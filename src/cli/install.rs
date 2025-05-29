@@ -89,7 +89,7 @@ impl Install {
             .write()
             .unwrap()
             .clone_from(&original_tool_args);
-        let config = Config::load().await?;
+        let config = Config::reset().await?;
         let ts = config.get_toolset().await?;
         let current_versions = ts.list_current_versions();
         // ensure that only current versions are sent to lockfile rebuild

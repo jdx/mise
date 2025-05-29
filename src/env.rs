@@ -324,6 +324,8 @@ pub static MISE_NODE_MAKE_INSTALL_OPTS: Lazy<Option<String>> = Lazy::new(|| {
         .or_else(|_| var("NODE_MAKE_INSTALL_OPTS"))
         .ok()
 });
+pub static MISE_JOBS: Lazy<Option<usize>> =
+    Lazy::new(|| var("MISE_JOBS").ok().and_then(|v| v.parse::<usize>().ok()));
 pub static MISE_NODE_DEFAULT_PACKAGES_FILE: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_NODE_DEFAULT_PACKAGES_FILE").unwrap_or_else(|| {
         let p = HOME.join(".default-nodejs-packages");

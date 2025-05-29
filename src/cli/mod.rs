@@ -319,7 +319,6 @@ impl Commands {
 }
 
 impl Cli {
-    #[async_backtrace::framed]
     pub async fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
         measure!("logger", { logger::init() });

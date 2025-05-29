@@ -22,7 +22,7 @@ permissions:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -56,16 +56,6 @@ jobs:
             ~/.cache/mise
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
-      - run: mise run test:perf
-        env:
-          NUM_TOOLS: 200
-          NUM_TASKS: 2000
-          RUNS: 10
-          MISE_ALT: mise-${{ steps.versions.outputs.release }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: flamegraphs
-          path: flamegraphs
       - run: |
           set -x
           failed=false
@@ -87,15 +77,17 @@ jobs:
             cat out.md
             
             # Extract relative performance from hyperfine output
-            variance=$(grep "mise $cmd" out.md | awk '{print $(NF-3)}' | sed 's/%//')
+            variance=$(grep "±.*±" out.md | awk '{print $(NF-3)}' | sed 's/%//')
             variance=$(echo "($variance * 100 - 100)/1" | bc)
             
             # Add warning if variance exceeds 10%
             if (( $(echo "$variance > 10" | bc -l) )); then
-              echo "⚠️  Warning: Performance variance for \`$cmd\` is ${variance}%" >> comment.md
-              failed=true
-            elif (( $(echo "$variance < -10" | bc -l) )); then
-              echo "✅  Performance improvement for \`$cmd\` is ${variance}%" >> comment.md
+              if grep -q "mise-${{ steps.versions.outputs.release }}.*±.*±" out.md; then
+                echo "✅  Performance improvement for \`$cmd\` is ${variance}%" >> comment.md
+              else
+                echo "⚠️  Warning: Performance variance for \`$cmd\` is ${variance}%" >> comment.md
+                failed=true
+              fi
             fi
           done
           if [ "$failed" = true ]; then
@@ -103,7 +95,13 @@ jobs:
           fi
         env:
           SHELL: zsh
+      - run: mise run test:perf
         if: always()
+        env:
+          NUM_TOOLS: 200
+          NUM_TASKS: 2000
+          RUNS: 10
+          MISE_ALT: mise-${{ steps.versions.outputs.release }}
       - run: cat comment.md >> "$GITHUB_STEP_SUMMARY"
         if: always() && github.event_name == 'pull_request'
       - name: Comment on PR

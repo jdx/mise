@@ -58,7 +58,7 @@ impl Link {
         file::create_dir_all(target.parent().unwrap())?;
         make_symlink(&path, &target)?;
 
-        let config = Config::load().await?;
+        let config = Config::reset().await?;
         let ts = config.get_toolset().await?;
         config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
         Ok(())

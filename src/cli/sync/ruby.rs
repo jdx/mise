@@ -30,7 +30,7 @@ impl SyncRuby {
         if self._type.brew {
             self.run_brew().await?;
         }
-        let config = Config::load().await?;
+        let config = Config::reset().await?;
         let ts = config.get_toolset().await?;
         config::rebuild_shims_and_runtime_symlinks(&config, ts, &[]).await?;
         Ok(())

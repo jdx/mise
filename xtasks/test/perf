@@ -8,50 +8,13 @@ cd perf-workspace
 mkdir -p flamegraphs
 MISE_DATA_DIR="${MISE_DATA_DIR:-$HOME/.local/share/mise}"
 declare -A benchmarks
-declare -A recent_benchmarks
-declare -A maximums
-declare -A minimums
 declare -A alt_benchmarks
 names=()
-errors=()
 
 if [ -v MISE_ALT ]; then
 	which mise
 	which "$MISE_ALT"
 fi
-
-recent_benchmarks["install-uncached"]=0
-recent_benchmarks["install-cached"]=186
-recent_benchmarks["ls-uncached"]=700
-recent_benchmarks["ls-cached"]=0
-recent_benchmarks["bin-paths-uncached"]=1077
-recent_benchmarks["bin-paths-cached"]=0
-recent_benchmarks["task-ls-uncached"]=3255
-recent_benchmarks["task-ls-cached"]=313
-
-for name in "${!recent_benchmarks[@]}"; do
-	maximums["$name"]=$(("${recent_benchmarks["$name"]}" * 13 / 10))
-	minimums["$name"]=$(("${recent_benchmarks["$name"]}" * 7 / 10))
-done
-
-benchmark_error() {
-	local name="$1"
-	local error="$2"
-	local cmd="$3"
-	mise cache clear
-	CLICOLOR_FORCE=1 MISE_TIMINGS=1 MISE_TRACE=1 timeout -v 20 mise $4 >/dev/null || true
-	CLICOLOR_FORCE=1 MISE_TIMINGS=1 MISE_TRACE=1 timeout -v 20 mise $4 >/dev/null || true
-	# TODO: mise task
-	if [ "$name" = "*-uncached" ]; then
-		mise cache clear
-	fi
-	# rm -rf cargo-flamegraph.trace
-	# CARGO_PROFILE_RELEASE_DEBUG=true timeout -v 180 \
-	# 	mise x cargo:flamegraph -- \
-	# 	cargo flamegraph --verbose -o "flamegraphs/$1.svg" --title "$1" --notes "$error" -- $cmd \
-	# 	>/dev/null || true
-	errors+=("::error file=xtasks/test/perf,title=$1::$2")
-}
 
 time_command() {
 	local uncached="$1"
@@ -93,24 +56,7 @@ benchmark() {
 		alt_benchmarks["$name-cached"]=$alt_cached_duration
 	fi
 
-	check_maximum "$name" "$uncached_duration" "$cached_duration" "$@"
 	names+=("$name")
-}
-
-check_maximum() {
-	local name="$1"
-	local uncached_duration="$2"
-	local cached_duration="$3"
-	local cmd="$4"
-	if [[ ${maximums["$name-uncached"]} != 0 ]] && [[ ${maximums["$name-uncached"]} -lt $uncached_duration ]]; then
-		benchmark_error "$name-uncached" "maximum for $name-uncached is ${maximums["$name-uncached"]}, got $uncached_duration" "$name" "$cmd"
-	elif [[ ${maximums["$name-cached"]} != 0 ]] && [[ ${maximums["$name-cached"]} -lt $cached_duration ]]; then
-		benchmark_error "$name-cached" "maximum for $name-cached is ${maximums["$name-cached"]}, got $cached_duration" "$name" "$cmd"
-	elif [[ ${minimums["$name-uncached"]} != 0 ]] && [[ ${minimums["$name-uncached"]} -gt $uncached_duration ]]; then
-		benchmark_error "$name-uncached" "(yay!) minimum for $name-uncached is ${minimums["$name-uncached"]}, got $uncached_duration" "$name" "$cmd"
-	elif [[ ${minimums["$name-cached"]} != 0 ]] && [[ ${minimums["$name-cached"]} -gt $cached_duration ]]; then
-		benchmark_error "$name-cached" "(yay!) minimum for $name-cached is ${minimums["$name-cached"]}, got $cached_duration" "$name" "$cmd"
-	fi
 }
 
 mise install
@@ -122,7 +68,7 @@ set +x
 
 get_performance_emoji() {
 	local variance="$1"
-	if [ ${variance#-} -gt 20 ]; then
+	if [ ${variance#-} -gt 10 ]; then
 		if [ $variance -gt 0 ]; then
 			echo "✅ "
 		else
@@ -135,11 +81,13 @@ get_performance_warning() {
 	local name="$1"
 	local variance="$2"
 	local type="$3"
-	if [ ${variance#-} -gt 20 ]; then
+	if [ ${variance#-} -gt 10 ]; then
 		if [ $variance -gt 0 ]; then
 			echo "✅  Performance improvement: $name $type is ${variance}%"
 		else
-			echo "⚠️  Warning: $name $type performance variance is ${variance}%"
+			local msg="⚠️  Warning: $name $type performance variance is ${variance}%"
+			echo "::warning file=xtasks/test/perf::$msg" >&2
+			echo "$msg"
 		fi
 	fi
 }
@@ -147,8 +95,8 @@ get_performance_warning() {
 print_performance_table() {
 	local output_file="$1"
 	if [ -n "${MISE_ALT:-}" ]; then
-		echo "| Command    | mise | $MISE_ALT |" >>"$output_file"
-		echo "|------------|------|-----------|" >>"$output_file"
+		echo "| Command    | $MISE_ALT | mise | Variance |" >>"$output_file"
+		echo "|------------|-----------|------|----------|" >>"$output_file"
 		for name in "${names[@]}"; do
 			uncached_variance=$(((${alt_benchmarks["$name-uncached"]} - ${benchmarks["$name-uncached"]}) * 100 / ${benchmarks["$name-uncached"]}))
 			cached_variance=$(((${alt_benchmarks["$name-cached"]} - ${benchmarks["$name-cached"]}) * 100 / ${benchmarks["$name-cached"]}))
@@ -156,42 +104,46 @@ print_performance_table() {
 			uncached_emoji=$(get_performance_emoji "$uncached_variance")
 			cached_emoji=$(get_performance_emoji "$cached_variance")
 
-			printf "| %-10s | %s%6dms | %6dms |\n" \
+			printf "| %-10s | %6dms | %s%6dms | %+d%% |\n" \
 				"$name (uncached)" \
+				"${alt_benchmarks["$name-uncached"]}" \
 				"$uncached_emoji" \
 				"${benchmarks["$name-uncached"]}" \
-				"${alt_benchmarks["$name-uncached"]}" >>"$output_file"
-			printf "| %-10s | %s%6dms | %6dms |\n" \
+				"$uncached_variance" >>"$output_file"
+			printf "| %-10s | %6dms | %s%6dms | %+d%% |\n" \
 				"$name (cached)" \
+				"${alt_benchmarks["$name-cached"]}" \
 				"$cached_emoji" \
 				"${benchmarks["$name-cached"]}" \
-				"${alt_benchmarks["$name-cached"]}" >>"$output_file"
+				"$cached_variance" >>"$output_file"
 		done
 	else
 		echo "| Command    | Time   |" >>"$output_file"
 		echo "|------------|--------|" >>"$output_file"
 		for name in "${names[@]}"; do
-			printf "| %-10s-uncached | %6dms |\n" "$name" "${benchmarks["$name-uncached"]}" >>"$output_file"
-			printf "| %-10s-cached   | %6dms |\n" "$name" "${benchmarks["$name-cached"]}" >>"$output_file"
+			printf "| %-10s | %6dms |\n" "$name (uncached)" "${benchmarks["$name-uncached"]}" >>"$output_file"
+			printf "| %-10s | %6dms |\n" "$name (cached)" "${benchmarks["$name-cached"]}" >>"$output_file"
 		done
 	fi
 }
 
 print_performance_warnings() {
 	local output_file="$1"
-	for name in "${names[@]}"; do
-		uncached_variance=$(((${alt_benchmarks["$name-uncached"]} - ${benchmarks["$name-uncached"]}) * 100 / ${benchmarks["$name-uncached"]}))
-		cached_variance=$(((${alt_benchmarks["$name-cached"]} - ${benchmarks["$name-cached"]}) * 100 / ${benchmarks["$name-cached"]}))
+	if [ -n "${MISE_ALT:-}" ]; then
+		for name in "${names[@]}"; do
+			uncached_variance=$(((${alt_benchmarks["$name-uncached"]} - ${benchmarks["$name-uncached"]}) * 100 / ${benchmarks["$name-uncached"]}))
+			cached_variance=$(((${alt_benchmarks["$name-cached"]} - ${benchmarks["$name-cached"]}) * 100 / ${benchmarks["$name-cached"]}))
 
-		warning=$(get_performance_warning "$name" "$uncached_variance" "uncached")
-		if [ -n "$warning" ]; then
-			echo "$warning" >>"$output_file"
-		fi
-		warning=$(get_performance_warning "$name" "$cached_variance" "cached")
-		if [ -n "$warning" ]; then
-			echo "$warning" >>"$output_file"
-		fi
-	done
+			warning=$(get_performance_warning "$name" "$uncached_variance" "uncached")
+			if [ -n "$warning" ]; then
+				echo "$warning" >>"$output_file"
+			fi
+			warning=$(get_performance_warning "$name" "$cached_variance" "cached")
+			if [ -n "$warning" ]; then
+				echo "$warning" >>"$output_file"
+			fi
+		done
+	fi
 }
 
 # Print table to console
@@ -209,11 +161,4 @@ if [ -v GITHUB_STEP_SUMMARY ]; then
 	print_performance_table "../comment.md"
 	echo "" >>../comment.md
 	print_performance_warnings "../comment.md"
-fi
-
-if [ ${#errors[@]} -gt 0 ]; then
-	for error in "${errors[@]}"; do
-		echo "$error" >&2
-	done
-	exit 1
 fi

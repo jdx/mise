@@ -370,10 +370,9 @@ pub trait Backend: Debug + Send + Sync {
             None => {
                 let installed_symlink = self.ba().installs_path.join("latest");
                 if installed_symlink.exists() {
-                    if installed_symlink.is_dir() && !installed_symlink.is_symlink() {
+                    let Some(target) = file::resolve_symlink(&installed_symlink)? else {
                         return Ok(Some("latest".to_string()));
-                    }
-                    let target = file::resolve_symlink(&installed_symlink)?;
+                    };
                     let version = target
                         .file_name()
                         .ok_or_else(|| eyre!("Invalid symlink target"))?

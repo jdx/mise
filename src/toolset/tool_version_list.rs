@@ -79,7 +79,7 @@ mod tests {
     async fn test_tool_version_list_failure() {
         env::set_var("MISE_FAILURE", "1");
         file::remove_all(dirs::CACHE.join("dummy")).unwrap();
-        let config = Config::load().await.unwrap();
+        let config = Config::reset().await.unwrap();
         let ba: Arc<BackendArg> = Arc::new("dummy".into());
         let mut tvl = ToolVersionList::new(ba.clone(), ToolSource::Argument);
         tvl.requests
@@ -95,6 +95,6 @@ mod tests {
             .await;
         assert_eq!(tvl.versions.len(), 0);
         env::remove_var("MISE_FAILURE");
-        Config::load().await.unwrap();
+        Config::reset().await.unwrap();
     }
 }
