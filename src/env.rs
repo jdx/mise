@@ -3,7 +3,7 @@ use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::file::replace_path;
 use crate::shell::ShellType;
 use crate::{
-    cli::args::{ENV_ARG, PROFILE_ARG, ToolArg},
+    cli::args::{ToolArg},
     file::display_path,
 };
 use eyre::Context;
@@ -493,16 +493,13 @@ fn prefer_offline(args: &[String]) -> bool {
 }
 
 fn environment(args: &[String]) -> Vec<String> {
-    let arg_defs = HashSet::from([
-        format!("--{}", PROFILE_ARG.get_long().unwrap_or_default()),
-        format!("-{}", PROFILE_ARG.get_short().unwrap_or_default()),
-        format!("--{}", ENV_ARG.get_long().unwrap_or_default()),
-        format!("-{}", ENV_ARG.get_short().unwrap_or_default()),
-    ]);
+    let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
-    args.windows(2)
+    args
+        .windows(2)
+        .take_while(|a| &*a[0] != "--" && &*a[1] != "--")
         .find_map(|window| {
-            if arg_defs.iter().contains(&window[0]) {
+            if arg_defs.contains(window[0].as_str()) {
                 Some(window[1].clone())
             } else {
                 None

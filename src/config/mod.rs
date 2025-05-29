@@ -1,3 +1,4 @@
+use clap_lex::OsStrExt;
 use config_file::ConfigFileType;
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
@@ -710,8 +711,8 @@ async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
     idiomatic_filenames
 }
 
-static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
-    let mut paths: IndexSet<&'static str> = IndexSet::new();
+static LOCAL_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
+    let mut paths: Vec<&'static str> = Vec::new();
     if let Some(o) = &*env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES {
         paths.extend(o.iter().map(|s| s.as_str()));
     } else {
@@ -771,12 +772,14 @@ pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     }
     filenames
 });
-static TOML_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
-    DEFAULT_CONFIG_FILENAMES
-        .iter()
-        .filter(|s| s.ends_with(".toml"))
-        .map(|s| s.to_string())
-        .collect()
+static TOML_CONFIG_FILENAMES: Lazy<Vec<&'static str>> = Lazy::new(|| {
+    measure!("TOML_CONFIG_FILENAMES", {
+        DEFAULT_CONFIG_FILENAMES
+            .iter()
+            .filter(|s| s.ends_with(".toml"))
+            .map(|s| s.as_str())
+            .collect()
+    })
 });
 pub static ALL_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
     load_config_paths(&DEFAULT_CONFIG_FILENAMES, false)
@@ -800,8 +803,9 @@ pub static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
 type GlobResults = HashMap<(PathBuf, String), Vec<PathBuf>>;
 static GLOB_RESULTS: Lazy<Mutex<GlobResults>> = Lazy::new(Default::default);
 
-pub fn glob(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
+pub fn glob<S: AsRef<str>>(dir: &Path, pattern: S) -> Result<Vec<PathBuf>> {
     let mut results = GLOB_RESULTS.lock().unwrap();
+    let pattern = pattern.as_ref().to_string();
     let key = (dir.to_path_buf(), pattern.to_string());
     if let Some(glob) = results.get(&key) {
         return Ok(glob.clone());
@@ -837,40 +841,49 @@ pub fn config_file_from_dir(p: &Path) -> PathBuf {
     }
 }
 
-pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> Vec<PathBuf> {
-    if Settings::no_config() {
-        return vec![];
-    }
-    let dirs = file::all_dirs().unwrap_or_default();
+pub fn load_config_paths<S: AsRef<str>>(
+    config_filenames: &[S],
+    include_ignored: bool,
+) -> Vec<PathBuf> {
+    measure!("load_config_paths: Settings::no_config", {
+        if Settings::no_config() {
+            return vec![];
+        }
+    });
+    let dirs = 
+        file::all_dirs().unwrap_or_default();
 
-    let mut config_files = dirs
-        .iter()
-        .flat_map(|dir| {
-            if !include_ignored
-                && env::MISE_IGNORED_CONFIG_PATHS
-                    .iter()
-                    .any(|p| dir.starts_with(p))
-            {
-                vec![]
-            } else {
-                config_filenames
-                    .iter()
-                    .rev()
-                    .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
-                    .collect()
-            }
-        })
-        .collect::<Vec<_>>();
+    let mut config_files = 
+        dirs.iter()
+            .flat_map(|dir| {
+                if !include_ignored
+                    && env::MISE_IGNORED_CONFIG_PATHS
+                        .iter()
+                        .any(|p| dir.starts_with(p))
+                {
+                    vec![]
+                } else {
+                    config_filenames
+                        .iter()
+                        .rev()
+                        .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
+                        .collect()
+                }
+            })
+            .collect::<Vec<_>>()
+    ;
 
     config_files.extend(global_config_files());
     config_files.extend(system_config_files());
 
     config_files
         .into_iter()
+        .unique()
         .unique_by(|p| file::desymlink_path(p))
         .filter(|p| {
             include_ignored
-                || !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
+                    || !(config_file::is_ignored(&config_trust_root(p))
+                        || config_file::is_ignored(p))
         })
         .collect()
 }
@@ -936,8 +949,8 @@ static CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
 fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
     let mut files = IndexSet::new();
     for p in file::ls(&dir.join("conf.d")).unwrap_or_default() {
-        if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string()) {
-            if !file_name.starts_with(".") && file_name.ends_with(".toml") {
+        if let Some(file_name) = p.file_name() {
+            if !file_name.starts_with(".") && p.extension().is_some_and(|e| e == "toml") {
                 files.insert(p);
             }
         }
@@ -959,14 +972,16 @@ pub fn global_config_path() -> PathBuf {
 pub fn top_toml_config() -> Option<PathBuf> {
     load_config_paths(&TOML_CONFIG_FILENAMES, false)
         .iter()
-        .find(|p| p.to_string_lossy().ends_with(".toml"))
         .map(|p| p.to_path_buf())
+        .next()
 }
 
 pub static ALL_TOML_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
-    load_config_paths(&TOML_CONFIG_FILENAMES, false)
-        .into_iter()
-        .collect()
+    measure!("ALL_TOML_CONFIG_FILES", {
+        load_config_paths(&TOML_CONFIG_FILENAMES, false)
+            .into_iter()
+            .collect()
+    })
 });
 
 /// list of all non-global mise.tomls

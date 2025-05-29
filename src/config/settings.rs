@@ -108,12 +108,14 @@ impl Settings {
         }
         time!("try_get");
 
-        // Initial pass to obtain cd option
-        let mut sb = Self::builder()
-            .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
-            .env();
+        let mut sb = measure!("settings builder", {
+            // Initial pass to obtain cd option
+            Self::builder()
+                .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
+                .env()
+        });
 
-        let mut settings = sb.load()?;
+        let mut settings = measure!("settings load", { sb.load()? });
         if let Some(mut cd) = settings.cd {
             static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
             if cd.is_relative() {
@@ -122,16 +124,23 @@ impl Settings {
             env::set_current_dir(cd)?;
         }
 
-        // Reload settings after current directory option processed
-        sb = Self::builder()
-            .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
-            .env();
-        for file in Self::all_settings_files() {
-            sb = sb.preloaded(file);
-        }
-        sb = sb.preloaded(DEFAULT_SETTINGS.clone());
+        sb = measure!("settings builder", {
+            // Reload settings after current directory option processed
+            Self::builder()
+                .preloaded(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
+                .env()
+        });
 
-        settings = sb.load()?;
+        measure!("settings all_settings_files", {
+            for file in Self::all_settings_files() {
+                sb = sb.preloaded(file);
+            }
+            sb = sb.preloaded(DEFAULT_SETTINGS.clone());
+        });
+
+        measure!("settings load", {
+            settings = sb.load()?;
+        });
         if !settings.legacy_version_file {
             settings.idiomatic_version_file = false;
         }
@@ -296,8 +305,8 @@ impl Settings {
     }
 
     pub fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
-        let raw = file::read_to_string(path)?;
-        let settings_file: SettingsFile = toml::from_str(&raw)?;
+        let raw = measure!("settings file read", { file::read_to_string(path)? });
+        let settings_file: SettingsFile = measure!("settings file parse", { toml::from_str(&raw)? });
 
         Ok(settings_file.settings)
     }

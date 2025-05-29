@@ -3713,6 +3713,7 @@ dependencies = [
  "chrono",
  "ci_info",
  "clap",
+ "clap_lex",
  "clap_mangen",
  "color-eyre",
  "color-print",
