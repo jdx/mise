@@ -1,5 +1,19 @@
 # Changelog
 
+## [2025.5.16](https://github.com/jdx/mise/compare/v2025.5.15..v2025.5.16) - 2025-05-29
+
+### 🐛 Bug Fixes
+
+- ensure config is always wrapped in Result by [@jdx](https://github.com/jdx) in [#5223](https://github.com/jdx/mise/pull/5223)
+
+### ⚡ Performance
+
+- improve init performance by [@jdx](https://github.com/jdx) in [#5231](https://github.com/jdx/mise/pull/5231)
+
+### Chore
+
+- remove hyperfine from main builds by [@jdx](https://github.com/jdx) in [#5226](https://github.com/jdx/mise/pull/5226)
+
 ## [2025.5.15](https://github.com/jdx/mise/compare/v2025.5.14..v2025.5.15) - 2025-05-28
 
 ### 🚀 Features
