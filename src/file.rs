@@ -812,13 +812,14 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
 }
 
 pub fn desymlink_path(p: &Path) -> PathBuf {
-    if let Ok(target) = fs::read_link(p) {
-        target
-            .canonicalize()
-            .unwrap_or_else(|_| target.to_path_buf())
-    } else {
-        p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+    if p.is_symlink() {
+        if let Ok(target) = fs::read_link(p) {
+            return target
+                .canonicalize()
+                .unwrap_or_else(|_| target.to_path_buf());
+        }
     }
+    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
 }
 
 pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {

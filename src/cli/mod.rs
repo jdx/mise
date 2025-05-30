@@ -321,6 +321,7 @@ impl Commands {
 impl Cli {
     pub async fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
+        let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
         measure!("handle_shim", { shims::handle_shim().await })?;
         ctrlc::init();
