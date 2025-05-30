@@ -3,7 +3,6 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::env_directive::{EnvResolveOptions, EnvResults};
@@ -18,6 +17,7 @@ use crate::registry::tool_enabled;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::uv;
 use crate::{backend, config, env, hooks};
+use crate::{backend::Backend, parallel};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
 use eyre::{Result, WrapErr};
@@ -152,14 +152,18 @@ impl Toolset {
     #[async_backtrace::framed]
     pub async fn resolve(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
         self.list_missing_plugins();
-        let mut tvls = vec![];
-        for (ba, mut tvl) in self.versions.clone().into_iter() {
-            tvl.resolve(config, &Default::default()).await?;
-            tvls.push((ba, tvl));
-        }
-        for (ba, tvl) in tvls {
-            self.versions.insert(ba, tvl);
-        }
+        let versions = self
+            .versions
+            .clone()
+            .into_iter()
+            .map(|(ba, tvl)| (config.clone(), ba, tvl.clone()))
+            .collect::<Vec<_>>();
+        let tvls = parallel::parallel(versions, |(config, ba, mut tvl)| async move {
+            tvl.resolve(&config, &Default::default()).await?;
+            Ok((ba, tvl))
+        })
+        .await?;
+        self.versions = tvls.into_iter().collect();
         Ok(())
     }
     #[async_backtrace::framed]
@@ -462,30 +466,40 @@ impl Toolset {
         config: &Arc<Config>,
         bump: bool,
     ) -> Vec<OutdatedInfo> {
-        let mut outdated = vec![];
-        for (t, tv) in self.list_current_versions().into_iter() {
-            match t.outdated_info(config, &tv, bump).await {
+        let versions = self.list_current_versions();
+        let versions = versions
+            .into_iter()
+            .map(|(t, tv)| (config.clone(), t, tv, bump))
+            .collect::<Vec<_>>();
+        let outdated = parallel::parallel(versions, |(config, t, tv, bump)| async move {
+            let mut outdated = vec![];
+            match t.outdated_info(&config, &tv, bump).await {
                 Ok(Some(oi)) => outdated.push(oi),
                 Ok(None) => {}
                 Err(e) => {
                     warn!("Error getting outdated info for {tv}: {e:#}");
-                    continue;
                 }
             }
             if t.symlink_path(&tv).is_some() {
                 trace!("skipping symlinked version {tv}");
                 // do not consider symlinked versions to be outdated
-                continue;
+                return Ok(outdated);
             }
-            match OutdatedInfo::resolve(config, tv.clone(), bump).await {
+            match OutdatedInfo::resolve(&config, tv.clone(), bump).await {
                 Ok(Some(oi)) => outdated.push(oi),
                 Ok(None) => {}
                 Err(e) => {
                     warn!("Error creating OutdatedInfo for {tv}: {e:#}");
                 }
             }
-        }
-        outdated
+            Ok(outdated)
+        })
+        .await
+        .unwrap_or_else(|e| {
+            warn!("Error in parallel outdated version check: {e:#}");
+            vec![]
+        });
+        outdated.into_iter().flatten().collect()
     }
     /// returns env_with_path but also with the existing env vars from the system
     pub async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
