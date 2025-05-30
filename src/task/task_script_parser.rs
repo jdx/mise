@@ -1,4 +1,4 @@
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::exit::exit;
 use crate::shell::ShellType;
@@ -334,7 +334,7 @@ impl TaskScriptParser {
         for script in scripts {
             let shell_type = shell_from_shebang(script)
                 .or(task.shell())
-                .unwrap_or(SETTINGS.default_inline_shell()?)[0]
+                .unwrap_or(Settings::get().default_inline_shell()?)[0]
                 .parse()
                 .ok();
             let escape = {

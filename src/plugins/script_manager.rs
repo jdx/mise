@@ -10,7 +10,7 @@ use indexmap::indexmap;
 use std::sync::LazyLock as Lazy;
 
 use crate::cmd::{CmdLineRunner, cmd};
-use crate::config::{SETTINGS, Settings};
+use crate::config::Settings;
 use crate::env::PATH_KEY;
 use crate::errors::Error;
 use crate::errors::Error::ScriptFailed;
@@ -168,7 +168,7 @@ impl ScriptManager {
         let path = self.get_script_path(script);
         pr.set_message(display_path(&path));
         let mut cmd = CmdLineRunner::new(path.clone());
-        if let Some(arch) = &SETTINGS.arch {
+        if let Some(arch) = &Settings::get().arch {
             if arch == "x86_64" && cfg!(macos) {
                 cmd = CmdLineRunner::new("/usr/bin/arch")
                     .arg("-x86_64")

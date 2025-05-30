@@ -3,7 +3,6 @@ use crate::build_time::built_info;
 use crate::cache::CacheManagerBuilder;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::settings::SETTINGS;
 use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
@@ -200,7 +199,7 @@ impl NodePlugin {
         let shasums_file = tarball.parent().unwrap().join("SHASUMS256.txt");
         HTTP.download_file(self.shasums_url(version)?, &shasums_file, Some(&ctx.pr))
             .await?;
-        if SETTINGS.node.gpg_verify != Some(false) && version.starts_with("2") {
+        if Settings::get().node.gpg_verify != Some(false) && version.starts_with("2") {
             self.verify_with_gpg(ctx, &shasums_file, version).await?;
         }
         let shasums = file::read_to_string(&shasums_file)?;
@@ -215,7 +214,7 @@ impl NodePlugin {
         shasums_file: &Path,
         v: &str,
     ) -> Result<()> {
-        if file::which_non_pristine("gpg").is_none() && SETTINGS.node.gpg_verify.is_none() {
+        if file::which_non_pristine("gpg").is_none() && Settings::get().node.gpg_verify.is_none() {
             warn!("gpg not found, skipping verification");
             return Ok(());
         }
@@ -360,16 +359,17 @@ impl Backend for NodePlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let base = SETTINGS.node.mirror_url();
+        let settings = Settings::get();
+        let base = Settings::get().node.mirror_url();
         let versions = HTTP_FETCH
             .json::<Vec<NodeVersion>, _>(base.join("index.json")?)
             .await?
             .into_iter()
             .filter(|v| {
-                if let Some(flavor) = &SETTINGS.node.flavor {
+                if let Some(flavor) = &settings.node.flavor {
                     v.files
                         .iter()
-                        .any(|f| f == &format!("{}-{}-{}", os(), arch(), flavor))
+                        .any(|f| f == &format!("{}-{}-{}", os(), arch(&settings), flavor))
                 } else {
                     true
                 }
@@ -485,9 +485,9 @@ impl Backend for NodePlugin {
                     CacheManagerBuilder::new(
                         self.ba().cache_path.join("remote_versions.msgpack.z"),
                     )
-                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-                    .with_cache_key(SETTINGS.node.mirror_url.clone().unwrap_or_default())
-                    .with_cache_key(SETTINGS.node.flavor.clone().unwrap_or_default())
+                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+                    .with_cache_key(Settings::get().node.mirror_url.clone().unwrap_or_default())
+                    .with_cache_key(Settings::get().node.flavor.clone().unwrap_or_default())
                     .build(),
                 )
                 .into()
@@ -533,13 +533,13 @@ impl BuildOpts {
             make_cmd: make_cmd(),
             make_install_cmd: make_install_cmd(),
             source_tarball_path: tv.download_path().join(&source_tarball_name),
-            source_tarball_url: SETTINGS
+            source_tarball_url: Settings::get()
                 .node
                 .mirror_url()
                 .join(&format!("v{v}/{source_tarball_name}"))?,
             source_tarball_name,
             binary_tarball_path: tv.download_path().join(&binary_tarball_name),
-            binary_tarball_url: SETTINGS
+            binary_tarball_url: Settings::get()
                 .node
                 .mirror_url()
                 .join(&format!("v{v}/{binary_tarball_name}"))?,
@@ -591,8 +591,8 @@ fn os() -> &'static str {
     }
 }
 
-fn arch() -> &'static str {
-    let arch = SETTINGS.arch();
+fn arch(settings: &Settings) -> &str {
+    let arch = settings.arch();
     if arch == "x86" {
         "x86"
     } else if arch == "x86_64" {
@@ -615,10 +615,11 @@ fn arch() -> &'static str {
 }
 
 fn slug(v: &str) -> String {
-    if let Some(flavor) = &SETTINGS.node.flavor {
-        format!("node-v{v}-{}-{}-{flavor}", os(), arch())
+    let settings = Settings::get();
+    if let Some(flavor) = &settings.node.flavor {
+        format!("node-v{v}-{}-{}-{flavor}", os(), arch(&settings))
     } else {
-        format!("node-v{v}-{}-{}", os(), arch())
+        format!("node-v{v}-{}-{}", os(), arch(&settings))
     }
 }
 

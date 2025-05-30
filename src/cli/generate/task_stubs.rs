@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::file;
 use crate::task::Task;
 use clap::ValueHint;
@@ -26,7 +26,7 @@ pub struct TaskStubs {
 
 impl TaskStubs {
     pub async fn run(self) -> eyre::Result<()> {
-        SETTINGS.ensure_experimental("generate task-stubs")?;
+        Settings::get().ensure_experimental("generate task-stubs")?;
         let config = Config::get().await?;
         for task in config.tasks().await?.values() {
             let bin = self.dir.join(task.name_to_path());

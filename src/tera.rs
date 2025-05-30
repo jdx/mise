@@ -13,7 +13,7 @@ use versions::{Requirement, Versioning};
 
 use crate::cache::CacheManagerBuilder;
 use crate::cmd::cmd;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::env_diff::EnvMap;
 use crate::{dirs, duration, env, hash};
 
@@ -330,7 +330,7 @@ pub fn tera_exec(
         };
         match args.get("command") {
             Some(Value::String(command)) => {
-                let shell = SETTINGS
+                let shell = Settings::get()
                     .default_inline_shell()
                     .map_err(|e| tera::Error::msg(e.to_string()))?;
                 let args = shell

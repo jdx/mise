@@ -1,6 +1,6 @@
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{dirs, file};
 use eyre::Result;
@@ -23,7 +23,7 @@ pub async fn uv_venv(config: &Arc<Config>) -> Option<Venv> {
     if let Some(venv) = UV_VENV.get() {
         return venv.clone();
     }
-    if !SETTINGS.python.uv_venv_auto {
+    if !Settings::get().python.uv_venv_auto {
         UV_VENV.set(None).unwrap();
         return None;
     }
@@ -47,7 +47,7 @@ async fn get_or_create_venv(
     venv_path: PathBuf,
     uv_path: PathBuf,
 ) -> Result<Venv> {
-    SETTINGS.ensure_experimental("uv venv auto")?;
+    Settings::get().ensure_experimental("uv venv auto")?;
     let mut venv = Venv {
         env: Default::default(),
         venv_path: venv_path.join("bin"),

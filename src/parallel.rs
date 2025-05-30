@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -11,7 +11,7 @@ where
     F: Fn(T) -> Fut + Send + Copy + 'static,
     Fut: Future<Output = Result<U>> + Send + 'static,
 {
-    let semaphore = Arc::new(Semaphore::new(SETTINGS.jobs));
+    let semaphore = Arc::new(Semaphore::new(Settings::get().jobs));
     let mut jset = JoinSet::new();
     let mut results = input.iter().map(|_| None).collect::<Vec<_>>();
     for item in input.into_iter().enumerate() {

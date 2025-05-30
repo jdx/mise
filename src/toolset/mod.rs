@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::env_directive::{EnvResolveOptions, EnvResults};
-use crate::config::settings::{SETTINGS, SettingsStatusMissingTools};
+use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::env::{PATH_KEY, TERM_WIDTH};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
@@ -98,11 +98,11 @@ pub struct InstallOptions {
 impl Default for InstallOptions {
     fn default() -> Self {
         InstallOptions {
-            jobs: Some(SETTINGS.jobs),
-            raw: SETTINGS.raw,
+            jobs: Some(Settings::get().jobs),
+            raw: Settings::get().raw,
             force: false,
             missing_args_only: true,
-            auto_install_disable_tools: SETTINGS.auto_install_disable_tools.clone(),
+            auto_install_disable_tools: Settings::get().auto_install_disable_tools.clone(),
             resolve_options: Default::default(),
         }
     }
@@ -324,10 +324,10 @@ impl Toolset {
                 }
             }
         }
-        let raw = opts.raw || SETTINGS.raw;
+        let raw = opts.raw || Settings::get().raw;
         let jobs = match raw {
             true => 1,
-            false => opts.jobs.unwrap_or(SETTINGS.jobs),
+            false => opts.jobs.unwrap_or(Settings::get().jobs),
         };
         let semaphore = Arc::new(Semaphore::new(jobs));
         let ts = Arc::new(self.clone());
@@ -688,7 +688,7 @@ impl Toolset {
                 .await
                 .into_iter()
                 .filter(|tv| tv.ba() == &**plugin.ba())
-                .filter(|tv| match &SETTINGS.auto_install_disable_tools {
+                .filter(|tv| match &Settings::get().auto_install_disable_tools {
                     Some(disable_tools) => !disable_tools.contains(&tv.ba().short),
                     None => true,
                 })
@@ -730,13 +730,13 @@ impl Toolset {
     // only displays for tools which have at least one version already installed
     #[async_backtrace::framed]
     pub async fn notify_if_versions_missing(&self, config: &Arc<Config>) {
-        if SETTINGS.status.missing_tools() == SettingsStatusMissingTools::Never {
+        if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Never {
             return;
         }
         let mut missing = vec![];
         let missing_versions = self.list_missing_versions(config).await;
         for tv in missing_versions.into_iter() {
-            if SETTINGS.status.missing_tools() == SettingsStatusMissingTools::Always {
+            if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Always {
                 missing.push(tv);
                 continue;
             }
@@ -764,8 +764,8 @@ impl Toolset {
     fn is_disabled(&self, ba: &BackendArg) -> bool {
         !ba.is_os_supported()
             || !tool_enabled(
-                &SETTINGS.enable_tools(),
-                &SETTINGS.disable_tools(),
+                &Settings::get().enable_tools(),
+                &Settings::get().disable_tools(),
                 &ba.short.to_string(),
             )
     }

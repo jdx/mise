@@ -8,7 +8,7 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::file::TarOptions;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -52,17 +52,28 @@ impl ZigPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+        let settings = Settings::get();
         let indexes = HashMap::from([
             ("zig", "https://ziglang.org/download/index.json"),
             ("mach", "https://machengine.org/zig/index.json"),
         ]);
 
         let url = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
-            self.get_tarball_url_from_json(indexes["mach"], tv.version.as_str(), arch(), os())
-                .await?
+            self.get_tarball_url_from_json(
+                indexes["mach"],
+                tv.version.as_str(),
+                arch(&settings),
+                os(),
+            )
+            .await?
         } else {
-            self.get_tarball_url_from_json(indexes["zig"], tv.version.as_str(), arch(), os())
-                .await?
+            self.get_tarball_url_from_json(
+                indexes["zig"],
+                tv.version.as_str(),
+                arch(&settings),
+                os(),
+            )
+            .await?
         };
 
         let filename = url.split('/').next_back().unwrap();
@@ -196,8 +207,8 @@ fn os() -> &'static str {
     }
 }
 
-fn arch() -> &'static str {
-    let arch = SETTINGS.arch();
+fn arch(settings: &Settings) -> &str {
+    let arch = settings.arch();
     if arch == "x86_64" {
         "x86_64"
     } else if arch == "aarch64" {

@@ -42,7 +42,6 @@ use crate::plugins::PluginType;
 use crate::tera::BASE_CONTEXT;
 use crate::watch_files::WatchFile;
 use crate::wildcard::Wildcard;
-pub use settings::SETTINGS;
 
 type AliasMap = IndexMap<String, Alias>;
 type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
@@ -131,7 +130,7 @@ impl Config {
             config_files,
             env: OnceCell::new(),
             env_with_sources: OnceCell::new(),
-            shorthands: get_shorthands(&SETTINGS),
+            shorthands: get_shorthands(&Settings::get()),
             hooks: OnceCell::new(),
             tasks: OnceCell::new(),
             tool_request_set: OnceCell::new(),
@@ -241,7 +240,7 @@ impl Config {
         self.env_with_sources
             .get_or_try_init(async || {
                 let mut env = self.env_results().await?.env.clone();
-                for env_file in SETTINGS.env_files() {
+                for env_file in Settings::get().env_files() {
                     match dotenvy::from_path_iter(&env_file) {
                         Ok(iter) => {
                             for item in iter {
@@ -567,7 +566,12 @@ impl Config {
             .flatten()
             .chain(env_results.env_files.iter().map(|p| p.as_path().into()))
             .chain(env_results.env_scripts.iter().map(|p| p.as_path().into()))
-            .chain(SETTINGS.env_files().iter().map(|p| p.as_path().into()))
+            .chain(
+                Settings::get()
+                    .env_files()
+                    .iter()
+                    .map(|p| p.as_path().into()),
+            )
             .collect())
     }
 
@@ -655,10 +659,13 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
 }
 
 async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
-    if !SETTINGS.idiomatic_version_file {
+    if !Settings::get().idiomatic_version_file {
         return BTreeMap::new();
     }
-    if !SETTINGS.idiomatic_version_file_disable_tools.is_empty() {
+    if !Settings::get()
+        .idiomatic_version_file_disable_tools
+        .is_empty()
+    {
         deprecated!(
             "idiomatic_version_file_disable_tools",
             "is deprecated, use idiomatic_version_file_enable_tools instead"
@@ -666,10 +673,13 @@ async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
     }
     let mut jset = JoinSet::new();
     let tool_is_enabled = |tool: &dyn Backend| {
-        if let Some(enable_tools) = &SETTINGS.idiomatic_version_file_enable_tools {
+        if let Some(enable_tools) = &Settings::get().idiomatic_version_file_enable_tools {
             enable_tools.contains(tool.id())
-        } else if !SETTINGS.idiomatic_version_file_disable_tools.is_empty() {
-            !SETTINGS
+        } else if !Settings::get()
+            .idiomatic_version_file_disable_tools
+            .is_empty()
+        {
+            !Settings::get()
                 .idiomatic_version_file_disable_tools
                 .contains(tool.id())
         } else {
@@ -831,7 +841,7 @@ pub fn config_file_from_dir(p: &Path) -> PathBuf {
             }
         }
     }
-    match SETTINGS.asdf_compat {
+    match Settings::get().asdf_compat {
         true => p.join(&*MISE_DEFAULT_TOOL_VERSIONS_FILENAME),
         false => p.join(&*MISE_DEFAULT_CONFIG_FILENAME),
     }
@@ -1183,7 +1193,7 @@ pub async fn rebuild_shims_and_runtime_symlinks(
 }
 
 fn warn_about_idiomatic_version_files(config_files: &ConfigMap) {
-    if SETTINGS
+    if Settings::get()
         .idiomatic_version_file_enable_tools
         .as_ref()
         .is_some()
@@ -1319,7 +1329,12 @@ async fn load_tasks_includes(
         .try_collect::<_, Vec<PathBuf>, _>()?
         .into_iter()
         .filter(|p| file::is_executable(p))
-        .filter(|p| !SETTINGS.task_disable_paths.iter().any(|d| p.starts_with(d)))
+        .filter(|p| {
+            !Settings::get()
+                .task_disable_paths
+                .iter()
+                .any(|d| p.starts_with(d))
+        })
         .collect::<Vec<_>>();
     let mut tasks = vec![];
     let root = Arc::new(root.to_path_buf());

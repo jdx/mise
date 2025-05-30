@@ -5,7 +5,7 @@ use std::sync::LazyLock as Lazy;
 
 use crate::backend::{Backend, BackendMap};
 use crate::cli::args::BackendArg;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::env;
 use crate::env::PATH_KEY;
 use crate::timeout::run_with_timeout;
@@ -57,7 +57,7 @@ where
     F: FnOnce() -> Result<T> + Send,
     T: Send,
 {
-    run_with_timeout(f, SETTINGS.fetch_remote_versions_timeout())
+    run_with_timeout(f, Settings::get().fetch_remote_versions_timeout())
 }
 
 pub fn new_backend_arg(tool_name: &str) -> BackendArg {

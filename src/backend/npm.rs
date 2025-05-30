@@ -4,7 +4,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
@@ -45,7 +45,7 @@ impl Backend for NPMBackend {
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
                 Ok(versions)
             },
-            SETTINGS.fetch_remote_versions_timeout(),
+            Settings::get().fetch_remote_versions_timeout(),
         )
         .await
     }
@@ -69,14 +69,14 @@ impl Backend for NPMBackend {
                     })
                     .await
             },
-            SETTINGS.fetch_remote_versions_timeout(),
+            Settings::get().fetch_remote_versions_timeout(),
         )
         .await
         .cloned()
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        if SETTINGS.npm.bun {
+        if Settings::get().npm.bun {
             CmdLineRunner::new("bun")
                 .arg("install")
                 .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -132,7 +132,7 @@ impl NPMBackend {
         Self {
             latest_version_cache: TokioMutex::new(
                 CacheManagerBuilder::new(ba.cache_path.join("latest_version.msgpack.z"))
-                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                     .build(),
             ),
             ba: Arc::new(ba),

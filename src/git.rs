@@ -9,7 +9,7 @@ use xx::file;
 
 use crate::cmd;
 use crate::cmd::CmdLineRunner;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::file::touch_dir;
 use crate::ui::progress_report::SingleReport;
 
@@ -120,7 +120,7 @@ impl Git {
         if let Some(parent) = self.dir.parent() {
             file::mkdirp(parent)?;
         }
-        if SETTINGS.libgit2 || SETTINGS.gix {
+        if Settings::get().libgit2 || Settings::get().gix {
             debug!("cloning {} to {} with gix", url, self.dir.display());
             let mut prepare_clone = gix::prepare_clone(url, &self.dir)?;
 

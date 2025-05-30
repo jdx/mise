@@ -11,7 +11,7 @@ use eyre::{Result, eyre};
 use crate::cli::args::ToolArg;
 #[cfg(any(test, windows))]
 use crate::cmd;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::env;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 
@@ -70,7 +70,7 @@ impl Exec {
             // also don't autoinstall if at least 1 tool is specified
             // in that case the user probably just wants that one tool
             missing_args_only: !self.tool.is_empty()
-                || !SETTINGS.exec_auto_install
+                || !Settings::get().exec_auto_install
                 || !console::user_attended_stderr()
                 || *env::__MISE_SHIM,
             resolve_options: Default::default(),

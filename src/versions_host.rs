@@ -1,5 +1,5 @@
 use crate::cli::args::BackendArg;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::http::HTTP_FETCH;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::registry::REGISTRY;
@@ -24,7 +24,7 @@ static PLUGINS_USE_VERSION_HOST: LazyLock<HashSet<&str>> = LazyLock::new(|| {
 });
 
 pub async fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>> {
-    if !SETTINGS.use_versions_host
+    if !Settings::get().use_versions_host
         || ba.short.contains(':')
         || !PLUGINS_USE_VERSION_HOST.contains(ba.short.as_str())
     {
@@ -57,7 +57,7 @@ pub async fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>>
         warn!("{ba}: skipping versions host check due to rate limit");
         return Ok(None);
     }
-    let url = match SETTINGS.paranoid {
+    let url = match Settings::get().paranoid {
         true => format!("https://mise-versions.jdx.dev/{}", &ba.short),
         false => format!("http://mise-versions.jdx.dev/{}", &ba.short),
     };

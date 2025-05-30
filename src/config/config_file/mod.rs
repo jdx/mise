@@ -20,7 +20,7 @@ use xx::regex;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
-use crate::config::{AliasMap, SETTINGS, Settings, is_global_config, settings};
+use crate::config::{AliasMap, Settings, is_global_config, settings};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
@@ -316,7 +316,7 @@ pub fn config_root(path: &Path) -> PathBuf {
 }
 
 pub fn config_trust_root(path: &Path) -> PathBuf {
-    if settings::is_loaded() && SETTINGS.paranoid {
+    if settings::is_loaded() && Settings::get().paranoid {
         path.to_path_buf()
     } else {
         config_root(path)
@@ -451,7 +451,7 @@ pub fn trust(path: &Path) -> Result<()> {
         file::create_dir_all(hashed_path.parent().unwrap())?;
         file::make_symlink_or_file(path.canonicalize()?.as_path(), &hashed_path)?;
     }
-    if SETTINGS.paranoid {
+    if Settings::get().paranoid {
         let trust_hash_path = hashed_path.with_extension("hash");
         let hash = hash::file_hash_sha256(path, None)?;
         file::write(trust_hash_path, hash)?;

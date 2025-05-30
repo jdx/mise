@@ -11,7 +11,7 @@ use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::env::GITHUB_TOKEN;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
@@ -63,7 +63,7 @@ impl Backend for CargoBackend {
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         let config = ctx.config.clone();
         let install_arg = format!("{}@{}", self.tool_name(), tv.version);
-        let registry_name = &SETTINGS.cargo.registry_name;
+        let registry_name = &Settings::get().cargo.registry_name;
 
         let cmd = CmdLineRunner::new("cargo").arg("install");
         let mut cmd = if let Some(url) = self.git_url() {
@@ -142,7 +142,7 @@ impl CargoBackend {
     }
 
     async fn is_binstall_enabled(&self, config: &Arc<Config>, tv: &ToolVersion) -> bool {
-        if !SETTINGS.cargo.binstall {
+        if !Settings::get().cargo.binstall {
             return false;
         }
         if file::which_non_pristine("cargo-binstall").is_none() {

@@ -9,7 +9,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -36,21 +36,22 @@ pub struct JavaPlugin {
 
 impl JavaPlugin {
     pub fn new() -> Self {
+        let settings = Settings::get();
         let ba = Arc::new(plugins::core::new_backend_arg("java"));
         let java_metadata_ga_cache_filename =
-            format!("java_metadata_ga_{}_{}.msgpack.z", os(), arch());
+            format!("java_metadata_ga_{}_{}.msgpack.z", os(), arch(&settings));
         let java_metadata_ea_cache_filename =
-            format!("java_metadata_ea_{}_{}.msgpack.z", os(), arch());
+            format!("java_metadata_ea_{}_{}.msgpack.z", os(), arch(&settings));
         Self {
             java_metadata_ea_cache: CacheManagerBuilder::new(
                 ba.cache_path.join(java_metadata_ea_cache_filename),
             )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
             .build(),
             java_metadata_ga_cache: CacheManagerBuilder::new(
                 ba.cache_path.join(java_metadata_ga_cache_filename),
             )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
             .build(),
             ba,
         }
@@ -264,11 +265,12 @@ impl JavaPlugin {
     }
 
     async fn download_java_metadata(&self, release_type: &str) -> Result<Vec<JavaMetadata>> {
+        let settings = Settings::get();
         let url = format!(
             "https://mise-java.jdx.dev/jvm/{}/{}/{}.json",
             release_type,
             os(),
-            arch()
+            arch(&settings)
         );
 
         let metadata = HTTP_FETCH
@@ -452,8 +454,8 @@ fn os() -> &'static str {
     }
 }
 
-fn arch() -> &'static str {
-    let arch = SETTINGS.arch();
+fn arch(settings: &Settings) -> &str {
+    let arch = settings.arch();
     if arch == "x86_64" {
         "x86_64"
     } else if arch == "arm" {

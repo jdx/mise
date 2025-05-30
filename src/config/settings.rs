@@ -25,8 +25,6 @@ use std::{
 };
 use url::Url;
 
-pub static SETTINGS: Lazy<Arc<Settings>> = Lazy::new(Settings::get);
-
 // settings are generated from settings.toml in the project root
 // make sure you run `mise run render` after updating settings.toml
 include!(concat!(env!("OUT_DIR"), "/settings.rs"));
@@ -434,18 +432,18 @@ impl Settings {
 
     pub fn default_inline_shell(&self) -> Result<Vec<String>> {
         let sa = if cfg!(windows) {
-            &SETTINGS.windows_default_inline_shell_args
+            &self.windows_default_inline_shell_args
         } else {
-            &SETTINGS.unix_default_inline_shell_args
+            &self.unix_default_inline_shell_args
         };
         Ok(shell_words::split(sa)?)
     }
 
     pub fn default_file_shell(&self) -> Result<Vec<String>> {
         let sa = if cfg!(windows) {
-            &SETTINGS.windows_default_file_shell_args
+            &self.windows_default_file_shell_args
         } else {
-            &SETTINGS.unix_default_file_shell_args
+            &self.unix_default_file_shell_args
         };
         Ok(shell_words::split(sa)?)
     }

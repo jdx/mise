@@ -1,5 +1,5 @@
 use crate::cmd::cmd;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::toolset::Toolset;
 use eyre::Result;
@@ -58,12 +58,12 @@ async fn execute(
     run: &str,
     files: Vec<&PathBuf>,
 ) -> Result<()> {
-    SETTINGS.ensure_experimental("watch_file_hooks")?;
+    Settings::get().ensure_experimental("watch_file_hooks")?;
     let modified_files_var = files
         .iter()
         .map(|f| f.to_string_lossy().replace(':', "\\:"))
         .join(":");
-    let shell = SETTINGS.default_inline_shell()?;
+    let shell = Settings::get().default_inline_shell()?;
 
     let args = shell
         .iter()

@@ -10,7 +10,7 @@ use path_absolutize::Absolutize;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{Config, SETTINGS, config_file};
+use crate::config::{Config, Settings, config_file};
 use crate::file::display_path;
 use crate::registry::REGISTRY;
 use crate::toolset::{
@@ -148,7 +148,7 @@ impl Use {
             )
             .await?;
 
-        let pin = self.pin || !self.fuzzy && (SETTINGS.pin || SETTINGS.asdf_compat);
+        let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
 
         for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
             let versions: Vec<_> = tvl

@@ -9,7 +9,7 @@ use std::{
 
 use crate::backend::Backend;
 use crate::cli::exec::Exec;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
@@ -60,7 +60,7 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
             return Ok(bin);
         }
     }
-    if SETTINGS.not_found_auto_install && console::user_attended() {
+    if Settings::get().not_found_auto_install && console::user_attended() {
         for tv in ts
             .install_missing_bin(config, bin_name)
             .await?
@@ -142,7 +142,7 @@ pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<(
 
 #[cfg(windows)]
 fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
-    match SETTINGS.windows_shim_mode.as_ref() {
+    match Settings::get().windows_shim_mode.as_ref() {
         "file" => {
             let shim = shim.trim_end_matches(".cmd");
             // write a shim file without extension for use in Git Bash/Cygwin
@@ -296,7 +296,7 @@ async fn get_desired_shims(config: &Arc<Config>, toolset: &Toolset) -> Result<Ha
         if cfg!(windows) {
             shims.extend(bins.into_iter().flat_map(|b| {
                 let p = PathBuf::from(&b);
-                match SETTINGS.windows_shim_mode.as_ref() {
+                match Settings::get().windows_shim_mode.as_ref() {
                     "hardlink" | "symlink" => {
                         vec![p.with_extension("exe").to_string_lossy().to_string()]
                     }

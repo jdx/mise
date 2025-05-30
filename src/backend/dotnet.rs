@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::http::HTTP_FETCH;
 use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
@@ -36,7 +36,7 @@ impl Backend for DotnetBackend {
                 "{}?q={}&packageType=dotnettool&take=1&prerelease={}",
                 feed_url,
                 &self.tool_name(),
-                SETTINGS
+                Settings::get()
                     .dotnet
                     .package_flags
                     .contains(&"prerelease".to_string())
@@ -62,7 +62,7 @@ impl Backend for DotnetBackend {
         ctx: &crate::install_context::InstallContext,
         tv: crate::toolset::ToolVersion,
     ) -> eyre::Result<crate::toolset::ToolVersion> {
-        SETTINGS.ensure_experimental("dotnet backend")?;
+        Settings::get().ensure_experimental("dotnet backend")?;
 
         let mut cli = CmdLineRunner::new("dotnet")
             .arg("tool")
@@ -89,7 +89,8 @@ impl DotnetBackend {
     }
 
     async fn get_search_url(&self) -> eyre::Result<String> {
-        let nuget_registry = SETTINGS.dotnet.registry_url.as_str();
+        let settings = Settings::get();
+        let nuget_registry = settings.dotnet.registry_url.as_str();
 
         let services: NugetFeed = HTTP_FETCH.json(nuget_registry).await?;
 

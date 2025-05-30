@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::env;
 use crate::file::replace_path;
 use crate::{dirs, file, result};
@@ -25,7 +25,7 @@ where
     static MUTEX: Mutex<()> = Mutex::const_new(());
     let age = AGE_KEY
         .get_or_init(async || {
-            let p = SETTINGS
+            let p = Settings::get()
                 .sops
                 .age_key_file
                 .clone()
@@ -37,7 +37,7 @@ where
                     return None;
                 }
             });
-            if let Some(age_key) = &SETTINGS.sops.age_key {
+            if let Some(age_key) = &Settings::get().sops.age_key {
                 if !age_key.is_empty() {
                     return Some(age_key.clone());
                 }
@@ -58,7 +58,7 @@ where
         })
         .await;
     let _lock = MUTEX.lock().await; // prevent multiple threads from using the same age key
-    let age_env_key = if SETTINGS.sops.rops {
+    let age_env_key = if Settings::get().sops.rops {
         "ROPS_AGE"
     } else {
         "SOPS_AGE_KEY"
@@ -67,7 +67,7 @@ where
     if let Some(age) = &age {
         env::set_var(age_env_key, age.trim());
     }
-    let output = if SETTINGS.sops.rops {
+    let output = if Settings::get().sops.rops {
         input
             .parse::<RopsFile<EncryptedFile<AES256GCM, SHA512>, F>>()
             .wrap_err("failed to parse sops file")?

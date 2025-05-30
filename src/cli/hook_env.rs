@@ -1,4 +1,4 @@
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::direnv::DirenvDiff;
 use crate::env::{__MISE_DIFF, PATH_KEY, TERM_WIDTH};
 use crate::env::{PATH_ENV_SEP, join_paths, split_paths};
@@ -82,7 +82,7 @@ impl HookEnv {
         ts: &Toolset,
         cur_env: &EnvMap,
     ) -> Result<()> {
-        if self.status || SETTINGS.status.show_tools {
+        if self.status || Settings::get().status.show_tools {
             let prev = &PREV_SESSION.loaded_tools;
             let cur = ts
                 .list_current_installed_versions(config)
@@ -101,7 +101,7 @@ impl HookEnv {
                 info!("{}", format_status(&status));
             }
         }
-        if self.status || SETTINGS.status.show_env {
+        if self.status || Settings::get().status.show_env {
             let mut env_diff = EnvDiff::new(&PREV_SESSION.env, cur_env.clone()).to_patches();
             // TODO: this logic should be in EnvDiff
             let removed_keys = PREV_SESSION
@@ -152,7 +152,7 @@ impl HookEnv {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
         let (pre, post) = match &*env::__MISE_ORIG_PATH {
             Some(orig_path) => match full.split_once(&format!("{PATH_ENV_SEP}{orig_path}")) {
-                Some((pre, post)) if !SETTINGS.activate_aggressive => (
+                Some((pre, post)) if !Settings::get().activate_aggressive => (
                     split_paths(pre).collect_vec(),
                     split_paths(&format!("{orig_path}{post}")).collect_vec(),
                 ),
@@ -219,7 +219,7 @@ impl HookEnv {
         env: EnvMap,
         watch_files: BTreeSet<WatchFilePattern>,
     ) -> Result<EnvDiffOperation> {
-        let loaded_tools = if self.status || SETTINGS.status.show_tools {
+        let loaded_tools = if self.status || Settings::get().status.show_tools {
             ts.list_current_versions()
                 .into_iter()
                 .map(|(_, tv)| format!("{}@{}", tv.short(), tv.version))
@@ -244,7 +244,7 @@ fn patch_to_status(patch: EnvDiffOperation) -> String {
 }
 
 fn format_status(status: &str) -> Cow<'_, str> {
-    if SETTINGS.status.truncate {
+    if Settings::get().status.truncate {
         truncate_str(status, TERM_WIDTH.max(60) - 5, "…")
     } else {
         status.into()

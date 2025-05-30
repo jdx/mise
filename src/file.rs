@@ -22,7 +22,7 @@ use walkdir::WalkDir;
 use zip::ZipArchive;
 
 #[cfg(windows)]
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env};
 
@@ -441,12 +441,12 @@ pub fn is_executable(path: &Path) -> bool {
 #[cfg(windows)]
 pub fn is_executable(path: &Path) -> bool {
     path.extension().map_or(
-        SETTINGS
+        Settings::get()
             .windows_executable_extensions
             .contains(&String::new()),
         |ext| {
             if let Some(str_val) = ext.to_str() {
-                return SETTINGS
+                return Settings::get()
                     .windows_executable_extensions
                     .contains(&str_val.to_lowercase().to_string());
             }
@@ -812,13 +812,14 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
 }
 
 pub fn desymlink_path(p: &Path) -> PathBuf {
-    if let Ok(target) = fs::read_link(p) {
-        target
-            .canonicalize()
-            .unwrap_or_else(|_| target.to_path_buf())
-    } else {
-        p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+    if p.is_symlink() {
+        if let Ok(target) = fs::read_link(p) {
+            return target
+                .canonicalize()
+                .unwrap_or_else(|_| target.to_path_buf());
+        }
     }
+    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
 }
 
 pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {

@@ -1,4 +1,4 @@
-use crate::config::{Config, SETTINGS, Settings};
+use crate::config::{Config, Settings};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
 use crate::git::{CloneOptions, Git};
@@ -103,7 +103,7 @@ impl AsdfPlugin {
                 let result = cmd.stdout_capture().stderr_capture().unchecked().run()?;
                 Ok(result)
             },
-            SETTINGS.fetch_remote_versions_timeout(),
+            Settings::get().fetch_remote_versions_timeout(),
         )
         .wrap_err_with(|| {
             let script = self.script_man.get_script_path(&Script::ListAll);

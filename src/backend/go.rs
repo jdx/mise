@@ -1,7 +1,7 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
@@ -56,7 +56,7 @@ impl Backend for GoBackend {
 
                 Ok(vec![])
             },
-            SETTINGS.fetch_remote_versions_timeout(),
+            Settings::get().fetch_remote_versions_timeout(),
         )
         .await
     }
@@ -66,7 +66,7 @@ impl Backend for GoBackend {
         ctx: &InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        SETTINGS.ensure_experimental("go backend")?;
+        Settings::get().ensure_experimental("go backend")?;
         let opts = self.ba.opts();
 
         let install = async |v| {

@@ -3,7 +3,7 @@ use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::file::{TarOptions, display_path};
 use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
@@ -81,7 +81,7 @@ impl PythonPlugin {
         if let Some(pr) = pr {
             clone_options = clone_options.pr(pr);
         }
-        git.clone(&SETTINGS.python.pyenv_repo, clone_options)?;
+        git.clone(&Settings::get().python.pyenv_repo, clone_options)?;
         Ok(())
     }
     fn update_python_build(&self) -> eyre::Result<()> {
@@ -101,14 +101,15 @@ impl PythonPlugin {
         static PRECOMPILED_CACHE: Lazy<CacheManager<Vec<(String, String, String)>>> =
             Lazy::new(|| {
                 CacheManagerBuilder::new(dirs::CACHE.join("python").join("precompiled.msgpack.z"))
-                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                     .with_cache_key(python_precompiled_platform())
                     .build()
             });
         PRECOMPILED_CACHE
             .get_or_try_init_async(async || {
-                let url_path = python_precompiled_url_path();
-                let rsp = match SETTINGS.paranoid {
+                let settings = Settings::get();
+                let url_path = python_precompiled_url_path(&settings);
+                let rsp = match settings.paranoid {
                     true => {
                         HTTP_FETCH
                             .get_bytes(format!("https://mise-versions.jdx.dev/{url_path}"))
@@ -176,7 +177,7 @@ impl PythonPlugin {
         let (tag, filename) = match precompile_info {
             Some((_, tag, filename)) => (tag, filename),
             None => {
-                if cfg!(windows) || SETTINGS.python.compile == Some(false) {
+                if cfg!(windows) || Settings::get().python.compile == Some(false) {
                     if !cfg!(windows) {
                         hint!(
                             "python_compile",
@@ -285,16 +286,16 @@ impl PythonPlugin {
             .arg(tv.install_path())
             .env("PIP_REQUIRE_VIRTUALENV", "false")
             .envs(ctx.config.env().await?);
-        if SETTINGS.verbose {
+        if Settings::get().verbose {
             cmd = cmd.arg("--verbose");
         }
-        if let Some(patch_url) = &SETTINGS.python.patch_url {
+        if let Some(patch_url) = &Settings::get().python.patch_url {
             ctx.pr
                 .set_message(format!("with patch file from: {patch_url}"));
             let patch = HTTP.get_text(patch_url).await?;
             cmd = cmd.arg("--patch").stdin_string(patch)
         }
-        if let Some(patches_dir) = &SETTINGS.python.patches_directory {
+        if let Some(patches_dir) = &Settings::get().python.patches_directory {
             let patch_file = patches_dir.join(format!("{}.patch", &tv.version));
             if patch_file.exists() {
                 ctx.pr
@@ -340,7 +341,7 @@ impl PythonPlugin {
         pr: Option<&Box<dyn SingleReport>>,
     ) -> eyre::Result<Option<PathBuf>> {
         if let Some(virtualenv) = tv.request.options().get("virtualenv") {
-            if !SETTINGS.experimental {
+            if !Settings::get().experimental {
                 warn!(
                     "please enable experimental mode with `mise settings experimental=true` \
                     to use python virtualenv activation"
@@ -354,7 +355,7 @@ impl PythonPlugin {
                 }
             }
             if !virtualenv.exists() {
-                if SETTINGS.python.venv_auto_create {
+                if Settings::get().python.venv_auto_create {
                     info!("setting up virtualenv at: {}", virtualenv.display());
                     let mut cmd = CmdLineRunner::new(python_path(tv))
                         .arg("-m")
@@ -419,7 +420,7 @@ impl Backend for PythonPlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        if cfg!(windows) || SETTINGS.python.compile == Some(false) {
+        if cfg!(windows) || Settings::get().python.compile == Some(false) {
             Ok(self
                 .fetch_precompiled_remote_versions()
                 .await?
@@ -451,7 +452,7 @@ impl Backend for PythonPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        if cfg!(windows) || SETTINGS.python.compile != Some(true) {
+        if cfg!(windows) || Settings::get().python.compile != Some(true) {
             self.install_precompiled(ctx, &tv).await?;
         } else {
             self.install_compiled(ctx, &tv).await?;
@@ -460,7 +461,7 @@ impl Backend for PythonPlugin {
         if let Err(e) = self.get_virtualenv(&ctx.config, &tv, Some(&ctx.pr)).await {
             warn!("failed to get virtualenv: {e:#}");
         }
-        if let Some(default_file) = &SETTINGS.python.default_packages_file {
+        if let Some(default_file) = &Settings::get().python.default_packages_file {
             let default_file = file::replace_path(default_file);
             if let Err(err) = self
                 .install_default_packages(&ctx.config, &default_file, &tv, &ctx.pr)
@@ -508,8 +509,8 @@ impl Backend for PythonPlugin {
                     CacheManagerBuilder::new(
                         self.ba().cache_path.join("remote_versions.msgpack.z"),
                     )
-                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
-                    .with_cache_key((SETTINGS.python.compile == Some(false)).to_string())
+                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+                    .with_cache_key((Settings::get().python.compile == Some(false)).to_string())
                     .build(),
                 ))
             })
@@ -517,16 +518,20 @@ impl Backend for PythonPlugin {
     }
 }
 
-fn python_precompiled_url_path() -> String {
+fn python_precompiled_url_path(settings: &Settings) -> String {
     if cfg!(windows) || cfg!(linux) || cfg!(macos) {
-        format!("python-precompiled-{}-{}.gz", python_arch(), python_os())
+        format!(
+            "python-precompiled-{}-{}.gz",
+            python_arch(settings),
+            python_os(settings)
+        )
     } else {
         "python-precompiled.gz".into()
     }
 }
 
-fn python_os() -> String {
-    if let Some(os) = &SETTINGS.python.precompiled_os {
+fn python_os(settings: &Settings) -> String {
+    if let Some(os) = &settings.python.precompiled_os {
         return os.clone();
     }
     if cfg!(windows) {
@@ -541,11 +546,11 @@ fn python_os() -> String {
     }
 }
 
-fn python_arch() -> &'static str {
-    if let Some(arch) = &SETTINGS.python.precompiled_arch {
+fn python_arch(settings: &Settings) -> &str {
+    if let Some(arch) = &settings.python.precompiled_arch {
         return arch.as_str();
     }
-    let arch = SETTINGS.arch();
+    let arch = settings.arch();
     if cfg!(windows) {
         "x86_64"
     } else if cfg!(linux) && arch == "x86_64" {
@@ -564,9 +569,10 @@ fn python_arch() -> &'static str {
 }
 
 fn python_precompiled_platform() -> String {
-    let os = python_os();
-    let arch = python_arch();
-    if let Some(flavor) = &SETTINGS.python.precompiled_flavor {
+    let settings = Settings::get();
+    let os = python_os(&settings);
+    let arch = python_arch(&settings);
+    if let Some(flavor) = &settings.python.precompiled_flavor {
         format!("{arch}-{os}-{flavor}")
     } else {
         format!("{arch}-{os}")

@@ -1,6 +1,6 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::env::{
     GITHUB_TOKEN, GITLAB_TOKEN, MISE_GITHUB_ENTERPRISE_TOKEN, MISE_GITLAB_ENTERPRISE_TOKEN,
 };
@@ -232,7 +232,7 @@ impl Backend for UbiBackend {
             } else {
                 bail!("Invalid checksum: {checksum_key}");
             }
-        } else if SETTINGS.lockfile && SETTINGS.experimental {
+        } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr
                 .set_message(format!("checksum generate {checksum_key}"));
             let hash = hash::file_hash_sha256(file, Some(&ctx.pr))?;

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::tracking::Tracker;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::runtime_symlinks;
 use crate::toolset::{ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -117,7 +117,8 @@ async fn delete(
             prefix = format!("{} {} ", prefix, style("[dryrun]").bold());
         }
         let pr = mpr.add(&prefix);
-        if dry_run || SETTINGS.yes || prompt::confirm_with_all(format!("remove {} ?", &tv))? {
+        if dry_run || Settings::get().yes || prompt::confirm_with_all(format!("remove {} ?", &tv))?
+        {
             p.uninstall_version(config, &tv, &pr, dry_run).await?;
             runtime_symlinks::remove_missing_symlinks(p)?;
             pr.finish();

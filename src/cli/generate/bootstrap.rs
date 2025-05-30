@@ -1,4 +1,4 @@
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::http::HTTP;
 use crate::ui::info;
 use crate::{Result, file, minisign};
@@ -31,7 +31,7 @@ pub struct Bootstrap {
 
 impl Bootstrap {
     pub async fn run(self) -> eyre::Result<()> {
-        SETTINGS.ensure_experimental("generate bootstrap")?;
+        Settings::get().ensure_experimental("generate bootstrap")?;
         let output = self.generate().await?;
         if let Some(bin) = &self.write {
             if let Some(parent) = bin.parent() {
