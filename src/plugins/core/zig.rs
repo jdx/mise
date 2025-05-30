@@ -130,7 +130,7 @@ impl Backend for ZigPlugin {
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let indexes = [
             "https://ziglang.org/download/index.json",
-            "https://machengine.org/zig/index.json",
+            // "https://machengine.org/zig/index.json", // need to handle mach's CalVer
         ];
         let mut versions: Vec<String> = Vec::new();
 
