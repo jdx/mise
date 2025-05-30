@@ -1,9 +1,8 @@
-use crate::aqua::aqua_template;
 use crate::backend::aqua;
 use crate::backend::aqua::{arch, os};
-use crate::config::SETTINGS;
 use crate::duration::{DAILY, WEEKLY};
 use crate::git::{CloneOptions, Git};
+use crate::{aqua::aqua_template, config::Settings};
 use crate::{dirs, file, hashmap, http};
 use expr::{Context, Program, Value};
 use eyre::{ContextCompat, Result, eyre};
@@ -193,7 +192,7 @@ impl AquaRegistry {
         let mut repo_exists = repo.exists();
         if repo_exists {
             fetch_latest_repo(&repo)?;
-        } else if let Some(aqua_registry_url) = &SETTINGS.aqua.registry_url {
+        } else if let Some(aqua_registry_url) = &Settings::get().aqua.registry_url {
             info!("cloning aqua registry to {path:?}");
             repo.clone(aqua_registry_url, CloneOptions::default())?;
             repo_exists = true;
@@ -236,7 +235,9 @@ impl AquaRegistry {
         let registry = if self.repo_exists {
             trace!("reading aqua-registry for {id} from repo at {path:?}");
             serde_yaml::from_reader(file::open(path)?)?
-        } else if SETTINGS.aqua.baked_registry && AQUA_STANDARD_REGISTRY_FILES.contains_key(id) {
+        } else if Settings::get().aqua.baked_registry
+            && AQUA_STANDARD_REGISTRY_FILES.contains_key(id)
+        {
             trace!("reading baked-in aqua-registry for {id}");
             serde_yaml::from_str(AQUA_STANDARD_REGISTRY_FILES.get(id).unwrap())?
         } else if !path.exists() || file::modified_duration(path)? > DAILY {

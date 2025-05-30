@@ -12,7 +12,7 @@ use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::env_diff::EnvMap;
 use crate::install_context::InstallContext;
@@ -57,7 +57,7 @@ impl Backend for VfoxBackend {
                     .map(|v| v.version)
                     .collect::<Vec<String>>())
             },
-            SETTINGS.fetch_remote_versions_timeout(),
+            Settings::get().fetch_remote_versions_timeout(),
         )
         .await
     }

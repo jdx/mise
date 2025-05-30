@@ -8,7 +8,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::external_plugin_cache::ExternalPluginCache;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
 use crate::hash::hash_to_str;
 use crate::install_context::InstallContext;
@@ -57,7 +57,7 @@ impl AsdfBackend {
             latest_stable_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("latest_stable.msgpack.z"),
             )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
             .with_fresh_file(plugin_path.clone())
             .with_fresh_file(plugin_path.join("bin/latest-stable"))
             .build(),
@@ -266,7 +266,7 @@ impl Backend for AsdfBackend {
                     })
                     .cloned()
             },
-            SETTINGS.fetch_remote_versions_timeout(),
+            Settings::get().fetch_remote_versions_timeout(),
         )
         .await
     }

@@ -2,7 +2,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
@@ -141,7 +141,7 @@ impl Backend for PIPXBackend {
                     })
                     .await
             },
-            SETTINGS.fetch_remote_versions_timeout(),
+            Settings::get().fetch_remote_versions_timeout(),
         )
         .await
         .cloned()
@@ -154,7 +154,7 @@ impl Backend for PIPXBackend {
             .pipx_request(&tv.version, &tv.request.options());
 
         if self.uv_is_installed(&ctx.config).await
-            && SETTINGS.pipx.uvx != Some(false)
+            && Settings::get().pipx.uvx != Some(false)
             && tv.request.options().get("uvx") != Some(&"false".to_string())
         {
             ctx.pr
@@ -198,14 +198,14 @@ impl PIPXBackend {
             latest_version_cache: CacheManagerBuilder::new(
                 ba.cache_path.join("latest_version.msgpack.z"),
             )
-            .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
             .build(),
             ba: Arc::new(ba),
         }
     }
 
     fn get_registry_url(&self) -> eyre::Result<String> {
-        let registry_url = SETTINGS.pipx.registry_url.clone();
+        let registry_url = Settings::get().pipx.registry_url.clone();
 
         debug!("Pipx registry URL: {}", registry_url);
 
@@ -228,7 +228,7 @@ impl PIPXBackend {
             .into_iter()
             .filter(|(b, _tv)| b.ba().backend_type() == BackendType::Pipx)
             .collect_vec();
-        if SETTINGS.pipx.uvx != Some(false) {
+        if Settings::get().pipx.uvx != Some(false) {
             let pr = MultiProgressReport::get().add("reinstalling pipx tools with uvx");
             for (b, tv) in pipx_tools {
                 for (cmd, tool) in &[

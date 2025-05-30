@@ -1,4 +1,4 @@
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::dirs;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -43,7 +43,7 @@ pub fn should_display_hint(id: &str) -> bool {
     if cfg!(test) || !console::user_attended() || !console::user_attended_stderr() {
         return false;
     }
-    if SETTINGS
+    if Settings::get()
         .disable_hints
         .iter()
         .any(|hint| hint == id || hint == "*")

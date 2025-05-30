@@ -14,7 +14,7 @@ use crate::plugins::core::CORE_PLUGINS;
 use crate::toolset::ToolsetBuilder;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
-use crate::{backend::unalias_backend, config::SETTINGS};
+use crate::{backend::unalias_backend, config::Settings};
 
 /// Install a plugin
 ///
@@ -102,7 +102,7 @@ impl PluginsInstall {
         plugins: Vec<String>,
     ) -> Result<()> {
         let mut jset: JoinSet<Result<()>> = JoinSet::new();
-        let semaphore = Arc::new(Semaphore::new(self.jobs.unwrap_or(SETTINGS.jobs)));
+        let semaphore = Arc::new(Semaphore::new(self.jobs.unwrap_or(Settings::get().jobs)));
         for plugin in plugins {
             let this = self.clone();
             let config = config.clone();

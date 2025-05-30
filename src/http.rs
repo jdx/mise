@@ -9,7 +9,7 @@ use std::sync::LazyLock as Lazy;
 use url::Url;
 
 use crate::cli::version;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::file::display_path;
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file};
@@ -18,10 +18,10 @@ use crate::{env, file};
 pub static HTTP_VERSION_CHECK: Lazy<Client> =
     Lazy::new(|| Client::new(Duration::from_secs(3)).unwrap());
 
-pub static HTTP: Lazy<Client> = Lazy::new(|| Client::new(SETTINGS.http_timeout()).unwrap());
+pub static HTTP: Lazy<Client> = Lazy::new(|| Client::new(Settings::get().http_timeout()).unwrap());
 
 pub static HTTP_FETCH: Lazy<Client> =
-    Lazy::new(|| Client::new(SETTINGS.fetch_remote_versions_timeout()).unwrap());
+    Lazy::new(|| Client::new(Settings::get().fetch_remote_versions_timeout()).unwrap());
 
 #[derive(Debug)]
 pub struct Client {

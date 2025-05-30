@@ -1,5 +1,5 @@
 use crate::cmd::cmd;
-use crate::config::{Config, SETTINGS, config_file};
+use crate::config::{Config, Settings, config_file};
 use crate::shell::Shell;
 use crate::toolset::Toolset;
 use crate::{dirs, hook_env};
@@ -160,8 +160,8 @@ impl Hook {
 }
 
 async fn execute(config: &Arc<Config>, ts: &Toolset, root: &Path, hook: &Hook) -> Result<()> {
-    SETTINGS.ensure_experimental("hooks")?;
-    let shell = SETTINGS.default_inline_shell()?;
+    Settings::get().ensure_experimental("hooks")?;
+    let shell = Settings::get().default_inline_shell()?;
 
     let args = shell
         .iter()

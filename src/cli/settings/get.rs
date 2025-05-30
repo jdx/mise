@@ -1,5 +1,5 @@
 use crate::config;
-use crate::config::{SETTINGS, Settings};
+use crate::config::Settings;
 use eyre::bail;
 
 /// Show a current setting
@@ -25,7 +25,7 @@ impl SettingsGet {
                 .unwrap_or_default();
             Settings::partial_as_dict(&partial)?
         } else {
-            SETTINGS.as_dict()?
+            Settings::get().as_dict()?
         };
         let mut value = toml::Value::Table(settings);
         let mut key = Some(self.setting.as_str());

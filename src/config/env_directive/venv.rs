@@ -3,7 +3,7 @@ use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::trust_check;
 use crate::config::env_directive::EnvResults;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::file::{display_path, which_non_pristine};
 use crate::lock_file::LockFile;
@@ -77,10 +77,10 @@ impl EnvResults {
                     .which_bin(config, "uv")
                     .await
                     .or_else(|| which_non_pristine("uv"));
-                let use_uv = !SETTINGS.python.venv_stdlib && uv_bin.is_some();
+                let use_uv = !Settings::get().python.venv_stdlib && uv_bin.is_some();
                 let cmd = if use_uv {
                     info!("creating venv with uv at: {}", display_path(&venv));
-                    let extra = SETTINGS
+                    let extra = Settings::get()
                         .python
                         .uv_venv_create_args
                         .clone()
@@ -100,7 +100,7 @@ impl EnvResults {
                     cmd.args(extra)
                 } else {
                     info!("creating venv with stdlib at: {}", display_path(&venv));
-                    let extra = SETTINGS
+                    let extra = Settings::get()
                         .python
                         .venv_create_args
                         .clone()

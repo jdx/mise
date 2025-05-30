@@ -1,6 +1,6 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env::consts::{ARCH, OS};
 use std::fmt::Display;
@@ -39,7 +39,7 @@ impl RegistryTool {
                 .map(|b| b.to_string())
                 .collect::<HashSet<_>>();
             time!("disable_backends");
-            for backend in &SETTINGS.disable_backends {
+            for backend in &Settings::get().disable_backends {
                 backend_types.remove(backend);
             }
             time!("disable_backends");
@@ -48,8 +48,8 @@ impl RegistryTool {
             }
             backend_types
         });
-        let os = SETTINGS.os.clone().unwrap_or(OS.to_string());
-        let arch = SETTINGS.arch.clone().unwrap_or(ARCH.to_string());
+        let os = Settings::get().os.clone().unwrap_or(OS.to_string());
+        let arch = Settings::get().arch.clone().unwrap_or(ARCH.to_string());
         let platform = format!("{os}-{arch}");
         self.backends
             .iter()

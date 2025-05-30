@@ -5,7 +5,7 @@ use crate::backend::Backend;
 use crate::build_time::TARGET;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolSource::IdiomaticVersionFile;
@@ -30,11 +30,12 @@ impl RustPlugin {
     }
 
     async fn setup_rustup(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        let settings = Settings::get();
         if rustup_home().join("settings.toml").exists() && cargo_bin().exists() {
             return Ok(());
         }
         ctx.pr.set_message("Downloading rustup-init".into());
-        HTTP.download_file(rustup_url(), &rustup_path(), Some(&ctx.pr))
+        HTTP.download_file(rustup_url(&settings), &rustup_path(), Some(&ctx.pr))
             .await?;
         file::make_executable(rustup_path())?;
         file::create_dir_all(rustup_home())?;
@@ -84,7 +85,7 @@ impl Backend for RustPlugin {
     }
 
     fn idiomatic_filenames(&self) -> Result<Vec<String>> {
-        if SETTINGS.experimental {
+        if Settings::get().experimental {
             Ok(vec!["rust-toolchain.toml".into()])
         } else {
             Ok(vec![])
@@ -306,13 +307,13 @@ const CARGO_BIN: &str = "cargo";
 const CARGO_BIN: &str = "cargo.exe";
 
 #[cfg(unix)]
-fn rustup_url() -> String {
+fn rustup_url(_settings: &Settings) -> String {
     "https://sh.rustup.rs".to_string()
 }
 
 #[cfg(windows)]
-fn rustup_url() -> String {
-    let arch = SETTINGS.arch();
+fn rustup_url(settings: &Settings) -> String {
+    let arch = settings.arch();
     format!("https://win.rustup.rs/{arch}")
 }
 
@@ -321,7 +322,7 @@ fn rustup_path() -> PathBuf {
 }
 
 fn rustup_home() -> PathBuf {
-    SETTINGS
+    Settings::get()
         .rust
         .rustup_home
         .clone()
@@ -330,7 +331,7 @@ fn rustup_home() -> PathBuf {
 }
 
 fn cargo_home() -> PathBuf {
-    SETTINGS
+    Settings::get()
         .rust
         .cargo_home
         .clone()

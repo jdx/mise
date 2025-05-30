@@ -10,7 +10,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::plugins::core::CORE_PLUGINS;
@@ -80,13 +80,13 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
     time!("load_tools install_state");
     tools.retain(|backend| {
         tool_enabled(
-            &SETTINGS.enable_tools(),
-            &SETTINGS.disable_tools(),
+            &Settings::get().enable_tools(),
+            &Settings::get().disable_tools(),
             &backend.id().to_string(),
         )
     });
     tools.retain(|backend| {
-        !SETTINGS
+        !Settings::get()
             .disable_backends
             .contains(&backend.get_type().to_string())
     });
@@ -525,7 +525,7 @@ pub trait Backend: Debug + Send + Sync {
             remove_all_with_warning(dir)
         };
         rmdir(&tv.install_path())?;
-        if !SETTINGS.always_keep_download {
+        if !Settings::get().always_keep_download {
             rmdir(&tv.download_path())?;
         }
         rmdir(&tv.cache_path())?;
@@ -593,7 +593,7 @@ pub trait Backend: Debug + Send + Sync {
 
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {
         let _ = remove_all_with_warning(tv.install_path());
-        if !SETTINGS.always_keep_download {
+        if !Settings::get().always_keep_download {
             let _ = remove_all_with_warning(tv.download_path());
         }
         let _ = remove_all_with_warning(tv.cache_path());
@@ -605,13 +605,13 @@ pub trait Backend: Debug + Send + Sync {
         Ok(())
     }
     fn cleanup_install_dirs_on_error(&self, tv: &ToolVersion) {
-        if !SETTINGS.always_keep_install {
+        if !Settings::get().always_keep_install {
             let _ = remove_all_with_warning(tv.install_path());
             self.cleanup_install_dirs(tv);
         }
     }
     fn cleanup_install_dirs(&self, tv: &ToolVersion) {
-        if !SETTINGS.always_keep_download {
+        if !Settings::get().always_keep_download {
             let _ = remove_all_with_warning(tv.download_path());
         }
     }
@@ -703,7 +703,7 @@ pub trait Backend: Debug + Send + Sync {
                 let mut cm = CacheManagerBuilder::new(
                     self.ba().cache_path.join("remote_versions.msgpack.z"),
                 )
-                .with_fresh_duration(SETTINGS.fetch_remote_versions_cache());
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
                 if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
                     cm = cm
                         .with_fresh_file(plugin_path.clone())
@@ -729,7 +729,7 @@ pub trait Backend: Debug + Send + Sync {
             } else {
                 bail!("Invalid checksum: {checksum}");
             }
-        } else if SETTINGS.lockfile && SETTINGS.experimental {
+        } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr.set_message(format!("generate checksum {filename}"));
             let hash = hash::file_hash_sha256(file, Some(&ctx.pr))?;
             tv.checksums.insert(filename, format!("sha256:{hash}"));

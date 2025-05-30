@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use clap::ValueHint;
 use eyre::Result;
 
-use crate::config::{SETTINGS, config_file};
+use crate::config::{Settings, config_file};
 use crate::file;
 use crate::file::display_path;
 
@@ -21,7 +21,7 @@ pub struct ConfigGenerate {
 
 impl ConfigGenerate {
     pub fn run(self) -> Result<()> {
-        SETTINGS.ensure_experimental("`mise config generate`")?;
+        Settings::get().ensure_experimental("`mise config generate`")?;
         let doc = if let Some(tool_versions) = &self.tool_versions {
             self.tool_versions(tool_versions)?
         } else {

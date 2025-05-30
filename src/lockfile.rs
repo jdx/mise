@@ -1,4 +1,4 @@
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::file;
 use crate::file::display_path;
 use crate::path::PathExt;
@@ -91,7 +91,7 @@ impl Lockfile {
 }
 
 pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersion]) -> Result<()> {
-    if !SETTINGS.lockfile || !SETTINGS.experimental {
+    if !Settings::get().lockfile || !Settings::get().experimental {
         return Ok(());
     }
     let mut all_tool_names = HashSet::new();
@@ -148,7 +148,11 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         // * tools inside a parent config but are overridden by a child config (we just keep what was in the lockfile before, if anything)
         existing_lockfile.tools.retain(|k, _| {
             all_tool_names.contains(k)
-                || !tool_enabled(&SETTINGS.enable_tools(), &SETTINGS.disable_tools(), k)
+                || !tool_enabled(
+                    &Settings::get().enable_tools(),
+                    &Settings::get().disable_tools(),
+                    k,
+                )
                 || REGISTRY
                     .get(&k.as_str())
                     .is_some_and(|rt| !rt.is_supported_os())
@@ -205,7 +209,7 @@ pub fn get_locked_version(
     short: &str,
     prefix: &str,
 ) -> Result<Option<LockfileTool>> {
-    if !SETTINGS.lockfile || !SETTINGS.experimental {
+    if !Settings::get().lockfile || !Settings::get().experimental {
         return Ok(None);
     }
 

@@ -6,7 +6,7 @@ use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS, Settings};
+use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -100,7 +100,13 @@ impl GoPlugin {
         pr: &Box<dyn SingleReport>,
     ) -> eyre::Result<PathBuf> {
         let settings = Settings::get();
-        let filename = format!("go{}.{}-{}.{}", tv.version, platform(), arch(), ext());
+        let filename = format!(
+            "go{}.{}-{}.{}",
+            tv.version,
+            platform(),
+            arch(&settings),
+            ext()
+        );
         let tarball_url = Arc::new(format!("{}/{}", &settings.go_download_mirror, &filename));
         let tarball_path = tv.download_path().join(&filename);
 
@@ -190,7 +196,14 @@ impl Backend for GoPlugin {
     }
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         plugins::core::run_fetch_task_with_timeout(move || {
-            let output = cmd!("git", "ls-remote", "--tags", &SETTINGS.go_repo, "go*").read()?;
+            let output = cmd!(
+                "git",
+                "ls-remote",
+                "--tags",
+                &Settings::get().go_repo,
+                "go*"
+            )
+            .read()?;
             let lines = output.split('\n');
             let versions = lines.map(|s| s.split("/go").last().unwrap_or_default().to_string())
                 .filter(|s| !s.is_empty())
@@ -261,8 +274,8 @@ fn platform() -> &'static str {
     }
 }
 
-fn arch() -> &'static str {
-    let arch = SETTINGS.arch();
+fn arch(settings: &Settings) -> &str {
+    let arch = settings.arch();
     if arch == "x86_64" {
         "amd64"
     } else if arch == "arm" {

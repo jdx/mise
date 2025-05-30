@@ -5,7 +5,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS, Settings};
+use crate::config::{Config, Settings};
 use crate::duration::DAILY;
 use crate::env::PATH_KEY;
 use crate::git::{CloneOptions, Git};
@@ -64,7 +64,7 @@ impl RubyPlugin {
 
     async fn update_build_tool(&self, ctx: Option<&InstallContext>) -> Result<()> {
         let pr = ctx.map(|ctx| &ctx.pr);
-        if SETTINGS.ruby.ruby_install {
+        if Settings::get().ruby.ruby_install {
             self.update_ruby_install(pr)
                 .await
                 .wrap_err("failed to update ruby-install")
@@ -88,7 +88,7 @@ impl RubyPlugin {
         if let Some(pr) = pr {
             clone_options = clone_options.pr(pr);
         }
-        git.clone(&SETTINGS.ruby.ruby_build_repo, clone_options)?;
+        git.clone(&Settings::get().ruby.ruby_build_repo, clone_options)?;
 
         cmd!("sh", "install.sh")
             .env("PREFIX", self.ruby_build_path())
@@ -334,7 +334,7 @@ impl Backend for RubyPlugin {
                 })?;
                 Ok(versions)
             },
-            SETTINGS.fetch_remote_versions_timeout(),
+            Settings::get().fetch_remote_versions_timeout(),
         )
         .await
     }

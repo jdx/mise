@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::config::config_file::config_trust_root;
 use crate::config::{
-    ALL_CONFIG_FILES, DEFAULT_CONFIG_FILENAMES, SETTINGS, config_file, config_files_in_dir,
+    ALL_CONFIG_FILES, DEFAULT_CONFIG_FILENAMES, Settings, config_file, config_files_in_dir,
     is_global_config,
 };
 use crate::file::{display_path, remove_file};
@@ -97,7 +97,9 @@ impl Trust {
         let cfr = cfr.canonicalize()?;
         info!("untrusted {}", cfr.display());
 
-        let trusted_via_settings = SETTINGS.trusted_config_paths().any(|p| cfr.starts_with(p));
+        let trusted_via_settings = Settings::get()
+            .trusted_config_paths()
+            .any(|p| cfr.starts_with(p));
         if trusted_via_settings {
             warn!("{cfr:?} is trusted via settings so it will still be trusted.");
         }
@@ -120,7 +122,9 @@ impl Trust {
         let cfr = cfr.canonicalize()?;
         info!("ignored {}", cfr.display());
 
-        let trusted_via_settings = SETTINGS.trusted_config_paths().any(|p| cfr.starts_with(p));
+        let trusted_via_settings = Settings::get()
+            .trusted_config_paths()
+            .any(|p| cfr.starts_with(p));
         if trusted_via_settings {
             warn!("{cfr:?} is trusted via settings so it will still be trusted.");
         }

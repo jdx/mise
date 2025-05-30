@@ -2,7 +2,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::file::TarOptions;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -133,7 +133,7 @@ impl Backend for AquaBackend {
             .entry(tv.version.clone())
             .or_insert_with(|| {
                 CacheManagerBuilder::new(tv.cache_path().join("bin_paths.msgpack.z"))
-                    .with_fresh_duration(SETTINGS.fetch_remote_versions_cache())
+                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                     .build()
             });
         let install_path = tv.install_path();
@@ -366,7 +366,7 @@ impl AquaBackend {
         v: &str,
         filename: &str,
     ) -> Result<()> {
-        if !SETTINGS.aqua.slsa {
+        if !Settings::get().aqua.slsa {
             return Ok(());
         }
         if let Some(minisign) = &pkg.minisign {
@@ -424,7 +424,7 @@ impl AquaBackend {
         v: &str,
         filename: &str,
     ) -> Result<()> {
-        if !SETTINGS.aqua.slsa {
+        if !Settings::get().aqua.slsa {
             return Ok(());
         }
         if let Some(slsa) = &pkg.slsa_provenance {
@@ -506,7 +506,7 @@ impl AquaBackend {
         tv: &ToolVersion,
         checksum_path: &Path,
     ) -> Result<()> {
-        if !SETTINGS.aqua.cosign {
+        if !Settings::get().aqua.cosign {
             return Ok(());
         }
         if let Some(cosign) = pkg.checksum.as_ref().and_then(|c| c.cosign.as_ref()) {
@@ -547,7 +547,12 @@ impl AquaBackend {
                 for opt in cosign.opts(pkg, v)? {
                     cmd = cmd.arg(opt);
                 }
-                for arg in SETTINGS.aqua.cosign_extra_args.clone().unwrap_or_default() {
+                for arg in Settings::get()
+                    .aqua
+                    .cosign_extra_args
+                    .clone()
+                    .unwrap_or_default()
+                {
                     cmd = cmd.arg(arg);
                 }
                 cmd = cmd.with_pr(&ctx.pr);

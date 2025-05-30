@@ -13,7 +13,7 @@ use xx::regex;
 
 use crate::registry::RegistryTool;
 use crate::{
-    config::SETTINGS,
+    config::Settings,
     registry::{REGISTRY, tool_enabled},
     ui::table::MiseTable,
 };
@@ -176,8 +176,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 fn filter_enabled(short: &str) -> bool {
     tool_enabled(
-        &SETTINGS.enable_tools,
-        &SETTINGS.disable_tools,
+        &Settings::get().enable_tools,
+        &Settings::get().disable_tools,
         &short.to_string(),
     )
 }
@@ -186,7 +186,7 @@ fn get_description(tool: &RegistryTool) -> String {
     let description = tool.description.unwrap_or_default();
     let backend = get_backends(tool.backends())
         .iter()
-        .filter(|b| !SETTINGS.disable_backends.contains(b))
+        .filter(|b| !Settings::get().disable_backends.contains(b))
         .map(|b| b.to_string())
         .next()
         .unwrap_or_default();

@@ -18,7 +18,7 @@ use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 use signal_hook::iterator::Signals;
 use std::sync::LazyLock as Lazy;
 
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::env;
 use crate::env::PATH_KEY;
 use crate::errors::Error::ScriptFailed;
@@ -302,7 +302,7 @@ impl<'a> CmdLineRunner<'a> {
         static RAW_LOCK: RwLock<()> = RwLock::new(());
         let read_lock = RAW_LOCK.read().unwrap();
         debug!("$ {self}");
-        if SETTINGS.raw || self.raw {
+        if Settings::get().raw || self.raw {
             drop(read_lock);
             let _write_lock = RAW_LOCK.write().unwrap();
             return self.execute_raw();
@@ -468,7 +468,7 @@ impl<'a> CmdLineRunner<'a> {
         match self.pr.or(self.pr_arc.as_deref()) {
             Some(pr) => {
                 error!("{} failed", self.get_program());
-                if !SETTINGS.verbose && !output.trim().is_empty() {
+                if !Settings::get().verbose && !output.trim().is_empty() {
                     pr.println(output);
                 }
             }

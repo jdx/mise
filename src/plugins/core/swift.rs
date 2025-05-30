@@ -1,6 +1,6 @@
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::SETTINGS;
+use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
@@ -40,13 +40,14 @@ impl SwiftPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+        let settings = Settings::get();
         let url = format!(
             "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
             version = tv.version,
             platform = platform(),
             platform_directory = platform_directory(),
             extension = extension(),
-            architecture = match architecture() {
+            architecture = match architecture(&settings) {
                 Some(arch) => format!("-{arch}"),
                 None => "".into(),
             }
@@ -62,7 +63,7 @@ impl SwiftPlugin {
     }
 
     fn install(&self, ctx: &InstallContext, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
-        SETTINGS.ensure_experimental("swift")?;
+        Settings::get().ensure_experimental("swift")?;
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         let version = &tv.version;
         ctx.pr.set_message(format!("extract {filename}"));
@@ -122,7 +123,7 @@ impl SwiftPlugin {
         tv: &ToolVersion,
         tarball_path: &Path,
     ) -> Result<()> {
-        if file::which_non_pristine("gpg").is_none() && SETTINGS.swift.gpg_verify.is_none() {
+        if file::which_non_pristine("gpg").is_none() && Settings::get().swift.gpg_verify.is_none() {
             ctx.pr
                 .println("gpg not found, skipping verification".to_string());
             return Ok(());
@@ -170,7 +171,7 @@ impl Backend for SwiftPlugin {
     }
 
     fn idiomatic_filenames(&self) -> Result<Vec<String>> {
-        if SETTINGS.experimental {
+        if Settings::get().experimental {
             Ok(vec![".swift-version".into()])
         } else {
             Ok(vec![])
@@ -183,7 +184,7 @@ impl Backend for SwiftPlugin {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         let tarball_path = self.download(&tv, &ctx.pr).await?;
-        if cfg!(target_os = "linux") && SETTINGS.swift.gpg_verify != Some(false) {
+        if cfg!(target_os = "linux") && Settings::get().swift.gpg_verify != Some(false) {
             self.verify_gpg(ctx, &tv, &tarball_path).await?;
         }
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
@@ -205,7 +206,8 @@ fn platform_directory() -> String {
     } else if cfg!(windows) {
         "windows10".into()
     } else if let Ok(os_release) = &*os_release::OS_RELEASE {
-        let arch = SETTINGS.arch();
+        let settings = Settings::get();
+        let arch = settings.arch();
         if os_release.id == "ubuntu" && arch == "aarch64" {
             let retval = format!("{}{}-{}", os_release.id, os_release.version_id, arch);
             retval.replace(".", "")
@@ -218,7 +220,7 @@ fn platform_directory() -> String {
 }
 
 fn platform() -> String {
-    if let Some(platform) = &SETTINGS.swift.platform {
+    if let Some(platform) = &Settings::get().swift.platform {
         return platform.clone();
     }
     if cfg!(macos) {
@@ -250,8 +252,8 @@ fn extension() -> &'static str {
     }
 }
 
-fn architecture() -> Option<&'static str> {
-    let arch = SETTINGS.arch();
+fn architecture(settings: &Settings) -> Option<&str> {
+    let arch = settings.arch();
     if cfg!(target_os = "linux") && arch != "x86_64" {
         return Some(arch);
     } else if cfg!(windows) && arch == "aarch64" {
@@ -261,13 +263,14 @@ fn architecture() -> Option<&'static str> {
 }
 
 fn url(tv: &ToolVersion) -> String {
+    let settings = Settings::get();
     format!(
         "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
         version = tv.version,
         platform = platform(),
         platform_directory = platform_directory(),
         extension = extension(),
-        architecture = match architecture() {
+        architecture = match architecture(&settings) {
             Some(arch) => format!("-{arch}"),
             None => "".into(),
         }

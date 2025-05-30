@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 #[cfg(unix)]
 use crate::file::TarOptions;
 use crate::file::display_path;
@@ -78,7 +78,7 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if SETTINGS.erlang.compile == Some(true) {
+        if Settings::get().erlang.compile == Some(true) {
             return Ok(None);
         }
         let release_tag = format!("OTP-{}", tv.version);
@@ -121,7 +121,7 @@ impl ErlangPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
-        if SETTINGS.erlang.compile == Some(true) {
+        if Settings::get().erlang.compile == Some(true) {
             return Ok(None);
         }
         let release_tag = format!("OTP-{}", tv.version);
@@ -187,7 +187,7 @@ impl Backend for ErlangPlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let versions = if SETTINGS.erlang.compile == Some(false) {
+        let versions = if Settings::get().erlang.compile == Some(false) {
             github::list_releases("erlef/otp_builds")
                 .await?
                 .into_iter()

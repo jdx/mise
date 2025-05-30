@@ -1,6 +1,6 @@
 use crate::config;
 use crate::config::settings::{SETTINGS_META, SettingsPartial, SettingsType};
-use crate::config::{ALL_TOML_CONFIG_FILES, SETTINGS, Settings};
+use crate::config::{ALL_TOML_CONFIG_FILES, Settings};
 use crate::file::display_path;
 use crate::ui::table;
 use eyre::Result;
@@ -70,7 +70,7 @@ impl SettingsLs {
         } else {
             let mut rows = vec![];
             if self.all {
-                for (k, v) in SETTINGS.as_dict()? {
+                for (k, v) in Settings::get().as_dict()? {
                     rows.extend(Row::from_toml(k.to_string(), v, None));
                 }
             }

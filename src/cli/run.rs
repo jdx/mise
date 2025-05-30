@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, SETTINGS};
+use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
@@ -309,7 +309,7 @@ impl Run {
         ts.install_missing_versions(
             &mut config,
             &InstallOptions {
-                missing_args_only: !SETTINGS.task_run_auto_install,
+                missing_args_only: !Settings::get().task_run_auto_install,
                 ..Default::default()
             },
         )
@@ -344,7 +344,7 @@ impl Run {
                             // only show this if it's the first failure, or we haven't killed all the remaining tasks
                             // otherwise we'll get unhelpful error messages about being killed by mise which we expect
                             let prefix = task.estyled_prefix();
-                            let err_body = if SETTINGS.verbose {
+                            let err_body = if Settings::get().verbose {
                                 format!("{} {err:?}", style::ered("ERROR"))
                             } else {
                                 format!("{} {err}", style::ered("ERROR"))
@@ -424,7 +424,7 @@ impl Run {
 
     async fn run_task(&self, task: &Task, config: &Arc<Config>) -> Result<()> {
         let prefix = task.estyled_prefix();
-        if SETTINGS.task_skip.contains(&task.name) {
+        if Settings::get().task_skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "skipping task");
             }
@@ -437,7 +437,7 @@ impl Run {
             return Ok(());
         }
         if let Some(message) = &task.confirm {
-            if !SETTINGS.yes && !ui::confirm(message).unwrap_or(true) {
+            if !Settings::get().yes && !ui::confirm(message).unwrap_or(true) {
                 return Err(eyre!("task cancelled"));
             }
         }
@@ -555,7 +555,7 @@ impl Run {
         args: &[String],
     ) -> Result<(String, Vec<String>)> {
         let display = file.display().to_string();
-        if file::is_executable(file) && !SETTINGS.use_file_shell_for_executable_tasks {
+        if file::is_executable(file) && !Settings::get().use_file_shell_for_executable_tasks {
             if cfg!(windows) && file.extension().is_some_and(|e| e == "ps1") {
                 let args = vec!["-File".to_string(), display]
                     .into_iter()
@@ -565,7 +565,9 @@ impl Run {
             }
             return Ok((display, args.to_vec()));
         }
-        let shell = task.shell().unwrap_or(SETTINGS.default_file_shell()?);
+        let shell = task
+            .shell()
+            .unwrap_or(Settings::get().default_file_shell()?);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
         full_args.push(display);
@@ -603,7 +605,7 @@ impl Run {
         if let Some(shell) = &self.shell {
             Ok(shell_words::split(shell)?)
         } else {
-            SETTINGS.default_inline_shell()
+            Settings::get().default_inline_shell()
         }
     }
 
@@ -773,7 +775,7 @@ impl Run {
             TaskOutput::Prefix
         } else if self.interleave {
             TaskOutput::Interleave
-        } else if let Some(output) = SETTINGS.task_output {
+        } else if let Some(output) = Settings::get().task_output {
             output
         } else if self.raw(task) || self.jobs() == 1 || self.is_linear {
             TaskOutput::Interleave
@@ -784,28 +786,28 @@ impl Run {
 
     fn silent(&self, task: Option<&Task>) -> bool {
         self.silent
-            || SETTINGS.silent
+            || Settings::get().silent
             || self.output.is_some_and(|o| o.is_silent())
             || task.is_some_and(|t| t.silent)
     }
 
     fn quiet(&self, task: Option<&Task>) -> bool {
         self.quiet
-            || SETTINGS.quiet
+            || Settings::get().quiet
             || self.output.is_some_and(|o| o.is_quiet())
             || task.is_some_and(|t| t.quiet)
             || self.silent(task)
     }
 
     fn raw(&self, task: Option<&Task>) -> bool {
-        self.raw || SETTINGS.raw || task.is_some_and(|t| t.raw)
+        self.raw || Settings::get().raw || task.is_some_and(|t| t.raw)
     }
 
     fn jobs(&self) -> usize {
         if self.raw {
             1
         } else {
-            self.jobs.unwrap_or(SETTINGS.jobs)
+            self.jobs.unwrap_or(Settings::get().jobs)
         }
     }
 
@@ -1020,7 +1022,7 @@ impl Run {
 
     fn task_timings(&self) -> bool {
         self.timings()
-            && SETTINGS.task_timings.unwrap_or(
+            && Settings::get().task_timings.unwrap_or(
                 self.output == Some(TaskOutput::Prefix)
                     || self.output == Some(TaskOutput::Timed)
                     || self.output == Some(TaskOutput::KeepOrder),
@@ -1028,7 +1030,7 @@ impl Run {
     }
 
     async fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
-        let no_cache = self.no_cache || SETTINGS.task_remote_no_cache.unwrap_or(false);
+        let no_cache = self.no_cache || Settings::get().task_remote_no_cache.unwrap_or(false);
         let task_file_providers = TaskFileProvidersBuilder::new()
             .with_cache(!no_cache)
             .build();
