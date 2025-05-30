@@ -13,6 +13,7 @@ See [installing mise](/installing-mise) for other ways to install mise (`macport
 
 ```shell
 curl https://mise.run | sh
+# you can also use wget: wget -O - https://mise.run | sh
 ```
 
 By default, mise will be installed to `~/.local/bin` (this is simply a suggestion. `mise` can be installed anywhere).
