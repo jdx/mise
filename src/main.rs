@@ -60,6 +60,7 @@ pub(crate) mod logger;
 pub(crate) mod maplit;
 mod migrate;
 mod minisign;
+pub(crate) mod parallel;
 mod path;
 mod path_env;
 mod plugins;
