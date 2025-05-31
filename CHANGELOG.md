@@ -1,5 +1,20 @@
 # Changelog
 
+## [2025.5.17](https://github.com/jdx/mise/compare/v2025.5.16..v2025.5.17) - 2025-05-31
+
+### 🚀 Features
+
+- add railway cli by [@jahands](https://github.com/jahands) in [#5083](https://github.com/jdx/mise/pull/5083)
+
+### 🐛 Bug Fixes
+
+- **(zig)** exclude mach version from version list by [@mangkoran](https://github.com/mangkoran) in [#5240](https://github.com/jdx/mise/pull/5240)
+- refresh settings by [@jdx](https://github.com/jdx) in [#5252](https://github.com/jdx/mise/pull/5252)
+
+### ⚡ Performance
+
+- re-enable parallelism for `mise up` by [@jdx](https://github.com/jdx) in [#5249](https://github.com/jdx/mise/pull/5249)
+
 ## [2025.5.16](https://github.com/jdx/mise/compare/v2025.5.15..v2025.5.16) - 2025-05-29
 
 ### 🐛 Bug Fixes
