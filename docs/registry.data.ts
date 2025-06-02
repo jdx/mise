@@ -31,11 +31,14 @@ export default {
           let name = typeof backend === "string" ? backend : backend.full;
           // replace selector square brackets
           name = name.replace(/(.*?)\[.*\]/g, "$1");
-          const parts = name.toString().split(":");
+          const parts = name.split(":", 2);
           const prefix = parts[0];
           const slug = parts[1];
+          const repoName = slug.split("/").slice(0,1).join("/");
           const urlMap: { [key: string]: string } = {
             core: `https://mise.jdx.dev/lang/${slug}.html`,
+            asdf: slug.startsWith("http") ? slug : `https://github.com/${slug}`,
+            aqua: `https://github.com/${repoName}`,
             cargo: `https://crates.io/crates/${slug}`,
             go: `https://pkg.go.dev/${slug}`,
             pipx: `https://pypi.org/project/${slug}`,
