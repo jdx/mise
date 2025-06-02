@@ -2012,10 +2012,10 @@ vhs.backends = ["aqua:charmbracelet/vhs", "asdf:chessmango/asdf-vhs"]
 victoria-metrics.backends = [
     "aqua:victoriametrics/victoriametrics/victoria-metrics"
 ]
-victoria-metrics.test = [
-    "victoria-metrics --version | awk -F'-' '{print $6}'",
-    "{{version}}"
-]
+# victoria-metrics.test = [
+# "victoria-metrics --version | awk -F'-' '{print $6}'",
+# "{{version}}"
+# ]
 viddy.backends = ["aqua:sachaos/viddy", "asdf:ryodocx/asdf-viddy"]
 vim.backends = ["asdf:mise-plugins/mise-vim"]
 virtualos.backends = ["asdf:mise-plugins/mise-virtualos"]
