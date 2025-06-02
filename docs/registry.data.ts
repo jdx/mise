@@ -34,7 +34,7 @@ export default {
           const parts = name.toString().split(":", 2);
           const prefix = parts[0];
           const slug = parts[1];
-          const repoName = slug.split("/").slice(0,1).join("/");
+          const repoName = slug.split("/").slice(0, 1).join("/");
           const urlMap: { [key: string]: string } = {
             core: `https://mise.jdx.dev/lang/${slug}.html`,
             asdf: slug.startsWith("http") ? slug : `https://github.com/${slug}`,
