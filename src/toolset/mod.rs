@@ -567,7 +567,7 @@ impl Toolset {
         }
         env.extend(config.env().await?.clone());
         if let Some(venv) = uv::uv_venv(config).await {
-            for (k, v) in venv.env {
+            for (k, v) in venv.env.clone() {
                 env.insert(k, v);
             }
         }
@@ -622,7 +622,7 @@ impl Toolset {
             paths.insert(p);
         }
         if let Some(venv) = uv::uv_venv(config).await {
-            paths.insert(venv.venv_path);
+            paths.insert(venv.venv_path.clone());
         }
         if let Some(path) = self.env(config).await?.get(&*PATH_KEY) {
             paths.insert(PathBuf::from(path));

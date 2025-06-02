@@ -19,27 +19,25 @@ pub struct Venv {
 // when resolving the venv path or env vars
 static UV_VENV: Lazy<OnceCell<Option<Venv>>> = Lazy::new(Default::default);
 
-pub async fn uv_venv(config: &Arc<Config>) -> Option<Venv> {
-    if let Some(venv) = UV_VENV.get() {
-        return venv.clone();
-    }
-    if !Settings::get().python.uv_venv_auto {
-        UV_VENV.set(None).unwrap();
-        return None;
-    }
-    if let (Some(venv_path), Some(uv_path)) = (venv_path(), uv_path(config).await) {
-        match get_or_create_venv(config, venv_path, uv_path).await {
-            Ok(venv) => {
-                UV_VENV.set(Some(venv.clone())).unwrap();
-                return Some(venv);
+pub async fn uv_venv(config: &Arc<Config>) -> &Option<Venv> {
+    UV_VENV
+        .get_or_init(async || {
+            if !Settings::get().python.uv_venv_auto {
+                return None;
             }
-            Err(e) => {
-                warn!("uv venv failed: {e}");
+            if let (Some(venv_path), Some(uv_path)) = (venv_path(), uv_path(config).await) {
+                match get_or_create_venv(config, venv_path, uv_path).await {
+                    Ok(venv) => {
+                        return Some(venv);
+                    }
+                    Err(e) => {
+                        warn!("uv venv failed: {e}");
+                    }
+                }
             }
-        }
-    }
-    UV_VENV.set(None).unwrap();
-    None
+            None
+        })
+        .await
 }
 
 async fn get_or_create_venv(

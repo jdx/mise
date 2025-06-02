@@ -6,3 +6,4 @@ docs/cli/watch.md
 node_modules/
 test/
 /tasks.md
+/comment.md
