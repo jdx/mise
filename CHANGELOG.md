@@ -1,5 +1,12 @@
 # Changelog
 
+## [2025.6.0](https://github.com/jdx/mise/compare/v2025.5.17..v2025.6.0) - 2025-06-02
+
+### 🐛 Bug Fixes
+
+- race condition with uv_venv by [@jdx](https://github.com/jdx) in [#5262](https://github.com/jdx/mise/pull/5262)
+- disable victoria-metrics test by [@jdx](https://github.com/jdx) in [11bda4b](https://github.com/jdx/mise/commit/11bda4bda97bd02f6a8cae2c7f345846769ff776)
+
 ## [2025.5.17](https://github.com/jdx/mise/compare/v2025.5.16..v2025.5.17) - 2025-05-31
 
 ### 🚀 Features
