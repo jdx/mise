@@ -77,10 +77,7 @@ export default {
           return {
             name: `${prefix}:${slug}`,
             url: urlBuilders[prefix]
-              ? urlBuilders[prefix](
-                  slug,
-                  match?.groups?.options ?? "",
-                )
+              ? urlBuilders[prefix](slug, match?.groups?.options ?? "")
               : "",
           };
         }),
