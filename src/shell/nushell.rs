@@ -51,9 +51,11 @@ impl Shell for Nushell {
         let exe = exe.to_string_lossy().replace('\\', r#"\\"#);
 
         let mut out = String::new();
-        out.push_str(&self.format_activate_prelude_inline(&opts.prelude));
+        let prelude = self.format_activate_prelude_inline(&opts.prelude);
         out.push_str(&formatdoc! {r#"
           export-env {{
+            {prelude}
+
             $env.MISE_SHELL = "nu"
             let mise_hook = {{
               condition: {{ "MISE_SHELL" in $env }}
