@@ -1423,7 +1423,7 @@ oc.backends = ["asdf:mise-plugins/mise-oc"]
 ocaml.backends = ["asdf:mise-plugins/mise-ocaml"]
 oci.backends = ["asdf:mise-plugins/mise-oci"]
 octosql.backends = ["ubi:cube2222/octosql"]
-octosql.text = ["octosql --version", "octosql version {{version}}"]
+octosql.test = ["octosql --version", "octosql version {{version}}"]
 odin.backends = ["ubi:odin-lang/Odin[exe=odin]", "asdf:jtakakura/asdf-odin"]
 odo.backends = ["aqua:redhat-developer/odo", "asdf:rm3l/asdf-odo"]
 okta-aws.aliases = ["okta-aws-cli"]
@@ -1750,7 +1750,7 @@ skaffold.backends = [
 ]
 skate.backends = ["aqua:charmbracelet/skate", "asdf:chessmango/asdf-skate"]
 skeema.backends = ["aqua:skeema/skeema", "ubi:skeema/skeema"]
-skeema.tests = [
+skeema.test = [
     "skeema version | awk -F, '{print $1}'",
     "skeema version {{version}}-community"
 ]
@@ -1968,7 +1968,7 @@ tsuru.backends = [
 ttyd.backends = ["aqua:tsl0922/ttyd", "asdf:ivanvc/asdf-ttyd"]
 tuist.backends = ["asdf:mise-plugins/mise-tuist"]
 tusd.backends = ["ubi:tus/tusd"]
-tusd.tests = ["tusd --version | head -n1", "Version: v{{version}}"]
+tusd.test = ["tusd --version | head -n1", "Version: v{{version}}"]
 typos.backends = ["aqua:crate-ci/typos", "asdf:aschiavon91/asdf-typos"]
 typst.backends = ["aqua:typst/typst", "asdf:stephane-klein/asdf-typst"]
 uaa.aliases = ["uaa-cli"]
