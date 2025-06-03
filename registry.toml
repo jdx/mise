@@ -1157,7 +1157,7 @@ kubectl.backends = [
     "asdf:asdf-community/asdf-kubectl"
 ]
 kubectl-convert.backends = [
-    "aqua:kubernetes/kubectl-convert",
+    "aqua:kubernetes/kubernetes/kubectl-convert",
     "asdf:iul1an/asdf-kubectl-convert"
 ]
 kubectl-kots.backends = [

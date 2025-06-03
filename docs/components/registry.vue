@@ -27,9 +27,14 @@
         <td>
           <span v-for="(backend, index) in entry.backends">
             <a
+              v-if="backend.url"
               :href="`${backend.url}`"
               v-html="highlightMatches(backend.name)"
             ></a>
+            <span
+              v-else
+              v-html="highlightMatches(backend.name)"
+            ></span>
             <span v-if="index < entry.backends.length - 1"><br /></span>
           </span>
         </td>
