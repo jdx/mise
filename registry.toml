@@ -1632,7 +1632,7 @@ redis.backends = ["asdf:mise-plugins/mise-redis"]
 redis-cli.backends = ["asdf:mise-plugins/mise-redis-cli"]
 redo.backends = ["ubi:barthr/redo", "asdf:chessmango/asdf-redo"]
 reg.backends = ["aqua:genuinetools/reg", "asdf:looztra/asdf-reg"]
-regal.backends = ["aqua:StyraInc/regal", "asdf:mise-plugins/mise-regal"]
+regal.backends = ["aqua:StyraInc/regal", "asdf:asdf-community/asdf-regal"]
 regctl.backends = ["aqua:regclient/regclient/regctl", "asdf:ORCID/asdf-regctl"]
 regsync.backends = [
     "aqua:regclient/regclient/regsync",
@@ -1690,7 +1690,7 @@ scala.backends = [
 ]
 scala-cli.backends = [
     "ubi:VirtusLab/scala-cli",
-    "asdf:mise-plugins/mise-scala-cli"
+    "asdf:asdf-community/asdf-scala-cli"
 ]
 scaleway.aliases = ["scaleway-cli"]
 scaleway.backends = [
