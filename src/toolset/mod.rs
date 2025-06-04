@@ -158,13 +158,40 @@ impl Toolset {
             .into_iter()
             .map(|(ba, tvl)| (config.clone(), ba, tvl.clone()))
             .collect::<Vec<_>>();
-        let tvls = parallel::parallel(versions, |(config, ba, mut tvl)| async move {
-            tvl.resolve(&config, &Default::default()).await?;
-            Ok((ba, tvl))
+        let safe_results = parallel::parallel(versions, |(config, ba, mut tvl)| async move {
+            let result = tvl.resolve(&config, &Default::default()).await;
+            match result {
+                Ok(()) => Ok((ba, Ok(tvl))),
+                Err(e) => Ok((ba, Err(e))),
+            }
         })
         .await?;
-        self.versions = tvls.into_iter().collect();
-        Ok(())
+        let mut successful_versions = IndexMap::new();
+        let mut errors = Vec::new();
+        for (ba, tool_result) in safe_results {
+            match tool_result {
+                Ok(tvl) => {
+                    successful_versions.insert(ba, tvl);
+                }
+                Err(err) => {
+                    if Error::is_argument_err(&err) {
+                        return Err(err);
+                    }
+                    warn!("failed to resolve tool {}: {err}", ba.short);
+                    errors.push(err);
+                }
+            }
+        }
+
+        self.versions = successful_versions;
+
+        match errors.is_empty() {
+            true => Ok(()),
+            false => {
+                let err = eyre::eyre!("error resolving versions");
+                Err(errors.into_iter().fold(err, |e, x| e.wrap_err(x)))
+            }
+        }
     }
     #[async_backtrace::framed]
     pub async fn install_missing_versions(
@@ -880,9 +907,15 @@ type TVTuple = (Arc<dyn Backend>, ToolVersion);
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
+    use std::{env, fs};
+    use tempfile::TempDir;
     use test_log::test;
 
     use super::ToolVersionOptions;
+    use crate::config::Config;
+
+    use super::*;
+
     #[test]
     fn test_tool_version_options() {
         let t = |input, f| {
@@ -913,5 +946,47 @@ mod tests {
                 ..Default::default()
             },
         );
+    }
+
+    #[tokio::test]
+    async fn test_resolve() -> Result<()> {
+        let test_cases = vec![
+            // This test reproduces the regression from https://github.com/jdx/mise/discussions/5282
+            // where an invalid tool in .tool-versions would prevent valid tools from working.
+            (
+                "mixed_valid_invalid",
+                "ruby 3.3.8\nnon-existent-tool 1.0.0\n",
+                1,
+            ),
+            (
+                "all_invalid",
+                "definitely-invalid-tool-1 1.0.0\ndefinitely-invalid-tool-2 2.0.0\n",
+                0,
+            ),
+        ];
+
+        for (test_name, tool_versions_content, expected_min_tools) in test_cases {
+            info!("Running test case: {}", test_name);
+
+            let temp_dir = TempDir::new()?;
+            let file_path = temp_dir.path().join(".test-tool-versions");
+
+            fs::write(&file_path, tool_versions_content)?;
+
+            let original_dir = env::current_dir()?;
+            env::set_current_dir(temp_dir.path())?;
+
+            let config = Config::reset().await?;
+            let builder = ToolsetBuilder::new();
+            // build calls resolve, which should not fail even with invalid tools
+            let toolset = builder.build(&config).await?;
+
+            let versions = toolset.list_current_versions();
+            assert_eq!(versions.len(), expected_min_tools, "{}", test_name);
+
+            env::set_current_dir(original_dir)?;
+        }
+
+        Ok(())
     }
 }
