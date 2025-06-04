@@ -16,6 +16,7 @@ use eyre::bail;
 use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
+use path_absolutize::Absolutize;
 use std::sync::LazyLock as Lazy;
 use tar::Archive;
 use walkdir::WalkDir;
@@ -719,8 +720,9 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
             .components()
             .skip(opts.strip_components)
             .filter(|c| c.as_os_str() != ".")
-            .collect();
-        let path = dest.join(path);
+            .collect::<PathBuf>()
+            .absolutize_virtually(dest)?
+            .to_path_buf();
         create_dir_all(path.parent().unwrap()).wrap_err_with(err)?;
         trace!("extracting {}", display_path(&path));
         entry.unpack(&path).wrap_err_with(err)?;
