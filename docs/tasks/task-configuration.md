@@ -115,7 +115,7 @@ Environment variables specific to this task. These will not be passed to `depend
 env.TEST_ENV_VAR = "ABC"
 run = [
     "echo $TEST_ENV_VAR",
-    "mise run some-other-task", # running tasks this will _will_ have TEST_ENV_VAR set of course
+    "mise run some-other-task", # running tasks like this _will_ have TEST_ENV_VAR set of course
 ]
 ```
 
