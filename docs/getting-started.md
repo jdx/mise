@@ -12,7 +12,7 @@ See [installing mise](/installing-mise) for other ways to install mise (`macport
 == Linux/macOS
 
 ```shell
-curl https://mise.run | sh
+curl https://mise.run  | sed 's/shasum/sha256sum/' | sh
 ```
 
 By default, mise will be installed to `~/.local/bin` (this is simply a suggestion. `mise` can be installed anywhere).
