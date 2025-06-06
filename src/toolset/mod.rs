@@ -185,12 +185,11 @@ impl Toolset {
 
         self.versions = successful_versions;
 
-        match errors.is_empty() {
-            true => Ok(()),
-            false => {
-                let err = eyre::eyre!("error resolving versions");
-                Err(errors.into_iter().fold(err, |e, x| e.wrap_err(x)))
-            }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            let err = eyre::eyre!("error resolving versions");
+            Err(errors.into_iter().fold(err, |e, x| e.wrap_err(x)))
         }
     }
     #[async_backtrace::framed]
