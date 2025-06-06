@@ -304,7 +304,8 @@ impl Task {
             .flatten_ok()
             .filter_ok(|t| tasks_to_run.contains(t))
             .collect_vec();
-        let depends_post = self.depends_post
+        let depends_post = self
+            .depends_post
             .iter()
             .map(|td| match_tasks(&tasks, td))
             .flatten_ok()
