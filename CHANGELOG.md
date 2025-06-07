@@ -1,5 +1,24 @@
 # Changelog
 
+## [2025.6.1](https://github.com/jdx/mise/compare/v2025.6.0..v2025.6.1) - 2025-06-07
+
+### 🚀 Features
+
+- **(registry)** use ubi backend for func-e by [@risu729](https://github.com/risu729) in [#5273](https://github.com/jdx/mise/pull/5273)
+
+### 📚 Documentation
+
+- **(registry)** fix links of registry by [@risu729](https://github.com/risu729) in [#5266](https://github.com/jdx/mise/pull/5266)
+- **(registry)** fix links to tools by [@risu729](https://github.com/risu729) in [#5272](https://github.com/jdx/mise/pull/5272)
+
+### 🧪 Testing
+
+- **(registry)** fix test typos by [@risu729](https://github.com/risu729) in [#5269](https://github.com/jdx/mise/pull/5269)
+
+### 🛡️ Security
+
+- **(security)** prevent untarring outside expected path by [@jdx](https://github.com/jdx) in [#5279](https://github.com/jdx/mise/pull/5279)
+
 ## [2025.6.0](https://github.com/jdx/mise/compare/v2025.5.17..v2025.6.0) - 2025-06-02
 
 ### 🐛 Bug Fixes
@@ -1352,12 +1371,9 @@
 
 ### 🐛 Bug Fixes
 
+- **(ruby)** remove ruby/gem tests by [@jdx](https://github.com/jdx) in [#4130](https://github.com/jdx/mise/pull/4130)
 - Fixes fish_command_not_found glob error by [@halostatue](https://github.com/halostatue) in [#4133](https://github.com/jdx/mise/pull/4133)
 - completions for `mise use` by [@jdx](https://github.com/jdx) in [#4147](https://github.com/jdx/mise/pull/4147)
-
-### 🛡️ Security
-
-- **(ruby)** remove ruby/gem tests by [@jdx](https://github.com/jdx) in [#4130](https://github.com/jdx/mise/pull/4130)
 
 ### 📦️ Dependency Updates
 
