@@ -80,6 +80,8 @@ pub struct AquaPackage {
     overrides: Vec<AquaOverride>,
     version_constraint: String,
     version_overrides: Vec<AquaPackage>,
+    pub no_asset: bool,
+    pub error_message: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -582,6 +584,12 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
         minisign.merge(avo_minisign);
         orig.minisign = Some(minisign);
     }
+    if avo.no_asset {
+        orig.no_asset = true;
+    }
+    if let Some(error_message) = avo.error_message.clone() {
+        orig.error_message = Some(error_message);
+    }
     orig
 }
 
@@ -842,6 +850,8 @@ impl Default for AquaPackage {
             overrides: vec![],
             version_constraint: "".to_string(),
             version_overrides: vec![],
+            no_asset: false,
+            error_message: None,
         }
     }
 }

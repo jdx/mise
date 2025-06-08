@@ -72,6 +72,9 @@ impl Backend for AquaBackend {
                         }
                     }
                     let pkg = pkg.clone().with_version(v);
+                    if pkg.no_asset || pkg.error_message.is_some() {
+                        return None;
+                    }
                     if let Some(prefix) = &pkg.version_prefix {
                         if let Some(_v) = v.strip_prefix(prefix) {
                             v = _v
@@ -97,6 +100,12 @@ impl Backend for AquaBackend {
     ) -> Result<ToolVersion> {
         let mut v = format!("v{}", tv.version);
         let pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
+        if pkg.no_asset {
+            bail!("no asset released");
+        }
+        if pkg.error_message.is_some() {
+            bail!(pkg.error_message.unwrap());
+        }
         if let Some(prefix) = &pkg.version_prefix {
             v = format!("{prefix}{v}");
         }
