@@ -584,6 +584,12 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo abc"]);
+
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(&config, &task, &scripts, &Default::default(), &[], &spec)
+            .await
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo "]);
     }
 
     #[tokio::test]
