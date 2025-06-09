@@ -380,7 +380,7 @@ impl TaskScriptParser {
                 }
             });
             let flag_func = {
-                {
+                |default_value: String| {
                     let usage_flags = m.flags.clone();
                     move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
                         let name = args
@@ -392,13 +392,13 @@ impl TaskScriptParser {
                                 .iter()
                                 .find(|(flag, _)| flag.name == name)
                                 .map(|(_, value)| escape(value))
-                                .unwrap_or("false".to_string()),
+                                .unwrap_or(default_value.clone()),
                         ))
                     }
                 }
             };
-            tera.register_function("option", flag_func.clone());
-            tera.register_function("flag", flag_func);
+            tera.register_function("option", flag_func("".to_string()));
+            tera.register_function("flag", flag_func(false.to_string()));
             let mut tera_ctx = task.tera_ctx(config).await?;
             tera_ctx.insert("env", &env);
             out.push(
