@@ -137,6 +137,7 @@ pub struct AquaCosign {
     pub signature: Option<AquaCosignSignature>,
     pub key: Option<AquaCosignSignature>,
     pub certificate: Option<AquaCosignSignature>,
+    pub bundle: Option<AquaCosignSignature>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     opts: Vec<String>,
 }
@@ -687,6 +688,12 @@ impl AquaCosign {
                 self.certificate = Some(certificate.clone());
             }
             self.certificate.as_mut().unwrap().merge(certificate);
+        }
+        if let Some(bundle) = other.bundle.clone() {
+            if self.bundle.is_none() {
+                self.bundle = Some(bundle.clone());
+            }
+            self.bundle.as_mut().unwrap().merge(bundle);
         }
         if !other.opts.is_empty() {
             self.opts = other.opts.clone();

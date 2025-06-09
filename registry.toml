@@ -1593,6 +1593,7 @@ psc-package.backends = [
 ]
 psqldef.backends = ["aqua:sqldef/sqldef/psqldef"]
 pulumi.backends = ["aqua:pulumi/pulumi", "asdf:canha/asdf-pulumi"]
+pulumi.test = ["pulumi version", "v{{version}}"]
 purerl.backends = ["ubi:purerl/purerl", "asdf:GoNZooo/asdf-purerl"]
 purescript.backends = [
     "ubi:purescript/purescript[exe=purs]",
