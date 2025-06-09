@@ -117,6 +117,10 @@ node = '22'
 # alternatively, you can also install `pnpm` with mise
 postinstall = 'npx corepack enable'
 
+[settings]
+# This must be enabled to make the hooks work
+experimental = true
+
 [env]
 _.path = ['./node_modules/.bin']
 
