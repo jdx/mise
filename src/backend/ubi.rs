@@ -335,6 +335,9 @@ async fn install(
     if let Some(matching) = opts.get("matching") {
         builder = builder.matching(matching);
     }
+    if let Some(matching_regex) = opts.get("matching_regex") {
+        builder = builder.matching_regex(matching_regex);
+    }
 
     let forge = match opts.get("provider") {
         Some(forge) => ForgeType::from_str(forge)?,

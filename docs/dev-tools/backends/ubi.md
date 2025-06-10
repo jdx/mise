@@ -69,6 +69,17 @@ then this will be ignored.
 "ubi:BurntSushi/ripgrep" = { version = "latest", matching = "musl" }
 ```
 
+### `matching_regex`
+
+Set a regular expression string that will be matched against release filenames before matching
+against OS/arch. If the pattern yields a single match, that release will be selected. If no matches
+are found, this will result in an error.
+
+```toml
+[tools]
+"ubi:shader-slang/slang" = { version = "latest", matching_regex = "\\d+\\.tar" }
+```
+
 ### `provider`
 
 Set the provider type to use for fetching assets and release information. Either `github` or `gitlab` (default is `github`).
