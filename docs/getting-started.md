@@ -178,6 +178,7 @@ $newPath = $currentPath + ";" + $shimPath
 ```
 
 - To open your Powershell profile
+
 ```powershell [powershell]
 if (-not (Test-Path $profile)) { New-Item $profile -Force } # create profile if it doesn't already exist
 Invoke-Item $profile
