@@ -2063,6 +2063,7 @@ xcbeautify.backends = [
 xchtmlreport.backends = ["asdf:mise-plugins/mise-xchtmlreport"]
 xcodegen.backends = ["asdf:mise-plugins/mise-xcodegen"]
 xcodes.backends = ["aqua:XcodesOrg/xcodes"]
+xcodes.os = ["macos"]
 xcodes.test = ["xcodes version", "{{version}}"]
 xcresultparser.backends = ["asdf:mise-plugins/mise-xcresultparser"]
 xh.backends = ["aqua:ducaale/xh", "ubi:ducaale/xh", "asdf:NeoHsu/asdf-xh"]
