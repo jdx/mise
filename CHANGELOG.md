@@ -1,5 +1,29 @@
 # Changelog
 
+## [2025.6.2](https://github.com/jdx/mise/compare/v2025.6.1..v2025.6.2) - 2025-06-12
+
+### 🚀 Features
+
+- **(aqua)** support cosign bundle option by [@risu729](https://github.com/risu729) in [#5314](https://github.com/jdx/mise/pull/5314)
+- **(registry)** add xcodes by [@MontakOleg](https://github.com/MontakOleg) in [#5321](https://github.com/jdx/mise/pull/5321)
+- **(registry)** add typstyle by [@3w36zj6](https://github.com/3w36zj6) in [#5319](https://github.com/jdx/mise/pull/5319)
+
+### 🐛 Bug Fixes
+
+- **(cli/doctor)** reduce severity of new version to warnings by [@risu729](https://github.com/risu729) in [#5317](https://github.com/jdx/mise/pull/5317)
+- **(doctor)** ignored config roots not displaying by [@jdx](https://github.com/jdx) in [#5336](https://github.com/jdx/mise/pull/5336)
+- ls command does not respect MISE_COLOR value by [@roele](https://github.com/roele) in [#5322](https://github.com/jdx/mise/pull/5322)
+
+### 📚 Documentation
+
+- Update contributing.md by [@GitToby](https://github.com/GitToby) in [#5332](https://github.com/jdx/mise/pull/5332)
+- add instructions to create/open pwsh profile file by [@Armaldio](https://github.com/Armaldio) in [#5316](https://github.com/jdx/mise/pull/5316)
+
+### New Contributors
+
+- @Armaldio made their first contribution in [#5316](https://github.com/jdx/mise/pull/5316)
+- @GitToby made their first contribution in [#5332](https://github.com/jdx/mise/pull/5332)
+
 ## [2025.6.1](https://github.com/jdx/mise/compare/v2025.6.0..v2025.6.1) - 2025-06-09
 
 ### 🚀 Features
@@ -15,6 +39,7 @@
 
 - **(registry)** fix links of registry by [@risu729](https://github.com/risu729) in [#5266](https://github.com/jdx/mise/pull/5266)
 - **(registry)** fix links to tools by [@risu729](https://github.com/risu729) in [#5272](https://github.com/jdx/mise/pull/5272)
+- update example with `pnpm` by [@mrazauskas](https://github.com/mrazauskas) in [#5306](https://github.com/jdx/mise/pull/5306)
 
 ### 🧪 Testing
 
@@ -23,6 +48,10 @@
 ### 🛡️ Security
 
 - **(security)** prevent untarring outside expected path by [@jdx](https://github.com/jdx) in [#5279](https://github.com/jdx/mise/pull/5279)
+
+### New Contributors
+
+- @mrazauskas made their first contribution in [#5306](https://github.com/jdx/mise/pull/5306)
 
 ## [2025.6.0](https://github.com/jdx/mise/compare/v2025.5.17..v2025.6.0) - 2025-06-02
 
