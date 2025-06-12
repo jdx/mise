@@ -1593,6 +1593,7 @@ psc-package.backends = [
 ]
 psqldef.backends = ["aqua:sqldef/sqldef/psqldef"]
 pulumi.backends = ["aqua:pulumi/pulumi", "asdf:canha/asdf-pulumi"]
+pulumi.test = ["pulumi version", "v{{version}}"]
 purerl.backends = ["ubi:purerl/purerl", "asdf:GoNZooo/asdf-purerl"]
 purescript.backends = [
     "ubi:purescript/purescript[exe=purs]",
@@ -1971,6 +1972,15 @@ tusd.backends = ["ubi:tus/tusd"]
 tusd.test = ["tusd --version | head -n1", "Version: v{{version}}"]
 typos.backends = ["aqua:crate-ci/typos", "asdf:aschiavon91/asdf-typos"]
 typst.backends = ["aqua:typst/typst", "asdf:stephane-klein/asdf-typst"]
+typstyle.backends = [
+    "aqua:Enter-tainer/typstyle",
+    "ubi:Enter-tainer/typstyle",
+    "cargo:typstyle"
+]
+typstyle.test = [
+    "typstyle --version | grep 'Version:' | awk '{print $2}'",
+    "{{version}}"
+]
 uaa.aliases = ["uaa-cli"]
 uaa.backends = [
     "ubi:cloudfoundry/uaa-cli[exe=uaa]",
@@ -2061,6 +2071,9 @@ xcbeautify.backends = [
 ]
 xchtmlreport.backends = ["asdf:mise-plugins/mise-xchtmlreport"]
 xcodegen.backends = ["asdf:mise-plugins/mise-xcodegen"]
+xcodes.backends = ["aqua:XcodesOrg/xcodes"]
+xcodes.os = ["macos"]
+xcodes.test = ["xcodes version", "{{version}}"]
 xcresultparser.backends = ["asdf:mise-plugins/mise-xcresultparser"]
 xh.backends = ["aqua:ducaale/xh", "ubi:ducaale/xh", "asdf:NeoHsu/asdf-xh"]
 xh.test = ["xh -V", "xh {{version}}"]

@@ -72,6 +72,9 @@ impl Backend for AquaBackend {
                         }
                     }
                     let pkg = pkg.clone().with_version(v);
+                    if pkg.no_asset || pkg.error_message.is_some() {
+                        return None;
+                    }
                     if let Some(prefix) = &pkg.version_prefix {
                         if let Some(_v) = v.strip_prefix(prefix) {
                             v = _v
@@ -97,6 +100,12 @@ impl Backend for AquaBackend {
     ) -> Result<ToolVersion> {
         let mut v = format!("v{}", tv.version);
         let pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
+        if pkg.no_asset {
+            bail!("no asset released");
+        }
+        if pkg.error_message.is_some() {
+            bail!(pkg.error_message.unwrap());
+        }
         if let Some(prefix) = &pkg.version_prefix {
             v = format!("{prefix}{v}");
         }
@@ -295,10 +304,11 @@ impl AquaBackend {
                         }
                         AquaChecksumType::Http => checksum.url(pkg, v)?,
                     };
-                    let checksum_path = tv.download_path().join(format!("{filename}.checksum"));
+                    let download_path = tv.download_path();
+                    let checksum_path = download_path.join(format!("{filename}.checksum"));
                     HTTP.download_file(&url, &checksum_path, Some(&ctx.pr))
                         .await?;
-                    self.cosign_checksums(ctx, pkg, v, tv, &checksum_path)
+                    self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
                         .await?;
                     let mut checksum_file = file::read_to_string(&checksum_path)?;
                     if checksum.file_format() == "regexp" {
@@ -505,6 +515,7 @@ impl AquaBackend {
         v: &str,
         tv: &ToolVersion,
         checksum_path: &Path,
+        download_path: &Path,
     ) -> Result<()> {
         if !Settings::get().aqua.cosign {
             return Ok(());
@@ -542,6 +553,16 @@ impl AquaBackend {
                     let arg = certificate.arg(pkg, v)?;
                     if !arg.is_empty() {
                         cmd = cmd.arg("--certificate").arg(arg);
+                    }
+                }
+                if let Some(bundle) = &cosign.bundle {
+                    let url = bundle.arg(pkg, v)?;
+                    if !url.is_empty() {
+                        let filename = url.split('/').next_back().unwrap();
+                        let bundle_path = download_path.join(filename);
+                        HTTP.download_file(&url, &bundle_path, Some(&ctx.pr))
+                            .await?;
+                        cmd = cmd.arg("--bundle").arg(bundle_path);
                     }
                 }
                 for opt in cosign.opts(pkg, v)? {

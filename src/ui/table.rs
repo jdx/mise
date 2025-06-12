@@ -52,8 +52,8 @@ impl MiseTable {
         table
             .load_preset(comfy_table::presets::NOTHING)
             .set_content_arrangement(ContentArrangement::Dynamic);
-        if console::colors_enabled() {
-            table.enforce_styling();
+        if !console::colors_enabled() {
+            table.force_no_tty();
         }
         if !no_header && console::user_attended() {
             let headers = headers.iter().map(Self::header).collect_vec();
