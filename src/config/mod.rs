@@ -796,7 +796,7 @@ pub static ALL_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
 pub static IGNORED_CONFIG_FILES: Lazy<IndexSet<PathBuf>> = Lazy::new(|| {
     load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
         .into_iter()
-        .filter(|p| config_file::is_ignored(p))
+        .filter(|p| config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
         .collect()
 });
 // pub static LOCAL_CONFIG_FILES: Lazy<Vec<PathBuf>> = Lazy::new(|| {
