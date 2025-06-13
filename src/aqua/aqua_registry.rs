@@ -71,8 +71,6 @@ pub struct AquaPackage {
     pub replacements: HashMap<String, String>,
     pub version_prefix: Option<String>,
     version_filter: Option<String>,
-    #[serde(skip)]
-    version_filter_expr: Option<Program>,
     pub version_source: Option<String>,
     pub checksum: Option<AquaChecksum>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
@@ -211,16 +209,13 @@ impl AquaRegistry {
         }
         let path_id = id.split('/').join(std::path::MAIN_SEPARATOR_STR);
         let path = self.path.join("pkgs").join(&path_id).join("registry.yaml");
-        let mut pkg = self
+        let pkg = self
             .fetch_package_yaml(id, &path, &path_id)
             .await?
             .packages
             .into_iter()
             .next()
             .wrap_err(format!("no package found for {id} in {path:?}"))?;
-        if let Some(version_filter) = &pkg.version_filter {
-            pkg.version_filter_expr = Some(expr::compile(version_filter)?);
-        }
         CACHE.lock().await.insert(id.to_string(), pkg.clone());
         Ok(pkg)
     }
@@ -483,9 +478,10 @@ impl AquaPackage {
     }
 
     pub fn version_filter_ok(&self, v: &str) -> Result<bool> {
-        // TODO: precompile the expression
-        if let Some(filter) = self.version_filter_expr.clone() {
-            if let Value::Bool(expr) = self.expr(v, filter)? {
+        if let Some(filter) = self.version_filter.clone() {
+            let filter = self.parse_aqua_str(&filter, v, &Default::default())?;
+            let program = expr::compile(&filter)?;
+            if let Value::Bool(expr) = self.expr(v, program)? {
                 Ok(expr)
             } else {
                 warn!(
@@ -849,7 +845,6 @@ impl Default for AquaPackage {
             replacements: HashMap::new(),
             version_prefix: None,
             version_filter: None,
-            version_filter_expr: None,
             version_source: None,
             checksum: None,
             slsa_provenance: None,
