@@ -1,5 +1,29 @@
 # Changelog
 
+## [2025.6.3](https://github.com/jdx/mise/compare/v2025.6.2..v2025.6.3) - 2025-06-13
+
+### 🚀 Features
+
+- support matching_regex from the ubi backend by [@yjoer](https://github.com/yjoer) in [#5320](https://github.com/jdx/mise/pull/5320)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** parse templates in version_filter by [@risu729](https://github.com/risu729) in [#5341](https://github.com/jdx/mise/pull/5341)
+- **(registry)** use extract_all for docker-slim by [@risu729](https://github.com/risu729) in [#5342](https://github.com/jdx/mise/pull/5342)
+
+### 🚜 Refactor
+
+- **(getting-started)** update powershell profile instructions by [@Armaldio](https://github.com/Armaldio) in [#5340](https://github.com/jdx/mise/pull/5340)
+
+### 📦️ Dependency Updates
+
+- update docker/build-push-action digest to 2634353 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5338](https://github.com/jdx/mise/pull/5338)
+- update jdx/mise-action digest to 13abe50 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5339](https://github.com/jdx/mise/pull/5339)
+
+### New Contributors
+
+- @yjoer made their first contribution in [#5320](https://github.com/jdx/mise/pull/5320)
+
 ## [2025.6.2](https://github.com/jdx/mise/compare/v2025.6.1..v2025.6.2) - 2025-06-12
 
 ### 🚀 Features
