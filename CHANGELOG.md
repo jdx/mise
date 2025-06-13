@@ -1,5 +1,15 @@
 # Changelog
 
+## [2025.6.4](https://github.com/jdx/mise/compare/v2025.6.3..v2025.6.4) - 2025-06-13
+
+### 🐛 Bug Fixes
+
+- **(registry)** use aqua for checkov by [@risu729](https://github.com/risu729) in [#5343](https://github.com/jdx/mise/pull/5343)
+
+### ◀️ Revert
+
+- fix(aqua): parse templates in version_filter by [@risu729](https://github.com/risu729) in [#5345](https://github.com/jdx/mise/pull/5345)
+
 ## [2025.6.3](https://github.com/jdx/mise/compare/v2025.6.2..v2025.6.3) - 2025-06-13
 
 ### 🚀 Features
