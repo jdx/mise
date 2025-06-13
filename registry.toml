@@ -551,7 +551,10 @@ docker-compose.test = [
     "docker-cli-plugin-docker-compose --version",
     "Docker Compose version"
 ]
-docker-slim.backends = ["ubi:slimtoolkit/slim[extract_all=true]", "asdf:xataz/asdf-docker-slim"]
+docker-slim.backends = [
+    "ubi:slimtoolkit/slim[extract_all=true]",
+    "asdf:xataz/asdf-docker-slim"
+]
 docker-slim.os = ["linux", "macos"]
 # docker-slim.test = ["slim --version", ""] # prints out weird version of mint or something
 dockle.backends = [
