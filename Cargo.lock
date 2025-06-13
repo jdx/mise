@@ -371,7 +371,6 @@ checksum = "e3620d72763b5d8df3384f3b2ec47dc5885441c2abbd94dd32197167d08b014a"
 dependencies = [
  "filetime",
  "libc",
- "xattr",
 ]
 
 [[package]]
@@ -5311,8 +5310,6 @@ version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b258109f244e1d6891bf1053a55d63a5cd4f8f4c30cf9a1280989f80e7a1fa9"
 dependencies = [
- "futures",
- "log",
  "once_cell",
  "parking_lot",
  "scc",
@@ -6128,9 +6125,9 @@ checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 
 [[package]]
 name = "ubi"
-version = "0.6.1"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6935e5064a326520a375603b9cddc9058796e39a041bf50e9e1eaa23da785adc"
+checksum = "238b7537b01c08edeef5dcb31e9ef882ec46e26a09875cffdab428e518204f19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6151,9 +6148,10 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.12",
  "url",
+ "walkdir",
  "which",
  "xz2",
- "zip 2.4.2",
+ "zip 3.0.0",
 ]
 
 [[package]]
@@ -7192,27 +7190,14 @@ version = "2.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fabe6324e908f85a1c52063ce7aa26b68dcb7eb6dbc83a2d148403c9bc3eba50"
 dependencies = [
- "aes",
  "arbitrary",
- "bzip2",
- "constant_time_eq",
  "crc32fast",
  "crossbeam-utils",
- "deflate64",
  "displaydoc",
- "flate2",
- "getrandom 0.3.3",
- "hmac",
  "indexmap 2.9.0",
- "lzma-rs",
  "memchr",
- "pbkdf2",
- "sha1",
  "thiserror 2.0.12",
  "time",
- "zeroize",
- "zopfli",
- "zstd",
 ]
 
 [[package]]
