@@ -541,6 +541,8 @@ difftastic.backends = [
     "ubi:wilfred/difftastic[exe=difft]",
     "asdf:volf52/asdf-difftastic"
 ]
+diffoci.backends = ["aqua:reproducible-containers/diffoci"]
+diffoci.test = ["diffoci --version", "diffoci version v{{version}}"]
 digdag.backends = ["asdf:mise-plugins/mise-digdag"]
 direnv.backends = ["aqua:direnv/direnv", "asdf:asdf-community/asdf-direnv"]
 dive.backends = ["ubi:wagoodman/dive", "asdf:looztra/asdf-dive"]
