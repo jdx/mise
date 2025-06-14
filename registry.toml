@@ -537,12 +537,12 @@ devspace.backends = ["aqua:devspace-sh/devspace", "asdf:NeoHsu/asdf-devspace"]
 # dhall seems to not provide any releases in the latest
 # dhall.backends = ["aqua:dhall-lang/dhall-haskell", "asdf:mise-plugins/mise-dhall"]
 dhall.backends = ["asdf:mise-plugins/mise-dhall"]
+diffoci.backends = ["aqua:reproducible-containers/diffoci"]
+diffoci.test = ["diffoci --version", "diffoci version v{{version}}"]
 difftastic.backends = [
     "ubi:wilfred/difftastic[exe=difft]",
     "asdf:volf52/asdf-difftastic"
 ]
-diffoci.backends = ["aqua:reproducible-containers/diffoci"]
-diffoci.test = ["diffoci --version", "diffoci version v{{version}}"]
 digdag.backends = ["asdf:mise-plugins/mise-digdag"]
 direnv.backends = ["aqua:direnv/direnv", "asdf:asdf-community/asdf-direnv"]
 dive.backends = ["ubi:wagoodman/dive", "asdf:looztra/asdf-dive"]
