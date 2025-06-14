@@ -1856,12 +1856,10 @@ talhelper.backends = ["aqua:budimanjojo/talhelper", "asdf:bjw-s/asdf-talhelper"]
 talos.backends = [
     "aqua:siderolabs/talos",
     "ubi:siderolabs/talos[exe=talosctl]",
-    "asdf:particledecay/asdf-talos"
 ]
 talosctl.backends = [
     "aqua:siderolabs/talos",
     "ubi:siderolabs/talos[exe=talosctl]",
-    "asdf:bjw-s/asdf-talosctl"
 ]
 tanka.backends = ["aqua:grafana/tanka", "asdf:trotttrotttrott/asdf-tanka"]
 tanzu.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
