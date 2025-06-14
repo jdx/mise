@@ -1854,10 +1854,12 @@ tailpipe.backends = ["aqua:turbot/tailpipe"]
 tailpipe.test = ["tailpipe --version", "Tailpipe v{{version}}"]
 talhelper.backends = ["aqua:budimanjojo/talhelper", "asdf:bjw-s/asdf-talhelper"]
 talos.backends = [
+    "aqua:siderolabs/talos",
     "ubi:siderolabs/talos[exe=talosctl]",
     "asdf:particledecay/asdf-talos"
 ]
 talosctl.backends = [
+    "aqua:siderolabs/talos",
     "ubi:siderolabs/talos[exe=talosctl]",
     "asdf:bjw-s/asdf-talosctl"
 ]
