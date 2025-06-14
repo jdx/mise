@@ -556,7 +556,8 @@ docker-compose.test = [
     "Docker Compose version"
 ]
 docker-slim.backends = [
-    "ubi:slimtoolkit/slim[extract_all=true]",
+    "aqua:mintoolkit/mint",
+    "ubi:mintoolkit/mint[extract_all=true]",
     "asdf:xataz/asdf-docker-slim"
 ]
 docker-slim.os = ["linux", "macos"]
