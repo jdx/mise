@@ -1394,6 +1394,26 @@
                   "type": "boolean"
                 }
               ]
+            },
+            "install_env": {
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "description": "environment variables during tool installation"
+            },
+            "postinstall": {
+              "description": "command to run after tool installation",
+              "type": "string"
             }
           },
           "required": ["version"],
