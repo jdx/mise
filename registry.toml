@@ -88,7 +88,7 @@ apollo-router.backends = [
 apollo-rover.backends = ["ubi:apollographql/rover"]
 aqua.backends = ["ubi:aquaproj/aqua"]
 aqua.test = ["aqua version", "{{version}}"]
-arduino.aliases = ["arduino"]
+arduino.aliases = ["arduino-cli"]
 arduino.backends = ["aqua:arduino/arduino-cli", "asdf:egnor/asdf-arduino-cli"]
 argc.backends = ["ubi:sigoden/argc"]
 argo.backends = ["aqua:argoproj/argo-workflows", "asdf:sudermanjr/asdf-argo"]
@@ -1853,13 +1853,14 @@ syft.backends = ["aqua:anchore/syft", "asdf:davidgp1701/asdf-syft"]
 tailpipe.backends = ["aqua:turbot/tailpipe"]
 tailpipe.test = ["tailpipe --version", "Tailpipe v{{version}}"]
 talhelper.backends = ["aqua:budimanjojo/talhelper", "asdf:bjw-s/asdf-talhelper"]
-talos.backends = [
-    "ubi:siderolabs/talos[exe=talosctl]",
-    "asdf:particledecay/asdf-talos"
-]
+talosctl.aliases = ["talos"]
 talosctl.backends = [
-    "ubi:siderolabs/talos[exe=talosctl]",
-    "asdf:bjw-s/asdf-talosctl"
+    "aqua:siderolabs/talos",
+    "ubi:siderolabs/talos[exe=talosctl]"
+]
+talosctl.test = [
+    "talosctl version --client --short | grep 'Talos'",
+    "Talos v{{version}}"
 ]
 tanka.backends = ["aqua:grafana/tanka", "asdf:trotttrotttrott/asdf-tanka"]
 tanzu.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
