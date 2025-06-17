@@ -51,7 +51,7 @@ Hook mise into your shell (pick the right one for your shell):
 echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
 echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
-echo '~/.local/bin/mise activate mise activate pwsh | Out-String | Invoke-Expression' >> ~/.config/powershell/Microsoft.PowerShell_profile.ps1
+echo '~/.local/bin/mise activate pwsh | Out-String | Invoke-Expression' >> ~/.config/powershell/Microsoft.PowerShell_profile.ps1
 ```
 
 ### Execute commands with specific tools
