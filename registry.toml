@@ -1853,11 +1853,7 @@ syft.backends = ["aqua:anchore/syft", "asdf:davidgp1701/asdf-syft"]
 tailpipe.backends = ["aqua:turbot/tailpipe"]
 tailpipe.test = ["tailpipe --version", "Tailpipe v{{version}}"]
 talhelper.backends = ["aqua:budimanjojo/talhelper", "asdf:bjw-s/asdf-talhelper"]
-talos.backends = ["aqua:siderolabs/talos", "ubi:siderolabs/talos[exe=talosctl]"]
-talos.test = [
-    "talosctl version --client --short | grep 'Talos'",
-    "Talos v{{version}}"
-]
+talosctl.aliases = ["talos"]
 talosctl.backends = [
     "aqua:siderolabs/talos",
     "ubi:siderolabs/talos[exe=talosctl]"
