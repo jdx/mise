@@ -104,18 +104,15 @@ impl Backend for AquaBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let mut v = tv.version.clone();
+        let mut v = format!("v{}", tv.version);
         let pkg = if let Some(pkg) = packages_map(self)
             .await?
             .into_iter()
-            .find(|(ver, _)| ver == &v)
+            .find(|(ver, _)| ver == &tv.version)
             .map(|(_, pkg)| pkg)
         {
             pkg
         } else {
-            if !v.starts_with('v') {
-                v = format!("v{v}");
-            }
             AQUA_REGISTRY.package_with_version(&self.id, &v).await?
         };
         if pkg.no_asset {
