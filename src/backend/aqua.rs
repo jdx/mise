@@ -34,6 +34,40 @@ pub struct AquaBackend {
     bin_path_caches: DashMap<String, CacheManager<Vec<PathBuf>>>,
 }
 
+async fn packages_map(backend: &AquaBackend) -> Result<Vec<(String, AquaPackage)>> {
+    let pkg = AQUA_REGISTRY.package(&backend.id).await?;
+    if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
+        let versions = get_versions(&pkg).await?;
+        Ok(versions
+            .into_iter()
+            .filter_map(|v| {
+                let mut version = v.as_str();
+                match pkg.version_filter_ok(version) {
+                    Ok(true) => {}
+                    Ok(false) => return None,
+                    Err(e) => {
+                        warn!("[{}] aqua version filter error: {e}", backend.ba());
+                    }
+                }
+                let pkg = pkg.clone().with_version(version);
+                if let Some(prefix) = &pkg.version_prefix {
+                    if let Some(_v) = version.strip_prefix(prefix) {
+                        version = _v;
+                    } else {
+                        return None;
+                    }
+                }
+                version = version.strip_prefix('v').unwrap_or(version);
+                Some((version.to_string(), pkg))
+            })
+            .rev()
+            .collect())
+    } else {
+        warn!("no aqua registry found for {}", backend.ba());
+        Ok(vec![])
+    }
+}
+
 #[async_trait]
 impl Backend for AquaBackend {
     fn get_type(&self) -> BackendType {
@@ -57,40 +91,12 @@ impl Backend for AquaBackend {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let pkg = AQUA_REGISTRY.package(&self.id).await?;
-        if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
-            let versions = get_versions(&pkg).await?;
-            Ok(versions
-                .into_iter()
-                .filter_map(|v| {
-                    let mut v = v.as_str();
-                    match pkg.version_filter_ok(v) {
-                        Ok(true) => {}
-                        Ok(false) => return None,
-                        Err(e) => {
-                            warn!("[{}] aqua version filter error: {e}", self.ba);
-                        }
-                    }
-                    let pkg = pkg.clone().with_version(v);
-                    if pkg.no_asset || pkg.error_message.is_some() {
-                        return None;
-                    }
-                    if let Some(prefix) = &pkg.version_prefix {
-                        if let Some(_v) = v.strip_prefix(prefix) {
-                            v = _v
-                        } else {
-                            return None;
-                        }
-                    }
-                    v = v.strip_prefix('v').unwrap_or(v);
-                    Some(v.to_string())
-                })
-                .rev()
-                .collect())
-        } else {
-            warn!("no aqua registry found for {}", self.ba);
-            Ok(vec![])
-        }
+        Ok(packages_map(self)
+            .await?
+            .into_iter()
+            .filter(|(_, pkg)| !pkg.no_asset && pkg.error_message.is_none())
+            .map(|(v, _)| v)
+            .collect())
     }
 
     async fn install_version_(
@@ -98,8 +104,20 @@ impl Backend for AquaBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let mut v = format!("v{}", tv.version);
-        let pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
+        let mut v = tv.version.clone();
+        let pkg = if let Some(pkg) = packages_map(self)
+            .await?
+            .into_iter()
+            .find(|(ver, _)| ver == &v)
+            .map(|(_, pkg)| pkg)
+        {
+            pkg
+        } else {
+            if !v.starts_with('v') {
+                v = format!("v{v}");
+            }
+            AQUA_REGISTRY.package_with_version(&self.id, &v).await?
+        };
         if pkg.no_asset {
             bail!("no asset released");
         }
