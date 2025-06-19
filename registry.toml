@@ -294,6 +294,8 @@ calicoctl.backends = [
     "aqua:projectcalico/calico/calicoctl",
     "asdf:TheCubicleJockey/asdf-calicoctl"
 ]
+carapace.backends = ["aqua:carapace-sh/carapace-bin"]
+carapace.test = ["carapace --version", "carapace-bin {{version}}"]
 cargo-binstall.backends = [
     "aqua:cargo-bins/cargo-binstall",
     'ubi:cargo-bins/cargo-binstall[tag_regex=^\\d\\.]',
