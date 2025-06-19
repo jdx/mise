@@ -1,5 +1,21 @@
 Describe 'windows runtime symlink' {
 
+    BeforeAll {
+        $cfg = ".\mise.local.toml"
+        $tool = "yq"
+
+        $content = @"
+[tools]
+$tool = "latest"
+"@
+        $content | Out-File $cfg
+        Get-Content $cfg
+    }
+
+    AfterAll {
+        Remove-Item $cfg -ErrorAction Ignore
+    }
+
     It 'version is correct, not latest' {
         mise install yq@4.45.4
 
@@ -16,10 +32,8 @@ Describe 'windows runtime symlink' {
 
         # https://github.com/jdx/mise/discussions/5254
 
-        
-        mise ls yq --json | jq '.[] | select(.source ) | .version' | Should -Be '"4.45.4"'
-
-        mise ls yq --json | jq '.[] | select(.version == "latest" ) | .version' | Should -Be $null
-
+        $output = mise ls --json yq
+        $output | jq '.[] | select(.source ) | .version' | Should -Be '"4.45.4"'
+        $output | jq '.[] | select(.version == "latest" ) | .version' | Should -Be $null
     }
 }
