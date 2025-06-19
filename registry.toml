@@ -350,6 +350,9 @@ calicoctl.backends = [
     "aqua:projectcalico/calico/calicoctl",
     "asdf:TheCubicleJockey/asdf-calicoctl"
 ]
+carapace.description = "A multi-shell completion binary"
+carapace.backends = ["aqua:carapace-sh/carapace-bin"]
+carapace.test = ["carapace --version 2>&1", "carapace-bin {{version}}"]
 cargo-binstall.description = "Binary installation for rust projects"
 cargo-binstall.backends = [
     "aqua:cargo-bins/cargo-binstall",
