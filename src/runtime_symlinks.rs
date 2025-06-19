@@ -103,11 +103,9 @@ pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
     Ok(())
 }
 
-// for unix/linux ./1.1.1
-// for Windows  .\1.1.1
 pub fn is_runtime_symlink(path: &Path) -> bool {
     if let Ok(Some(link)) = file::resolve_symlink(path) {
-        return link.starts_with(format!(".{}", std::path::MAIN_SEPARATOR_STR));
+        return link.starts_with("./");
     }
     false
 }
