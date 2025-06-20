@@ -24,6 +24,7 @@ use eyre::{ContextCompat, Result, bail};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::Regex;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::{collections::HashSet, sync::Arc};
 
@@ -31,41 +32,8 @@ use std::{collections::HashSet, sync::Arc};
 pub struct AquaBackend {
     ba: Arc<BackendArg>,
     id: String,
+    version_tags_cache: CacheManager<BTreeMap<String, String>>,
     bin_path_caches: DashMap<String, CacheManager<Vec<PathBuf>>>,
-}
-
-async fn packages_map(backend: &AquaBackend) -> Result<Vec<(String, AquaPackage)>> {
-    let pkg = AQUA_REGISTRY.package(&backend.id).await?;
-    if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
-        let versions = get_versions(&pkg).await?;
-        Ok(versions
-            .into_iter()
-            .filter_map(|v| {
-                let mut version = v.as_str();
-                match pkg.version_filter_ok(version) {
-                    Ok(true) => {}
-                    Ok(false) => return None,
-                    Err(e) => {
-                        warn!("[{}] aqua version filter error: {e}", backend.ba());
-                    }
-                }
-                let pkg = pkg.clone().with_version(version);
-                if let Some(prefix) = &pkg.version_prefix {
-                    if let Some(_v) = version.strip_prefix(prefix) {
-                        version = _v;
-                    } else {
-                        return None;
-                    }
-                }
-                version = version.strip_prefix('v').unwrap_or(version);
-                Some((version.to_string(), pkg))
-            })
-            .rev()
-            .collect())
-    } else {
-        warn!("no aqua registry found for {}", backend.ba());
-        Ok(vec![])
-    }
 }
 
 #[async_trait]
@@ -91,12 +59,19 @@ impl Backend for AquaBackend {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        Ok(packages_map(self)
-            .await?
-            .into_iter()
-            .filter(|(_, pkg)| !pkg.no_asset && pkg.error_message.is_none())
-            .map(|(v, _)| v)
-            .collect())
+        let version_tags_map = self.get_version_tags_map().await?;
+        debug!("{} versions: {:?}", self.id, version_tags_map);
+        let mut versions = Vec::new();
+        for (v, tag) in version_tags_map.iter() {
+            let pkg = AQUA_REGISTRY
+                .package_with_version(&self.id, tag)
+                .await
+                .unwrap_or_default();
+            if !pkg.no_asset && pkg.error_message.is_none() {
+                versions.push(v.clone());
+            }
+        }
+        Ok(versions)
     }
 
     async fn install_version_(
@@ -104,17 +79,13 @@ impl Backend for AquaBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let mut v = format!("v{}", tv.version);
-        let pkg = if let Some(pkg) = packages_map(self)
+        let mut v = self
+            .get_version_tags_map()
             .await?
-            .into_iter()
-            .find(|(ver, _)| ver == &tv.version)
-            .map(|(_, pkg)| pkg)
-        {
-            pkg
-        } else {
-            AQUA_REGISTRY.package_with_version(&self.id, &v).await?
-        };
+            .get(&tv.version)
+            .cloned()
+            .unwrap_or_else(|| format!("v{}", tv.version));
+        let pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
         if pkg.no_asset {
             bail!("no asset released");
         }
@@ -225,11 +196,52 @@ impl AquaBackend {
                     id
                 });
         }
+        let cache_path = ba.cache_path.clone();
         Self {
             id: id.to_string(),
             ba: Arc::new(ba),
+            version_tags_cache: CacheManagerBuilder::new(cache_path.join("version_tags.msgpack.z"))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+                .build(),
             bin_path_caches: Default::default(),
         }
+    }
+
+    async fn get_version_tags_map(&self) -> Result<&BTreeMap<String, String>> {
+        Ok(self
+            .version_tags_cache
+            .get_or_try_init_async(|| async {
+                let pkg = AQUA_REGISTRY.package(&self.id).await?;
+                let mut map = BTreeMap::new();
+                if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
+                    let tags = get_tags(&pkg).await?;
+                    for tag in tags.into_iter().rev() {
+                        let mut version = tag.as_str();
+                        match pkg.version_filter_ok(version) {
+                            Ok(true) => {}
+                            Ok(false) => continue,
+                            Err(e) => {
+                                warn!("[{}] aqua version filter error: {e}", self.ba());
+                                continue;
+                            }
+                        }
+                        let pkg = pkg.clone().with_version(version);
+                        if let Some(prefix) = &pkg.version_prefix {
+                            if let Some(_v) = version.strip_prefix(prefix) {
+                                version = _v;
+                            } else {
+                                continue;
+                            }
+                        }
+                        version = version.strip_prefix('v').unwrap_or(version);
+                        map.insert(version.to_string(), tag);
+                    }
+                } else {
+                    warn!("no aqua registry found for {}", self.ba());
+                }
+                Ok(map)
+            })
+            .await?)
     }
 
     async fn fetch_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
@@ -706,7 +718,7 @@ impl AquaBackend {
     }
 }
 
-async fn get_versions(pkg: &AquaPackage) -> Result<Vec<String>> {
+async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
     if let Some("github_tag") = pkg.version_source.as_deref() {
         let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
         return Ok(versions);
