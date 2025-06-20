@@ -68,12 +68,24 @@ where
         env::set_var(age_env_key, age.trim());
     }
     let output = if Settings::get().sops.rops {
-        input
+        match input
             .parse::<RopsFile<EncryptedFile<AES256GCM, SHA512>, F>>()
-            .wrap_err("failed to parse sops file")?
-            .decrypt::<F>()
-            .wrap_err("failed to decrypt sops file")?
-            .to_string()
+            .wrap_err("failed to parse sops file")
+            .and_then(|file| file.decrypt::<F>().wrap_err("failed to decrypt sops file"))
+        {
+            Ok(decrypted) => decrypted.to_string(),
+            Err(e) => {
+                if Settings::get().sops.strict {
+                    return Err(e);
+                } else {
+                    warn!(
+                        "sops decryption failed but continuing in non-strict mode: {}",
+                        e
+                    );
+                    return Ok(input.to_string()); // Return original content without decryption
+                }
+            }
+        }
     } else {
         let mut ts = config
             .get_tool_request_set()
@@ -89,7 +101,7 @@ where
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or("sops".into());
         // TODO: this obviously won't work on windows
-        cmd!(
+        match cmd!(
             sops,
             "--input-type",
             format,
@@ -99,7 +111,21 @@ where
             "/dev/stdin"
         )
         .stdin_bytes(input.as_bytes())
-        .read()?
+        .read()
+        {
+            Ok(output) => output,
+            Err(e) => {
+                if Settings::get().sops.strict {
+                    return Err(e.into());
+                } else {
+                    warn!(
+                        "sops decryption failed but continuing in non-strict mode: {}",
+                        e
+                    );
+                    input.to_string() // Return original content without decryption
+                }
+            }
+        }
     };
 
     if let Some(age) = prev_age {
