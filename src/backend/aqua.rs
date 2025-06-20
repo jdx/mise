@@ -60,7 +60,6 @@ impl Backend for AquaBackend {
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let version_tags_map = self.get_version_tags_map().await?;
-        debug!("{} versions: {:?}", self.id, version_tags_map);
         let mut versions = Vec::new();
         for (v, tag) in version_tags_map.iter() {
             let pkg = AQUA_REGISTRY
