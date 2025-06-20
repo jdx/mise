@@ -10,8 +10,6 @@ on:
       - registry.toml
       - .github/workflows/registry.yml
       - src/cli/test_tool.rs
-      # TODO: remove this before merging
-      - src/cli/backends/**
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.pull_request.number || github.event.pull_request.number || 'push' }}
