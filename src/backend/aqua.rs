@@ -78,21 +78,26 @@ impl Backend for AquaBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let mut v = self
-            .get_version_tags_map()
-            .await?
-            .get(&tv.version)
-            .cloned()
-            .unwrap_or_else(|| format!("v{}", tv.version));
-        let pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
+        let mut v;
+        let pkg;
+        match self.get_version_tags_map().await?.get(&tv.version).cloned() {
+            Some(tag) => {
+                v = tag;
+                pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
+            }
+            None => {
+                v = format!("v{}", tv.version);
+                pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
+                if let Some(prefix) = &pkg.version_prefix {
+                    v = format!("{prefix}{v}");
+                }
+            }
+        }
         if pkg.no_asset {
             bail!("no asset released");
         }
         if pkg.error_message.is_some() {
             bail!(pkg.error_message.unwrap());
-        }
-        if let Some(prefix) = &pkg.version_prefix {
-            v = format!("{prefix}{v}");
         }
         validate(&pkg)?;
         let url = match self.fetch_url(&pkg, &v).await {
