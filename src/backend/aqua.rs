@@ -208,7 +208,7 @@ impl AquaBackend {
     }
 
     async fn get_version_tags_map(&self) -> Result<&BTreeMap<String, String>> {
-        Ok(self
+        self
             .version_tags_cache
             .get_or_try_init_async(|| async {
                 let pkg = AQUA_REGISTRY.package(&self.id).await?;
@@ -241,7 +241,7 @@ impl AquaBackend {
                 }
                 Ok(map)
             })
-            .await?)
+            .await
     }
 
     async fn fetch_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
