@@ -1315,7 +1315,13 @@ loki-logcli.backends = [
     "aqua:grafana/loki/logcli",
     "asdf:comdotlinux/asdf-loki-logcli"
 ]
-ls-lint.backends = ["aqua:loeffel-io/ls-lint", "asdf:Ameausoone/asdf-ls-lint"]
+ls-lint.backends = [
+    "aqua:loeffel-io/ls-lint",
+    "ubi:loeffel-io/ls-lint",
+    "npm:@ls-lint/ls-lint", # uses prebuilt binaries
+    "asdf:Ameausoone/asdf-ls-lint"
+]
+ls-lint.test = ["ls-lint --version", "ls-lint v{{version}}"]
 lsd.backends = ["aqua:lsd-rs/lsd", "asdf:mise-plugins/asdf-lsd"]
 lua.backends = ["asdf:mise-plugins/mise-lua"]
 lua-language-server.backends = [
