@@ -529,7 +529,8 @@ deck.backends = ["aqua:Kong/deck", "asdf:nutellinoit/asdf-deck"]
 delta.backends = [
     "aqua:dandavison/delta",
     "ubi:dandavison/delta",
-    "asdf:andweeb/asdf-delta"
+    "asdf:andweeb/asdf-delta",
+    "cargo:git-delta"
 ]
 delta.test = ["delta --version", "delta {{version}}"]
 deno.backends = ["core:deno"]
