@@ -218,7 +218,11 @@ bbr-s3-config-validator.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
 benthos.backends = ["aqua:benthosdev/benthos", "asdf:benthosdev/benthos-asdf"]
 bfs.backends = ["asdf:mise-plugins/mise-bfs"]
 binnacle.backends = ["aqua:Traackr/binnacle", "asdf:Traackr/asdf-binnacle"]
-biome.backends = ["aqua:biomejs/biome", "ubi:biomejs/biome"]
+biome.backends = [
+    "aqua:biomejs/biome",
+    "ubi:biomejs/biome",
+    "npm:@biomejs/biome"
+]
 # biome.test = ["biome --version", "Version: {{version}}"] # 2.0.0 cannot be installed
 bitwarden.backends = ["aqua:bitwarden/clients", "asdf:vixus0/asdf-bitwarden"]
 bitwarden.test = [
