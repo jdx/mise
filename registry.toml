@@ -1063,8 +1063,9 @@ jmespath.backends = ["aqua:jmespath/jp", "asdf:skyzyx/asdf-jmespath"]
 jmespath.test = ["jp --version", "jp version {{version}}"]
 jmeter.backends = ["asdf:mise-plugins/mise-jmeter"]
 jnv.backends = ["aqua:ynqa/jnv", "asdf:raimon49/asdf-jnv"]
-jq.backends = ["aqua:jqlang/jq", "asdf:mise-plugins/asdf-jq"]
+jq.backends = ["aqua:jqlang/jq", "ubi:jqlang/jq", "asdf:mise-plugins/asdf-jq"]
 jq.description = "Command-line JSON processor"
+jq.test = ["jq --version", "jq-{{version}}"]
 jqp.backends = [
     "aqua:noahgorstein/jqp",
     "asdf:https://gitlab.com/wt0f/asdf-jqp"
