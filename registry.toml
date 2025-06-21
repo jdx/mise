@@ -2013,7 +2013,13 @@ typos.backends = [
     "cargo:typos-cli"
 ]
 typos.test = ["typos --version", "typos-cli {{version}}"]
-typst.backends = ["aqua:typst/typst", "asdf:stephane-klein/asdf-typst"]
+typst.backends = [
+    "aqua:typst/typst",
+    "ubi:typst/typst",
+    "asdf:stephane-klein/asdf-typst",
+    "cargo:typst-cli"
+]
+typst.test = ["typst --version", "typst {{version}}"]
 typstyle.backends = [
     "aqua:Enter-tainer/typstyle",
     "ubi:Enter-tainer/typstyle",
