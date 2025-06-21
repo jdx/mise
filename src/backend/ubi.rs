@@ -121,6 +121,10 @@ impl Backend for UbiBackend {
                 ForgeType::GitLab => gitlab::API_URL,
             },
         };
+        let bin_path = opts
+            .get("bin_path")
+            .cloned()
+            .unwrap_or_else(|| "bin".to_string());
         let extract_all = opts.get("extract_all").is_some_and(|v| v == "true");
         let bin_dir = tv.install_path();
 
@@ -174,6 +178,10 @@ impl Backend for UbiBackend {
         {
             bin_file
         } else {
+            let mut bin_dir = bin_dir.to_path_buf();
+            if extract_all && bin_dir.join(&bin_path).exists() {
+                bin_dir = bin_dir.join(&bin_path);
+            }
             file::ls(&bin_dir)?
                 .into_iter()
                 .find(|f| {
