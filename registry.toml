@@ -1332,7 +1332,11 @@ luajit.backends = ["asdf:mise-plugins/mise-luaJIT"]
 luau.backends = ["aqua:luau-lang/luau"]
 luau.description = "A fast, small, safe, gradually typed embeddable scripting language derived from Lua"
 luau.test = ["echo 'print(_VERSION)' | luau", "Luau"]
-lychee.backends = ["aqua:lycheeverse/lychee"]
+lychee.backends = [
+    "aqua:lycheeverse/lychee",
+    "ubi:lycheeverse/lychee",
+    "cargo:lychee"
+]
 lychee.test = ["lychee --version", "lychee {{version}}"]
 maestro.backends = [
     "ubi:mobile-dev-inc/maestro",
