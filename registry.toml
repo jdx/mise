@@ -663,10 +663,11 @@ eza.backends = [
     {full = "aqua:eza-community/eza", platforms = [
         "linux"
     ]},
-    # "ubi:cargo-bins/cargo-quickinstall[exe=eza,tag_regex=^eza-]", # does not fetch tags right, needs to load everything
+    "ubi:eza-community/eza",
     "asdf:mise-plugins/mise-eza",
     "cargo:eza"
 ]
+eza.test = ["eza --version", "v{{version}}"]
 fastfetch.backends = ["aqua:fastfetch-cli/fastfetch"]
 fastfetch.test = [
     "fastfetch --version | awk '{print $1, $2}'",
