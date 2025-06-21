@@ -1,11 +1,38 @@
 # Changelog
 
+## [2025.6.6](https://github.com/jdx/mise/compare/v2025.6.5..v2025.6.6) - 2025-06-18
+
+### 🐛 Bug Fixes
+
+- **(registry)** talosctl use aqua by [@mangkoran](https://github.com/mangkoran) in [#5348](https://github.com/jdx/mise/pull/5348)
+
+### 📚 Documentation
+
+- Fix typo in README.md - Install mise by [@cytsai1008](https://github.com/cytsai1008) in [#5366](https://github.com/jdx/mise/pull/5366)
+
+### Chore
+
+- update expr-lang crate to v0.3.2 by [@risu729](https://github.com/risu729) in [#5364](https://github.com/jdx/mise/pull/5364)
+
+### New Contributors
+
+- @cytsai1008 made their first contribution in [#5366](https://github.com/jdx/mise/pull/5366)
+
 ## [2025.6.5](https://github.com/jdx/mise/compare/v2025.6.4..v2025.6.5) - 2025-06-16
+
+### 🚀 Features
+
+- **(registry)** add diffoci by [@mangkoran](https://github.com/mangkoran) in [#5350](https://github.com/jdx/mise/pull/5350)
 
 ### 🐛 Bug Fixes
 
 - **(registry)** use mintoolkit/mint for docker-slim by [@risu729](https://github.com/risu729) in [#5351](https://github.com/jdx/mise/pull/5351)
 - **(schema)** add missing tool options to schema by [@risu729](https://github.com/risu729) in [#5356](https://github.com/jdx/mise/pull/5356)
+- only show deprecation if not using 'tools-version' by [@timfallmk](https://github.com/timfallmk) in [#5290](https://github.com/jdx/mise/pull/5290)
+
+### New Contributors
+
+- @timfallmk made their first contribution in [#5290](https://github.com/jdx/mise/pull/5290)
 
 ## [2025.6.4](https://github.com/jdx/mise/compare/v2025.6.3..v2025.6.4) - 2025-06-13
 
