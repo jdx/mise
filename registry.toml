@@ -218,7 +218,7 @@ benthos.backends = ["aqua:benthosdev/benthos", "asdf:benthosdev/benthos-asdf"]
 bfs.backends = ["asdf:mise-plugins/mise-bfs"]
 binnacle.backends = ["aqua:Traackr/binnacle", "asdf:Traackr/asdf-binnacle"]
 biome.backends = ["aqua:biomejs/biome", "ubi:biomejs/biome"]
-# biome.test = ["biome --version", "Version: {{version}}"] # 2.0.0 cannot be installed
+biome.test = ["biome --version", "Version: {{version}}"]
 bitwarden.backends = ["aqua:bitwarden/clients", "asdf:vixus0/asdf-bitwarden"]
 bitwarden.test = [
     "bw --version",
