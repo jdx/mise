@@ -1,6 +1,16 @@
 # TOML-based Tasks
 
-Tasks can be defined in `mise.toml` files in different ways:
+Tasks can be defined in `mise.toml` files in different ways. Trivial tasks can be written into a `[tasks]` section, while more detailed tasks each get their own section.
+
+## Trivial task examples
+
+```toml [mise.toml]
+build = "cargo build"
+test = "cargo test"
+lint = "cargo clippy"
+```
+
+## Detailed task examples
 
 ```toml [mise.toml]
 [tasks.cleancache]
