@@ -2006,7 +2006,13 @@ ttyd.backends = ["aqua:tsl0922/ttyd", "asdf:ivanvc/asdf-ttyd"]
 tuist.backends = ["asdf:mise-plugins/mise-tuist"]
 tusd.backends = ["ubi:tus/tusd"]
 tusd.test = ["tusd --version | head -n1", "Version: v{{version}}"]
-typos.backends = ["aqua:crate-ci/typos", "asdf:aschiavon91/asdf-typos"]
+typos.backends = [
+    "aqua:crate-ci/typos",
+    "ubi:crate-ci/typos",
+    "asdf:aschiavon91/asdf-typos",
+    "cargo:typos-cli"
+]
+typos.test = ["typos --version", "typos-cli {{version}}"]
 typst.backends = ["aqua:typst/typst", "asdf:stephane-klein/asdf-typst"]
 typstyle.backends = [
     "aqua:Enter-tainer/typstyle",
