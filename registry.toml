@@ -1765,11 +1765,12 @@ setup-envtest.backends = ["asdf:mise-plugins/mise-setup-envtest"]
 shell2http.backends = ["aqua:msoap/shell2http", "asdf:ORCID/asdf-shell2http"]
 shellcheck.backends = [
     "ubi:koalaman/shellcheck",
-    "aqua:koalaman/shellcheck", # uses versionFilter
+    "aqua:koalaman/shellcheck", # warning: aqua version filter error: invalid version
     "asdf:luizm/asdf-shellcheck"
 ]
-shellcheck.os = ["linux", "macos"]
 shellcheck.description = "ShellCheck, a static analysis tool for shell scripts"
+shellcheck.os = ["linux", "macos"]
+shellcheck.test = ["shellcheck --version", "version: {{version}}"]
 shellspec.backends = [
     "aqua:shellspec/shellspec",
     "asdf:poikilotherm/asdf-shellspec"
