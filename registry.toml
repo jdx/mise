@@ -1546,7 +1546,8 @@ pivnet.backends = [
 pivnet.test = ["pivnet version", ""] # version returns "dev" on windows
 pixi.backends = ["ubi:prefix-dev/pixi"]
 pixi.test = ["pixi -V", "pixi {{version}}"]
-pkl.backends = ["aqua:apple/pkl", "asdf:mise-plugins/asdf-pkl"]
+pkl.backends = ["aqua:apple/pkl", "ubi:apple/pkl", "asdf:mise-plugins/asdf-pkl"]
+pkl.test = ["pkl --version", "Pkl {{version}}"]
 please.backends = [
     "aqua:thought-machine/please",
     "asdf:asdf-community/asdf-please"
