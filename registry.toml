@@ -664,7 +664,7 @@ eza.backends = [
     {full = "aqua:eza-community/eza", platforms = [
         "linux"
     ]},
-    "ubi:eza-community/eza",
+    # "ubi:eza-community/eza", # cannot install on macos
     "asdf:mise-plugins/mise-eza",
     "cargo:eza"
 ]
