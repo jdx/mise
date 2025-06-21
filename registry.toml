@@ -1691,7 +1691,11 @@ ripgrep.backends = [
 ]
 ripgrep.test = ["rg --version", "ripgrep {{version}}"]
 ripgrep.description = "ripgrep recursively searches directories for a regex pattern while respecting your gitignore"
-ripgrep-all.backends = ["aqua:phiresky/ripgrep-all"]
+ripgrep-all.backends = [
+    "aqua:phiresky/ripgrep-all",
+    "ubi:phiresky/ripgrep-all[exe=rga]",
+    "cargo:ripgrep_all"
+]
 ripgrep-all.test = ["rga --version", "ripgrep-all {{version}}"]
 ripsecrets.backends = [
     "aqua:sirwart/ripsecrets",
