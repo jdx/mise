@@ -2152,7 +2152,8 @@ youtube-dl.backends = ["asdf:mise-plugins/mise-youtube-dl"]
 yq.backends = [
     "aqua:mikefarah/yq",
     "ubi:mikefarah/yq",
-    "asdf:sudermanjr/asdf-yq"
+    "asdf:sudermanjr/asdf-yq",
+    "go:github.com/mikefarah/yq/v4"
 ]
 yq.test = ["yq --version", "version v{{version}}"]
 yt-dlp.backends = ["ubi:yt-dlp/yt-dlp", "asdf:duhow/asdf-yt-dlp"]
