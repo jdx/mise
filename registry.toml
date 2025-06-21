@@ -938,6 +938,7 @@ hadolint.backends = [
     "ubi:hadolint/hadolint",
     "asdf:devlincashman/asdf-hadolint"
 ]
+hadolint.test = ["hadolint --version", "Haskell Dockerfile Linter {{version}}"]
 hamler.backends = ["asdf:mise-plugins/mise-hamler"]
 harper-cli.backends = ["aqua:Automattic/harper/harper-cli"]
 # harper-cli intentionally prints different version. See https://github.com/Automattic/harper/issues/557#issuecomment-2635037944
