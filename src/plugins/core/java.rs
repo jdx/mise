@@ -127,21 +127,17 @@ impl JavaPlugin {
     ) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         pr.set_message(format!("extract {filename}"));
-        if m.file_type
-            .as_ref()
-            .is_some_and(|file_type| file_type == "zip")
-        {
-            file::unzip(tarball_path, &tv.download_path())?;
-        } else {
-            file::untar(
+        match m.file_type.as_deref() {
+            Some("zip") => file::unzip(tarball_path, &tv.download_path())?,
+            _ => file::untar(
                 tarball_path,
                 &tv.download_path(),
                 &TarOptions {
-                    format: TarFormat::TarGz,
+                    format: TarFormat::Auto,
                     pr: Some(pr),
                     ..Default::default()
                 },
-            )?;
+            )?,
         }
         self.move_to_install_path(tv, m)
     }
@@ -520,7 +516,7 @@ static JAVA_FEATURES: Lazy<HashSet<String>> = Lazy::new(|| {
 });
 #[cfg(unix)]
 static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
-    Lazy::new(|| HashSet::from(["tar.gz"].map(|s| s.to_string())));
+    Lazy::new(|| HashSet::from(["tar.gz", "tar.xz"].map(|s| s.to_string())));
 #[cfg(windows)]
 static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
     Lazy::new(|| HashSet::from(["zip"].map(|s| s.to_string())));
