@@ -1290,7 +1290,7 @@ lefthook.backends = [
     "asdf:jtzero/asdf-lefthook",
     "go:github.com/evilmartians/lefthook"
 ]
-lefthook.test = ["lefthook --version", "{{version}}"]
+lefthook.test = ["lefthook version", "{{version}}"]
 leiningen.backends = ["asdf:mise-plugins/mise-lein"]
 levant.backends = ["aqua:hashicorp/levant", "asdf:mise-plugins/mise-hashicorp"]
 lfe.backends = ["asdf:mise-plugins/mise-lfe"]
