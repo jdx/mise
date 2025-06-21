@@ -675,7 +675,8 @@ fastfetch.test = [
 fd.backends = [
     "aqua:sharkdp/fd",
     "ubi:sharkdp/fd",
-    "asdf:https://gitlab.com/wt0f/asdf-fd"
+    "asdf:https://gitlab.com/wt0f/asdf-fd",
+    "cargo:fd-find"
 ]
 fd.test = ["fd --version", "fd {{version}}"]
 ffmpeg.backends = ["asdf:mise-plugins/mise-ffmpeg"]
