@@ -1747,7 +1747,7 @@ scie-pants.backends = [
     "ubi:pantsbuild/scie-pants",
     "asdf:robzr/asdf-scie-pants"
 ]
-sd.backends = ["aqua:chmln/sd"]
+sd.backends = ["aqua:chmln/sd", "ubi:chmln/sd", "cargo:sd"]
 sd.test = ["sd --version", "sd {{version}}"]
 seed7.backends = ["asdf:mise-plugins/mise-seed7"]
 semgrep.backends = ["asdf:mise-plugins/mise-semgrep"]
