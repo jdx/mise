@@ -2050,7 +2050,13 @@ usage.backends = ["ubi:jdx/usage", "asdf:jdx/mise-usage", "cargo:usage-cli"]
 usage.os = ["linux", "macos"]
 usage.test = ["usage --version", "usage-cli {{version}}"]
 usql.backends = ["aqua:xo/usql", "asdf:itspngu/asdf-usql"]
-uv.backends = ["aqua:astral-sh/uv", "asdf:asdf-community/asdf-uv"]
+uv.backends = [
+    "aqua:astral-sh/uv",
+    "ubi:astral-sh/uv",
+    "asdf:asdf-community/asdf-uv",
+    "pipx:uv"
+]
+uv.test = ["uv --version", "uv {{version}}"]
 v.backends = ["asdf:mise-plugins/mise-v"]
 vacuum.backends = ["aqua:daveshanley/vacuum"]
 vacuum.test = ["vacuum version", "{{version}}"]
