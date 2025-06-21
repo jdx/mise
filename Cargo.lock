@@ -7194,10 +7194,12 @@ dependencies = [
  "crc32fast",
  "crossbeam-utils",
  "displaydoc",
+ "flate2",
  "indexmap 2.9.0",
  "memchr",
  "thiserror 2.0.12",
  "time",
+ "zopfli",
 ]
 
 [[package]]
