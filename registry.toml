@@ -2058,7 +2058,13 @@ wasmtime.backends = [
     "aqua:bytecodealliance/wasmtime",
     "asdf:tachyonicbytes/asdf-wasmtime"
 ]
-watchexec.backends = ["ubi:watchexec/watchexec", "asdf:nyrst/asdf-watchexec"]
+watchexec.backends = [
+    "aqua:watchexec/watchexec",
+    "ubi:watchexec/watchexec",
+    "asdf:nyrst/asdf-watchexec",
+    "cargo:watchexec-cli"
+]
+watchexec.test = ["watchexec --version", "watchexec {{version}}"]
 waypoint.backends = [
     "aqua:hashicorp/waypoint",
     "asdf:mise-plugins/mise-hashicorp"
