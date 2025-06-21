@@ -1774,8 +1774,14 @@ shellspec.backends = [
     "aqua:shellspec/shellspec",
     "asdf:poikilotherm/asdf-shellspec"
 ]
-shfmt.backends = ["aqua:mvdan/sh", "asdf:luizm/asdf-shfmt"]
+shfmt.backends = [
+    "aqua:mvdan/sh",
+    "ubi:mvdan/sh",
+    "asdf:luizm/asdf-shfmt",
+    "go:mvdan.cc/sh/v3/cmd/shfmt"
+]
 shfmt.os = ["linux", "macos"]
+shfmt.test = ["shfmt --version", "v{{version}}"]
 shorebird.backends = ["asdf:mise-plugins/mise-shorebird"]
 signadot.backends = ["ubi:signadot/cli[exe=signadot]"]
 signadot.test = ["signadot --version", "signadot version v{{version}}"]
