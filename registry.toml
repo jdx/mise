@@ -1575,9 +1575,12 @@ powershell-core.backends = [
 ]
 pre-commit.backends = [
     "aqua:pre-commit/pre-commit",
-    "asdf:jonathanmorley/asdf-pre-commit"
+    "ubi:pre-commit/pre-commit",
+    "asdf:jonathanmorley/asdf-pre-commit",
+    "pipx:pre-commit"
 ]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
+pre-commit.test = ["pre-commit --version", "pre-commit {{version}}"]
 process-compose.backends = ["ubi:F1bonacc1/process-compose"]
 process-compose.description = "Process Compose is a simple and flexible scheduler and orchestrator to manage non-containerized applications."
 process-compose.test = ["process-compose version --short", "{{version}}"]
