@@ -1355,7 +1355,7 @@ markdownlint-cli2.backends = [
     "asdf:paulo-ferraz-oliveira/asdf-markdownlint-cli2"
 ]
 markdownlint-cli2.test = [
-    "markdownlint --version",
+    "markdownlint-cli2 --version",
     "markdownlint-cli2 v{{version}}"
 ]
 marksman.backends = ["aqua:artempyanykh/marksman"]
