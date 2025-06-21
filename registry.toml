@@ -1686,7 +1686,8 @@ ripgrep.aliases = ["rg"]
 ripgrep.backends = [
     "aqua:BurntSushi/ripgrep",
     "ubi:BurntSushi/ripgrep[exe=rg]",
-    "asdf:https://gitlab.com/wt0f/asdf-ripgrep"
+    "asdf:https://gitlab.com/wt0f/asdf-ripgrep",
+    "cargo:ripgrep"
 ]
 ripgrep.test = ["rg --version", "ripgrep {{version}}"]
 ripgrep.description = "ripgrep recursively searches directories for a regex pattern while respecting your gitignore"
