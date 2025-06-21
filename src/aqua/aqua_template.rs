@@ -240,6 +240,11 @@ mod tests {
         test_parse_trim_prefix2: (r#"trimPrefix "v" "1.0.0""#, "1.0.0", hashmap!{}),
         test_parse_trim_suffix: (r#"trimSuffix "-v1.0.0" "foo-v1.0.0""#, "foo", hashmap!{}),
         test_parse_pipe: (r#"trimPrefix "foo-" "foo-v1.0.0" | trimV"#, "1.0.0", hashmap!{}),
+        test_parse_multiple_pipes: (
+            r#"trimPrefix "foo-" "foo-v1.0.0-beta | trimSuffix "-beta" | trimV"#,
+            "1.0.0",
+            hashmap!{},
+        ),
         test_parse_replace: (r#"replace "foo" "bar" "foo-bar""#, "bar-bar", hashmap!{}),
     );
 
