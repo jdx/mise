@@ -2132,7 +2132,13 @@ xh.backends = [
 ]
 xh.test = ["xh -V", "xh {{version}}"]
 yadm.backends = ["asdf:mise-plugins/mise-yadm"]
-yamlfmt.backends = ["aqua:google/yamlfmt", "asdf:mise-plugins/asdf-yamlfmt"]
+yamlfmt.backends = [
+    "aqua:google/yamlfmt",
+    "ubi:google/yamlfmt",
+    "asdf:mise-plugins/asdf-yamlfmt",
+    "go:github.com/google/yamlfmt/cmd/yamlfmt"
+]
+yamlfmt.test = ["yamlfmt --version", "yamlfmt {{version}}"]
 yamllint.backends = ["pipx:yamllint", "asdf:ericcornelissen/asdf-yamllint"]
 yamllint.test = ["yamllint --version", "yamllint {{version}}"]
 yamlscript.backends = [
