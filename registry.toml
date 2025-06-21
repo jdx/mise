@@ -28,7 +28,8 @@ action-validator.test = [
 actionlint.backends = [
     "aqua:rhysd/actionlint",
     "ubi:rhysd/actionlint",
-    "asdf:crazy-matt/asdf-actionlint"
+    "asdf:crazy-matt/asdf-actionlint",
+    "go:github.com/rhysd/actionlint/cmd/actionlint"
 ]
 actionlint.test = ["actionlint --version", "{{version}}"]
 adr-tools.backends = [
