@@ -1552,7 +1552,13 @@ please.backends = [
     "asdf:asdf-community/asdf-please"
 ]
 pluto.backends = ["ubi:FairwindsOps/pluto", "asdf:FairwindsOps/asdf-pluto"]
-pnpm.backends = ["aqua:pnpm/pnpm", "asdf:jonathanmorley/asdf-pnpm"]
+pnpm.backends = [
+    "aqua:pnpm/pnpm",
+    "ubi:pnpm/pnpm",
+    "npm:pnpm", # uses prebuilt binaries
+    "asdf:jonathanmorley/asdf-pnpm"
+]
+pnpm.test = ["pnpm --version", "{{version}}"]
 podman.backends = ["ubi:containers/podman", "asdf:tvon/asdf-podman"]
 poetry.backends = ["asdf:mise-plugins/mise-poetry"]
 poetry.depends = ["python"]
