@@ -48,7 +48,16 @@ impl Shell for Nushell {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.to_string_lossy().replace('\\', r#"\\"#);
+        let exe = {
+            #[cfg(windows)]
+            {
+                crate::path::to_unix_path_list(&exe.to_string_lossy()).replace('\\', r#"\\"#)
+            }
+            #[cfg(not(windows))]
+            {
+                exe.to_string_lossy().replace('\\', r#"\\"#)
+            }
+        };
 
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude_inline(&opts.prelude));
@@ -123,6 +132,15 @@ impl Shell for Nushell {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
+        #[cfg(windows)]
+        let v_cow = if k == "PATH" {
+            std::borrow::Cow::Owned(crate::path::to_unix_path_list(v))
+        } else {
+            std::borrow::Cow::Borrowed(v)
+        };
+        #[cfg(windows)]
+        let v: &str = v_cow.as_ref();
+
         let k = Nushell::escape_csv_value(k);
         let v = Nushell::escape_csv_value(v);
 
