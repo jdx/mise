@@ -16,6 +16,11 @@ impl Shell for Zsh {
         let exe = opts.exe;
         let flags = opts.flags;
         let exe = exe.to_string_lossy();
+
+        #[cfg(windows)]
+        let exe: std::borrow::Cow<str> =
+            std::borrow::Cow::Owned(crate::path::to_unix_path_list(&exe));
+
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude(&opts.prelude));
 
