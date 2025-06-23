@@ -1724,6 +1724,8 @@ scie-pants.backends = [
     "ubi:pantsbuild/scie-pants",
     "asdf:robzr/asdf-scie-pants"
 ]
+scorecard.backends = ["aqua:ossf/scorecard"]
+scorecard.test = ["scorecard version", "v{{version}}"]
 sd.backends = ["aqua:chmln/sd"]
 sd.test = ["sd --version", "sd {{version}}"]
 seed7.backends = ["asdf:mise-plugins/mise-seed7"]
