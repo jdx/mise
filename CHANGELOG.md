@@ -1,5 +1,15 @@
 # Changelog
 
+## [2025.6.7](https://github.com/jdx/mise/compare/v2025.6.6..v2025.6.7) - 2025-06-23
+
+### 🐛 Bug Fixes
+
+- **(aqua)** fix versions order by [@risu729](https://github.com/risu729) in [#5406](https://github.com/jdx/mise/pull/5406)
+
+### Ci
+
+- use pinnable tag of taiki-e/install-action by [@risu729](https://github.com/risu729) in [#5405](https://github.com/jdx/mise/pull/5405)
+
 ## [2025.6.6](https://github.com/jdx/mise/compare/v2025.6.5..v2025.6.6) - 2025-06-23
 
 ### 🚀 Features
