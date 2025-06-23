@@ -155,10 +155,16 @@ impl ToolVersion {
             ToolRequest::Ref { ref_: r, .. } => format!("ref-{r}"),
             ToolRequest::Path { path: p, .. } => format!("path-{}", hash_to_str(p)),
             ToolRequest::System { .. } => {
-                deprecated!(
-                    "system_tool_version",
-                    "@system is deprecated, use MISE_DISABLE_TOOLS instead"
-                );
+                // Only show deprecation warning if not from .tool-versions file
+                if !matches!(
+                    self.request.source(),
+                    crate::toolset::ToolSource::ToolVersions(_)
+                ) {
+                    deprecated!(
+                        "system_tool_version",
+                        "@system is deprecated, use MISE_DISABLE_TOOLS instead"
+                    );
+                }
                 "system".to_string()
             }
         }

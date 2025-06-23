@@ -210,7 +210,7 @@ impl Doctor {
 
         if let Some(latest) = version::check_for_new_version(duration::HOURLY).await {
             version::show_latest().await;
-            self.errors.push(format!(
+            self.warnings.push(format!(
                 "new mise version {latest} available, currently on {}",
                 *version::V
             ));

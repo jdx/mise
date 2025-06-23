@@ -88,7 +88,7 @@ apollo-router.backends = [
 apollo-rover.backends = ["ubi:apollographql/rover"]
 aqua.backends = ["ubi:aquaproj/aqua"]
 aqua.test = ["aqua version", "{{version}}"]
-arduino.aliases = ["arduino"]
+arduino.aliases = ["arduino-cli"]
 arduino.backends = ["aqua:arduino/arduino-cli", "asdf:egnor/asdf-arduino-cli"]
 argc.backends = ["ubi:sigoden/argc"]
 argo.backends = ["aqua:argoproj/argo-workflows", "asdf:sudermanjr/asdf-argo"]
@@ -322,8 +322,12 @@ changie.backends = ["ubi:miniscruff/changie", "asdf:pdemagny/asdf-changie"]
 cheat.backends = ["aqua:cheat/cheat", "asdf:jmoratilla/asdf-cheat-plugin"]
 checkmake.backends = ["aqua:mrtazz/checkmake"]
 checkmake.test = ["checkmake --version", "checkmake {{version}}"]
-checkov.backends = ["ubi:bridgecrewio/checkov", "asdf:bosmak/asdf-checkov"]
-# checkov.test = ["checkov -v", "{{version}}"] missing assets on latest release
+checkov.backends = [
+    "aqua:bridgecrewio/checkov",
+    "ubi:bridgecrewio/checkov",
+    "asdf:bosmak/asdf-checkov"
+]
+checkov.test = ["checkov -v", "{{version}}"]
 chezmoi.backends = ["ubi:twpayne/chezmoi", "asdf:joke/asdf-chezmoi"]
 chezscheme.backends = ["asdf:mise-plugins/mise-chezscheme"]
 chicken.backends = ["asdf:mise-plugins/mise-chicken"]
@@ -533,6 +537,8 @@ devspace.backends = ["aqua:devspace-sh/devspace", "asdf:NeoHsu/asdf-devspace"]
 # dhall seems to not provide any releases in the latest
 # dhall.backends = ["aqua:dhall-lang/dhall-haskell", "asdf:mise-plugins/mise-dhall"]
 dhall.backends = ["asdf:mise-plugins/mise-dhall"]
+diffoci.backends = ["aqua:reproducible-containers/diffoci"]
+diffoci.test = ["diffoci --version", "diffoci version v{{version}}"]
 difftastic.backends = [
     "ubi:wilfred/difftastic[exe=difft]",
     "asdf:volf52/asdf-difftastic"
@@ -551,7 +557,11 @@ docker-compose.test = [
     "docker-cli-plugin-docker-compose --version",
     "Docker Compose version"
 ]
-docker-slim.backends = ["ubi:slimtoolkit/slim", "asdf:xataz/asdf-docker-slim"]
+docker-slim.backends = [
+    "aqua:mintoolkit/mint",
+    "ubi:mintoolkit/mint[extract_all=true]",
+    "asdf:xataz/asdf-docker-slim"
+]
 docker-slim.os = ["linux", "macos"]
 # docker-slim.test = ["slim --version", ""] # prints out weird version of mint or something
 dockle.backends = [
@@ -1843,13 +1853,14 @@ syft.backends = ["aqua:anchore/syft", "asdf:davidgp1701/asdf-syft"]
 tailpipe.backends = ["aqua:turbot/tailpipe"]
 tailpipe.test = ["tailpipe --version", "Tailpipe v{{version}}"]
 talhelper.backends = ["aqua:budimanjojo/talhelper", "asdf:bjw-s/asdf-talhelper"]
-talos.backends = [
-    "ubi:siderolabs/talos[exe=talosctl]",
-    "asdf:particledecay/asdf-talos"
-]
+talosctl.aliases = ["talos"]
 talosctl.backends = [
-    "ubi:siderolabs/talos[exe=talosctl]",
-    "asdf:bjw-s/asdf-talosctl"
+    "aqua:siderolabs/talos",
+    "ubi:siderolabs/talos[exe=talosctl]"
+]
+talosctl.test = [
+    "talosctl version --client --short | grep 'Talos'",
+    "Talos v{{version}}"
 ]
 tanka.backends = ["aqua:grafana/tanka", "asdf:trotttrotttrott/asdf-tanka"]
 tanzu.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
@@ -1972,6 +1983,15 @@ tusd.backends = ["ubi:tus/tusd"]
 tusd.test = ["tusd --version | head -n1", "Version: v{{version}}"]
 typos.backends = ["aqua:crate-ci/typos", "asdf:aschiavon91/asdf-typos"]
 typst.backends = ["aqua:typst/typst", "asdf:stephane-klein/asdf-typst"]
+typstyle.backends = [
+    "aqua:Enter-tainer/typstyle",
+    "ubi:Enter-tainer/typstyle",
+    "cargo:typstyle"
+]
+typstyle.test = [
+    "typstyle --version | grep 'Version:' | awk '{print $2}'",
+    "{{version}}"
+]
 uaa.aliases = ["uaa-cli"]
 uaa.backends = [
     "ubi:cloudfoundry/uaa-cli[exe=uaa]",
@@ -2025,8 +2045,10 @@ vlang.backends = ["vfox:mise-plugins/vfox-vlang"]
 vlt.backends = ["asdf:mise-plugins/mise-hashicorp"]
 vultr.aliases = ["vultr-cli"]
 vultr.backends = ["ubi:vultr/vultr-cli", "asdf:ikuradon/asdf-vultr-cli"]
-vultr.test = ["vultr-cli version", "Vultr-CLI v3.4.0"]
+vultr.test = ["vultr-cli version", "Vultr-CLI v{{version}}"]
 wait-for-gh-rate-limit.backends = ["ubi:jdx/wait-for-gh-rate-limit"]
+wash.backends = ["aqua:wasmCloud/wasmCloud/wash"]
+wash.test = ["wash --version | head -n1 | awk '{print $2}'", "v{{version}}"]
 wasi-sdk.backends = ["asdf:mise-plugins/mise-wasi-sdk"]
 wasm3.backends = ["asdf:mise-plugins/mise-wasm3"]
 wasm4.backends = ["ubi:aduros/wasm4[exe=w4]", "asdf:jtakakura/asdf-wasm4"]
@@ -2036,7 +2058,13 @@ wasmtime.backends = [
     "aqua:bytecodealliance/wasmtime",
     "asdf:tachyonicbytes/asdf-wasmtime"
 ]
-watchexec.backends = ["ubi:watchexec/watchexec", "asdf:nyrst/asdf-watchexec"]
+watchexec.backends = [
+    "aqua:watchexec/watchexec",
+    "ubi:watchexec/watchexec",
+    "asdf:nyrst/asdf-watchexec",
+    "cargo:watchexec-cli"
+]
+watchexec.test = ["watchexec --version", "watchexec {{version}}"]
 waypoint.backends = [
     "aqua:hashicorp/waypoint",
     "asdf:mise-plugins/mise-hashicorp"
@@ -2062,6 +2090,9 @@ xcbeautify.backends = [
 ]
 xchtmlreport.backends = ["asdf:mise-plugins/mise-xchtmlreport"]
 xcodegen.backends = ["asdf:mise-plugins/mise-xcodegen"]
+xcodes.backends = ["aqua:XcodesOrg/xcodes"]
+xcodes.os = ["macos"]
+xcodes.test = ["xcodes version", "{{version}}"]
 xcresultparser.backends = ["asdf:mise-plugins/mise-xcresultparser"]
 xh.backends = ["aqua:ducaale/xh", "ubi:ducaale/xh", "asdf:NeoHsu/asdf-xh"]
 xh.test = ["xh -V", "xh {{version}}"]

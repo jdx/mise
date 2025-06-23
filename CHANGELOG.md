@@ -1,5 +1,137 @@
 # Changelog
 
+## [2025.6.7](https://github.com/jdx/mise/compare/v2025.6.6..v2025.6.7) - 2025-06-23
+
+### 🐛 Bug Fixes
+
+- **(aqua)** fix versions order by [@risu729](https://github.com/risu729) in [#5406](https://github.com/jdx/mise/pull/5406)
+
+### Ci
+
+- use pinnable tag of taiki-e/install-action by [@risu729](https://github.com/risu729) in [#5405](https://github.com/jdx/mise/pull/5405)
+
+## [2025.6.6](https://github.com/jdx/mise/compare/v2025.6.5..v2025.6.6) - 2025-06-23
+
+### 🚀 Features
+
+- **(registry)** add wash by [@jtakakura](https://github.com/jtakakura) in [#5386](https://github.com/jdx/mise/pull/5386)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** parse consecutive pipes in aqua templates by [@risu729](https://github.com/risu729) in [#5385](https://github.com/jdx/mise/pull/5385)
+- **(aqua)** use versions list to install correct version by [@risu729](https://github.com/risu729) in [#5371](https://github.com/jdx/mise/pull/5371)
+- **(registry)** talosctl use aqua by [@mangkoran](https://github.com/mangkoran) in [#5348](https://github.com/jdx/mise/pull/5348)
+- **(registry)** use aqua backend for watchexec by [@risu729](https://github.com/risu729) in [#5390](https://github.com/jdx/mise/pull/5390)
+- **(shim)** improve resolve_symlink for Windows by [@qianlongzt](https://github.com/qianlongzt) in [#5361](https://github.com/jdx/mise/pull/5361)
+- add compression-zip-deflate feature on self_update crate for windows target by [@roele](https://github.com/roele) in [#5391](https://github.com/jdx/mise/pull/5391)
+- suppress hint on 'cargo search mise' command by [@roele](https://github.com/roele) in [#5400](https://github.com/jdx/mise/pull/5400)
+
+### 📚 Documentation
+
+- Fix typo in README.md - Install mise by [@cytsai1008](https://github.com/cytsai1008) in [#5366](https://github.com/jdx/mise/pull/5366)
+- Document trivial task syntax by [@JayBazuzi](https://github.com/JayBazuzi) in [#5352](https://github.com/jdx/mise/pull/5352)
+
+### 🧪 Testing
+
+- **(registry)** fix vultr test by [@risu729](https://github.com/risu729) in [#5372](https://github.com/jdx/mise/pull/5372)
+
+### 📦️ Dependency Updates
+
+- update autofix-ci/action action to v1.3.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5377](https://github.com/jdx/mise/pull/5377)
+- update docker/setup-buildx-action digest to e468171 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5376](https://github.com/jdx/mise/pull/5376)
+
+### Chore
+
+- update expr-lang crate to v0.3.2 by [@risu729](https://github.com/risu729) in [#5364](https://github.com/jdx/mise/pull/5364)
+- show curl error by [@jdx](https://github.com/jdx) in [729aa4a](https://github.com/jdx/mise/commit/729aa4a6279cbb8dd8b1d81e8726d252ad2ad2bc)
+- fix latest version fetch by [@jdx](https://github.com/jdx) in [729aadc](https://github.com/jdx/mise/commit/729aadc83e042b276e3ebd3ae378a7e647a54bc0)
+- update vfox.rs crate to v1.0.3 by [@risu729](https://github.com/risu729) in [#5393](https://github.com/jdx/mise/pull/5393)
+- updated deps by [@jdx](https://github.com/jdx) in [#5403](https://github.com/jdx/mise/pull/5403)
+
+### Ci
+
+- use cargo info to retrieve latest mise version by [@risu729](https://github.com/risu729) in [#5401](https://github.com/jdx/mise/pull/5401)
+
+### New Contributors
+
+- @jtakakura made their first contribution in [#5386](https://github.com/jdx/mise/pull/5386)
+- @JayBazuzi made their first contribution in [#5352](https://github.com/jdx/mise/pull/5352)
+- @cytsai1008 made their first contribution in [#5366](https://github.com/jdx/mise/pull/5366)
+
+## [2025.6.5](https://github.com/jdx/mise/compare/v2025.6.4..v2025.6.5) - 2025-06-16
+
+### 🚀 Features
+
+- **(registry)** add diffoci by [@mangkoran](https://github.com/mangkoran) in [#5350](https://github.com/jdx/mise/pull/5350)
+
+### 🐛 Bug Fixes
+
+- **(registry)** use mintoolkit/mint for docker-slim by [@risu729](https://github.com/risu729) in [#5351](https://github.com/jdx/mise/pull/5351)
+- **(schema)** add missing tool options to schema by [@risu729](https://github.com/risu729) in [#5356](https://github.com/jdx/mise/pull/5356)
+- only show deprecation if not using 'tools-version' by [@timfallmk](https://github.com/timfallmk) in [#5290](https://github.com/jdx/mise/pull/5290)
+
+### New Contributors
+
+- @timfallmk made their first contribution in [#5290](https://github.com/jdx/mise/pull/5290)
+
+## [2025.6.4](https://github.com/jdx/mise/compare/v2025.6.3..v2025.6.4) - 2025-06-13
+
+### 🐛 Bug Fixes
+
+- **(registry)** use aqua for checkov by [@risu729](https://github.com/risu729) in [#5343](https://github.com/jdx/mise/pull/5343)
+
+### ◀️ Revert
+
+- fix(aqua): parse templates in version_filter by [@risu729](https://github.com/risu729) in [#5345](https://github.com/jdx/mise/pull/5345)
+
+## [2025.6.3](https://github.com/jdx/mise/compare/v2025.6.2..v2025.6.3) - 2025-06-13
+
+### 🚀 Features
+
+- support matching_regex from the ubi backend by [@yjoer](https://github.com/yjoer) in [#5320](https://github.com/jdx/mise/pull/5320)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** parse templates in version_filter by [@risu729](https://github.com/risu729) in [#5341](https://github.com/jdx/mise/pull/5341)
+- **(registry)** use extract_all for docker-slim by [@risu729](https://github.com/risu729) in [#5342](https://github.com/jdx/mise/pull/5342)
+
+### 🚜 Refactor
+
+- **(getting-started)** update powershell profile instructions by [@Armaldio](https://github.com/Armaldio) in [#5340](https://github.com/jdx/mise/pull/5340)
+
+### 📦️ Dependency Updates
+
+- update docker/build-push-action digest to 2634353 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5338](https://github.com/jdx/mise/pull/5338)
+- update jdx/mise-action digest to 13abe50 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5339](https://github.com/jdx/mise/pull/5339)
+
+### New Contributors
+
+- @yjoer made their first contribution in [#5320](https://github.com/jdx/mise/pull/5320)
+
+## [2025.6.2](https://github.com/jdx/mise/compare/v2025.6.1..v2025.6.2) - 2025-06-12
+
+### 🚀 Features
+
+- **(aqua)** support cosign bundle option by [@risu729](https://github.com/risu729) in [#5314](https://github.com/jdx/mise/pull/5314)
+- **(registry)** add xcodes by [@MontakOleg](https://github.com/MontakOleg) in [#5321](https://github.com/jdx/mise/pull/5321)
+- **(registry)** add typstyle by [@3w36zj6](https://github.com/3w36zj6) in [#5319](https://github.com/jdx/mise/pull/5319)
+
+### 🐛 Bug Fixes
+
+- **(cli/doctor)** reduce severity of new version to warnings by [@risu729](https://github.com/risu729) in [#5317](https://github.com/jdx/mise/pull/5317)
+- **(doctor)** ignored config roots not displaying by [@jdx](https://github.com/jdx) in [#5336](https://github.com/jdx/mise/pull/5336)
+- ls command does not respect MISE_COLOR value by [@roele](https://github.com/roele) in [#5322](https://github.com/jdx/mise/pull/5322)
+
+### 📚 Documentation
+
+- Update contributing.md by [@GitToby](https://github.com/GitToby) in [#5332](https://github.com/jdx/mise/pull/5332)
+- add instructions to create/open pwsh profile file by [@Armaldio](https://github.com/Armaldio) in [#5316](https://github.com/jdx/mise/pull/5316)
+
+### New Contributors
+
+- @Armaldio made their first contribution in [#5316](https://github.com/jdx/mise/pull/5316)
+- @GitToby made their first contribution in [#5332](https://github.com/jdx/mise/pull/5332)
+
 ## [2025.6.1](https://github.com/jdx/mise/compare/v2025.6.0..v2025.6.1) - 2025-06-09
 
 ### 🚀 Features
@@ -15,6 +147,7 @@
 
 - **(registry)** fix links of registry by [@risu729](https://github.com/risu729) in [#5266](https://github.com/jdx/mise/pull/5266)
 - **(registry)** fix links to tools by [@risu729](https://github.com/risu729) in [#5272](https://github.com/jdx/mise/pull/5272)
+- update example with `pnpm` by [@mrazauskas](https://github.com/mrazauskas) in [#5306](https://github.com/jdx/mise/pull/5306)
 
 ### 🧪 Testing
 
@@ -23,6 +156,10 @@
 ### 🛡️ Security
 
 - **(security)** prevent untarring outside expected path by [@jdx](https://github.com/jdx) in [#5279](https://github.com/jdx/mise/pull/5279)
+
+### New Contributors
+
+- @mrazauskas made their first contribution in [#5306](https://github.com/jdx/mise/pull/5306)
 
 ## [2025.6.0](https://github.com/jdx/mise/compare/v2025.5.17..v2025.6.0) - 2025-06-02
 

@@ -40,7 +40,7 @@ See [Getting started](https://mise.jdx.dev/getting-started.html) for more option
 ```sh-session
 $ curl https://mise.run | sh
 $ ~/.local/bin/mise --version
-2025.6.1 macos-arm64 (a1b2d3e 2025-06-09)
+2025.6.7 macos-arm64 (a1b2d3e 2025-06-23)
 ```
 
 Hook mise into your shell (pick the right one for your shell):
@@ -51,7 +51,7 @@ Hook mise into your shell (pick the right one for your shell):
 echo 'eval "$(~/.local/bin/mise activate bash)"' >> ~/.bashrc
 echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshrc
 echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
-echo '~/.local/bin/mise activate mise activate pwsh | Out-String | Invoke-Expression' >> ~/.config/powershell/Microsoft.PowerShell_profile.ps1
+echo '~/.local/bin/mise activate pwsh | Out-String | Invoke-Expression' >> ~/.config/powershell/Microsoft.PowerShell_profile.ps1
 ```
 
 ### Execute commands with specific tools
