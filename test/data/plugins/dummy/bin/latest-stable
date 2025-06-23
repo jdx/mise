@@ -3,7 +3,7 @@
 get_latest_stable() {
   query=$1
 
-  version_list=(1.0.0 1.1.0 1.2.0 1.10.0 2.0.0)
+  version_list=(1.0.0 1.1.0 2.0.0 2.0.2 2.0.10)
   printf "%s\n" "${version_list[@]}" | grep -E "^\s*$query" | tail -1
 }
 
