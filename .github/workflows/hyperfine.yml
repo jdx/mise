@@ -68,9 +68,10 @@ jobs:
           echo "## Hyperfine Performance" >> comment.md
           for cmd in "${CMDS[@]}"; do
             if [ -n "${MISE_ALT:-}" ]; then
-              mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "$MISE_ALT $cmd" "mise $cmd"
+              # TODO: unpin hyperfine version
+              mise x hyperfine@1.19 -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "$MISE_ALT $cmd" "mise $cmd"
             else
-              mise x hyperfine -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
+              mise x hyperfine@1.19 -- hyperfine -N -w 10 -r 500 --export-markdown out.md --reference "mise-${{ steps.versions.outputs.release }} $cmd" "mise $cmd"
             fi
             echo "### \`mise $cmd\`" >> comment.md
             cat out.md >> comment.md
