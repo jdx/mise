@@ -558,6 +558,11 @@ djinni.backends = [
 ]
 # djinni.test = ["djinni-generator --version", "djinni generator version {{version}}"] # test fails on windows
 dmd.backends = ["asdf:mise-plugins/mise-dmd"]
+docker-cli.backends = ["aqua:docker/cli"]
+docker-cli.test = [
+    "docker --version | awk '{print $3}' | tr -d ','",
+    "{{version}}"
+]
 docker-compose.backends = ["aqua:docker/compose"]
 docker-compose.test = [
     "docker-cli-plugin-docker-compose --version",
@@ -1512,6 +1517,8 @@ opsgenie-lamp.test = [
 ] # 3.1.4 reports 3.2.0
 oras.backends = ["aqua:oras-project/oras", "asdf:bodgit/asdf-oras"]
 osqueryi.backends = ["asdf:mise-plugins/mise-osqueryi"]
+osv-scanner.backends = ["aqua:google/osv-scanner"]
+osv-scanner.test = ["osv-scanner --version", "osv-scanner version: {{version}}"]
 overmind.backends = [
     "ubi:DarthSim/overmind",
     "go:github.com/DarthSim/overmind/v2"
@@ -1768,6 +1775,8 @@ scie-pants.backends = [
     "ubi:pantsbuild/scie-pants",
     "asdf:robzr/asdf-scie-pants"
 ]
+scorecard.backends = ["aqua:ossf/scorecard"]
+scorecard.test = ["scorecard version", "v{{version}}"]
 sd.backends = ["aqua:chmln/sd", "ubi:chmln/sd", "cargo:sd"]
 sd.test = ["sd --version", "sd {{version}}"]
 seed7.backends = ["asdf:mise-plugins/mise-seed7"]
@@ -2119,6 +2128,8 @@ vultr.aliases = ["vultr-cli"]
 vultr.backends = ["ubi:vultr/vultr-cli", "asdf:ikuradon/asdf-vultr-cli"]
 vultr.test = ["vultr-cli version", "Vultr-CLI v{{version}}"]
 wait-for-gh-rate-limit.backends = ["ubi:jdx/wait-for-gh-rate-limit"]
+wash.backends = ["aqua:wasmCloud/wasmCloud/wash"]
+wash.test = ["wash --version | head -n1 | awk '{print $2}'", "v{{version}}"]
 wasi-sdk.backends = ["asdf:mise-plugins/mise-wasi-sdk"]
 wasm3.backends = ["asdf:mise-plugins/mise-wasm3"]
 wasm4.backends = ["ubi:aduros/wasm4[exe=w4]", "asdf:jtakakura/asdf-wasm4"]

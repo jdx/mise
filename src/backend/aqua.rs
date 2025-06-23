@@ -24,7 +24,6 @@ use eyre::{ContextCompat, Result, bail};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::Regex;
-use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::{collections::HashSet, sync::Arc};
 
@@ -32,7 +31,7 @@ use std::{collections::HashSet, sync::Arc};
 pub struct AquaBackend {
     ba: Arc<BackendArg>,
     id: String,
-    version_tags_cache: CacheManager<BTreeMap<String, String>>,
+    version_tags_cache: CacheManager<Vec<(String, String)>>,
     bin_path_caches: DashMap<String, CacheManager<Vec<PathBuf>>>,
 }
 
@@ -59,9 +58,9 @@ impl Backend for AquaBackend {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let version_tags_map = self.get_version_tags_map().await?;
+        let version_tags = self.get_version_tags().await?;
         let mut versions = Vec::new();
-        for (v, tag) in version_tags_map.iter() {
+        for (v, tag) in version_tags.iter() {
             let pkg = AQUA_REGISTRY
                 .package_with_version(&self.id, tag)
                 .await
@@ -80,9 +79,14 @@ impl Backend for AquaBackend {
     ) -> Result<ToolVersion> {
         let mut v;
         let pkg;
-        match self.get_version_tags_map().await?.get(&tv.version).cloned() {
-            Some(tag) => {
-                v = tag;
+        match self
+            .get_version_tags()
+            .await?
+            .iter()
+            .find(|(version, _)| version == &tv.version)
+        {
+            Some((_, tag)) => {
+                v = tag.clone();
                 pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
             }
             None => {
@@ -211,11 +215,11 @@ impl AquaBackend {
         }
     }
 
-    async fn get_version_tags_map(&self) -> Result<&BTreeMap<String, String>> {
+    async fn get_version_tags(&self) -> Result<&Vec<(String, String)>> {
         self.version_tags_cache
             .get_or_try_init_async(|| async {
                 let pkg = AQUA_REGISTRY.package(&self.id).await?;
-                let mut map = BTreeMap::new();
+                let mut versions = Vec::new();
                 if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
                     let tags = get_tags(&pkg).await?;
                     for tag in tags.into_iter().rev() {
@@ -237,12 +241,12 @@ impl AquaBackend {
                             }
                         }
                         version = version.strip_prefix('v').unwrap_or(version);
-                        map.insert(version.to_string(), tag);
+                        versions.push((version.to_string(), tag));
                     }
                 } else {
                     warn!("no aqua registry found for {}", self.ba());
                 }
-                Ok(map)
+                Ok(versions)
             })
             .await
     }

@@ -80,7 +80,8 @@ jobs:
       - if: matrix.runs-on != 'ubuntu-latest'
         run: rustup target add ${{matrix.target}}
       - if: matrix.runs-on == 'ubuntu-latest'
-        uses: taiki-e/install-action@cross
+        uses: taiki-e/install-action@v2
+        with: { tool: cross }
       - name: build-tarball
         uses: nick-fields/retry@v3
         with:
