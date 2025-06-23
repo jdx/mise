@@ -72,7 +72,58 @@ impl ErlangPlugin {
         Ok(())
     }
 
-    #[cfg(not(windows))]
+    #[cfg(linux)]
+    async fn install_precompiled(
+        &self,
+        ctx: &InstallContext,
+        mut tv: ToolVersion,
+    ) -> Result<Option<ToolVersion>> {
+        if Settings::get().erlang.compile == Some(true) {
+            return Ok(None);
+        }
+        let release_tag = format!("OTP-{}", tv.version);
+
+        let arch: String = match ARCH {
+            "x86_64" => "amd64",
+            "aarch64" => "arm64",
+            _ => {
+                debug!("Unsupported architecture: {}", ARCH);
+                return Ok(None);
+            }
+        };
+
+        let os_ver = match std::env::var("ImageOS") {
+            Ok(os) => os,
+            Err(_) => {
+                debug!("ImageOS environment variable not set");
+                return Ok(None);
+            }
+        };
+
+        let url: String = format!("https://builds.hex.pm/builds/otp/{arch}/{os_ver}/{release_tag}.tar.gz");
+
+        let filename = url.split('/').next_back().unwrap();
+        let tarball_path = tv.download_path().join(filename);
+
+        ctx.pr.set_message(format!("Downloading {filename}"));
+        if !tarball_path.exists() {
+            HTTP.download_file(&url, &tarball_path, Some(&ctx.pr)).await?;
+        }
+        ctx.pr.set_message(format!("Extracting {filename}"));
+        file::untar(
+            &tarball_path,
+            &tv.install_path(),
+            &TarOptions {
+                strip_components: 0,
+                pr: Some(&ctx.pr),
+                format: file::TarFormat::TarGz,
+            },
+        )?;
+
+        Ok(Some(tv));
+    }
+
+    #[cfg(macos)]
     async fn install_precompiled(
         &self,
         ctx: &InstallContext,
