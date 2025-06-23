@@ -1,11 +1,68 @@
 # Changelog
 
+## [2025.6.6](https://github.com/jdx/mise/compare/v2025.6.5..v2025.6.6) - 2025-06-23
+
+### 🚀 Features
+
+- **(registry)** add wash by [@jtakakura](https://github.com/jtakakura) in [#5386](https://github.com/jdx/mise/pull/5386)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** parse consecutive pipes in aqua templates by [@risu729](https://github.com/risu729) in [#5385](https://github.com/jdx/mise/pull/5385)
+- **(aqua)** use versions list to install correct version by [@risu729](https://github.com/risu729) in [#5371](https://github.com/jdx/mise/pull/5371)
+- **(registry)** talosctl use aqua by [@mangkoran](https://github.com/mangkoran) in [#5348](https://github.com/jdx/mise/pull/5348)
+- **(registry)** use aqua backend for watchexec by [@risu729](https://github.com/risu729) in [#5390](https://github.com/jdx/mise/pull/5390)
+- **(shim)** improve resolve_symlink for Windows by [@qianlongzt](https://github.com/qianlongzt) in [#5361](https://github.com/jdx/mise/pull/5361)
+- add compression-zip-deflate feature on self_update crate for windows target by [@roele](https://github.com/roele) in [#5391](https://github.com/jdx/mise/pull/5391)
+- suppress hint on 'cargo search mise' command by [@roele](https://github.com/roele) in [#5400](https://github.com/jdx/mise/pull/5400)
+
+### 📚 Documentation
+
+- Fix typo in README.md - Install mise by [@cytsai1008](https://github.com/cytsai1008) in [#5366](https://github.com/jdx/mise/pull/5366)
+- Document trivial task syntax by [@JayBazuzi](https://github.com/JayBazuzi) in [#5352](https://github.com/jdx/mise/pull/5352)
+
+### 🧪 Testing
+
+- **(registry)** fix vultr test by [@risu729](https://github.com/risu729) in [#5372](https://github.com/jdx/mise/pull/5372)
+
+### 📦️ Dependency Updates
+
+- update autofix-ci/action action to v1.3.2 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5377](https://github.com/jdx/mise/pull/5377)
+- update docker/setup-buildx-action digest to e468171 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5376](https://github.com/jdx/mise/pull/5376)
+
+### Chore
+
+- update expr-lang crate to v0.3.2 by [@risu729](https://github.com/risu729) in [#5364](https://github.com/jdx/mise/pull/5364)
+- show curl error by [@jdx](https://github.com/jdx) in [729aa4a](https://github.com/jdx/mise/commit/729aa4a6279cbb8dd8b1d81e8726d252ad2ad2bc)
+- fix latest version fetch by [@jdx](https://github.com/jdx) in [729aadc](https://github.com/jdx/mise/commit/729aadc83e042b276e3ebd3ae378a7e647a54bc0)
+- update vfox.rs crate to v1.0.3 by [@risu729](https://github.com/risu729) in [#5393](https://github.com/jdx/mise/pull/5393)
+- updated deps by [@jdx](https://github.com/jdx) in [#5403](https://github.com/jdx/mise/pull/5403)
+
+### Ci
+
+- use cargo info to retrieve latest mise version by [@risu729](https://github.com/risu729) in [#5401](https://github.com/jdx/mise/pull/5401)
+
+### New Contributors
+
+- @jtakakura made their first contribution in [#5386](https://github.com/jdx/mise/pull/5386)
+- @JayBazuzi made their first contribution in [#5352](https://github.com/jdx/mise/pull/5352)
+- @cytsai1008 made their first contribution in [#5366](https://github.com/jdx/mise/pull/5366)
+
 ## [2025.6.5](https://github.com/jdx/mise/compare/v2025.6.4..v2025.6.5) - 2025-06-16
+
+### 🚀 Features
+
+- **(registry)** add diffoci by [@mangkoran](https://github.com/mangkoran) in [#5350](https://github.com/jdx/mise/pull/5350)
 
 ### 🐛 Bug Fixes
 
 - **(registry)** use mintoolkit/mint for docker-slim by [@risu729](https://github.com/risu729) in [#5351](https://github.com/jdx/mise/pull/5351)
 - **(schema)** add missing tool options to schema by [@risu729](https://github.com/risu729) in [#5356](https://github.com/jdx/mise/pull/5356)
+- only show deprecation if not using 'tools-version' by [@timfallmk](https://github.com/timfallmk) in [#5290](https://github.com/jdx/mise/pull/5290)
+
+### New Contributors
+
+- @timfallmk made their first contribution in [#5290](https://github.com/jdx/mise/pull/5290)
 
 ## [2025.6.4](https://github.com/jdx/mise/compare/v2025.6.3..v2025.6.4) - 2025-06-13
 
