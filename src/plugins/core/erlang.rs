@@ -76,7 +76,7 @@ impl ErlangPlugin {
     async fn install_precompiled(
         &self,
         ctx: &InstallContext,
-        mut tv: ToolVersion,
+        tv: ToolVersion,
     ) -> Result<Option<ToolVersion>> {
         if Settings::get().erlang.compile == Some(true) {
             return Ok(None);
