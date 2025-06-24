@@ -120,7 +120,7 @@ impl ErlangPlugin {
             },
         )?;
 
-        Ok(Some(tv));
+        Ok(Some(tv))
     }
 
     #[cfg(macos)]
