@@ -368,7 +368,7 @@ clarinet.os = ["linux", "macos"]
 clarinet.test = ["clarinet --version", "clarinet {{version}}"]
 claude.aliases = ["claude-code"]
 claude.backends = ["npm:@anthropic-ai/claude-code"]
-claude.test = ["claude --version"]
+claude.test = ["claude --version", "{{version}} (Claude Code)"]
 cli53.backends = ["aqua:barnybug/cli53"]
 cli53.test = ["cli53 --version", "cli53 version {{version}}"]
 # ubi not working on linux
