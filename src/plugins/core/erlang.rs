@@ -84,8 +84,8 @@ impl ErlangPlugin {
         let release_tag = format!("OTP-{}", tv.version);
 
         let arch: String = match ARCH {
-            "x86_64" => "amd64",
-            "aarch64" => "arm64",
+            "x86_64" => "amd64".to_string(),
+            "aarch64" => "arm64".to_string(),
             _ => {
                 debug!("Unsupported architecture: {}", ARCH);
                 return Ok(None);
