@@ -132,10 +132,10 @@ impl ErlangPlugin {
 
         self.move_to_install_path(&tv)?;
 
-        CmdLineRunner::new(&tv.install_path().join("Install"))
+        CmdLineRunner::new(tv.install_path().join("Install"))
             .with_pr(&ctx.pr)
             .arg("-minimal")
-            .arg(&tv.install_path())
+            .arg(tv.install_path())
             .execute()?;
 
         Ok(Some(tv))
