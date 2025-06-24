@@ -1734,7 +1734,8 @@ scorecard.test = ["scorecard version", "v{{version}}"]
 sd.backends = ["aqua:chmln/sd"]
 sd.test = ["sd --version", "sd {{version}}"]
 seed7.backends = ["asdf:mise-plugins/mise-seed7"]
-semgrep.backends = ["asdf:mise-plugins/mise-semgrep"]
+semgrep.backends = ["pipx:semgrep", "asdf:mise-plugins/mise-semgrep"]
+semgrep.test = ["semgrep --version", "{{version}}"]
 semtag.backends = ["asdf:mise-plugins/mise-semtag"]
 semver.backends = [
     "aqua:fsaintjacques/semver-tool",
