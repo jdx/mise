@@ -5,7 +5,7 @@ git config user.name mise-en-dev
 git config user.email release@mise.jdx.dev
 
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
-latest_version="$(cargo search mise --limit 1 | grep '^mise = "' | cut -d'"' -f2)"
+latest_version="$(cargo info --registry "crates-io" --color never --quiet mise | grep "^version:" | cut -d' ' -f2)"
 if [[ $cur_version != "$latest_version" ]]; then
 	echo "Releasing $cur_version"
 	cargo publish
@@ -40,7 +40,7 @@ sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/versio
 mise run render ::: lint-fix
 
 mise up
-# cargo update
+cargo update
 git add \
 	Cargo.lock \
 	Cargo.toml \

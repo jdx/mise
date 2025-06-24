@@ -111,61 +111,90 @@ impl Parser<'_> {
             let arg = tokens.next().wrap_err("missing argument")?;
             self.parse(vec![arg])
         };
+
+        let mut in_pipe = false;
         while let Some(token) = tokens.next() {
             match token {
                 Token::Key(key) => {
+                    if in_pipe {
+                        bail!("unexpected key token in pipe");
+                    }
                     if let Some(val) = self.ctx.get(*key) {
                         s = val.to_string()
                     } else {
                         bail!("unable to find key in context: {key}");
                     }
                 }
-                Token::String(str) => s = str.to_string(),
-                Token::Func(func) => match *func {
-                    "title" => {
-                        let arg = next_arg(&mut tokens)?;
-                        s = arg.to_title_case();
+                Token::String(str) => {
+                    if in_pipe {
+                        bail!("unexpected string token in pipe");
                     }
-                    "trimV" => {
-                        let arg = next_arg(&mut tokens)?;
-                        s = arg.trim_start_matches('v').to_string();
-                    }
-                    "trimPrefix" => {
-                        let prefix = next_arg(&mut tokens)?;
-                        let str = next_arg(&mut tokens)?;
-                        if let Some(str) = str.strip_prefix(&prefix) {
-                            s = str.to_string();
-                        } else {
-                            s = str.to_string();
+                    s = str.to_string()
+                }
+                Token::Func(func) => {
+                    match *func {
+                        "title" | "trimV" => {
+                            let arg = if in_pipe {
+                                s.clone()
+                            } else {
+                                next_arg(&mut tokens)?
+                            };
+                            s = match *func {
+                                "title" => arg.to_title_case(),
+                                "trimV" => arg.trim_start_matches('v').to_string(),
+                                _ => unreachable!(),
+                            };
                         }
-                    }
-                    "trimSuffix" => {
-                        let suffix = next_arg(&mut tokens)?;
-                        let str = next_arg(&mut tokens)?;
-                        if let Some(str) = str.strip_suffix(&suffix) {
-                            s = str.to_string();
-                        } else {
-                            s = str.to_string();
+                        "trimPrefix" | "trimSuffix" => {
+                            let param = next_arg(&mut tokens)?;
+                            let input = if in_pipe {
+                                s.clone()
+                            } else {
+                                next_arg(&mut tokens)?
+                            };
+                            s = match *func {
+                                "trimPrefix" => {
+                                    if let Some(str) = input.strip_prefix(&param) {
+                                        str.to_string()
+                                    } else {
+                                        input.to_string()
+                                    }
+                                }
+                                "trimSuffix" => {
+                                    if let Some(str) = input.strip_suffix(&param) {
+                                        str.to_string()
+                                    } else {
+                                        input.to_string()
+                                    }
+                                }
+                                _ => unreachable!(),
+                            };
                         }
+                        "replace" => {
+                            let from = next_arg(&mut tokens)?;
+                            let to = next_arg(&mut tokens)?;
+                            let str = if in_pipe {
+                                s.clone()
+                            } else {
+                                next_arg(&mut tokens)?
+                            };
+                            s = str.replace(&from, &to);
+                        }
+                        _ => bail!("unexpected function: {func}"),
                     }
-                    "replace" => {
-                        let from = next_arg(&mut tokens)?;
-                        let to = next_arg(&mut tokens)?;
-                        let str = next_arg(&mut tokens)?;
-                        s = str.replace(&from, &to);
-                    }
-                    _ => bail!("unexpected function: {func}"),
-                },
+                    in_pipe = false
+                }
                 Token::Whitespace(_) => {}
                 Token::Pipe => {
-                    let mut tokens = tokens.cloned().collect_vec();
-                    let whitespace = Token::Whitespace(" ");
-                    let str = Token::String(&s);
-                    tokens.push(&whitespace);
-                    tokens.push(&str);
-                    return self.parse(tokens);
+                    if in_pipe {
+                        bail!("unexpected pipe token");
+                    }
+                    in_pipe = true;
                 }
             }
+        }
+        if in_pipe {
+            bail!("unexpected end of input in pipe");
         }
         Ok(s)
     }
@@ -211,6 +240,11 @@ mod tests {
         test_parse_trim_prefix2: (r#"trimPrefix "v" "1.0.0""#, "1.0.0", hashmap!{}),
         test_parse_trim_suffix: (r#"trimSuffix "-v1.0.0" "foo-v1.0.0""#, "foo", hashmap!{}),
         test_parse_pipe: (r#"trimPrefix "foo-" "foo-v1.0.0" | trimV"#, "1.0.0", hashmap!{}),
+        test_parse_multiple_pipes: (
+            r#"trimPrefix "foo-" "foo-v1.0.0-beta" | trimSuffix "-beta" | trimV"#,
+            "1.0.0",
+            hashmap!{},
+        ),
         test_parse_replace: (r#"replace "foo" "bar" "foo-bar""#, "bar-bar", hashmap!{}),
     );
 
