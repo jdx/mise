@@ -92,13 +92,20 @@ impl ErlangPlugin {
             }
         };
 
-        let os_ver = match std::env::var("ImageOS") {
-            Ok(os) => os,
-            Err(_) => {
-                debug!("ImageOS environment variable not set");
-                return Ok(None);
-            }
+        let os_ver: String;
+        if let Ok(os) = std::env::var("ImageOS") {
+            os_ver = os
+        } else if let Ok(os_release) = &*os_release::OS_RELEASE {
+            os_ver = format!("{}-{}", os_release.id, os_release.version_id);
+        } else {
+            return Ok(None);
         };
+
+        // Currently, Bob only builds for Ubuntu, so we have to check that we're on ubuntu, and on a supported version
+        if !["ubuntu-20.04", "ubuntu-22.04", "ubuntu-24.04"].contains(&os_ver.as_str()) {
+            debug!("Unsupported OS version: {}", os_ver);
+            return Ok(None);
+        }
 
         let url: String = format!("https://builds.hex.pm/builds/otp/{arch}/{os_ver}/{release_tag}.tar.gz");
 
