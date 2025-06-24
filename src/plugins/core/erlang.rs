@@ -1,7 +1,8 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{fs, path::PathBuf, sync::Arc};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
+use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 #[cfg(unix)]
 use crate::file::TarOptions;
@@ -129,7 +130,35 @@ impl ErlangPlugin {
             },
         )?;
 
+        self.move_to_install_path(&tv)?;
+
+        CmdLineRunner::new(&tv.install_path().join("Install"))
+            .with_pr(&ctx.pr)
+            .arg("-minimal")
+            .arg(&tv.install_path())
+            .execute()?;
+
         Ok(Some(tv))
+    }
+
+    #[cfg(linux)]
+    fn move_to_install_path(&self, tv: &ToolVersion) -> Result<()> {
+        let base_dir = tv
+            .download_path()
+            .read_dir()?
+            .find(|e| e.as_ref().unwrap().file_type().unwrap().is_dir())
+            .unwrap()?
+            .path();
+        file::remove_all(tv.install_path())?;
+        file::create_dir_all(tv.install_path())?;
+        for entry in fs::read_dir(base_dir)? {
+            let entry = entry?;
+            let dest = tv.install_path().join(entry.file_name());
+            trace!("moving {:?} to {:?}", entry.path(), &dest);
+            file::rename(entry.path(), dest)?;
+        }
+
+        Ok(())
     }
 
     #[cfg(macos)]
