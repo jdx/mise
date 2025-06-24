@@ -107,14 +107,16 @@ impl ErlangPlugin {
             return Ok(None);
         }
 
-        let url: String = format!("https://builds.hex.pm/builds/otp/{arch}/{os_ver}/{release_tag}.tar.gz");
+        let url: String =
+            format!("https://builds.hex.pm/builds/otp/{arch}/{os_ver}/{release_tag}.tar.gz");
 
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
         ctx.pr.set_message(format!("Downloading {filename}"));
         if !tarball_path.exists() {
-            HTTP.download_file(&url, &tarball_path, Some(&ctx.pr)).await?;
+            HTTP.download_file(&url, &tarball_path, Some(&ctx.pr))
+                .await?;
         }
         ctx.pr.set_message(format!("Extracting {filename}"));
         file::untar(
