@@ -126,7 +126,7 @@ impl ErlangPlugin {
         ctx.pr.set_message(format!("Extracting {filename}"));
         file::untar(
             &tarball_path,
-            &tv.install_path(),
+            &tv.download_path(),
             &TarOptions {
                 strip_components: 0,
                 pr: Some(&ctx.pr),
