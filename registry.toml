@@ -28,7 +28,8 @@ action-validator.test = [
 actionlint.backends = [
     "aqua:rhysd/actionlint",
     "ubi:rhysd/actionlint",
-    "asdf:crazy-matt/asdf-actionlint"
+    "asdf:crazy-matt/asdf-actionlint",
+    "go:github.com/rhysd/actionlint/cmd/actionlint"
 ]
 actionlint.test = ["actionlint --version", "{{version}}"]
 adr-tools.backends = [
@@ -217,7 +218,11 @@ bbr-s3-config-validator.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
 benthos.backends = ["aqua:benthosdev/benthos", "asdf:benthosdev/benthos-asdf"]
 bfs.backends = ["asdf:mise-plugins/mise-bfs"]
 binnacle.backends = ["aqua:Traackr/binnacle", "asdf:Traackr/asdf-binnacle"]
-biome.backends = ["aqua:biomejs/biome", "ubi:biomejs/biome"]
+biome.backends = [
+    "aqua:biomejs/biome",
+    "ubi:biomejs/biome",
+    "npm:@biomejs/biome"
+]
 biome.test = ["biome --version", "Version: {{version}}"]
 bitwarden.backends = ["aqua:bitwarden/clients", "asdf:vixus0/asdf-bitwarden"]
 bitwarden.test = [
@@ -527,7 +532,8 @@ deck.backends = ["aqua:Kong/deck", "asdf:nutellinoit/asdf-deck"]
 delta.backends = [
     "aqua:dandavison/delta",
     "ubi:dandavison/delta",
-    "asdf:andweeb/asdf-delta"
+    "asdf:andweeb/asdf-delta",
+    "cargo:git-delta"
 ]
 delta.test = ["delta --version", "delta {{version}}"]
 deno.backends = ["core:deno"]
@@ -663,13 +669,12 @@ etcd.backends = [
 etcd.test = ["etcd --version", "etcd Version: {{version}}"]
 evans.backends = ["aqua:ktr0731/evans", "asdf:goki90210/asdf-evans"]
 eza.backends = [
-    {full = "aqua:eza-community/eza", platforms = [
-        "linux"
-    ]},
-    # "ubi:cargo-bins/cargo-quickinstall[exe=eza,tag_regex=^eza-]", # does not fetch tags right, needs to load everything
+    {full = "aqua:eza-community/eza", platforms = ["linux"]},
+    # "ubi:eza-community/eza", # cannot install on macos
     "asdf:mise-plugins/mise-eza",
     "cargo:eza"
 ]
+eza.test = ["eza --version", "v{{version}}"]
 fastfetch.backends = ["aqua:fastfetch-cli/fastfetch"]
 fastfetch.test = [
     "fastfetch --version | awk '{print $1, $2}'",
@@ -678,7 +683,8 @@ fastfetch.test = [
 fd.backends = [
     "aqua:sharkdp/fd",
     "ubi:sharkdp/fd",
-    "asdf:https://gitlab.com/wt0f/asdf-fd"
+    "asdf:https://gitlab.com/wt0f/asdf-fd",
+    "cargo:fd-find"
 ]
 fd.test = ["fd --version", "fd {{version}}"]
 ffmpeg.backends = ["asdf:mise-plugins/mise-ffmpeg"]
@@ -857,7 +863,13 @@ goconvey.backends = [
 ]
 gocryptfs.backends = ["aqua:rfjakob/gocryptfs", "ubi:rfjakob/gocryptfs"]
 gofumpt.backends = ["ubi:mvdan/gofumpt", "asdf:looztra/asdf-gofumpt"]
-gojq.backends = ["aqua:itchyny/gojq", "asdf:jimmidyson/asdf-gojq"]
+gojq.backends = [
+    "aqua:itchyny/gojq",
+    "ubi:itchyny/gojq",
+    "asdf:jimmidyson/asdf-gojq",
+    "go:github.com/itchyny/gojq/cmd/gojq"
+]
+gojq.test = ["gojq --version", "gojq {{version}}"]
 # "aqua:cloudflare/gokey" exists, but can't be used due to "unsupported aqua package type: go_install"
 gokey.backends = ["ubi:cloudflare/gokey"]
 gokey.test = ["gokey -p master -r realm -l 8", "hJ2gXSy["]
@@ -935,6 +947,7 @@ hadolint.backends = [
     "ubi:hadolint/hadolint",
     "asdf:devlincashman/asdf-hadolint"
 ]
+hadolint.test = ["hadolint --version", "Haskell Dockerfile Linter {{version}}"]
 hamler.backends = ["asdf:mise-plugins/mise-hamler"]
 harper-cli.backends = ["aqua:Automattic/harper/harper-cli"]
 # harper-cli intentionally prints different version. See https://github.com/Automattic/harper/issues/557#issuecomment-2635037944
@@ -1060,8 +1073,9 @@ jmespath.backends = ["aqua:jmespath/jp", "asdf:skyzyx/asdf-jmespath"]
 jmespath.test = ["jp --version", "jp version {{version}}"]
 jmeter.backends = ["asdf:mise-plugins/mise-jmeter"]
 jnv.backends = ["aqua:ynqa/jnv", "asdf:raimon49/asdf-jnv"]
-jq.backends = ["aqua:jqlang/jq", "asdf:mise-plugins/asdf-jq"]
+jq.backends = ["aqua:jqlang/jq", "ubi:jqlang/jq", "asdf:mise-plugins/asdf-jq"]
 jq.description = "Command-line JSON processor"
+jq.test = ["jq --version", "jq-{{version}}"]
 jqp.backends = [
     "aqua:noahgorstein/jqp",
     "asdf:https://gitlab.com/wt0f/asdf-jqp"
@@ -1278,8 +1292,11 @@ lean.backends = ["asdf:mise-plugins/mise-lean"]
 lefthook.backends = [
     "aqua:evilmartians/lefthook",
     "ubi:evilmartians/lefthook",
-    "asdf:jtzero/asdf-lefthook"
+    "npm:lefthook", # uses prebuilt binaries
+    "asdf:jtzero/asdf-lefthook",
+    "go:github.com/evilmartians/lefthook"
 ]
+lefthook.test = ["lefthook version", "{{version}}"]
 leiningen.backends = ["asdf:mise-plugins/mise-lein"]
 levant.backends = ["aqua:hashicorp/levant", "asdf:mise-plugins/mise-hashicorp"]
 lfe.backends = ["asdf:mise-plugins/mise-lfe"]
@@ -1308,7 +1325,13 @@ loki-logcli.backends = [
     "aqua:grafana/loki/logcli",
     "asdf:comdotlinux/asdf-loki-logcli"
 ]
-ls-lint.backends = ["aqua:loeffel-io/ls-lint", "asdf:Ameausoone/asdf-ls-lint"]
+ls-lint.backends = [
+    "aqua:loeffel-io/ls-lint",
+    "ubi:loeffel-io/ls-lint",
+    "npm:@ls-lint/ls-lint", # uses prebuilt binaries
+    "asdf:Ameausoone/asdf-ls-lint"
+]
+ls-lint.test = ["ls-lint --version", "ls-lint v{{version}}"]
 lsd.backends = ["aqua:lsd-rs/lsd", "asdf:mise-plugins/asdf-lsd"]
 lua.backends = ["asdf:mise-plugins/mise-lua"]
 lua-language-server.backends = [
@@ -1319,7 +1342,11 @@ luajit.backends = ["asdf:mise-plugins/mise-luaJIT"]
 luau.backends = ["aqua:luau-lang/luau"]
 luau.description = "A fast, small, safe, gradually typed embeddable scripting language derived from Lua"
 luau.test = ["echo 'print(_VERSION)' | luau", "Luau"]
-lychee.backends = ["aqua:lycheeverse/lychee"]
+lychee.backends = [
+    "aqua:lycheeverse/lychee",
+    "ubi:lycheeverse/lychee",
+    "cargo:lychee"
+]
 lychee.test = ["lychee --version", "lychee {{version}}"]
 maestro.backends = [
     "ubi:mobile-dev-inc/maestro",
@@ -1332,6 +1359,10 @@ mark.backends = ["ubi:kovetskiy/mark", "asdf:jfreeland/asdf-mark"]
 markdownlint-cli2.backends = [
     "npm:markdownlint-cli2",
     "asdf:paulo-ferraz-oliveira/asdf-markdownlint-cli2"
+]
+markdownlint-cli2.test = [
+    "markdownlint-cli2 --version",
+    "markdownlint-cli2 v{{version}}"
 ]
 marksman.backends = ["aqua:artempyanykh/marksman"]
 marksman.test = ["marksman --version", ""]
@@ -1531,13 +1562,20 @@ pivnet.backends = [
 pivnet.test = ["pivnet version", ""] # version returns "dev" on windows
 pixi.backends = ["ubi:prefix-dev/pixi"]
 pixi.test = ["pixi -V", "pixi {{version}}"]
-pkl.backends = ["aqua:apple/pkl", "asdf:mise-plugins/asdf-pkl"]
+pkl.backends = ["aqua:apple/pkl", "ubi:apple/pkl", "asdf:mise-plugins/asdf-pkl"]
+pkl.test = ["pkl --version", "Pkl {{version}}"]
 please.backends = [
     "aqua:thought-machine/please",
     "asdf:asdf-community/asdf-please"
 ]
 pluto.backends = ["ubi:FairwindsOps/pluto", "asdf:FairwindsOps/asdf-pluto"]
-pnpm.backends = ["aqua:pnpm/pnpm", "asdf:jonathanmorley/asdf-pnpm"]
+pnpm.backends = [
+    "aqua:pnpm/pnpm",
+    "ubi:pnpm/pnpm",
+    "npm:pnpm", # uses prebuilt binaries
+    "asdf:jonathanmorley/asdf-pnpm"
+]
+pnpm.test = ["pnpm --version", "{{version}}"]
 podman.backends = ["ubi:containers/podman", "asdf:tvon/asdf-podman"]
 poetry.backends = ["asdf:mise-plugins/mise-poetry"]
 poetry.depends = ["python"]
@@ -1560,9 +1598,12 @@ powershell-core.backends = [
 ]
 pre-commit.backends = [
     "aqua:pre-commit/pre-commit",
-    "asdf:jonathanmorley/asdf-pre-commit"
+    "ubi:pre-commit/pre-commit",
+    "asdf:jonathanmorley/asdf-pre-commit",
+    "pipx:pre-commit"
 ]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
+pre-commit.test = ["pre-commit --version", "pre-commit {{version}}"]
 process-compose.backends = ["ubi:F1bonacc1/process-compose"]
 process-compose.description = "Process Compose is a simple and flexible scheduler and orchestrator to manage non-containerized applications."
 process-compose.test = ["process-compose version --short", "{{version}}"]
@@ -1671,11 +1712,16 @@ ripgrep.aliases = ["rg"]
 ripgrep.backends = [
     "aqua:BurntSushi/ripgrep",
     "ubi:BurntSushi/ripgrep[exe=rg]",
-    "asdf:https://gitlab.com/wt0f/asdf-ripgrep"
+    "asdf:https://gitlab.com/wt0f/asdf-ripgrep",
+    "cargo:ripgrep"
 ]
 ripgrep.test = ["rg --version", "ripgrep {{version}}"]
 ripgrep.description = "ripgrep recursively searches directories for a regex pattern while respecting your gitignore"
-ripgrep-all.backends = ["aqua:phiresky/ripgrep-all"]
+ripgrep-all.backends = [
+    "aqua:phiresky/ripgrep-all",
+    "ubi:phiresky/ripgrep-all[exe=rga]",
+    "cargo:ripgrep_all"
+]
 ripgrep-all.test = ["rga --version", "ripgrep-all {{version}}"]
 ripsecrets.backends = [
     "aqua:sirwart/ripsecrets",
@@ -1734,7 +1780,7 @@ scie-pants.backends = [
 ]
 scorecard.backends = ["aqua:ossf/scorecard"]
 scorecard.test = ["scorecard version", "v{{version}}"]
-sd.backends = ["aqua:chmln/sd"]
+sd.backends = ["aqua:chmln/sd", "ubi:chmln/sd", "cargo:sd"]
 sd.test = ["sd --version", "sd {{version}}"]
 seed7.backends = ["asdf:mise-plugins/mise-seed7"]
 semgrep.backends = ["pipx:semgrep", "asdf:mise-plugins/mise-semgrep"]
@@ -1753,17 +1799,24 @@ setup-envtest.backends = ["asdf:mise-plugins/mise-setup-envtest"]
 shell2http.backends = ["aqua:msoap/shell2http", "asdf:ORCID/asdf-shell2http"]
 shellcheck.backends = [
     "ubi:koalaman/shellcheck",
-    "aqua:koalaman/shellcheck", # uses versionFilter
+    "aqua:koalaman/shellcheck", # warning: aqua version filter error: invalid version
     "asdf:luizm/asdf-shellcheck"
 ]
-shellcheck.os = ["linux", "macos"]
 shellcheck.description = "ShellCheck, a static analysis tool for shell scripts"
+shellcheck.os = ["linux", "macos"]
+shellcheck.test = ["shellcheck --version", "version: {{version}}"]
 shellspec.backends = [
     "aqua:shellspec/shellspec",
     "asdf:poikilotherm/asdf-shellspec"
 ]
-shfmt.backends = ["aqua:mvdan/sh", "asdf:luizm/asdf-shfmt"]
+shfmt.backends = [
+    "aqua:mvdan/sh",
+    "ubi:mvdan/sh",
+    "asdf:luizm/asdf-shfmt",
+    "go:mvdan.cc/sh/v3/cmd/shfmt"
+]
 shfmt.os = ["linux", "macos"]
+shfmt.test = ["shfmt --version", "v{{version}}"]
 shorebird.backends = ["asdf:mise-plugins/mise-shorebird"]
 signadot.backends = ["ubi:signadot/cli[exe=signadot]"]
 signadot.test = ["signadot --version", "signadot version v{{version}}"]
@@ -1994,8 +2047,20 @@ ttyd.backends = ["aqua:tsl0922/ttyd", "asdf:ivanvc/asdf-ttyd"]
 tuist.backends = ["asdf:mise-plugins/mise-tuist"]
 tusd.backends = ["ubi:tus/tusd"]
 tusd.test = ["tusd --version | head -n1", "Version: v{{version}}"]
-typos.backends = ["aqua:crate-ci/typos", "asdf:aschiavon91/asdf-typos"]
-typst.backends = ["aqua:typst/typst", "asdf:stephane-klein/asdf-typst"]
+typos.backends = [
+    "aqua:crate-ci/typos",
+    "ubi:crate-ci/typos",
+    "asdf:aschiavon91/asdf-typos",
+    "cargo:typos-cli"
+]
+typos.test = ["typos --version", "typos-cli {{version}}"]
+typst.backends = [
+    "aqua:typst/typst",
+    "ubi:typst/typst",
+    "asdf:stephane-klein/asdf-typst",
+    "cargo:typst-cli"
+]
+typst.test = ["typst --version", "typst {{version}}"]
 typstyle.backends = [
     "aqua:Enter-tainer/typstyle",
     "ubi:Enter-tainer/typstyle",
@@ -2022,10 +2087,17 @@ updatecli.backends = [
 ]
 upt.backends = ["ubi:sigoden/upt", "asdf:ORCID/asdf-upt"]
 upx.backends = ["aqua:upx/upx", "asdf:jimmidyson/asdf-upx"]
-usage.backends = ["ubi:jdx/usage", "asdf:jdx/mise-usage"]
+usage.backends = ["ubi:jdx/usage", "asdf:jdx/mise-usage", "cargo:usage-cli"]
 usage.os = ["linux", "macos"]
+usage.test = ["usage --version", "usage-cli {{version}}"]
 usql.backends = ["aqua:xo/usql", "asdf:itspngu/asdf-usql"]
-uv.backends = ["aqua:astral-sh/uv", "asdf:asdf-community/asdf-uv"]
+uv.backends = [
+    "aqua:astral-sh/uv",
+    "ubi:astral-sh/uv",
+    "asdf:asdf-community/asdf-uv",
+    "pipx:uv"
+]
+uv.test = ["uv --version", "uv {{version}}"]
 v.backends = ["asdf:mise-plugins/mise-v"]
 vacuum.backends = ["aqua:daveshanley/vacuum"]
 vacuum.test = ["vacuum version", "{{version}}"]
@@ -2107,11 +2179,23 @@ xcodes.backends = ["aqua:XcodesOrg/xcodes"]
 xcodes.os = ["macos"]
 xcodes.test = ["xcodes version", "{{version}}"]
 xcresultparser.backends = ["asdf:mise-plugins/mise-xcresultparser"]
-xh.backends = ["aqua:ducaale/xh", "ubi:ducaale/xh", "asdf:NeoHsu/asdf-xh"]
+xh.backends = [
+    "aqua:ducaale/xh",
+    "ubi:ducaale/xh",
+    "asdf:NeoHsu/asdf-xh",
+    "cargo:xh"
+]
 xh.test = ["xh -V", "xh {{version}}"]
 yadm.backends = ["asdf:mise-plugins/mise-yadm"]
-yamlfmt.backends = ["aqua:google/yamlfmt", "asdf:mise-plugins/asdf-yamlfmt"]
+yamlfmt.backends = [
+    "aqua:google/yamlfmt",
+    "ubi:google/yamlfmt",
+    "asdf:mise-plugins/asdf-yamlfmt",
+    "go:github.com/google/yamlfmt/cmd/yamlfmt"
+]
+yamlfmt.test = ["yamlfmt --version", "yamlfmt {{version}}"]
 yamllint.backends = ["pipx:yamllint", "asdf:ericcornelissen/asdf-yamllint"]
+yamllint.test = ["yamllint --version", "yamllint {{version}}"]
 yamlscript.backends = [
     "ubi:yaml/yamlscript[exe=ys,matching=ys-]",
     "asdf:mise-plugins/mise-yamlscript"
@@ -2130,7 +2214,8 @@ youtube-dl.backends = ["asdf:mise-plugins/mise-youtube-dl"]
 yq.backends = [
     "aqua:mikefarah/yq",
     "ubi:mikefarah/yq",
-    "asdf:sudermanjr/asdf-yq"
+    "asdf:sudermanjr/asdf-yq",
+    "go:github.com/mikefarah/yq/v4"
 ]
 yq.test = ["yq --version", "version v{{version}}"]
 yt-dlp.backends = ["ubi:yt-dlp/yt-dlp", "asdf:duhow/asdf-yt-dlp"]
