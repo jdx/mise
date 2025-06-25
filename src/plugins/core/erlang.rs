@@ -15,6 +15,11 @@ use async_trait::async_trait;
 use eyre::Result;
 use xx::regex;
 
+#[cfg(linux)]
+use crate::cmd::CmdLineRunner;
+#[cfg(linux)]
+use std::fs;
+
 #[derive(Debug)]
 pub struct ErlangPlugin {
     ba: Arc<BackendArg>,
@@ -72,7 +77,95 @@ impl ErlangPlugin {
         Ok(())
     }
 
-    #[cfg(not(windows))]
+    #[cfg(linux)]
+    async fn install_precompiled(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> Result<Option<ToolVersion>> {
+        if Settings::get().erlang.compile == Some(true) {
+            return Ok(None);
+        }
+        let release_tag = format!("OTP-{}", tv.version);
+
+        let arch: String = match ARCH {
+            "x86_64" => "amd64".to_string(),
+            "aarch64" => "arm64".to_string(),
+            _ => {
+                debug!("Unsupported architecture: {}", ARCH);
+                return Ok(None);
+            }
+        };
+
+        let os_ver: String;
+        if let Ok(os) = std::env::var("ImageOS") {
+            os_ver = os
+        } else if let Ok(os_release) = &*os_release::OS_RELEASE {
+            os_ver = format!("{}-{}", os_release.id, os_release.version_id);
+        } else {
+            return Ok(None);
+        };
+
+        // Currently, Bob only builds for Ubuntu, so we have to check that we're on ubuntu, and on a supported version
+        if !["ubuntu-20.04", "ubuntu-22.04", "ubuntu-24.04"].contains(&os_ver.as_str()) {
+            debug!("Unsupported OS version: {}", os_ver);
+            return Ok(None);
+        }
+
+        let url: String =
+            format!("https://builds.hex.pm/builds/otp/{arch}/{os_ver}/{release_tag}.tar.gz");
+
+        let filename = url.split('/').next_back().unwrap();
+        let tarball_path = tv.download_path().join(filename);
+
+        ctx.pr.set_message(format!("Downloading {filename}"));
+        if !tarball_path.exists() {
+            HTTP.download_file(&url, &tarball_path, Some(&ctx.pr))
+                .await?;
+        }
+        ctx.pr.set_message(format!("Extracting {filename}"));
+        file::untar(
+            &tarball_path,
+            &tv.download_path(),
+            &TarOptions {
+                strip_components: 0,
+                pr: Some(&ctx.pr),
+                format: file::TarFormat::TarGz,
+            },
+        )?;
+
+        self.move_to_install_path(&tv)?;
+
+        CmdLineRunner::new(tv.install_path().join("Install"))
+            .with_pr(&ctx.pr)
+            .arg("-minimal")
+            .arg(tv.install_path())
+            .execute()?;
+
+        Ok(Some(tv))
+    }
+
+    #[cfg(linux)]
+    fn move_to_install_path(&self, tv: &ToolVersion) -> Result<()> {
+        let base_dir = tv
+            .download_path()
+            .read_dir()?
+            .find(|e| e.as_ref().unwrap().file_type().unwrap().is_dir())
+            .unwrap()?
+            .path();
+        file::remove_all(tv.install_path())?;
+        file::create_dir_all(tv.install_path())?;
+        for entry in fs::read_dir(base_dir)? {
+            let entry = entry?;
+            let dest = tv.install_path().join(entry.file_name());
+            trace!("moving {:?} to {:?}", entry.path(), &dest);
+            file::rename(entry.path(), dest)?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(macos)]
     async fn install_precompiled(
         &self,
         ctx: &InstallContext,
