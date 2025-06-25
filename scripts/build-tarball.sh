@@ -71,11 +71,11 @@ linux-arm*)
 esac
 
 if command -v cross >/dev/null; then
-	cross build --profile=serious --target "$RUST_TRIPLE" --features rustls-native-roots
+	cross build --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored
 elif command -v zig >/dev/null; then
-	cargo zigbuild --profile=serious --target "$RUST_TRIPLE" --features rustls-native-roots
+	cargo zigbuild --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored
 else
-	cargo build --profile=serious --target "$RUST_TRIPLE" --features rustls-native-roots
+	cargo build --profile=serious --target "$RUST_TRIPLE" --features openssl/vendored
 fi
 mkdir -p dist/mise/bin
 mkdir -p dist/mise/man/man1
