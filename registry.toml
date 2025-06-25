@@ -915,6 +915,8 @@ grain.backends = [
 ]
 grain.test = ["grain --version", ""] # versions are in a strange format
 granted.backends = ["aqua:common-fate/granted", "asdf:dex4er/asdf-granted"]
+graphite.backends = ["npm:@withgraphite/graphite-cli"]
+graphite.test = ["gt --version", "{{version}}"]
 grex.backends = ["aqua:pemistahl/grex", "asdf:ouest/asdf-grex"]
 grex.test = ["grex --version", "grex {{version}}"]
 gron.backends = ["aqua:tomnomnom/gron", "ubi:tomnomnom/gron"]
