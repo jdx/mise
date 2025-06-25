@@ -1,8 +1,7 @@
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 #[cfg(unix)]
 use crate::file::TarOptions;
@@ -15,6 +14,11 @@ use crate::{cmd, file, github, plugins};
 use async_trait::async_trait;
 use eyre::Result;
 use xx::regex;
+
+#[cfg(linux)]
+use crate::cmd::CmdLineRunner;
+#[cfg(linux)]
+use std::fs;
 
 #[derive(Debug)]
 pub struct ErlangPlugin {
