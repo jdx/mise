@@ -325,6 +325,3 @@ const OS: &str = "win64";
 
 #[cfg(macos)]
 const OS: &str = "apple-darwin";
-
-#[cfg(not(any(windows, macos)))]
-const OS: &str = "unknown";
