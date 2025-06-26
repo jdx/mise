@@ -1,5 +1,39 @@
 # Changelog
 
+## [2025.6.8](https://github.com/jdx/mise/compare/v2025.6.7..v2025.6.8) - 2025-06-26
+
+### 🚀 Features
+
+- **(java)** add support for tar.xz in Java core plugin to support RedHat JDKs by [@roele](https://github.com/roele) in [#5354](https://github.com/jdx/mise/pull/5354)
+- **(registry)** add osv-scanner by [@scop](https://github.com/scop) in [#5413](https://github.com/jdx/mise/pull/5413)
+- **(registry)** add scorecard by [@scop](https://github.com/scop) in [#5410](https://github.com/jdx/mise/pull/5410)
+- **(registry)** add docker cli by [@acesyde](https://github.com/acesyde) in [#5344](https://github.com/jdx/mise/pull/5344)
+- **(registry)** add claude code by [@lelouvincx](https://github.com/lelouvincx) in [#5420](https://github.com/jdx/mise/pull/5420)
+- **(registry)** add aws `cfn-lint` by [@garysassano](https://github.com/garysassano) in [#5434](https://github.com/jdx/mise/pull/5434)
+- added graphite by [@jdx](https://github.com/jdx) in [#5429](https://github.com/jdx/mise/pull/5429)
+
+### 🐛 Bug Fixes
+
+- **(erlang)** use precompiled binaries for linux ubuntu by [@paradox460](https://github.com/paradox460) in [#5402](https://github.com/jdx/mise/pull/5402)
+- **(ubi)** checksum generation might fail if extract_all option is used by [@roele](https://github.com/roele) in [#5394](https://github.com/jdx/mise/pull/5394)
+- `self-update` on MITM firewall by [@joehorsnell](https://github.com/joehorsnell) in [#5387](https://github.com/jdx/mise/pull/5387)
+- lint warning by [@jdx](https://github.com/jdx) in [#5425](https://github.com/jdx/mise/pull/5425)
+- only warn on toolset resolve errors by [@jdx](https://github.com/jdx) in [#5435](https://github.com/jdx/mise/pull/5435)
+
+### 🚜 Refactor
+
+- **(registry)** use pipx for semgrep by [@scop](https://github.com/scop) in [#5423](https://github.com/jdx/mise/pull/5423)
+- **(registry)** add backends and tests by [@risu729](https://github.com/risu729) in [#5388](https://github.com/jdx/mise/pull/5388)
+
+### Ci
+
+- unpin hyperfine by [@risu729](https://github.com/risu729) in [#5411](https://github.com/jdx/mise/pull/5411)
+
+### New Contributors
+
+- @paradox460 made their first contribution in [#5402](https://github.com/jdx/mise/pull/5402)
+- @lelouvincx made their first contribution in [#5420](https://github.com/jdx/mise/pull/5420)
+
 ## [2025.6.7](https://github.com/jdx/mise/compare/v2025.6.6..v2025.6.7) - 2025-06-23
 
 ### 🐛 Bug Fixes
