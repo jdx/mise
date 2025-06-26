@@ -39,9 +39,12 @@ impl Backend for NPMBackend {
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         timeout::run_with_timeout_async(
             async || {
-                let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
-                    .full_env(self.dependency_env(config).await?)
-                    .read()?;
+                let cmd = if Settings::get().npm.bun {
+                    cmd!("bun", "info", self.tool_name(), "versions", "--json")
+                } else {
+                    cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
+                };
+                let raw = cmd.full_env(self.dependency_env(config).await?).read()?;
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
                 Ok(versions)
             },
@@ -57,10 +60,12 @@ impl Backend for NPMBackend {
             async || {
                 cache
                     .get_or_try_init_async(async || {
-                        let raw =
+                        let cmd = if Settings::get().npm.bun {
+                            cmd!("bun", "info", this.tool_name(), "dist-tags", "--json")
+                        } else {
                             cmd!(NPM_PROGRAM, "view", this.tool_name(), "dist-tags", "--json")
-                                .full_env(this.dependency_env(config).await?)
-                                .read()?;
+                        };
+                        let raw = cmd.full_env(this.dependency_env(config).await?).read()?;
                         let dist_tags: Value = serde_json::from_str(&raw)?;
                         match dist_tags["latest"] {
                             Value::String(ref s) => Ok(Some(s.clone())),
