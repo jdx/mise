@@ -318,6 +318,8 @@ ccache.test = ["ccache --version", "ccache version {{version}}"]
 certstrap.backends = ["ubi:square/certstrap", "asdf:carnei-ro/asdf-certstrap"]
 certstrap.test = ["certstrap --version", "certstrap version {{version}}"]
 cf.backends = ["asdf:mise-plugins/mise-cf"]
+cfn-lint.backends = ["pipx:cfn-lint"]
+cfn-lint.test = ["cfn-lint --version", "cfn-lint {{version}}"]
 cfssl.backends = [
     "aqua:cloudflare/cfssl/cfssl",
     "asdf:mathew-fleisch/asdf-cfssl"
