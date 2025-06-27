@@ -136,12 +136,10 @@ fn arch() -> &'static str {
             } else {
                 "x64-musl-baseline"
             }
+        } else if cfg!(target_feature = "avx2") {
+            "x64"
         } else {
-            if cfg!(target_feature = "avx2") {
-                "x64"
-            } else {
-                "x64-baseline"
-            }
+            "x64-baseline"
         }
     } else if cfg!(target_arch = "aarch64") {
         if cfg!(target_env = "musl") {
