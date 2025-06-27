@@ -506,6 +506,8 @@ crystal.backends = [
     "asdf:mise-plugins/mise-crystal",
     "vfox:mise-plugins/vfox-crystal"
 ]
+cspell.backends = ["npm:cspell"]
+cspell.test = ["cspell --version", "{{version}}"]
 ctlptl.backends = ["aqua:tilt-dev/ctlptl", "asdf:ezcater/asdf-ctlptl"]
 ctop.backends = ["ubi:bcicen/ctop", "asdf:NeoHsu/asdf-ctop"]
 cue.backends = ["aqua:cue-lang/cue", "asdf:asdf-community/asdf-cue"]
@@ -1083,6 +1085,8 @@ jqp.backends = [
     "asdf:https://gitlab.com/wt0f/asdf-jqp"
 ]
 jreleaser.backends = ["aqua:jreleaser/jreleaser", "asdf:joschi/asdf-jreleaser"]
+json5.backends = ["npm:json5"]
+json5.test = ["json5 --version", "{{version}}"]
 jsonnet-bundler.aliases = ["jb"]
 jsonnet-bundler.backends = [
     "aqua:jsonnet-bundler/jsonnet-bundler",
@@ -1457,6 +1461,8 @@ nfpm.backends = [
     "asdf:ORCID/asdf-nfpm"
 ]
 nfpm.test = ["nfpm --version", "{{version}}"]
+ni.backends = ["npm:@antfu/ni"]
+ni.test = ["ni --version", "@antfu/ni  v{{version}}"]
 nim.backends = ["asdf:mise-plugins/mise-nim"]
 ninja.backends = ["aqua:ninja-build/ninja", "asdf:asdf-community/asdf-ninja"]
 node.backends = ["core:node"]
@@ -1609,6 +1615,8 @@ pre-commit.backends = [
 ]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
 pre-commit.test = ["pre-commit --version", "pre-commit {{version}}"]
+prettier.backends = ["npm:prettier"]
+prettier.test = ["prettier --version", "{{version}}"]
 process-compose.backends = ["ubi:F1bonacc1/process-compose"]
 process-compose.description = "Process Compose is a simple and flexible scheduler and orchestrator to manage non-containerized applications."
 process-compose.test = ["process-compose version --short", "{{version}}"]
