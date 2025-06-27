@@ -768,7 +768,7 @@ gcloud.backends = ["asdf:mise-plugins/mise-gcloud"]
 gdu.backends = ["aqua:dundee/gdu"]
 gemini-cli.aliases = ["gemini"]
 gemini-cli.backends = ["npm:@google/gemini-cli"]
-gemini-cli.test = ["gemini", "{{version}}"]
+gemini-cli.test = ["gemini --version", "{{version}}"]
 getenvoy.backends = [
     "ubi:tetratelabs-attic/getenvoy",
     "asdf:mise-plugins/mise-getenvoy"
