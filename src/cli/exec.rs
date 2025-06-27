@@ -214,7 +214,13 @@ fn parse_command(
             let (program, args) = command.split_first().unwrap();
             (program.clone(), args.into())
         }
-        _ => (shell.into(), vec!["-c".into(), c.clone().unwrap()]),
+        _ => {
+            #[cfg(unix)]
+            let command_flag = "-c";
+            #[cfg(windows)]
+            let command_flag = "/c";
+            (shell.into(), vec![command_flag.into(), c.clone().unwrap()])
+        }
     }
 }
 
