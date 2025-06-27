@@ -10,17 +10,17 @@ jobs:
     ## if github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
           token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           shared-key: build
           save-if: false
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
-      - uses: actions/cache@v4
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
           path: |
@@ -30,7 +30,7 @@ jobs:
       - run: mise x -- bun i
       - run: mise run render:fig
       - name: Create Autocomplete PR ## Create the autocomplete PR using this action
-        uses: withfig/push-to-fig-autocomplete-action@v2
+        uses: withfig/push-to-fig-autocomplete-action@fb320c27ec12b225b9446373aa30b7d9c0c1eae8 # v2
         with:
           token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
           autocomplete-spec-name: mise
