@@ -196,7 +196,6 @@ jobs:
           sudo apt-get install \
             bison \
             build-essential \
-            direnv \
             fd-find \
             fish \
             pipx \
