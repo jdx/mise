@@ -1464,7 +1464,7 @@ nfpm.backends = [
 ]
 nfpm.test = ["nfpm --version", "{{version}}"]
 ni.backends = ["npm:@antfu/ni"]
-ni.test = ["ni --version | cat", "@antfu/ni  v{{version}}"]
+ni.test = ["ni --version", "@antfu/ni  \u001b[36mv{{version}}\u001b[39m"]
 nim.backends = ["asdf:mise-plugins/mise-nim"]
 ninja.backends = ["aqua:ninja-build/ninja", "asdf:asdf-community/asdf-ninja"]
 node.backends = ["core:node"]
