@@ -1608,6 +1608,7 @@ powerline-go.backends = [
     "asdf:dex4er/asdf-powerline-go"
 ]
 powerpipe.backends = ["aqua:turbot/powerpipe", "asdf:jc00ke/asdf-powerpipe"]
+powershell-core.aliases = ["powershell"]
 powershell-core.backends = [
     "aqua:PowerShell/PowerShell",
     "asdf:daveneeley/asdf-powershell-core"
