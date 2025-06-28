@@ -130,13 +130,25 @@ fn os() -> &'static str {
 
 fn arch() -> &'static str {
     if cfg!(target_arch = "x86_64") {
-        if cfg!(target_feature = "avx2") {
+        if cfg!(target_env = "musl") {
+            if cfg!(target_feature = "avx2") {
+                "x64-musl"
+            } else {
+                "x64-musl-baseline"
+            }
+        } else if cfg!(target_feature = "avx2") {
             "x64"
         } else {
             "x64-baseline"
         }
     } else if cfg!(target_arch = "aarch64") {
-        if cfg!(windows) { "x64" } else { "aarch64" }
+        if cfg!(target_env = "musl") {
+            "aarch64-musl"
+        } else if cfg!(windows) {
+            "x64"
+        } else {
+            "aarch64"
+        }
     } else {
         &ARCH
     }
