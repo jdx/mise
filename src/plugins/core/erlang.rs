@@ -99,7 +99,12 @@ impl ErlangPlugin {
 
         let os_ver: String;
         if let Ok(os) = std::env::var("ImageOS") {
-            os_ver = os
+            os_ver = match os.as_str() {
+                "ubuntu24" => "ubuntu-24.04".to_string(),
+                "ubuntu22" => "ubuntu-22.04".to_string(),
+                "ubuntu20" => "ubuntu-20.04".to_string(),
+                _ => os,
+            };
         } else if let Ok(os_release) = &*os_release::OS_RELEASE {
             os_ver = format!("{}-{}", os_release.id, os_release.version_id);
         } else {

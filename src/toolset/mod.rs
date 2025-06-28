@@ -159,7 +159,9 @@ impl Toolset {
             .map(|(ba, tvl)| (config.clone(), ba, tvl.clone()))
             .collect::<Vec<_>>();
         let tvls = parallel::parallel(versions, |(config, ba, mut tvl)| async move {
-            tvl.resolve(&config, &Default::default()).await?;
+            if let Err(err) = tvl.resolve(&config, &Default::default()).await {
+                warn!("Failed to resolve tool version list for {ba}: {err}");
+            }
             Ok((ba, tvl))
         })
         .await?;

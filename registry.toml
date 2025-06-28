@@ -318,6 +318,8 @@ ccache.test = ["ccache --version", "ccache version {{version}}"]
 certstrap.backends = ["ubi:square/certstrap", "asdf:carnei-ro/asdf-certstrap"]
 certstrap.test = ["certstrap --version", "certstrap version {{version}}"]
 cf.backends = ["asdf:mise-plugins/mise-cf"]
+cfn-lint.backends = ["pipx:cfn-lint"]
+cfn-lint.test = ["cfn-lint --version", "cfn-lint {{version}}"]
 cfssl.backends = [
     "aqua:cloudflare/cfssl/cfssl",
     "asdf:mathew-fleisch/asdf-cfssl"
@@ -506,6 +508,8 @@ crystal.backends = [
     "asdf:mise-plugins/mise-crystal",
     "vfox:mise-plugins/vfox-crystal"
 ]
+cspell.backends = ["npm:cspell"]
+cspell.test = ["cspell --version", "{{version}}"]
 ctlptl.backends = ["aqua:tilt-dev/ctlptl", "asdf:ezcater/asdf-ctlptl"]
 ctop.backends = ["ubi:bcicen/ctop", "asdf:NeoHsu/asdf-ctop"]
 cue.backends = ["aqua:cue-lang/cue", "asdf:asdf-community/asdf-cue"]
@@ -764,6 +768,9 @@ gauche.backends = ["asdf:mise-plugins/mise-gauche"]
 gcc-arm-none-eabi.backends = ["asdf:mise-plugins/mise-gcc-arm-none-eabi"]
 gcloud.backends = ["asdf:mise-plugins/mise-gcloud"]
 gdu.backends = ["aqua:dundee/gdu"]
+gemini-cli.aliases = ["gemini"]
+gemini-cli.backends = ["npm:@google/gemini-cli"]
+gemini-cli.test = ["gemini --version", "{{version}}"]
 getenvoy.backends = [
     "ubi:tetratelabs-attic/getenvoy",
     "asdf:mise-plugins/mise-getenvoy"
@@ -1083,6 +1090,8 @@ jqp.backends = [
     "asdf:https://gitlab.com/wt0f/asdf-jqp"
 ]
 jreleaser.backends = ["aqua:jreleaser/jreleaser", "asdf:joschi/asdf-jreleaser"]
+json5.backends = ["npm:json5"]
+json5.test = ["json5 --version", "{{version}}"]
 jsonnet-bundler.aliases = ["jb"]
 jsonnet-bundler.backends = [
     "aqua:jsonnet-bundler/jsonnet-bundler",
@@ -1457,6 +1466,8 @@ nfpm.backends = [
     "asdf:ORCID/asdf-nfpm"
 ]
 nfpm.test = ["nfpm --version", "{{version}}"]
+ni.backends = ["npm:@antfu/ni"]
+ni.test = ["ni --version", "@antfu/ni  \u001b[36mv{{version}}\u001b[39m"]
 nim.backends = ["asdf:mise-plugins/mise-nim"]
 ninja.backends = ["aqua:ninja-build/ninja", "asdf:asdf-community/asdf-ninja"]
 node.backends = ["core:node"]
@@ -1597,6 +1608,7 @@ powerline-go.backends = [
     "asdf:dex4er/asdf-powerline-go"
 ]
 powerpipe.backends = ["aqua:turbot/powerpipe", "asdf:jc00ke/asdf-powerpipe"]
+powershell-core.aliases = ["powershell"]
 powershell-core.backends = [
     "aqua:PowerShell/PowerShell",
     "asdf:daveneeley/asdf-powershell-core"
@@ -1609,6 +1621,8 @@ pre-commit.backends = [
 ]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
 pre-commit.test = ["pre-commit --version", "pre-commit {{version}}"]
+prettier.backends = ["npm:prettier"]
+prettier.test = ["prettier --version", "{{version}}"]
 process-compose.backends = ["ubi:F1bonacc1/process-compose"]
 process-compose.description = "Process Compose is a simple and flexible scheduler and orchestrator to manage non-containerized applications."
 process-compose.test = ["process-compose version --short", "{{version}}"]
