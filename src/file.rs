@@ -716,7 +716,7 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     for entry in Archive::new(tar).entries().wrap_err_with(err)? {
         let mut entry = entry.wrap_err_with(err)?;
         trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
-        entry.unpack_in(&dest).wrap_err_with(err)?;
+        entry.unpack_in(dest).wrap_err_with(err)?;
         if let Some(pr) = &opts.pr {
             pr.set_length(entry.raw_file_position());
         }
