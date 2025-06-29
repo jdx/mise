@@ -308,9 +308,11 @@ cargo-binstall.description = "Binary installation for rust projects"
 # cargo-binstall.test = ["cargo binstall -V", "{{version}}"] # flaky on windows CI
 cargo-insta.backends = ["aqua:mitsuhiko/insta", "ubi:mitsuhiko/insta"]
 cargo-make.backends = [
+    "aqua:sagiegurari/cargo-make",
     "ubi:sagiegurari/cargo-make",
     "asdf:mise-plugins/asdf-cargo-make"
 ]
+cargo-make.test = ["makers --version", "cargo-make {{version}}"]
 carp.backends = ["ubi:carp-lang/Carp[exe=carp]", "asdf:susurri/asdf-carp"]
 carthage.backends = ["asdf:mise-plugins/mise-carthage"]
 ccache.backends = ["ubi:ccache/ccache", "asdf:asdf-community/asdf-ccache"]
