@@ -1601,7 +1601,10 @@ polaris.backends = [
 ]
 popeye.backends = ["aqua:derailed/popeye", "asdf:nlamirault/asdf-popeye"]
 postgis.backends = ["asdf:mise-plugins/mise-postgis"]
-postgres.backends = ["aqua:theseus-rs/postgresql-binaries", "asdf:mise-plugins/mise-postgres"]
+postgres.backends = [
+    "aqua:theseus-rs/postgresql-binaries",
+    "asdf:mise-plugins/mise-postgres"
+]
 postgres.aliases = ["psql"]
 postgres.test = ["psql --version", "psql (PostgreSQL) {{version}}"]
 powerline-go.backends = [
