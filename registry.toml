@@ -819,7 +819,7 @@ github-markdown-toc.backends = [
     "aqua:ekalinin/github-markdown-toc",
     "asdf:skyzyx/asdf-github-markdown-toc"
 ]
-github-markdown-toc.test = ["github-markdown-toc --version", "{{version}}"]
+github-markdown-toc.test = ["gh-md-toc --version", "{{version}}"]
 gitleaks.backends = ["aqua:gitleaks/gitleaks", "asdf:jmcvetta/asdf-gitleaks"]
 gitleaks.test = ["gitleaks --version", "gitleaks version {{version}}"]
 gitsign.backends = ["aqua:sigstore/gitsign", "asdf:spencergilbert/asdf-gitsign"]
