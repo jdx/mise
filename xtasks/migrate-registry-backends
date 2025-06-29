@@ -5,21 +5,21 @@
 # the registry.toml file in-place by prepending the correct 'aqua:' backend
 # to the backends list for each matched tool.
 
-yq --output-format=json . registry.toml | \
-jq -c '.tools | to_entries[] | select(.value.backends[0]? | (type == "string" and startswith("ubi:"))) | {tool_key: .key, ubi_backend: .value.backends[0]}' | \
-while IFS= read -r tool_json; do
-    tool_key=$(echo "$tool_json" | jq -r '.tool_key')
-    ubi_backend=$(echo "$tool_json" | jq -r '.ubi_backend')
+yq --output-format=json . registry.toml |
+	jq -c '.tools | to_entries[] | select(.value.backends[0]? | (type == "string" and startswith("ubi:"))) | {tool_key: .key, ubi_backend: .value.backends[0]}' |
+	while IFS= read -r tool_json; do
+		tool_key=$(echo "$tool_json" | jq -r '.tool_key')
+		ubi_backend=$(echo "$tool_json" | jq -r '.ubi_backend')
 
-    package_path=$(echo "$ubi_backend" | sed 's/^ubi://' | sed 's/\[.*\]//')
-    aqua_registry_file="./aqua-registry/pkgs/${package_path}/registry.yaml"
+		package_path=$(echo "$ubi_backend" | sed 's/^ubi://' | sed 's/\[.*\]//')
+		aqua_registry_file="./aqua-registry/pkgs/${package_path}/registry.yaml"
 
-    if [ -f "$aqua_registry_file" ]; then
-        new_aqua_backend="aqua:${package_path}"
-        echo "Found match for tool '${tool_key}'. Prepending backend '${new_aqua_backend}' to registry.toml." >&2
-        sed -i "s|\"${ubi_backend}\"|\"${new_aqua_backend}\", \"${ubi_backend}\"|" registry.toml
-    fi
-done
+		if [ -f "$aqua_registry_file" ]; then
+			new_aqua_backend="aqua:${package_path}"
+			echo "Found match for tool '${tool_key}'. Prepending backend '${new_aqua_backend}' to registry.toml." >&2
+			sed -i "s|\"${ubi_backend}\"|\"${new_aqua_backend}\", \"${ubi_backend}\"|" registry.toml
+		fi
+	done
 
 taplo fmt
 toml-sort -i settings.toml --spaces-indent-inline-array 4

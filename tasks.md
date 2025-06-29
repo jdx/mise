@@ -133,6 +133,10 @@ User to run as
 
 - **Usage**: `lint:toml`
 
+## `migrate-registry-backends`
+
+- **Usage**: `migrate-registry-backends`
+
 ## `pre-commit`
 
 - **Usage**: `pre-commit`
