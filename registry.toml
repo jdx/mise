@@ -2233,7 +2233,7 @@ youtube-dl.backends = [
     "ubi:ytdl-org/ytdl-nightly[matching_regex=^youtube-dl$,rename_exe=youtube-dl]",
     "asdf:mise-plugins/mise-youtube-dl"
 ]
-youtube-dl.test = ["youtube-dl --version", "{{version}}"]
+# youtube-dl.test = ["youtube-dl --version", "{{version}}"] # disable until the versions host update
 yq.backends = [
     "aqua:mikefarah/yq",
     "ubi:mikefarah/yq",
