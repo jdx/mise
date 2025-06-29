@@ -2229,7 +2229,8 @@ yazi.test = [
 ] # Version is in format Yazi {{version}} (buildid DATE) so it failed Yazi 0.4.1 (2275719 2024-12-10)
 yj.backends = ["ubi:sclevine/yj", "asdf:ryodocx/asdf-yj"]
 yor.backends = ["aqua:bridgecrewio/yor", "asdf:ordinaryexperts/asdf-yor"]
-youtube-dl.backends = ["asdf:mise-plugins/mise-youtube-dl"]
+youtube-dl.backends = ["ubi:ytdl-org/ytdl-nightly[matching_regex=^youtube-dl$,rename_exe=youtube-dl]","asdf:mise-plugins/mise-youtube-dl"]
+youtube-dl.test = ["youtube-dl --version", "{{version}}"]
 yq.backends = [
     "aqua:mikefarah/yq",
     "ubi:mikefarah/yq",
