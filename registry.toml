@@ -225,10 +225,8 @@ biome.backends = [
 ]
 biome.test = ["biome --version", "Version: {{version}}"]
 bitwarden.backends = ["aqua:bitwarden/clients", "asdf:vixus0/asdf-bitwarden"]
-bitwarden.test = [
-    "bw --version",
-    ""
-] # TODO: change version_filter to version_prefix in aqua registry
+# TODO: change version_filter to version_prefix in aqua registry
+# bitwarden.test = ["bw --version", ""] # latest version doesn't contain sha256
 bitwarden-secrets-manager.backends = [
     "ubi:bitwarden/sdk[tag_regex=^bws,exe=bws]",
     "asdf:asdf-community/asdf-bitwarden-secrets-manager"
