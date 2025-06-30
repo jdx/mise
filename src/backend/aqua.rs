@@ -62,7 +62,7 @@ impl Backend for AquaBackend {
         let mut versions = Vec::new();
         for (v, tag) in version_tags.iter() {
             let pkg = AQUA_REGISTRY
-                .package_with_version(&self.id, tag)
+                .package_with_version(&self.id, &[tag])
                 .await
                 .unwrap_or_default();
             if !pkg.no_asset && pkg.error_message.is_none() {
@@ -83,11 +83,20 @@ impl Backend for AquaBackend {
             .iter()
             .find(|(version, _)| version == &tv.version)
             .map(|(_, tag)| tag);
-        let mut v = tag.unwrap_or(&tv.version).to_string();
-        let pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
+        let mut v = tag.cloned().unwrap_or_else(|| tv.version.clone());
+        let mut v_prefixed =
+            (!tag.is_some() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
+        let versions = match &v_prefixed {
+            Some(v_prefixed) => vec![v.as_str(), v_prefixed.as_str()],
+            None => vec![v.as_str()],
+        };
+        let pkg = AQUA_REGISTRY
+            .package_with_version(&self.id, &versions)
+            .await?;
         if let Some(prefix) = &pkg.version_prefix {
             if !v.starts_with(prefix) {
                 v = format!("{prefix}{v}");
+                v_prefixed = v_prefixed.map(|v| format!("{prefix}{v}"));
             }
         }
         if pkg.no_asset {
@@ -97,20 +106,18 @@ impl Backend for AquaBackend {
             bail!(pkg.error_message.unwrap());
         }
         validate(&pkg)?;
-        let url = match self.fetch_url(&pkg, &v).await {
+        // try v-prefixed version first because most aqua packages use v-prefixed versions
+        let url = match self
+            .fetch_url(&pkg, v_prefixed.as_ref().unwrap_or(&v))
+            .await
+        {
             Ok(url) => url,
-            Err(err) => {
-                if tag.is_some() || tv.version.starts_with("v") {
-                    return Err(err);
-                }
-                v = format!("v{}", tv.version);
-                if let Some(prefix) = &pkg.version_prefix {
-                    v = format!("{prefix}{v}");
-                }
+            Err(err) if v_prefixed.is_some() => {
                 self.fetch_url(&pkg, &v)
                     .await
                     .map_err(|e| err.wrap_err(e))?
             }
+            Err(err) => return Err(err),
         };
         let filename = url.split('/').next_back().unwrap();
         self.download(ctx, &tv, &url, filename).await?;
@@ -137,8 +144,9 @@ impl Backend for AquaBackend {
         let install_path = tv.install_path();
         let paths = cache
             .get_or_try_init_async(async || {
+                // TODO: align this logic with the one in `install_version_`
                 let pkg = AQUA_REGISTRY
-                    .package_with_version(&self.id, &tv.version)
+                    .package_with_version(&self.id, &[&tv.version])
                     .await?;
 
                 let srcs = self.srcs(&pkg, tv)?;
@@ -227,7 +235,7 @@ impl AquaBackend {
                                 continue;
                             }
                         }
-                        let pkg = pkg.clone().with_version(version);
+                        let pkg = pkg.clone().with_version(&[version]);
                         if let Some(prefix) = &pkg.version_prefix {
                             if let Some(_v) = version.strip_prefix(prefix) {
                                 version = _v;

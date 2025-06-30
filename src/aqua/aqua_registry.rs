@@ -225,8 +225,8 @@ impl AquaRegistry {
         Ok(pkg)
     }
 
-    pub async fn package_with_version(&self, id: &str, v: &str) -> Result<AquaPackage> {
-        Ok(self.package(id).await?.with_version(v))
+    pub async fn package_with_version(&self, id: &str, versions: &[&str]) -> Result<AquaPackage> {
+        Ok(self.package(id).await?.with_version(versions))
     }
 
     async fn fetch_package_yaml(
@@ -281,8 +281,8 @@ fn fetch_latest_repo(repo: &Git) -> Result<()> {
 }
 
 impl AquaPackage {
-    pub fn with_version(mut self, v: &str) -> AquaPackage {
-        self = apply_override(self.clone(), self.version_override(v));
+    pub fn with_version(mut self, versions: &[&str]) -> AquaPackage {
+        self = apply_override(self.clone(), self.version_override(versions));
         if let Some(avo) = self.overrides.clone().into_iter().find(|o| {
             if let (Some(goos), Some(goarch)) = (&o.goos, &o.goarch) {
                 goos == aqua::os() && goarch == aqua::arch()
@@ -299,9 +299,12 @@ impl AquaPackage {
         self
     }
 
-    fn version_override(&self, v: &str) -> &AquaPackage {
-        let expr = self.expr_parser(v);
-        let ctx = self.expr_ctx(v);
+    // all versions must refer to the same logical version. e.g. ["v1.2.3", "1.2.3"]
+    fn version_override(&self, versions: &[&str]) -> &AquaPackage {
+        let expressions = versions
+            .iter()
+            .map(|v| (self.expr_parser(v), self.expr_ctx(v)))
+            .collect_vec();
         vec![self]
             .into_iter()
             .chain(self.version_overrides.iter())
@@ -309,11 +312,13 @@ impl AquaPackage {
                 if vo.version_constraint.is_empty() {
                     true
                 } else {
-                    expr.eval(&vo.version_constraint, &ctx)
-                        .map_err(|e| debug!("error parsing {}: {e}", vo.version_constraint))
-                        .unwrap_or(false.into())
-                        .as_bool()
-                        .unwrap()
+                    expressions.iter().any(|(expr, ctx)| {
+                        expr.eval(&vo.version_constraint, &ctx)
+                            .map_err(|e| debug!("error parsing {}: {e}", vo.version_constraint))
+                            .unwrap_or(false.into())
+                            .as_bool()
+                            .unwrap()
+                    })
                 }
             })
             .unwrap_or(self)
