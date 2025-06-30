@@ -1,5 +1,37 @@
 # Changelog
 
+## [2025.6.9](https://github.com/jdx/mise/compare/v2025.6.8..v2025.6.9) - 2025-06-30
+
+### 🚀 Features
+
+- **(registry)** adds gemini-cli by [@risu729](https://github.com/risu729) in [#5447](https://github.com/jdx/mise/pull/5447)
+- **(registry)** adds npm backended tools by [@risu729](https://github.com/risu729) in [#5446](https://github.com/jdx/mise/pull/5446)
+- **(registry)** add powershell alias by [@risu729](https://github.com/risu729) in [#5449](https://github.com/jdx/mise/pull/5449)
+
+### 🐛 Bug Fixes
+
+- **(bun)** enhance architecture detection for musl targets by [@roele](https://github.com/roele) in [#5450](https://github.com/jdx/mise/pull/5450)
+- **(erlang)** use precompiled ubuntu binaries on GHA by [@paradox460](https://github.com/paradox460) in [#5439](https://github.com/jdx/mise/pull/5439)
+- **(registry)** use aqua backend for cargo-make by [@risu729](https://github.com/risu729) in [#5465](https://github.com/jdx/mise/pull/5465)
+- `parse_command` passing `-c` flag to cmd.exe by [@IMXEren](https://github.com/IMXEren) in [#5441](https://github.com/jdx/mise/pull/5441)
+
+### 🧪 Testing
+
+- **(registry)** disable bitwarden test by [@risu729](https://github.com/risu729) in [#5468](https://github.com/jdx/mise/pull/5468)
+
+### 📦️ Dependency Updates
+
+- pin dependencies by [@renovate[bot]](https://github.com/renovate[bot]) in [#5443](https://github.com/jdx/mise/pull/5443)
+- update jdx/mise-action digest to 5cb1df6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5444](https://github.com/jdx/mise/pull/5444)
+
+### Ci
+
+- **(test)** run `apt-get update` before `apt-get install` by [@risu729](https://github.com/risu729) in [#5448](https://github.com/jdx/mise/pull/5448)
+
+### New Contributors
+
+- @IMXEren made their first contribution in [#5441](https://github.com/jdx/mise/pull/5441)
+
 ## [2025.6.8](https://github.com/jdx/mise/compare/v2025.6.7..v2025.6.8) - 2025-06-26
 
 ### 🚀 Features
