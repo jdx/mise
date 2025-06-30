@@ -517,6 +517,7 @@ impl AquaFile {
         let asset = asset.strip_suffix(".tbz").unwrap_or(asset);
         let ctx = hashmap! {
             "AssetWithoutExt".to_string() => asset.to_string(),
+            "FileName".to_string() => self.name.to_string(),
         };
         self.src
             .as_ref()
