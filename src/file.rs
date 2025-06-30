@@ -16,7 +16,6 @@ use eyre::bail;
 use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
-use path_absolutize::Absolutize;
 use std::sync::LazyLock as Lazy;
 use tar::Archive;
 use walkdir::WalkDir;
@@ -164,7 +163,7 @@ pub fn copy_dir_all<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()
     let from = from.as_ref();
     let to = to.as_ref();
     trace!("cp -r {} {}", from.display(), to.display());
-    recursive_ls(from)?.into_iter().try_for_each(|path| {
+    recursive_ls(from, false)?.into_iter().try_for_each(|path| {
         let relative = path.strip_prefix(from)?;
         let dest = to.join(relative);
         create_dir_all(dest.parent().unwrap())?;
@@ -329,7 +328,7 @@ pub fn ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
     Ok(output)
 }
 
-pub fn recursive_ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
+pub fn recursive_ls(dir: &Path, include_dirs: bool) -> Result<BTreeSet<PathBuf>> {
     if !dir.is_dir() {
         return Ok(Default::default());
     }
@@ -337,7 +336,7 @@ pub fn recursive_ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
     Ok(WalkDir::new(dir)
         .follow_links(true)
         .into_iter()
-        .filter_ok(|e| e.file_type().is_file())
+        .filter_ok(|e| e.file_type().is_file() || (include_dirs && e.file_type().is_dir()))
         .map_ok(|e| e.path().to_path_buf())
         .try_collect()?)
 }
@@ -713,22 +712,42 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     //         pr.set_length(total);
     //     }
     // }
+    create_dir_all(dest).wrap_err_with(err)?;
     for entry in Archive::new(tar).entries().wrap_err_with(err)? {
         let mut entry = entry.wrap_err_with(err)?;
-        let path: PathBuf = entry
-            .path()
-            .wrap_err_with(err)?
-            .components()
-            .skip(opts.strip_components)
-            .filter(|c| c.as_os_str() != ".")
-            .collect::<PathBuf>()
-            .absolutize_virtually(dest)?
-            .to_path_buf();
-        create_dir_all(path.parent().unwrap()).wrap_err_with(err)?;
-        trace!("extracting {}", display_path(&path));
-        entry.unpack(&path).wrap_err_with(err)?;
+        trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
+        entry.unpack_in(dest).wrap_err_with(err)?;
         if let Some(pr) = &opts.pr {
             pr.set_length(entry.raw_file_position());
+        }
+    }
+    if opts.strip_components > 0 {
+        debug!(
+            "moving files with strip-components={}",
+            opts.strip_components
+        );
+        let entries = recursive_ls(dest, true).wrap_err_with(err)?;
+        for entry in entries.into_iter().rev() {
+            if entry.is_dir() {
+                if is_empty_dir(&entry).wrap_err_with(err)? {
+                    fs::remove_dir(&entry).wrap_err_with(err)?;
+                }
+                continue;
+            }
+            let relative = entry
+                .strip_prefix(dest)
+                .wrap_err_with(err)?
+                .components()
+                .skip(opts.strip_components)
+                .collect::<PathBuf>();
+            if relative.is_empty() {
+                // remove the file if the path components are all stripped
+                fs::remove_file(&entry).wrap_err_with(err)?;
+                continue;
+            }
+            let stripped = dest.join(relative);
+            create_dir_all(stripped.parent().unwrap()).wrap_err_with(err)?;
+            fs::rename(&entry, &stripped).wrap_err_with(err)?;
         }
     }
     // if let Some(pr) = &opts.pr {
