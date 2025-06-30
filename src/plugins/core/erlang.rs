@@ -248,6 +248,11 @@ impl ErlangPlugin {
         Ok(Some(tv))
     }
 
+    #[cfg(not(any(linux, macos, windows)))]
+    async fn install_precompiled(&self, ctx: &InstallContext) -> Result<Option<ToolVersion>> {
+        Ok(None)
+    }
+
     async fn install_via_kerl(
         &self,
         _ctx: &InstallContext,
