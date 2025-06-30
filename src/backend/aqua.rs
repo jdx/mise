@@ -77,25 +77,18 @@ impl Backend for AquaBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let mut v;
-        let pkg;
-        match self
+        let tag = self
             .get_version_tags()
             .await?
             .iter()
             .find(|(version, _)| version == &tv.version)
+            .map(|(_, tag)| tag);
+        let mut v = tag.unwrap_or(&tv.version).to_string();
+        let pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
+        if let Some(prefix) = &pkg.version_prefix
+            && !v.starts_with(prefix)
         {
-            Some((_, tag)) => {
-                v = tag.clone();
-                pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
-            }
-            None => {
-                v = format!("v{}", tv.version);
-                pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
-                if let Some(prefix) = &pkg.version_prefix {
-                    v = format!("{prefix}{v}");
-                }
-            }
+            v = format!("{prefix}{v}");
         }
         if pkg.no_asset {
             bail!("no asset released");
@@ -107,10 +100,12 @@ impl Backend for AquaBackend {
         let url = match self.fetch_url(&pkg, &v).await {
             Ok(url) => url,
             Err(err) => {
+                if tag.is_some() || tv.version.starts_with("v") {
+                    return Err(err);
+                }
+                v = format!("v{}", tv.version);
                 if let Some(prefix) = &pkg.version_prefix {
-                    v = format!("{}{}", prefix, tv.version);
-                } else {
-                    v = tv.version.to_string();
+                    v = format!("{prefix}{v}");
                 }
                 self.fetch_url(&pkg, &v)
                     .await
