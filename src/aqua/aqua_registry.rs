@@ -313,7 +313,7 @@ impl AquaPackage {
                     true
                 } else {
                     expressions.iter().any(|(expr, ctx)| {
-                        expr.eval(&vo.version_constraint, &ctx)
+                        expr.eval(&vo.version_constraint, ctx)
                             .map_err(|e| debug!("error parsing {}: {e}", vo.version_constraint))
                             .unwrap_or(false.into())
                             .as_bool()

@@ -85,7 +85,7 @@ impl Backend for AquaBackend {
             .map(|(_, tag)| tag);
         let mut v = tag.cloned().unwrap_or_else(|| tv.version.clone());
         let mut v_prefixed =
-            (!tag.is_some() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
+            (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
         let versions = match &v_prefixed {
             Some(v_prefixed) => vec![v.as_str(), v_prefixed.as_str()],
             None => vec![v.as_str()],
@@ -112,11 +112,10 @@ impl Backend for AquaBackend {
             .await
         {
             Ok(url) => url,
-            Err(err) if v_prefixed.is_some() => {
-                self.fetch_url(&pkg, &v)
-                    .await
-                    .map_err(|e| err.wrap_err(e))?
-            }
+            Err(err) if v_prefixed.is_some() => self
+                .fetch_url(&pkg, &v)
+                .await
+                .map_err(|e| err.wrap_err(e))?,
             Err(err) => return Err(err),
         };
         let filename = url.split('/').next_back().unwrap();
