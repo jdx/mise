@@ -85,10 +85,10 @@ impl Backend for AquaBackend {
             .map(|(_, tag)| tag);
         let mut v = tag.unwrap_or(&tv.version).to_string();
         let pkg = AQUA_REGISTRY.package_with_version(&self.id, &v).await?;
-        if let Some(prefix) = &pkg.version_prefix
-            && !v.starts_with(prefix)
-        {
-            v = format!("{prefix}{v}");
+        if let Some(prefix) = &pkg.version_prefix {
+            if !v.starts_with(prefix) {
+                v = format!("{prefix}{v}");
+            }
         }
         if pkg.no_asset {
             bail!("no asset released");
