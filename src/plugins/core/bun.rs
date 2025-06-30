@@ -8,8 +8,8 @@ use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 
-use crate::cli::args::BackendArg;
-use crate::cli::version::{ARCH, OS};
+use crate::{cli::args::BackendArg, config::Settings};
+use crate::cli::version::{ARCH};
 use crate::cmd::CmdLineRunner;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -118,13 +118,11 @@ impl Backend for BunPlugin {
     }
 }
 
-fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "darwin"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else {
-        &OS
+fn os() -> String {
+    let os = Settings::get().os().to_string();
+    match os.as_str() {
+        "macos" => "darwin".into(),
+        _ => os,
     }
 }
 

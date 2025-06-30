@@ -7,7 +7,6 @@ use std::sync::Arc;
 use crate::backend::Backend;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
@@ -442,11 +441,11 @@ impl Backend for JavaPlugin {
     }
 }
 
-fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "macosx"
-    } else {
-        &OS
+fn os() -> String {
+    let os = Settings::get().os().to_string();
+    match os.as_str() {
+        "macos" => "macosx".into(),
+        _ => os,
     }
 }
 

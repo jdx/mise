@@ -12,7 +12,6 @@ use versions::Versioning;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::http::{HTTP, HTTP_FETCH};
@@ -161,15 +160,13 @@ impl Backend for DenoPlugin {
     }
 }
 
-fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "apple-darwin"
-    } else if cfg!(target_os = "linux") {
-        "unknown-linux-gnu"
-    } else if cfg!(target_os = "windows") {
-        "pc-windows-msvc"
-    } else {
-        &OS
+fn os() -> String {
+    let os = Settings::get().os().to_string();
+    match os.as_str() {
+        "macos" => "apple-darwin".into(),
+        "linux" => "unknown-linux-gnu".into(),
+        "windows" => "pc-windows-msvc".into(),
+        _ => os,
     }
 }
 

@@ -4,7 +4,6 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::Result;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
@@ -266,11 +265,11 @@ impl Backend for GoPlugin {
     }
 }
 
-fn platform() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "darwin"
-    } else {
-        &OS
+fn platform() -> String {
+    let os = Settings::get().os().to_string();
+    match os.as_str() {
+        "macos" => "darwin".into(),
+        _ => os,
     }
 }
 

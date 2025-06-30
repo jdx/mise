@@ -24,6 +24,7 @@ use std::{
     sync::atomic::Ordering,
 };
 use url::Url;
+use crate::cli::version::OS;
 
 // settings are generated from settings.toml in the project root
 // make sure you run `mise run render` after updating settings.toml
@@ -446,6 +447,10 @@ impl Settings {
             &self.unix_default_file_shell_args
         };
         Ok(shell_words::split(sa)?)
+    }
+
+    pub fn os(&self) -> &str {
+        self.os.as_deref().unwrap_or(&OS)
     }
 
     pub fn arch(&self) -> &str {

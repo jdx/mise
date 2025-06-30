@@ -60,7 +60,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
     tera.register_function(
         "os",
         move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
-            Ok(Value::String(env::consts::OS.to_string()))
+            Ok(Value::String(Settings::get().os().to_string()))
         },
     );
     tera.register_function(

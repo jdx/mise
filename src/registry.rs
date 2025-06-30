@@ -2,7 +2,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::env::consts::{ARCH, OS};
+use std::env::consts::{ARCH};
 use std::fmt::Display;
 use std::iter::Iterator;
 use std::sync::LazyLock as Lazy;
@@ -48,7 +48,7 @@ impl RegistryTool {
             }
             backend_types
         });
-        let os = Settings::get().os.clone().unwrap_or(OS.to_string());
+        let os = Settings::get().os().to_string();
         let arch = Settings::get().arch.clone().unwrap_or(ARCH.to_string());
         let platform = format!("{os}-{arch}");
         self.backends
@@ -69,7 +69,7 @@ impl RegistryTool {
     }
 
     pub fn is_supported_os(&self) -> bool {
-        self.os.is_empty() || self.os.contains(&OS)
+        self.os.is_empty() || self.os.contains(&Settings::get().os())
     }
 
     pub fn ba(&self) -> Option<BackendArg> {

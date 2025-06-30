@@ -224,6 +224,7 @@ impl Backend for UbiBackend {
         tv: &mut ToolVersion,
         file: &Path,
     ) -> eyre::Result<()> {
+        let settings = Settings::get();
         let mut checksum_key = file.file_name().unwrap().to_string_lossy().to_string();
         if let Some(exe) = tv.request.options().get("exe") {
             checksum_key = format!("{checksum_key}-{exe}");
@@ -231,7 +232,7 @@ impl Backend for UbiBackend {
         if let Some(matching) = tv.request.options().get("matching") {
             checksum_key = format!("{checksum_key}-{matching}");
         }
-        checksum_key = format!("{}-{}-{}", checksum_key, env::consts::OS, env::consts::ARCH);
+        checksum_key = format!("{}-{}-{}", checksum_key, settings.os(), env::consts::ARCH);
         if let Some(checksum) = &tv.checksums.get(&checksum_key) {
             ctx.pr
                 .set_message(format!("checksum verify {checksum_key}"));
@@ -240,7 +241,7 @@ impl Backend for UbiBackend {
             } else {
                 bail!("Invalid checksum: {checksum_key}");
             }
-        } else if Settings::get().lockfile && Settings::get().experimental {
+        } else if settings.lockfile && settings.experimental {
             ctx.pr
                 .set_message(format!("checksum generate {checksum_key}"));
             let hash = hash::file_hash_sha256(file, Some(&ctx.pr))?;

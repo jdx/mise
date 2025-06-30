@@ -4,7 +4,7 @@ use console::style;
 use self_update::backends::github::Update;
 use self_update::{Status, cargo_crate_version};
 
-use crate::cli::version::{ARCH, OS};
+use crate::cli::version::{ARCH};
 use crate::config::Settings;
 use crate::{cmd, env};
 
@@ -70,7 +70,7 @@ impl SelfUpdate {
             .current_version(cargo_crate_version!())
             .bin_path_in_archive(bin_path_in_archive);
 
-        let settings = Settings::try_get();
+        let settings = Settings::get();
         let v = self
             .version
             .clone()
@@ -79,7 +79,7 @@ impl SelfUpdate {
                 Ok,
             )
             .map(|v| format!("v{v}"))?;
-        let target = format!("{}-{}", *OS, *ARCH);
+        let target = format!("{}-{}", settings.os(), *ARCH);
         if self.force || self.version.is_some() {
             update.target_version_tag(&v);
         }
@@ -91,7 +91,7 @@ impl SelfUpdate {
             .verifying_keys([*include_bytes!("../../zipsign.pub")])
             .show_download_progress(true)
             .target(&target)
-            .no_confirm(settings.is_ok_and(|s| s.yes) || self.yes)
+            .no_confirm(settings.yes || self.yes)
             .build()?
             .update()?;
         Ok(status)

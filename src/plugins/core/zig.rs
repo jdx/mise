@@ -6,7 +6,6 @@ use std::{
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::TarOptions;
@@ -63,7 +62,7 @@ impl ZigPlugin {
                 indexes["mach"],
                 tv.version.as_str(),
                 arch(&settings),
-                os(),
+                &os(),
             )
             .await?
         } else {
@@ -71,7 +70,7 @@ impl ZigPlugin {
                 indexes["zig"],
                 tv.version.as_str(),
                 arch(&settings),
-                os(),
+                &os(),
             )
             .await?
         };
@@ -195,16 +194,8 @@ impl Backend for ZigPlugin {
     }
 }
 
-fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "freebsd") {
-        "freebsd"
-    } else {
-        &OS
-    }
+fn os() -> String {
+    Settings::get().os().to_string()
 }
 
 fn arch(settings: &Settings) -> &str {
