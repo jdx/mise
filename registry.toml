@@ -2634,7 +2634,9 @@ tsuru.backends = [
 ]
 ttyd.description = "Share your terminal over the web"
 ttyd.backends = ["aqua:tsl0922/ttyd", "asdf:ivanvc/asdf-ttyd"]
+tuist.description = "A toolchain to generate Xcode projects from Swift packages"
 tuist.backends = ["asdf:mise-plugins/mise-tuist"]
+tuist.os = ["macos"]
 tusd.backends = ["ubi:tus/tusd"]
 tusd.test = ["tusd --version | head -n1", "Version: v{{version}}"]
 typos.description = "Source code spell checker"
