@@ -42,17 +42,17 @@ Examples:
 $ mise search jq
 Tool  Description
 jq    Command-line JSON processor. https://github.com/jqlang/jq
-jqp   https://github.com/noahgorstein/jqp
-jiq   https://github.com/fiatjaf/jiq
-gojq  https://github.com/itchyny/gojq
+jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
+jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
+gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
 
 $ mise search --interactive
 Tool
 Search a tool
 ❯ jq    Command-line JSON processor. https://github.com/jqlang/jq
-  jqp   https://github.com/noahgorstein/jqp
-  jiq   https://github.com/fiatjaf/jiq
-  gojq  https://github.com/itchyny/gojq
+  jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
+  jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
+  gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
 /jq 
 esc clear filter • enter confirm
 ```
