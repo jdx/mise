@@ -639,7 +639,8 @@ impl AquaBackend {
                 .or_else(|| pkg.name.as_ref().and_then(|n| n.split('/').next_back()))
                 .unwrap_or(&pkg.repo_name),
         );
-        if cfg!(windows) && pkg.complete_windows_ext {
+        let settings = Settings::get();
+        if settings.is_windows() && pkg.complete_windows_ext {
             bin_path = bin_path.with_extension("exe");
         }
         let mut tar_opts = TarOptions {
@@ -682,7 +683,7 @@ impl AquaBackend {
 
         for (src, dst) in self.srcs(pkg, tv)? {
             if src != dst && src.exists() && !dst.exists() {
-                if cfg!(windows) {
+                if settings.is_windows() {
                     file::copy(&src, &dst)?;
                 } else {
                     let src = PathBuf::from(".").join(src.file_name().unwrap().to_str().unwrap());

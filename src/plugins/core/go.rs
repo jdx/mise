@@ -137,7 +137,7 @@ impl GoPlugin {
             .to_string_lossy();
         pr.set_message(format!("extract {tarball}"));
         let tmp_extract_path = tempdir_in(tv.install_path().parent().unwrap())?;
-        if cfg!(windows) {
+        if Settings::get().is_windows() {
             file::unzip(tarball_path, tmp_extract_path.path())?;
         } else {
             file::untar(
@@ -287,5 +287,5 @@ fn arch(settings: &Settings) -> &str {
 }
 
 fn ext() -> &'static str {
-    if cfg!(windows) { "zip" } else { "tar.gz" }
+    if Settings::get().is_windows() { "zip" } else { "tar.gz" }
 }

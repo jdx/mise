@@ -163,7 +163,7 @@ impl JavaPlugin {
             file::rename(entry.path(), dest)?;
         }
 
-        if cfg!(target_os = "macos") {
+        if os() == "macosx" {
             self.handle_macos_integration(&contents_dir, tv, m)?;
         }
 

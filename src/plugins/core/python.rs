@@ -31,7 +31,7 @@ pub struct PythonPlugin {
 }
 
 pub fn python_path(tv: &ToolVersion) -> PathBuf {
-    if cfg!(windows) {
+    if Settings::get().is_windows() {
         tv.install_path().join("python.exe")
     } else {
         tv.install_path().join("bin/python")
@@ -174,11 +174,12 @@ impl PythonPlugin {
             .iter()
             .rev()
             .find(|(v, _, _)| &tv.version == v);
+        let settings = Settings::get();
         let (tag, filename) = match precompile_info {
             Some((_, tag, filename)) => (tag, filename),
             None => {
-                if cfg!(windows) || Settings::get().python.compile == Some(false) {
-                    if !cfg!(windows) {
+                if use_precompiled(&settings) {
+                    if settings.is_unix() {
                         hint!(
                             "python_compile",
                             "To compile python from source, run",
@@ -205,7 +206,7 @@ impl PythonPlugin {
             }
         };
 
-        if cfg!(unix) {
+        if settings.is_unix() {
             hint!(
                 "python_precompiled",
                 "installing precompiled python from astral-sh/python-build-standalone\n\
@@ -256,7 +257,7 @@ impl PythonPlugin {
         let suffix = version_parts
             .get(2)
             .map(|s| re_digits.replace(s, "").to_string());
-        if cfg!(unix) {
+        if settings.is_unix() {
             if let (Some(major), Some(minor), Some(suffix)) = (major, minor, suffix) {
                 if tv.request.options().get("patch_sysconfig") != Some(&"false".to_string()) {
                     sysconfig::update_sysconfig(&install, major, minor, &suffix)?;
@@ -420,7 +421,7 @@ impl Backend for PythonPlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        if cfg!(windows) || Settings::get().python.compile == Some(false) {
+        if use_precompiled(&Settings::get()) {
             Ok(self
                 .fetch_precompiled_remote_versions()
                 .await?
@@ -452,7 +453,8 @@ impl Backend for PythonPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        if cfg!(windows) || Settings::get().python.compile != Some(true) {
+        let settings: Arc<Settings> = Settings::get();
+        if use_precompiled(&settings) {
             self.install_precompiled(ctx, &tv).await?;
         } else {
             self.install_compiled(ctx, &tv).await?;
@@ -461,7 +463,7 @@ impl Backend for PythonPlugin {
         if let Err(e) = self.get_virtualenv(&ctx.config, &tv, Some(&ctx.pr)).await {
             warn!("failed to get virtualenv: {e:#}");
         }
-        if let Some(default_file) = &Settings::get().python.default_packages_file {
+        if let Some(default_file) = &settings.python.default_packages_file {
             let default_file = file::replace_path(default_file);
             if let Err(err) = self
                 .install_default_packages(&ctx.config, &default_file, &tv, &ctx.pr)
@@ -518,8 +520,12 @@ impl Backend for PythonPlugin {
     }
 }
 
+fn use_precompiled(settings: &Settings) -> bool {
+    settings.is_windows() || settings.python.compile == Some(false)
+}
+
 fn python_precompiled_url_path(settings: &Settings) -> String {
-    if cfg!(windows) || cfg!(linux) || cfg!(macos) {
+    if settings.is_windows() || settings.is_linux() || settings.is_macos() {
         format!(
             "python-precompiled-{}-{}.gz",
             python_arch(settings),
@@ -534,15 +540,16 @@ fn python_os(settings: &Settings) -> String {
     if let Some(os) = &settings.python.precompiled_os {
         return os.clone();
     }
-    if cfg!(windows) {
-        "pc-windows-msvc-shared".into()
-    } else if cfg!(target_os = "macos") {
-        "apple-darwin".into()
-    } else {
-        ["unknown", built_info::CFG_OS, built_info::CFG_ENV]
-            .iter()
-            .filter(|s| !s.is_empty())
-            .join("-")
+    let os = settings.os();
+    match os {
+        "windows" => "pc-windows-msvc-shared".into(),
+        "macos" => "apple-darwin".into(),
+        _ => {
+            ["unknown", os, built_info::CFG_ENV]
+                .iter()
+                .filter(|s| !s.is_empty())
+                .join("-")
+        }
     }
 }
 
@@ -551,9 +558,9 @@ fn python_arch(settings: &Settings) -> &str {
         return arch.as_str();
     }
     let arch = settings.arch();
-    if cfg!(windows) {
+    if settings.is_windows() {
         "x86_64"
-    } else if cfg!(linux) && arch == "x86_64" {
+    } else if settings.is_unix() && arch == "x86_64" {
         if cfg!(target_feature = "avx512f") {
             "x86_64_v4"
         } else if cfg!(target_feature = "avx2") {
@@ -580,7 +587,7 @@ fn python_precompiled_platform() -> String {
 }
 
 fn ensure_not_windows() -> eyre::Result<()> {
-    if cfg!(windows) {
+    if Settings::get().is_windows() {
         bail!(
             "python can not currently be compiled on windows with core:python, use vfox:python instead"
         );

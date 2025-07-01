@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::config::Settings;
 use crate::env::PATH_KEY;
 use crate::file::touch_dir;
 use crate::path_env::PathEnv;
@@ -71,7 +72,7 @@ impl Activate {
         // touch ROOT to allow hook-env to run
         let _ = touch_dir(&dirs::DATA);
 
-        let mise_bin = if cfg!(target_os = "linux") {
+        let mise_bin = if Settings::get().is_linux() {
             // linux dereferences symlinks, so use argv0 instead
             PathBuf::from(&*env::ARGV0)
         } else {

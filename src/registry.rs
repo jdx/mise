@@ -43,7 +43,7 @@ impl RegistryTool {
                 backend_types.remove(backend);
             }
             time!("disable_backends");
-            if cfg!(windows) {
+            if Settings::get().is_windows() {
                 backend_types.remove("asdf");
             }
             backend_types

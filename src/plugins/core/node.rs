@@ -1,5 +1,4 @@
 use crate::backend::{Backend, VersionCacheManager};
-use crate::build_time::built_info;
 use crate::cache::CacheManagerBuilder;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -241,7 +240,7 @@ impl NodePlugin {
     }
 
     fn node_path(&self, tv: &ToolVersion) -> PathBuf {
-        if cfg!(windows) {
+        if Settings::get().is_windows() {
             tv.install_path().join("node.exe")
         } else {
             tv.install_path().join("bin").join("node")
@@ -249,7 +248,7 @@ impl NodePlugin {
     }
 
     fn npm_path(&self, tv: &ToolVersion) -> PathBuf {
-        if cfg!(windows) {
+        if Settings::get().is_windows() {
             tv.install_path().join("npm.cmd")
         } else {
             tv.install_path().join("bin").join("npm")
@@ -257,7 +256,7 @@ impl NodePlugin {
     }
 
     fn corepack_path(&self, tv: &ToolVersion) -> PathBuf {
-        if cfg!(windows) {
+        if Settings::get().is_windows() {
             tv.install_path().join("corepack.cmd")
         } else {
             tv.install_path().join("bin").join("corepack")
@@ -443,7 +442,7 @@ impl Backend for NodePlugin {
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx, &tv).await?;
         trace!("node build opts: {:#?}", opts);
-        if cfg!(windows) {
+        if settings.is_windows() {
             self.install_windows(ctx, &mut tv, &opts).await?;
         } else if settings.node.compile == Some(true) {
             self.install_compiled(ctx, &mut tv, &opts).await?;
@@ -451,7 +450,7 @@ impl Backend for NodePlugin {
             self.install_precompiled(ctx, &mut tv, &opts).await?;
         }
         self.test_node(&ctx.config, &tv, &ctx.pr).await?;
-        if !cfg!(windows) {
+        if settings.is_unix() {
             self.install_npm_shim(&tv)?;
         }
         self.test_npm(&ctx.config, &tv, &ctx.pr).await?;
@@ -579,15 +578,12 @@ fn make_install_cmd() -> String {
     make_install_cmd
 }
 
-fn os() -> &'static str {
-    if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "macos") {
-        "darwin"
-    } else if cfg!(target_os = "windows") {
-        "win"
-    } else {
-        built_info::CFG_OS
+fn os() -> String {
+    let os = Settings::get().os().to_string();
+    match os.as_str() {
+        "macos" => "darwin".into(),
+        "windows" => "win".into(),
+        _ => os,
     }
 }
 

@@ -168,7 +168,7 @@ impl Backend for UbiBackend {
                 .cloned()
                 .unwrap_or(tv.ba().short.to_string()),
         ];
-        if cfg!(windows) {
+        if Settings::get().is_windows() {
             possible_exes.push(format!("{}.exe", possible_exes[0]));
         }
         let full_binary_path = if let Some(bin_file) = possible_exes

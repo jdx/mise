@@ -179,7 +179,7 @@ impl ToolRequestSetBuilder {
     fn is_disabled(&self, ba: &BackendArg) -> bool {
         let backend_type = ba.backend_type();
         backend_type == BackendType::Unknown
-            || (cfg!(windows) && backend_type == BackendType::Asdf)
+            || (Settings::get().is_windows() && backend_type == BackendType::Asdf)
             || !ba.is_os_supported()
             || !tool_enabled(&self.enable_tools, &self.disable_tools, ba)
     }

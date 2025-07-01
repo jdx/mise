@@ -293,10 +293,11 @@ async fn get_desired_shims(config: &Arc<Config>, toolset: &Toolset) -> Result<Ha
                 warn!("Error listing bin paths for {}: {:#}", tv, e);
                 Vec::new()
             });
-        if cfg!(windows) {
+            let settings = Settings::get();
+        if settings.is_windows() {
             shims.extend(bins.into_iter().flat_map(|b| {
                 let p = PathBuf::from(&b);
-                match Settings::get().windows_shim_mode.as_ref() {
+                match settings.windows_shim_mode.as_ref() {
                     "hardlink" | "symlink" => {
                         vec![p.with_extension("exe").to_string_lossy().to_string()]
                     }
@@ -309,7 +310,7 @@ async fn get_desired_shims(config: &Arc<Config>, toolset: &Toolset) -> Result<Ha
                     _ => panic!("Unknown shim mode"),
                 }
             }));
-        } else if cfg!(macos) {
+        } else if settings.is_macos() {
             // some bins might be uppercased but on mac APFS is case insensitive
             shims.extend(bins.into_iter().map(|b| b.to_lowercase()));
         } else {

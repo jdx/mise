@@ -1,5 +1,5 @@
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
-use crate::config::{self, Config};
+use crate::config::{self, Config, Settings};
 use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
@@ -259,7 +259,7 @@ impl Task {
     }
 
     pub fn run(&self) -> &Vec<String> {
-        if cfg!(windows) && !self.run_windows.is_empty() {
+        if Settings::get().is_windows() && !self.run_windows.is_empty() {
             &self.run_windows
         } else {
             &self.run

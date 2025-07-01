@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::cli::args::BackendArg;
+use crate::{cli::args::BackendArg, config::Settings};
 use crate::cmd::CmdLineRunner;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -139,7 +139,7 @@ impl Backend for ElixirPlugin {
 }
 
 fn elixir_bin_name() -> &'static str {
-    if cfg!(windows) {
+    if Settings::get().is_windows() {
         "elixir.bat"
     } else {
         "elixir"

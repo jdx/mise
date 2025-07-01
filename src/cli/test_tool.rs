@@ -1,5 +1,5 @@
 use crate::cli::args::ToolArg;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::registry::REGISTRY;
 use crate::tera::get_tera;
@@ -164,12 +164,13 @@ impl TestTool {
             .which(config, &tv, cmd)
             .await?
             .unwrap_or(PathBuf::from(cmd));
-        if cfg!(windows) && which_cmd == PathBuf::from("which") {
+        let settings = Settings::get();
+        if settings.is_windows() && which_cmd == PathBuf::from("which") {
             which_cmd = PathBuf::from("where");
         }
         let cmd = format!("{} {}", which_cmd.display(), which_parts.join(" "));
         info!("$ {cmd}");
-        let mut cmd = if cfg!(windows) {
+        let mut cmd = if settings.is_windows() {
             cmd!("cmd", "/C", cmd)
         } else {
             cmd!("sh", "-c", cmd)

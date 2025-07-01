@@ -44,9 +44,9 @@ impl SwiftPlugin {
         let url = format!(
             "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
             version = tv.version,
-            platform = platform(),
-            platform_directory = platform_directory(),
-            extension = extension(),
+            platform = platform(&settings),
+            platform_directory = platform_directory(&settings),
+            extension = extension(&settings),
             architecture = match architecture(&settings) {
                 Some(arch) => format!("-{arch}"),
                 None => "".into(),
@@ -67,7 +67,8 @@ impl SwiftPlugin {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         let version = &tv.version;
         ctx.pr.set_message(format!("extract {filename}"));
-        if cfg!(macos) {
+        let settings = Settings::get();
+        if settings.is_macos() {
             let tmp = {
                 tempdir_in(tv.install_path().parent().unwrap())?
                     .path()
@@ -85,7 +86,7 @@ impl SwiftPlugin {
                     .join("Payload"),
                 tv.install_path(),
             )?;
-        } else if cfg!(windows) {
+        } else if settings.is_windows() {
             todo!("install from exe");
         } else {
             file::untar(
@@ -184,7 +185,8 @@ impl Backend for SwiftPlugin {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         let tarball_path = self.download(&tv, &ctx.pr).await?;
-        if cfg!(target_os = "linux") && Settings::get().swift.gpg_verify != Some(false) {
+        let settings = Settings::get();
+        if settings.is_linux() && settings.swift.gpg_verify != Some(false) {
             self.verify_gpg(ctx, &tv, &tarball_path).await?;
         }
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
@@ -197,35 +199,34 @@ impl Backend for SwiftPlugin {
 }
 
 fn swift_bin_name() -> &'static str {
-    if cfg!(windows) { "swift.exe" } else { "swift" }
+    if Settings::get().is_windows() { "swift.exe" } else { "swift" }
 }
 
-fn platform_directory() -> String {
-    if cfg!(macos) {
+fn platform_directory(settings: &Settings) -> String {
+    if settings.is_macos() {
         "xcode".into()
-    } else if cfg!(windows) {
+    } else if settings.is_windows() {
         "windows10".into()
     } else if let Ok(os_release) = &*os_release::OS_RELEASE {
-        let settings = Settings::get();
         let arch = settings.arch();
         if os_release.id == "ubuntu" && arch == "aarch64" {
             let retval = format!("{}{}-{}", os_release.id, os_release.version_id, arch);
             retval.replace(".", "")
         } else {
-            platform().replace(".", "")
+            platform(settings).replace(".", "")
         }
     } else {
-        platform().replace(".", "")
+        platform(settings).replace(".", "")
     }
 }
 
-fn platform() -> String {
-    if let Some(platform) = &Settings::get().swift.platform {
+fn platform(settings: &Settings) -> String {
+    if let Some(platform) = &settings.swift.platform {
         return platform.clone();
     }
-    if cfg!(macos) {
+    if settings.is_macos() {
         "osx".to_string()
-    } else if cfg!(windows) {
+    } else if settings.is_windows() {
         "windows10".to_string()
     } else if let Ok(os_release) = &*os_release::OS_RELEASE {
         if os_release.id == "amzn" {
@@ -242,10 +243,10 @@ fn platform() -> String {
     }
 }
 
-fn extension() -> &'static str {
-    if cfg!(macos) {
+fn extension(settings: &Settings) -> &'static str {
+    if settings.is_macos() {
         "pkg"
-    } else if cfg!(windows) {
+    } else if settings.is_windows() {
         "exe"
     } else {
         "tar.gz"
@@ -254,9 +255,9 @@ fn extension() -> &'static str {
 
 fn architecture(settings: &Settings) -> Option<&str> {
     let arch = settings.arch();
-    if cfg!(target_os = "linux") && arch != "x86_64" {
+    if settings.is_linux() && arch != "x86_64" {
         return Some(arch);
-    } else if cfg!(windows) && arch == "aarch64" {
+    } else if settings.is_windows() && arch == "aarch64" {
         return Some("arm64");
     }
     None
@@ -267,9 +268,9 @@ fn url(tv: &ToolVersion) -> String {
     format!(
         "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
         version = tv.version,
-        platform = platform(),
-        platform_directory = platform_directory(),
-        extension = extension(),
+        platform = platform(&settings),
+        platform_directory = platform_directory(&settings),
+        extension = extension(&settings),
         architecture = match architecture(&settings) {
             Some(arch) => format!("-{arch}"),
             None => "".into(),

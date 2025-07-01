@@ -70,7 +70,7 @@ impl BunPlugin {
                 .join(bun_bin_name()),
             self.bun_bin(tv),
         )?;
-        if cfg!(unix) {
+        if Settings::get().is_unix() {
             file::make_executable(self.bun_bin(tv))?;
             file::make_symlink(Path::new("./bun"), &tv.install_path().join("bin/bunx"))?;
         }
@@ -142,7 +142,7 @@ fn arch() -> &'static str {
     } else if cfg!(target_arch = "aarch64") {
         if cfg!(target_env = "musl") {
             "aarch64-musl"
-        } else if cfg!(windows) {
+        } else if Settings::get().is_windows() {
             "x64"
         } else {
             "aarch64"
@@ -153,5 +153,5 @@ fn arch() -> &'static str {
 }
 
 fn bun_bin_name() -> &'static str {
-    if cfg!(windows) { "bun.exe" } else { "bun" }
+    if Settings::get().is_windows() { "bun.exe" } else { "bun" }
 }

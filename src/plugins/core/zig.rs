@@ -35,7 +35,7 @@ impl ZigPlugin {
     }
 
     fn zig_bin(&self, tv: &ToolVersion) -> PathBuf {
-        if cfg!(windows) {
+        if Settings::get().is_windows() {
             tv.install_path().join("zig.exe")
         } else {
             tv.install_path().join("bin").join("zig")
@@ -103,7 +103,7 @@ impl ZigPlugin {
             },
         )?;
 
-        if cfg!(unix) {
+        if Settings::get().is_unix() {
             file::create_dir_all(tv.install_path().join("bin"))?;
             file::make_symlink(Path::new("../zig"), &tv.install_path().join("bin/zig"))?;
         }
@@ -170,7 +170,7 @@ impl Backend for ZigPlugin {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        if cfg!(windows) {
+        if Settings::get().is_windows() {
             Ok(vec![tv.install_path()])
         } else {
             Ok(vec![tv.install_path().join("bin")])

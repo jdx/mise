@@ -20,8 +20,6 @@ pub struct NPMBackend {
     latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
 }
 
-const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
-
 #[async_trait]
 impl Backend for NPMBackend {
     fn get_type(&self) -> BackendType {
@@ -39,9 +37,15 @@ impl Backend for NPMBackend {
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         timeout::run_with_timeout_async(
             async || {
-                let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
-                    .full_env(self.dependency_env(config).await?)
-                    .read()?;
+                let raw = cmd!(
+                    NPMBackend::npm_program(),
+                    "view",
+                    self.tool_name(),
+                    "versions",
+                    "--json"
+                )
+                .full_env(self.dependency_env(config).await?)
+                .read()?;
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
                 Ok(versions)
             },
@@ -57,10 +61,15 @@ impl Backend for NPMBackend {
             async || {
                 cache
                     .get_or_try_init_async(async || {
-                        let raw =
-                            cmd!(NPM_PROGRAM, "view", this.tool_name(), "dist-tags", "--json")
-                                .full_env(this.dependency_env(config).await?)
-                                .read()?;
+                        let raw = cmd!(
+                            NPMBackend::npm_program(),
+                            "view",
+                            this.tool_name(),
+                            "dist-tags",
+                            "--json"
+                        )
+                        .full_env(this.dependency_env(config).await?)
+                        .read()?;
                         let dist_tags: Value = serde_json::from_str(&raw)?;
                         match dist_tags["latest"] {
                             Value::String(ref s) => Ok(Some(s.clone())),
@@ -97,7 +106,7 @@ impl Backend for NPMBackend {
                 )?
                 .execute()?;
         } else {
-            CmdLineRunner::new(NPM_PROGRAM)
+            CmdLineRunner::new(NPMBackend::npm_program())
                 .arg("install")
                 .arg("-g")
                 .arg(format!("{}@{}", self.tool_name(), tv.version))
@@ -136,6 +145,14 @@ impl NPMBackend {
                     .build(),
             ),
             ba: Arc::new(ba),
+        }
+    }
+
+    fn npm_program() -> &'static str {
+        if Settings::get().is_windows() {
+            "npm.cmd"
+        } else {
+            "npm"
         }
     }
 }

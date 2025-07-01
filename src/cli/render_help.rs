@@ -1,4 +1,5 @@
 use crate::cli::Cli;
+use crate::config::Settings;
 use crate::file;
 use clap::CommandFactory;
 use eyre::Result;
@@ -15,7 +16,7 @@ impl RenderHelp {
         xx::file::mkdirp("docs/.vitepress")?;
 
         file::write("docs/.vitepress/cli_commands.ts", render_command_ts())?;
-        if cfg!(windows) {
+        if Settings::get().is_windows() {
             cmd!("prettier.cmd", "--write", "docs/.vitepress/cli_commands.ts").run()?;
         } else {
             cmd!("prettier", "--write", "docs/.vitepress/cli_commands.ts").run()?;

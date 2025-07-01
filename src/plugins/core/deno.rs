@@ -33,7 +33,7 @@ impl DenoPlugin {
     }
 
     fn deno_bin(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join(if cfg!(target_os = "windows") {
+        tv.install_path().join(if Settings::get().is_windows() {
             "bin/deno.exe"
         } else {
             "bin/deno"
@@ -79,7 +79,7 @@ impl DenoPlugin {
         file::create_dir_all(tv.install_path().join("bin"))?;
         file::unzip(tarball_path, &tv.download_path())?;
         file::rename(
-            tv.download_path().join(if cfg!(target_os = "windows") {
+            tv.download_path().join(if Settings::get().is_windows() {
                 "deno.exe"
             } else {
                 "deno"

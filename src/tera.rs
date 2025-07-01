@@ -66,7 +66,11 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
     tera.register_function(
         "os_family",
         move |_args: &HashMap<String, Value>| -> tera::Result<Value> {
-            Ok(Value::String(env::consts::FAMILY.to_string()))
+            Ok(Value::String(if Settings::get().is_unix() {
+                "unix".into()
+            } else {
+                "windows".into()
+            }))
         },
     );
     tera.register_function(
