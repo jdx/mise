@@ -138,7 +138,10 @@ aws-iam-authenticator.backends = [
 aws-nuke.backends = ["aqua:ekristen/aws-nuke", "asdf:bersalazar/asdf-aws-nuke"]
 aws-sam.aliases = ["aws-sam-cli"]
 aws-sam.backends = [
-    {full="aqua:aws/aws-sam-cli",platforms=["linux","macos"]},
+    {full = "aqua:aws/aws-sam-cli", platforms = [
+        "linux",
+        "macos"
+    ]},
     "pipx:aws-sam-cli",
     "asdf:mise-plugins/mise-pyapp"
 ]
