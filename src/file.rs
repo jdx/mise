@@ -611,6 +611,16 @@ pub fn un_xz(input: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn un_zst(input: &Path, dest: &Path) -> Result<()> {
+    debug!("zstd -d {} -c > {}", input.display(), dest.display());
+    let f = File::open(input)?;
+    let mut dec = zstd::Decoder::new(f)?;
+    let mut output = File::create(dest)?;
+    std::io::copy(&mut dec, &mut output)
+        .wrap_err_with(|| format!("failed to un-zst: {}", display_path(input)))?;
+    Ok(())
+}
+
 pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
     debug!("bzip2 -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
