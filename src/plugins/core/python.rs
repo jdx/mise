@@ -544,12 +544,10 @@ fn python_os(settings: &Settings) -> String {
     match os {
         "windows" => "pc-windows-msvc-shared".into(),
         "macos" => "apple-darwin".into(),
-        _ => {
-            ["unknown", os, built_info::CFG_ENV]
-                .iter()
-                .filter(|s| !s.is_empty())
-                .join("-")
-        }
+        _ => ["unknown", os, built_info::CFG_ENV]
+            .iter()
+            .filter(|s| !s.is_empty())
+            .join("-"),
     }
 }
 

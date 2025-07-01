@@ -199,7 +199,11 @@ impl Backend for SwiftPlugin {
 }
 
 fn swift_bin_name() -> &'static str {
-    if Settings::get().is_windows() { "swift.exe" } else { "swift" }
+    if Settings::get().is_windows() {
+        "swift.exe"
+    } else {
+        "swift"
+    }
 }
 
 fn platform_directory(settings: &Settings) -> String {

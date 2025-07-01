@@ -1,4 +1,5 @@
 use crate::cli::Cli;
+use crate::cli::version::OS;
 use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::duration;
 use crate::file::FindUp;
@@ -24,7 +25,6 @@ use std::{
     sync::atomic::Ordering,
 };
 use url::Url;
-use crate::cli::version::OS;
 
 // settings are generated from settings.toml in the project root
 // make sure you run `mise run render` after updating settings.toml

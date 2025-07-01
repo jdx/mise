@@ -2,7 +2,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::env::consts::{ARCH};
+use std::env::consts::ARCH;
 use std::fmt::Display;
 use std::iter::Iterator;
 use std::sync::LazyLock as Lazy;

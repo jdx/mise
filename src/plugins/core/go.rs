@@ -287,5 +287,9 @@ fn arch(settings: &Settings) -> &str {
 }
 
 fn ext() -> &'static str {
-    if Settings::get().is_windows() { "zip" } else { "tar.gz" }
+    if Settings::get().is_windows() {
+        "zip"
+    } else {
+        "tar.gz"
+    }
 }

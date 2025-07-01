@@ -3,7 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use crate::{cli::args::BackendArg, config::Settings};
 use crate::cmd::CmdLineRunner;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -11,6 +10,7 @@ use crate::plugins::VERSION_REGEX;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, config::Config};
+use crate::{cli::args::BackendArg, config::Settings};
 use crate::{file, plugins};
 use async_trait::async_trait;
 use eyre::Result;

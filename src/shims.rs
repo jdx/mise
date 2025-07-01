@@ -293,7 +293,7 @@ async fn get_desired_shims(config: &Arc<Config>, toolset: &Toolset) -> Result<Ha
                 warn!("Error listing bin paths for {}: {:#}", tv, e);
                 Vec::new()
             });
-            let settings = Settings::get();
+        let settings = Settings::get();
         if settings.is_windows() {
             shims.extend(bins.into_iter().flat_map(|b| {
                 let p = PathBuf::from(&b);

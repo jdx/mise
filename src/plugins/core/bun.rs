@@ -8,14 +8,14 @@ use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 
-use crate::{cli::args::BackendArg, config::Settings};
-use crate::cli::version::{ARCH};
+use crate::cli::version::ARCH;
 use crate::cmd::CmdLineRunner;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, config::Config};
+use crate::{cli::args::BackendArg, config::Settings};
 use crate::{file, github, plugins};
 
 #[derive(Debug)]
@@ -153,5 +153,9 @@ fn arch() -> &'static str {
 }
 
 fn bun_bin_name() -> &'static str {
-    if Settings::get().is_windows() { "bun.exe" } else { "bun" }
+    if Settings::get().is_windows() {
+        "bun.exe"
+    } else {
+        "bun"
+    }
 }

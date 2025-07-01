@@ -4,7 +4,7 @@ use console::style;
 use self_update::backends::github::Update;
 use self_update::{Status, cargo_crate_version};
 
-use crate::cli::version::{ARCH};
+use crate::cli::version::ARCH;
 use crate::config::Settings;
 use crate::{cmd, env};
 
