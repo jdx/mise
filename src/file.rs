@@ -1,5 +1,3 @@
-use crate::config::Settings;
-use crate::path::{Path, PathBuf, PathExt};
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::fs;
@@ -22,8 +20,8 @@ use tar::Archive;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
-#[cfg(windows)]
 use crate::config::Settings;
+use crate::path::{Path, PathBuf, PathExt};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env};
 
