@@ -870,7 +870,6 @@ github-markdown-toc.backends = [
     "aqua:ekalinin/github-markdown-toc",
     "asdf:skyzyx/asdf-github-markdown-toc"
 ]
-github-markdown-toc.test = ["gh-md-toc --version", "{{version}}"]
 gitleaks.backends = ["aqua:gitleaks/gitleaks", "asdf:jmcvetta/asdf-gitleaks"]
 gitleaks.test = ["gitleaks --version", "gitleaks version {{version}}"]
 gitsign.backends = ["aqua:sigstore/gitsign", "asdf:spencergilbert/asdf-gitsign"]
@@ -1442,7 +1441,6 @@ license-plist.backends = [
     "asdf:MacPaw/asdf-license-plist"
 ]
 lima.backends = ["aqua:lima-vm/lima", "asdf:CrouchingMuppet/asdf-lima"]
-lima.test = ["lima --version", "limactl version {{version}}"]
 linkerd.backends = ["aqua:linkerd/linkerd2", "asdf:kforsthoevel/asdf-linkerd"]
 liqoctl.backends = ["aqua:liqotech/liqo", "asdf:pdemagny/asdf-liqoctl"]
 liquibase.backends = ["asdf:mise-plugins/mise-liquibase"]
