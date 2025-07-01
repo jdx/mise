@@ -188,13 +188,9 @@ bashbot.backends = [
     "asdf:mathew-fleisch/asdf-bashbot"
 ]
 bashly.backends = ["asdf:mise-plugins/mise-bashly"]
-# aqua is available but uses cargo
 bat.backends = [
-    {full = "ubi:sharkdp/bat", platforms = [
-        "linux",
-        "macos",
-        "windows"
-    ]},
+    "aqua:sharkdp/bat",
+    "ubi:sharkdp/bat",
     "cargo:bat",
     "asdf:https://gitlab.com/wt0f/asdf-bat"
 ]
