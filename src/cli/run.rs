@@ -555,8 +555,9 @@ impl Run {
         args: &[String],
     ) -> Result<(String, Vec<String>)> {
         let display = file.display().to_string();
-        if file::is_executable(file) && !Settings::get().use_file_shell_for_executable_tasks {
-            if cfg!(windows) && file.extension().is_some_and(|e| e == "ps1") {
+        let settings = Settings::get();
+        if file::is_executable(file) && !settings.use_file_shell_for_executable_tasks {
+            if settings.is_windows() && file.extension().is_some_and(|e| e == "ps1") {
                 let args = vec!["-File".to_string(), display]
                     .into_iter()
                     .chain(args.iter().cloned())
@@ -1189,7 +1190,7 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
             .map(|d| d.join(name))
             .find(|d| d.is_file() && !file::is_executable(d));
         if let Some(path) = path {
-            if !cfg!(windows) {
+            if !Settings::get().is_windows() {
                 warn!(
                     "no task {} found, but a non-executable file exists at {}",
                     style::ered(name),

@@ -7,7 +7,7 @@ use crate::backend::backend_type::BackendType;
 use crate::build_time::built_info;
 use crate::cli::version;
 use crate::cli::version::VERSION;
-use crate::config::{Config, IGNORED_CONFIG_FILES};
+use crate::config::{Config, IGNORED_CONFIG_FILES, Settings};
 use crate::env::PATH_KEY;
 use crate::file::display_path;
 use crate::git::Git;
@@ -280,7 +280,7 @@ impl Doctor {
 
         if !env::is_activated() && !shims_on_path() {
             let shims = style::ncyan(display_path(*dirs::SHIMS));
-            if cfg!(windows) {
+            if Settings::try_get().is_ok_and(|s| s.is_windows()) {
                 self.errors.push(formatdoc!(
                     r#"mise shims are not on PATH
                     Add this directory to PATH: {shims}"#

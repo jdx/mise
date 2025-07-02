@@ -8,14 +8,14 @@ use eyre::Result;
 use itertools::Itertools;
 use versions::Versioning;
 
-use crate::cli::args::BackendArg;
-use crate::cli::version::{ARCH, OS};
+use crate::cli::version::ARCH;
 use crate::cmd::CmdLineRunner;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, config::Config};
+use crate::{cli::args::BackendArg, config::Settings};
 use crate::{file, github, plugins};
 
 #[derive(Debug)]
@@ -70,7 +70,7 @@ impl BunPlugin {
                 .join(bun_bin_name()),
             self.bun_bin(tv),
         )?;
-        if cfg!(unix) {
+        if Settings::get().is_unix() {
             file::make_executable(self.bun_bin(tv))?;
             file::make_symlink(Path::new("./bun"), &tv.install_path().join("bin/bunx"))?;
         }
@@ -118,13 +118,11 @@ impl Backend for BunPlugin {
     }
 }
 
-fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "darwin"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else {
-        &OS
+fn os() -> String {
+    let os = Settings::get().os().to_string();
+    match os.as_str() {
+        "macos" => "darwin".into(),
+        _ => os,
     }
 }
 
@@ -144,7 +142,7 @@ fn arch() -> &'static str {
     } else if cfg!(target_arch = "aarch64") {
         if cfg!(target_env = "musl") {
             "aarch64-musl"
-        } else if cfg!(windows) {
+        } else if Settings::get().is_windows() {
             "x64"
         } else {
             "aarch64"
@@ -155,5 +153,9 @@ fn arch() -> &'static str {
 }
 
 fn bun_bin_name() -> &'static str {
-    if cfg!(windows) { "bun.exe" } else { "bun" }
+    if Settings::get().is_windows() {
+        "bun.exe"
+    } else {
+        "bun"
+    }
 }

@@ -12,7 +12,6 @@ use versions::Versioning;
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::http::{HTTP, HTTP_FETCH};
@@ -34,7 +33,7 @@ impl DenoPlugin {
     }
 
     fn deno_bin(&self, tv: &ToolVersion) -> PathBuf {
-        tv.install_path().join(if cfg!(target_os = "windows") {
+        tv.install_path().join(if Settings::get().is_windows() {
             "bin/deno.exe"
         } else {
             "bin/deno"
@@ -80,7 +79,7 @@ impl DenoPlugin {
         file::create_dir_all(tv.install_path().join("bin"))?;
         file::unzip(tarball_path, &tv.download_path())?;
         file::rename(
-            tv.download_path().join(if cfg!(target_os = "windows") {
+            tv.download_path().join(if Settings::get().is_windows() {
                 "deno.exe"
             } else {
                 "deno"
@@ -161,15 +160,13 @@ impl Backend for DenoPlugin {
     }
 }
 
-fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "apple-darwin"
-    } else if cfg!(target_os = "linux") {
-        "unknown-linux-gnu"
-    } else if cfg!(target_os = "windows") {
-        "pc-windows-msvc"
-    } else {
-        &OS
+fn os() -> String {
+    let os = Settings::get().os().to_string();
+    match os.as_str() {
+        "macos" => "apple-darwin".into(),
+        "linux" => "unknown-linux-gnu".into(),
+        "windows" => "pc-windows-msvc".into(),
+        _ => os,
     }
 }
 

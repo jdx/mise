@@ -9,6 +9,7 @@ use versions::{Chunk, Version};
 use xx::file;
 
 use crate::cli::args::BackendArg;
+use crate::config::Settings;
 use crate::lockfile::LockfileTool;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
@@ -292,7 +293,7 @@ impl ToolRequest {
 
     pub fn is_os_supported(&self) -> bool {
         if let Some(os) = self.os() {
-            if !os.contains(&crate::cli::version::OS) {
+            if !os.contains(&Settings::get().os().to_string()) {
                 return false;
             }
         }

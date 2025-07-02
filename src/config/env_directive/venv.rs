@@ -126,8 +126,14 @@ impl EnvResults {
         }
         drop(venv_lock);
         if venv.exists() {
-            r.env_paths
-                .insert(0, venv.join(if cfg!(windows) { "Scripts" } else { "bin" }));
+            r.env_paths.insert(
+                0,
+                venv.join(if Settings::get().is_windows() {
+                    "Scripts"
+                } else {
+                    "bin"
+                }),
+            );
             env.insert(
                 "VIRTUAL_ENV".into(),
                 (

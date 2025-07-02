@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
+use crate::config::Settings;
 use crate::dirs::TRACKED_CONFIGS;
 use crate::file::{create_dir_all, make_symlink_or_file};
 use crate::hash::hash_to_str;
@@ -29,7 +30,7 @@ impl Tracker {
             let mut path = path?.path();
             if path.is_symlink() {
                 path = fs::read_link(path)?;
-            } else if cfg!(target_os = "windows") {
+            } else if Settings::get().is_windows() {
                 path = PathBuf::from(fs::read_to_string(&path)?.trim());
             } else {
                 continue;

@@ -1,4 +1,5 @@
 use crate::cli::Cli;
+use crate::cli::version::OS;
 use crate::config::ALL_TOML_CONFIG_FILES;
 use crate::duration;
 use crate::file::FindUp;
@@ -431,7 +432,7 @@ impl Settings {
     }
 
     pub fn default_inline_shell(&self) -> Result<Vec<String>> {
-        let sa = if cfg!(windows) {
+        let sa = if self.is_windows() {
             &self.windows_default_inline_shell_args
         } else {
             &self.unix_default_inline_shell_args
@@ -440,12 +441,33 @@ impl Settings {
     }
 
     pub fn default_file_shell(&self) -> Result<Vec<String>> {
-        let sa = if cfg!(windows) {
+        let sa = if self.is_windows() {
             &self.windows_default_file_shell_args
         } else {
             &self.unix_default_file_shell_args
         };
         Ok(shell_words::split(sa)?)
+    }
+
+    pub fn os(&self) -> &str {
+        self.os.as_deref().unwrap_or(&OS)
+    }
+
+    // derive the OS family from `os` field as `os_family` cannot be modified by the user
+    pub fn is_unix(&self) -> bool {
+        !self.is_windows()
+    }
+
+    pub fn is_linux(&self) -> bool {
+        self.os() == "linux"
+    }
+
+    pub fn is_macos(&self) -> bool {
+        self.os() == "macos"
+    }
+
+    pub fn is_windows(&self) -> bool {
+        self.os() == "windows"
     }
 
     pub fn arch(&self) -> &str {

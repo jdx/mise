@@ -1,7 +1,8 @@
 use eyre::Result;
 use itertools::sorted;
-use std::env::consts::{ARCH, OS};
+use std::env::consts::ARCH;
 
+use crate::config::Settings;
 use crate::{backend, config, dirs, env, file};
 use crate::{config::Config, env::PYENV_ROOT};
 
@@ -94,7 +95,7 @@ impl SyncPython {
             }
             // ~/.local/share/uv/python/cpython-3.10.16-macos-aarch64-none
             // ~/.local/share/uv/python/cpython-3.13.0-linux-x86_64-gnu
-            let os = OS;
+            let os = Settings::get().os().to_string();
             let arch = if cfg!(target_arch = "x86_64") {
                 "x86_64-gnu"
             } else if cfg!(target_arch = "aarch64") {

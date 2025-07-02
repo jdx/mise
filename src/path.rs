@@ -1,6 +1,6 @@
 pub use std::path::*;
 
-use crate::dirs;
+use crate::{config::Settings, dirs};
 
 pub trait PathExt {
     /// replaces $HOME with "~"
@@ -12,7 +12,7 @@ pub trait PathExt {
 impl PathExt for Path {
     fn display_user(&self) -> String {
         let home = dirs::HOME.to_string_lossy();
-        match cfg!(unix) && self.starts_with(home.as_ref()) && home != "/" {
+        match Settings::get().is_unix() && self.starts_with(home.as_ref()) && home != "/" {
             true => self.to_string_lossy().replacen(home.as_ref(), "~", 1),
             false => self.to_string_lossy().to_string(),
         }

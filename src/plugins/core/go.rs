@@ -4,7 +4,6 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::Result;
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
@@ -138,7 +137,7 @@ impl GoPlugin {
             .to_string_lossy();
         pr.set_message(format!("extract {tarball}"));
         let tmp_extract_path = tempdir_in(tv.install_path().parent().unwrap())?;
-        if cfg!(windows) {
+        if Settings::get().is_windows() {
             file::unzip(tarball_path, tmp_extract_path.path())?;
         } else {
             file::untar(
@@ -266,11 +265,11 @@ impl Backend for GoPlugin {
     }
 }
 
-fn platform() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "darwin"
-    } else {
-        &OS
+fn platform() -> String {
+    let os = Settings::get().os().to_string();
+    match os.as_str() {
+        "macos" => "darwin".into(),
+        _ => os,
     }
 }
 
@@ -288,5 +287,9 @@ fn arch(settings: &Settings) -> &str {
 }
 
 fn ext() -> &'static str {
-    if cfg!(windows) { "zip" } else { "tar.gz" }
+    if Settings::get().is_windows() {
+        "zip"
+    } else {
+        "tar.gz"
+    }
 }

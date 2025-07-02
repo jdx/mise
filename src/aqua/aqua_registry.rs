@@ -285,9 +285,9 @@ impl AquaPackage {
         self = apply_override(self.clone(), self.version_override(v));
         if let Some(avo) = self.overrides.clone().into_iter().find(|o| {
             if let (Some(goos), Some(goarch)) = (&o.goos, &o.goarch) {
-                goos == aqua::os() && goarch == aqua::arch()
+                goos == &aqua::os() && goarch == aqua::arch()
             } else if let Some(goos) = &o.goos {
-                goos == aqua::os()
+                goos == &aqua::os()
             } else if let Some(goarch) = &o.goarch {
                 goarch == aqua::arch()
             } else {
@@ -376,11 +376,12 @@ impl AquaPackage {
 
     pub fn asset_strs(&self, v: &str) -> Result<IndexSet<String>> {
         let mut strs = IndexSet::from([self.asset(v)?]);
-        if cfg!(macos) {
+        let settings = Settings::get();
+        if settings.is_macos() {
             let mut ctx = HashMap::default();
             ctx.insert("Arch".to_string(), "universal".to_string());
             strs.insert(self.parse_aqua_str(&self.asset, v, &ctx)?);
-        } else if cfg!(windows) {
+        } else if settings.is_windows() {
             let mut ctx = HashMap::default();
             let asset = self.parse_aqua_str(&self.asset, v, &ctx)?;
             if self.complete_windows_ext && self.format(v)? == "raw" {
@@ -405,7 +406,7 @@ impl AquaPackage {
 
     pub fn url(&self, v: &str) -> Result<String> {
         let mut url = self.url.clone();
-        if cfg!(windows) && self.complete_windows_ext && self.format(v)? == "raw" {
+        if Settings::get().is_windows() && self.complete_windows_ext && self.format(v)? == "raw" {
             url.push_str(".exe");
         }
         self.parse_aqua_str(&url, v, &Default::default())
@@ -439,8 +440,8 @@ impl AquaPackage {
         let mut ctx = hashmap! {
             "Version".to_string() => replace(v),
             "SemVer".to_string() => replace(semver),
-            "OS".to_string() => replace(os),
-            "GOOS".to_string() => replace(os),
+            "OS".to_string() => replace(&os),
+            "GOOS".to_string() => replace(&os),
             "GOARCH".to_string() => replace(arch),
             "Arch".to_string() => replace(arch),
             "Format".to_string() => replace(&self.format),

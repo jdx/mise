@@ -1,4 +1,3 @@
-use crate::path::{Path, PathBuf, PathExt};
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::fs;
@@ -22,8 +21,8 @@ use tar::Archive;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
-#[cfg(windows)]
 use crate::config::Settings;
+use crate::path::{Path, PathBuf, PathExt};
 use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env};
 
@@ -836,9 +835,10 @@ pub fn desymlink_path(p: &Path) -> PathBuf {
 }
 
 pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
-    if cfg!(macos) {
+    let settings = Settings::get();
+    if settings.is_macos() {
         cmd!("cp", "-cR", from, to).run()?;
-    } else if cfg!(windows) {
+    } else if settings.is_windows() {
         cmd!("robocopy", from, to, "/MIR").run()?;
     } else {
         cmd!("cp", "--reflink=auto", "-r", from, to).run()?;

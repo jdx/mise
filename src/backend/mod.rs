@@ -571,7 +571,7 @@ pub trait Backend: Debug + Send + Sync {
             .into_iter()
             .filter(|p| p.parent().is_some());
         for bin_path in bin_paths {
-            let paths_with_ext = if cfg!(windows) {
+            let paths_with_ext = if Settings::get().is_windows() {
                 vec![
                     bin_path.clone(),
                     bin_path.join(bin_name).with_extension("exe"),

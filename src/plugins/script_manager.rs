@@ -168,8 +168,9 @@ impl ScriptManager {
         let path = self.get_script_path(script);
         pr.set_message(display_path(&path));
         let mut cmd = CmdLineRunner::new(path.clone());
-        if let Some(arch) = &Settings::get().arch {
-            if arch == "x86_64" && cfg!(macos) {
+        let settings = Settings::get();
+        if let Some(arch) = &settings.arch {
+            if arch == "x86_64" && settings.is_macos() {
                 cmd = CmdLineRunner::new("/usr/bin/arch")
                     .arg("-x86_64")
                     .arg(path.clone());

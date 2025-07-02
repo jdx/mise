@@ -6,7 +6,6 @@ use std::{
 
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::TarOptions;
@@ -36,7 +35,7 @@ impl ZigPlugin {
     }
 
     fn zig_bin(&self, tv: &ToolVersion) -> PathBuf {
-        if cfg!(windows) {
+        if Settings::get().is_windows() {
             tv.install_path().join("zig.exe")
         } else {
             tv.install_path().join("bin").join("zig")
@@ -63,7 +62,7 @@ impl ZigPlugin {
                 indexes["mach"],
                 tv.version.as_str(),
                 arch(&settings),
-                os(),
+                &os(),
             )
             .await?
         } else {
@@ -71,7 +70,7 @@ impl ZigPlugin {
                 indexes["zig"],
                 tv.version.as_str(),
                 arch(&settings),
-                os(),
+                &os(),
             )
             .await?
         };
@@ -104,7 +103,7 @@ impl ZigPlugin {
             },
         )?;
 
-        if cfg!(unix) {
+        if Settings::get().is_unix() {
             file::create_dir_all(tv.install_path().join("bin"))?;
             file::make_symlink(Path::new("../zig"), &tv.install_path().join("bin/zig"))?;
         }
@@ -171,7 +170,7 @@ impl Backend for ZigPlugin {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        if cfg!(windows) {
+        if Settings::get().is_windows() {
             Ok(vec![tv.install_path()])
         } else {
             Ok(vec![tv.install_path().join("bin")])
@@ -195,16 +194,8 @@ impl Backend for ZigPlugin {
     }
 }
 
-fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "freebsd") {
-        "freebsd"
-    } else {
-        &OS
-    }
+fn os() -> String {
+    Settings::get().os().to_string()
 }
 
 fn arch(settings: &Settings) -> &str {

@@ -1,6 +1,6 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
-use crate::cli::version::{ARCH, OS};
+use crate::cli::version::ARCH;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::file::TarOptions;
@@ -639,7 +639,8 @@ impl AquaBackend {
                 .or_else(|| pkg.name.as_ref().and_then(|n| n.split('/').next_back()))
                 .unwrap_or(&pkg.repo_name),
         );
-        if cfg!(windows) && pkg.complete_windows_ext {
+        let settings = Settings::get();
+        if settings.is_windows() && pkg.complete_windows_ext {
             bin_path = bin_path.with_extension("exe");
         }
         let mut tar_opts = TarOptions {
@@ -686,7 +687,7 @@ impl AquaBackend {
 
         for (src, dst) in self.srcs(pkg, tv)? {
             if src != dst && src.exists() && !dst.exists() {
-                if cfg!(windows) {
+                if settings.is_windows() {
                     file::copy(&src, &dst)?;
                 } else {
                     let src = PathBuf::from(".").join(src.file_name().unwrap().to_str().unwrap());
@@ -750,7 +751,7 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
     let os = os();
     let arch = arch();
     let os_arch = format!("{os}/{arch}");
-    let mut myself: HashSet<&str> = ["all", os, arch, os_arch.as_str()].into();
+    let mut myself: HashSet<&str> = ["all", &os, arch, os_arch.as_str()].into();
     if os == "windows" && arch == "arm64" {
         // assume windows/arm64 is supported
         myself.insert("windows/amd64");
@@ -762,11 +763,11 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
     Ok(())
 }
 
-pub fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "darwin"
-    } else {
-        &OS
+pub fn os() -> String {
+    let os = Settings::get().os().to_string();
+    match os.as_str() {
+        "macos" => "darwin".into(),
+        _ => os,
     }
 }
 
