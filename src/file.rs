@@ -664,95 +664,66 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     };
     if format == TarFormat::Zip {
         unzip(archive, dest)?;
-        match opts.strip_components {
-            0 => {}
-            1 => {
-                let entries = ls(dest)?
-                    .into_iter()
-                    .map(|p| ls(&p))
-                    .collect::<Result<Vec<_>>>()?
-                    .into_iter()
-                    .flatten()
-                    .collect::<Vec<_>>();
-                for entry in entries {
-                    let mut new_dest = dest.to_path_buf();
-                    new_dest.push(entry.file_name().unwrap());
-                    fs::rename(entry, new_dest)?;
-                }
-            }
-            _ => bail!("strip-components not supported for zip archives"),
-        }
-        return Ok(());
-    }
-    debug!("tar -xf {} -C {}", archive.display(), dest.display());
-    if let Some(pr) = &opts.pr {
-        pr.set_message(format!(
-            "extract {}",
-            archive.file_name().unwrap().to_string_lossy()
-        ));
-    }
-    let tar = open_tar(format, archive)?;
-    let err = || {
-        let archive = display_path(archive);
-        let dest = display_path(dest);
-        format!("failed to extract tar: {archive} to {dest}")
-    };
-    // TODO: put this back in when we can read+write in parallel
-    // let mut cur = Cursor::new(vec![]);
-    // let mut total = 0;
-    // loop {
-    //     let mut buf = Cursor::new(vec![0; 1024 * 1024]);
-    //     let n = tar.read(buf.get_mut()).wrap_err_with(err)?;
-    //     cur.get_mut().extend_from_slice(&buf.get_ref()[..n]);
-    //     if n == 0 {
-    //         break;
-    //     }
-    //     if let Some(pr) = &opts.pr {
-    //         total += n as u64;
-    //         pr.set_length(total);
-    //     }
-    // }
-    create_dir_all(dest).wrap_err_with(err)?;
-    for entry in Archive::new(tar).entries().wrap_err_with(err)? {
-        let mut entry = entry.wrap_err_with(err)?;
-        trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
-        entry.unpack_in(dest).wrap_err_with(err)?;
+    } else {
+        debug!("tar -xf {} -C {}", archive.display(), dest.display());
         if let Some(pr) = &opts.pr {
-            pr.set_length(entry.raw_file_position());
+            pr.set_message(format!(
+                "extract {}",
+                archive.file_name().unwrap().to_string_lossy()
+            ));
         }
-    }
-    if opts.strip_components > 0 {
-        debug!(
-            "moving files with strip-components={}",
-            opts.strip_components
-        );
-        let entries = recursive_ls(dest, true).wrap_err_with(err)?;
-        for entry in entries.into_iter().rev() {
-            if entry.is_dir() {
-                if is_empty_dir(&entry).wrap_err_with(err)? {
-                    fs::remove_dir(&entry).wrap_err_with(err)?;
-                }
-                continue;
+        let tar = open_tar(format, archive)?;
+        let err = || {
+            let archive = display_path(archive);
+            let dest = display_path(dest);
+            format!("failed to extract tar: {archive} to {dest}")
+        };
+        // TODO: put this back in when we can read+write in parallel
+        // let mut cur = Cursor::new(vec![]);
+        // let mut total = 0;
+        // loop {
+        //     let mut buf = Cursor::new(vec![0; 1024 * 1024]);
+        //     let n = tar.read(buf.get_mut()).wrap_err_with(err)?;
+        //     cur.get_mut().extend_from_slice(&buf.get_ref()[..n]);
+        //     if n == 0 {
+        //         break;
+        //     }
+        //     if let Some(pr) = &opts.pr {
+        //         total += n as u64;
+        //         pr.set_length(total);
+        //     }
+        // }
+        create_dir_all(dest).wrap_err_with(err)?;
+        for entry in Archive::new(tar).entries().wrap_err_with(err)? {
+            let mut entry = entry.wrap_err_with(err)?;
+            trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
+            entry.unpack_in(dest).wrap_err_with(err)?;
+            if let Some(pr) = &opts.pr {
+                pr.set_length(entry.raw_file_position());
             }
-            let relative = entry
-                .strip_prefix(dest)
-                .wrap_err_with(err)?
-                .components()
-                .skip(opts.strip_components)
-                .collect::<PathBuf>();
-            if relative.is_empty() {
-                // remove the file if the path components are all stripped
-                fs::remove_file(&entry).wrap_err_with(err)?;
-                continue;
-            }
-            let stripped = dest.join(relative);
-            create_dir_all(stripped.parent().unwrap()).wrap_err_with(err)?;
-            fs::rename(&entry, &stripped).wrap_err_with(err)?;
         }
+        // if let Some(pr) = &opts.pr {
+        //     pr.set_position(total);
+        // }
     }
-    // if let Some(pr) = &opts.pr {
-    //     pr.set_position(total);
-    // }
+    match opts.strip_components {
+        0 => {}
+        1 => {
+            let entries = ls(dest)?
+                .into_iter()
+                .map(|p| ls(&p))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+            for entry in entries {
+                let mut new_dest = dest.to_path_buf();
+                new_dest.push(entry.file_name().unwrap());
+                fs::rename(entry, new_dest)?;
+            }
+        }
+        _ => bail!("strip-components > 1 is not supported"),
+    }
     Ok(())
 }
 
