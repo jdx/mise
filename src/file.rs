@@ -163,7 +163,7 @@ pub fn copy_dir_all<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<()
     let from = from.as_ref();
     let to = to.as_ref();
     trace!("cp -r {} {}", from.display(), to.display());
-    recursive_ls(from, false)?.into_iter().try_for_each(|path| {
+    recursive_ls(from)?.into_iter().try_for_each(|path| {
         let relative = path.strip_prefix(from)?;
         let dest = to.join(relative);
         create_dir_all(dest.parent().unwrap())?;
@@ -328,7 +328,7 @@ pub fn ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
     Ok(output)
 }
 
-pub fn recursive_ls(dir: &Path, include_dirs: bool) -> Result<BTreeSet<PathBuf>> {
+pub fn recursive_ls(dir: &Path) -> Result<BTreeSet<PathBuf>> {
     if !dir.is_dir() {
         return Ok(Default::default());
     }
@@ -336,7 +336,7 @@ pub fn recursive_ls(dir: &Path, include_dirs: bool) -> Result<BTreeSet<PathBuf>>
     Ok(WalkDir::new(dir)
         .follow_links(true)
         .into_iter()
-        .filter_ok(|e| e.file_type().is_file() || (include_dirs && e.file_type().is_dir()))
+        .filter_ok(|e| e.file_type().is_file())
         .map_ok(|e| e.path().to_path_buf())
         .try_collect()?)
 }
