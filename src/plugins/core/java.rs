@@ -24,7 +24,6 @@ use itertools::Itertools;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
-use tabled::settings;
 use versions::Versioning;
 use xx::regex;
 

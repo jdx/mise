@@ -48,7 +48,7 @@ impl CacheManagerBuilder {
         cache_keys.extend([settings.os().to_string(), settings.arch().to_string()]);
         Self {
             cache_file_path: cache_file_path.as_ref().to_path_buf(),
-            cache_keys: cache_keys,
+            cache_keys,
             fresh_files: vec![],
             fresh_duration: None,
         }
