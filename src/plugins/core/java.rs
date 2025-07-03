@@ -13,7 +13,6 @@ use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
@@ -26,6 +25,13 @@ use serde_derive::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 use xx::regex;
+
+static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?i)(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|snapshot|SNAPSHOT|master)"
+    )
+        .unwrap()
+});
 
 #[derive(Debug)]
 pub struct JavaPlugin {
