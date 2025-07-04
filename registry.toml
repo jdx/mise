@@ -2882,3 +2882,6 @@ zoxide.backends = [
 ]
 zoxide.test = ["zoxide --version", "zoxide {{version}}"]
 zprint.backends = ["asdf:mise-plugins/mise-zprint"]
+zizmor.description = "Static analysis for GitHub Actions"
+zizmor.backends = ["aqua:zizmorcore/zizmor", "ubi:zizmorcore/zizmor", "cargo:zizmor"]
+zizmor.test = ["zizmor --version", "zizmor {{version}}"]
