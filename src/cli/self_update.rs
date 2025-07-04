@@ -80,6 +80,8 @@ impl SelfUpdate {
             )
             .map(|v| format!("v{v}"))?;
         let target = format!("{}-{}", *OS, *ARCH);
+        #[cfg(target_env = "musl")]
+        let target = format!("{target}-musl");
         if self.force || self.version.is_some() {
             update.target_version_tag(&v);
         }

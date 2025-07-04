@@ -249,7 +249,11 @@ impl ErlangPlugin {
     }
 
     #[cfg(not(any(linux, macos, windows)))]
-    async fn install_precompiled(&self, ctx: &InstallContext) -> Result<Option<ToolVersion>> {
+    async fn install_precompiled(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> Result<Option<ToolVersion>> {
         Ok(None)
     }
 

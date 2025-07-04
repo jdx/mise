@@ -668,6 +668,10 @@ impl AquaBackend {
             file::create_dir_all(&install_path)?;
             file::un_xz(&tarball_path, &bin_path)?;
             file::make_executable(&bin_path)?;
+        } else if format == "zst" {
+            file::create_dir_all(&install_path)?;
+            file::un_zst(&tarball_path, &bin_path)?;
+            file::make_executable(&bin_path)?;
         } else if format == "bz2" {
             file::create_dir_all(&install_path)?;
             file::un_bz2(&tarball_path, &bin_path)?;

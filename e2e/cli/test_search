@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
 assert "mise search jq" "jq    Command-line JSON processor. https://github.com/jqlang/jq
-jqp   https://github.com/noahgorstein/jqp
-jiq   https://github.com/fiatjaf/jiq
-gojq  https://github.com/itchyny/gojq"
+jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
+jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
+gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq"
 
-assert "mise search --match-type contains jq" "gojq  https://github.com/itchyny/gojq
+assert "mise search --match-type contains jq" "gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
 jq    Command-line JSON processor. https://github.com/jqlang/jq
-jqp   https://github.com/noahgorstein/jqp"
+jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp"
 
 assert "mise search --match-type equal jq" "jq  Command-line JSON processor. https://github.com/jqlang/jq"

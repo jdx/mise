@@ -12,7 +12,7 @@ use itertools::Itertools;
 use serde::ser::Error;
 use serde::{Deserialize, Deserializer};
 use serde_derive::Serialize;
-use std::env::consts::ARCH;
+use std::env::consts::{ARCH, OS};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -446,6 +446,10 @@ impl Settings {
             &self.unix_default_file_shell_args
         };
         Ok(shell_words::split(sa)?)
+    }
+
+    pub fn os(&self) -> &str {
+        self.os.as_deref().unwrap_or(OS)
     }
 
     pub fn arch(&self) -> &str {

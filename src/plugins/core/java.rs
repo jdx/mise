@@ -38,20 +38,16 @@ impl JavaPlugin {
     pub fn new() -> Self {
         let settings = Settings::get();
         let ba = Arc::new(plugins::core::new_backend_arg("java"));
-        let java_metadata_ga_cache_filename =
-            format!("java_metadata_ga_{}_{}.msgpack.z", os(), arch(&settings));
-        let java_metadata_ea_cache_filename =
-            format!("java_metadata_ea_{}_{}.msgpack.z", os(), arch(&settings));
         Self {
             java_metadata_ea_cache: CacheManagerBuilder::new(
-                ba.cache_path.join(java_metadata_ea_cache_filename),
+                ba.cache_path.join("java_metadata_ea.msgpack.z"),
             )
-            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+            .with_fresh_duration(settings.fetch_remote_versions_cache())
             .build(),
             java_metadata_ga_cache: CacheManagerBuilder::new(
-                ba.cache_path.join(java_metadata_ga_cache_filename),
+                ba.cache_path.join("java_metadata_ga.msgpack.z"),
             )
-            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+            .with_fresh_duration(settings.fetch_remote_versions_cache())
             .build(),
             ba,
         }

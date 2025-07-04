@@ -43,9 +43,12 @@ pub static BASE_CACHE_KEYS: Lazy<Vec<String>> = Lazy::new(|| {
 
 impl CacheManagerBuilder {
     pub fn new(cache_file_path: impl AsRef<Path>) -> Self {
+        let settings = Settings::get();
+        let mut cache_keys = BASE_CACHE_KEYS.clone();
+        cache_keys.extend([settings.os().to_string(), settings.arch().to_string()]);
         Self {
             cache_file_path: cache_file_path.as_ref().to_path_buf(),
-            cache_keys: BASE_CACHE_KEYS.clone(),
+            cache_keys,
             fresh_files: vec![],
             fresh_duration: None,
         }
