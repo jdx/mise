@@ -1082,7 +1082,7 @@ gojq.backends = [
 ]
 gojq.test = ["gojq --version", "gojq {{version}}"]
 gokey.backends = [
-    # "aqua:cloudflare/gokey", # package type go_install not supported
+    "aqua:cloudflare/gokey",
     "ubi:cloudflare/gokey"
 ]
 gokey.test = ["gokey -p master -r realm -l 8", "hJ2gXSy["]
@@ -1103,7 +1103,7 @@ golangci-lint-langserver.test = [
     "golangci-lint-langserver"
 ]
 golines.backends = [
-    # "aqua:segmentio/golines", # package type go_install not supported
+    "aqua:segmentio/golines",
     "ubi:segmentio/golines",
     "go:github.com/segmentio/golines"
 ]
@@ -1897,7 +1897,7 @@ notation.backends = ["aqua:notaryproject/notation", "asdf:bodgit/asdf-notation"]
 nova.description = "Find outdated or deprecated Helm charts running in your cluster"
 nova.backends = ["aqua:FairwindsOps/nova", "asdf:elementalvoid/asdf-nova"]
 nsc.backends = ["ubi:nats-io/nsc", "asdf:dex4er/asdf-nsc"]
-numbat.backends = ["ubi:sharkdp/numbat"]
+numbat.backends = ["aqua:sharkdp/numbat", "ubi:sharkdp/numbat"]
 numbat.test = ["numbat --version", "numbat {{version}}"]
 oapi-codegen.backends = [
     "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen",
