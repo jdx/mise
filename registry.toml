@@ -1004,6 +1004,7 @@ github-markdown-toc.backends = [
     "aqua:ekalinin/github-markdown-toc",
     "asdf:skyzyx/asdf-github-markdown-toc"
 ]
+github-markdown-toc.test = ["gh-md-toc --version", "{{version}}"]
 gitleaks.description = "Find secrets with Gitleaks"
 gitleaks.backends = ["aqua:gitleaks/gitleaks", "asdf:jmcvetta/asdf-gitleaks"]
 gitleaks.test = ["gitleaks --version", "gitleaks version {{version}}"]
@@ -1700,6 +1701,7 @@ license-plist.backends = [
 ]
 lima.description = "Linux virtual machines, with a focus on running containers"
 lima.backends = ["aqua:lima-vm/lima", "asdf:CrouchingMuppet/asdf-lima"]
+lima.test = ["lima --version", "limactl version {{version}}"]
 linkerd.description = "Ultralight, security-first service mesh for Kubernetes. Main repo for Linkerd 2.x"
 linkerd.backends = ["aqua:linkerd/linkerd2", "asdf:kforsthoevel/asdf-linkerd"]
 liqoctl.backends = ["aqua:liqotech/liqo", "asdf:pdemagny/asdf-liqoctl"]
