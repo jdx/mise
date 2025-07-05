@@ -18,7 +18,7 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - uses: thollander/actions-comment-pull-request@v3
+      - uses: thollander/actions-comment-pull-request@24bffb9b452ba05a4f3f77933840a6a841d1b32b # v3
         if: github.event.pull_request.number != null && github.actor != 'jdx'
         with:
           comment-tag: "mise-registry-bot"
