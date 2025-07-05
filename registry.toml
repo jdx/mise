@@ -162,11 +162,14 @@ aws-nuke.backends = ["aqua:ekristen/aws-nuke", "asdf:bersalazar/asdf-aws-nuke"]
 aws-sam.aliases = ["aws-sam-cli"]
 aws-sam.description = "CLI tool to build, test, debug, and deploy Serverless applications using AWS SAM"
 aws-sam.backends = [
-    "aqua:aws/aws-sam-cli",
+    {full = "aqua:aws/aws-sam-cli", platforms = [
+        "linux",
+        "macos"
+    ]},
     "pipx:aws-sam-cli",
     "asdf:mise-plugins/mise-pyapp"
 ]
-# aws-sam.test = ["sam --version", "SAM CLI, version {{version}}"] # takes forever on windows in CI
+aws-sam.test = ["sam --version", "SAM CLI, version {{version}}"]
 aws-sso.description = "A powerful tool for using AWS Identity Center for the CLI and web console"
 aws-sso.backends = [
     "aqua:synfinatic/aws-sso-cli",
