@@ -1105,8 +1105,8 @@ golangci-lint-langserver.test = [
 ]
 golines.description = "A golang formatter that fixes long lines"
 golines.backends = [
-    "aqua:segmentio/golines",
-    "ubi:segmentio/golines",
+    {full="aqua:segmentio/golines", platforms=["linux", "macos"]},
+    {full="ubi:segmentio/golines", platforms=["linux", "macos"]},
     "go:github.com/segmentio/golines"
 ]
 golines.test = ["golines --version", "golines v{{version}}"]
