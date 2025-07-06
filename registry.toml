@@ -1085,10 +1085,8 @@ gojq.backends = [
     "go:github.com/itchyny/gojq/cmd/gojq"
 ]
 gojq.test = ["gojq --version", "gojq {{version}}"]
-gokey.backends = [
-    # "aqua:cloudflare/gokey", # package type go_install not supported
-    "ubi:cloudflare/gokey"
-]
+gokey.description = "A simple vaultless password manager in Go"
+gokey.backends = ["aqua:cloudflare/gokey", "ubi:cloudflare/gokey"]
 gokey.test = ["gokey -p master -r realm -l 8", "hJ2gXSy["]
 golangci-lint.description = "Fast linters Runner for Go"
 golangci-lint.backends = [
@@ -1106,9 +1104,16 @@ golangci-lint-langserver.test = [
     "which golangci-lint-langserver",
     "golangci-lint-langserver"
 ]
+golines.description = "A golang formatter that fixes long lines"
 golines.backends = [
-    # "aqua:segmentio/golines", # package type go_install not supported
-    "ubi:segmentio/golines",
+    {full = "aqua:segmentio/golines", platforms = [
+        "linux",
+        "macos"
+    ]},
+    {full = "ubi:segmentio/golines", platforms = [
+        "linux",
+        "macos"
+    ]},
     "go:github.com/segmentio/golines"
 ]
 golines.test = ["golines --version", "golines v{{version}}"]
@@ -1902,7 +1907,8 @@ notation.backends = ["aqua:notaryproject/notation", "asdf:bodgit/asdf-notation"]
 nova.description = "Find outdated or deprecated Helm charts running in your cluster"
 nova.backends = ["aqua:FairwindsOps/nova", "asdf:elementalvoid/asdf-nova"]
 nsc.backends = ["ubi:nats-io/nsc", "asdf:dex4er/asdf-nsc"]
-numbat.backends = ["ubi:sharkdp/numbat"]
+numbat.description = "A statically typed programming language for scientific computations with first class support for physical dimensions and units"
+numbat.backends = ["aqua:sharkdp/numbat", "ubi:sharkdp/numbat"]
 numbat.test = ["numbat --version", "numbat {{version}}"]
 oapi-codegen.backends = [
     "go:github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen",
