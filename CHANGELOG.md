@@ -1,5 +1,36 @@
 # Changelog
 
+## [2025.7.1](https://github.com/jdx/mise/compare/v2025.7.0..v2025.7.1) - 2025-07-06
+
+### 🚀 Features
+
+- **(aqua)** add support for zst compressed assets by [@andreabedini](https://github.com/andreabedini) in [#5495](https://github.com/jdx/mise/pull/5495)
+- **(registry)** import package descriptions from aqua and add os specifier for tuist by [@matracey](https://github.com/matracey) in [#5487](https://github.com/jdx/mise/pull/5487)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** handle hard links in aqua packages (attempt #2) by [@risu729](https://github.com/risu729) in [#5486](https://github.com/jdx/mise/pull/5486)
+- **(aqua)** apply correct `version_override` by [@risu729](https://github.com/risu729) in [#5474](https://github.com/jdx/mise/pull/5474)
+- **(erlang)** fix install_precompiled method signature for unsupported os by [@roele](https://github.com/roele) in [#5503](https://github.com/jdx/mise/pull/5503)
+- **(java)** relax version filter regex for JetBrains builds by [@roele](https://github.com/roele) in [#5508](https://github.com/jdx/mise/pull/5508)
+- **(registry)** use aqua backend for bat by [@risu729](https://github.com/risu729) in [#5490](https://github.com/jdx/mise/pull/5490)
+- **(registry)** use pipx backend for aws-sam on windows by [@risu729](https://github.com/risu729) in [#5491](https://github.com/jdx/mise/pull/5491)
+- enhance self-update for musl targets by [@roele](https://github.com/roele) in [#5502](https://github.com/jdx/mise/pull/5502)
+- include arch and os settings in cache keys by [@risu729](https://github.com/risu729) in [#5504](https://github.com/jdx/mise/pull/5504)
+
+### 🧪 Testing
+
+- **(registry)** enable youtube-dl test by [@risu729](https://github.com/risu729) in [#5492](https://github.com/jdx/mise/pull/5492)
+
+### 📦️ Dependency Updates
+
+- update swatinem/rust-cache digest to 98c8021 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5512](https://github.com/jdx/mise/pull/5512)
+
+### New Contributors
+
+- @matracey made their first contribution in [#5487](https://github.com/jdx/mise/pull/5487)
+- @andreabedini made their first contribution in [#5495](https://github.com/jdx/mise/pull/5495)
+
 ## [2025.7.0](https://github.com/jdx/mise/compare/v2025.6.8..v2025.7.0) - 2025-07-01
 
 ### 🚀 Features
