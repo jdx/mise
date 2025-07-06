@@ -2864,6 +2864,13 @@ zephyr.backends = ["ubi:MaybeJustJames/zephyr", "asdf:nsaunders/asdf-zephyr"]
 zig.backends = ["core:zig"]
 zigmod.backends = ["ubi:nektro/zigmod", "asdf:mise-plugins/asdf-zigmod"]
 zigmod.test = ["zigmod version", "{{version}}"]
+zizmor.description = "Static analysis for GitHub Actions"
+zizmor.backends = [
+    "aqua:zizmorcore/zizmor",
+    "ubi:zizmorcore/zizmor",
+    "cargo:zizmor"
+]
+zizmor.test = ["zizmor --version", "zizmor {{version}}"]
 zls.description = "A Zig language server supporting Zig developers with features like autocomplete and goto definition"
 zls.backends = ["aqua:zigtools/zls", "ubi:zigtools/zls"]
 zls.test = ["zls --version", "{{version}}"]
@@ -2882,6 +2889,3 @@ zoxide.backends = [
 ]
 zoxide.test = ["zoxide --version", "zoxide {{version}}"]
 zprint.backends = ["asdf:mise-plugins/mise-zprint"]
-zizmor.description = "Static analysis for GitHub Actions"
-zizmor.backends = ["aqua:zizmorcore/zizmor", "ubi:zizmorcore/zizmor", "cargo:zizmor"]
-zizmor.test = ["zizmor --version", "zizmor {{version}}"]
