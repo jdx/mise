@@ -1082,10 +1082,7 @@ gojq.backends = [
 ]
 gojq.test = ["gojq --version", "gojq {{version}}"]
 gokey.description = "A simple vaultless password manager in Go"
-gokey.backends = [
-    "aqua:cloudflare/gokey",
-    "ubi:cloudflare/gokey"
-]
+gokey.backends = ["aqua:cloudflare/gokey", "ubi:cloudflare/gokey"]
 gokey.test = ["gokey -p master -r realm -l 8", "hJ2gXSy["]
 golangci-lint.description = "Fast linters Runner for Go"
 golangci-lint.backends = [
@@ -1105,8 +1102,14 @@ golangci-lint-langserver.test = [
 ]
 golines.description = "A golang formatter that fixes long lines"
 golines.backends = [
-    {full="aqua:segmentio/golines", platforms=["linux", "macos"]},
-    {full="ubi:segmentio/golines", platforms=["linux", "macos"]},
+    {full = "aqua:segmentio/golines", platforms = [
+        "linux",
+        "macos"
+    ]},
+    {full = "ubi:segmentio/golines", platforms = [
+        "linux",
+        "macos"
+    ]},
     "go:github.com/segmentio/golines"
 ]
 golines.test = ["golines --version", "golines v{{version}}"]
