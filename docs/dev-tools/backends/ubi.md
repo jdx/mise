@@ -128,7 +128,7 @@ releases.
 
 ```toml
 [tools]
-"ubi:cargo-bins/cargo-binstall" = { version = "latest", tag_regex = "^\d+\." }
+"ubi:cargo-bins/cargo-binstall" = { version = "latest", tag_regex = '^\d+\.' }
 ```
 
 ## Self-hosted GitHub/GitLab
