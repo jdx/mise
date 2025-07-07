@@ -5,9 +5,9 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::backend_type::BackendType;
 use crate::build_time::built_info;
+use crate::cli::self_update::SelfUpdate;
 use crate::cli::version;
 use crate::cli::version::VERSION;
-use crate::cli::self_update::SelfUpdate;
 use crate::config::{Config, IGNORED_CONFIG_FILES};
 use crate::env::PATH_KEY;
 use crate::file::display_path;
@@ -66,7 +66,10 @@ impl Doctor {
         );
         data.insert("activated".into(), env::is_activated().into());
         data.insert("shims_on_path".into(), shims_on_path().into());
-        data.insert("self_update_available".into(), SelfUpdate::is_available().into());
+        data.insert(
+            "self_update_available".into(),
+            SelfUpdate::is_available().into(),
+        );
         if env::is_activated() && shims_on_path() {
             self.errors.push("shims are on PATH and mise is also activated. You should only use one of these methods.".to_string());
         }
