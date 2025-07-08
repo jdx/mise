@@ -104,8 +104,10 @@ fn main() -> eyre::Result<()> {
 async fn main_() -> eyre::Result<()> {
     color_eyre::install()?;
     install_panic_hook();
-    unsafe {
-        path_absolutize::update_cwd();
+    if std::env::current_dir().is_ok() {
+        unsafe {
+            path_absolutize::update_cwd();
+        }
     }
     measure!("main", {
         let args = env::args().collect_vec();
