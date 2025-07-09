@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+require_cmd xonsh
+exec /home/joe/.pyenv/versions/3.12.0/bin/xonsh --no-rc "$TEST_DIR/xonsh_script"
