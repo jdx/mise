@@ -889,7 +889,7 @@ mod tests {
     #[test]
     fn test_which() {
         let path = which("git");
-        print!("{:?}", path);
+        print!("{path:?}");
         assert!(path.is_some());
     }
 
