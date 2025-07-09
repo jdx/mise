@@ -1,5 +1,31 @@
 # Changelog
 
+## [2025.7.2](https://github.com/jdx/mise/compare/v2025.7.1..v2025.7.2) - 2025-07-09
+
+### 🚀 Features
+
+- **(registry)** add zizmor by [@risu729](https://github.com/risu729) in [#5519](https://github.com/jdx/mise/pull/5519)
+- Add `self_update_available` to `mise doctor` output by [@joehorsnell](https://github.com/joehorsnell) in [#5534](https://github.com/jdx/mise/pull/5534)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** use the version in url to verify and install by [@risu729](https://github.com/risu729) in [#5537](https://github.com/jdx/mise/pull/5537)
+- **(registry)** use aqua for numbat, gokey, golines by [@risu729](https://github.com/risu729) in [#5518](https://github.com/jdx/mise/pull/5518)
+- `self-update` on MITM firewall (attempt #2) by [@joehorsnell](https://github.com/joehorsnell) in [#5459](https://github.com/jdx/mise/pull/5459)
+- mise panic in removed directory by [@roele](https://github.com/roele) in [#5532](https://github.com/jdx/mise/pull/5532)
+
+### 📚 Documentation
+
+- update ubi tag_regex syntax by [@grimm26](https://github.com/grimm26) in [#5529](https://github.com/jdx/mise/pull/5529)
+
+### 🧪 Testing
+
+- disable yamlscript test by [@jdx](https://github.com/jdx) in [#5536](https://github.com/jdx/mise/pull/5536)
+
+### New Contributors
+
+- @grimm26 made their first contribution in [#5529](https://github.com/jdx/mise/pull/5529)
+
 ## [2025.7.1](https://github.com/jdx/mise/compare/v2025.7.0..v2025.7.1) - 2025-07-06
 
 ### 🚀 Features
