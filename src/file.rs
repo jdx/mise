@@ -602,7 +602,7 @@ pub fn which_in_paths<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<Path
                 return Some(path);
             }
         }
-        return None;
+        None
     })
 }
 
