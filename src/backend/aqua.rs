@@ -107,21 +107,23 @@ impl Backend for AquaBackend {
         }
         validate(&pkg)?;
         // try v-prefixed version first because most aqua packages use v-prefixed versions
-        let url = match self
+        let (url, v) = match self
             .fetch_url(&pkg, v_prefixed.as_ref().unwrap_or(&v))
             .await
         {
-            Ok(url) => url,
-            Err(err) if v_prefixed.is_some() => self
-                .fetch_url(&pkg, &v)
-                .await
-                .map_err(|e| err.wrap_err(e))?,
+            Ok(url) => (url, v_prefixed.as_ref().unwrap_or(&v)),
+            Err(err) if v_prefixed.is_some() => (
+                self.fetch_url(&pkg, &v)
+                    .await
+                    .map_err(|e| err.wrap_err(e))?,
+                &v,
+            ),
             Err(err) => return Err(err),
         };
         let filename = url.split('/').next_back().unwrap();
         self.download(ctx, &tv, &url, filename).await?;
-        self.verify(ctx, &mut tv, &pkg, &v, filename).await?;
-        self.install(ctx, &tv, &pkg, &v, filename)?;
+        self.verify(ctx, &mut tv, &pkg, v, filename).await?;
+        self.install(ctx, &tv, &pkg, v, filename)?;
 
         Ok(tv)
     }

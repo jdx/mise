@@ -2563,6 +2563,7 @@ terragrunt.backends = [
     "aqua:gruntwork-io/terragrunt",
     "asdf:gruntwork-io/asdf-terragrunt"
 ]
+terragrunt.test = ["terragrunt --version", "terragrunt version v{{version}}"]
 terramate.description = "Open-source Infrastructure as Code (IaC) orchestration platform: GitOps workflows, orchestration, code generation, observability, drift detection, asset management, policies, Slack notifications, and more. Integrates with Terraform, OpenTofu, Terragrunt, Kubernetes, GitHub Actions, GitLab CI/CD, BitBucket Pipelines, and any other CI/CD platform"
 terramate.backends = [
     "aqua:terramate-io/terramate",
