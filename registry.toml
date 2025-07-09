@@ -2834,7 +2834,7 @@ yamlfmt.test = ["yamlfmt --version", "yamlfmt {{version}}"]
 yamllint.backends = ["pipx:yamllint", "asdf:ericcornelissen/asdf-yamllint"]
 yamllint.test = ["yamllint --version", "yamllint {{version}}"]
 yamlscript.backends = [
-    "aqua:yamlscript/yamlscript",
+    "aqua:yaml/yamlscript",
     "ubi:yaml/yamlscript[matching_regex=^ys,extract_all=true]",
     "asdf:mise-plugins/mise-yamlscript"
 ]
