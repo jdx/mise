@@ -597,7 +597,9 @@ pub fn which_in_paths<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<Path
         } else {
             vec![path.join(name)]
         };
-        paths_with_ext.into_iter().find(|path| path.exists() && is_executable(&path))
+        paths_with_ext
+            .into_iter()
+            .find(|path| path.exists() && is_executable(path))
     })
 }
 
