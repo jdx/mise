@@ -2903,3 +2903,6 @@ zoxide.backends = [
 ]
 zoxide.test = ["zoxide --version", "zoxide {{version}}"]
 zprint.backends = ["asdf:mise-plugins/mise-zprint"]
+vfox.description = "A cross-platform and extendable version manager with support for Java, Node.js, Flutter, .Net & more"
+vfox.backends = ["aqua:version-fox/vfox", "ubi:version-fox/vfox"]
+vfox.test = ["vfox --version", "vfox version {{version}}"]
