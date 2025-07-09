@@ -266,7 +266,27 @@ impl AquaBackend {
                 HTTP.head(&url).await?;
                 Ok(url)
             }
-            ref t => bail!("unsupported aqua package type: {t}"),
+            AquaPackageType::Cargo => {
+                bail!(
+                    "package type `cargo` is not supported in the aqua backend. Use the cargo backend instead{}.",
+                    pkg.name
+                        .as_ref()
+                        .and_then(|s| s.strip_prefix("crates.io/"))
+                        .map(|name| format!(": cargo:{name}"))
+                        .unwrap_or_default()
+                )
+            }
+            AquaPackageType::GoInstall => {
+                bail!(
+                    "package type `go_install` is not supported in the aqua backend. Use the go backend instead{}.",
+                    pkg.path
+                        .as_ref()
+                        .map(|path| format!(": go:{path}"))
+                        .unwrap_or_else(|| {
+                            format!(": go:github.com/{}/{}", pkg.repo_owner, pkg.repo_name)
+                        })
+                )
+            }
         }
     }
 
