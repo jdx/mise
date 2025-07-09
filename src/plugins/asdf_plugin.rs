@@ -420,8 +420,10 @@ fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
         .with_env("MISE_PLUGIN_PATH", plugin_path)
         .with_env("MISE_SHIMS_DIR", *dirs::SHIMS);
     if let Some(token) = &*env::GITHUB_TOKEN {
-        // asdf plugins often use GITHUB_API_TOKEN as the env var for GitHub API token
-        sm = sm.with_env("GITHUB_API_TOKEN", token.to_string());
+        sm = sm
+            .with_env("GITHUB_TOKEN", token.to_string())
+            // asdf plugins often use GITHUB_API_TOKEN as the env var for GitHub API token
+            .with_env("GITHUB_API_TOKEN", token.to_string());
     }
     sm
 }
