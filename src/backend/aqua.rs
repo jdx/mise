@@ -122,8 +122,8 @@ impl Backend for AquaBackend {
         };
         let filename = url.split('/').next_back().unwrap();
         self.download(ctx, &tv, &url, filename).await?;
-        self.verify(ctx, &mut tv, &pkg, &v, filename).await?;
-        self.install(ctx, &tv, &pkg, &v, filename)?;
+        self.verify(ctx, &mut tv, &pkg, v, filename).await?;
+        self.install(ctx, &tv, &pkg, v, filename)?;
 
         Ok(tv)
     }
