@@ -2834,11 +2834,10 @@ yamlfmt.test = ["yamlfmt --version", "yamlfmt {{version}}"]
 yamllint.backends = ["pipx:yamllint", "asdf:ericcornelissen/asdf-yamllint"]
 yamllint.test = ["yamllint --version", "yamllint {{version}}"]
 yamlscript.backends = [
-    # "aqua:yaml/yamlscript[exe=ys,matching=ys]]",
-    "ubi:yaml/yamlscript[exe=ys,matching=ys]]",
+    "ubi:yaml/yamlscript[exe=ys,matching=ys-]",
     "asdf:mise-plugins/mise-yamlscript"
 ]
-# yamlscript.test = ["ys --version", "{{version}}"] needs to be added to aqua for test to work
+yamlscript.test = ["ys --version", "{{version}}"]
 yarn.backends = ["asdf:mise-plugins/mise-yarn"]
 yay.backends = ["asdf:mise-plugins/mise-yay"]
 yazi.description = "Blazing fast terminal file manager written in Rust, based on async I/O"
