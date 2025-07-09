@@ -886,6 +886,12 @@ mod tests {
         let result = find_up(path, &filenames);
         assert_eq!(result, Some(dirs::HOME.join(".test-tool-versions")));
     }
+    #[test]
+    fn test_which() {
+        let path = which("git");
+        print!("{:?}", path);
+        assert!(path.is_some());
+    }
 
     #[tokio::test]
     async fn test_dir_subdirs() {
