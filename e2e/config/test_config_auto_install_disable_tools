@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Clean up any previous installs
+mise uninstall dummy@1.0.0 || true
+
+# Test auto_install_disable_tools via settings in mise.toml
+cat <<EOF >mise.toml
+[tools]
+dummy = '1.0.0'
+
+[settings]
+auto_install_disable_tools = ["dummy"]
+EOF
+
+# Should NOT auto-install dummy when running a command
+assert_fail "mise exec dummy@1.0.0 -- dummy --version" "couldn't exec process"
+
+# Remove auto_install_disable_tools and check auto-install works
+cat <<EOF >mise.toml
+[tools]
+dummy = '1.0.0'
+EOF
+
+assert "mise exec dummy@1.0.0 -- dummy --version"
+
+# Uninstall for env var test
+mise uninstall dummy@1.0.0 || true
+
+# Test auto_install_disable_tools via environment variable
+cat <<EOF >mise.toml
+[tools]
+dummy = '1.0.0'
+EOF
+
+MISE_AUTO_INSTALL_DISABLE_TOOLS=dummy assert_fail "mise exec dummy@1.0.0 -- dummy --version" "couldn't exec process"
+MISE_AUTO_INSTALL_DISABLE_TOOLS='' assert "mise exec dummy@1.0.0 -- dummy --version"
