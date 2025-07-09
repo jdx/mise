@@ -209,7 +209,7 @@ pub static GITHUB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
         .or_else(|_| var("GITHUB_API_TOKEN"))
         .or_else(|_| var("GITHUB_TOKEN"))
         .ok()
-        .and_then(|v| if v.is_empty() { None } else { Some(v) })
+        .and_then(|v| if v.trim().is_empty() { None } else { Some(v) })
 });
 pub static MISE_GITHUB_ENTERPRISE_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
     var("MISE_GITHUB_ENTERPRISE_TOKEN")
@@ -220,7 +220,7 @@ pub static GITLAB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
     var("MISE_GITLAB_TOKEN")
         .or_else(|_| var("GITLAB_API_TOKEN"))
         .ok()
-        .and_then(|v| if v.is_empty() { None } else { Some(v) })
+        .and_then(|v| if v.trim().is_empty() { None } else { Some(v) })
 });
 pub static MISE_GITLAB_ENTERPRISE_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
     var("MISE_GITLAB_ENTERPRISE_TOKEN")
