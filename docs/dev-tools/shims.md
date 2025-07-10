@@ -240,7 +240,7 @@ The obvious downside is that anytime one wants to use `mise` they need to prefix
 
 ## Hook on `cd` {#hook-on-cd}
 
-For some shells (`bash`, `zsh`, `fish`), `mise` hooks into the `cd` command, while in others, it only runs when the prompt is displayed. This relies on `chpwd` in `zsh`, `PROMPT_COMMAND` in `bash`, and `fish_prompt` in `fish`.
+For some shells (`bash`, `zsh`, `fish`, `xonsh`), `mise` hooks into the `cd` command, while in others, it only runs when the prompt is displayed. This relies on `chpwd` in `zsh`, `PROMPT_COMMAND` in `bash`, `fish_prompt` in `fish`, and `on_chdir` in `xonsh`.
 
 The upside is that it doesn't run as frequently but since mise is written in Rust the cost for executing
 mise is negligible (a few ms).

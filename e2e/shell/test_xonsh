@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+require_cmd xonsh
+exec xonsh --no-rc "$TEST_DIR/xonsh_script"

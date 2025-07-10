@@ -4,14 +4,14 @@ expression: replace_path(&deactivate)
 snapshot_kind: text
 ---
 import os
-from xonsh.built_ins  import XSH
+from xonsh.built_ins import XSH
 
 hooks = {
-  'on_pre_prompt' : ['listen_prompt'],
+  'on_pre_prompt' : ['mise_hook'],
+  'on_chdir': ['mise_hook'],
 }
-for   hook_type in hooks:
-  hook_fns = hooks[hook_type]
-  for hook_fn   in hook_fns:
+for hook_type, hook_fns in hooks.items():
+  for hook_fn in hook_fns:
     hndl = getattr(XSH.builtins.events, hook_type)
     for fn in hndl:
       if fn.__name__ == hook_fn:
@@ -20,8 +20,5 @@ for   hook_type in hooks:
 
 del XSH.aliases['mise']
 del XSH.env['MISE_SHELL']
-del os.environ['MISE_SHELL']
 del XSH.env['__MISE_DIFF']
-del os.environ['__MISE_DIFF']
 del XSH.env['__MISE_SESSION']
-del os.environ['__MISE_SESSION']
