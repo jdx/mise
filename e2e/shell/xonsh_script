@@ -15,6 +15,7 @@ echo @(node18) > 18/.mise.toml
 
 mise install node@20.0.0 node@18.0.0
 
+# shellcheck disable=SC1073,SC1065,SC1064,SC1072
 execx($(mise activate -s xonsh))
 events.on_pre_prompt.fire() # event handlers don't fire in non-interactive mode, so do it manually
 
