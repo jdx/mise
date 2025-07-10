@@ -17,23 +17,24 @@ mise install node@20.0.0 node@18.0.0
 
 # shellcheck disable=SC1073,SC1065,SC1064,SC1072
 execx($(mise activate -s xonsh))
-events.on_pre_prompt.fire() # event handlers don't fire in non-interactive mode, so do it manually
 
 # check that mise was activated at all
 assert 'mise' in aliases
-assert list(events.on_pre_prompt)[0].__name__ == 'listen_prompt'
+assert list(events.on_pre_prompt)[0].__name__ == 'mise_hook'
+assert list(events.on_chdir)[0].__name__ == 'mise_hook'
 
 # check that correct node version is being used
+events.on_pre_prompt.fire() # prompt doesn't render in non-interactive mode, so do this manually
 assert $(node -v) == 'v20.0.0'
 
-# check that config file in subdir is respected
-cd 18 && events.on_pre_prompt.fire()
+# check that on_chdir hook is firing
+cd 18
 assert $(node -v) == 'v18.0.0'
-
-# check that subdir is correctly forgotten when moving back up to parent dir
-cd .. && events.on_pre_prompt.fire()
+cd ..
 assert $(node -v) == 'v20.0.0'
 
+# check that mise is correctly deactivated
 mise deactivate
 assert 'mise' not in aliases
 assert len(list(events.on_pre_prompt)) == 0
+assert len(list(events.on_chdir)) == 0

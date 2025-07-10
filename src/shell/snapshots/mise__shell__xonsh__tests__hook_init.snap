@@ -17,7 +17,7 @@ import shlex
 import subprocess
 
 extra_args = shlex.split(' --status')
-def listen_prompt(): # Hook Events
+def mise_hook(**kwargs): # Hook Events
     script = subprocess.run(
         ['/some/dir/mise', 'hook-env', *extra_args, '-s', 'xonsh'],
         env=XSH.env.detype(),
@@ -25,4 +25,5 @@ def listen_prompt(): # Hook Events
     ).stdout.decode()
     execx(script)
 
-XSH.builtins.events.on_pre_prompt(listen_prompt) # Activate hook: before showing the prompt
+XSH.builtins.events.on_pre_prompt(mise_hook) # Activate hook: before showing the prompt
+XSH.builtins.events.on_chdir(mise_hook) # Activate hook: when the working directory changes

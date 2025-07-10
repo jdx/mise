@@ -67,7 +67,7 @@ impl Shell for Xonsh {
                 import subprocess
 
                 extra_args = shlex.split('{flags}')
-                def listen_prompt(): # Hook Events
+                def mise_hook(**kwargs): # Hook Events
                     script = subprocess.run(
                         ['{exe}', 'hook-env', *extra_args, '-s', 'xonsh'],
                         env=XSH.env.detype(),
@@ -75,7 +75,8 @@ impl Shell for Xonsh {
                     ).stdout.decode()
                     execx(script)
 
-                XSH.builtins.events.on_pre_prompt(listen_prompt) # Activate hook: before showing the prompt
+                XSH.builtins.events.on_pre_prompt(mise_hook) # Activate hook: before showing the prompt
+                XSH.builtins.events.on_chdir(mise_hook) # Activate hook: when the working directory changes
             "#});
         }
         out
@@ -87,7 +88,8 @@ impl Shell for Xonsh {
             from xonsh.built_ins import XSH
 
             hooks = {{
-              'on_pre_prompt' : ['listen_prompt'],
+              'on_pre_prompt' : ['mise_hook'],
+              'on_chdir': ['mise_hook'],
             }}
             for hook_type, hook_fns in hooks.items():
               for hook_fn in hook_fns:
