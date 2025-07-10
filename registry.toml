@@ -622,7 +622,9 @@ curlie.test = ["curlie version", "curlie {{version}}"]
 curlie.description = "The power of curl, the ease of use of httpie"
 curlie.backends = ["aqua:rs/curlie"]
 cutler.description = "Powerful, declarative settings management for your Mac, with speed."
-cutler.backends = ["cargo:cutler"]
+cutler.backends = [
+    {full = "cargo:cutler", platforms = ["macos"]}
+]
 cutler.test = ["cutler --version", "cutler {{version}}"]
 cyclonedx.description = "CycloneDX CLI tool for SBOM analysis, merging, diffs and format conversions"
 cyclonedx.backends = [
