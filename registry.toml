@@ -2847,6 +2847,7 @@ yarn.backends = [
     "aqua:yarnpkg/yarn",
     "asdf:mise-plugins/mise-yarn"
 ]
+yarn.test = ["yarn --version", "{{version}}"]
 yay.backends = ["asdf:mise-plugins/mise-yay"]
 yazi.description = "Blazing fast terminal file manager written in Rust, based on async I/O"
 yazi.backends = ["aqua:sxyazi/yazi"]
