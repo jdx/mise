@@ -2843,7 +2843,10 @@ yamlscript.backends = [
     "asdf:mise-plugins/mise-yamlscript"
 ]
 yamlscript.test = ["ys --version", "{{version}}"]
-yarn.backends = ["asdf:mise-plugins/mise-yarn"]
+yarn.backends = [
+    "aqua:yarnpkg/yarn",
+    "asdf:mise-plugins/mise-yarn"
+]
 yay.backends = ["asdf:mise-plugins/mise-yay"]
 yazi.description = "Blazing fast terminal file manager written in Rust, based on async I/O"
 yazi.backends = ["aqua:sxyazi/yazi"]
