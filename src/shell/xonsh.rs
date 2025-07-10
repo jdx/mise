@@ -107,23 +107,25 @@ impl Shell for Xonsh {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
-        let k = shell_escape::unix::escape(k.into()); // todo: drop illegal chars, not escape?
         formatdoc!(
             r#"
             from xonsh.built_ins import XSH
             XSH.env['{k}'] = '{v}'
         "#,
-            k = shell_escape::unix::escape(k), // todo: drop illegal chars, not escape?
+            k = shell_escape::unix::escape(k.into()), // todo: drop illegal chars, not escape?
             v = xonsh_escape_sq(v)
         )
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
-        let v = xonsh_escape_sq(v);
-        formatdoc! {r#"
+        formatdoc!(
+            r#"
             from xonsh.built_ins import XSH
             XSH.env['{k}'].add('{v}', front=True)
-        "#}
+        "#,
+            k = shell_escape::unix::escape(k.into()),
+            v = xonsh_escape_sq(v)
+        )
     }
 
     fn unset_env(&self, k: &str) -> String {
