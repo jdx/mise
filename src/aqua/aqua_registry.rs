@@ -82,6 +82,7 @@ pub struct AquaPackage {
     version_overrides: Vec<AquaPackage>,
     pub no_asset: bool,
     pub error_message: Option<String>,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -597,6 +598,9 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     if let Some(error_message) = avo.error_message.clone() {
         orig.error_message = Some(error_message);
     }
+    if let Some(path) = avo.path.clone() {
+        orig.path = Some(path);
+    }
     orig
 }
 
@@ -865,6 +869,7 @@ impl Default for AquaPackage {
             version_overrides: vec![],
             no_asset: false,
             error_message: None,
+            path: None,
         }
     }
 }
