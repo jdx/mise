@@ -1,5 +1,28 @@
 # Changelog
 
+## [2025.7.3](https://github.com/jdx/mise/compare/v2025.7.2..v2025.7.3) - 2025-07-10
+
+### 🚀 Features
+
+- **(registry)** add vfox by [@risu729](https://github.com/risu729) in [#5551](https://github.com/jdx/mise/pull/5551)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** show other backends suggestion for unsupported package types by [@risu729](https://github.com/risu729) in [#5547](https://github.com/jdx/mise/pull/5547)
+- **(registry)** use aqua and fix ubi options for yamlscript by [@risu729](https://github.com/risu729) in [#5538](https://github.com/jdx/mise/pull/5538)
+- **(registry)** add java and yq to android-sdk dependencies by [@risu729](https://github.com/risu729) in [#5545](https://github.com/jdx/mise/pull/5545)
+- **(schema)** broken $schema ref by [@tpansino](https://github.com/tpansino) in [#5540](https://github.com/jdx/mise/pull/5540)
+- auto_install_disable_tools env var by [@jdx](https://github.com/jdx) in [#5543](https://github.com/jdx/mise/pull/5543)
+- do not overwrite github tokens environment variables by [@risu729](https://github.com/risu729) in [#5546](https://github.com/jdx/mise/pull/5546)
+
+### Chore
+
+- update Cargo.lock by [@risu729](https://github.com/risu729) in [#5549](https://github.com/jdx/mise/pull/5549)
+
+### New Contributors
+
+- @tpansino made their first contribution in [#5540](https://github.com/jdx/mise/pull/5540)
+
 ## [2025.7.2](https://github.com/jdx/mise/compare/v2025.7.1..v2025.7.2) - 2025-07-09
 
 ### 🚀 Features
