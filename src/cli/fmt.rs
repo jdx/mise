@@ -126,6 +126,7 @@ fn format(toml: String) -> Result<String> {
             inline_table_expand: true,
             reorder_arrays: false,
             reorder_keys: false,
+            reorder_inline_tables: false,
             trailing_newline: true,
         },
     );
