@@ -720,7 +720,7 @@ impl AquaBackend {
     fn srcs(
         &self,
         pkg: &AquaPackage,
-        install_path: &PathBuf,
+        install_path: &Path,
         v: &str,
     ) -> Result<Vec<(PathBuf, PathBuf)>> {
         let files: Vec<(PathBuf, PathBuf)> = pkg
