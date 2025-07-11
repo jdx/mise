@@ -243,4 +243,168 @@ leave = "deactivate"
 python = ["3.10", "3.11", "3.12"]  # Install multiple versions
 ```
 
-This covers the essential information about mise for LLMs to help users effectively use the tool for development environment management.
+## Development & Contributing
+
+### Setting Up Development Environment
+
+mise is written in Rust and uses itself for development tasks. To contribute to mise:
+
+#### Prerequisites
+- Rust (latest stable)
+- Node.js
+- `pipx` or `uv` 
+- Bash (newer than macOS default)
+
+#### Getting Started
+```bash
+# Clone the repository
+git clone https://github.com/jdx/mise.git
+cd mise
+
+# Install dependencies and build
+mise run build
+
+# Run sanity check
+mise run build
+```
+
+#### Development Setup
+Create a development shim to easily run mise during development:
+
+```bash
+# Create ~/.local/bin/@mise
+#!/bin/sh
+exec cargo run -q --all-features --manifest-path ~/src/mise/Cargo.toml -- "$@"
+```
+
+Then use `@mise` to run the development version:
+```bash
+@mise --help
+eval "$(@mise activate zsh)"
+```
+
+### Testing
+
+#### Unit Tests
+```bash
+# Run unit tests
+cargo test
+# OR
+mise run test:unit
+```
+
+#### E2E Tests
+```bash
+# Run E2E tests
+mise run test:e2e
+
+# Run specific E2E test
+./e2e/run_test test_name
+
+# Run all tests including slow ones
+TEST_ALL=1 mise run test:e2e
+```
+
+#### Windows E2E Tests
+```powershell
+pwsh e2e-win\run.ps1
+pwsh e2e-win\run.ps1 task  # run tests matching *task*
+```
+
+### Available Development Tasks
+
+Use `mise tasks` to see all available development tasks:
+
+#### Common Tasks
+- `mise run build` - Build the project
+- `mise run test` - Run all tests (unit + E2E)
+- `mise run test:unit` - Run unit tests only
+- `mise run test:e2e` - Run E2E tests only
+- `mise run lint` - Run linting
+- `mise run lint:fix` - Run linting with fixes
+- `mise run format` - Format code
+- `mise run clean` - Clean build artifacts
+- `mise run snapshots` - Update test snapshots
+- `mise run render` - Generate documentation and completions
+
+#### Documentation Tasks
+- `mise run docs` - Start documentation development server
+- `mise run docs:build` - Build documentation
+- `mise run render:help` - Generate help documentation
+- `mise run render:completions` - Generate shell completions
+
+#### Release Tasks
+- `mise run release` - Create a release
+- `mise run ci` - Run CI tasks (format, build, test)
+
+### Project Structure
+
+```
+mise/
+├── src/           # Main Rust source code
+├── e2e/           # End-to-end tests
+├── docs/          # Documentation
+├── tasks.toml     # Development tasks
+├── mise.toml      # Project configuration
+├── Cargo.toml     # Rust project configuration
+└── xtasks/        # Additional build scripts
+```
+
+### Pre-commit Hooks
+
+Install [lefthook](https://github.com/evilmartians/lefthook) for pre-commit hooks:
+```bash
+lefthook install
+```
+
+### Testing Configuration
+
+- **Unit tests**: Fast tests for individual components
+- **E2E tests**: Integration tests that test the full application
+- **Slow tests**: Only run with `TEST_ALL=1` environment variable
+- **Windows tests**: Separate PowerShell-based test suite
+
+### Development Tips
+
+1. **Disable mise during development**: If you use mise in your shell, disable it when running tests to avoid conflicts
+2. **Use dev container**: Docker setup available (currently needs fixing)
+3. **Test specific features**: Use `cargo test <test_name>` for targeted testing
+4. **Update snapshots**: Use `mise run snapshots` when changing test outputs
+5. **Rate limiting**: Set `MISE_GITHUB_TOKEN` to avoid GitHub API rate limits during development
+
+### Contributing Guidelines
+
+1. **Before starting**: File an issue or discuss in Discord for non-obvious changes
+2. **Look for issues**: Check "help wanted" and "good first issue" labels
+3. **Test thoroughly**: Ensure both unit and E2E tests pass
+4. **Follow conventions**: Use existing code style and patterns
+5. **Update documentation**: Add/update docs for new features
+
+### Packaging Testing
+
+For testing package installation:
+
+#### Ubuntu/Debian
+```bash
+# Test apt installation
+docker run -ti --rm ubuntu
+apt update -y && apt install -y gpg sudo wget curl
+# ... installation steps
+```
+
+#### Fedora
+```bash
+# Test dnf installation  
+docker run -ti --rm fedora
+dnf install -y dnf-plugins-core
+# ... installation steps
+```
+
+### Release Process
+
+```bash
+# Create release (minor for first release of month, patch otherwise)
+mise run release -x [minor|patch]
+```
+
+This covers the essential information about mise for LLMs to help users effectively use the tool for development environment management and contribute to its development.
