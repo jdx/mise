@@ -285,30 +285,180 @@ eval "$(@mise activate zsh)"
 
 ### Testing
 
+mise has a comprehensive test suite with multiple types of tests to ensure reliability and functionality across different platforms and scenarios.
+
 #### Unit Tests
+Unit tests are fast, focused tests for individual components and functions:
+
 ```bash
-# Run unit tests
-cargo test
-# OR
-mise run test:unit
+# Run all unit tests
+cargo test --all-features
+
+# Run specific unit tests
+cargo test <test_name>
+
+# Run tests with verbose output
+cargo test --all-features -- --nocapture
+
+# Run tests in series (not parallel)
+RUST_TEST_THREADS=1 cargo test --all-features
 ```
 
+**Unit test structure:**
+- Located in `src/` directory alongside source code
+- Use Rust's built-in test framework
+- Test individual functions and modules
+- Fast execution (used for quick feedback during development)
+
 #### E2E Tests
+End-to-end tests validate the complete functionality of mise in realistic scenarios:
+
 ```bash
-# Run E2E tests
+# Run all E2E tests
 mise run test:e2e
 
 # Run specific E2E test
 ./e2e/run_test test_name
 
+# Run E2E tests matching pattern
+./e2e/run_test task  # runs tests matching *task*
+
 # Run all tests including slow ones
 TEST_ALL=1 mise run test:e2e
 ```
 
+**E2E test structure:**
+- Located in `e2e/` directory
+- Organized by functionality:
+  - `e2e/cli/` - Command-line interface tests
+  - `e2e/core/` - Core functionality tests
+  - `e2e/env/` - Environment variable tests
+  - `e2e/tasks/` - Task runner tests
+  - `e2e/config/` - Configuration tests
+  - `e2e/tools/` - Tool management tests
+  - `e2e/shell/` - Shell integration tests
+  - `e2e/backend/` - Backend tests
+  - `e2e/plugins/` - Plugin tests
+
+**E2E test categories:**
+- **Fast tests** (`test_*`): Run in normal test suites
+- **Slow tests** (`test_*_slow`): Only run when `TEST_ALL=1` is set
+- **Isolated environment**: Each test runs in a clean, isolated environment
+
+#### Coverage Tests
+Coverage tests measure how much of the codebase is covered by tests:
+
+```bash
+# Run coverage tests
+mise run test:coverage
+
+# Coverage tests run in parallel tranches for CI
+TEST_TRANCHE=0 TEST_TRANCHE_COUNT=8 mise run test:coverage
+```
+
 #### Windows E2E Tests
+Windows has its own test suite written in PowerShell:
+
 ```powershell
+# Run all Windows E2E tests
 pwsh e2e-win\run.ps1
+
+# Run specific Windows tests
 pwsh e2e-win\run.ps1 task  # run tests matching *task*
+```
+
+#### Plugin Tests
+Test plugin functionality across different backends:
+
+```bash
+# Test specific plugin
+mise test-tool ripgrep
+
+# Test all plugins in registry
+mise test-tool --all
+
+# Test all plugins in config files
+mise test-tool --all-config
+
+# Test with parallel jobs
+mise test-tool --all --jobs 4
+```
+
+#### Test Environment Setup
+Tests run in isolated environments to avoid conflicts:
+
+```bash
+# Disable mise during development testing
+export MISE_DISABLE_TOOLS=1
+
+# Run tests with specific environment
+MISE_TRUSTED_CONFIG_PATHS=$PWD cargo test
+```
+
+#### Test Assertions
+The E2E tests use a custom assertion framework (`e2e/assert.sh`):
+
+```bash
+# Basic assertions
+assert "command" "expected_output"
+assert_contains "command" "substring"
+assert_fail "command" "expected_error"
+
+# JSON assertions
+assert_json "command" '{"key": "value"}'
+assert_json_partial_array "command" "fields" '[{...}]'
+
+# File/directory assertions
+assert_directory_exists "/path/to/dir"
+assert_directory_not_exists "/path/to/dir"
+assert_empty "command"
+```
+
+#### Running Specific Test Categories
+
+```bash
+# Run all tests (unit + e2e)
+mise run test
+
+# Run only unit tests
+mise run test:unit
+
+# Run only e2e tests
+mise run test:e2e
+
+# Run tests with shuffle (for detecting order dependencies)
+mise run test:shuffle
+
+# Run nightly tests (with bleeding edge Rust)
+rustup default nightly && mise run test
+```
+
+#### Test Development Tips
+
+1. **Test naming**: Use descriptive names that explain what's being tested
+2. **Test isolation**: Each test should be independent and clean up after itself
+3. **Use slow tests sparingly**: Mark long-running tests as `_slow` to avoid CI timeouts
+4. **Mock external dependencies**: Use dummy plugins and mock data when possible
+5. **Test edge cases**: Include tests for error conditions and boundary cases
+
+#### Performance Testing
+```bash
+# Run performance benchmarks
+mise run test:perf
+
+# Build performance test workspace
+mise run test:build-perf-workspace
+```
+
+#### Snapshot Testing
+Used for testing output consistency:
+
+```bash
+# Update test snapshots when output changes
+mise run snapshots
+
+# Use cargo-insta for snapshot testing
+cargo insta test --accept --unreferenced delete
 ```
 
 ### Available Development Tasks
