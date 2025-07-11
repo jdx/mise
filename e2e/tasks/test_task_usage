@@ -29,7 +29,7 @@ assert_json_partial_array "mise task ls --json" "name,description,source" "[
 ]"
 
 assert_json_partial_array "mise task ls --json" "name,description,source" "$(
-  cat <<EOF
+	cat <<EOF
 [
   {
     "name": "test",
