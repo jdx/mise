@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# Ensure 'which' behaves as if java is not installed,
+# except if it was installed through mise
+cat >"$HOME/bin/which" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "java" ]; then
+  java_path=$(/usr/bin/which "$@" || true)
+  if [[ $java_path == /mise/installs/java/* ]]; then
+    echo $java_path
+    exit 0
+  fi
+  exit 1
+fi
+
+/usr/bin/which "$@"
+EOF
+chmod +x "$HOME"/bin/which
+export PATH="$HOME/bin:$PATH"
+
+# Have java and jib in the dependencies
+cat >.mise.toml <<EOF
+[tools]
+jib = "0.13.0"
+java = "openjdk-17.0.2"
+
+[settings]
+jobs = 1
+
+EOF
+
+# Ensure java is available as soon as it's installed by mise
+export PATH="/mise/installs/java/openjdk-17.0.2/bin/java:$PATH"
+
+# Install the tools
+mise install
+
+# Assert that both tools are available
+assert_contains "mise x -- jib --version" "0.13.0"
+assert_contains "mise x -- java --version" "openjdk 17.0.2"
