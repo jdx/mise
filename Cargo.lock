@@ -3754,7 +3754,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "built",
- "bzip2 0.5.2",
+ "bzip2 0.6.0",
  "calm_io",
  "cfg_aliases",
  "chrono",

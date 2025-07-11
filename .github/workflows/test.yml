@@ -203,7 +203,6 @@ jobs:
             pipx \
             python3-venv \
             zsh
-          sudo pip3 install xonsh
       - run: |
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
