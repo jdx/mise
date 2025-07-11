@@ -48,7 +48,7 @@ test               ./tasks.toml
 test-with-args     ./tasks.toml"
 
 assert_json "mise task ls --json" "$(
-  cat <<EOF
+	cat <<EOF
 [
   {
    "name": "filetask2",

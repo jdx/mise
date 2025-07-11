@@ -3,7 +3,7 @@
 export MISE_EXPERIMENTAL=1
 
 test() {
-  assert_contains "mise x $1 -- $2" "$3"
+	assert_contains "mise x $1 -- $2" "$3"
 }
 
 test aqua:BurntSushi/ripgrep@14.0.0 "rg --version" "ripgrep 14.0.0"
