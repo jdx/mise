@@ -22,9 +22,72 @@ Notes:
 - This list doesn't include [Configuration Environments](/configuration/environments) which allow for environment-specific config files like `mise.development.toml`—set with `MISE_ENV=development`.
 - See [`LOCAL_CONFIG_FILENAMES` in `src/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/config/mod.rs) for the actual code for these paths and their precedence. Some legacy paths are not listed here for brevity.
 
+## Configuration Hierarchy
+
+mise uses a sophisticated hierarchical configuration system that merges settings from multiple sources. Understanding this hierarchy helps you organize your development environments effectively.
+
+### How Configuration Merging Works
+
 These files recurse upwards, so if you have a `~/src/work/myproj/mise.toml` file, what is defined
 there will override anything set in
 `~/src/work/mise.toml` or `~/.config/mise.toml`. The config contents are merged together.
+
+### Configuration Resolution Process
+
+When mise needs configuration, it follows this process:
+
+1. **Walks up the directory tree** from your current location to the root
+2. **Collects all config files** it finds along the way
+3. **Merges them in order** with more specific (closer to your current directory) settings overriding broader ones
+4. **Applies environment-specific configs** like `mise.dev.toml` if `MISE_ENV` is set
+
+### Visual Configuration Hierarchy
+
+```
+/
+├── etc/mise/config.toml              # System-wide config (highest precedence)
+└── home/user/
+    ├── .config/mise/config.toml      # Global user config
+    └── work/
+        ├── mise.toml                 # Work-wide settings
+        └── myproject/
+            ├── mise.local.toml       # Local overrides (git-ignored)
+            ├── mise.toml             # Project config
+            └── backend/
+                └── mise.toml         # Service-specific config (lowest precedence)
+```
+
+### Merge Behavior by Section
+
+Different configuration sections merge in different ways:
+
+**Tools** (`[tools]`): Additive with overrides
+```toml
+# Global: node@18, python@3.11
+# Project: node@20, go@1.21
+# Result: node@20, python@3.11, go@1.21
+```
+
+**Environment Variables** (`[env]`): Additive with overrides
+```toml
+# Global: NODE_ENV=development
+# Project: NODE_ENV=production, API_URL=localhost
+# Result: NODE_ENV=production, API_URL=localhost
+```
+
+**Tasks** (`[tasks]`): Completely replaced per task
+```toml
+# Global: [tasks.test] = "npm test"
+# Project: [tasks.test] = "yarn test"  
+# Result: "yarn test" (completely replaces global)
+```
+
+**Settings** (`[settings]`): Additive with overrides
+```toml
+# Global: experimental = true
+# Project: jobs = 4
+# Result: experimental = true, jobs = 4
+```
 
 :::tip
 Run `mise config` to see what files mise has loaded in order of precedence.

@@ -79,6 +79,7 @@ export default defineConfig({
             link: "/dev-tools/backends/",
             collapsed: true,
             items: [
+              { text: "Architecture", link: "/dev-tools/backends/architecture" },
               { text: "aqua", link: "/dev-tools/backends/aqua" },
               { text: "asdf", link: "/dev-tools/backends/asdf" },
               { text: "cargo", link: "/dev-tools/backends/cargo" },
@@ -111,6 +112,7 @@ export default defineConfig({
         text: "Tasks",
         items: [
           { text: "Task overview", link: "/tasks/" },
+          { text: "Task Architecture", link: "/tasks/architecture" },
           { text: "Running Tasks", link: "/tasks/running-tasks" },
           { text: "TOML Tasks", link: "/tasks/toml-tasks" },
           { text: "File Tasks", link: "/tasks/file-tasks" },
@@ -148,6 +150,7 @@ export default defineConfig({
       {
         text: "Advanced",
         items: [
+          { text: "Architecture", link: "/architecture" },
           { text: "Paranoid", link: "/paranoid" },
           { text: "Templates", link: "/templates" },
           { text: "How I Use mise", link: "/how-i-use-mise" },
