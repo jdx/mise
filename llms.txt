@@ -380,6 +380,62 @@ lefthook install
 4. **Follow conventions**: Use existing code style and patterns
 5. **Update documentation**: Add/update docs for new features
 
+### Conventional Commits
+
+mise uses [Conventional Commits](https://www.conventionalcommits.org/) for consistent commit messages and automated changelog generation. All commits should follow this format:
+
+```
+<type>[optional scope]: <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+#### Commit Types
+
+- **feat**: New features (🚀 Features)
+- **fix**: Bug fixes (🐛 Bug Fixes)
+- **refactor**: Code refactoring (🚜 Refactor)
+- **doc**: Documentation changes (📚 Documentation)
+- **style**: Code style changes (🎨 Styling)
+- **perf**: Performance improvements (⚡ Performance)
+- **test**: Testing changes (🧪 Testing)
+- **chore**: Maintenance tasks, dependency updates
+- **revert**: Reverting previous changes (◀️ Revert)
+
+#### Examples
+
+```bash
+feat(cli): add new command for listing plugins
+fix(parser): handle edge case in version parsing
+refactor(config): simplify configuration loading logic
+doc(readme): update installation instructions
+test(e2e): add tests for new plugin functionality
+chore(deps): update dependencies to latest versions
+```
+
+#### Scopes
+
+Common scopes used in mise:
+- `cli` - Command line interface changes
+- `config` - Configuration system changes
+- `parser` - Parsing logic changes
+- `deps` - Dependency updates
+- `security` - Security-related changes
+
+#### Breaking Changes
+
+For breaking changes, add `!` after the type or include `BREAKING CHANGE:` in the footer:
+
+```bash
+feat(api)!: remove deprecated configuration options
+# OR
+feat(api): remove deprecated configuration options
+
+BREAKING CHANGE: The old configuration format is no longer supported
+```
+
 ### Packaging Testing
 
 For testing package installation:
