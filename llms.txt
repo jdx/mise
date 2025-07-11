@@ -1,0 +1,246 @@
+# mise (mise-en-place) - Development Environment Tool
+
+## What is mise?
+
+mise (pronounced "meez") is a development environment setup tool that manages:
+1. **Dev Tools**: Version management for programming languages and tools (like asdf, nvm, pyenv, rbenv)
+2. **Environments**: Environment variable management (can replace direnv)
+3. **Tasks**: Task runner for project automation (can replace make, npm scripts)
+
+mise supports hundreds of development tools and can automatically switch between different versions based on your project directory.
+
+## Installation
+
+### Quick Install (Linux/macOS)
+```bash
+curl https://mise.run | sh
+```
+
+### Other Methods
+- **Homebrew**: `brew install mise`
+- **Windows**: `winget install jdx.mise` or `scoop install mise`
+- **Debian/Ubuntu**: Available via apt repository
+- **Fedora**: Available via dnf repository
+
+## Core Configuration
+
+### mise.toml
+The main configuration file for mise. Can be named:
+- `mise.toml` (project-specific)
+- `mise.local.toml` (local, not committed to git)
+- `~/.config/mise/config.toml` (global)
+
+Example `mise.toml`:
+```toml
+[tools]
+node = "20"
+python = "3.11"
+terraform = "1.0.0"
+go = "latest"
+
+[env]
+NODE_ENV = "development"
+DATABASE_URL = "postgresql://localhost/myapp"
+
+[tasks.test]
+run = "npm test"
+description = "Run tests"
+
+[tasks.build]
+run = "npm run build"
+deps = ["test"]
+```
+
+### .tool-versions (asdf compatibility)
+mise is compatible with asdf's `.tool-versions` format:
+```
+node 20.0.0
+python 3.11.5
+terraform 1.0.0
+```
+
+## Essential Commands
+
+### Tool Management
+- `mise use node@20` - Install and set node version (updates config)
+- `mise use -g node@20` - Set global default
+- `mise install` - Install all tools from config
+- `mise install node@20` - Install specific version
+- `mise ls` - List installed tools
+- `mise ls-remote node` - List available versions
+
+### Execution
+- `mise exec node@20 -- node script.js` - Run command with specific tool version
+- `mise x node@20 -- node script.js` - Shorthand for exec
+- `mise run test` - Run defined task
+- `mise test` - Shorthand (if no command conflict)
+
+### Environment
+- `mise activate bash` - Activate mise in shell (add to .bashrc)
+- `mise activate zsh` - Activate mise in zsh (add to .zshrc)  
+- `mise activate fish` - Activate mise in fish
+- `mise env` - Show current environment
+- `mise set KEY=value` - Set environment variable
+
+### Information
+- `mise doctor` - Check mise setup
+- `mise config` - Show loaded config files
+- `mise current` - Show active tool versions
+- `mise which node` - Show path to tool
+
+## Key Concepts
+
+### Activation vs Shims vs Exec
+1. **Activation** (`mise activate`): Recommended for interactive shells. Updates PATH automatically when changing directories.
+2. **Shims**: Symlinks that intercept tool calls. Good for CI/CD and IDEs.
+3. **Exec** (`mise exec`): Run commands with mise environment without activation.
+
+### Tool Scopes
+- `node@20.1.0` - Exact version
+- `node@20` - Latest 20.x version
+- `node@latest` - Latest available version
+- `node@lts` - Latest LTS version
+- `ref:master` - Build from git ref
+- `prefix:1.19` - Latest matching prefix
+- `path:/custom/path` - Use custom installation
+
+### Configuration Hierarchy
+Config files are loaded in order (later overrides earlier):
+1. Global: `~/.config/mise/config.toml`
+2. Parent directories: `mise.toml` files going up the tree
+3. Current directory: `mise.toml`
+4. Local: `mise.local.toml`
+
+## Tasks
+
+### TOML Tasks
+```toml
+[tasks.build]
+run = "cargo build"
+description = "Build the project"
+depends = ["install"]
+
+[tasks.test]
+run = "cargo test"
+depends = ["build"]
+```
+
+### File Tasks
+Create executable scripts in `mise-tasks/` directory:
+```bash
+#!/usr/bin/env bash
+#MISE description="Run tests"
+cargo test
+```
+
+### Task Features
+- Parallel execution by default
+- Dependency management
+- File watching (`mise watch`)
+- Environment variable passing
+
+## Environment Variables
+
+### Settings
+- `MISE_DATA_DIR` - Where tools are installed (`~/.local/share/mise`)
+- `MISE_CONFIG_DIR` - Config directory (`~/.config/mise`)
+- `MISE_CACHE_DIR` - Cache directory
+- `MISE_GITHUB_TOKEN` - GitHub token for API access
+
+### Tool-specific
+- `MISE_NODE_VERSION=20` - Override node version
+- `MISE_PYTHON_VERSION=3.11` - Override python version
+
+## Common Patterns
+
+### Project Setup
+```bash
+# Initialize project
+cd my-project
+mise use node@20 python@3.11
+mise install
+
+# Add environment variables
+mise set NODE_ENV=development
+mise set DATABASE_URL=postgresql://localhost/myapp
+```
+
+### Global Tools
+```bash
+# Set global defaults
+mise use -g node@lts python@3.11 go@latest
+```
+
+### CI/CD
+```bash
+# Install mise and tools
+curl https://mise.run | sh
+export PATH="$HOME/.local/bin:$PATH"
+mise install
+mise run build
+```
+
+## Troubleshooting
+
+### Common Issues
+- **Rate limiting**: Set `MISE_GITHUB_TOKEN` for GitHub API access
+- **Tool not found**: Run `mise doctor` to check setup
+- **Slow performance**: Check `mise cache clear` if stale
+- **Permission errors**: Ensure proper file permissions
+
+### Debugging
+- `mise doctor` - Comprehensive health check
+- `mise config` - Show config file loading order
+- `mise env` - Show current environment
+- `mise which <tool>` - Show tool path resolution
+
+## Plugin System
+
+mise uses plugins to support different tools:
+- Compatible with asdf plugins
+- Automatic plugin installation
+- Custom plugin repositories supported
+- Plugin shortcuts in registry
+
+## Migration from asdf
+
+mise is largely compatible with asdf:
+- Reads `.tool-versions` files
+- Uses asdf plugins
+- Similar commands (with improvements)
+- Can run alongside asdf temporarily
+
+## Best Practices
+
+1. Use `mise.toml` for committed project configuration
+2. Use `mise.local.toml` for local overrides
+3. Activate mise in shell for interactive use
+4. Use shims for CI/CD and IDE integration
+5. Set `MISE_GITHUB_TOKEN` to avoid rate limits
+6. Use `mise doctor` regularly to check setup
+7. Pin versions in production environments
+8. Use tasks for project automation
+
+## Advanced Features
+
+### Tool Options
+```toml
+[tools]
+node = { version = "20", postinstall = "corepack enable" }
+python = { version = "3.11", virtualenv = "myproject" }
+```
+
+### Hooks
+```toml
+[hooks]
+enter = "mise install --quiet"
+leave = "deactivate"
+```
+
+### Multiple Versions
+```toml
+[tools]
+python = ["3.10", "3.11", "3.12"]  # Install multiple versions
+```
+
+This covers the essential information about mise for LLMs to help users effectively use the tool for development environment management.
