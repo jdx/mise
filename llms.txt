@@ -853,4 +853,183 @@ mise uses several automated workflows to maintain code quality and streamline de
 - Runs daily via scheduled workflow
 - Handles version bumping and changelog generation
 
+## mise Codebase Architecture
+
+### Overview
+
+mise is a Rust-based tool with a modular architecture designed around three main concepts:
+1. **Tool Version Management** - Managing different versions of development tools
+2. **Environment Management** - Setting up environment variables and project contexts
+3. **Task Running** - Executing project tasks with dependency management
+
+### Core Architecture Components
+
+#### 1. **Main Entry Point** (`src/main.rs`)
+- Asynchronous Tokio runtime with multi-threading
+- Global error handling and panic hooks
+- CLI argument parsing and routing
+- Multi-progress reporting system
+
+#### 2. **CLI Layer** (`src/cli/`)
+- **Command Structure**: Each command is a separate module (e.g., `install.rs`, `use.rs`, `run.rs`)
+- **Argument Parsing**: Uses `clap` for command-line argument handling
+- **Command Execution**: Async command execution with proper error handling
+- **Key Commands**:
+  - `install` - Install tool versions
+  - `use` - Add tools to configuration
+  - `run` - Execute tasks
+  - `env` - Environment management
+  - `shell` - Shell integration
+
+#### 3. **Backend System** (`src/backend/`)
+The backend system is the core abstraction for tool management:
+
+**Backend Trait**: Common interface for all tool backends
+```rust
+pub trait Backend: Debug + Send + Sync {
+    async fn list_remote_versions(&self) -> Result<Vec<String>>;
+    async fn install_version(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()>;
+    async fn uninstall_version(&self, tv: &ToolVersion) -> Result<()>;
+    // ... other methods
+}
+```
+
+**Backend Types**:
+- **Core Backends**: Built-in support (Node.js, Python, etc.)
+- **ASDF Backends**: External plugin system compatibility
+- **Aqua Backends**: Package manager integration
+- **Language-specific**: npm, cargo, pipx, gem, go, etc.
+- **Universal**: ubi (GitHub releases)
+
+#### 4. **Configuration System** (`src/config/`)
+**Hierarchical Configuration**:
+- `Config` struct manages all configuration sources
+- `ConfigFile` trait for different config formats:
+  - `MiseToml` - Main configuration format
+  - `ToolVersions` - ASDF compatibility
+  - `IdiomaticVersion` - Language-specific files (`.nvmrc`, `.python-version`)
+
+**Configuration Hierarchy**:
+1. System config (`/etc/mise/config.toml`)
+2. Global config (`~/.config/mise/config.toml`)
+3. Project configs (searched up directory tree)
+4. Environment-specific configs (`mise.dev.toml`)
+
+#### 5. **Toolset Management** (`src/toolset/`)
+**Core Components**:
+- `Toolset` - Collection of tools for a specific context
+- `ToolVersion` - Represents a specific version of a tool
+- `ToolRequest` - User request for a tool (e.g., `node@18`)
+- `ToolsetBuilder` - Constructs toolsets from configuration
+
+**Tool Resolution Flow**:
+1. Parse configuration files
+2. Resolve version specifications
+3. Build toolset with dependencies
+4. Install missing tools
+5. Set up environment
+
+#### 6. **Task System** (`src/task/`)
+**Task Components**:
+- `Task` struct with metadata, dependencies, and execution info
+- `Deps` - Dependency graph management using petgraph
+- `TaskFileProvider` - Discovers tasks from files and configuration
+- Parallel execution with dependency resolution
+
+**Task Types**:
+- **TOML Tasks**: Defined in `mise.toml`
+- **File Tasks**: Executable scripts in task directories
+- **Command Tasks**: Simple command execution
+- **Script Tasks**: Inline script execution
+
+#### 7. **Plugin System** (`src/plugins/`)
+**Plugin Architecture**:
+- `Plugin` trait for extensibility
+- `AsdfPlugin` - ASDF plugin compatibility
+- `VfoxPlugin` - Vfox plugin system
+- `ScriptManager` - Manages plugin scripts
+
+**Plugin Types**:
+- **Core Plugins**: Built into mise
+- **External Plugins**: Downloaded from repositories
+- **Local Plugins**: Custom local implementations
+
+#### 8. **Shell Integration** (`src/shell/`)
+**Shell Support**:
+- Bash, Zsh, Fish, PowerShell support
+- `Shell` trait for shell-specific behavior
+- Activation scripts for environment setup
+- Hook system for directory changes
+
+#### 9. **Environment Management** (`src/env*.rs`)
+**Environment Components**:
+- `EnvDiff` - Tracks environment changes
+- `EnvDirective` - Configuration for environment variables
+- `PathEnv` - PATH management
+- Context-aware environment resolution
+
+#### 10. **Caching System** (`src/cache.rs`)
+**Cache Management**:
+- `CacheManager` - Generic caching with TTL
+- File-based caching for versions, metadata
+- Automatic cache invalidation
+- Per-backend cache isolation
+
+### Key Design Patterns
+
+#### 1. **Trait-Based Architecture**
+- `Backend` trait for tool management
+- `ConfigFile` trait for configuration formats
+- `Shell` trait for shell integration
+- `Plugin` trait for extensibility
+
+#### 2. **Async/Await Throughout**
+- Tokio runtime for async operations
+- Parallel tool installations
+- Concurrent task execution
+- Non-blocking I/O operations
+
+#### 3. **Error Handling**
+- `eyre` crate for error management
+- Structured error types
+- Context-aware error reporting
+- Graceful fallback behavior
+
+#### 4. **Configuration Hierarchy**
+- Multiple configuration sources
+- Inheritance and overrides
+- Environment-specific configurations
+- Validation and trust system
+
+#### 5. **Dependency Management**
+- Tool dependencies (e.g., Node.js for npm tools)
+- Task dependencies with DAG resolution
+- Parallel execution with proper ordering
+- Circular dependency detection
+
+### Data Flow
+
+1. **Initialization**: Load configuration hierarchy
+2. **Tool Discovery**: Find available backends and versions
+3. **Resolution**: Resolve tool requests to specific versions
+4. **Installation**: Install missing tools in dependency order
+5. **Environment Setup**: Configure PATH and environment variables
+6. **Execution**: Run tasks or provide shell integration
+
+### Testing Architecture
+
+**Test Structure**:
+- **Unit Tests**: Component-level testing with mocks
+- **Integration Tests**: End-to-end CLI testing
+- **E2E Tests**: Real-world scenario testing
+- **Snapshot Tests**: Output comparison testing
+
+**Test Organization**:
+- `src/` - Unit tests alongside source code
+- `e2e/` - End-to-end test scripts
+- `test/` - Test fixtures and utilities
+- `src/snapshots/` - Snapshot test data
+
+This architecture provides a flexible, extensible foundation for managing development environments while maintaining compatibility with existing tools and workflows.
+
 This covers the essential information about mise for LLMs to help users effectively use the tool for development environment management and contribute to its development.
