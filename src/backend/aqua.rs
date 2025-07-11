@@ -77,53 +77,11 @@ impl Backend for AquaBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tag = self
-            .get_version_tags()
-            .await?
-            .iter()
-            .find(|(version, _)| version == &tv.version)
-            .map(|(_, tag)| tag);
-        let mut v = tag.cloned().unwrap_or_else(|| tv.version.clone());
-        let mut v_prefixed =
-            (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
-        let versions = match &v_prefixed {
-            Some(v_prefixed) => vec![v.as_str(), v_prefixed.as_str()],
-            None => vec![v.as_str()],
-        };
-        let pkg = AQUA_REGISTRY
-            .package_with_version(&self.id, &versions)
-            .await?;
-        if let Some(prefix) = &pkg.version_prefix {
-            if !v.starts_with(prefix) {
-                v = format!("{prefix}{v}");
-                v_prefixed = v_prefixed.map(|v| format!("{prefix}{v}"));
-            }
-        }
-        if pkg.no_asset {
-            bail!("no asset released");
-        }
-        if pkg.error_message.is_some() {
-            bail!(pkg.error_message.unwrap());
-        }
-        validate(&pkg)?;
-        // try v-prefixed version first because most aqua packages use v-prefixed versions
-        let (url, v) = match self
-            .fetch_url(&pkg, v_prefixed.as_ref().unwrap_or(&v))
-            .await
-        {
-            Ok(url) => (url, v_prefixed.as_ref().unwrap_or(&v)),
-            Err(err) if v_prefixed.is_some() => (
-                self.fetch_url(&pkg, &v)
-                    .await
-                    .map_err(|e| err.wrap_err(e))?,
-                &v,
-            ),
-            Err(err) => return Err(err),
-        };
+        let (pkg, v, url) = self.resolve_version(&tv).await?;
         let filename = url.split('/').next_back().unwrap();
         self.download(ctx, &tv, &url, filename).await?;
-        self.verify(ctx, &mut tv, &pkg, v, filename).await?;
-        self.install(ctx, &tv, &pkg, v, filename)?;
+        self.verify(ctx, &mut tv, &pkg, &v, filename).await?;
+        self.install(ctx, &tv, &pkg, &v, filename)?;
 
         Ok(tv)
     }
@@ -145,12 +103,8 @@ impl Backend for AquaBackend {
         let install_path = tv.install_path();
         let paths = cache
             .get_or_try_init_async(async || {
-                // TODO: align this logic with the one in `install_version_`
-                let pkg = AQUA_REGISTRY
-                    .package_with_version(&self.id, &[&tv.version])
-                    .await?;
-
-                let srcs = self.srcs(&pkg, tv)?;
+                let (pkg, v, _) = self.resolve_version(tv).await?;
+                let srcs = self.srcs(&pkg, &install_path, &v)?;
                 let paths = if srcs.is_empty() {
                     vec![install_path.clone()]
                 } else {
@@ -217,6 +171,47 @@ impl AquaBackend {
                 .build(),
             bin_path_caches: Default::default(),
         }
+    }
+
+    async fn resolve_version(&self, tv: &ToolVersion) -> Result<(AquaPackage, String, String)> {
+        let tag = self
+            .get_version_tags()
+            .await?
+            .iter()
+            .find(|(version, _)| version == &tv.version)
+            .map(|(_, tag)| tag);
+        let mut v = tag.cloned().unwrap_or_else(|| tv.version.clone());
+        let mut v_prefixed =
+            (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
+        let versions = match &v_prefixed {
+            Some(v_prefixed) => vec![v.as_str(), v_prefixed.as_str()],
+            None => vec![v.as_str()],
+        };
+        let pkg = AQUA_REGISTRY
+            .package_with_version(&self.id, &versions)
+            .await?;
+        if let Some(prefix) = &pkg.version_prefix {
+            if !v.starts_with(prefix) {
+                v = format!("{prefix}{v}");
+                v_prefixed = v_prefixed.map(|v| format!("{prefix}{v}"));
+            }
+        }
+        validate(&pkg)?;
+        // try v-prefixed version first because most aqua packages use v-prefixed versions
+        let (url, v) = match self
+            .fetch_url(&pkg, v_prefixed.as_ref().unwrap_or(&v))
+            .await
+        {
+            Ok(url) => (url, v_prefixed.unwrap_or(v)),
+            Err(err) if v_prefixed.is_some() => (
+                self.fetch_url(&pkg, v.as_str())
+                    .await
+                    .map_err(|e| err.wrap_err(e))?,
+                v,
+            ),
+            Err(err) => return Err(err),
+        };
+        Ok((pkg, v, url))
     }
 
     async fn get_version_tags(&self) -> Result<&Vec<(String, String)>> {
@@ -708,7 +703,7 @@ impl AquaBackend {
             bail!("unsupported format: {}", format);
         }
 
-        for (src, dst) in self.srcs(pkg, tv)? {
+        for (src, dst) in self.srcs(pkg, &install_path, v)? {
             if src != dst && src.exists() && !dst.exists() {
                 if cfg!(windows) {
                     file::copy(&src, &dst)?;
@@ -722,33 +717,23 @@ impl AquaBackend {
         Ok(())
     }
 
-    fn srcs(&self, pkg: &AquaPackage, tv: &ToolVersion) -> Result<Vec<(PathBuf, PathBuf)>> {
+    fn srcs(
+        &self,
+        pkg: &AquaPackage,
+        install_path: &Path,
+        v: &str,
+    ) -> Result<Vec<(PathBuf, PathBuf)>> {
         let files: Vec<(PathBuf, PathBuf)> = pkg
             .files
             .iter()
             .map(|f| {
-                let srcs = if let Some(prefix) = &pkg.version_prefix {
-                    vec![f.src(pkg, &format!("{}{}", prefix, tv.version))?]
-                } else {
-                    vec![
-                        f.src(pkg, &tv.version)?,
-                        f.src(pkg, &format!("v{}", tv.version))?,
-                    ]
-                };
-                Ok(srcs
-                    .into_iter()
-                    .flatten()
-                    .map(|src| tv.install_path().join(src))
-                    .map(|src| {
-                        let dst = src.parent().unwrap().join(f.name.as_str());
-                        (src, dst)
-                    }))
+                Ok(f.src(pkg, v)?.map(|src| install_path.join(src)).map(|src| {
+                    let dst = src.parent().unwrap().join(f.name.as_str());
+                    (src, dst)
+                }))
             })
             .flatten_ok()
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .unique_by(|(src, _)| src.to_path_buf())
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
         Ok(files)
     }
 }
@@ -770,6 +755,12 @@ async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
 }
 
 fn validate(pkg: &AquaPackage) -> Result<()> {
+    if pkg.no_asset {
+        bail!("no asset released");
+    }
+    if let Some(msg) = &pkg.error_message {
+        bail!(msg.clone());
+    }
     let envs: HashSet<&str> = pkg.supported_envs.iter().map(|s| s.as_str()).collect();
     let os = os();
     let arch = arch();
