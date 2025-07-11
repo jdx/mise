@@ -372,6 +372,25 @@ lefthook install
 4. **Update snapshots**: Use `mise run snapshots` when changing test outputs
 5. **Rate limiting**: Set `MISE_GITHUB_TOKEN` to avoid GitHub API rate limits during development
 
+### Dependency Management
+
+mise uses several tools to validate dependencies and code quality:
+
+- **cargo-deny**: Validates licenses, security advisories, and dependency duplicates
+- **cargo-msrv**: Verifies minimum supported Rust version compatibility
+- **cargo-machete**: Detects unused dependencies in Cargo.toml
+
+These checks run automatically in CI and can be run locally:
+```bash
+# Install tools
+mise use cargo-deny cargo-msrv cargo-machete
+
+# Run checks
+cargo deny check
+cargo msrv verify
+cargo machete --with-metadata
+```
+
 ### Contributing Guidelines
 
 1. **Before starting**: File an issue or discuss in Discord for non-obvious changes
@@ -379,6 +398,19 @@ lefthook install
 3. **Test thoroughly**: Ensure both unit and E2E tests pass
 4. **Follow conventions**: Use existing code style and patterns
 5. **Update documentation**: Add/update docs for new features
+
+#### Pull Request Workflow
+1. **PR titles**: Must follow conventional commit format (validated automatically)
+2. **Auto-formatting**: Code will be automatically formatted by autofix.ci
+3. **CI checks**: All tests must pass across Linux, macOS, and Windows
+4. **Coverage**: New code should maintain or improve test coverage
+5. **Dependencies**: New dependencies are validated with cargo-deny
+
+#### GitHub Actions Development
+If modifying GitHub Actions workflows:
+- Use `actionlint` to validate workflow files: `mise run lint`
+- Self-hosted runners are configured for performance testing
+- Configuration variables are allowed (see `.github/actionlint.yaml`)
 
 ### Conventional Commits
 
@@ -456,11 +488,31 @@ dnf install -y dnf-plugins-core
 # ... installation steps
 ```
 
-### Release Process
+### CI/CD & Pull Request Automation
 
-```bash
-# Create release (minor for first release of month, patch otherwise)
-mise run release -x [minor|patch]
-```
+mise uses several automated workflows to maintain code quality and streamline development:
+
+#### Automated Code Formatting
+- **autofix.ci**: Automatically formats code and fixes linting issues in PRs
+- Runs `mise run render` and `mise run lint-fix` automatically
+- Commits fixes directly to the PR branch
+
+#### PR Title Validation
+- **semantic-pr-lint**: Validates PR titles follow conventional commit format
+- PR titles must match: `<type>[optional scope]: <description>`
+- Example: `feat(cli): add new command for listing plugins`
+
+#### Continuous Integration
+- **Cross-platform testing**: Ubuntu, macOS, and Windows
+- **Unit tests**: Fast component-level tests
+- **E2E tests**: Full integration testing with multiple test tranches
+- **Coverage testing**: Code coverage across 8 parallel test runs
+- **Dependency validation**: `cargo deny`, `cargo msrv`, `cargo machete`
+
+#### Release Automation
+- **release-plz**: Automated release management based on conventional commits
+- Automatically creates release PRs and publishes releases
+- Runs daily via scheduled workflow
+- Handles version bumping and changelog generation
 
 This covers the essential information about mise for LLMs to help users effectively use the tool for development environment management and contribute to its development.
