@@ -30,10 +30,80 @@ under the hood. However, [it is _much_ faster than asdf and has a more friendly 
 
 ## How it works
 
-mise hooks into your shell (with `mise activate zsh`) and sets the `PATH`
-environment variable to point your shell to the correct runtime binaries. When you `cd` into a
-directory containing a `mise.toml`/`.tool-versions` file, mise will automatically set the
-appropriate tool versions in `PATH`.
+mise manages development tools through a sophisticated but user-friendly system that automatically handles tool installation, version management, and environment setup.
+
+### Tool Resolution Flow
+
+When you enter a directory or run a command, mise follows this process:
+
+1. **Configuration Discovery**: mise walks up the directory tree looking for configuration files (`mise.toml`, `.tool-versions`, etc.) and merges them hierarchically
+2. **Tool Resolution**: mise resolves version specifications (like `node@latest` or `python@3`) to specific versions using registries and version lists
+3. **Backend Selection**: mise chooses the appropriate [backend](/dev-tools/backend_architecture) to handle each tool (core, asdf, aqua, etc.)
+4. **Installation Check**: mise verifies if the required tool versions are installed, automatically installing missing ones
+5. **Environment Setup**: mise configures your `PATH` and environment variables to use the resolved tool versions
+
+### Environment Integration
+
+mise provides several ways to integrate with your development environment:
+
+**Automatic Activation**: With `mise activate`, mise hooks into your shell prompt and automatically updates your environment when you change directories:
+
+```bash
+eval "$(mise activate zsh)"  # In your ~/.zshrc
+cd my-project               # Automatically loads mise.toml tools
+```
+
+**On-Demand Execution**: Use `mise exec` to run commands with mise's environment without permanent activation:
+
+```bash
+mise exec -- node my-script.js  # Runs with tools from mise.toml
+```
+
+**Shims**: mise can create lightweight wrapper scripts that automatically use the correct tool versions:
+
+```bash
+mise activate --shims  # Creates shims instead of modifying PATH
+```
+
+### Path Management
+
+mise modifies your `PATH` environment variable to prioritize the correct tool versions:
+
+```bash
+# Before mise
+echo $PATH
+/usr/local/bin:/usr/bin:/bin
+
+# After mise activation in a project with node@20
+echo $PATH
+/home/user/.local/share/mise/installs/node/20.11.0/bin:/usr/local/bin:/usr/bin:/bin
+```
+
+This ensures that when you run `node`, you get the version specified in your project configuration, not a system-wide installation.
+
+### Configuration Hierarchy
+
+mise supports nested configuration that cascades from broad to specific settings:
+
+```bash
+~/.config/mise/config.toml      # Global defaults
+~/work/mise.toml                # Work-specific tools
+~/work/project/mise.toml        # Project-specific overrides
+~/work/project/.tool-versions   # Legacy asdf compatibility
+```
+
+Each level can override or extend the previous ones, giving you fine-grained control over tool versions across different contexts.
+
+### Caching and Performance
+
+mise uses intelligent caching to minimize overhead:
+
+- **Version lists**: Cached daily to avoid repeated API calls
+- **Installation artifacts**: Cached downloads to speed up reinstalls
+- **Environment resolution**: Cached environment setups for faster shell prompts
+- **Plugin metadata**: Cached plugin information for quicker operations
+
+This ensures that mise adds minimal latency to your daily development workflow.
 
 ::: info
 After activating, mise will update env vars like PATH whenever the directory is changed or the prompt is _displayed_.

@@ -8,23 +8,21 @@ backend = "aqua:rhysd/actionlint"
 "actionlint_1.7.7_linux_arm64.tar.gz" = "sha256:401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0"
 
 [tools.bun]
-version = "1.2.14"
+version = "1.2.18"
 backend = "core:bun"
 
 [tools.bun.checksums]
-"bun-darwin-aarch64.zip" = "sha256:274c37bad6dd5041f74f65330b0c3980317b1142a1bdece7bebeb3aab44b88da"
-"bun-linux-x64-baseline.zip" = "sha256:8590c16b934317401b69eae06109d36c399d64b041386b892f39bf75969abe12"
+"bun-darwin-aarch64.zip" = "sha256:cca9eb52762bbd81eb894fc8275bba0a0654e81aad318d19869854a30f3769a2"
 
 [tools.cargo-binstall]
-version = "1.12.5"
+version = "1.14.1"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.checksums]
-"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:c59a3f059b9b8d7ffaf66c5791a7ae09b9b09f46e2bf68a069a70cfc451ae0ea"
-"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:c6378f62f878e566cbfedc8bb693b143297313b6e2768ac3811ed0a1a51da095"
+"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:07d46d31fb68ac10b906c5d39d611ded7787966f4ed15c598cb6175b45a2b069"
 
 [tools."cargo:cargo-edit"]
-version = "0.13.4"
+version = "0.13.6"
 backend = "cargo:cargo-edit"
 
 [tools."cargo:cargo-insta"]
@@ -32,7 +30,7 @@ version = "1.43.1"
 backend = "cargo:cargo-insta"
 
 [tools."cargo:git-cliff"]
-version = "2.8.0"
+version = "2.9.1"
 backend = "cargo:git-cliff"
 
 [tools."cargo:toml-cli"]
@@ -40,40 +38,36 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [tools."cargo:usage-cli"]
-version = "2.1.1"
+version = "2.2.0"
 backend = "cargo:usage-cli"
 
 [tools.cosign]
-version = "2.5.0"
+version = "2.5.2"
 backend = "aqua:sigstore/cosign"
 
 [tools.cosign.checksums]
-cosign-darwin-arm64 = "sha256:780da3654d9601367b0d54686ac65cb9716578610cabe292d725c7008de4db85"
-cosign-linux-amd64 = "sha256:1f6c194dd0891eb345b436bb71ff9f996768355f5e0ce02dde88567029ac2188"
+cosign-darwin-arm64 = "sha256:51fdc6d8da8310d72df10065a52247b6bebfe990d4c946dd9f71e17588256011"
 
 [tools.hk]
-version = "1.1.2"
+version = "1.2.1"
 backend = "aqua:jdx/hk"
 
 [tools.hk.checksums]
-"hk-x86_64-unknown-linux-gnu.tar.gz" = "sha256:2f889c916a641efb7b5861503bbcaee11752d874e1e4de72bc4727bd571256d5"
+"hk-aarch64-apple-darwin.tar.gz" = "sha256:acaae0f68b20838a68b48014dd8aa79a46a748ff9e11f472d33b9413f36f98f3"
 
 [tools.jq]
-version = "1.7.1"
+version = "1.8.1"
 backend = "aqua:jqlang/jq"
 
 [tools.jq.checksums]
-jq-linux-amd64 = "sha256:5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5"
-jq-linux-arm64 = "sha256:4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5"
-jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea8a8362e8a"
-"jq-windows-amd64.exe" = "sha256:7451fbbf37feffb9bf262bd97c54f0da558c63f0748e64152dd87b0a07b6d6ab"
+jq-macos-arm64 = "sha256:a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263603"
 
 [tools."npm:markdownlint-cli"]
 version = "0.45.0"
 backend = "npm:markdownlint-cli"
 
 [tools."npm:prettier"]
-version = "3.5.3"
+version = "3.6.2"
 backend = "npm:prettier"
 
 [tools."pipx:toml-sort"]
@@ -115,19 +109,15 @@ shellcheck-macos-aarch64 = "sha256:b9e420df8c78ec7d261d66277d5767cbd4cf6da4e4a9f
 "shellcheck-v0.10.0.darwin.aarch64.tar.xz" = "sha256:bbd2f14826328eee7679da7221f2bc3afb011f6a928b848c80c321f6046ddf81"
 
 [tools.shfmt]
-version = "3.11.0"
+version = "3.12.0"
 backend = "aqua:mvdan/sh"
 
-[tools.shfmt.checksums]
-"shfmt_v3.11.0_linux_amd64" = "sha256:1904ec6bac715c1d05cd7f6612eec8f67a625c3749cb327e5bfb4127d09035ff"
-
 [tools.slsa-verifier]
-version = "2.7.0"
+version = "2.7.1"
 backend = "ubi:slsa-framework/slsa-verifier"
 
 [tools.slsa-verifier.checksums]
-slsa-verifier-linux-x86_64 = "sha256:499befb675efcca9001afe6e5156891b91e71f9c07ab120a8943979f85cc82e6"
-slsa-verifier-macos-aarch64 = "sha256:84d9122ce12e0c79080844285fd5c4976407ed3463e434a1b21b0979c46b1e55"
+slsa-verifier-macos-aarch64 = "sha256:39abfcf5f1d690c3e889ce3d2d6a8b87711424d83368511868d414e8f8bcb05c"
 
 [tools.taplo]
 version = "0.10.0"
