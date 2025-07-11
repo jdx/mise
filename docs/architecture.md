@@ -1,45 +1,42 @@
+---
+outline: [1, 3]
+---
 # mise Architecture
 
 This document provides a comprehensive overview of mise's architecture, designed primarily for contributors and those interested in understanding how mise works internally.
+
+For practical development guidance, see the [Contributing Guide](contributing.md).
 
 ## System Overview
 
 mise is a Rust-based tool with a modular architecture centered around three core concepts:
 
-1. **Tool Version Management** - Installing and managing different versions of development tools
-2. **Environment Management** - Setting up environment variables and project contexts  
-3. **Task Running** - Executing project tasks with dependency management
+1. **Tool Version Management** - Installing and managing different versions of [development tools](dev-tools/)
+2. **Environment Management** - Setting up [environment variables](environments/) and project contexts  
+3. **Task Running** - Executing [project tasks](tasks/) with dependency management
 
 These three pillars work together to provide a unified development environment management experience.
 
 ## Core Architecture Components
 
-### 1. Entry Point and Runtime (`src/main.rs`)
-
-mise uses an asynchronous architecture built on Tokio:
-
-- **Multi-threaded Runtime**: Configurable worker threads (default: number of CPU cores, minimum 8)
-- **Global Error Handling**: Centralized error management with `color_eyre`
-- **CLI Argument Processing**: Entry point for all user interactions
-- **Multi-Progress Reporting**: Coordinated progress display for concurrent operations
-
-### 2. Command Layer (`src/cli/`)
+### Command Layer ([`src/cli/`](https://github.com/jdx/mise/tree/main/src/cli/))
 
 The CLI layer provides the user interface and delegates to core functionality:
 
-- **Modular Commands**: Each command is a separate module (`install.rs`, `use.rs`, `run.rs`, etc.)
-- **Argument Parsing**: Leverages `clap` for robust CLI parsing and validation
+- **Modular Commands**: Each command is a separate module ([`install.rs`](https://github.com/jdx/mise/blob/main/src/cli/install.rs), [`use.rs`](https://github.com/jdx/mise/blob/main/src/cli/use.rs), [`run.rs`](https://github.com/jdx/mise/blob/main/src/cli/run.rs), etc.)
+- **Argument Parsing**: Leverages [`clap`](https://clap.rs) for robust CLI parsing and validation
 - **Async Command Execution**: All commands support concurrent operations
 - **Unified Error Handling**: Consistent error reporting across all commands
 
 **Key Commands Architecture:**
-- `install` - Tool installation coordination
-- `use` - Tool activation and configuration management
-- `run` - Task execution with dependency resolution
-- `env` - Environment variable management
-- `shell` - Shell integration and activation
 
-### 3. Backend System (`src/backend/`)
+- [`install`](cli/install.md) - Tool installation coordination
+- [`use`](cli/use.md) - Tool activation and configuration management
+- [`run`](cli/run.md) - Task execution with dependency resolution
+- [`env`](cli/env.md) - Environment variable management
+- [`shell`](cli/shell.md) - Shell integration and activation
+
+### Backend System ([`src/backend/`](https://github.com/jdx/mise/tree/main/src/backend/))
 
 The backend system is mise's core abstraction for tool management, implementing a trait-based architecture:
 
@@ -53,16 +50,20 @@ pub trait Backend: Debug + Send + Sync {
 ```
 
 **Backend Categories:**
+
 - **Core Backends**: Native Rust implementations for maximum performance
 - **Language Package Managers**: npm, pipx, cargo, gem, go modules
 - **Universal Installers**: ubi (GitHub releases), aqua (comprehensive package management)
-- **Plugin Systems**: asdf (legacy compatibility), vfox (cross-platform)
+- **Plugin Systems**: [asdf](plugins.md) (legacy compatibility), [vfox](plugins.md) (cross-platform)
 
-### 4. Configuration System (`src/config/`)
+For guidance on implementing new backends, see the [Contributing Guide](contributing.md#adding-backends). For detailed backend system design, see [Backend Architecture](dev-tools/backend_architecture.md).
 
-A hierarchical configuration system that merges settings from multiple sources:
+### Configuration System ([`src/config/`](https://github.com/jdx/mise/tree/main/src/config/))
+
+A hierarchical configuration system that merges settings from multiple config files:
 
 **Config Trait Architecture:**
+
 ```rust
 pub trait ConfigFile: Debug + Send + Sync {
     fn get_path(&self) -> &Path;
@@ -74,60 +75,65 @@ pub trait ConfigFile: Debug + Send + Sync {
 ```
 
 **Concrete Implementations:**
+
 - `MiseToml` - Primary configuration format with full feature support
 - `ToolVersions` - asdf compatibility layer
 - `IdiomaticVersion` - Language-specific version files (`.node-version`, etc.)
 
-**Configuration Hierarchy:**
-1. System config (`/etc/mise/config.toml`) - Highest precedence
-2. Global user config (`~/.config/mise/config.toml`)
-3. Project configs (searched up directory tree)
-4. Environment-specific configs (`mise.{ENV}.toml`)
+**Configuration Hierarchy:** See [Configuration Documentation](configuration.md) for the complete hierarchy and precedence rules.
 
-### 5. Toolset Management (`src/toolset/`)
+### Toolset Management ([`src/toolset/`](https://github.com/jdx/mise/tree/main/src/toolset/))
 
 Coordinates tool resolution, installation, and environment setup:
 
 **Core Components:**
+
 - `Toolset` - Immutable collection of resolved tools for a context
-- `ToolVersion` - Represents a specific, resolved tool version
+- `ToolVersion` - Represents a specific, resolved tool version (e.g., `node@latest` becomes `node@18.17.0`)
 - `ToolRequest` - User's tool specification (e.g., `node@18`, `python@latest`)
 - `ToolsetBuilder` - Constructs toolsets from configuration with dependency resolution
 
 **Tool Resolution Pipeline:**
+
 1. **Configuration Parsing**: Extract tool requirements from config files
-2. **Version Resolution**: Resolve version specifications (latest, semver ranges, etc.)
+2. **Version Resolution**: Resolve version specifications (`latest`, `~1.2.0`, etc.) to concrete versions
 3. **Backend Selection**: Choose appropriate backend for each tool
 4. **Dependency Analysis**: Resolve tool dependencies (e.g., npm requires Node.js)
 5. **Installation Coordination**: Install missing tools in dependency order
 6. **Environment Configuration**: Set up PATH and environment variables
 
-### 6. Task System (`src/task/`)
+### Task System ([`src/task/`](https://github.com/jdx/mise/tree/main/src/task/))
 
 Sophisticated task execution with dependency graph management:
 
 **Architecture Components:**
+
 - `Task` - Task definition with metadata, dependencies, and execution configuration
 - `Deps` - Dependency graph manager using `petgraph` for DAG operations
 - `TaskFileProvider` - Discovers tasks from files and configuration
 - Parallel execution engine with configurable concurrency
 
 **Task Discovery:**
-1. File-based tasks from configured directories
-2. TOML-defined tasks in configuration files
+
+1. [File-based tasks](tasks/file-tasks.md) from configured directories
+2. [TOML-defined tasks](tasks/toml-tasks.md) in configuration files
 3. Inherited tasks from parent directories
 
 **Dependency Resolution:**
+
 - Uses directed acyclic graph (DAG) for dependency modeling
 - Supports multiple dependency types: `depends`, `depends_post`, `wait_for`
 - Parallel execution within dependency constraints
 - Circular dependency detection and prevention
 
-### 7. Plugin System (`src/plugins/`)
+See the [Task Documentation](tasks/) for complete usage details and configuration options, and [Task Architecture](tasks/architecture.md) for detailed system design.
+
+### Plugin System ([`src/plugins/`](https://github.com/jdx/mise/tree/main/src/plugins/))
 
 Extensibility layer supporting multiple plugin architectures:
 
 **Plugin Trait:**
+
 ```rust
 pub trait Plugin: Debug + Send {
     fn name(&self) -> &str;
@@ -139,15 +145,18 @@ pub trait Plugin: Debug + Send {
 ```
 
 **Plugin Types:**
-- **Core Plugins**: Built into mise binary
-- **External Plugins**: Downloaded from repositories
-- **Local Plugins**: Custom local implementations
 
-### 8. Shell Integration (`src/shell/`)
+- **asdf Plugins**: Compatible with the asdf plugin ecosystem
+- **vfox Plugins**: Cross-platform plugins using the vfox format
 
-Cross-platform shell support with multiple activation methods:
+For complete plugin documentation, see [Plugin Guide](plugins.md).
+
+### Shell Integration ([`src/shell/`](https://github.com/jdx/mise/tree/main/src/shell/))
+
+Shell-specific code generation that abstracts commands like `mise env` and contains all shell differences in one place:
 
 **Shell Trait:**
+
 ```rust
 pub trait Shell {
     fn activate(&self, opts: ActivateOptions) -> String;
@@ -157,174 +166,235 @@ pub trait Shell {
 }
 ```
 
-**Supported Shells:** Bash, Zsh, Fish, PowerShell, Nushell
-**Activation Methods:** PATH modification, shims, exec mode
+**Supported Shells:** See [`mise activate`](cli/activate.md) documentation for the complete list
+**Shell Abstractions:** Environment variable setting, PATH modification, command execution
 
-### 9. Environment Management (`src/env*.rs`)
+### Environment Management ([`src/env*.rs`](https://github.com/jdx/mise/tree/main/src/))
 
-Comprehensive environment variable and PATH management:
+Helpers for working with environment variables:
 
 - `EnvDiff` - Tracks and applies environment changes
 - `EnvDirective` - Configuration-based environment variable management
 - `PathEnv` - Intelligent PATH manipulation with precedence rules
 - Context-aware resolution with inheritance
 
-### 10. Caching System (`src/cache.rs`)
+For environment setup and configuration, see [Environment Documentation](environments/).
 
-High-performance caching with automatic invalidation:
+### Caching System ([`src/cache.rs`](https://github.com/jdx/mise/blob/main/src/cache.rs))
+
+Generic caching backed by files, using msgpack serialization with zstd compression:
 
 - `CacheManager<T>` - Generic caching with TTL support
-- File-based persistence for tool metadata and versions
-- Automatic cache invalidation based on timestamps
+- Data serialized with msgpack and compressed with zstd for efficient storage
+- Automatic cache invalidation based on file timestamps
 - Per-backend cache isolation for data integrity
 
-## Key Design Patterns
+## Test Architecture
 
-### Trait-Based Architecture
+mise employs a multi-layered testing strategy that combines different testing approaches for thorough validation across its complex feature set.
 
-mise leverages Rust's trait system for extensibility and modularity:
+**Testing Strategy Overview:**
 
-- **Backend Trait**: Uniform interface for all tool installation methods
-- **ConfigFile Trait**: Consistent configuration handling across formats
-- **Shell Trait**: Cross-platform shell integration
-- **Plugin Trait**: Extensible plugin system
+1. **Unit Tests** - Rust `#[test]` functions embedded in source files
+2. **End-to-End (E2E) Tests** - Bash-based integration tests with complete environment isolation
+3. **Snapshot Tests** - Using `insta` crate for complex output validation
 
-### Async/Await Concurrency
+::: tip Testing Philosophy
+**Most tests in mise are end-to-end tests, and this is generally the preferred approach** for new functionality. E2E tests provide thorough validation of real-world usage scenarios and catch integration issues that unit tests might miss. However, **E2E tests can be challenging to run locally** due to environment dependencies and setup complexity. For development and CI purposes, it's often easier to run tests on GitHub Actions where the environment is consistent and properly configured.
 
-All I/O operations use async/await for maximum performance:
+See the [Contributing Guide](contributing.md#testing) for detailed testing setup and guidelines.
+:::
 
-- **Parallel Tool Installation**: Multiple tools install concurrently
-- **Concurrent Task Execution**: Tasks run in parallel within dependency constraints
-- **Non-blocking Operations**: Network requests and file operations don't block the event loop
-- **Resource Management**: Semaphores control concurrency limits
+### Unit Tests ([`src/` modules](https://github.com/jdx/mise/tree/main/src/))
 
-### Hierarchical Configuration
+**Structure and Characteristics:**
 
-Configuration follows a layered approach with clear precedence rules:
+- **Location**: Embedded within source files using `mod tests` blocks
+- **Test Runner**: Standard Rust `cargo test`
+- **Dependencies**: `pretty_assertions`, `insta`, `test-log`, `ctor`
+- **Coverage**: ~50+ test modules covering all major functionality
 
-- **Inheritance**: Child directories inherit parent configurations
-- **Override Semantics**: More specific configurations override general ones
-- **Merge Strategies**: Different configuration sections use appropriate merge behavior
-- **Environment Contexts**: Support for environment-specific configurations
+```rust
+mod tests {
+    use insta::assert_snapshot;
+    use pretty_assertions::assert_eq;
+    use crate::config::Config;
+    use super::*;
 
-### Error Handling Strategy
-
-Structured error handling with rich context:
-
-- **eyre Integration**: Provides detailed error reporting with context
-- **Error Propagation**: Consistent error handling across async boundaries
-- **User-Friendly Messages**: Contextual error messages with suggested solutions
-- **Graceful Degradation**: Continues operation when possible despite errors
-
-### Dependency Management
-
-Multiple levels of dependency resolution:
-
-- **Tool Dependencies**: Automatic installation of prerequisite tools
-- **Task Dependencies**: DAG-based task execution ordering
-- **Configuration Dependencies**: Hierarchical configuration inheritance
-- **Plugin Dependencies**: Managed plugin lifecycle with dependencies
-
-## Data Flow Architecture
-
-### Tool Installation Flow
-
-```mermaid
-graph TD
-    A[User Request] --> B[Config Resolution]
-    B --> C[Tool Request Parsing]
-    C --> D[Backend Selection]
-    D --> E[Version Resolution]
-    E --> F[Dependency Analysis]
-    F --> G[Concurrent Installation]
-    G --> H[Environment Setup]
-    H --> I[PATH Configuration]
+    #[tokio::test]
+    async fn test_hash_to_str() {
+        let _config = Config::get().await.unwrap();
+        assert_eq!(hash_to_str(&"foo"), "e1b19adfb2e348a2");
+    }
+}
 ```
 
-### Task Execution Flow
+**Test Environment Setup:**
 
-```mermaid
-graph TD
-    A[Task Request] --> B[Task Discovery]
-    B --> C[Dependency Graph]
-    C --> D[Parallel Planning]
-    D --> E[Resource Allocation]
-    E --> F[Concurrent Execution]
-    F --> G[Output Coordination]
-    G --> H[Cleanup & Reporting]
+- **Global Setup**: Uses `ctor::ctor` in [`src/test.rs`](https://github.com/jdx/mise/blob/main/src/test.rs) for test environment initialization
+- **Isolated Environment**: Each test gets a clean environment with custom `HOME`, cache, and config directories
+- **Async Support**: Extensive use of `#[tokio::test]` for async testing
+
+### End-to-End Tests ([`e2e/`](https://github.com/jdx/mise/tree/main/e2e/))
+
+**Architecture:**
+
+```
+e2e/
+├── run_test          # Single test executor with environment isolation
+├── run_all_tests     # Test orchestrator with parallel execution
+├── assert.sh         # Rich assertion library
+├── cli/              # CLI command tests
+│   ├── test_use      # Testing tool activation and configuration
+│   ├── test_install  # Testing tool installation
+│   ├── test_upgrade  # Testing tool upgrades
+│   ├── test_uninstall # Testing tool removal
+│   └── test_version  # Testing version commands
+├── backend/          # Backend-specific tests
+│   ├── test_aqua     # Testing aqua package manager
+│   ├── test_asdf     # Testing asdf plugin compatibility
+│   └── test_npm      # Testing npm backend
+├── tasks/            # Task system tests
+│   ├── test_task_deps # Testing task dependencies
+│   ├── test_task_run_depends # Testing task execution order
+│   ├── test_task_ls  # Testing task listing
+│   └── test_task_info # Testing task metadata
+├── config/           # Configuration tests
+│   ├── test_config_ls # Testing configuration listing
+│   └── test_config_set # Testing configuration updates
+└── [other domains]/  # Additional test categories
 ```
 
-### Configuration Resolution Flow
+**Environment Isolation System:**
 
-```mermaid
-graph TD
-    A[Directory Context] --> B[File Discovery]
-    B --> C[Hierarchical Parsing]
-    C --> D[Merge Resolution]
-    D --> E[Environment Application]
-    E --> F[Final Configuration]
+Each test runs in complete isolation with temporary directories:
+
+```bash
+setup_isolated_env() {
+  TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
+  TEST_HOME="$TEST_ISOLATED_DIR/home"
+  MISE_DATA_DIR="$TEST_HOME/.local/share/mise"
+  MISE_CACHE_DIR="$TEST_HOME/.cache/mise"
+  # ... complete environment isolation
+}
 ```
 
-## Performance Characteristics
+**Rich Assertion Framework:**
 
-### Optimization Strategies
+The [`assert.sh`](https://github.com/jdx/mise/blob/main/e2e/assert.sh) provides rich test utilities:
 
-1. **Aggressive Caching**: Multi-layered caching reduces redundant operations
-2. **Parallel Execution**: Concurrent operations maximize throughput
-3. **Lazy Loading**: Components initialize only when needed
-4. **Efficient Data Structures**: Uses optimized data structures for performance
-5. **Memory Management**: Careful memory usage with Arc/Rc for shared data
+```bash
+# Basic assertions
+assert "command" "expected_output"
+assert_contains "command" "substring"
+assert_fail "command" "error_message"
 
-### Scalability Considerations
+# JSON testing
+assert_json "command" '{"key": "value"}'
+assert_json_partial_object "command" "field1,field2" '{"field1": "value1"}'
 
-- **Large Toolsets**: Efficient handling of projects with many tools
-- **Complex Dependencies**: Optimized graph algorithms for dependency resolution
-- **Concurrent Users**: Thread-safe design supports multiple concurrent operations
-- **Large Repositories**: Efficient handling of large plugin repositories
+# File system assertions
+assert_directory_exists "path"
+assert_directory_empty "path"
+```
 
-## Security Model
+**Test Categories:**
 
-### Trust and Verification
+- **CLI Tests**: Validate all command-line interfaces and argument parsing
+- **Backend Tests**: Test tool installation, version resolution, and backend integration
+- **Task Tests**: Validate task execution, dependency resolution, and parallel execution
+- **Configuration Tests**: Test configuration parsing, hierarchy, and environment variable handling
 
-- **Configuration Trust**: Explicit trust model for configuration files
-- **Checksum Verification**: Automatic verification of downloaded tools
-- **Signature Validation**: Support for cryptographic signature verification
-- **Sandbox Isolation**: Plugin execution isolation where possible
+### Windows Testing
 
-## Testing Architecture
+**Windows-Specific Tests ([`e2e-win/`](https://github.com/jdx/mise/tree/main/e2e-win/)):**
 
-### Test Organization
+- **Language**: PowerShell scripts (`.ps1`)
+- **Focus**: Windows-specific functionality and cross-platform compatibility
+- **Coverage**: Core tools like Go, Java, Node.js, Python, Rust
 
-- **Unit Tests**: Component-level testing with mock dependencies
-- **Integration Tests**: Cross-component interaction testing
-- **End-to-End Tests**: Full workflow testing with real tools
-- **Property Tests**: Randomized testing for edge case discovery
+```powershell
+Describe "go" {
+    It "installs go" {
+        mise install go@latest
+        go version | Should -Match "go version"
+    }
+}
+```
 
-### Test Infrastructure
+### Snapshot Testing ([`src/snapshots/`](https://github.com/jdx/mise/tree/main/src/snapshots/))
 
-- **Mock Backends**: Simulate tool installation for testing
-- **Temporary Environments**: Isolated test environments
-- **Snapshot Testing**: Output consistency verification
-- **Performance Benchmarks**: Automated performance regression detection
+**Implementation:**
 
-## Future Architectural Considerations
+- **Crate**: Uses `insta` for snapshot testing with 11 snapshot files
+- **Format**: Stores expected outputs as `.snap` files
+- **Coverage**: Complex outputs like directory listings, configuration parsing, environment diffs
 
-### Planned Enhancements
+```rust
+#[tokio::test]
+async fn test_parse() {
+    let diff = DirenvDiff::parse(input).unwrap();
+    assert_snapshot!(diff);  // Creates/validates snapshot
+}
+```
 
-1. **GUI/TUI Integration**: Enhanced user interfaces for complex operations
-2. **Distributed Caching**: Shared caching across development teams
-3. **Container Integration**: Better container and virtualization support
-4. **Language Server Protocol**: IDE integration improvements
-5. **Plugin Security**: Enhanced plugin sandboxing and verification
+### Test Infrastructure Features
 
-### Design Principles
+**Performance and Utility Tests ([`xtasks/test/`](https://github.com/jdx/mise/tree/main/xtasks/test/)):**
 
-mise's architecture follows these core principles:
+- **Performance Testing**: `perf` script for benchmarking
+- **Coverage Testing**: `coverage` script for test coverage analysis
+- **E2E Runner**: `e2e` script with filtering capabilities
 
-- **User Experience First**: Architecture serves usability, not the reverse
-- **Performance by Default**: Optimized for common development workflows
-- **Extensibility**: Plugin architecture supports diverse ecosystems
-- **Reliability**: Robust error handling and recovery mechanisms
-- **Cross-Platform**: Consistent behavior across operating systems
+**Test Data Management ([`test/`](https://github.com/jdx/mise/tree/main/test/)):**
 
-This architecture provides a solid foundation for managing complex development environments while remaining approachable for everyday use.
+```
+test/
+├── fixtures/          # Sample configuration files
+├── config/           # Test-specific configs
+├── data/             # Test plugins and mock data
+└── state/            # Test state directory
+```
+
+**Test Execution Modes:**
+
+- **Fast Tests**: Regular tests that run in CI
+- **Slow Tests**: Marked with `_slow` suffix, skipped unless `TEST_ALL=1`
+- **Tranche Support**: Tests can be split across parallel runners using `TEST_TRANCHE_COUNT`
+
+**Developer Experience Features:**
+
+- **Environment Safety**: Complete isolation prevents tests from affecting user's actual mise installation
+- **Parallel Execution**: E2E tests support parallel execution with proper isolation
+- **Rich Reporting**: Detailed test timing, environment preservation on failure for debugging
+- **Cross-Platform Validation**: Automated testing on multiple operating systems
+
+**Running Tests:**
+
+```bash
+# Run all unit tests
+cargo test
+
+# Run all E2E tests
+./e2e/run_all_tests
+
+# Run specific E2E test
+./e2e/run_test test_install
+
+# Run with coverage
+./xtasks/test/coverage
+
+# Performance testing
+./xtasks/test/perf
+```
+
+For complete development setup and testing procedures, see the [Contributing Guide](contributing.md).
+
+This robust test architecture ensures mise's reliability across its complex feature set, including tool management, environment configuration, task execution, and multi-platform support.
+
+## Related Architecture Documentation
+
+For deeper understanding of specific subsystems:
+
+- **[Task Architecture](tasks/architecture.md)** - Detailed design of the task dependency system, parallel execution engine, and task discovery mechanisms
+- **[Backend Architecture](dev-tools/backend_architecture.md)** - In-depth guide to backend types, the trait system, and how different installation methods work

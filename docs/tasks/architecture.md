@@ -21,6 +21,7 @@ graph TD
 ```
 
 This graph ensures that:
+
 - Dependencies run before dependents
 - Independent tasks run in parallel
 - No circular dependencies exist
@@ -31,6 +32,7 @@ This graph ensures that:
 mise supports three types of task dependencies:
 
 #### `depends` - Prerequisites
+
 Tasks that must complete successfully before this task runs:
 
 ```toml
@@ -40,6 +42,7 @@ run = "npm test"
 ```
 
 #### `depends_post` - Cleanup Tasks  
+
 Tasks that run after this task completes (whether successful or failed):
 
 ```toml
@@ -50,6 +53,7 @@ run = "kubectl apply -f deployment.yaml"
 ```
 
 #### `wait_for` - Soft Dependencies
+
 Tasks that should run first if they're in the current execution, but don't fail if they're not available:
 
 ```toml
@@ -77,16 +81,10 @@ The default is 4 parallel jobs, but you can configure this globally:
 jobs = 8
 ```
 
-### Execution Strategy
-
-1. **Dependency Resolution**: mise builds the complete dependency graph
-2. **Parallel Planning**: Identifies tasks that can run concurrently
-3. **Resource Management**: Respects job limits and task constraints
-4. **Dynamic Scheduling**: Starts new tasks as dependencies complete
-
 ### Example Execution Flow
 
 Given these tasks:
+
 ```toml
 [tasks.lint]
 run = "eslint src/"
@@ -105,6 +103,7 @@ run = "npm run build"
 ```
 
 Execution with `--jobs 2`:
+
 ```
 Time →
 0s:   [lint]
@@ -206,6 +205,7 @@ run = "npm run build"
 ```
 
 mise will only run the task if:
+
 - Source files are newer than output files
 - The task has never been run
 - Dependencies have changed
@@ -248,32 +248,26 @@ mise run build --dry-run       # Show what would run without executing
 
 ### Common Issues
 
-**Circular Dependencies**: 
+**Circular Dependencies**:
+
 ```
 Error: Circular dependency detected: test → build → test
 ```
+
 Solution: Remove the circular reference or use `wait_for` instead of `depends`.
 
 **Missing Dependencies**:
+
 ```
 Error: Task 'build' depends on 'lint' but 'lint' was not found
 ```
+
 Solution: Define the missing task or remove the dependency.
 
 **Slow Parallel Execution**:
+
 - Check if tasks have unnecessary dependencies
 - Use `mise task deps` to verify dependency graph
 - Consider increasing `--jobs` if you have CPU cores available
-
-## Architecture Benefits
-
-This task system provides several key advantages:
-
-1. **Correctness**: Dependency graphs ensure tasks run in the right order
-2. **Performance**: Automatic parallelization speeds up builds
-3. **Reliability**: Failed dependencies prevent invalid states
-4. **Flexibility**: Multiple dependency types handle different scenarios
-5. **Efficiency**: Source tracking avoids unnecessary rebuilds
-6. **Debugging**: Rich tooling for understanding task relationships
 
 The task architecture is designed to scale from simple single-task projects to complex multi-service applications with intricate build dependencies.

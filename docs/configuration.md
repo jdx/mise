@@ -62,6 +62,7 @@ When mise needs configuration, it follows this process:
 Different configuration sections merge in different ways:
 
 **Tools** (`[tools]`): Additive with overrides
+
 ```toml
 # Global: node@18, python@3.11
 # Project: node@20, go@1.21
@@ -69,6 +70,7 @@ Different configuration sections merge in different ways:
 ```
 
 **Environment Variables** (`[env]`): Additive with overrides
+
 ```toml
 # Global: NODE_ENV=development
 # Project: NODE_ENV=production, API_URL=localhost
@@ -76,6 +78,7 @@ Different configuration sections merge in different ways:
 ```
 
 **Tasks** (`[tasks]`): Completely replaced per task
+
 ```toml
 # Global: [tasks.test] = "npm test"
 # Project: [tasks.test] = "yarn test"  
@@ -83,6 +86,7 @@ Different configuration sections merge in different ways:
 ```
 
 **Settings** (`[settings]`): Additive with overrides
+
 ```toml
 # Global: experimental = true
 # Project: jobs = 4

@@ -38,7 +38,7 @@ When you enter a directory or run a command, mise follows this process:
 
 1. **Configuration Discovery**: mise walks up the directory tree looking for configuration files (`mise.toml`, `.tool-versions`, etc.) and merges them hierarchically
 2. **Tool Resolution**: mise resolves version specifications (like `node@latest` or `python@3`) to specific versions using registries and version lists
-3. **Backend Selection**: mise chooses the appropriate [backend](/dev-tools/backends/architecture) to handle each tool (core, asdf, aqua, etc.)
+3. **Backend Selection**: mise chooses the appropriate [backend](/dev-tools/backend_architecture) to handle each tool (core, asdf, aqua, etc.)
 4. **Installation Check**: mise verifies if the required tool versions are installed, automatically installing missing ones
 5. **Environment Setup**: mise configures your `PATH` and environment variables to use the resolved tool versions
 
