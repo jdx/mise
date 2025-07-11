@@ -7,6 +7,10 @@ backend = "aqua:rhysd/actionlint"
 "actionlint_1.7.7_linux_amd64.tar.gz" = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
 "actionlint_1.7.7_linux_arm64.tar.gz" = "sha256:401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0"
 
+[tools.age]
+version = "1.2.1"
+backend = "aqua:FiloSottile/age"
+
 [tools.bun]
 version = "1.2.14"
 backend = "core:bun"
@@ -128,6 +132,10 @@ backend = "ubi:slsa-framework/slsa-verifier"
 [tools.slsa-verifier.checksums]
 slsa-verifier-linux-x86_64 = "sha256:499befb675efcca9001afe6e5156891b91e71f9c07ab120a8943979f85cc82e6"
 slsa-verifier-macos-aarch64 = "sha256:84d9122ce12e0c79080844285fd5c4976407ed3463e434a1b21b0979c46b1e55"
+
+[tools.sops]
+version = "3.10.2"
+backend = "aqua:getsops/sops"
 
 [tools.taplo]
 version = "0.10.0"
