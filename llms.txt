@@ -433,6 +433,61 @@ mise run test:shuffle
 rustup default nightly && mise run test
 ```
 
+#### Running Single Tests
+
+**Unit Tests:**
+```bash
+# Run a specific unit test by name
+cargo test test_name
+
+# Run tests matching a pattern
+cargo test pattern
+
+# Run tests in a specific module
+cargo test module_name
+
+# Run a single test with output
+cargo test test_name -- --nocapture
+
+# Run a single test file (if organized by file)
+cargo test --test test_file_name
+```
+
+**E2E Tests:**
+```bash
+# Run a specific E2E test by name
+./e2e/run_test test_name
+
+# Run E2E tests matching a pattern
+mise run test:e2e pattern
+
+# Examples:
+./e2e/run_test test_use                    # Run specific test
+./e2e/run_test test_config_set            # Run config-related test
+mise run test:e2e task                     # Run all tests matching "task"
+```
+
+**Plugin Tests:**
+```bash
+# Test a specific plugin
+mise test-tool ripgrep
+
+# Test a plugin with verbose output
+mise test-tool ripgrep --raw
+
+# Test multiple plugins
+mise test-tool ripgrep jq terraform
+```
+
+**Windows Tests:**
+```powershell
+# Run a specific Windows test
+pwsh e2e-win\run.ps1 -TestName "test_name"
+
+# Run tests matching a pattern
+pwsh e2e-win\run.ps1 task
+```
+
 #### Test Development Tips
 
 1. **Test naming**: Use descriptive names that explain what's being tested
@@ -500,12 +555,145 @@ mise/
 └── xtasks/        # Additional build scripts
 ```
 
-### Pre-commit Hooks
+### Pre-commit Hooks & Code Quality
 
-Install [lefthook](https://github.com/evilmartians/lefthook) for pre-commit hooks:
+mise uses multiple approaches for ensuring code quality and running pre-commit hooks:
+
+#### hk (Modern Hook Manager)
+mise uses [hk](https://hk.jdx.dev) (pronounced "hook") as its primary hook manager for linting and code quality checks. hk is a modern alternative to lefthook written by the same author as mise.
+
+**hk Configuration:**
+The project uses `hk.pkl` (written in the Pkl configuration language) to define linting rules:
+
 ```bash
-lefthook install
+# Run all linting checks
+hk check --all
+
+# Run linting with fixes
+hk fix --all
+
+# Run specific linter
+hk check --linter shellcheck
 ```
+
+**Available Linters in hk:**
+- **prettier**: Code formatting for multiple languages
+- **clippy**: Rust linting with `cargo clippy`
+- **shellcheck**: Shell script linting
+- **shfmt**: Shell script formatting
+- **pkl**: Pkl configuration file validation
+
+**Using hk in Development:**
+```bash
+# Install hk via mise
+mise use hk
+
+# Run linting (used in CI and pre-commit)
+mise run lint  # This runs hk check --all
+
+# Run linting with fixes
+hk fix --all
+
+# Check specific file types
+hk check --linter prettier
+hk check --linter shellcheck
+```
+
+#### Traditional Pre-commit Hooks (Alternative)
+mise also supports traditional pre-commit hooks through multiple methods:
+
+**Option 1: Using lefthook (Legacy)**
+```bash
+# Install lefthook
+mise use lefthook
+
+# Install the git hooks
+lefthook install
+
+# Run pre-commit manually
+lefthook run pre-commit
+```
+
+**Option 2: Using standard pre-commit framework**
+```bash
+# Install pre-commit
+mise use pre-commit
+
+# Install the git hooks
+pre-commit install
+
+# Run pre-commit manually
+pre-commit run --all-files
+```
+
+**Option 3: Using mise's built-in git hook generation**
+```bash
+# Generate a git pre-commit hook that runs mise tasks
+mise generate git-pre-commit --write --task=pre-commit
+
+# This creates .git/hooks/pre-commit that runs:
+# mise run pre-commit
+```
+
+#### Pre-commit Task Configuration
+mise defines a `pre-commit` task that runs the main linting checks:
+
+```toml
+[pre-commit]
+env = { PRE_COMMIT = 1 }
+run = ["mise run lint"]
+```
+
+This task:
+1. Sets `PRE_COMMIT=1` environment variable
+2. Runs `mise run lint`, which executes `hk check --all`
+
+#### Setting Up Pre-commit Hooks
+**Recommended approach using hk:**
+```bash
+# Install hk
+mise use hk
+
+# Set up git hook to run mise's pre-commit task
+mise generate git-pre-commit --write --task=pre-commit
+
+# Or manually create .git/hooks/pre-commit:
+cat > .git/hooks/pre-commit << 'EOF'
+#!/bin/sh
+exec mise run pre-commit
+EOF
+chmod +x .git/hooks/pre-commit
+```
+
+**Alternative approach using standard pre-commit:**
+```bash
+# Install pre-commit
+mise use pre-commit
+
+# Install hooks defined in .pre-commit-config.yaml
+pre-commit install
+```
+
+#### Running Pre-commit Checks Manually
+```bash
+# Run all pre-commit checks
+mise run pre-commit
+
+# Run specific linting checks
+mise run lint
+
+# Run linting with fixes
+hk fix --all
+
+# Run checks on specific files
+hk check --files="src/**/*.rs"
+```
+
+#### Environment Variables for Hooks
+When hooks run, they have access to these environment variables:
+- `PRE_COMMIT=1`: Indicates the code is running in pre-commit context
+- `STAGED`: Git staged files (when using mise's git hook generation)
+- `MISE_PRE_COMMIT=1`: Set by mise's generated git hooks
 
 ### Testing Configuration
 
