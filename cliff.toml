@@ -102,7 +102,7 @@ commit_parsers = [
   { message = '^style', group = "<!-- 05 -->🎨 Styling" },
   { message = '^perf', group = "<!-- 04 -->⚡ Performance" },
   { message = '^test', group = "<!-- 06 -->🧪 Testing" },
-  { message = '^revert', group = "<!-- 09 -->◀️ Revert" },
+  { message = '^[Rr]evert', group = "<!-- 09 -->◀️ Revert" },
 ]
 # protect breaking changes from being skipped due to matching a skipping commit_parser
 protect_breaking_commits = false
