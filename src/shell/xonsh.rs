@@ -10,7 +10,7 @@ use crate::shell::{ActivateOptions, Shell};
 #[derive(Default)]
 pub struct Xonsh {}
 
-fn xonsh_escape_sq(input: &str) -> Cow<str> {
+fn xonsh_escape_sq(input: &str) -> Cow<'_, str> {
     for (i, ch) in input.char_indices() {
         if xonsh_escape_char(ch).is_some() {
             let mut escaped_string = String::with_capacity(input.len());
@@ -47,47 +47,52 @@ impl Shell for Xonsh {
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude(&opts.prelude));
 
-        // todo: xonsh doesn't update the environment that mise relies on with $PATH.add even with $UPDATE_OS_ENVIRON (github.com/xonsh/xonsh/issues/3207)
-        // with envx.swap(UPDATE_OS_ENVIRON=True): # ← use when ↑ fixed before PATH.add; remove environ
-        // meanwhile, save variables twice: in shell env + in os env
         // use xonsh API instead of $.xsh to allow use inside of .py configs, which start faster due to being compiled to .pyc
-        // todo: subprocess instead of $() is a bit faster, but lose auto-color detection (use $FORCE_COLOR)
         out.push_str(&formatdoc! {r#"
-            from os               import environ
-            import subprocess
-            from xonsh.built_ins  import XSH
-
-            def listen_prompt(): # Hook Events
-              execx($({exe} hook-env{flags} -s xonsh))
-
-            envx = XSH.env
-            envx[   'MISE_SHELL'] = 'xonsh'
-            environ['MISE_SHELL'] = envx.get_detyped('MISE_SHELL')
-            XSH.builtins.events.on_pre_prompt(listen_prompt) # Activate hook: before showing the prompt
+            from xonsh.built_ins import XSH
 
             def _mise(args):
               if args and args[0] in ('deactivate', 'shell', 'sh'):
-                execx(subprocess.run(['command', 'mise', *args], stdout=subprocess.PIPE).stdout.decode())
+                execx($(mise @(args)))
               else:
-                subprocess.run(['command', 'mise', *args])
+                mise @(args)
 
+            XSH.env['MISE_SHELL'] = 'xonsh'
             XSH.aliases['mise'] = _mise
         "#});
 
+        if !opts.no_hook_env {
+            out.push_str(&formatdoc! {r#"
+                import shlex
+                import subprocess
+
+                extra_args = shlex.split('{flags}')
+                def mise_hook(**kwargs): # Hook Events
+                    script = subprocess.run(
+                        ['{exe}', 'hook-env', *extra_args, '-s', 'xonsh'],
+                        env=XSH.env.detype(),
+                        stdout=subprocess.PIPE,
+                    ).stdout.decode()
+                    execx(script)
+
+                XSH.builtins.events.on_pre_prompt(mise_hook) # Activate hook: before showing the prompt
+                XSH.builtins.events.on_chdir(mise_hook) # Activate hook: when the working directory changes
+            "#});
+        }
         out
     }
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
             import os
-            from xonsh.built_ins  import XSH
+            from xonsh.built_ins import XSH
 
             hooks = {{
-              'on_pre_prompt' : ['listen_prompt'],
+              'on_pre_prompt' : ['mise_hook'],
+              'on_chdir': ['mise_hook'],
             }}
-            for   hook_type in hooks:
-              hook_fns = hooks[hook_type]
-              for hook_fn   in hook_fns:
+            for hook_type, hook_fns in hooks.items():
+              for hook_fn in hook_fns:
                 hndl = getattr(XSH.builtins.events, hook_type)
                 for fn in hndl:
                   if fn.__name__ == hook_fn:
@@ -96,51 +101,38 @@ impl Shell for Xonsh {
 
             del XSH.aliases['mise']
             del XSH.env['MISE_SHELL']
-            del os.environ['MISE_SHELL']
             del XSH.env['__MISE_DIFF']
-            del os.environ['__MISE_DIFF']
             del XSH.env['__MISE_SESSION']
-            del os.environ['__MISE_SESSION']
             "#}
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
-        let k = shell_escape::unix::escape(k.into()); // todo: drop illegal chars, not escape?
         formatdoc!(
             r#"
-            from os               import environ
-            from xonsh.built_ins  import XSH
-
-            envx = XSH.env
-            envx[   '{k}'] = '{v}'
-            environ['{k}'] = envx.get_detyped('{k}')
+            from xonsh.built_ins import XSH
+            XSH.env['{k}'] = '{v}'
         "#,
-            k = shell_escape::unix::escape(k), // todo: drop illegal chars, not escape?
+            k = shell_escape::unix::escape(k.into()), // todo: drop illegal chars, not escape?
             v = xonsh_escape_sq(v)
         )
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
-        let v = xonsh_escape_sq(v);
-        formatdoc! {r#"
-            from os               import environ
-            from xonsh.built_ins  import XSH
-
-            envx = XSH.env
-            envx[   '{k}'].add('{v}', front=True)
-            environ['{k}'] = envx.get_detyped('{k}')
-        "#}
+        formatdoc!(
+            r#"
+            from xonsh.built_ins import XSH
+            XSH.env['{k}'].add('{v}', front=True)
+        "#,
+            k = shell_escape::unix::escape(k.into()),
+            v = xonsh_escape_sq(v)
+        )
     }
 
     fn unset_env(&self, k: &str) -> String {
         formatdoc!(
             r#"
-            from os               import environ
-            from xonsh.built_ins  import XSH
-
-            envx = XSH.env
-            envx.pop(   '{k}',None)
-            environ.pop('{k}',None)
+            from xonsh.built_ins import XSH
+            XSH.env.pop('{k}',None)
         "#,
             k = shell_escape::unix::escape(k.into()) // todo: drop illegal chars, not escape?
         )

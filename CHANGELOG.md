@@ -1,5 +1,37 @@
 # Changelog
 
+## [2025.7.4](https://github.com/jdx/mise/compare/v2025.7.3..v2025.7.4) - 2025-07-11
+
+### 🐛 Bug Fixes
+
+- **(aqua)** align version resolution logic in list_bin_paths by [@risu729](https://github.com/risu729) in [#5562](https://github.com/jdx/mise/pull/5562)
+- Xonsh integration by [@jfmontanaro](https://github.com/jfmontanaro) in [#5557](https://github.com/jdx/mise/pull/5557)
+
+### 📚 Documentation
+
+- create comprehensive architecture documentation suite and enhance development guides by [@jdx](https://github.com/jdx) in [d2b4a05](https://github.com/jdx/mise/commit/d2b4a050261b685279c502009f55a3e260b72ff9)
+
+### ◀️ Revert
+
+- Revert "fix(aqua): align version resolution logic in list_bin_paths" by [@jdx](https://github.com/jdx) in [#5574](https://github.com/jdx/mise/pull/5574)
+
+### 📦️ Dependency Updates
+
+- update rust crate bzip2 to 0.6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5568](https://github.com/jdx/mise/pull/5568)
+- update rust crate clap_mangen to v0.2.28 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5566](https://github.com/jdx/mise/pull/5566)
+- update rust crate clap to v4.5.41 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5565](https://github.com/jdx/mise/pull/5565)
+- update rust crate taplo to 0.14 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5158](https://github.com/jdx/mise/pull/5158)
+
+### Chore
+
+- added xonsh for release builds by [@jdx](https://github.com/jdx) in [#5561](https://github.com/jdx/mise/pull/5561)
+- enable backtrace lines on panic by [@jdx](https://github.com/jdx) in [#5571](https://github.com/jdx/mise/pull/5571)
+- shfmt update by [@jdx](https://github.com/jdx) in [67ee245](https://github.com/jdx/mise/commit/67ee24556f1533c508e422513399ae04ecf6bdaa)
+
+### New Contributors
+
+- @jfmontanaro made their first contribution in [#5557](https://github.com/jdx/mise/pull/5557)
+
 ## [2025.7.3](https://github.com/jdx/mise/compare/v2025.7.2..v2025.7.3) - 2025-07-10
 
 ### 🚀 Features
@@ -106,6 +138,11 @@
 
 - **(registry)** disable bitwarden test by [@risu729](https://github.com/risu729) in [#5468](https://github.com/jdx/mise/pull/5468)
 
+### ◀️ Revert
+
+- Revert "chore(deps): pin dependencies" by [@jdx](https://github.com/jdx) in [#5453](https://github.com/jdx/mise/pull/5453)
+- Revert "fix(aqua): handle hard links in aqua packages" by [@jdx](https://github.com/jdx) in [#5485](https://github.com/jdx/mise/pull/5485)
+
 ### 📦️ Dependency Updates
 
 - pin dependencies by [@renovate[bot]](https://github.com/renovate[bot]) in [#5443](https://github.com/jdx/mise/pull/5443)
@@ -149,6 +186,10 @@
 
 - **(registry)** use pipx for semgrep by [@scop](https://github.com/scop) in [#5423](https://github.com/jdx/mise/pull/5423)
 - **(registry)** add backends and tests by [@risu729](https://github.com/risu729) in [#5388](https://github.com/jdx/mise/pull/5388)
+
+### ◀️ Revert
+
+- Revert "fix: `self-update` on MITM firewall" by [@jdx](https://github.com/jdx) in [#5427](https://github.com/jdx/mise/pull/5427)
 
 ### Ci
 
@@ -660,6 +701,11 @@
 - disable aqua for now due to bad version output by [@jdx](https://github.com/jdx) in [fa3daa2](https://github.com/jdx/mise/commit/fa3daa2cab09ba7e0140fcf2112375eef8427a85)
 - fix python poetry test by [@jdx](https://github.com/jdx) in [c46a190](https://github.com/jdx/mise/commit/c46a190cb699b7700aa636a2bc888222ed7e9dbc)
 
+### ◀️ Revert
+
+- Revert "fix(dotenv): properly escape values in generated dotenv " by [@jdx](https://github.com/jdx) in [358c3da](https://github.com/jdx/mise/commit/358c3dab2dba7129ac115fc3414657dc39b2bd79)
+- Revert "fix(env): fix dotenv files cascading (fix #4688) " by [@jdx](https://github.com/jdx) in [b1ca323](https://github.com/jdx/mise/commit/b1ca3235ffc9635f17dac0896c3c07b975d65819)
+
 ### 📦️ Dependency Updates
 
 - update rust crate nix to 0.30 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5032](https://github.com/jdx/mise/pull/5032)
@@ -1041,6 +1087,10 @@
 - **(registry)** use ubi for velad by [@scop](https://github.com/scop) in [#4727](https://github.com/jdx/mise/pull/4727)
 
 ## [2025.3.10](https://github.com/jdx/mise/compare/v2025.3.9..v2025.3.10) - 2025-03-26
+
+### ◀️ Revert
+
+- Revert "chore: make awscli compatible with R2" by [@jdx](https://github.com/jdx) in [83e8c16](https://github.com/jdx/mise/commit/83e8c164ec78cab4325b4489d9cc5d1fa466ec3f)
 
 ## [2025.3.9](https://github.com/jdx/mise/compare/v2025.3.8..v2025.3.9) - 2025-03-26
 
@@ -1432,6 +1482,10 @@
 
 ## [2025.2.3](https://github.com/jdx/mise/compare/v2025.2.2..v2025.2.3) - 2025-02-09
 
+### ◀️ Revert
+
+- Revert "feat: add support for idiomatic go.mod file " by [@jdx](https://github.com/jdx) in [7fc9beb](https://github.com/jdx/mise/commit/7fc9bebd02abfee4b622a211b86c516df9bd4f6d)
+
 ## [2025.2.2](https://github.com/jdx/mise/compare/v2025.2.1..v2025.2.2) - 2025-02-08
 
 ### 🚀 Features
@@ -1822,6 +1876,10 @@
 - disable some non-working plugins by [@jdx](https://github.com/jdx) in [106ee40](https://github.com/jdx/mise/commit/106ee40b463923bb5c6444e0c0127dabc502d9ee)
 - remove test for flarectl by [@jdx](https://github.com/jdx) in [a63b449](https://github.com/jdx/mise/commit/a63b44910d55ad2cdc801a472f0c196c605cce25)
 
+### ◀️ Revert
+
+- Revert "docs: set prose-wrap with prettier " by [@jdx](https://github.com/jdx) in [065dd8f](https://github.com/jdx/mise/commit/065dd8fa917b6097fb168b631b506455af3e1d28)
+
 ### Chore
 
 - added `cargo check` to pre-commit by [@jdx](https://github.com/jdx) in [73eb25a](https://github.com/jdx/mise/commit/73eb25a88bbfe1b979bb5483ca3c81a689be184f)
@@ -2095,6 +2153,10 @@
 ### 🧪 Testing
 
 - added stubbed test for https://github.com/jdx/mise/discussions/3783 by [@jdx](https://github.com/jdx) in [f79a3a4](https://github.com/jdx/mise/commit/f79a3a41ebf833d2c49bdc91ae4026c46498d9f7)
+
+### ◀️ Revert
+
+- Revert "fix: Use arguments for to pass staged filenames to pre-commit task (#…" by [@jdx](https://github.com/jdx) in [#3791](https://github.com/jdx/mise/pull/3791)
 
 ### Chore
 
@@ -2744,6 +2806,10 @@
 
 - use aqua for snyk by [@scop](https://github.com/scop) in [#3290](https://github.com/jdx/mise/pull/3290)
 
+### ◀️ Revert
+
+- Revert "fix: always prefer glibc to musl in mise run " by [@jdx](https://github.com/jdx) in [#3298](https://github.com/jdx/mise/pull/3298)
+
 ### Chore
 
 - bump expr-lang by [@jdx](https://github.com/jdx) in [#3297](https://github.com/jdx/mise/pull/3297)
@@ -2984,7 +3050,7 @@
 - gitignore aqua-registry by [@jdx](https://github.com/jdx) in [1c38bca](https://github.com/jdx/mise/commit/1c38bca434cfc17792eb3053be2f4271a9e92fdd)
 - gitignore aqua-registry by [@jdx](https://github.com/jdx) in [644cb6d](https://github.com/jdx/mise/commit/644cb6dfa762d6360b5aaa7fce0502fe61ac1067)
 
-## [2024.11.28] - 2024-11-24
+## [2024.11.28](https://github.com/jdx/mise/compare/v2023.12.0..v2024.11.28) - 2024-11-24
 
 ### 🚀 Features
 
@@ -3006,5 +3072,52 @@
 ### Chore
 
 - clean up CHANGELOG by [@jdx](https://github.com/jdx) in [8ec0ca2](https://github.com/jdx/mise/commit/8ec0ca20fce57d07d769209fd9043a129daa86f1)
+
+## [2023.12.0] - 2023-12-01
+
+### New Contributors
+
+- @jdx made their first contribution
+- @dependabot[bot] made their first contribution
+- @benweint made their first contribution
+- @CharString made their first contribution
+- @Nezteb made their first contribution
+- @duckpuppy made their first contribution
+- @jguddas made their first contribution
+- @Jaxwood made their first contribution
+- @booniepepper made their first contribution
+- @fiadliel made their first contribution
+- @roele made their first contribution
+- @scottdotau made their first contribution
+- @xanderificnl made their first contribution
+- @dfang made their first contribution
+- @tsukimizake made their first contribution
+- @scop made their first contribution
+- @Sacro made their first contribution
+- @ProducerMatt made their first contribution
+- @splinter98 made their first contribution
+- @AlecRust made their first contribution
+- @pedorich-n made their first contribution
+- @knu made their first contribution
+- @smbl64 made their first contribution
+- @tombh made their first contribution
+- @luccahuguet made their first contribution
+- @andrewthauer made their first contribution
+- @KokaKiwi made their first contribution
+- @toadslop made their first contribution
+- @jonathanmorley made their first contribution
+- @chadac made their first contribution
+- @tomocrafter made their first contribution
+- @issmo made their first contribution
+- @jaybosamiya made their first contribution
+- @nrjais made their first contribution
+- @Alex23rodriguez made their first contribution
+- @gerbal made their first contribution
+- @chhe made their first contribution
+- @kianmeng made their first contribution
+- @cserino made their first contribution
+- @amoosbr made their first contribution
+- @eugenesvk made their first contribution
+- @delicb made their first contribution
 
 <!-- generated by git-cliff -->

@@ -10,7 +10,7 @@ exit 1
 EOF
 chmod +x "$HOME"/bin/fail
 for TOOL in python python3 pipx; do
-  ln -s fail "$HOME/bin/$TOOL"
+	ln -s fail "$HOME/bin/$TOOL"
 done
 export PATH="$HOME/bin:$PATH"
 

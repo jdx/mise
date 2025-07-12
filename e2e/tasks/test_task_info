@@ -20,7 +20,7 @@ assert_json_partial_object "mise task info build --json" "name,source,descriptio
 
 mise tasks add lint --depends "build -v" -- 'echo "linting!"'
 assert_json "mise task info lint --json" "$(
-  cat <<EOF
+	cat <<EOF
 {
   "name": "lint",
   "aliases": [],

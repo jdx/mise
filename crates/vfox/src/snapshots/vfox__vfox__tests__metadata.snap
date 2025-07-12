@@ -1,0 +1,6 @@
+---
+source: src/vfox.rs
+expression: out
+snapshot_kind: text
+---
+Metadata { name: "nodejs", legacy_filenames: [".node-version", ".nvmrc"], version: "0.3.0", description: Some("Node.js runtime environment."), author: None, license: Some("Apache 2.0"), homepage: Some("https://github.com/version-fox/vfox-nodejs"), hooks: {"available", "env_keys", "parse_legacy_file", "pre_install", "pre_use"} }

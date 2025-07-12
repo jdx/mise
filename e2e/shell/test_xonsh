@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec mise x 'pipx:xonsh[full]' -- xonsh --no-rc "$TEST_DIR/xonsh_script"
