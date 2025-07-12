@@ -1,0 +1,17 @@
+---
+source: src/hooks/pre_install.rs
+expression: pre_install
+---
+PreInstall {
+    version: "20.3.0",
+    url: Some(
+        "https://nodejs.org/dist/v20.3.0/node-v20.3.0-win-x64.zip",
+    ),
+    note: None,
+    sha256: Some(
+        "43be53f9f4d6fa19e27efdb724e10cbdf3c7abfaebe0d852af62fc80c6f465a2",
+    ),
+    md5: None,
+    sha1: None,
+    sha512: None,
+}
