@@ -677,7 +677,7 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
         Ok(())
     }
 
-    fn children(&self) -> Cow<[Self::Child]> {
+    fn children(&self) -> Cow<'_, [Self::Child]> {
         let v: Vec<_> = self.0.neighbors(self.1).map(|i| (self.0, i)).collect();
         Cow::from(v)
     }

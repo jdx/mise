@@ -10,7 +10,7 @@ use crate::shell::{ActivateOptions, Shell};
 #[derive(Default)]
 pub struct Xonsh {}
 
-fn xonsh_escape_sq(input: &str) -> Cow<str> {
+fn xonsh_escape_sq(input: &str) -> Cow<'_, str> {
     for (i, ch) in input.char_indices() {
         if xonsh_escape_char(ch).is_some() {
             let mut escaped_string = String::with_capacity(input.len());

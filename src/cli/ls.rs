@@ -203,7 +203,7 @@ impl Ls {
         table.truncate(true).print()
     }
 
-    async fn get_prunable_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow>> {
+    async fn get_prunable_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
         let installed_tool = self.installed_tool.clone().unwrap_or_default();
         Ok(
             prune::prunable_tools(config, installed_tool.iter().collect())
@@ -213,7 +213,7 @@ impl Ls {
                 .collect(),
         )
     }
-    async fn get_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow>> {
+    async fn get_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
         let mut trs = config.get_tool_request_set().await?.clone();
         if self.global {
             trs = trs
@@ -238,7 +238,7 @@ impl Ls {
         let mut ts = Toolset::from(trs);
         ts.resolve(config).await?;
 
-        let rvs: Vec<RuntimeRow> = ts
+        let rvs: Vec<RuntimeRow<'_>> = ts
             .list_all_versions(config)
             .await?
             .into_iter()
