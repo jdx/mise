@@ -1,15 +1,3 @@
----
-description: Conventional commit formatting rules for mise project
-globs: 
-alwaysApply: true
----
-
----
-description: Conventional commit formatting rules for mise project
-globs: 
-alwaysApply: true
----
-
 ## Conventional Commits (REQUIRED)
 
 All commit messages and PR titles MUST follow conventional commit format:
