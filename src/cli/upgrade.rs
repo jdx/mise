@@ -2,18 +2,16 @@ use std::sync::Arc;
 
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::ToolArg;
-use crate::config::{Config, config_file, Settings};
+use crate::config::{Config, config_file};
 use crate::file::display_path;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{config, ui};
+use crate::{config, ui, parallel};
 use console::Term;
 use demand::DemandOption;
 use eyre::{Context, Result, eyre};
-use tokio::sync::Semaphore;
-use tokio::task::JoinSet;
 
 /// Upgrades outdated tools
 ///
@@ -163,47 +161,40 @@ impl Upgrade {
             ..Default::default()
         };
 
-        // Install tools in parallel, handling partial failures
+        // Install tools in parallel using the existing parallel infrastructure
+        let upgrade_tasks: Vec<_> = outdated
+            .iter()
+            .map(|outdated_info| {
+                (config.clone(), ts.clone(), outdated_info.clone(), opts.clone())
+            })
+            .collect();
+
+        let results = parallel::parallel(upgrade_tasks, |(mut config, mut ts, outdated_info, opts)| async move {
+            let result = ts
+                .install_all_versions(&mut config, vec![outdated_info.tool_request.clone()], &opts)
+                .await;
+            (outdated_info.name.clone(), result)
+        }).await;
+
         let mut successful_versions = Vec::new();
         let mut had_errors = false;
-        
-        let jobs = match opts.raw {
-            true => 1,
-            false => opts.jobs.unwrap_or(Settings::get().jobs),
-        };
-        let semaphore = Arc::new(Semaphore::new(jobs));
-        let mut jset = JoinSet::new();
-        
-        for outdated_info in &outdated {
-            let tool_request = outdated_info.tool_request.clone();
-            let tool_name = outdated_info.name.clone();
-            let mut config_clone = config.clone();
-            let opts = opts.clone();
-            let mut ts_clone = ts.clone();
-            let permit = semaphore.clone().acquire_owned().await?;
-            
-            jset.spawn(async move {
-                let _permit = permit;
-                let result = ts_clone
-                    .install_all_versions(&mut config_clone, vec![tool_request], &opts)
-                    .await;
-                (tool_name, result)
-            });
-        }
-        
-        while let Some(result) = jset.join_next().await {
-            match result {
-                Ok((tool_name, Ok(versions))) => {
-                    successful_versions.extend(versions);
+
+        match results {
+            Ok(install_results) => {
+                for (tool_name, result) in install_results {
+                    match result {
+                        Ok(versions) => {
+                            successful_versions.extend(versions);
+                        }
+                        Err(e) => {
+                            had_errors = true;
+                            warn!("Failed to upgrade {}: {}", tool_name, e);
+                        }
+                    }
                 }
-                Ok((tool_name, Err(e))) => {
-                    had_errors = true;
-                    warn!("Failed to upgrade {}: {}", tool_name, e);
-                }
-                Err(e) => {
-                    had_errors = true;
-                    warn!("Task failed: {}", e);
-                }
+            }
+            Err(e) => {
+                return Err(eyre!("Failed to run parallel upgrades: {}", e));
             }
         }
 
