@@ -10,11 +10,11 @@ plugin_dir="$temp_plugins_dir/$plugin_name"
 
 # Ensure cleanup happens
 cleanup() {
-    rm -rf "$temp_plugins_dir"
-    # Clean up any test installations
-    rm -rf "$MISE_DATA_DIR/installs/vfox-test-npm" 2>/dev/null || true
-    # Clean up plugin link
-    mise plugins unlink vfox-test-npm 2>/dev/null || true
+  rm -rf "$temp_plugins_dir"
+  # Clean up any test installations
+  rm -rf "$MISE_DATA_DIR/installs/vfox-test-npm" 2>/dev/null || true
+  # Clean up plugin link
+  mise plugins unlink vfox-test-npm 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -22,7 +22,7 @@ trap cleanup EXIT
 mkdir -p "$plugin_dir/hooks"
 
 # Create metadata.lua with backend support that can handle multiple tools
-cat > "$plugin_dir/metadata.lua" << 'EOF'
+cat >"$plugin_dir/metadata.lua" <<'EOF'
 PLUGIN = {
     name = "vfox-test-npm",
     version = "1.0.0", 
@@ -86,17 +86,17 @@ PLUGIN = {
 EOF
 
 # Create hook stub files (required by vfox plugin system)
-cat > "$plugin_dir/hooks/available.lua" << 'EOF'
+cat >"$plugin_dir/hooks/available.lua" <<'EOF'
 -- This file is required by vfox but the actual Available function is in metadata.lua
 -- This is just a stub to satisfy the require statement
 EOF
 
-cat > "$plugin_dir/hooks/pre_install.lua" << 'EOF'
+cat >"$plugin_dir/hooks/pre_install.lua" <<'EOF'
 -- This file is required by vfox but the actual PreInstall function is in metadata.lua
 -- This is just a stub to satisfy the require statement
 EOF
 
-cat > "$plugin_dir/hooks/env_keys.lua" << 'EOF'
+cat >"$plugin_dir/hooks/env_keys.lua" <<'EOF'
 -- This file is required by vfox but the actual EnvKeys function is in metadata.lua
 -- This is just a stub to satisfy the require statement
 EOF
@@ -115,72 +115,72 @@ mise plugins link vfox-test-npm "$plugin_dir"
 # Verify the plugin was linked
 echo "=== Checking plugin link ==="
 if mise plugins ls | grep vfox-test-npm; then
-    echo "✓ Plugin linked successfully"
+  echo "✓ Plugin linked successfully"
 else
-    echo "✗ Plugin link failed"
-    exit 1
+  echo "✗ Plugin link failed"
+  exit 1
 fi
 
 # Test plugin:tool format version listing
 echo "=== Testing plugin:tool format - Version Listing ==="
 echo "Running: mise ls-remote vfox-test-npm:prettier"
 if mise ls-remote vfox-test-npm:prettier | grep -q "1.0.0"; then
-    echo "✓ Plugin:tool format version listing works for prettier"
+  echo "✓ Plugin:tool format version listing works for prettier"
 else
-    echo "✗ Plugin:tool format version listing failed for prettier"
-    exit 1
+  echo "✗ Plugin:tool format version listing failed for prettier"
+  exit 1
 fi
 
 echo "Running: mise ls-remote vfox-test-npm:eslint"
 if mise ls-remote vfox-test-npm:eslint | grep -q "1.0.0"; then
-    echo "✓ Plugin:tool format version listing works for eslint"
+  echo "✓ Plugin:tool format version listing works for eslint"
 else
-    echo "✗ Plugin:tool format version listing failed for eslint"
-    exit 1
+  echo "✗ Plugin:tool format version listing failed for eslint"
+  exit 1
 fi
 
 # Test installation with plugin:tool format
 echo "=== Testing plugin:tool format - Installation ==="
 echo "Running: mise install vfox-test-npm:prettier@1.0.0"
 if mise install vfox-test-npm:prettier@1.0.0; then
-    echo "✓ Plugin:tool format installation works for prettier"
+  echo "✓ Plugin:tool format installation works for prettier"
 else
-    echo "✗ Plugin:tool format installation failed for prettier"
-    exit 1
+  echo "✗ Plugin:tool format installation failed for prettier"
+  exit 1
 fi
 
 echo "Running: mise install vfox-test-npm:eslint@1.0.0"
 if mise install vfox-test-npm:eslint@1.0.0; then
-    echo "✓ Plugin:tool format installation works for eslint"
+  echo "✓ Plugin:tool format installation works for eslint"
 else
-    echo "✗ Plugin:tool format installation failed for eslint"
-    exit 1
+  echo "✗ Plugin:tool format installation failed for eslint"
+  exit 1
 fi
 
 # Test usage with plugin:tool format
 echo "=== Testing plugin:tool format - Usage ==="
 echo "Running: mise use vfox-test-npm:prettier@1.0.0"
 if mise use vfox-test-npm:prettier@1.0.0; then
-    echo "✓ Plugin:tool format usage works for prettier"
+  echo "✓ Plugin:tool format usage works for prettier"
 else
-    echo "✗ Plugin:tool format usage failed for prettier"
-    exit 1
+  echo "✗ Plugin:tool format usage failed for prettier"
+  exit 1
 fi
 
 # Verify tools are listed correctly
 echo "=== Verifying tool listing ==="
 if mise ls | grep -q "vfox-test-npm:prettier.*1.0.0"; then
-    echo "✓ Prettier tool listed correctly with plugin:tool format"
+  echo "✓ Prettier tool listed correctly with plugin:tool format"
 else
-    echo "✗ Prettier tool not listed correctly"
-    exit 1
+  echo "✗ Prettier tool not listed correctly"
+  exit 1
 fi
 
 if mise ls | grep -q "vfox-test-npm:eslint.*1.0.0"; then
-    echo "✓ Eslint tool listed correctly with plugin:tool format"
+  echo "✓ Eslint tool listed correctly with plugin:tool format"
 else
-    echo "✗ Eslint tool not listed correctly"
-    exit 1
+  echo "✗ Eslint tool not listed correctly"
+  exit 1
 fi
 
 echo ""
@@ -199,4 +199,4 @@ echo "  mise install vfox-test-npm:eslint@1.0.0    # ✓ Works"
 echo "  mise use vfox-test-npm:prettier@1.0.0       # ✓ Works"
 echo ""
 echo "✓ All vfox backend npm plugin tests passed!"
-echo "✓ Plugin discovery issue has been resolved!" 
+echo "✓ Plugin discovery issue has been resolved!"

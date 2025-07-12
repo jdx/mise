@@ -107,7 +107,7 @@ impl BackendArg {
         if let Ok(Some(backend_type)) = install_state::backend_type(&self.short) {
             return backend_type;
         }
-        
+
         // Check if this is a vfox plugin:tool format
         if let Some((plugin_name, _tool_name)) = self.short.split_once(':') {
             if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
@@ -117,7 +117,7 @@ impl BackendArg {
                 };
             }
         }
-        
+
         let full = self.full();
         let backend = full.split(':').next().unwrap();
         if let Ok(backend_type) = backend.parse() {
