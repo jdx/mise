@@ -1,4 +1,4 @@
-name: Test vfox.rs
+name: test-vfox
 
 on:
   push:
