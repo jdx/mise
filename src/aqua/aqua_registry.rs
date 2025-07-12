@@ -460,7 +460,7 @@ impl AquaPackage {
         expr.run(program, &self.expr_ctx(v)).map_err(|e| eyre!(e))
     }
 
-    fn expr_parser(&self, v: &str) -> expr::Environment {
+    fn expr_parser(&self, v: &str) -> expr::Environment<'_> {
         let prefix = Regex::new(r"^[^0-9.]+").unwrap();
         let ver = versions::Versioning::new(prefix.replace(v, ""));
         let mut env = expr::Environment::new();
