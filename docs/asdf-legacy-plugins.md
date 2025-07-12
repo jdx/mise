@@ -4,31 +4,33 @@ mise maintains compatibility with the asdf plugin ecosystem through its asdf bac
 
 ## What are asdf (Legacy) Plugins?
 
-asdf (legacy) plugins are shell script-based plugins that follow the asdf plugin specification. They were the original way to extend tool management in the asdf ecosystem and are now supported by mise for backward compatibility.
+asdf plugins are shell script-based plugins that follow the asdf plugin specification. They were the original way to extend tool management in the asdf ecosystem and are now supported by mise for backward compatibility.
 
 ## Limitations
 
-asdf (legacy) plugins have several limitations compared to mise's modern plugin system:
+asdf plugins have several limitations compared to mise's modern plugin system:
 
 - **Platform Support**: Only work on Linux and macOS (no Windows support)
 - **Performance**: Shell script execution is slower than mise's native backends
-- **Features**: Limited compared to modern backends like aqua, ubi, or mise plugins
+- **Features**: Limited compared to modern backends like aqua, ubi, or tool/backend plugins
 - **Maintenance**: Harder to maintain and debug
 - **Security**: Less secure than sandboxed modern backends
 
 ## When to Use asdf (Legacy) Plugins
 
-Only use asdf (legacy) plugins when:
+Only use asdf plugins when:
 
 - The tool is not available through modern backends (aqua, ubi, etc.)
 - You need compatibility with existing asdf workflows
 - The tool requires complex shell-based installation logic that can't be handled by modern backends
 
 **For new tools, consider these alternatives first:**
+
 1. [aqua backend](dev-tools/backends/aqua.md) - Preferred for GitHub releases
 2. [ubi backend](dev-tools/backends/ubi.md) - Simple GitHub/GitLab releases
 3. [Language package managers](dev-tools/backends/) - npm, pipx, cargo, gem, etc.
-4. [mise plugins](plugin-development.md) - Custom cross-platform plugins
+4. [backend plugins](backend-plugin-development.md) - Enhanced plugins with backend methods
+5. [tool plugins](tool-plugin-development.md) - Hook-based cross-platform plugins
 
 ## Installing asdf (Legacy) Plugins
 
@@ -69,7 +71,7 @@ mise use postgres@15.0.0
 
 ## Plugin Structure
 
-asdf (legacy) plugins follow this directory structure:
+asdf plugins follow this directory structure:
 
 ```
 plugin-name/
@@ -198,7 +200,7 @@ cat "$1" | head -n 1
 
 ## Environment Variables
 
-asdf (legacy) plugins have access to these environment variables:
+asdf plugins have access to these environment variables:
 
 - `ASDF_INSTALL_TYPE` - `version` or `ref`
 - `ASDF_INSTALL_VERSION` - Version number or git ref
@@ -318,11 +320,11 @@ chmod +x "$ASDF_INSTALL_PATH/bin/tool"
 
 ## Migration Path
 
-Consider migrating from asdf (legacy) plugins to modern alternatives:
+Consider migrating from asdf plugins to modern alternatives:
 
 1. **Check if tool is available in [aqua registry](https://aquaproj.github.io/aqua-registry/)**
 2. **Use [ubi backend](dev-tools/backends/ubi.md) for simple GitHub releases**
-3. **Create a [mise plugin](plugin-development.md) for complex tools**
+3. **Create a [mise plugin](tool-plugin-development.md) for complex tools**
 4. **Use language-specific package managers** (npm, pipx, cargo, gem)
 
 ## Community Resources
@@ -333,7 +335,7 @@ Consider migrating from asdf (legacy) plugins to modern alternatives:
 
 ## Security Considerations
 
-asdf (legacy) plugins execute arbitrary shell scripts, which poses security risks:
+asdf plugins execute arbitrary shell scripts, which poses security risks:
 
 - **Only install plugins from trusted sources**
 - **Review plugin code before installation**
@@ -343,5 +345,6 @@ asdf (legacy) plugins execute arbitrary shell scripts, which poses security risk
 ## Next Steps
 
 - [Explore modern backends](dev-tools/backends/) for better alternatives
-- [Learn about mise plugins](plugin-development.md) for cross-platform support
-- [Check the registry](registry.md) for available tools 
+- [Learn about backend plugins](backend-plugin-development.md) for enhanced functionality
+- [Learn about tool plugins](tool-plugin-development.md) for cross-platform support
+- [Check the registry](registry.md) for available tools

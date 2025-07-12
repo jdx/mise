@@ -84,5 +84,6 @@ mise use my-plugin:some-tool@latest
 ```
 
 For more information, see:
-- [Using Plugins](../plugin-usage.md) - End-user guide
-- [Plugin Development](../plugin-development.md) - Developer guide
+
+- [Using Plugins](../../plugin-usage.md) - End-user guide
+- [Plugin Development](../../tool-plugin-development.md) - Developer guide
