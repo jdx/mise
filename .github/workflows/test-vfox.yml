@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  vfox_test:
+  "test-vfox":
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
