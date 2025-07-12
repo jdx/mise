@@ -11,7 +11,7 @@ pub struct BackendExecEnvContext {
     pub install_path: PathBuf,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BackendExecEnvResponse {
     pub env_vars: Vec<EnvKey>,
 }

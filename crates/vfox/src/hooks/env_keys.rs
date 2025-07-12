@@ -7,7 +7,7 @@ use crate::error::Result;
 use crate::sdk_info::SdkInfo;
 use crate::Plugin;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct EnvKey {
     pub key: String,
     pub value: String,
