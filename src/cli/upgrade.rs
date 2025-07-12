@@ -161,28 +161,23 @@ impl Upgrade {
             ..Default::default()
         };
 
-        let mut successful_versions = Vec::new();
-        let mut had_errors = false;
+        // Collect all tool requests to install them in parallel
+        let all_tool_requests: Vec<_> = outdated
+            .iter()
+            .map(|outdated_info| outdated_info.tool_request.clone())
+            .collect();
 
-        for outdated_info in &outdated {
-            let tool_request = outdated_info.tool_request.clone();
-            let tool_name = outdated_info.name.clone();
-
-            match ts
-                .install_all_versions(config, vec![tool_request], &opts)
-                .await
-            {
-                Ok(versions) => {
-                    for version in versions {
-                        successful_versions.push(version);
-                    }
-                }
-                Err(e) => {
-                    had_errors = true;
-                    warn!("Failed to upgrade {}: {}", tool_name, e);
-                }
+        let successful_versions = match ts
+            .install_all_versions(config, all_tool_requests, &opts)
+            .await
+        {
+            Ok(versions) => versions,
+            Err(e) => {
+                return Err(eyre!("Failed to upgrade tools: {}", e));
             }
-        }
+        };
+
+        let had_errors = false;
 
         // Only update config files for tools that were successfully installed
         for (o, cf) in config_file_updates {
