@@ -16,7 +16,6 @@ pub mod backend_hooks {
     pub use crate::hooks::backend_exec_env::{BackendExecEnvContext, BackendExecEnvResponse};
     pub use crate::hooks::backend_install::{BackendInstallContext, BackendInstallResponse};
     pub use crate::hooks::backend_list_versions::{BackendListVersionsContext, BackendListVersionsResponse};
-    pub use crate::hooks::backend_uninstall::{BackendUninstallContext, BackendUninstallResponse};
 }
 
 mod config;

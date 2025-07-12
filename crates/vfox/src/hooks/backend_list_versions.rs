@@ -1,15 +1,12 @@
 use mlua::{FromLua, IntoLua, Lua, Value, prelude::LuaError};
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct BackendListVersionsContext {
     pub args: Vec<String>,
     pub tool: String,
-    pub options: BTreeMap<String, serde_json::Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct BackendListVersionsResponse {
     pub versions: Vec<String>,
 }
@@ -19,45 +16,7 @@ impl IntoLua for BackendListVersionsContext {
         let table = lua.create_table()?;
         table.set("args", self.args)?;
         table.set("tool", self.tool)?;
-        // Convert serde_json::Value to mlua::Value
-        let options_table = lua.create_table()?;
-        for (key, value) in self.options {
-            let lua_value = serde_json_to_lua_value(lua, value)?;
-            options_table.set(key, lua_value)?;
-        }
-        table.set("options", options_table)?;
         Ok(Value::Table(table))
-    }
-}
-
-fn serde_json_to_lua_value(lua: &mlua::Lua, value: serde_json::Value) -> mlua::Result<Value> {
-    match value {
-        serde_json::Value::Null => Ok(Value::Nil),
-        serde_json::Value::Bool(b) => Ok(Value::Boolean(b)),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(Value::Integer(i))
-            } else if let Some(f) = n.as_f64() {
-                Ok(Value::Number(f))
-            } else {
-                Ok(Value::Nil)
-            }
-        }
-        serde_json::Value::String(s) => Ok(Value::String(lua.create_string(s)?)),
-        serde_json::Value::Array(arr) => {
-            let table = lua.create_table()?;
-            for (i, item) in arr.into_iter().enumerate() {
-                table.set(i + 1, serde_json_to_lua_value(lua, item)?)?;
-            }
-            Ok(Value::Table(table))
-        }
-        serde_json::Value::Object(obj) => {
-            let table = lua.create_table()?;
-            for (key, value) in obj {
-                table.set(key, serde_json_to_lua_value(lua, value)?)?;
-            }
-            Ok(Value::Table(table))
-        }
     }
 }
 

@@ -109,10 +109,13 @@ impl Plugin {
         ctx: crate::hooks::backend_list_versions::BackendListVersionsContext,
     ) -> Result<crate::hooks::backend_list_versions::BackendListVersionsResponse> {
         debug!("[vfox:{}] backend_list_versions", &self.name);
+        self.load()?;
+        // Set the context as a global variable with a unique name
+        self.set_global("BACKEND_CTX", ctx)?;
         let response = self
             .eval_async(chunk! {
-                if PLUGIN.backend_list_versions then
-                    return PLUGIN:backend_list_versions($ctx)
+                if PLUGIN.BackendListVersions then
+                    return PLUGIN:BackendListVersions(BACKEND_CTX)
                 else
                     return {versions = {}}
                 end
@@ -126,10 +129,12 @@ impl Plugin {
         ctx: crate::hooks::backend_install::BackendInstallContext,
     ) -> Result<crate::hooks::backend_install::BackendInstallResponse> {
         debug!("[vfox:{}] backend_install", &self.name);
+        self.load()?;
+        self.set_global("BACKEND_CTX", ctx)?;
         let response = self
             .eval_async(chunk! {
-                if PLUGIN.backend_install then
-                    return PLUGIN:backend_install($ctx)
+                if PLUGIN.BackendInstall then
+                    return PLUGIN:BackendInstall(BACKEND_CTX)
                 else
                     return {success = false, message = "Backend install not implemented"}
                 end
@@ -143,29 +148,14 @@ impl Plugin {
         ctx: crate::hooks::backend_exec_env::BackendExecEnvContext,
     ) -> Result<crate::hooks::backend_exec_env::BackendExecEnvResponse> {
         debug!("[vfox:{}] backend_exec_env", &self.name);
+        self.load()?;
+        self.set_global("BACKEND_CTX", ctx)?;
         let response = self
             .eval_async(chunk! {
-                if PLUGIN.backend_exec_env then
-                    return PLUGIN:backend_exec_env($ctx)
+                if PLUGIN.BackendExecEnv then
+                    return PLUGIN:BackendExecEnv(BACKEND_CTX)
                 else
                     return {env_vars = {}}
-                end
-            })
-            .await?;
-        Ok(response)
-    }
-
-    pub async fn backend_uninstall(
-        &self,
-        ctx: crate::hooks::backend_uninstall::BackendUninstallContext,
-    ) -> Result<crate::hooks::backend_uninstall::BackendUninstallResponse> {
-        debug!("[vfox:{}] backend_uninstall", &self.name);
-        let response = self
-            .eval_async(chunk! {
-                if PLUGIN.backend_uninstall then
-                    return PLUGIN:backend_uninstall($ctx)
-                else
-                    return {success = false, message = "Backend uninstall not implemented"}
                 end
             })
             .await?;
@@ -185,6 +175,7 @@ impl Plugin {
             )?;
 
             lua_mod::archiver(&self.lua)?;
+            lua_mod::cmd(&self.lua)?;
             lua_mod::file(&self.lua)?;
             lua_mod::html(&self.lua)?;
             lua_mod::http(&self.lua)?;

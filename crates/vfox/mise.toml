@@ -1,0 +1,30 @@
+[tools]
+"cargo-binstall" = "latest"
+"cargo:cargo-edit" = "latest"
+"cargo:git-cliff" = "latest"
+"npm:prettier" = "latest"
+
+[tasks.build]
+run = "cargo build"
+[tasks.test]
+alias = "t"
+depends = ['test:setup-plugins']
+run = "cargo test"
+[tasks."test:setup-plugins"]
+run = [
+  "mkdir -p plugins",
+  "test -d plugins/nodejs || git clone https://github.com/version-fox/vfox-nodejs plugins/nodejs",
+  "test -d plugins/cmake || git clone https://github.com/version-fox/vfox-cmake plugins/cmake",
+]
+[tasks.lint-fix]
+run = "cargo fmt --all && cargo clippy --fix --all --all-features --allow-dirty --allow-staged -- -D warnings"
+[tasks.lint]
+depends = ['lint:prettier', 'lint:clippy', 'lint:fmt']
+[tasks."lint:prettier"]
+run = "prettier -c ."
+[tasks."lint:clippy"]
+run = 'cargo clippy --all-features -- -D warnings'
+[tasks."lint:fmt"]
+run = 'cargo fmt --all -- --check'
+[tasks.pre-commit]
+depends = ['lint:*']
