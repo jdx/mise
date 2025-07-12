@@ -170,10 +170,13 @@ impl Upgrade {
             .collect();
 
         let results = parallel::parallel(upgrade_tasks, |(mut config, mut ts, outdated_info, opts)| async move {
-            let result = ts
+            match ts
                 .install_all_versions(&mut config, vec![outdated_info.tool_request.clone()], &opts)
-                .await;
-            (outdated_info.name.clone(), result)
+                .await
+            {
+                Ok(versions) => Ok((outdated_info.name.clone(), Ok(versions))),
+                Err(e) => Ok((outdated_info.name.clone(), Err(e))),
+            }
         }).await;
 
         let mut successful_versions = Vec::new();
@@ -202,7 +205,7 @@ impl Upgrade {
         for (o, cf) in config_file_updates {
             if successful_versions
                 .iter()
-                .any(|v| v.ba() == o.tool_version.ba())
+                .any(|v: &ToolVersion| v.ba() == o.tool_version.ba())
             {
                 if let Err(e) =
                     cf.replace_versions(o.tool_request.ba(), vec![o.tool_request.clone()])
@@ -220,7 +223,7 @@ impl Upgrade {
         for (o, tv) in to_remove {
             if successful_versions
                 .iter()
-                .any(|v| v.ba() == o.tool_version.ba())
+                .any(|v: &ToolVersion| v.ba() == o.tool_version.ba())
             {
                 let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
                 if let Err(e) = self
@@ -236,7 +239,7 @@ impl Upgrade {
         let ts = config.get_toolset().await?;
         config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
 
-        if successful_versions.iter().any(|v| v.short() == "python") {
+        if successful_versions.iter().any(|v: &ToolVersion| v.short() == "python") {
             PIPXBackend::reinstall_all(config)
                 .await
                 .unwrap_or_else(|err| {
