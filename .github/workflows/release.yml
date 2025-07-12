@@ -288,6 +288,7 @@ jobs:
           files: releases/${{github.ref_name}}/*
           generate_release_notes: true
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+      - run: gh release edit --draft=false $(./scripts/get-version.sh)
   bump-alpine:
     runs-on: ubuntu-latest
     container: ghcr.io/jdx/mise:alpine
