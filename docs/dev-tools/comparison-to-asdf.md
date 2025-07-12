@@ -1,7 +1,7 @@
 # Comparison to asdf
 
 mise can be used as a drop-in replacement for asdf. It supports the same `.tool-versions` files that
-you may have used with asdf and can use asdf plugins through
+you may have used with asdf and can use asdf (legacy) plugins through
 the [asdf backend](/dev-tools/backends/asdf.html).
 
 It will not, however, reuse existing asdf directories
@@ -47,20 +47,20 @@ with asdf.
 
 ## Supply chain security
 
-asdf plugins are not secure. This is explained
+asdf (legacy) plugins are not secure. This is explained
 in [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md), but the quick explanation is
-that asdf plugins involve shell code which can essentially do anything on your machine. It's
-dangerous code. What's worse is asdf plugins are rarely written by the tool vendor (who you need to
+that asdf (legacy) plugins involve shell code which can essentially do anything on your machine. It's
+dangerous code. What's worse is asdf (legacy) plugins are rarely written by the tool vendor (who you need to
 trust anyway to use the tool), which means for every asdf plugin you use you'll be trusting a random
 developer to not go rogue and to not get hacked themselves and publish changes to a plugin with an
 exploit.
 
-mise still uses asdf plugins for some tools, but we're actively reducing that count as well as
+mise still uses asdf (legacy) plugins for some tools, but we're actively reducing that count as well as
 moving things into the [mise-plugins org](https://github.com/mise-plugins). It looks like asdf has a
 similar model with their asdf-community org, but it isn't. asdf gives plugin authors commit access
 to their plugin in [asdf-community](https://github.com/asdf-community) when they move it in, which I
 feel like defeats the purpose of having a dedicated org in the first place. By the end of 2025 I
-would like for there to no longer be any asdf plugins in the registry that aren't owned by me.
+would like for there to no longer be any asdf (legacy) plugins in the registry that aren't owned by me.
 
 I've also been adopting extra security verification steps when vendors offer that ability such as
 gpg verification on node installs, or slsa-verify/cosign checks on some aqua tools.
@@ -147,9 +147,9 @@ work on Windows.
 
 ## Security
 
-asdf plugins are insecure. They typically are written by individuals with no ties to the vendors
+asdf (legacy) plugins are insecure. They typically are written by individuals with no ties to the vendors
 that provide the underlying tool.
-Where possible, mise does not use asdf plugins and instead uses backends like aqua and ubi which do
+Where possible, mise does not use asdf (legacy) plugins and instead uses backends like aqua and ubi which do
 not require separate plugins.
 
 Aqua tools can be configured with cosign/slsa verification as well.

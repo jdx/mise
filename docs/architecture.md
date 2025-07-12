@@ -54,7 +54,7 @@ pub trait Backend: Debug + Send + Sync {
 - **Core Backends**: Native Rust implementations for maximum performance
 - **Language Package Managers**: npm, pipx, cargo, gem, go modules
 - **Universal Installers**: ubi (GitHub releases), aqua (comprehensive package management)
-- **Plugin Systems**: [asdf](plugins.md) (legacy compatibility), [vfox](plugins.md) (cross-platform)
+- **Plugin Systems**: [asdf](plugins.md) (legacy compatibility), [vfox](plugins.md) (cross-platform), [mise plugins](plugin-usage.md) (user-created)
 
 For guidance on implementing new backends, see the [Contributing Guide](contributing.md#adding-backends). For detailed backend system design, see [Backend Architecture](dev-tools/backend_architecture.md).
 
@@ -146,8 +146,8 @@ pub trait Plugin: Debug + Send {
 
 **Plugin Types:**
 
-- **asdf Plugins**: Compatible with the asdf plugin ecosystem
-- **vfox Plugins**: Cross-platform plugins using the vfox format
+- **asdf (Legacy) Plugins**: Compatible with the asdf plugin ecosystem (Linux/macOS only)
+- **Plugins**: Cross-platform plugins using the extended vfox format with enhanced backend methods
 
 For complete plugin documentation, see [Plugin Guide](plugins.md).
 

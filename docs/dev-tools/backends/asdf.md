@@ -2,9 +2,9 @@
 
 `asdf` is the original backend for mise.
 
-It relies on asdf plugins for each tool. asdf plugins are more risky to use because they're typically written by a single developer unrelated to the tool vendor. They also do not function on Windows.
+It relies on asdf (legacy) plugins for each tool. asdf (legacy) plugins are more risky to use because they're typically written by a single developer unrelated to the tool vendor. They also do not function on Windows.
 
-asdf plugins are not used for tools inside the [registry](https://github.com/jdx/mise/blob/main/registry.toml) whenever possible. Sometimes it is not possible to use more secure backends like aqua/ubi because tools have complex install setups or need to export env vars.
+asdf (legacy) plugins are not used for tools inside the [registry](https://github.com/jdx/mise/blob/main/registry.toml) whenever possible. Sometimes it is not possible to use more secure backends like aqua/ubi because tools have complex install setups or need to export env vars.
 
 All of these are hosted in the mise-plugins org to secure the supply chain so you do not need to rely on plugins maintained by anyone except me.
 
@@ -13,6 +13,6 @@ the registry away from asdf where possible to backends like aqua and ubi which d
 That said, not all tools can function with ubi/aqua if they have a unique installation process or
 need to set env vars other than `PATH`.
 
-## Writing asdf plugins for mise
+## Writing asdf (legacy) plugins for mise
 
 See the asdf documentation for more information on [writing plugins](https://asdf-vm.com/plugins/create.html).

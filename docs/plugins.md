@@ -7,7 +7,7 @@ Historically it was the only way to add new tools (as the only backend was [asdf
 The way that backend works is every tool has its own plugin which needs to be manually installed. However, now with [core tools](/core-tools.html)
 and backends like [aqua](/dev-tools/backends/aqua.html)/[ubi](/dev-tools/backends/ubi.html), plugins are no longer necessary to run most tools in mise.
 
-Tool plugins should be avoided for security reasons. New tools will not be accepted into mise built with asdf/vfox plugins unless they are very popular and
+Tool plugins should be avoided for security reasons. New tools will not be accepted into mise built with asdf (legacy)/plugins unless they are very popular and
 aqua/ubi is not an option for some reason.
 
 The only exception is if the tool needs to set env vars or has a complex installation process, as plugins can provide functionality like [setting env vars globally](/environments/#plugin-provided-env-directives) without relying on a tool being installed. They can also provide [aliases for versions](/dev-tools/aliases.html#aliased-versions).
@@ -26,18 +26,41 @@ mise plugins ls --urls
 # ...
 ```
 
-## asdf Plugins
+## asdf (Legacy) Plugins
 
-mise can use asdf's plugin ecosystem under the hood. These plugins contain shell scripts like
+mise can use asdf's plugin ecosystem under the hood for backward compatibility. These plugins contain shell scripts like
 `bin/install` (for installing) and `bin/list-all` (for listing all of the available versions).
 
-See <https://github.com/jdx/mise/blob/main/registry.toml> for the list of built-in plugins shorthands. See asdf's
-[Create a Plugin](https://asdf-vm.com/plugins/create.html) for how to create your own or just learn
-more about how they work.
+asdf (legacy) plugins have limitations compared to modern backends and should only be used when necessary. They only work on Linux/macOS and are slower than native backends.
 
-## vfox Plugins
+See [asdf (Legacy) Plugins](asdf-legacy-plugins.md) for comprehensive documentation on using and creating these plugins.
 
-Similarly, mise can also use [vfox plugins](/dev-tools/backends/vfox.html). These have the advantage of working on Windows so are preferred.
+## Plugins
+
+mise provides a modern cross-platform plugin system that extends the vfox plugin architecture. These plugins have several advantages over asdf (legacy) plugins:
+
+- **Cross-platform**: Work on Windows, macOS, and Linux
+- **Performance**: Faster execution than shell-based plugins
+- **Modern Features**: Support for the `plugin:tool` format and enhanced backend methods
+
+You can create and use plugins that aren't available in the standard registry. This enables:
+
+- Installing tools from private repositories
+- Using experimental or niche tools
+- Creating custom tool installations for your team
+
+Plugins use the `plugin:tool` format, allowing a single plugin to manage multiple tools. For example:
+
+```bash
+# Install a plugin
+mise plugin install my-plugin https://github.com/username/my-plugin
+
+# Use the plugin:tool format
+mise install my-plugin:some-tool@1.0.0
+mise use my-plugin:some-tool@latest
+```
+
+See [Using Plugins](plugin-usage.md) for end-user documentation or [Plugin Development](plugin-development.md) for creating your own plugins.
 
 ## Plugin Authors
 

@@ -74,8 +74,9 @@ Registry-based package manager with strong security features:
 
 Support for external plugin ecosystems:
 
-- **asdf** - Vast ecosystem of community plugins (`asdf:postgres`, `asdf:redis`) - Linux/macOS only
+- **asdf (legacy)** - Legacy plugin ecosystem (`asdf:postgres`, `asdf:redis`) - Linux/macOS only
 - **vfox** - Cross-platform plugin system (`vfox:nodejs`, `vfox:python`) - includes Windows support
+- **Plugins** - User-created plugins using the `plugin:tool` format (`my-plugin:some-tool`) - enables private/custom tools
 
 ## How Backend Selection Works
 
