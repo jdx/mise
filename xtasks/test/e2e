@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE depends=["build"]
-#MISE alias="e"
+#MISE alias=["e", "e2e"]
 #MISE description="run end-to-end tests"
 set -euo pipefail
 
@@ -9,14 +9,27 @@ export RUST_TEST_THREADS=1
 if [[ ${1:-all} == all ]]; then
 	./e2e/run_all_tests
 else
-	pushd e2e
-	FILES="$(fd -tf "$1" --and "^test_")"
-	popd
+	PATTERN="$1"
+	if [[ $PATTERN == e2e/* ]]; then
+		PATTERN="${PATTERN#e2e/}"
+	fi
+	# Debug output
+	echo "[xtask:e2e] Searching for test pattern: $PATTERN" >&2
+	pushd e2e >/dev/null
+	if [[ -f $PATTERN ]]; then
+		FILES="$PATTERN"
+	elif [[ $PATTERN == */* ]]; then
+		FILES="$(fd -tf "$(basename "$PATTERN")")"
+	else
+		FILES="$(fd -tf "$PATTERN" --and "^test_")"
+	fi
+	popd >/dev/null
 	if [[ -z $FILES ]]; then
 		echo "Not test matches $1" >&2
 		exit 1
 	fi
 	for FILE in $FILES; do
+		echo "[xtask:e2e] Running test: $FILE" >&2
 		./e2e/run_test "$FILE"
 	done
 fi

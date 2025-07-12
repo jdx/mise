@@ -7,7 +7,14 @@ ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
 source "$SCRIPT_DIR/style.sh"
 
 TEST="$1"
-TEST_SCRIPT="$SCRIPT_DIR/$TEST"
+# Handle both relative and absolute paths
+if [[ $TEST == /* ]] || [[ $TEST == e2e/* ]]; then
+	# If it's an absolute path or already contains e2e/, use it as is
+	TEST_SCRIPT="$TEST"
+else
+	# Otherwise, treat it as relative to the e2e directory
+	TEST_SCRIPT="$SCRIPT_DIR/$TEST"
+fi
 
 setup_isolated_env() {
 	TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
