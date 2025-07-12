@@ -1,0 +1,134 @@
+name: Test vfox.rs
+
+on:
+  push:
+    branches: ["main", "mise"]
+    paths:
+      - "crates/vfox/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/test-vfox.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "crates/vfox/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/test-vfox.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test-vfox:
+    name: Test vfox crate
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust: [stable, beta]
+        exclude:
+          # Reduce matrix size by excluding some combinations
+          - os: macos-latest
+            rust: beta
+          - os: windows-latest
+            rust: beta
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          submodules: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
+        with:
+          key: ${{ matrix.os }}-${{ matrix.rust }}-vfox
+          workspaces: |
+            crates/vfox
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path crates/vfox/Cargo.toml --check
+
+      - name: Run clippy
+        run: cargo clippy --manifest-path crates/vfox/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Build vfox crate
+        run: cargo build --manifest-path crates/vfox/Cargo.toml --all-features
+
+      - name: Run vfox tests
+        run: cargo test --manifest-path crates/vfox/Cargo.toml --all-features
+
+      - name: Run vfox tests with all features
+        run: cargo test --manifest-path crates/vfox/Cargo.toml --all-features --release
+
+      - name: Build vfox CLI binary
+        run: cargo build --manifest-path crates/vfox/Cargo.toml --features cli --bin vfox-cli
+
+      - name: Test vfox CLI help
+        run: cargo run --manifest-path crates/vfox/Cargo.toml --features cli --bin vfox-cli -- --help
+
+  test-vfox-minimal:
+    name: Test vfox minimal features
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
+        with:
+          key: ubuntu-minimal-vfox
+          workspaces: |
+            crates/vfox
+
+      - name: Test vfox with minimal features
+        run: cargo test --manifest-path crates/vfox/Cargo.toml --no-default-features
+
+      - name: Test vfox with individual features
+        run: |
+          cargo test --manifest-path crates/vfox/Cargo.toml --no-default-features --features native-tls
+          cargo test --manifest-path crates/vfox/Cargo.toml --no-default-features --features rustls
+          cargo test --manifest-path crates/vfox/Cargo.toml --no-default-features --features rustls-native-roots
+
+  test-vfox-docs:
+    name: Test vfox documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
+        with:
+          key: ubuntu-docs-vfox
+          workspaces: |
+            crates/vfox
+
+      - name: Test documentation
+        run: cargo doc --manifest-path crates/vfox/Cargo.toml --all-features --no-deps
+
+      - name: Test documentation examples
+        run: cargo test --manifest-path crates/vfox/Cargo.toml --doc --all-features
