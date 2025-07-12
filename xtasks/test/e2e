@@ -9,25 +9,19 @@ export RUST_TEST_THREADS=1
 if [[ ${1:-all} == all ]]; then
 	./e2e/run_all_tests
 else
-	PATTERN="$1"
-	if [[ $PATTERN == e2e/* ]]; then
-		PATTERN="${PATTERN#e2e/}"
-	fi
-	# Debug output
-	echo "[xtask:e2e] Searching for test pattern: $PATTERN" >&2
+	# Strip e2e/ prefix if present, then extract just the filename
+	PATTERN="${1#e2e/}"
+	FILENAME="$(basename "$PATTERN")"
+
 	pushd e2e >/dev/null
-	if [[ -f $PATTERN ]]; then
-		FILES="$PATTERN"
-	elif [[ $PATTERN == */* ]]; then
-		FILES="$(fd -tf "$(basename "$PATTERN")")"
-	else
-		FILES="$(fd -tf "$PATTERN" --and "^test_")"
-	fi
+	FILES="$(fd -tf "$FILENAME" --and "^test_")"
 	popd >/dev/null
+
 	if [[ -z $FILES ]]; then
-		echo "Not test matches $1" >&2
+		echo "No test matches $1" >&2
 		exit 1
 	fi
+
 	for FILE in $FILES; do
 		echo "[xtask:e2e] Running test: $FILE" >&2
 		./e2e/run_test "$FILE"
