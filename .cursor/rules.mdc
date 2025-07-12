@@ -1,28 +1,22 @@
-# Cursor Rules for mise
-
 ## Conventional Commits (REQUIRED)
+
 All commit messages and PR titles MUST follow conventional commit format:
 
-### Commit Types
+### Format
+```
+<type>(<scope>): <description>
+```
+
+### Types
 - `feat:` - New features
 - `fix:` - Bug fixes  
 - `refactor:` - Code refactoring
-- `doc:` - Documentation changes
+- `doc:` - Documentation
 - `style:` - Code style/formatting
 - `perf:` - Performance improvements
 - `test:` - Testing changes
 - `chore:` - Maintenance tasks
 - `chore(deps):` - Dependency updates
-- `chore(security):` - Security updates
-
-### Commit Format
-```
-<type>(<scope>): <description>
-
-[optional body]
-
-[optional footer]
-```
 
 ### Examples
 ```
@@ -35,12 +29,4 @@ chore(deps): update Rust dependencies
 ```
 
 ### Common Scopes
-- `cli` - Command line interface
-- `config` - Configuration handling
-- `backend` - Backend/plugin systems
-- `tool` - Tool management
-- `env` - Environment handling
-- `task` - Task runner
-- `api` - API changes
-- `ui` - User interface
-- `core` - Core functionality
+`cli`, `config`, `backend`, `tool`, `env`, `task`, `api`, `ui`, `core`
