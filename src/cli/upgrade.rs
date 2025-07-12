@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::ToolArg;
@@ -8,7 +9,7 @@ use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{config, ui};
+use crate::{config, ui, parallel};
 use console::Term;
 use demand::DemandOption;
 use eyre::{Context, Result, eyre};
@@ -161,26 +162,30 @@ impl Upgrade {
             ..Default::default()
         };
 
+        let requests = outdated.iter().map(|o| o.tool_request.clone()).collect();
+        let versions = ts
+            .install_all_versions(&mut config, requests, &opts)
+            .await?;
+
         let mut successful_versions = Vec::new();
         let mut had_errors = false;
 
-        for outdated_info in &outdated {
-            let tool_request = outdated_info.tool_request.clone();
-            let tool_name = outdated_info.name.clone();
-
-            match ts
-                .install_all_versions(config, vec![tool_request], &opts)
-                .await
-            {
-                Ok(versions) => {
-                    for version in versions {
-                        successful_versions.push(version);
+        match results {
+            Ok(install_results) => {
+                for (tool_name, result) in install_results {
+                    match result {
+                        Ok(versions) => {
+                            successful_versions.extend(versions);
+                        }
+                        Err(e) => {
+                            had_errors = true;
+                            warn!("Failed to upgrade {}: {}", tool_name, e);
+                        }
                     }
                 }
-                Err(e) => {
-                    had_errors = true;
-                    warn!("Failed to upgrade {}: {}", tool_name, e);
-                }
+            }
+            Err(e) => {
+                return Err(eyre!("Failed to run parallel upgrades: {}", e));
             }
         }
 
@@ -188,7 +193,7 @@ impl Upgrade {
         for (o, cf) in config_file_updates {
             if successful_versions
                 .iter()
-                .any(|v| v.ba() == o.tool_version.ba())
+                .any(|v: &ToolVersion| v.ba() == o.tool_version.ba())
             {
                 if let Err(e) =
                     cf.replace_versions(o.tool_request.ba(), vec![o.tool_request.clone()])
@@ -206,7 +211,7 @@ impl Upgrade {
         for (o, tv) in to_remove {
             if successful_versions
                 .iter()
-                .any(|v| v.ba() == o.tool_version.ba())
+                .any(|v: &ToolVersion| v.ba() == o.tool_version.ba())
             {
                 let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
                 if let Err(e) = self
@@ -222,7 +227,7 @@ impl Upgrade {
         let ts = config.get_toolset().await?;
         config::rebuild_shims_and_runtime_symlinks(config, ts, &successful_versions).await?;
 
-        if successful_versions.iter().any(|v| v.short() == "python") {
+        if successful_versions.iter().any(|v: &ToolVersion| v.short() == "python") {
             PIPXBackend::reinstall_all(config)
                 .await
                 .unwrap_or_else(|err| {
