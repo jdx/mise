@@ -93,7 +93,7 @@ impl Upgrade {
 
     async fn upgrade(&self, config: &mut Arc<Config>, outdated: Vec<OutdatedInfo>) -> Result<()> {
         let mpr = MultiProgressReport::get();
-        let mut ts = ToolsetBuilder::new()
+        let ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(config)
             .await?;
@@ -161,21 +161,28 @@ impl Upgrade {
             ..Default::default()
         };
 
-        // Install tools in parallel using the existing parallel infrastructure
+        // Install tools in parallel by creating fresh configs for each task
         let upgrade_tasks: Vec<_> = outdated
             .iter()
             .map(|outdated_info| {
-                (config.clone(), ts.clone(), outdated_info.clone(), opts.clone())
+                (outdated_info.tool_request.clone(), outdated_info.name.clone(), opts.clone(), self.tool.clone())
             })
             .collect();
 
-        let results = parallel::parallel(upgrade_tasks, |(mut config, mut ts, outdated_info, opts)| async move {
-            match ts
-                .install_all_versions(&mut config, vec![outdated_info.tool_request.clone()], &opts)
+        let results = parallel::parallel(upgrade_tasks, |(tool_request, tool_name, opts, tool_args)| async move {
+            // Create fresh config and toolset for this task to avoid Send issues
+            let mut fresh_config = Config::get().await?;
+            let mut fresh_ts = ToolsetBuilder::new()
+                .with_args(&tool_args)
+                .build(&fresh_config)
+                .await?;
+            
+            match fresh_ts
+                .install_all_versions(&mut fresh_config, vec![tool_request], &opts)
                 .await
             {
-                Ok(versions) => Ok((outdated_info.name.clone(), Ok(versions))),
-                Err(e) => Ok((outdated_info.name.clone(), Err(e))),
+                Ok(versions) => Ok((tool_name, Ok(versions))),
+                Err(e) => Ok((tool_name, Err(e))),
             }
         }).await;
 
