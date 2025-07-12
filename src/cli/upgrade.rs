@@ -161,24 +161,24 @@ impl Upgrade {
             ..Default::default()
         };
 
-        // Install tools in parallel by creating fresh configs for each task
+        // Install tools in parallel using Arc to share config
         let upgrade_tasks: Vec<_> = outdated
             .iter()
             .map(|outdated_info| {
-                (outdated_info.tool_request.clone(), outdated_info.name.clone(), opts.clone(), self.tool.clone())
+                (config.clone(), outdated_info.tool_request.clone(), outdated_info.name.clone(), opts.clone())
             })
             .collect();
 
-        let results = parallel::parallel(upgrade_tasks, |(tool_request, tool_name, opts, tool_args)| async move {
-            // Create fresh config and toolset for this task to avoid Send issues
-            let mut fresh_config = Config::get().await?;
+        let results = parallel::parallel(upgrade_tasks, |(config, tool_request, tool_name, opts)| async move {
+            // Create a fresh toolset for this task to avoid Send issues with shared toolset
             let mut fresh_ts = ToolsetBuilder::new()
-                .with_args(&tool_args)
-                .build(&fresh_config)
+                .with_args(&[]) // Empty tool args since we're installing a specific tool request
+                .build(&config)
                 .await?;
             
+            let mut config_arc = config;
             match fresh_ts
-                .install_all_versions(&mut fresh_config, vec![tool_request], &opts)
+                .install_all_versions(&mut config_arc, vec![tool_request], &opts)
                 .await
             {
                 Ok(versions) => Ok((tool_name, Ok(versions))),
