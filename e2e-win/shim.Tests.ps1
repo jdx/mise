@@ -43,7 +43,9 @@ Describe 'shim_mode' {
         $binPath = (Join-Path -Path $env:MISE_DATA_DIR -ChildPath "bin")
         $newMisePath = (Join-Path -Path $binPath -ChildPath "mise.exe")
         New-Item -ItemType Directory -Path $binPath -Force
-        Copy-Item  $misePath $newMisePath
+        Write-Information "mise path: $misePath"
+        Write-Information "new mise path: $newMisePath"
+        Copy-Item  $misePath $newMisePath -Verbose
 
         &$newMisePath reshim --force
 
