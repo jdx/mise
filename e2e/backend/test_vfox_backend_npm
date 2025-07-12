@@ -4,7 +4,7 @@
 # Test vfox backend with npm plugin (plugin:tool format) using vfox-npm submodule
 
 # Link the vfox-npm plugin from the submodule
-mise plugins link vfox-npm test/plugins/vfox-npm
+mise plugins link vfox-npm "$ROOT/test/plugins/vfox-npm"
 
 # Test plugin:tool format with assertions
 latest_version=$(mise latest vfox-npm:prettier)

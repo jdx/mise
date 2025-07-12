@@ -39,7 +39,11 @@ pub struct VfoxBackend {
 #[async_trait]
 impl Backend for VfoxBackend {
     fn get_type(&self) -> BackendType {
-        BackendType::Vfox
+        if self.use_backend_methods_only {
+            BackendType::VfoxBackend
+        } else {
+            BackendType::Vfox
+        }
     }
 
     fn ba(&self) -> &Arc<BackendArg> {
@@ -47,7 +51,11 @@ impl Backend for VfoxBackend {
     }
 
     fn get_plugin_type(&self) -> Option<PluginType> {
-        Some(PluginType::Vfox)
+        if self.use_backend_methods_only {
+            Some(PluginType::VfoxBackend)
+        } else {
+            Some(PluginType::Vfox)
+        }
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
