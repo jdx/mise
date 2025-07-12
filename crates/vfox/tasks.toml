@@ -13,6 +13,3 @@ run = [
 description = "test vfox crate"
 run = "cargo test --all-features"
 
-[ci]
-description = "run all CI checks for vfox"
-depends = ["build", "lint", "test"]

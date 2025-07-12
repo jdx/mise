@@ -32,4 +32,9 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           experimental: true
-      - run: cd crates/vfox && mise run ci
+      - run: mise run build
+        working-directory: crates/vfox
+      - run: mise run lint
+        working-directory: crates/vfox
+      - run: mise run test
+        working-directory: crates/vfox
