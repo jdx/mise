@@ -1,4 +1,3 @@
-# paths = ["../vfox.rs"] # now using workspace member at crates/vfox
 #paths = ["../usage/lib"]
 
 [env]
