@@ -1,0 +1,33 @@
+name: test-vfox
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: test-vfox-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  "test-vfox":
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          cargo build --all-features
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - run: mise -v
+      - run: mise --cd crates/vfox install
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-vfox-${{ hashFiles('crates/vfox/mise.toml') }}
+          path: |
+            ~/.local/share/mise
+            ~/.cache/mise
+      - run: mise --cd crates/vfox run build
+      - run: mise --cd crates/vfox run lint
+      - run: mise --cd crates/vfox run test

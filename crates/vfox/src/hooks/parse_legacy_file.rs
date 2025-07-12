@@ -84,4 +84,15 @@ mod tests {
         let out = format!("{response:?}");
         assert_snapshot!(out, @r###"ParseLegacyFileResponse { version: Some("20.0.0") }"###);
     }
+
+    #[tokio::test]
+    async fn test_parse_legacy_file_dummy() {
+        let vfox = Vfox::test();
+        let response = vfox
+            .parse_legacy_file("dummy", Path::new("test/data/.dummy-version"))
+            .await
+            .unwrap();
+        let out = format!("{response:?}");
+        assert_snapshot!(out, @r###"ParseLegacyFileResponse { version: Some("1.0.0") }"###);
+    }
 }
