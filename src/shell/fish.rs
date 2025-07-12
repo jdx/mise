@@ -15,6 +15,11 @@ impl Shell for Fish {
         let exe = opts.exe;
         let flags = opts.flags;
         let exe = exe.to_string_lossy();
+
+        #[cfg(windows)]
+        let exe: std::borrow::Cow<str> =
+            std::borrow::Cow::Owned(crate::path::to_unix_path_list(&exe));
+
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude(&opts.prelude));
@@ -121,6 +126,15 @@ impl Shell for Fish {
     }
 
     fn set_env(&self, key: &str, v: &str) -> String {
+        #[cfg(windows)]
+        let v_cow = if key == "PATH" {
+            std::borrow::Cow::Owned(crate::path::to_unix_path_list(v))
+        } else {
+            std::borrow::Cow::Borrowed(v)
+        };
+        #[cfg(windows)]
+        let v: &str = v_cow.as_ref();
+
         let k = escape(key.into());
         let v = escape(v.into());
         format!("set -gx {k} {v}\n")
