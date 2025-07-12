@@ -1,0 +1,53 @@
+[package]
+name = "vfox"
+version = "1.0.5"
+edition = "2021"
+license = "MIT"
+description = "Interface to vfox plugins"
+documentation = "https://docs.rs/vfox"
+homepage = "https://github.com/jdx/vfox.rs"
+repository = "https://github.com/jdx/vfox.rs"
+include = ["src", "lua", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
+
+[lib]
+name = "vfox"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vfox-cli"
+path = "src/bin.rs"
+
+[dependencies]
+homedir = "0.3"
+indexmap = "2"
+itertools = "0.14"
+log = "0.4"
+mlua = { version = "0.10", features = ["async", "lua51", "macros", "serialize", "send"] }
+once_cell = "1"
+reqwest = { version = "0.12", features = [] } # TODO: replace with xx
+serde = "1"
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "fs"] }
+url = "2"
+xx = { version = "2", features = ["archive", "hash", "http"] }
+
+# cli dependencies
+env_logger = { version = "0.11", optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+tempfile = "3"
+
+[dev-dependencies]
+insta = "1"
+#pretty_assertions = "1.4.0"
+
+[features]
+default = ["vendored-lua"]
+cli = ["clap", "tokio/full", "env_logger"]
+native-tls = ["xx/native-tls"]
+rustls = ["xx/rustls"]
+rustls-native-roots = ["xx/rustls-native-roots"]
+vendored-lua = ["mlua/vendored"]
+
+# [workspace.metadata.release] - removed since this is now part of mise workspace
+# pre-release-hook = ["git", "cliff", "-o", "CHANGELOG.md", "--tag", "{{version}}"]
