@@ -32,6 +32,4 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           experimental: true
-      - run: cargo fmt --manifest-path crates/vfox/Cargo.toml --check
-      - run: cargo clippy --manifest-path crates/vfox/Cargo.toml --all-targets --all-features -- -D warnings
-      - run: cargo test --manifest-path crates/vfox/Cargo.toml --all-features
+      - run: cd crates/vfox && mise run ci

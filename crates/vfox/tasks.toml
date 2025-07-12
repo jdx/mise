@@ -1,0 +1,18 @@
+[build]
+description = "build vfox crate"
+run = "cargo build --all-features"
+
+[lint]
+description = "lint vfox crate"
+run = [
+  "cargo fmt --check",
+  "cargo clippy --all-targets --all-features -- -D warnings"
+]
+
+[test]
+description = "test vfox crate"
+run = "cargo test --all-features"
+
+[ci]
+description = "run all CI checks for vfox"
+depends = ["build", "lint", "test"]
