@@ -12,23 +12,22 @@ pub fn mod_cmd(lua: &Lua) -> LuaResult<()> {
 
 fn exec(_lua: &Lua, (command,): (String,)) -> LuaResult<String> {
     use std::process::Command;
-    
+
     let output = Command::new("sh")
         .arg("-c")
         .arg(&command)
         .output()
-        .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {}", e)))?;
-    
+        .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")))?;
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     if output.status.success() {
         Ok(stdout.to_string())
     } else {
         Err(mlua::Error::RuntimeError(format!(
             "Command failed with status {}: {}",
-            output.status,
-            stderr
+            output.status, stderr
         )))
     }
 }
@@ -49,4 +48,4 @@ mod tests {
         .exec()
         .unwrap();
     }
-} 
+}

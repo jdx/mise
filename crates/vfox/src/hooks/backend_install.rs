@@ -1,4 +1,4 @@
-use mlua::{FromLua, IntoLua, Lua, Value, prelude::LuaError};
+use mlua::{prelude::LuaError, FromLua, IntoLua, Lua, Value};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -10,8 +10,7 @@ pub struct BackendInstallContext {
 }
 
 #[derive(Debug, Clone)]
-pub struct BackendInstallResponse {
-}
+pub struct BackendInstallResponse {}
 
 impl IntoLua for BackendInstallContext {
     fn into_lua(self, lua: &mlua::Lua) -> mlua::Result<Value> {
@@ -38,4 +37,4 @@ impl FromLua for BackendInstallResponse {
             }),
         }
     }
-} 
+}

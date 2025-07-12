@@ -1,4 +1,4 @@
-use mlua::{FromLua, IntoLua, Lua, Value, prelude::LuaError};
+use mlua::{prelude::LuaError, FromLua, IntoLua, Lua, Value};
 use std::path::PathBuf;
 
 use crate::hooks::env_keys::EnvKey;
@@ -43,4 +43,4 @@ impl FromLua for BackendExecEnvResponse {
             }),
         }
     }
-} 
+}

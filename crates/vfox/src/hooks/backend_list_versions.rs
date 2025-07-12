@@ -1,4 +1,4 @@
-use mlua::{FromLua, IntoLua, Lua, Value, prelude::LuaError};
+use mlua::{prelude::LuaError, FromLua, IntoLua, Lua, Value};
 
 #[derive(Debug, Clone)]
 pub struct BackendListVersionsContext {
@@ -33,4 +33,4 @@ impl FromLua for BackendListVersionsResponse {
             }),
         }
     }
-} 
+}
