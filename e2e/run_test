@@ -8,9 +8,12 @@ source "$SCRIPT_DIR/style.sh"
 
 TEST="$1"
 # Handle both relative and absolute paths
-if [[ $TEST == /* ]] || [[ $TEST == e2e/* ]]; then
-	# If it's an absolute path or already contains e2e/, use it as is
+if [[ $TEST == /* ]]; then
+	# If it's an absolute path, use it as is
 	TEST_SCRIPT="$TEST"
+elif [[ $TEST == e2e/* ]]; then
+	# If it starts with e2e/, treat it as relative to the project root
+	TEST_SCRIPT="$ROOT/$TEST"
 else
 	# Otherwise, treat it as relative to the e2e directory
 	TEST_SCRIPT="$SCRIPT_DIR/$TEST"
