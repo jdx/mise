@@ -2,25 +2,15 @@ name: test-vfox
 
 on:
   pull_request:
-    paths:
-      - "crates/vfox/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - ".github/workflows/test-vfox.yml"
   push:
     branches: [main]
-    paths:
-      - "crates/vfox/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - ".github/workflows/test-vfox.yml"
 
 concurrency:
   group: test-vfox-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
+  vfox_test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,9 +22,6 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           experimental: true
-      - run: mise run build
-        working-directory: crates/vfox
-      - run: mise run lint
-        working-directory: crates/vfox
-      - run: mise run test:unit
-        working-directory: crates/vfox
+      - run: mise --cd crates/vfox run build
+      - run: mise --cd crates/vfox run lint
+      - run: mise --cd crates/vfox run test:unit
