@@ -93,10 +93,10 @@ impl Upgrade {
 
     async fn upgrade(&self, config: &mut Arc<Config>, outdated: Vec<OutdatedInfo>) -> Result<()> {
         let mpr = MultiProgressReport::get();
-        let ts = ToolsetBuilder::new()
+        let ts = Arc::new(ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(config)
-            .await?;
+            .await?);
 
         let config_file_updates = outdated
             .iter()
@@ -161,23 +161,18 @@ impl Upgrade {
             ..Default::default()
         };
 
-        // Install tools in parallel using Arc to share config
+        // Install tools in parallel using Arc to share config and toolset
         let upgrade_tasks: Vec<_> = outdated
             .iter()
             .map(|outdated_info| {
-                (config.clone(), outdated_info.tool_request.clone(), outdated_info.name.clone(), opts.clone())
+                (config.clone(), ts.clone(), outdated_info.tool_request.clone(), outdated_info.name.clone(), opts.clone())
             })
             .collect();
 
-        let results = parallel::parallel(upgrade_tasks, |(config, tool_request, tool_name, opts)| async move {
-            // Create a fresh toolset for this task to avoid Send issues with shared toolset
-            let mut fresh_ts = ToolsetBuilder::new()
-                .with_args(&[]) // Empty tool args since we're installing a specific tool request
-                .build(&config)
-                .await?;
-            
+        let results = parallel::parallel(upgrade_tasks, |(config, ts, tool_request, tool_name, opts)| async move {
             let mut config_arc = config;
-            match fresh_ts
+            let mut ts_clone = (*ts).clone(); // Clone the Toolset from the Arc
+            match ts_clone
                 .install_all_versions(&mut config_arc, vec![tool_request], &opts)
                 .await
             {
