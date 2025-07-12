@@ -8,7 +8,25 @@ mise supports plugins that extend its functionality, allowing you to install too
 
 ## What Are Plugins?
 
-Plugins are extensions that can install and manage tools not included in mise's built-in registry. They are written in Lua and can:
+Plugins are extensions that can install and manage tools not included in mise's built-in registry. They are written in Lua and come in two main types:
+
+### Backend Plugins
+
+Backend plugins use enhanced backend methods and support the `plugin:tool` format:
+
+- **Multiple Tools**: A single plugin can manage multiple tools
+- **Enhanced Methods**: Backend methods for listing, installing, and environment setup
+- **Format**: Use the `plugin:tool` format (e.g., `vfox-npm:prettier`)
+
+### Tool Plugins
+
+Tool plugins use the traditional hook-based approach:
+
+- **Single Tool**: Each plugin manages one tool
+- **Hook-based**: Use hooks like `PreInstall`, `PostInstall`, `Available`, etc.
+- **Format**: Use the tool name directly (e.g., `my-tool`)
+
+Both types:
 
 - Install tools from any source (npm packages, GitHub releases, custom builds)
 - Set up environment variables and PATH entries
@@ -147,13 +165,28 @@ mise exec vfox-npm:prettier -- --check .
 
 ## How Plugins Work
 
-Plugins in mise are built on an extended version of the vfox plugin system. They use enhanced backend methods that provide better performance and support for the `plugin:tool` format:
+Plugins in mise are built on an extended version of the vfox plugin system with two approaches:
+
+### Backend Plugins
+
+Backend plugins use enhanced backend methods that provide better performance and support for the `plugin:tool` format:
 
 - **BackendListVersions**: Lists available versions of a tool
 - **BackendInstall**: Installs a specific version
 - **BackendExecEnv**: Sets up environment variables
 
 This architecture allows plugins to manage multiple tools efficiently while providing a consistent interface.
+
+### Tool Plugins
+
+Tool plugins use the traditional hook-based approach:
+
+- **Available**: Lists available versions
+- **PreInstall/PostInstall**: Installation hooks
+- **EnvKeys**: Environment variable setup
+- **Parse**: Version parsing and validation
+
+Both architectures provide a flexible plugin system that can handle diverse installation and management needs.
 
 ## Security Considerations
 
@@ -198,6 +231,7 @@ ls ~/.local/share/mise/installs/vfox-npm/prettier/
 
 ## Next Steps
 
-- [Learn how to create your own plugins](plugin-development.md)
+- [Learn how to create backend plugins](backend-plugin-development.md)
+- [Learn how to create tool plugins](tool-plugin-development.md)
 - [Explore built-in backends](dev-tools/backends/)
-- [Check the community registry](registry.md) 
+- [Check the community registry](registry.md)
