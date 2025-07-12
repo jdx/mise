@@ -1,0 +1,13 @@
+---
+source: src/hooks/pre_install.rs
+expression: pre_install
+---
+PreInstall {
+    version: "1.0.1",
+    url: None,
+    note: None,
+    sha256: None,
+    md5: None,
+    sha1: None,
+    sha512: None,
+}
