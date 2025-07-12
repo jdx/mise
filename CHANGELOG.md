@@ -11,6 +11,10 @@
 
 - create comprehensive architecture documentation suite and enhance development guides by [@jdx](https://github.com/jdx) in [d2b4a05](https://github.com/jdx/mise/commit/d2b4a050261b685279c502009f55a3e260b72ff9)
 
+### ◀️ Revert
+
+- Revert "fix(aqua): align version resolution logic in list_bin_paths" by [@jdx](https://github.com/jdx) in [#5574](https://github.com/jdx/mise/pull/5574)
+
 ### 📦️ Dependency Updates
 
 - update rust crate bzip2 to 0.6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5568](https://github.com/jdx/mise/pull/5568)
@@ -134,6 +138,11 @@
 
 - **(registry)** disable bitwarden test by [@risu729](https://github.com/risu729) in [#5468](https://github.com/jdx/mise/pull/5468)
 
+### ◀️ Revert
+
+- Revert "chore(deps): pin dependencies" by [@jdx](https://github.com/jdx) in [#5453](https://github.com/jdx/mise/pull/5453)
+- Revert "fix(aqua): handle hard links in aqua packages" by [@jdx](https://github.com/jdx) in [#5485](https://github.com/jdx/mise/pull/5485)
+
 ### 📦️ Dependency Updates
 
 - pin dependencies by [@renovate[bot]](https://github.com/renovate[bot]) in [#5443](https://github.com/jdx/mise/pull/5443)
@@ -177,6 +186,10 @@
 
 - **(registry)** use pipx for semgrep by [@scop](https://github.com/scop) in [#5423](https://github.com/jdx/mise/pull/5423)
 - **(registry)** add backends and tests by [@risu729](https://github.com/risu729) in [#5388](https://github.com/jdx/mise/pull/5388)
+
+### ◀️ Revert
+
+- Revert "fix: `self-update` on MITM firewall" by [@jdx](https://github.com/jdx) in [#5427](https://github.com/jdx/mise/pull/5427)
 
 ### Ci
 
@@ -688,6 +701,11 @@
 - disable aqua for now due to bad version output by [@jdx](https://github.com/jdx) in [fa3daa2](https://github.com/jdx/mise/commit/fa3daa2cab09ba7e0140fcf2112375eef8427a85)
 - fix python poetry test by [@jdx](https://github.com/jdx) in [c46a190](https://github.com/jdx/mise/commit/c46a190cb699b7700aa636a2bc888222ed7e9dbc)
 
+### ◀️ Revert
+
+- Revert "fix(dotenv): properly escape values in generated dotenv " by [@jdx](https://github.com/jdx) in [358c3da](https://github.com/jdx/mise/commit/358c3dab2dba7129ac115fc3414657dc39b2bd79)
+- Revert "fix(env): fix dotenv files cascading (fix #4688) " by [@jdx](https://github.com/jdx) in [b1ca323](https://github.com/jdx/mise/commit/b1ca3235ffc9635f17dac0896c3c07b975d65819)
+
 ### 📦️ Dependency Updates
 
 - update rust crate nix to 0.30 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5032](https://github.com/jdx/mise/pull/5032)
@@ -1069,6 +1087,10 @@
 - **(registry)** use ubi for velad by [@scop](https://github.com/scop) in [#4727](https://github.com/jdx/mise/pull/4727)
 
 ## [2025.3.10](https://github.com/jdx/mise/compare/v2025.3.9..v2025.3.10) - 2025-03-26
+
+### ◀️ Revert
+
+- Revert "chore: make awscli compatible with R2" by [@jdx](https://github.com/jdx) in [83e8c16](https://github.com/jdx/mise/commit/83e8c164ec78cab4325b4489d9cc5d1fa466ec3f)
 
 ## [2025.3.9](https://github.com/jdx/mise/compare/v2025.3.8..v2025.3.9) - 2025-03-26
 
@@ -1460,6 +1482,10 @@
 
 ## [2025.2.3](https://github.com/jdx/mise/compare/v2025.2.2..v2025.2.3) - 2025-02-09
 
+### ◀️ Revert
+
+- Revert "feat: add support for idiomatic go.mod file " by [@jdx](https://github.com/jdx) in [7fc9beb](https://github.com/jdx/mise/commit/7fc9bebd02abfee4b622a211b86c516df9bd4f6d)
+
 ## [2025.2.2](https://github.com/jdx/mise/compare/v2025.2.1..v2025.2.2) - 2025-02-08
 
 ### 🚀 Features
@@ -1850,6 +1876,10 @@
 - disable some non-working plugins by [@jdx](https://github.com/jdx) in [106ee40](https://github.com/jdx/mise/commit/106ee40b463923bb5c6444e0c0127dabc502d9ee)
 - remove test for flarectl by [@jdx](https://github.com/jdx) in [a63b449](https://github.com/jdx/mise/commit/a63b44910d55ad2cdc801a472f0c196c605cce25)
 
+### ◀️ Revert
+
+- Revert "docs: set prose-wrap with prettier " by [@jdx](https://github.com/jdx) in [065dd8f](https://github.com/jdx/mise/commit/065dd8fa917b6097fb168b631b506455af3e1d28)
+
 ### Chore
 
 - added `cargo check` to pre-commit by [@jdx](https://github.com/jdx) in [73eb25a](https://github.com/jdx/mise/commit/73eb25a88bbfe1b979bb5483ca3c81a689be184f)
@@ -2123,6 +2153,10 @@
 ### 🧪 Testing
 
 - added stubbed test for https://github.com/jdx/mise/discussions/3783 by [@jdx](https://github.com/jdx) in [f79a3a4](https://github.com/jdx/mise/commit/f79a3a41ebf833d2c49bdc91ae4026c46498d9f7)
+
+### ◀️ Revert
+
+- Revert "fix: Use arguments for to pass staged filenames to pre-commit task (#…" by [@jdx](https://github.com/jdx) in [#3791](https://github.com/jdx/mise/pull/3791)
 
 ### Chore
 
@@ -2771,6 +2805,10 @@
 ### 🚜 Refactor
 
 - use aqua for snyk by [@scop](https://github.com/scop) in [#3290](https://github.com/jdx/mise/pull/3290)
+
+### ◀️ Revert
+
+- Revert "fix: always prefer glibc to musl in mise run " by [@jdx](https://github.com/jdx) in [#3298](https://github.com/jdx/mise/pull/3298)
 
 ### Chore
 
