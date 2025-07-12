@@ -13,11 +13,12 @@ pub fn mod_cmd(lua: &Lua) -> LuaResult<()> {
 fn exec(_lua: &Lua, (command,): (String,)) -> LuaResult<String> {
     use std::process::Command;
 
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg(&command)
-        .output()
-        .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")))?;
+    let output = if cfg!(target_os = "windows") {
+        Command::new("cmd").args(["/C", &command]).output()
+    } else {
+        Command::new("sh").args(["-c", &command]).output()
+    }
+    .map_err(|e| mlua::Error::RuntimeError(format!("Failed to execute command: {e}")))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -45,6 +46,30 @@ mod tests {
             local result = cmd.exec("echo hello world")
             assert(result == "hello world\n")
         })
+        .exec()
+        .unwrap();
+    }
+
+    #[test]
+    fn test_cmd_windows_compatibility() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+
+        // Test that the command execution works on both Unix and Windows
+        let test_command = if cfg!(target_os = "windows") {
+            "echo hello world"
+        } else {
+            "echo hello world"
+        };
+
+        lua.load(format!(
+            r#"
+            local cmd = require("cmd")
+            local result = cmd.exec("{}")
+            assert(result:find("hello world") ~= nil)
+        "#,
+            test_command
+        ))
         .exec()
         .unwrap();
     }
