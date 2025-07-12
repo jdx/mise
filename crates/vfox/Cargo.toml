@@ -5,8 +5,8 @@ edition = "2021"
 license = "MIT"
 description = "Interface to vfox plugins"
 documentation = "https://docs.rs/vfox"
-homepage = "https://github.com/jdx/vfox.rs"
-repository = "https://github.com/jdx/vfox.rs"
+homepage = "https://github.com/jdx/mise"
+repository = "https://github.com/jdx/mise"
 include = ["src", "lua", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
 
 [lib]

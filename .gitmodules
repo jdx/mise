@@ -1,3 +1,6 @@
 [submodule "aqua-registry"]
 	path = aqua-registry
 	url = https://github.com/aquaproj/aqua-registry
+[submodule "test/plugins/vfox-npm"]
+	path = test/plugins/vfox-npm
+	url = https://github.com/jdx/vfox-npm.git

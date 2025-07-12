@@ -11,6 +11,15 @@ pub use error::VfoxError;
 pub use plugin::Plugin;
 pub use vfox::Vfox;
 
+// Backend hooks
+pub mod backend_hooks {
+    pub use crate::hooks::backend_exec_env::{BackendExecEnvContext, BackendExecEnvResponse};
+    pub use crate::hooks::backend_install::{BackendInstallContext, BackendInstallResponse};
+    pub use crate::hooks::backend_list_versions::{
+        BackendListVersionsContext, BackendListVersionsResponse,
+    };
+}
+
 mod config;
 mod context;
 mod error;
