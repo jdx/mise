@@ -110,8 +110,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     for (short, pt) in init_plugins().await?.iter() {
         let full = match pt {
             PluginType::Asdf => format!("asdf:{short}"),
-            PluginType::Vfox => format!("vfox:{short}"),
-            PluginType::VfoxBackend => format!("vfox-backend:{short}"),
+            PluginType::Vfox | PluginType::VfoxBackend => format!("vfox:{short}"),
         };
         let tool = tools
             .entry(short.clone())
