@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::ToolArg;
-use crate::config::{Config, config_file};
+use crate::config::{Config, config_file, Settings};
 use crate::file::display_path;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
@@ -12,6 +12,8 @@ use crate::{config, ui};
 use console::Term;
 use demand::DemandOption;
 use eyre::{Context, Result, eyre};
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 /// Upgrades outdated tools
 ///
@@ -161,15 +163,49 @@ impl Upgrade {
             ..Default::default()
         };
 
-        // Collect all tool requests to install them in parallel
-        let all_tool_requests: Vec<_> = outdated
-            .iter()
-            .map(|outdated_info| outdated_info.tool_request.clone())
-            .collect();
-
-        let successful_versions = ts
-            .install_all_versions(config, all_tool_requests, &opts)
-            .await?;
+        // Install tools in parallel, handling partial failures
+        let mut successful_versions = Vec::new();
+        let mut had_errors = false;
+        
+        let jobs = match opts.raw {
+            true => 1,
+            false => opts.jobs.unwrap_or(Settings::get().jobs),
+        };
+        let semaphore = Arc::new(Semaphore::new(jobs));
+        let mut jset = JoinSet::new();
+        
+        for outdated_info in &outdated {
+            let tool_request = outdated_info.tool_request.clone();
+            let tool_name = outdated_info.name.clone();
+            let mut config_clone = config.clone();
+            let opts = opts.clone();
+            let mut ts_clone = ts.clone();
+            let permit = semaphore.clone().acquire_owned().await?;
+            
+            jset.spawn(async move {
+                let _permit = permit;
+                let result = ts_clone
+                    .install_all_versions(&mut config_clone, vec![tool_request], &opts)
+                    .await;
+                (tool_name, result)
+            });
+        }
+        
+        while let Some(result) = jset.join_next().await {
+            match result {
+                Ok((tool_name, Ok(versions))) => {
+                    successful_versions.extend(versions);
+                }
+                Ok((tool_name, Err(e))) => {
+                    had_errors = true;
+                    warn!("Failed to upgrade {}: {}", tool_name, e);
+                }
+                Err(e) => {
+                    had_errors = true;
+                    warn!("Task failed: {}", e);
+                }
+            }
+        }
 
         // Only update config files for tools that were successfully installed
         for (o, cf) in config_file_updates {
@@ -215,6 +251,10 @@ impl Upgrade {
                 .unwrap_or_else(|err| {
                     warn!("failed to reinstall pipx tools: {err}");
                 });
+        }
+
+        if had_errors {
+            return Err(eyre!("Some tools failed to upgrade"));
         }
 
         Ok(())
