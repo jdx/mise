@@ -226,7 +226,7 @@ run all tests with coverage report
 - Depends: build
 
 - **Usage**: `test:e2e`
-- **Aliases**: `e`
+- **Aliases**: `e`, `e2e`
 
 run end-to-end tests
 
