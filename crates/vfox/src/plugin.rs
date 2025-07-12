@@ -148,10 +148,12 @@ impl Plugin {
     fn load_metadata(&self) -> Result<Table> {
         let metadata = self
             .lua
-            .load(r#"
+            .load(
+                r#"
                 require "metadata"
                 return PLUGIN
-            "#)
+            "#,
+            )
             .eval()?;
         Ok(metadata)
     }

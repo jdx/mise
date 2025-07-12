@@ -335,7 +335,7 @@ mod tests {
         let vfox = Vfox::test();
         vfox.install_plugin("nodejs").unwrap();
         let keys = vfox.env_keys("nodejs", "20.0.0").await.unwrap();
-        let output = format!("{:?}", keys).replace(
+        let output = format!("{keys:?}").replace(
             &vfox.install_dir.to_string_lossy().to_string(),
             "<INSTALL_DIR>",
         );
@@ -420,7 +420,7 @@ mod tests {
     async fn test_metadata() {
         let vfox = Vfox::test();
         let metadata = vfox.metadata("nodejs").await.unwrap();
-        let out = format!("{:?}", metadata);
+        let out = format!("{metadata:?}");
         assert_snapshot!(out);
     }
 }

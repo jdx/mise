@@ -81,7 +81,7 @@ mod tests {
             .parse_legacy_file("nodejs", Path::new("test/data/.node-version"))
             .await
             .unwrap();
-        let out = format!("{:?}", response);
+        let out = format!("{response:?}");
         assert_snapshot!(out, @r###"ParseLegacyFileResponse { version: Some("20.0.0") }"###);
     }
 }

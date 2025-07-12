@@ -22,7 +22,13 @@ homedir = "0.3"
 indexmap = "2"
 itertools = "0.14"
 log = "0.4"
-mlua = { version = "0.10", features = ["async", "lua51", "macros", "serialize", "send"] }
+mlua = { version = "0.10", features = [
+  "async",
+  "lua51",
+  "macros",
+  "serialize",
+  "send",
+] }
 once_cell = "1"
 reqwest = { version = "0.12", features = [] } # TODO: replace with xx
 serde = "1"
