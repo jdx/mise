@@ -569,26 +569,9 @@ pub trait Backend: Debug + Send + Sync {
             .list_bin_paths(config, tv)
             .await?
             .into_iter()
-            .filter(|p| p.parent().is_some());
-        for bin_path in bin_paths {
-            let paths_with_ext = if cfg!(windows) {
-                vec![
-                    bin_path.clone(),
-                    bin_path.join(bin_name).with_extension("exe"),
-                    bin_path.join(bin_name).with_extension("cmd"),
-                    bin_path.join(bin_name).with_extension("bat"),
-                    bin_path.join(bin_name).with_extension("ps1"),
-                ]
-            } else {
-                vec![bin_path.join(bin_name)]
-            };
-            for bin_path in paths_with_ext {
-                if bin_path.exists() && file::is_executable(&bin_path) {
-                    return Ok(Some(bin_path));
-                }
-            }
-        }
-        Ok(None)
+            .filter(|p| p.parent().is_some())
+            .collect::<Vec<_>>();
+        return Ok(file::which_in_paths(bin_name, &bin_paths));
     }
 
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {
