@@ -103,6 +103,75 @@ impl Plugin {
         Ok(result)
     }
 
+    // Backend plugin methods
+    pub async fn backend_list_versions(
+        &self,
+        ctx: crate::hooks::backend_list_versions::BackendListVersionsContext,
+    ) -> Result<crate::hooks::backend_list_versions::BackendListVersionsResponse> {
+        debug!("[vfox:{}] backend_list_versions", &self.name);
+        let response = self
+            .eval_async(chunk! {
+                if PLUGIN.backend_list_versions then
+                    return PLUGIN:backend_list_versions($ctx)
+                else
+                    return {versions = {}}
+                end
+            })
+            .await?;
+        Ok(response)
+    }
+
+    pub async fn backend_install(
+        &self,
+        ctx: crate::hooks::backend_install::BackendInstallContext,
+    ) -> Result<crate::hooks::backend_install::BackendInstallResponse> {
+        debug!("[vfox:{}] backend_install", &self.name);
+        let response = self
+            .eval_async(chunk! {
+                if PLUGIN.backend_install then
+                    return PLUGIN:backend_install($ctx)
+                else
+                    return {success = false, message = "Backend install not implemented"}
+                end
+            })
+            .await?;
+        Ok(response)
+    }
+
+    pub async fn backend_exec_env(
+        &self,
+        ctx: crate::hooks::backend_exec_env::BackendExecEnvContext,
+    ) -> Result<crate::hooks::backend_exec_env::BackendExecEnvResponse> {
+        debug!("[vfox:{}] backend_exec_env", &self.name);
+        let response = self
+            .eval_async(chunk! {
+                if PLUGIN.backend_exec_env then
+                    return PLUGIN:backend_exec_env($ctx)
+                else
+                    return {env_vars = {}}
+                end
+            })
+            .await?;
+        Ok(response)
+    }
+
+    pub async fn backend_uninstall(
+        &self,
+        ctx: crate::hooks::backend_uninstall::BackendUninstallContext,
+    ) -> Result<crate::hooks::backend_uninstall::BackendUninstallResponse> {
+        debug!("[vfox:{}] backend_uninstall", &self.name);
+        let response = self
+            .eval_async(chunk! {
+                if PLUGIN.backend_uninstall then
+                    return PLUGIN:backend_uninstall($ctx)
+                else
+                    return {success = false, message = "Backend uninstall not implemented"}
+                end
+            })
+            .await?;
+        Ok(response)
+    }
+
     fn load(&self) -> Result<&Metadata> {
         self.metadata.get_or_try_init(|| {
             debug!("Getting metadata for {self}");

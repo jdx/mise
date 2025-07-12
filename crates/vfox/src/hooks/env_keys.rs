@@ -7,7 +7,7 @@ use crate::error::Result;
 use crate::sdk_info::SdkInfo;
 use crate::Plugin;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EnvKey {
     pub key: String,
     pub value: String,
