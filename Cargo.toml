@@ -1,3 +1,6 @@
+[workspace]
+members = ["crates/vfox"]
+
 [package]
 name = "mise"
 version = "2025.7.4"
@@ -149,8 +152,7 @@ url = "2"
 urlencoding = "2.1.3"
 usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
-# vfox = { path = "../vfox.rs" }
-vfox = { version = "1", default-features = false }
+vfox = { path = "crates/vfox", default-features = false }
 walkdir = "2"
 which = "7"
 xx = { version = "2", features = ["glob"] }

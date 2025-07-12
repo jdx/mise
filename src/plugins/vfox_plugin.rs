@@ -38,7 +38,7 @@ impl VfoxPlugin {
         }
     }
 
-    fn repo(&self) -> MutexGuard<Git> {
+    fn repo(&self) -> MutexGuard<'_, Git> {
         self.repo.lock().unwrap()
     }
 

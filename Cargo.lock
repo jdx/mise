@@ -1295,6 +1295,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "186e05a59d4c50738528153b83b0b0194d3a29507dfec16eccd4b342903397d0"
 dependencies = [
  "log",
+ "regex",
 ]
 
 [[package]]
@@ -1312,6 +1313,7 @@ dependencies = [
  "anstream",
  "anstyle",
  "env_filter",
+ "jiff",
  "log",
 ]
 
@@ -6498,11 +6500,12 @@ dependencies = [
 [[package]]
 name = "vfox"
 version = "1.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed8b4515b35f86ca1d3ea7c936e704ade91ec9f609000f3de82febdea27406da"
 dependencies = [
+ "clap",
+ "env_logger",
  "homedir",
  "indexmap 2.10.0",
+ "insta",
  "itertools 0.14.0",
  "log",
  "mlua",

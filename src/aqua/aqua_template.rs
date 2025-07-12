@@ -44,7 +44,7 @@ enum Token<'a> {
     Pipe,
 }
 
-fn lex(code: &str) -> Result<Vec<Token>> {
+fn lex(code: &str) -> Result<Vec<Token<'_>>> {
     let mut tokens = vec![];
     let mut code = code.trim();
     while !code.is_empty() {

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::ToolArg;
@@ -93,10 +94,10 @@ impl Upgrade {
 
     async fn upgrade(&self, config: &mut Arc<Config>, outdated: Vec<OutdatedInfo>) -> Result<()> {
         let mpr = MultiProgressReport::get();
-        let ts = Arc::new(ToolsetBuilder::new()
+        let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(config)
-            .await?);
+            .await?;
 
         let config_file_updates = outdated
             .iter()
@@ -161,25 +162,10 @@ impl Upgrade {
             ..Default::default()
         };
 
-        // Install tools in parallel using Arc to share config and toolset
-        let upgrade_tasks: Vec<_> = outdated
-            .iter()
-            .map(|outdated_info| {
-                (config.clone(), ts.clone(), outdated_info.tool_request.clone(), outdated_info.name.clone(), opts.clone())
-            })
-            .collect();
-
-        let results = parallel::parallel(upgrade_tasks, |(config, ts, tool_request, tool_name, opts)| async move {
-            let mut config_arc = config;
-            let mut ts_clone = (*ts).clone(); // Clone the Toolset from the Arc
-            match ts_clone
-                .install_all_versions(&mut config_arc, vec![tool_request], &opts)
-                .await
-            {
-                Ok(versions) => Ok((tool_name, Ok(versions))),
-                Err(e) => Ok((tool_name, Err(e))),
-            }
-        }).await;
+        let requests = outdated.iter().map(|o| o.tool_request.clone()).collect();
+        let versions = ts
+            .install_all_versions(&mut config, requests, &opts)
+            .await?;
 
         let mut successful_versions = Vec::new();
         let mut had_errors = false;

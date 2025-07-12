@@ -270,7 +270,7 @@ impl Eq for BackendArg {}
 
 impl PartialOrd for BackendArg {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.short.cmp(&other.short))
+        Some(self.cmp(other))
     }
 }
 

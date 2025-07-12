@@ -70,7 +70,7 @@ impl FromStr for ShellType {
     }
 }
 
-pub trait Shell: Display {
+pub trait Shell: Display + Send + Sync {
     fn activate(&self, opts: ActivateOptions) -> String;
     fn deactivate(&self) -> String;
     fn set_env(&self, k: &str, v: &str) -> String;

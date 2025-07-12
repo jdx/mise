@@ -5,7 +5,7 @@ pub trait TreeItem: Clone {
 
     fn write_self(&self) -> std::io::Result<()>;
 
-    fn children(&self) -> Cow<[Self::Child]>;
+    fn children(&self) -> Cow<'_, [Self::Child]>;
 }
 
 struct TreeItemIndentChars {

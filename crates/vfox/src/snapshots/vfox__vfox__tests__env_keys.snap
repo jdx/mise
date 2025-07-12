@@ -1,0 +1,5 @@
+---
+source: src/vfox.rs
+expression: output
+---
+[EnvKey { key: "PATH", value: "<INSTALL_DIR>/nodejs/20.0.0/bin" }]
