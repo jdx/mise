@@ -102,10 +102,6 @@ export default withMermaid(
                 { text: "vfox", link: "/dev-tools/backends/vfox" },
               ],
             },
-            {
-              text: "Plugins",
-              link: "/plugins",
-            },
           ],
         },
         {
@@ -126,6 +122,18 @@ export default withMermaid(
             { text: "TOML Tasks", link: "/tasks/toml-tasks" },
             { text: "File Tasks", link: "/tasks/file-tasks" },
             { text: "Task Configuration", link: "/tasks/task-configuration" },
+          ],
+        },
+        {
+          text: "Plugins",
+          items: [
+            { text: "Plugin Overview", link: "/plugins" },
+            { text: "Using Plugins", link: "/plugin-usage" },
+            { text: "Backend Plugin Development", link: "/backend-plugin-development" },
+            { text: "Tool Plugin Development", link: "/tool-plugin-development" },
+            { text: "Plugin Lua Modules", link: "/plugin-lua-modules" },
+            { text: "Plugin Publishing", link: "/plugin-publishing" },
+            { text: "asdf (Legacy) Plugins", link: "/asdf-legacy-plugins" },
           ],
         },
         {

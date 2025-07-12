@@ -45,6 +45,7 @@ jobs:
       - run: mise x -- bun i
       - run: mise run render
       - run: mise run lint-fix
+      - run: mise --cd crates/vfox run lint-fix
       - uses: autofix-ci/action@635ffb0c9798bd160680f18fd73371e355b85f27 # v1.3.2
 #  windows:
 #    runs-on: windows-latest
@@ -69,4 +70,5 @@ jobs:
 #      - run: mise x -- npm i
 #      #- run: mise run render
 #      - run: mise run lint-fix
+#      - run: mise --cd crates/vfox run lint-fix
 #      - uses: autofix-ci/action@2891949f3779a1cafafae1523058501de3d4e944 # v1.3.1

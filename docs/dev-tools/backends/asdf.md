@@ -13,6 +13,6 @@ the registry away from asdf where possible to backends like aqua and ubi which d
 That said, not all tools can function with ubi/aqua if they have a unique installation process or
 need to set env vars other than `PATH`.
 
-## Writing asdf plugins for mise
+## Writing asdf (legacy) plugins for mise
 
 See the asdf documentation for more information on [writing plugins](https://asdf-vm.com/plugins/create.html).

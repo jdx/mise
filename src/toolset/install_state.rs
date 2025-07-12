@@ -10,8 +10,7 @@ use itertools::Itertools;
 use std::collections::BTreeMap;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tokio::task::JoinSet;
 use versions::Versioning;
 
@@ -54,7 +53,11 @@ async fn init_plugins() -> MutexResult<InstallStatePlugins> {
                 let _ = file::remove_all(&path);
                 None
             } else if path.join("metadata.lua").exists() {
-                Some((d, PluginType::Vfox))
+                if has_backend_methods(&path) {
+                    Some((d, PluginType::VfoxBackend))
+                } else {
+                    Some((d, PluginType::Vfox))
+                }
             } else if path.join("bin").join("list-all").exists() {
                 Some((d, PluginType::Asdf))
             } else {
@@ -107,7 +110,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     for (short, pt) in init_plugins().await?.iter() {
         let full = match pt {
             PluginType::Asdf => format!("asdf:{short}"),
-            PluginType::Vfox => format!("vfox:{short}"),
+            PluginType::Vfox | PluginType::VfoxBackend => format!("vfox:{short}"),
         };
         let tool = tools
             .entry(short.clone())
@@ -140,6 +143,27 @@ fn is_banned_plugin(path: &Path) -> bool {
         }
     }
     false
+}
+
+fn has_backend_methods(plugin_path: &Path) -> bool {
+    let metadata_path = plugin_path.join("metadata.lua");
+    if !metadata_path.exists() {
+        return false;
+    }
+
+    // Read the metadata.lua file and check for backend method definitions
+    let content = match std::fs::read_to_string(&metadata_path) {
+        std::result::Result::Ok(content) => content,
+        std::result::Result::Err(_) => return false,
+    };
+
+    // Check for the presence of backend method definitions
+    // These are typically defined as BackendListVersions, BackendInstall, BackendExecEnv
+    let backend_methods = ["BackendListVersions", "BackendInstall", "BackendExecEnv"];
+
+    backend_methods
+        .iter()
+        .any(|method| content.contains(method))
 }
 
 pub fn get_tool_full(short: &str) -> Option<String> {

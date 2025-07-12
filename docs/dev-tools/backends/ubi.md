@@ -2,7 +2,7 @@
 
 You may install GitHub Releases and URL packages directly using [ubi](https://github.com/houseabsolute/ubi) backend. ubi is directly compiled into
 the mise codebase so it does not need to be installed separately to be used. ubi is preferred over
-asdf/vfox for new tools since it doesn't require a plugin, supports Windows, and is really easy to use.
+plugins for new tools since it doesn't require a plugin, supports Windows, and is really easy to use.
 
 ubi doesn't require plugins or even any configuration for each tool. What it does is try to deduce what
 the proper binary/tarball is from GitHub releases and downloads the right one. As long as the vendor

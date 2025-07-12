@@ -741,8 +741,7 @@ If you need a custom backend:
    creating a [discussion](https://github.com/jdx/mise/discussions)
 2. **Consider if existing backends** (ubi, aqua, npm, pipx, etc.) can meet your
    needs
-3. **Help implement vfox plugin backend support** - this would enable custom
-   backends without core changes
+3. **Create a plugin** - use the [plugin system](plugin-development.md) to create plugins for private/custom tools without core changes
 
 Most tool installation needs can be met by existing backends, especially
 [ubi](dev-tools/backends/ubi.md) for GitHub releases and
@@ -761,7 +760,7 @@ across different installation systems.
   modules
 - **Universal Installers** (`src/backend/`) - ubi, aqua for GitHub releases and
   package management
-- **Plugin Backends** (`src/backend/`) - asdf and vfox plugin compatibility
+- **Plugin Backends** (`src/backend/`) - plugins, vfox and asdf plugin compatibility
 
 ### Implementation Steps
 
