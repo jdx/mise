@@ -1,4 +1,4 @@
-#paths = ["../vfox.rs"]
+paths = ["./vfox.rs"]
 #paths = ["../usage/lib"]
 
 [env]

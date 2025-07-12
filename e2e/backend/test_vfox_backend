@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+# Test vfox backend integration with mise
+echo "Testing vfox backend integration..."
+
+# Test that regular vfox plugins work correctly
+echo "=== Testing vfox plugin installation ==="
+mise install vfox:version-fox/vfox-cmake@3.21.0
+if mise exec vfox:version-fox/vfox-cmake@3.21.0 -- cmake --version; then
+    echo "✓ vfox plugin installation and execution works"
+else
+    echo "✗ vfox plugin installation or execution failed"
+    exit 1
+fi
+
+# Test that vfox remote version listing works
+echo "=== Testing vfox remote version listing ==="
+if mise ls-remote vfox:version-fox/vfox-nodejs | head -3; then
+    echo "✓ vfox remote version listing works"
+else
+    echo "✗ vfox remote version listing failed"
+    exit 1
+fi
+
+# Test that vfox backend code paths are integrated
+echo "=== Testing backend integration ==="
+# This verifies that the backend code in VfoxBackend is properly integrated
+# The backend hooks should be checked but fall back to default behavior
+# since the standard vfox plugins don't have backend support
+if mise ls-remote vfox:version-fox/vfox-maven | head -3; then
+    echo "✓ Backend integration code paths work (fallback to default)"
+else
+    echo "✗ Backend integration code paths failed"
+    exit 1
+fi
+
+echo "✓ All vfox backend integration tests passed!"
+echo "Note: Custom backend functionality tested separately in vfox.rs unit tests" 

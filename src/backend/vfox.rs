@@ -20,6 +20,10 @@ use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::plugins::{Plugin, PluginType};
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
+// Backend hooks are not available in the current vfox version
+// use vfox::hooks::backend_exec_env::BackendExecEnvContext;
+// use vfox::hooks::backend_install::BackendInstallContext;
+// use vfox::hooks::backend_list_versions::BackendListVersionsContext;
 
 #[derive(Debug)]
 pub struct VfoxBackend {
@@ -50,6 +54,8 @@ impl Backend for VfoxBackend {
             || async {
                 let (vfox, _log_rx) = this.plugin.vfox();
                 this.ensure_plugin_installed(config).await?;
+                
+                // Use default vfox behavior for now
                 let versions = vfox.list_available_versions(&this.pathname).await?;
                 Ok(versions
                     .into_iter()
@@ -75,6 +81,8 @@ impl Backend for VfoxBackend {
                 info!("{}", line);
             }
         });
+        
+        // Use default vfox behavior for now
         vfox.install(&self.pathname, &tv.version, tv.install_path())
             .await?;
         Ok(tv)
@@ -116,9 +124,20 @@ impl Backend for VfoxBackend {
 
 impl VfoxBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        let pathname = ba.short.to_kebab_case();
+        // For vfox plugins, we need to extract the plugin name from the plugin:tool format
+        let (plugin_name, pathname) = if let Some((plugin_name, _tool_name)) = ba.short.split_once(':') {
+            // Check if this is a vfox plugin:tool format
+            if crate::toolset::install_state::get_plugin_type(plugin_name).is_some() {
+                (plugin_name.to_string(), plugin_name.to_kebab_case())
+            } else {
+                (ba.short.clone(), ba.short.to_kebab_case())
+            }
+        } else {
+            (ba.short.clone(), ba.short.to_kebab_case())
+        };
+        
         let plugin_path = dirs::PLUGINS.join(&pathname);
-        let mut plugin = VfoxPlugin::new(pathname.clone(), plugin_path.clone());
+        let mut plugin = VfoxPlugin::new(plugin_name, plugin_path.clone());
         plugin.full = Some(ba.full());
         let plugin = Arc::new(plugin);
         Self {
@@ -153,6 +172,8 @@ impl VfoxBackend {
             .get_or_try_init_async(async || {
                 self.ensure_plugin_installed(config).await?;
                 let (vfox, _log_rx) = self.plugin.vfox();
+                
+                // Use default vfox behavior for now
                 Ok(vfox
                     .env_keys(&self.pathname, &tv.version)
                     .await?

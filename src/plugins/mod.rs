@@ -184,7 +184,20 @@ pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
 
 pub fn get(short: &str) -> Result<PluginEnum> {
     let (name, full) = short.split_once(':').unwrap_or((short, short));
-    let plugin_type = if let Some(plugin_type) = install_state::list_plugins().get(short) {
+    
+    // For plugin:tool format, look up the plugin by just the plugin name
+    let plugin_lookup_key = if short.contains(':') {
+        // Check if the part before the colon is a plugin name
+        if let Some(plugin_type) = install_state::list_plugins().get(name) {
+            name
+        } else {
+            short
+        }
+    } else {
+        short
+    };
+    
+    let plugin_type = if let Some(plugin_type) = install_state::list_plugins().get(plugin_lookup_key) {
         *plugin_type
     } else {
         PluginType::from_full(full)?

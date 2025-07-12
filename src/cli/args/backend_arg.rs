@@ -107,6 +107,17 @@ impl BackendArg {
         if let Ok(Some(backend_type)) = install_state::backend_type(&self.short) {
             return backend_type;
         }
+        
+        // Check if this is a vfox plugin:tool format
+        if let Some((plugin_name, _tool_name)) = self.short.split_once(':') {
+            if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
+                return match plugin_type {
+                    PluginType::Vfox => BackendType::Vfox,
+                    PluginType::Asdf => BackendType::Asdf,
+                };
+            }
+        }
+        
         let full = self.full();
         let backend = full.split(':').next().unwrap();
         if let Ok(backend_type) = backend.parse() {
@@ -155,6 +166,16 @@ impl BackendArg {
             full.clone()
         } else if let Some(full) = install_state::get_tool_full(short) {
             full
+        } else if let Some((plugin_name, _tool_name)) = short.split_once(':') {
+            // Check if this is a vfox plugin:tool format
+            if let Some(pt) = install_state::get_plugin_type(plugin_name) {
+                match pt {
+                    PluginType::Asdf => format!("asdf:{short}"),
+                    PluginType::Vfox => format!("vfox:{short}"),
+                }
+            } else {
+                short.to_string()
+            }
         } else if let Some(pt) = install_state::get_plugin_type(short) {
             match pt {
                 PluginType::Asdf => format!("asdf:{short}"),
