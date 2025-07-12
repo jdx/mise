@@ -1,0 +1,46 @@
+# Cursor Rules for mise
+
+## Conventional Commits (REQUIRED)
+All commit messages and PR titles MUST follow conventional commit format:
+
+### Commit Types
+- `feat:` - New features
+- `fix:` - Bug fixes  
+- `refactor:` - Code refactoring
+- `doc:` - Documentation changes
+- `style:` - Code style/formatting
+- `perf:` - Performance improvements
+- `test:` - Testing changes
+- `chore:` - Maintenance tasks
+- `chore(deps):` - Dependency updates
+- `chore(security):` - Security updates
+
+### Commit Format
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
+```
+
+### Examples
+```
+feat(cli): add new command for tool management
+fix(config): resolve parsing issue with nested tables
+refactor(backend): simplify plugin loading logic
+doc(api): update configuration examples
+test(e2e): add tests for tool installation
+chore(deps): update Rust dependencies
+```
+
+### Common Scopes
+- `cli` - Command line interface
+- `config` - Configuration handling
+- `backend` - Backend/plugin systems
+- `tool` - Tool management
+- `env` - Environment handling
+- `task` - Task runner
+- `api` - API changes
+- `ui` - User interface
+- `core` - Core functionality
