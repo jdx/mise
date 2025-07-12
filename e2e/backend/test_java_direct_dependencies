@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#
+# Have java and jib in the dependencies
+cat >.mise.toml <<EOF
+[tools]
+jib = "0.13.0"
+java = "openjdk-17.0.2"
+
+[settings]
+jobs = 1
+
+EOF
+
+# Install the tools
+mise install
+
+# Assert that both tools are available
+assert_contains "which jib" "/mise/installs/jib/0.13.0/"
+assert_contains "which java" "/mise/installs/java/openjdk-17.0.2/"
