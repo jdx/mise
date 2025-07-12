@@ -33,6 +33,7 @@ pub struct VfoxBackend {
     exec_env_cache: RwLock<HashMap<String, CacheManager<EnvMap>>>,
     pathname: String,
     tool_name: Option<String>,
+    use_backend_methods_only: bool,
 }
 
 #[async_trait]
@@ -56,14 +57,13 @@ impl Backend for VfoxBackend {
                 let (vfox, _log_rx) = this.plugin.vfox();
                 this.ensure_plugin_installed(config).await?;
 
-                // Check if this is a plugin:tool format and plugin supports backend methods
-                if let Some(tool_name) = &this.tool_name {
-                    debug!("Using backend method for tool: {}", tool_name);
-                    // Try to use the new backend method first (CamelCase)
+                // Use backend methods if the plugin supports them
+                if this.use_backend_methods_only {
+                    debug!("Using backend method for plugin: {}", this.pathname);
                     let plugin = vfox.get_sdk(&this.pathname)?;
                     let ctx = BackendListVersionsContext {
                         args: vec![],
-                        tool: tool_name.clone(),
+                        tool: this.tool_name.as_ref().unwrap_or(&this.pathname).clone(),
                     };
 
                     match plugin.backend_list_versions(ctx).await {
@@ -72,8 +72,6 @@ impl Backend for VfoxBackend {
                         }
                         Err(e) => {
                             debug!("Backend method failed: {}", e);
-                            // For plugin:tool format, don't fall back to traditional methods
-                            // as they don't support tool information
                             return Ok(vec![]);
                         }
                     }
@@ -106,13 +104,12 @@ impl Backend for VfoxBackend {
             }
         });
 
-        // Check if this is a plugin:tool format and plugin supports backend methods
-        if let Some(tool_name) = &self.tool_name {
-            // Try to use the new backend method first
+        // Use backend methods if the plugin supports them
+        if self.use_backend_methods_only {
             let plugin = vfox.get_sdk(&self.pathname)?;
             let backend_ctx = BackendInstallContext {
                 args: vec![],
-                tool: tool_name.clone(),
+                tool: self.tool_name.as_ref().unwrap_or(&self.pathname).clone(),
                 version: tv.version.clone(),
                 install_path: tv.install_path(),
             };
@@ -187,16 +184,31 @@ impl VfoxBackend {
             };
 
         let plugin_path = dirs::PLUGINS.join(&pathname);
-        let mut plugin = VfoxPlugin::new(plugin_name, plugin_path.clone());
+        let mut plugin = VfoxPlugin::new(plugin_name.clone(), plugin_path.clone());
         plugin.full = Some(ba.full());
         let plugin = Arc::new(plugin);
+
+        // Determine if this plugin supports backend methods
+        let use_backend_methods_only = if let Some(plugin_type) =
+            crate::toolset::install_state::get_plugin_type(&plugin_name)
+        {
+            matches!(plugin_type, crate::plugins::PluginType::VfoxBackend)
+        } else {
+            false
+        };
+
         Self {
             exec_env_cache: Default::default(),
             plugin: plugin.clone(),
-            plugin_enum: PluginEnum::Vfox(plugin),
+            plugin_enum: if use_backend_methods_only {
+                PluginEnum::VfoxBackend(plugin)
+            } else {
+                PluginEnum::Vfox(plugin)
+            },
             ba: Arc::new(ba),
             pathname,
             tool_name,
+            use_backend_methods_only,
         }
     }
 
@@ -224,13 +236,12 @@ impl VfoxBackend {
                 self.ensure_plugin_installed(config).await?;
                 let (vfox, _log_rx) = self.plugin.vfox();
 
-                // Check if this is a plugin:tool format and plugin supports backend methods
-                if let Some(tool_name) = &self.tool_name {
-                    // Try to use the new backend method first
+                // Use backend methods if the plugin supports them
+                if self.use_backend_methods_only {
                     let plugin = vfox.get_sdk(&self.pathname)?;
                     let backend_ctx = BackendExecEnvContext {
                         args: vec![],
-                        tool: tool_name.clone(),
+                        tool: self.tool_name.as_ref().unwrap_or(&self.pathname).clone(),
                         version: tv.version.clone(),
                         install_path: tv.install_path(),
                     };

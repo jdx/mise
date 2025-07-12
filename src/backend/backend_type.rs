@@ -27,6 +27,7 @@ pub enum BackendType {
     Spm,
     Ubi,
     Vfox,
+    VfoxBackend,
     Unknown,
 }
 
@@ -52,6 +53,7 @@ impl BackendType {
             "pipx" => BackendType::Pipx,
             "spm" => BackendType::Spm,
             "ubi" => BackendType::Ubi,
+            "vfox-backend" => BackendType::VfoxBackend,
             "vfox" => BackendType::Vfox,
             _ => BackendType::Unknown,
         }

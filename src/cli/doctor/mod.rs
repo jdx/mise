@@ -489,7 +489,7 @@ fn render_plugins() -> String {
             let p = p.plugin().unwrap();
             let padded_name = pad_str(p.name(), max_plugin_name_len, Alignment::Left, None);
             let extra = match p {
-                PluginEnum::Asdf(_) | PluginEnum::Vfox(_) => {
+                PluginEnum::Asdf(_) | PluginEnum::Vfox(_) | PluginEnum::VfoxBackend(_) => {
                     let git = Git::new(dirs::PLUGINS.join(p.name()));
                     match git.get_remote_url() {
                         Some(url) => {

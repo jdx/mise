@@ -113,6 +113,7 @@ impl BackendArg {
             if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
                 return match plugin_type {
                     PluginType::Vfox => BackendType::Vfox,
+                    PluginType::VfoxBackend => BackendType::VfoxBackend,
                     PluginType::Asdf => BackendType::Asdf,
                 };
             }
@@ -172,6 +173,7 @@ impl BackendArg {
                 match pt {
                     PluginType::Asdf => format!("asdf:{short}"),
                     PluginType::Vfox => format!("vfox:{short}"),
+                    PluginType::VfoxBackend => format!("vfox:{short}"),
                 }
             } else {
                 short.to_string()
@@ -180,6 +182,7 @@ impl BackendArg {
             match pt {
                 PluginType::Asdf => format!("asdf:{short}"),
                 PluginType::Vfox => format!("vfox:{short}"),
+                PluginType::VfoxBackend => format!("vfox:{short}"),
             }
         } else if let Some(full) = REGISTRY
             .get(short)
