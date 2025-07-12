@@ -167,17 +167,9 @@ impl Upgrade {
             .map(|outdated_info| outdated_info.tool_request.clone())
             .collect();
 
-        let successful_versions = match ts
+        let successful_versions = ts
             .install_all_versions(config, all_tool_requests, &opts)
-            .await
-        {
-            Ok(versions) => versions,
-            Err(e) => {
-                return Err(eyre!("Failed to upgrade tools: {}", e));
-            }
-        };
-
-        let had_errors = false;
+            .await?;
 
         // Only update config files for tools that were successfully installed
         for (o, cf) in config_file_updates {
@@ -223,10 +215,6 @@ impl Upgrade {
                 .unwrap_or_else(|err| {
                     warn!("failed to reinstall pipx tools: {err}");
                 });
-        }
-
-        if had_errors {
-            return Err(eyre!("Some tools failed to upgrade"));
         }
 
         Ok(())
