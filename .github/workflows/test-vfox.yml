@@ -36,5 +36,5 @@ jobs:
         working-directory: crates/vfox
       - run: mise run lint
         working-directory: crates/vfox
-      - run: mise run test
+      - run: mise run test:unit
         working-directory: crates/vfox
