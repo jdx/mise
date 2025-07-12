@@ -256,6 +256,7 @@ impl Backend for UbiBackend {
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
         if let Some(bin_path) = opts.get("bin_path") {
+            // bin_path should always point to a directory containing binaries
             Ok(vec![tv.install_path().join(bin_path)])
         } else if opts.get("extract_all").is_some_and(|v| v == "true") {
             Ok(vec![tv.install_path()])

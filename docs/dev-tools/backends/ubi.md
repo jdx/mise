@@ -119,6 +119,13 @@ This only makes sense when `extract_all` is set to `true`.
 "ubi:BurntSushi/ripgrep" = { version = "latest", extract_all = "true", bin_path = "target/release" }
 ```
 
+**Binary path lookup order:**
+
+1. If `bin_path` is specified, use that directory
+2. If `extract_all` is set to `true`, use the install path root
+3. If `bin_path` is not set, look for a `bin/` directory in the install path
+4. If no `bin/` directory exists, use the root of the extracted directory
+
 ### `tag_regex`
 
 Set a regex to filter out tags that don't match the regex. This is useful when a vendor has a bunch of
