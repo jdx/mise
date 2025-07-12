@@ -65,10 +65,9 @@ mod tests {
         lua.load(format!(
             r#"
             local cmd = require("cmd")
-            local result = cmd.exec("{}")
+            local result = cmd.exec("{test_command}")
             assert(result:find("hello world") ~= nil)
-        "#,
-            test_command
+        "#
         ))
         .exec()
         .unwrap();

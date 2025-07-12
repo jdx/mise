@@ -72,7 +72,7 @@ impl Backend for VfoxBackend {
                         }
                         Err(e) => {
                             debug!("Backend method failed: {}", e);
-                            return Ok(vec![]);
+                            return Err(eyre::eyre!("Backend list versions method failed: {}", e));
                         }
                     }
                 }
@@ -272,7 +272,7 @@ impl VfoxBackend {
                         }
                         Err(e) => {
                             debug!("Backend method failed: {}", e);
-                            return Ok(BTreeMap::new());
+                            return Err(eyre::eyre!("Backend exec env method failed: {}", e));
                         }
                     }
                 }
