@@ -10,7 +10,6 @@ This will install the tool version if it is not already installed.
 By default, this will use a `mise.toml` file in the current directory.
 
 In the following order:
-
 - If `--global` is set, it will use the global config file.
 - If `--path` is set, it will use the config file at the given path.
 - If `--env` is set, it will use `mise.<env>.toml`.
@@ -85,7 +84,6 @@ Consider using mise.lock as a better alternative to pinning in mise.toml:
 <https://mise.jdx.dev/configuration/settings.html#lockfile>
 
 Examples:
-
 ```
 
 # run with no arguments to use the interactive selector
