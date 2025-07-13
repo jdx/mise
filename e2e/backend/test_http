@@ -65,19 +65,19 @@ assert_contains "mise x -- hello-world" "hello world"
 
 # Test HTTP backend with platform-specific URLs
 cat <<EOF >mise.toml
-[tools.'http:hello-platform']
+[tools."http:hello-platform"]
 version = "1.0.0"
 bin_path = "bin"
 postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/bin/hello-world"
 strip_components = 1
 
-[tools.'http:hello-platform'.platforms.'darwin-arm64']
+[tools."http:hello-platform".platforms.darwin-arm64]
 url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 
-[tools.'http:hello-platform'.platforms.'darwin-amd64']
+[tools."http:hello-platform".platforms.darwin-amd64]
 url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 
-[tools.'http:hello-platform'.platforms.'linux-amd64']
+[tools."http:hello-platform".platforms.linux-amd64]
 url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 EOF
 
