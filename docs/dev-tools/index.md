@@ -146,8 +146,6 @@ port = 6379
 
 Internally, nested options are flattened to dot notation (e.g., `platforms.macos-x64.url`, `database.host`, `cache.redis.port`) for backend access.
 
-> **Legacy Support:** The traditional flat format (`platforms_macos_x64_url`) continues to work for backward compatibility.
-
 ### Caching and Performance
 
 mise uses intelligent caching to minimize overhead:
