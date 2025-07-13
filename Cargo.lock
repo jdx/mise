@@ -3615,18 +3615,18 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "lua-src"
-version = "547.0.0"
+version = "548.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1edaf29e3517b49b8b746701e5648ccb5785cde1c119062cbabbc5d5cd115e42"
+checksum = "00bc4bd1f1d5c65b30717333cbec4fa7aa378978940a1bca62f404498d423233"
 dependencies = [
  "cc",
 ]
 
 [[package]]
 name = "luajit-src"
-version = "210.5.12+a4f56a4"
+version = "210.6.1+f9140a6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3a8e7962a5368d5f264d045a5a255e90f9aa3fc1941ae15a8d2940d42cac671"
+checksum = "813bd31f2759443affa687c0d9c5eb5cf6cb0e898810ab197408431d746054bf"
 dependencies = [
  "cc",
  "which 7.0.3",
@@ -3877,9 +3877,9 @@ dependencies = [
 
 [[package]]
 name = "mlua"
-version = "0.10.5"
+version = "0.11.0-beta.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1f5f8fbebc7db5f671671134b9321c4b9aa9adeafccfd9a8c020ae45c6a35d0"
+checksum = "20b35ffb9c638eaa0992057934110c0964fc14a6e033d7d70070fdfcbd2e4c62"
 dependencies = [
  "bstr",
  "either",
@@ -3897,9 +3897,9 @@ dependencies = [
 
 [[package]]
 name = "mlua-sys"
-version = "0.6.8"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "380c1f7e2099cafcf40e51d3a9f20a346977587aa4d012eae1f043149a728a93"
+checksum = "0f2443fccee1fa88a880b371d9a0af28ff56b76ff52d9ff679559388cdcfc776"
 dependencies = [
  "cc",
  "cfg-if",
@@ -3910,11 +3910,11 @@ dependencies = [
 
 [[package]]
 name = "mlua_derive"
-version = "0.10.1"
+version = "0.11.0-beta.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "870d71c172fcf491c6b5fb4c04160619a2ee3e5a42a1402269c66bcbf1dd4deb"
+checksum = "66b452b6259da19a715eb4f174d6856ddaf9b0582d4cc769536fdd319d794b9a"
 dependencies = [
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "once_cell",
  "proc-macro-error2",
  "proc-macro2",

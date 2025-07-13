@@ -163,7 +163,11 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::Ubi => Some(Arc::new(ubi::UbiBackend::from_arg(ba))),
-        BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba))),
+        BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba, None))),
+        BackendType::VfoxBackend(plugin_name) => Some(Arc::new(vfox::VfoxBackend::from_arg(
+            ba,
+            Some(plugin_name.to_string()),
+        ))),
         BackendType::Unknown => None,
     }
 }

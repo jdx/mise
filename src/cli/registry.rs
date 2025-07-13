@@ -47,7 +47,7 @@ impl Registry {
 
     fn display_table(&self) -> Result<()> {
         let filter_backend = |rt: &RegistryTool| {
-            if let Some(backend) = self.backend {
+            if let Some(backend) = &self.backend {
                 rt.backends()
                     .iter()
                     .filter(|full| full.starts_with(&format!("{backend}:")))

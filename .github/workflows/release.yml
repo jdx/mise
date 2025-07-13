@@ -139,6 +139,8 @@ jobs:
         tranche: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          submodules: true
       - name: Install zsh/fish/direnv/fd
         run: sudo apt-get update; sudo apt-get install zsh fish direnv fd-find
       - name: Install fd-find

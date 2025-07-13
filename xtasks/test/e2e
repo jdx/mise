@@ -6,24 +6,27 @@ set -euo pipefail
 
 export RUST_TEST_THREADS=1
 
-if [[ ${1:-all} == all ]]; then
+if [[ ${1:-} == --all ]]; then
 	./e2e/run_all_tests
 else
-	# Strip e2e/ prefix if present, then extract just the filename
-	PATTERN="${1#e2e/}"
-	FILENAME="$(basename "$PATTERN")"
+	# Handle multiple test arguments
+	for TEST_ARG in "$@"; do
+		# Strip e2e/ prefix if present, then extract just the filename
+		PATTERN="${TEST_ARG#e2e/}"
+		FILENAME="$(basename "$PATTERN")"
 
-	pushd e2e >/dev/null
-	FILES="$(fd -tf "$FILENAME" --and "^test_")"
-	popd >/dev/null
+		pushd e2e >/dev/null
+		FILES="$(fd -tf "$FILENAME" --and "^test_")"
+		popd >/dev/null
 
-	if [[ -z $FILES ]]; then
-		echo "No test matches $1" >&2
-		exit 1
-	fi
+		if [[ -z $FILES ]]; then
+			echo "No test matches $TEST_ARG" >&2
+			exit 1
+		fi
 
-	for FILE in $FILES; do
-		echo "[xtask:e2e] Running test: $FILE" >&2
-		./e2e/run_test "$FILE"
+		for FILE in $FILES; do
+			echo "[xtask:e2e] Running test: $FILE" >&2
+			./e2e/run_test "$FILE"
+		done
 	done
 fi

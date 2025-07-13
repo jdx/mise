@@ -74,8 +74,9 @@ Registry-based package manager with strong security features:
 
 Support for external plugin ecosystems:
 
-- **asdf** - Vast ecosystem of community plugins (`asdf:postgres`, `asdf:redis`) - Linux/macOS only
-- **vfox** - Cross-platform plugin system (`vfox:nodejs`, `vfox:python`) - includes Windows support
+- **Tool Plugins** - Hook-based plugins for single tools (`my-tool`) - a superset of vfox plugins functionality
+- **asdf Plugins** - Legacy plugin ecosystem (`asdf:postgres`, `asdf:redis`) - generally Linux/macOS only
+- **Backend Plugins** - Enhanced plugins using the `plugin:tool` format (`my-plugin:some-tool`) - enables private/custom tools with backend methods
 
 ## How Backend Selection Works
 
@@ -101,13 +102,13 @@ terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 
 ## Backend Capabilities Comparison
 
-| Feature | Core | npm/pipx/cargo | ubi | aqua | asdf | vfox |
-|---------|------|----------------|-----|------|------|------|
-| **Speed** | ✅ | ✅ | ✅ | ✅ | ⚠️ | ⚠️ |
-| **Security** | ✅ | ⚠️ | ⚠️ | ✅ | ⚠️ | ⚠️ |
-| **Windows Support** | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
-| **Env Var Support** | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **Custom Scripts** | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Feature | Core | npm/pipx/cargo | ubi | aqua | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
+|---------|------|----------------|-----|------|---------------|-------------|-------------|
+| **Speed** | ✅ | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ |
+| **Security** | ✅ | ⚠️ | ⚠️ | ✅ | ⚠️ | ⚠️ | ⚠️ |
+| **Windows Support** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Env Var Support** | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
+| **Custom Scripts** | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
 
 ## When to Use Each Backend
 
@@ -141,7 +142,24 @@ terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 - The tool is already available in the [aqua registry](https://github.com/aquaproj/aqua-registry)
 - You're willing to contribute tools to the aqua registry for tools not yet available
 
-### Use **asdf** when
+### Use **Backend Plugins** when
+
+- You need to manage multiple tools with one plugin
+- Want enhanced backend methods for better performance
+- Need the `plugin:tool` format for flexibility
+- Working with custom or private tools
+- Want modern plugin architecture with backend methods
+
+### Use **Tool Plugins** when
+
+- Creating traditional single-tool plugins
+- Need fine-grained control over installation hooks
+- Want to use the vfox hook system
+- Tool requires complex installation logic or build processes
+- Tool requires environment variable setup (like `JAVA_HOME`, `GOROOT`, etc.)
+- You need cross-platform support including Windows
+
+### Use **asdf Plugins** when
 
 - Tool requires compilation from source
 - Need complex installation logic or build processes
@@ -149,14 +167,6 @@ terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 - No other backend supports the tool
 - Migrating from existing asdf setup
 - Working on Linux/macOS (no Windows support)
-
-### Use **vfox** when
-
-- Tool requires compilation from source
-- Need complex installation logic or build processes
-- Tool requires environment variable setup (like `JAVA_HOME`, `GOROOT`, etc.)
-- You need cross-platform support including Windows
-- Want a newer plugin system with better performance than asdf
 
 ## Backend Dependencies
 

@@ -6,7 +6,6 @@ use std::fmt::{Display, Formatter};
     Eq,
     Hash,
     Clone,
-    Copy,
     strum::EnumString,
     strum::EnumIter,
     strum::AsRefStr,
@@ -30,20 +29,24 @@ pub enum BackendType {
     Http,
     Ubi,
     Vfox,
+    VfoxBackend(String),
     Unknown,
 }
 
 impl Display for BackendType {
     fn fmt(&self, formatter: &mut Formatter) -> std::fmt::Result {
-        write!(formatter, "{}", format!("{self:?}").to_lowercase())
+        match self {
+            BackendType::VfoxBackend(plugin_name) => write!(formatter, "{plugin_name}"),
+            _ => write!(formatter, "{}", format!("{self:?}").to_lowercase()),
+        }
     }
 }
 
 impl BackendType {
     pub fn guess(s: &str) -> BackendType {
-        let s = s.split(':').next().unwrap_or(s);
-        let s = s.split('-').next().unwrap_or(s);
-        match s {
+        let prefix = s.split(':').next().unwrap_or(s);
+
+        match prefix {
             "aqua" => BackendType::Aqua,
             "asdf" => BackendType::Asdf,
             "cargo" => BackendType::Cargo,

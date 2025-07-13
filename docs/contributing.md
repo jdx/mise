@@ -730,10 +730,10 @@ mechanisms (like `aqua` or `ubi`). If you want to add a specific tool to mise,
 see [Adding Tools](#adding-tools) instead.
 :::
 
-:::warning Backend Acceptance Policy
-**New backends are unlikely to be accepted into mise core.** The current vision
-is to make vfox plugins capable of defining custom backends, but this
-functionality is not yet implemented.
+:::warning Core Backend Acceptance Policy
+**New backends are unlikely to be accepted into mise core.** They require
+a lot of maintenance so it's generally better to use the [backend plugin system](backend-plugin-development.md) to add backends without core changes. A new backend would only be accepted for a major package manager
+or tool that would greatly enhance mise's capabilities.
 
 If you need a custom backend:
 
@@ -741,8 +741,7 @@ If you need a custom backend:
    creating a [discussion](https://github.com/jdx/mise/discussions)
 2. **Consider if existing backends** (ubi, aqua, npm, pipx, etc.) can meet your
    needs
-3. **Help implement vfox plugin backend support** - this would enable custom
-   backends without core changes
+3. **Create a plugin** - use the [plugin system](tool-plugin-development.md) to create plugins for private/custom tools without core changes
 
 Most tool installation needs can be met by existing backends, especially
 [ubi](dev-tools/backends/ubi.md) for GitHub releases and
@@ -761,7 +760,7 @@ across different installation systems.
   modules
 - **Universal Installers** (`src/backend/`) - ubi, aqua for GitHub releases and
   package management
-- **Plugin Backends** (`src/backend/`) - asdf and vfox plugin compatibility
+- **Plugin Backends** (`src/backend/`) - plugins can provide custom backends or individual tools
 
 ### Implementation Steps
 
