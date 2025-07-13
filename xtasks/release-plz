@@ -10,8 +10,7 @@ if [[ $cur_version != "$latest_version" ]]; then
 	echo "Releasing $cur_version"
 	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
 	changelog="$(echo "$changelog" | tail -n +3)"
-	git tag "v$cur_version" -s -m "$changelog"
-	cargo release -x --no-confirm --no-tag --no-push
+	cargo release -x --no-confirm --workspace
 	git push --tags
 	gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog" --draft
 	exit 0
