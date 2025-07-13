@@ -243,8 +243,8 @@ impl Backend for UbiBackend {
         } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr
                 .set_message(format!("checksum generate {checksum_key}"));
-            let hash = hash::file_hash_sha256(file, Some(&ctx.pr))?;
-            tv.checksums.insert(checksum_key, format!("sha256:{hash}"));
+            let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
+            tv.checksums.insert(checksum_key, format!("blake3:{hash}"));
         }
         Ok(())
     }

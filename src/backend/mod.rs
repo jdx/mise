@@ -738,8 +738,8 @@ pub trait Backend: Debug + Send + Sync {
             }
         } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr.set_message(format!("generate checksum {filename}"));
-            let hash = hash::file_hash_sha256(file, Some(&ctx.pr))?;
-            tv.checksums.insert(filename, format!("sha256:{hash}"));
+            let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
+            tv.checksums.insert(filename, format!("blake3:{hash}"));
         }
         Ok(())
     }
