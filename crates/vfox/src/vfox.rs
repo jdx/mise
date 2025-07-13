@@ -207,7 +207,6 @@ impl Vfox {
     pub async fn backend_list_versions(&self, sdk: &str, tool: &str) -> Result<Vec<String>> {
         let plugin = self.get_sdk(sdk)?;
         let ctx = BackendListVersionsContext {
-            args: vec![],
             tool: tool.to_string(),
         };
         plugin.backend_list_versions(ctx).await.map(|r| r.versions)
@@ -222,7 +221,6 @@ impl Vfox {
     ) -> Result<()> {
         let plugin = self.get_sdk(sdk)?;
         let ctx = BackendInstallContext {
-            args: vec![],
             tool: tool.to_string(),
             version: version.to_string(),
             install_path,
@@ -240,7 +238,6 @@ impl Vfox {
     ) -> Result<Vec<EnvKey>> {
         let plugin = self.get_sdk(sdk)?;
         let ctx = BackendExecEnvContext {
-            args: vec![],
             tool: tool.to_string(),
             version: version.to_string(),
             install_path,

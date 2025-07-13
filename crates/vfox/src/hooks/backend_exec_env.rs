@@ -5,7 +5,6 @@ use crate::{error::Result, hooks::env_keys::EnvKey, Plugin};
 
 #[derive(Debug, Clone)]
 pub struct BackendExecEnvContext {
-    pub args: Vec<String>,
     pub tool: String,
     pub version: String,
     pub install_path: PathBuf,
@@ -33,7 +32,6 @@ impl Plugin {
 impl IntoLua for BackendExecEnvContext {
     fn into_lua(self, lua: &mlua::Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
-        table.set("args", self.args)?;
         table.set("tool", self.tool)?;
         table.set("version", self.version)?;
         table.set(

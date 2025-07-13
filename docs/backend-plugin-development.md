@@ -6,46 +6,17 @@ Backend plugins in mise use enhanced backend methods to manage multiple tools us
 
 Backend plugins extend the standard vfox plugin system with enhanced backend methods. They support:
 
-- **Multiple Tools**: One plugin can manage multiple tools (e.g., `vfox-npm:prettier`, `vfox-npm:eslint`)
-- **Enhanced Performance**: Optimized backend methods for better performance
+- **Multiple Tools**: One plugin can manage multiple tools. For example, `vfox-npm` is the plugin which could install different types of tools like `prettier`, `eslint`, and other npm packages
 - **Cross-Platform Support**: Works on Windows, macOS, and Linux
-- **Modern Architecture**: CamelCase method names and structured responses
+- **Flexible Architecture**: Modern plugin system with dedicated backend methods for enhanced functionality
 
 ## Plugin Architecture
 
-Backend plugins use three main methods:
+Backend plugins are generally a git repository but can also be a directory (via `mise link`). They use three main backend methods implemented as individual files:
 
-```mermaid
-graph TD
-    A[User Request] --> B[mise CLI]
-    B --> C[Backend Plugin]
-    
-    C --> D[BackendListVersions]
-    C --> E[BackendInstall]
-    C --> F[BackendExecEnv]
-    
-    D --> G[List Available Versions]
-    E --> H[Install Specific Version]
-    F --> I[Set Environment Variables]
-    
-    subgraph "Backend Context"
-        J[ctx.tool]
-        K[ctx.version]
-        L[ctx.install_path]
-        M[ctx.args]
-    end
-    
-    D --> J
-    E --> J
-    E --> K
-    E --> L
-    F --> L
-    
-    style C fill:#e1f5fe
-    style D fill:#e8f5e8
-    style E fill:#e8f5e8
-    style F fill:#e8f5e8
-```
+- `hooks/backend_list_versions.lua` - Lists available versions for a tool
+- `hooks/backend_install.lua` - Installs a specific version of a tool  
+- `hooks/backend_exec_env.lua` - Sets up environment variables for a tool
 
 ## Backend Methods
 
@@ -197,7 +168,7 @@ end
 
 ## Usage Example
 
-With the vfox-npm plugin installed, you can manage npm packages:
+The plugin name doesn't have to match the repository name. The backend prefix will match whatever name the backend plugin was installed as.
 
 ```bash
 # Install the plugin
@@ -213,19 +184,28 @@ mise install vfox-npm:prettier@3.0.0
 mise use vfox-npm:prettier@latest
 
 # Execute the tool
-mise exec vfox-npm:prettier -- --help
+mise exec -- prettier --help
 ```
+
+> **Tip**: This naming flexibility could potentially be used to have a very complex plugin backend that would behave differently based on what it was named. For example, you could install the same plugin with different names to configure different behaviors or access different tool registries.
 
 ## Context Variables
 
 Backend plugins receive context through the `ctx` parameter passed to each hook function:
+
+### BackendListVersions Context
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `ctx.tool` | The tool name | `"prettier"` |
+
+### BackendInstall and BackendExecEnv Context
 
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `ctx.tool` | The tool name | `"prettier"` |
 | `ctx.version` | The requested version | `"3.0.0"` |
 | `ctx.install_path` | Installation directory | `"/home/user/.local/share/mise/installs/vfox-npm/prettier/3.0.0"` |
-| `ctx.args` | Additional arguments | `[]` (usually empty) |
 
 ## Testing Your Plugin
 
@@ -239,10 +219,10 @@ mise plugin link my-plugin /path/to/my-plugin
 mise ls-remote my-plugin:some-tool
 
 # Test installation
-mise install my-plugin:some-tool@1.0.0
+mise use my-plugin:some-tool@1.0.0
 
 # Test execution
-mise exec my-plugin:some-tool -- --version
+mise exec -- some-tool --version
 ```
 
 ### Debug Mode
@@ -257,7 +237,7 @@ mise --debug install my-plugin:some-tool@1.0.0
 
 ### Error Handling
 
-Always provide meaningful error messages:
+Provide more meaningful error messages:
 
 ```lua
 function PLUGIN:BackendListVersions(ctx)
@@ -298,14 +278,14 @@ function PLUGIN:BackendListVersions(ctx)
 end
 ```
 
-### Version Parsing
+### Regex Parsing
 
-Parse versions consistently:
+Parse versions with regex:
 
 ```lua
 local function parse_version(version_string)
     -- Remove prefixes like 'v' or 'release-'
-    return version_string:gsub("^[vr]?", ""):gsub("^release%-", "")
+    return version_string:gsub("^v", ""):gsub("^release%-", "")
 end
 ```
 
@@ -327,12 +307,8 @@ local bin_path = join_path(install_path, "bin")
 Handle different operating systems:
 
 ```lua
-local function is_windows()
-    return package.config:sub(1,1) == '\\'
-end
-
 local function create_dir(path)
-    local cmd = is_windows() and "mkdir" or "mkdir -p"
+    local cmd = RUNTIME.osType == "Windows" and "mkdir" or "mkdir -p"
     os.execute(cmd .. " " .. path)
 end
 ```
@@ -406,22 +382,15 @@ Set multiple environment variables:
 
 ```lua
 function PLUGIN:BackendExecEnv(ctx)
-    local install_path = ctx.install_path
-    local tool = ctx.tool
-    
-    if install_path then
-        -- Add node_modules/.bin to PATH for npm-installed binaries
-        local bin_path = install_path .. "/node_modules/.bin"
-        return {
-            env_vars = {
-                {key = "PATH", value = bin_path},
-                {key = tool:upper() .. "_HOME", value = install_path},
-                {key = tool:upper() .. "_VERSION", value = ctx.version}
-            }
+    -- Add node_modules/.bin to PATH for npm-installed binaries
+    local bin_path = ctx.install_path .. "/node_modules/.bin"
+    return {
+        env_vars = {
+            {key = "PATH", value = bin_path},
+            {key = ctx.tool:upper() .. "_HOME", value = ctx.install_path},
+            {key = ctx.tool:upper() .. "_VERSION", value = ctx.version}
         }
-    else
-        return {env_vars = {}}
-    end
+    }
 end
 ```
 
@@ -429,79 +398,7 @@ end
 
 ### Caching
 
-Cache expensive operations when possible:
-
-```lua
--- Cache versions for a short time
-local version_cache = {}
-local cache_ttl = 300 -- 5 minutes
-
-function PLUGIN:BackendListVersions(ctx)
-    local tool = ctx.tool
-    local now = os.time()
-    
-    -- Check cache first
-    if version_cache[tool] and (now - version_cache[tool].timestamp) < cache_ttl then
-        return {versions = version_cache[tool].versions}
-    end
-    
-    -- Fetch versions from npm
-    local cmd = require("cmd")
-    local result = cmd.exec("npm view " .. tool .. " versions --json 2>/dev/null")
-    
-    local versions = {}
-    if result and result ~= "" and not result:match("npm ERR!") then
-        local json = require("json")
-        local success, npm_versions = pcall(json.decode, result)
-        
-        if success and npm_versions and type(npm_versions) == "table" then
-            for i = #npm_versions, 1, -1 do
-                table.insert(versions, npm_versions[i])
-            end
-        end
-    end
-    
-    -- Cache the result
-    version_cache[tool] = {
-        versions = versions,
-        timestamp = now
-    }
-    
-    return {versions = versions}
-end
-```
-
-### Parallel Downloads
-
-For plugins that need to download multiple files:
-
-```lua
-function PLUGIN:BackendInstall(ctx)
-    local tool = ctx.tool
-    local version = ctx.version
-    local install_path = ctx.install_path
-    
-    -- Create install directory
-    os.execute("mkdir -p " .. install_path)
-    
-    -- Install multiple packages in parallel when possible
-    local packages = {
-        tool .. "@" .. version,
-        "other-package@latest"
-    }
-    
-    -- Use npm install for multiple packages
-    local cmd = require("cmd")
-    local npm_cmd = "cd " .. install_path .. " && npm install " .. table.concat(packages, " ") .. " --no-package-lock --no-save --silent 2>/dev/null"
-    local result = cmd.exec(npm_cmd)
-    
-    if result:match("npm ERR!") then
-        error("Failed to install packages")
-    end
-    
-    return {}
-end
-```
+TODO: We need caching support for [Shared Lua modules](plugin-lua-modules.md).
 
 ## Next Steps
 

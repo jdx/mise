@@ -5,7 +5,6 @@ use crate::{error::Result, Plugin};
 
 #[derive(Debug)]
 pub struct BackendInstallContext {
-    pub args: Vec<String>,
     pub tool: String,
     pub version: String,
     pub install_path: PathBuf,
@@ -31,7 +30,6 @@ impl Plugin {
 impl IntoLua for BackendInstallContext {
     fn into_lua(self, lua: &mlua::Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
-        table.set("args", self.args)?;
         table.set("tool", self.tool)?;
         table.set("version", self.version)?;
         table.set(

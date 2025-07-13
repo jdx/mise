@@ -3,7 +3,6 @@ use mlua::{prelude::LuaError, FromLua, IntoLua, Lua, Value};
 
 #[derive(Debug, Clone)]
 pub struct BackendListVersionsContext {
-    pub args: Vec<String>,
     pub tool: String,
 }
 
@@ -29,7 +28,6 @@ impl Plugin {
 impl IntoLua for BackendListVersionsContext {
     fn into_lua(self, lua: &mlua::Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
-        table.set("args", self.args)?;
         table.set("tool", self.tool)?;
         Ok(Value::Table(table))
     }
