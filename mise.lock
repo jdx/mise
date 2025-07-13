@@ -29,6 +29,10 @@ backend = "cargo:cargo-edit"
 version = "1.43.1"
 backend = "cargo:cargo-insta"
 
+[tools."cargo:cargo-release"]
+version = "0.25.14"
+backend = "cargo:cargo-release"
+
 [tools."cargo:git-cliff"]
 version = "2.9.1"
 backend = "cargo:git-cliff"
