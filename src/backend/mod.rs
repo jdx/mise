@@ -163,8 +163,11 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::Ubi => Some(Arc::new(ubi::UbiBackend::from_arg(ba))),
-        BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba))),
-        BackendType::VfoxBackend => Some(Arc::new(vfox::VfoxBackend::from_arg(ba))),
+        BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba, None))),
+        BackendType::VfoxBackend(plugin_name) => Some(Arc::new(vfox::VfoxBackend::from_arg(
+            ba,
+            Some(plugin_name.to_string()),
+        ))),
         BackendType::Unknown => None,
     }
 }
@@ -739,8 +742,8 @@ pub trait Backend: Debug + Send + Sync {
             }
         } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr.set_message(format!("generate checksum {filename}"));
-            let hash = hash::file_hash_sha256(file, Some(&ctx.pr))?;
-            tv.checksums.insert(filename, format!("sha256:{hash}"));
+            let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
+            tv.checksums.insert(filename, format!("blake3:{hash}"));
         }
         Ok(())
     }

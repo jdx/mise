@@ -1,6 +1,6 @@
 use crate::{env, plugins::PluginEnum, timeout};
 use async_trait::async_trait;
-use heck::ToKebabCase;
+use eyre::WrapErr;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::path::PathBuf;
@@ -16,14 +16,10 @@ use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::env_diff::EnvMap;
 use crate::install_context::InstallContext;
+use crate::plugins::Plugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
-use crate::plugins::{Plugin, PluginType};
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::multi_progress_report::MultiProgressReport;
-// Backend hooks are now available in the current vfox version
-use vfox::backend_hooks::{
-    BackendExecEnvContext, BackendInstallContext, BackendListVersionsContext,
-};
 
 #[derive(Debug)]
 pub struct VfoxBackend {
@@ -33,29 +29,20 @@ pub struct VfoxBackend {
     exec_env_cache: RwLock<HashMap<String, CacheManager<EnvMap>>>,
     pathname: String,
     tool_name: Option<String>,
-    use_backend_methods_only: bool,
 }
 
 #[async_trait]
 impl Backend for VfoxBackend {
     fn get_type(&self) -> BackendType {
-        if self.use_backend_methods_only {
-            BackendType::VfoxBackend
-        } else {
-            BackendType::Vfox
+        match self.plugin_enum {
+            PluginEnum::VfoxBackend(_) => BackendType::VfoxBackend(self.plugin.name().to_string()),
+            PluginEnum::Vfox(_) => BackendType::Vfox,
+            _ => unreachable!(),
         }
     }
 
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
-    }
-
-    fn get_plugin_type(&self) -> Option<PluginType> {
-        if self.use_backend_methods_only {
-            Some(PluginType::VfoxBackend)
-        } else {
-            Some(PluginType::Vfox)
-        }
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
@@ -66,21 +53,18 @@ impl Backend for VfoxBackend {
                 this.ensure_plugin_installed(config).await?;
 
                 // Use backend methods if the plugin supports them
-                if this.use_backend_methods_only {
+                if matches!(&this.plugin_enum, PluginEnum::VfoxBackend(_)) {
                     debug!("Using backend method for plugin: {}", this.pathname);
-                    let plugin = vfox.get_sdk(&this.pathname)?;
-                    let ctx = BackendListVersionsContext {
-                        args: vec![],
-                        tool: this.tool_name.as_ref().unwrap_or(&this.pathname).clone(),
-                    };
-
-                    match plugin.backend_list_versions(ctx).await {
-                        Ok(response) => {
-                            return Ok(response.versions.into_iter().rev().collect());
+                    let tool_name = this.tool_name.as_ref().ok_or_else(|| {
+                        eyre::eyre!("VfoxBackend requires a tool name (plugin:tool format)")
+                    })?;
+                    match vfox.backend_list_versions(&this.pathname, tool_name).await {
+                        Ok(versions) => {
+                            return Ok(versions);
                         }
                         Err(e) => {
                             debug!("Backend method failed: {}", e);
-                            return Err(eyre::eyre!("Backend list versions method failed: {}", e));
+                            return Err(e).wrap_err("Backend list versions method failed");
                         }
                     }
                 }
@@ -113,16 +97,14 @@ impl Backend for VfoxBackend {
         });
 
         // Use backend methods if the plugin supports them
-        if self.use_backend_methods_only {
-            let plugin = vfox.get_sdk(&self.pathname)?;
-            let backend_ctx = BackendInstallContext {
-                args: vec![],
-                tool: self.tool_name.as_ref().unwrap_or(&self.pathname).clone(),
-                version: tv.version.clone(),
-                install_path: tv.install_path(),
-            };
-
-            match plugin.backend_install(backend_ctx).await {
+        if matches!(&self.plugin_enum, PluginEnum::VfoxBackend(_)) {
+            let tool_name = self.tool_name.as_ref().ok_or_else(|| {
+                eyre::eyre!("VfoxBackend requires a tool name (plugin:tool format)")
+            })?;
+            match vfox
+                .backend_install(&self.pathname, tool_name, &tv.version, tv.install_path())
+                .await
+            {
                 Ok(_response) => {
                     return Ok(tv);
                 }
@@ -173,50 +155,41 @@ impl Backend for VfoxBackend {
 }
 
 impl VfoxBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
-        // For vfox plugins, we need to extract the plugin name from the plugin:tool format
-        let (plugin_name, pathname, tool_name) =
-            if let Some((plugin_name, tool_name)) = ba.short.split_once(':') {
-                // Check if this is a vfox plugin:tool format
-                if crate::toolset::install_state::get_plugin_type(plugin_name).is_some() {
-                    (
-                        plugin_name.to_string(),
-                        plugin_name.to_kebab_case(),
-                        Some(tool_name.to_string()),
-                    )
+    pub fn from_arg(ba: BackendArg, backend_plugin_name: Option<String>) -> Self {
+        let plugin_name = match &backend_plugin_name {
+            Some(plugin_name) => plugin_name.clone(),
+            None => {
+                // For plugin:tool format, extract just the plugin name
+                if let Some((name, _)) = ba.short.split_once(':') {
+                    name.to_string()
                 } else {
-                    (ba.short.clone(), ba.short.to_kebab_case(), None)
+                    ba.short.clone()
                 }
-            } else {
-                (ba.short.clone(), ba.short.to_kebab_case(), None)
-            };
+            }
+        };
 
-        let plugin_path = dirs::PLUGINS.join(&pathname);
+        let plugin_path = dirs::PLUGINS.join(&plugin_name);
         let mut plugin = VfoxPlugin::new(plugin_name.clone(), plugin_path.clone());
         plugin.full = Some(ba.full());
         let plugin = Arc::new(plugin);
 
-        // Determine if this plugin supports backend methods
-        let use_backend_methods_only = if let Some(plugin_type) =
-            crate::toolset::install_state::get_plugin_type(&plugin_name)
-        {
-            matches!(plugin_type, crate::plugins::PluginType::VfoxBackend)
+        // Extract tool name for plugin:tool format
+        let tool_name = if ba.short.contains(':') {
+            ba.short.split_once(':').map(|(_, tool)| tool.to_string())
         } else {
-            false
+            None
         };
 
         Self {
             exec_env_cache: Default::default(),
             plugin: plugin.clone(),
-            plugin_enum: if use_backend_methods_only {
-                PluginEnum::VfoxBackend(plugin)
-            } else {
-                PluginEnum::Vfox(plugin)
+            plugin_enum: match backend_plugin_name {
+                Some(_) => PluginEnum::VfoxBackend(plugin),
+                None => PluginEnum::Vfox(plugin),
             },
             ba: Arc::new(ba),
-            pathname,
+            pathname: plugin_name,
             tool_name,
-            use_backend_methods_only,
         }
     }
 
@@ -245,18 +218,16 @@ impl VfoxBackend {
                 let (vfox, _log_rx) = self.plugin.vfox();
 
                 // Use backend methods if the plugin supports them
-                if self.use_backend_methods_only {
-                    let plugin = vfox.get_sdk(&self.pathname)?;
-                    let backend_ctx = BackendExecEnvContext {
-                        args: vec![],
-                        tool: self.tool_name.as_ref().unwrap_or(&self.pathname).clone(),
-                        version: tv.version.clone(),
-                        install_path: tv.install_path(),
-                    };
-
-                    match plugin.backend_exec_env(backend_ctx).await {
+                if matches!(&self.plugin_enum, PluginEnum::VfoxBackend(_)) {
+                    let tool_name = self.tool_name.as_ref().ok_or_else(|| {
+                        eyre::eyre!("VfoxBackend requires a tool name (plugin:tool format)")
+                    })?;
+                    match vfox
+                        .backend_exec_env(&self.pathname, tool_name, &tv.version, tv.install_path())
+                        .await
+                    {
                         Ok(response) => {
-                            return Ok(response.env_vars.into_iter().fold(
+                            return Ok(response.into_iter().fold(
                                 BTreeMap::new(),
                                 |mut acc, env_key| {
                                     let key = &env_key.key;

@@ -1,7 +1,9 @@
 use mlua::{prelude::LuaError, FromLua, IntoLua, Lua, Value};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone)]
+use crate::{error::Result, Plugin};
+
+#[derive(Debug)]
 pub struct BackendInstallContext {
     pub args: Vec<String>,
     pub tool: String,
@@ -9,8 +11,22 @@ pub struct BackendInstallContext {
     pub install_path: PathBuf,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BackendInstallResponse {}
+
+impl Plugin {
+    pub async fn backend_install(
+        &self,
+        ctx: BackendInstallContext,
+    ) -> Result<BackendInstallResponse> {
+        debug!("[vfox:{}] backend_install", &self.name);
+        self.eval_async(chunk! {
+            require "hooks/backend_install"
+            return PLUGIN:BackendInstall($ctx)
+        })
+        .await
+    }
+}
 
 impl IntoLua for BackendInstallContext {
     fn into_lua(self, lua: &mlua::Lua) -> mlua::Result<Value> {

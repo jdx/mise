@@ -86,14 +86,14 @@ impl Plugin {
         Ok(ctx)
     }
 
-    pub(crate) async fn exec_async<'a>(&self, chunk: impl AsChunk<'a>) -> Result<()> {
+    pub(crate) async fn exec_async(&self, chunk: impl AsChunk) -> Result<()> {
         self.load()?;
         let chunk = self.lua.load(chunk);
         chunk.exec_async().await?;
         Ok(())
     }
 
-    pub(crate) async fn eval_async<'a, R>(&self, chunk: impl AsChunk<'a>) -> Result<R>
+    pub(crate) async fn eval_async<R>(&self, chunk: impl AsChunk) -> Result<R>
     where
         R: FromLuaMulti,
     {
@@ -104,64 +104,6 @@ impl Plugin {
     }
 
     // Backend plugin methods
-    pub async fn backend_list_versions(
-        &self,
-        ctx: crate::hooks::backend_list_versions::BackendListVersionsContext,
-    ) -> Result<crate::hooks::backend_list_versions::BackendListVersionsResponse> {
-        debug!("[vfox:{}] backend_list_versions", &self.name);
-        self.load()?;
-        // Set the context as a global variable with a unique name
-        self.set_global("BACKEND_CTX", ctx)?;
-        let response = self
-            .eval_async(chunk! {
-                if PLUGIN.BackendListVersions then
-                    return PLUGIN:BackendListVersions(BACKEND_CTX)
-                else
-                    return {versions = {}}
-                end
-            })
-            .await?;
-        Ok(response)
-    }
-
-    pub async fn backend_install(
-        &self,
-        ctx: crate::hooks::backend_install::BackendInstallContext,
-    ) -> Result<crate::hooks::backend_install::BackendInstallResponse> {
-        debug!("[vfox:{}] backend_install", &self.name);
-        self.load()?;
-        self.set_global("BACKEND_CTX", ctx)?;
-        let response = self
-            .eval_async(chunk! {
-                if PLUGIN.BackendInstall then
-                    return PLUGIN:BackendInstall(BACKEND_CTX)
-                else
-                    return {success = false, message = "Backend install not implemented"}
-                end
-            })
-            .await?;
-        Ok(response)
-    }
-
-    pub async fn backend_exec_env(
-        &self,
-        ctx: crate::hooks::backend_exec_env::BackendExecEnvContext,
-    ) -> Result<crate::hooks::backend_exec_env::BackendExecEnvResponse> {
-        debug!("[vfox:{}] backend_exec_env", &self.name);
-        self.load()?;
-        self.set_global("BACKEND_CTX", ctx)?;
-        let response = self
-            .eval_async(chunk! {
-                if PLUGIN.BackendExecEnv then
-                    return PLUGIN:BackendExecEnv(BACKEND_CTX)
-                else
-                    return {env_vars = {}}
-                end
-            })
-            .await?;
-        Ok(response)
-    }
-
     fn load(&self) -> Result<&Metadata> {
         self.metadata.get_or_try_init(|| {
             debug!("Getting metadata for {self}");

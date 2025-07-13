@@ -1,5 +1,45 @@
 # Changelog
 
+## [2025.7.5](https://github.com/jdx/mise/compare/v2025.7.4..v2025.7.5) - 2025-07-13
+
+### 🚀 Features
+
+- add static backends (Github, GitLab, and HTTP) by [@jdx](https://github.com/jdx) in [#5602](https://github.com/jdx/mise/pull/5602)
+- blake3 support by [@jdx](https://github.com/jdx) in [#5605](https://github.com/jdx/mise/pull/5605)
+
+### 🐛 Bug Fixes
+
+- **(e2e)** simplify test path handling logic by [@jdx](https://github.com/jdx) in [#5600](https://github.com/jdx/mise/pull/5600)
+- skip gh release edit on dry run in release workflow by [@jdx](https://github.com/jdx) in [#5603](https://github.com/jdx/mise/pull/5603)
+
+### 📚 Documentation
+
+- **(cursor)** fix conventional commits rule formatting by [@jdx](https://github.com/jdx) in [#5597](https://github.com/jdx/mise/pull/5597)
+- **(cursor)** add testing rule for mise codebase by [@jdx](https://github.com/jdx) in [#5598](https://github.com/jdx/mise/pull/5598)
+
+### 🧪 Testing
+
+- disable cmake test for now by [@jdx](https://github.com/jdx) in [d521c31](https://github.com/jdx/mise/commit/d521c31eff1675cd18333c5c258b5d41110fc81a)
+
+### 📦️ Dependency Updates
+
+- pin dependencies by [@renovate[bot]](https://github.com/renovate[bot]) in [#5511](https://github.com/jdx/mise/pull/5511)
+
+### Chore
+
+- **(release)** mark a release as draft until assets are added by [@risu729](https://github.com/risu729) in [#5584](https://github.com/jdx/mise/pull/5584)
+- added reverts to git-cliff by [@jdx](https://github.com/jdx) in [#5577](https://github.com/jdx/mise/pull/5577)
+- reduce binary size for linux by [@jdx](https://github.com/jdx) in [#5587](https://github.com/jdx/mise/pull/5587)
+- `cargo check` fixes by [@jdx](https://github.com/jdx) in [#5589](https://github.com/jdx/mise/pull/5589)
+- Merge vfox.rs into jdx/mise monorepo by [@jdx](https://github.com/jdx) in [#5590](https://github.com/jdx/mise/pull/5590)
+- Add cursor rule for conventional commits by [@jdx](https://github.com/jdx) in [#5592](https://github.com/jdx/mise/pull/5592)
+- Create GitHub action for vfox.rs tests by [@jdx](https://github.com/jdx) in [#5593](https://github.com/jdx/mise/pull/5593)
+- tweak paths for test-vfox workflow by [@jdx](https://github.com/jdx) in [0189372](https://github.com/jdx/mise/commit/0189372aadad456cdac459317bb96ae3987cfd15)
+- set workspace resolver by [@jdx](https://github.com/jdx) in [#5606](https://github.com/jdx/mise/pull/5606)
+- add workspace resolver = 3 by [@jdx](https://github.com/jdx) in [304547a](https://github.com/jdx/mise/commit/304547a0b9a324b5d925c45e2841cadc3f6e938b)
+- fix release-plz with workspace by [@jdx](https://github.com/jdx) in [5b3be6e](https://github.com/jdx/mise/commit/5b3be6eb8f06c509964a2b030eccb2f6e006f398)
+- only bump mise version for release-plz by [@jdx](https://github.com/jdx) in [8f14d10](https://github.com/jdx/mise/commit/8f14d1014d217c91c36a96beaad4565a3aaf567e)
+
 ## [2025.7.4](https://github.com/jdx/mise/compare/v2025.7.3..v2025.7.4) - 2025-07-11
 
 ### 🐛 Bug Fixes

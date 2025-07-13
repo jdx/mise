@@ -98,24 +98,29 @@ impl BackendArg {
         // Ok(backend.clone())
         if let Some(backend) = backend::get(self) {
             Ok(backend)
+        } else if let Some(backend_name) = self.short.split(':').next() {
+            bail!("{backend_name} is not a valid backend name");
         } else {
             bail!("{self} not found in mise tool registry");
         }
     }
 
     pub fn backend_type(&self) -> BackendType {
-        if let Ok(Some(backend_type)) = install_state::backend_type(&self.short) {
-            return backend_type;
-        }
-
-        // Check if this is a vfox plugin:tool format
+        // Check if this is a vfox plugin:tool format first, before checking install state
         if let Some((plugin_name, _tool_name)) = self.short.split_once(':') {
             if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
                 return match plugin_type {
                     PluginType::Vfox => BackendType::Vfox,
-                    PluginType::VfoxBackend => BackendType::VfoxBackend,
+                    PluginType::VfoxBackend => BackendType::VfoxBackend(plugin_name.to_string()),
                     PluginType::Asdf => BackendType::Asdf,
                 };
+            }
+        }
+
+        // Only check install state for non-plugin:tool format entries
+        if !self.short.contains(':') {
+            if let Ok(Some(backend_type)) = install_state::backend_type(&self.short) {
+                return backend_type;
             }
         }
 
@@ -172,8 +177,10 @@ impl BackendArg {
             if let Some(pt) = install_state::get_plugin_type(plugin_name) {
                 match pt {
                     PluginType::Asdf => format!("asdf:{short}"),
-                    PluginType::Vfox => format!("vfox:{short}"),
-                    PluginType::VfoxBackend => format!("vfox:{short}"),
+                    // For vfox plugins, when already in plugin:tool format, return as-is
+                    // because the plugin itself is the backend specification
+                    PluginType::Vfox => short.to_string(),
+                    PluginType::VfoxBackend => short.to_string(),
                 }
             } else {
                 short.to_string()

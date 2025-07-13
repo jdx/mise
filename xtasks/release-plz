@@ -8,7 +8,10 @@ cur_version="$(cargo pkgid mise | cut -d# -f2)"
 latest_version="$(cargo info --registry "crates-io" --color never --quiet mise | grep "^version:" | cut -d' ' -f2)"
 if [[ $cur_version != "$latest_version" ]]; then
 	echo "Releasing $cur_version"
-	cargo publish
+	cargo set-version "$cur_version" --workspace
+	cargo publish --allow-dirty -p vfox
+	cargo add "vfox@$cur_version"
+	cargo publish --allow-dirty -p mise
 	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
 	changelog="$(echo "$changelog" | tail -n +3)"
 	git tag "v$cur_version" -s -m "$changelog"
@@ -22,11 +25,11 @@ git submodule update --remote
 year="$(date +%Y)"
 month="$(date +%-m)"
 if echo "$cur_version" | grep -e "^$year\.$month\."; then
-	cargo set-version --bump patch
+	cargo set-version --bump patch -p mise
 elif echo "$cur_version" | grep -e "^$year\."; then
-	cargo set-version --bump minor
+	cargo set-version --bump minor -p mise
 else
-	cargo set-version "$year.1.0"
+	cargo set-version "$year.1.0" -p mise
 fi
 
 version="$(cargo pkgid mise | cut -d# -f2)"

@@ -6,7 +6,6 @@ use std::fmt::{Display, Formatter};
     Eq,
     Hash,
     Clone,
-    Copy,
     strum::EnumString,
     strum::EnumIter,
     strum::AsRefStr,
@@ -30,20 +29,31 @@ pub enum BackendType {
     Http,
     Ubi,
     Vfox,
-    VfoxBackend,
+    VfoxBackend(String),
     Unknown,
 }
 
 impl Display for BackendType {
     fn fmt(&self, formatter: &mut Formatter) -> std::fmt::Result {
-        write!(formatter, "{}", format!("{self:?}").to_lowercase())
+        match self {
+            BackendType::VfoxBackend(plugin_name) => write!(formatter, "{}", plugin_name),
+            _ => write!(formatter, "{}", format!("{self:?}").to_lowercase()),
+        }
     }
 }
 
 impl BackendType {
     pub fn guess(s: &str) -> BackendType {
-        let s = s.split(':').next().unwrap_or(s);
-        let s = s.split('-').next().unwrap_or(s);
+        let prefix = s.split(':').next().unwrap_or(s);
+
+        // Handle vfox-backend prefix for backend plugins
+        if prefix == "vfox-backend" {
+            // For vfox-backend:plugin-name format, we need to extract the plugin name from the full string
+            let (_, plugin_name) = s.split_once(':').unwrap_or(("", s));
+            return BackendType::VfoxBackend(plugin_name.to_string());
+        }
+
+        let s = prefix.split('-').next().unwrap_or(prefix);
         match s {
             "aqua" => BackendType::Aqua,
             "asdf" => BackendType::Asdf,
@@ -59,7 +69,6 @@ impl BackendType {
             "spm" => BackendType::Spm,
             "http" => BackendType::Http,
             "ubi" => BackendType::Ubi,
-            "vfox-backend" => BackendType::VfoxBackend,
             "vfox" => BackendType::Vfox,
             _ => BackendType::Unknown,
         }

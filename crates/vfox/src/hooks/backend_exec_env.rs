@@ -1,7 +1,7 @@
 use mlua::{prelude::LuaError, FromLua, IntoLua, Lua, Value};
 use std::path::PathBuf;
 
-use crate::hooks::env_keys::EnvKey;
+use crate::{error::Result, hooks::env_keys::EnvKey, Plugin};
 
 #[derive(Debug, Clone)]
 pub struct BackendExecEnvContext {
@@ -14,6 +14,20 @@ pub struct BackendExecEnvContext {
 #[derive(Debug)]
 pub struct BackendExecEnvResponse {
     pub env_vars: Vec<EnvKey>,
+}
+
+impl Plugin {
+    pub async fn backend_exec_env(
+        &self,
+        ctx: BackendExecEnvContext,
+    ) -> Result<BackendExecEnvResponse> {
+        debug!("[vfox:{}] backend_exec_env", &self.name);
+        self.eval_async(chunk! {
+            require "hooks/backend_exec_env"
+            return PLUGIN:BackendExecEnv($ctx)
+        })
+        .await
+    }
 }
 
 impl IntoLua for BackendExecEnvContext {

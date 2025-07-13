@@ -110,7 +110,8 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     for (short, pt) in init_plugins().await?.iter() {
         let full = match pt {
             PluginType::Asdf => format!("asdf:{short}"),
-            PluginType::Vfox | PluginType::VfoxBackend => format!("vfox:{short}"),
+            PluginType::Vfox => format!("vfox:{short}"),
+            PluginType::VfoxBackend => format!("vfox-backend:{short}"), // Use vfox-backend prefix
         };
         let tool = tools
             .entry(short.clone())
@@ -146,24 +147,10 @@ fn is_banned_plugin(path: &Path) -> bool {
 }
 
 fn has_backend_methods(plugin_path: &Path) -> bool {
-    let metadata_path = plugin_path.join("metadata.lua");
-    if !metadata_path.exists() {
-        return false;
-    }
-
-    // Read the metadata.lua file and check for backend method definitions
-    let content = match std::fs::read_to_string(&metadata_path) {
-        std::result::Result::Ok(content) => content,
-        std::result::Result::Err(_) => return false,
-    };
-
-    // Check for the presence of backend method definitions
-    // These are typically defined as BackendListVersions, BackendInstall, BackendExecEnv
-    let backend_methods = ["BackendListVersions", "BackendInstall", "BackendExecEnv"];
-
-    backend_methods
-        .iter()
-        .any(|method| content.contains(method))
+    plugin_path
+        .join("hooks")
+        .join("backend_install.lua")
+        .exists()
 }
 
 pub fn get_tool_full(short: &str) -> Option<String> {

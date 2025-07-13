@@ -29,10 +29,10 @@ graph TD
     F --> I[Set Environment Variables]
     
     subgraph "Backend Context"
-        J[BACKEND_CTX.tool]
-        K[BACKEND_CTX.version]
-        L[BACKEND_CTX.install_path]
-        M[BACKEND_CTX.args]
+        J[ctx.tool]
+        K[ctx.version]
+        L[ctx.install_path]
+        M[ctx.args]
     end
     
     D --> J
@@ -54,8 +54,8 @@ graph TD
 Lists available versions for a tool:
 
 ```lua
-BackendListVersions = function(ctx)
-    local tool = BACKEND_CTX.tool
+function PLUGIN:BackendListVersions(ctx)
+    local tool = ctx.tool
     local versions = {}
     
     -- Your logic to fetch versions for the tool
@@ -70,10 +70,10 @@ end
 Installs a specific version of a tool:
 
 ```lua
-BackendInstall = function(ctx)
-    local tool = BACKEND_CTX.tool
-    local version = BACKEND_CTX.version
-    local install_path = BACKEND_CTX.install_path
+function PLUGIN:BackendInstall(ctx)
+    local tool = ctx.tool
+    local version = ctx.version
+    local install_path = ctx.install_path
     
     -- Your logic to install the tool
     -- Example: download files, extract archives, etc.
@@ -87,8 +87,8 @@ end
 Sets up environment variables for a tool:
 
 ```lua
-BackendExecEnv = function(ctx)
-    local install_path = BACKEND_CTX.install_path
+function PLUGIN:BackendExecEnv(ctx)
+    local install_path = ctx.install_path
     
     -- Your logic to set up environment variables
     -- Example: add bin directories to PATH
@@ -109,9 +109,12 @@ Create a directory with this structure:
 
 ```
 vfox-npm/
-├── metadata.lua          # Plugin metadata and backend methods
-└── test/                 # Test scripts (optional)
-    └── test.sh
+├── metadata.lua                    # Plugin metadata
+├── hooks/
+│   ├── backend_list_versions.lua   # BackendListVersions hook
+│   ├── backend_install.lua         # BackendInstall hook
+│   └── backend_exec_env.lua        # BackendExecEnv hook
+└── Injection.lua                   # Runtime injection (auto-generated)
 ```
 
 ### 2. Basic metadata.lua
@@ -121,22 +124,7 @@ PLUGIN = {
     name = "vfox-npm",
     version = "1.0.0",
     description = "Backend plugin for npm packages",
-    author = "Your Name",
-    
-    -- Backend method for listing versions
-    BackendListVersions = function(ctx)
-        -- Implementation here
-    end,
-    
-    -- Backend method for installing a tool
-    BackendInstall = function(ctx)
-        -- Implementation here
-    end,
-    
-    -- Backend method for setting environment
-    BackendExecEnv = function(ctx)
-        -- Implementation here
-    end
+    author = "Your Name"
 }
 ```
 
@@ -144,90 +132,66 @@ PLUGIN = {
 
 Here's the complete implementation of the vfox-npm plugin that manages npm packages:
 
+### metadata.lua
+
 ```lua
 PLUGIN = {
     name = "vfox-npm",
     version = "1.0.0", 
     description = "Backend plugin for npm packages",
-    author = "jdx",
-    
-    -- Backend method to list versions
-    BackendListVersions = function(ctx)
-        local tool = BACKEND_CTX.tool
-        local versions = {}
-        
-        -- Use npm view to get real versions
-        local result = os.capture("npm view " .. tool .. " versions --json 2>/dev/null")
-        
-        if result and result ~= "" and not result:match("npm ERR!") then
-            -- Parse JSON response from npm
-            local json = require("json")
-            local success, npm_versions = pcall(json.decode, result)
-            
-            if success and npm_versions then
-                if type(npm_versions) == "table" then
-                    for i = #npm_versions, 1, -1 do
-                        local version = npm_versions[i]
-                        table.insert(versions, version)
-                    end
-                end
-            end
-        end
-        
-        if #versions == 0 then
-            error("Failed to fetch versions for " .. tool .. " from npm registry")
-        end
-        
-        return {versions = versions}
-    end,
-    
-    -- Backend method to install a tool
-    BackendInstall = function(ctx)
-        local tool = BACKEND_CTX.tool
-        local version = BACKEND_CTX.version
-        local install_path = BACKEND_CTX.install_path
-        
-        -- Create install directory
-        os.execute("mkdir -p " .. install_path)
-        
-        -- Install the package using npm
-        local npm_cmd = "cd " .. install_path .. " && npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent 2>/dev/null"
-        local result = os.execute(npm_cmd)
-        
-        if result ~= 0 then
-            error("Failed to install " .. tool .. "@" .. version)
-        end
-        
-        return {}
-    end,
-    
-    -- Backend method to set environment
-    BackendExecEnv = function(ctx)
-        local install_path = BACKEND_CTX.install_path
-        if install_path then
-            -- Add node_modules/.bin to PATH for npm-installed binaries
-            local bin_path = install_path .. "/node_modules/.bin"
-            return {
-                env_vars = {
-                    {key = "PATH", value = bin_path}
-                }
-            }
-        else
-            return {env_vars = {}}
-        end
-    end
+    author = "jdx"
 }
+```
 
--- Helper function to capture command output
-function os.capture(cmd, raw)
-    local f = assert(io.popen(cmd, 'r'))
-    local s = assert(f:read('*a'))
-    f:close()
-    if raw then return s end
-    s = string.gsub(s, '^%s+', '')
-    s = string.gsub(s, '%s+$', '')
-    s = string.gsub(s, '[\n\r]+', ' ')
-    return s
+### hooks/backend_list_versions.lua
+
+```lua
+function PLUGIN:BackendListVersions(ctx)
+    local tool = ctx.tool
+    
+    -- Use npm view to get real versions
+    local cmd = require("cmd")
+    local result = cmd.exec("npm view " .. tool .. " versions --json 2>/dev/null")
+    local json = require("json")
+    local versions = json.decode(result)
+    
+    return {versions = versions}
+end
+```
+
+### hooks/backend_install.lua
+
+```lua
+function PLUGIN:BackendInstall(ctx)
+    local tool = ctx.tool
+    local version = ctx.version
+    local install_path = ctx.install_path
+    
+    -- Create install directory
+    os.execute("mkdir -p " .. install_path)
+    
+    -- Install the package directly using npm install
+    local cmd = require("cmd")
+    local npm_cmd = "cd " .. install_path .. " && npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent 2>/dev/null"
+    local result = cmd.exec(npm_cmd)
+    
+    -- If we get here, the command succeeded
+    return {}
+end
+```
+
+### hooks/backend_exec_env.lua
+
+```lua
+function PLUGIN:BackendExecEnv(ctx)
+    local install_path = ctx.install_path
+    -- Add node_modules/.bin to PATH for npm-installed binaries
+    local bin_path = install_path .. "/node_modules/.bin"
+    return {
+        env_vars = {
+            {key = "PATH", value = bin_path}
+        }
+    }
 end
 ```
 
@@ -254,14 +218,14 @@ mise exec vfox-npm:prettier -- --help
 
 ## Context Variables
 
-Backend plugins receive context through the `BACKEND_CTX` variable:
+Backend plugins receive context through the `ctx` parameter passed to each hook function:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `BACKEND_CTX.tool` | The tool name | `"prettier"` |
-| `BACKEND_CTX.version` | The requested version | `"3.0.0"` |
-| `BACKEND_CTX.install_path` | Installation directory | `"/home/user/.local/share/mise/installs/vfox-npm/prettier/3.0.0"` |
-| `BACKEND_CTX.args` | Additional arguments | `[]` (usually empty) |
+| `ctx.tool` | The tool name | `"prettier"` |
+| `ctx.version` | The requested version | `"3.0.0"` |
+| `ctx.install_path` | Installation directory | `"/home/user/.local/share/mise/installs/vfox-npm/prettier/3.0.0"` |
+| `ctx.args` | Additional arguments | `[]` (usually empty) |
 
 ## Testing Your Plugin
 
@@ -296,8 +260,8 @@ mise --debug install my-plugin:some-tool@1.0.0
 Always provide meaningful error messages:
 
 ```lua
-BackendListVersions = function(ctx)
-    local tool = BACKEND_CTX.tool
+function PLUGIN:BackendListVersions(ctx)
+    local tool = ctx.tool
     
     -- Validate tool name
     if not tool or tool == "" then
@@ -305,13 +269,27 @@ BackendListVersions = function(ctx)
     end
     
     -- Execute command with error checking
-    local result = os.capture("some-command")
-    if not result or result:match("error") then
+    local cmd = require("cmd")
+    local result = cmd.exec("npm view " .. tool .. " versions --json 2>/dev/null")
+    if not result or result:match("npm ERR!") then
         error("Failed to fetch versions for " .. tool .. ": " .. (result or "no output"))
     end
     
+    -- Parse JSON response
+    local json = require("json")
+    local success, npm_versions = pcall(json.decode, result)
+    if not success or not npm_versions then
+        error("Failed to parse versions for " .. tool)
+    end
+    
     -- Return versions or error if none found
-    local versions = parse_versions(result)
+    local versions = {}
+    if type(npm_versions) == "table" then
+        for i = #npm_versions, 1, -1 do
+            table.insert(versions, npm_versions[i])
+        end
+    end
+    
     if #versions == 0 then
         error("No versions found for " .. tool)
     end
@@ -366,16 +344,30 @@ end
 Different installation logic based on tool or version:
 
 ```lua
-BackendInstall = function(ctx)
-    local tool = BACKEND_CTX.tool
-    local version = BACKEND_CTX.version
+function PLUGIN:BackendInstall(ctx)
+    local tool = ctx.tool
+    local version = ctx.version
+    local install_path = ctx.install_path
+    
+    -- Create install directory
+    os.execute("mkdir -p " .. install_path)
     
     if tool == "special-tool" then
         -- Special installation logic
-        install_special_tool(version)
+        local cmd = require("cmd")
+        local npm_cmd = "cd " .. install_path .. " && npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent 2>/dev/null"
+        local result = cmd.exec(npm_cmd)
+        if result:match("npm ERR!") then
+            error("Failed to install " .. tool .. "@" .. version)
+        end
     else
         -- Default installation logic
-        install_default_tool(tool, version)
+        local cmd = require("cmd")
+        local npm_cmd = "cd " .. install_path .. " && npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent 2>/dev/null"
+        local result = cmd.exec(npm_cmd)
+        if result:match("npm ERR!") then
+            error("Failed to install " .. tool .. "@" .. version)
+        end
     end
     
     return {}
@@ -384,50 +376,52 @@ end
 
 ### Environment Detection
 
-Detect operating system and architecture:
+vfox automatically injects runtime information into your plugin:
 
 ```lua
-local function get_platform()
-    local uname = os.capture("uname -s"):lower()
-    local arch = os.capture("uname -m")
-    return {os = uname, arch = arch}
-end
-
-BackendInstall = function(ctx)
-    local platform = get_platform()
-    local tool = BACKEND_CTX.tool
-    local version = BACKEND_CTX.version
-    
-    -- Platform-specific installation
-    if platform.os == "darwin" then
-        -- macOS installation
-    elseif platform.os == "linux" then
-        -- Linux installation
-    else
-        -- Other platforms
+function PLUGIN:BackendInstall(ctx)
+    -- Platform-specific installation using injected RUNTIME object
+    if RUNTIME.osType == "Darwin" then
+        -- macOS installation logic
+    elseif RUNTIME.osType == "Linux" then
+        -- Linux installation logic
+    elseif RUNTIME.osType == "Windows" then
+        -- Windows installation logic
     end
     
     return {}
 end
 ```
 
+The `RUNTIME` object provides:
+
+- `RUNTIME.osType`: Operating system type (Windows, Linux, Darwin)
+- `RUNTIME.archType`: Architecture (amd64, arm64, etc.)
+- `RUNTIME.version`: vfox runtime version
+- `RUNTIME.pluginDirPath`: Plugin directory path
+
 ### Multiple Environment Variables
 
 Set multiple environment variables:
 
 ```lua
-BackendExecEnv = function(ctx)
-    local install_path = BACKEND_CTX.install_path
-    local tool = BACKEND_CTX.tool
+function PLUGIN:BackendExecEnv(ctx)
+    local install_path = ctx.install_path
+    local tool = ctx.tool
     
-    return {
-        env_vars = {
-            {key = "PATH", value = install_path .. "/bin"},
-            {key = "PATH", value = install_path .. "/scripts"},
-            {key = tool:upper() .. "_HOME", value = install_path},
-            {key = tool:upper() .. "_VERSION", value = BACKEND_CTX.version}
+    if install_path then
+        -- Add node_modules/.bin to PATH for npm-installed binaries
+        local bin_path = install_path .. "/node_modules/.bin"
+        return {
+            env_vars = {
+                {key = "PATH", value = bin_path},
+                {key = tool:upper() .. "_HOME", value = install_path},
+                {key = tool:upper() .. "_VERSION", value = ctx.version}
+            }
         }
-    }
+    else
+        return {env_vars = {}}
+    end
 end
 ```
 
@@ -442,8 +436,8 @@ Cache expensive operations when possible:
 local version_cache = {}
 local cache_ttl = 300 -- 5 minutes
 
-BackendListVersions = function(ctx)
-    local tool = BACKEND_CTX.tool
+function PLUGIN:BackendListVersions(ctx)
+    local tool = ctx.tool
     local now = os.time()
     
     -- Check cache first
@@ -451,8 +445,21 @@ BackendListVersions = function(ctx)
         return {versions = version_cache[tool].versions}
     end
     
-    -- Fetch versions
-    local versions = fetch_versions(tool)
+    -- Fetch versions from npm
+    local cmd = require("cmd")
+    local result = cmd.exec("npm view " .. tool .. " versions --json 2>/dev/null")
+    
+    local versions = {}
+    if result and result ~= "" and not result:match("npm ERR!") then
+        local json = require("json")
+        local success, npm_versions = pcall(json.decode, result)
+        
+        if success and npm_versions and type(npm_versions) == "table" then
+            for i = #npm_versions, 1, -1 do
+                table.insert(versions, npm_versions[i])
+            end
+        end
+    end
     
     -- Cache the result
     version_cache[tool] = {
@@ -469,19 +476,28 @@ end
 For plugins that need to download multiple files:
 
 ```lua
-BackendInstall = function(ctx)
-    local tool = BACKEND_CTX.tool
-    local version = BACKEND_CTX.version
-    local install_path = BACKEND_CTX.install_path
+function PLUGIN:BackendInstall(ctx)
+    local tool = ctx.tool
+    local version = ctx.version
+    local install_path = ctx.install_path
     
-    -- Download files in parallel when possible
-    local downloads = {
-        {url = "https://example.com/file1.zip", dest = install_path .. "/file1.zip"},
-        {url = "https://example.com/file2.zip", dest = install_path .. "/file2.zip"}
+    -- Create install directory
+    os.execute("mkdir -p " .. install_path)
+    
+    -- Install multiple packages in parallel when possible
+    local packages = {
+        tool .. "@" .. version,
+        "other-package@latest"
     }
     
-    -- Use parallel downloads if available
-    parallel_download(downloads)
+    -- Use npm install for multiple packages
+    local cmd = require("cmd")
+    local npm_cmd = "cd " .. install_path .. " && npm install " .. table.concat(packages, " ") .. " --no-package-lock --no-save --silent 2>/dev/null"
+    local result = cmd.exec(npm_cmd)
+    
+    if result:match("npm ERR!") then
+        error("Failed to install packages")
+    end
     
     return {}
 end

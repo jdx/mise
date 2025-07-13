@@ -2,8 +2,10 @@ name: test-vfox
 
 on:
   pull_request:
+    paths:
+      - "crates/vfox/**"
   push:
-    branches: [main]
+    branches: [release]
 
 concurrency:
   group: test-vfox-${{ github.ref }}

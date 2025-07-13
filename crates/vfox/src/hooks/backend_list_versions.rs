@@ -1,3 +1,4 @@
+use crate::{error::Result, Plugin};
 use mlua::{prelude::LuaError, FromLua, IntoLua, Lua, Value};
 
 #[derive(Debug, Clone)]
@@ -9,6 +10,20 @@ pub struct BackendListVersionsContext {
 #[derive(Debug, Clone)]
 pub struct BackendListVersionsResponse {
     pub versions: Vec<String>,
+}
+
+impl Plugin {
+    pub async fn backend_list_versions(
+        &self,
+        ctx: BackendListVersionsContext,
+    ) -> Result<BackendListVersionsResponse> {
+        debug!("[vfox:{}] backend_list_versions", &self.name);
+        self.eval_async(chunk! {
+            require "hooks/backend_list_versions"
+            return PLUGIN:BackendListVersions($ctx)
+        })
+        .await
+    }
 }
 
 impl IntoLua for BackendListVersionsContext {

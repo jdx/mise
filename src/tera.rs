@@ -95,7 +95,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         move |input: &Value, args: &HashMap<String, Value>| match input {
             Value::String(s) => {
                 let path = Path::new(s);
-                let mut hash = hash::file_hash_sha256(path, None).unwrap();
+                let mut hash = hash::file_hash_blake3(path, None).unwrap();
                 if let Some(len) = args.get("len").and_then(Value::as_u64) {
                     hash = hash.chars().take(len as usize).collect();
                 }
@@ -108,7 +108,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         "hash",
         move |input: &Value, args: &HashMap<String, Value>| match input {
             Value::String(s) => {
-                let mut hash = hash::hash_sha256_to_str(s);
+                let mut hash = hash::hash_blake3_to_str(s);
                 if let Some(len) = args.get("len").and_then(Value::as_u64) {
                     hash = hash.chars().take(len as usize).collect();
                 }
@@ -343,7 +343,7 @@ pub fn tera_exec(
                     cmd = cmd.dir(dir);
                 }
                 let result = if cache.is_some() || cache_duration.is_some() {
-                    let cachehash = hash::hash_sha256_to_str(
+                    let cachehash = hash::hash_blake3_to_str(
                         &(dir
                             .as_ref()
                             .map(|d| d.to_string_lossy().to_string())
@@ -553,7 +553,7 @@ mod tests {
     async fn test_hash() {
         let _config = Config::get().await.unwrap();
         let s = render("{{ \"foo\" | hash(len=8) }}");
-        assert_eq!(s, "2c26b46b");
+        assert_eq!(s, "04e0bb39");
     }
 
     #[tokio::test]
@@ -561,7 +561,7 @@ mod tests {
     async fn test_hash_file() {
         let _config = Config::get().await.unwrap();
         let s = render("{{ \"../fixtures/shorthands.toml\" | hash_file(len=64) }}");
-        insta::assert_snapshot!(s, @"518349c5734814ff9a21ab8d00ed2da6464b1699910246e763a4e6d5feb139fa");
+        insta::assert_snapshot!(s, @"ce17f44735ea2083038e61c4b291ed31593e6cf4d93f5dc147e97e62962ac4e6");
     }
 
     #[tokio::test]

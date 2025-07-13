@@ -55,12 +55,7 @@ mod tests {
         let lua = Lua::new();
         mod_cmd(&lua).unwrap();
 
-        // Test that the command execution works on both Unix and Windows
-        let test_command = if cfg!(target_os = "windows") {
-            "echo hello world"
-        } else {
-            "echo hello world"
-        };
+        let test_command = "echo hello world";
 
         lua.load(format!(
             r#"
