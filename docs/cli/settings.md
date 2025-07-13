@@ -53,7 +53,6 @@ Output in TOML format
 - [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.md)
 
 Examples:
-
 ```
 # list all settings
 $ mise settings

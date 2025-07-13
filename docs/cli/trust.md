@@ -9,7 +9,6 @@ This means mise will parse the file with potentially dangerous
 features enabled.
 
 This includes:
-
 - environment variables
 - templates
 - `path:` plugin versions
