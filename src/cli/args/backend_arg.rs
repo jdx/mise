@@ -98,8 +98,32 @@ impl BackendArg {
         // Ok(backend.clone())
         if let Some(backend) = backend::get(self) {
             Ok(backend)
-        } else if let Some(backend_name) = self.short.split(':').next() {
-            bail!("{backend_name} is not a valid backend name");
+        } else if let Some((plugin_name, tool_name)) = self.short.split_once(':') {
+            // Check if the plugin exists first
+            if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
+                // Plugin exists, but the backend couldn't be created
+                // This could be due to the tool not being available or plugin not properly installed
+                match plugin_type {
+                    PluginType::Asdf => {
+                        bail!(
+                            "asdf plugin '{plugin_name}' exists but '{tool_name}' is not available or the plugin is not properly installed"
+                        );
+                    }
+                    PluginType::Vfox => {
+                        bail!(
+                            "vfox plugin '{plugin_name}' exists but '{tool_name}' is not available or the plugin is not properly installed"
+                        );
+                    }
+                    PluginType::VfoxBackend => {
+                        bail!(
+                            "vfox-backend plugin '{plugin_name}' exists but '{tool_name}' is not available or the plugin is not properly installed"
+                        );
+                    }
+                }
+            } else {
+                // Plugin doesn't exist
+                bail!("{plugin_name} is not a valid plugin name");
+            }
         } else {
             bail!("{self} not found in mise tool registry");
         }
@@ -398,5 +422,26 @@ mod tests {
         // Test that vfox-backend plugins in plugin:tool format return as-is
         let fa: BackendArg = "vfox-backend-plugin:tool".into();
         assert_str_eq!("vfox-backend-plugin:tool", fa.full());
+    }
+
+    #[tokio::test]
+    async fn test_backend_arg_improved_error_messages() {
+        let _config = Config::get().await.unwrap();
+
+        // Test that when a plugin exists but the tool is not available,
+        // we get a more specific error message instead of "not a valid backend name"
+        let fa: BackendArg = "nonexistent-plugin:some-tool".into();
+        let result = fa.backend();
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("is not a valid plugin name"),
+            "Expected error to mention invalid plugin name, got: {error_msg}"
+        );
+
+        // Note: We can't easily test the case where a plugin exists but the tool doesn't
+        // because that would require setting up actual plugins in the test environment.
+        // The logic has been improved to check plugin existence first and provide
+        // more specific error messages based on the plugin type.
     }
 }
