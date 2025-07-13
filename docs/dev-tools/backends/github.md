@@ -44,11 +44,9 @@ For different asset patterns per platform:
 [tools."github:cli/cli"]
 version = "latest"
 
-[tools."github:cli/cli".platforms.linux-x64]
-asset_pattern = "gh_*_linux_x64.tar.gz"
-
-[tools."github:cli/cli".platforms.macos-arm64]
-asset_pattern = "gh_*_macOS_arm64.tar.gz"
+[tools."github:cli/cli".platforms]
+linux-x64 = { asset_pattern = "gh_*_linux_x64.tar.gz" }
+macos-arm64 = { asset_pattern = "gh_*_macOS_arm64.tar.gz" }
 ```
 
 ### `checksum`
@@ -70,13 +68,9 @@ checksum = "sha256:a1b2c3d4e5f6789..."
 [tools."github:cli/cli"]
 version = "latest"
 
-[tools."github:cli/cli".platforms.linux-x64]
-asset_pattern = "gh_*_linux_x64.tar.gz"
-checksum = "sha256:a1b2c3d4e5f6789..."
-
-[tools."github:cli/cli".platforms.macos-arm64]
-asset_pattern = "gh_*_macOS_arm64.tar.gz"
-checksum = "sha256:b2c3d4e5f6789..."
+[tools."github:cli/cli".platforms]
+linux-x64 = { asset_pattern = "gh_*_linux_x64.tar.gz", checksum = "sha256:a1b2c3d4e5f6789..." }
+macos-arm64 = { asset_pattern = "gh_*_macOS_arm64.tar.gz", checksum = "sha256:b2c3d4e5f6789..." }
 ```
 
 ### `size`

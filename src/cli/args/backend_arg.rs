@@ -331,7 +331,7 @@ impl Debug for BackendArg {
 
 impl PartialEq for BackendArg {
     fn eq(&self, other: &Self) -> bool {
-        self.short == other.short
+        self.full_with_opts() == other.full_with_opts()
     }
 }
 
@@ -345,13 +345,13 @@ impl PartialOrd for BackendArg {
 
 impl Ord for BackendArg {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.short.cmp(&other.short)
+        self.full_with_opts().cmp(&other.full_with_opts())
     }
 }
 
 impl Hash for BackendArg {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.short.hash(state);
+        self.full_with_opts().hash(state);
     }
 }
 
@@ -446,5 +446,35 @@ mod tests {
         // because that would require setting up actual plugins in the test environment.
         // The logic has been improved to check plugin existence first and provide
         // more specific error messages based on the plugin type.
+    }
+
+    #[tokio::test]
+    async fn test_backend_arg_equality_with_different_backends() {
+        let _config = Config::get().await.unwrap();
+        
+        // Test that BackendArg objects with the same short name but different backends
+        // are correctly treated as different objects
+        let core_node: BackendArg = "core:node".into();
+        let asdf_node: BackendArg = "asdf:node".into();
+        
+        // These should have the same short name but be different objects
+        assert_eq!(core_node.short, asdf_node.short);
+        assert_ne!(core_node, asdf_node);
+        
+        // Test that BackendArg objects with options are different from those without
+        let node_with_opts: BackendArg = "node[provider=gitlab]".into();
+        let node_without_opts: BackendArg = "node".into();
+        
+        // These should have the same short name but be different objects
+        assert_eq!(node_with_opts.short, node_without_opts.short);
+        assert_ne!(node_with_opts, node_without_opts);
+        
+        // Test that the full_with_opts representations are different
+        assert_ne!(core_node.full_with_opts(), asdf_node.full_with_opts());
+        assert_ne!(node_with_opts.full_with_opts(), node_without_opts.full_with_opts());
+        
+        // Test that options are preserved in the full_with_opts representation
+        assert!(node_with_opts.full_with_opts().contains("provider=gitlab"));
+        assert!(!node_without_opts.full_with_opts().contains("provider=gitlab"));
     }
 }

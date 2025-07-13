@@ -133,14 +133,13 @@ impl dyn ConfigFile {
         for ta in tools {
             if let Some(tv) = &ta.tvr {
                 plugins_to_update
-                    .entry(ta.ba.short.clone())
+                    .entry(ta.ba.clone())
                     .or_insert_with(Vec::new)
                     .push(tv);
             }
         }
         trace!("plugins to update: {plugins_to_update:?}");
-        for (ba_short, versions) in &plugins_to_update {
-            let ba = Arc::new(BackendArg::new(ba_short.clone(), None));
+        for (ba, versions) in &plugins_to_update {
             let mut tvl = ToolVersionList::new(
                 ba.clone(),
                 ts.source.clone().unwrap_or(ToolSource::Argument),
@@ -148,13 +147,12 @@ impl dyn ConfigFile {
             for tv in versions {
                 tvl.requests.push((*tv).clone());
             }
-            ts.versions.insert(ba, tvl);
+            ts.versions.insert(ba.clone(), tvl);
         }
         trace!("resolving toolset 2");
         ts.resolve(config).await?;
         trace!("resolved toolset 2");
-        for (ba_short, versions) in plugins_to_update {
-            let ba = Arc::new(BackendArg::new(ba_short, None));
+        for (ba, versions) in plugins_to_update {
             let mut new = vec![];
             for tr in versions {
                 let mut tr = tr.clone();

@@ -45,11 +45,9 @@ For different asset patterns per platform:
 [tools."gitlab:gitlab-org/gitlab-runner"]
 version = "latest"
 
-[tools."gitlab:gitlab-org/gitlab-runner".platforms.linux-x64]
-asset_pattern = "gitlab-runner-linux-x64"
-
-[tools."gitlab:gitlab-org/gitlab-runner".platforms.macos-arm64]
-asset_pattern = "gitlab-runner-macos-arm64"
+[tools."gitlab:gitlab-org/gitlab-runner".platforms]
+linux-x64 = { asset_pattern = "gitlab-runner-linux-x64" }
+macos-arm64 = { asset_pattern = "gitlab-runner-macos-arm64" }
 ```
 
 ### `checksum`
@@ -71,13 +69,9 @@ checksum = "sha256:a1b2c3d4e5f6789..."
 [tools."gitlab:gitlab-org/gitlab-runner"]
 version = "latest"
 
-[tools."gitlab:gitlab-org/gitlab-runner".platforms.linux-x64]
-asset_pattern = "gitlab-runner-linux-x64"
-checksum = "sha256:a1b2c3d4e5f6789..."
-
-[tools."gitlab:gitlab-org/gitlab-runner".platforms.macos-arm64]
-asset_pattern = "gitlab-runner-macos-arm64"
-checksum = "sha256:b2c3d4e5f6789..."
+[tools."gitlab:gitlab-org/gitlab-runner".platforms]
+linux-x64 = { asset_pattern = "gitlab-runner-linux-x64", checksum = "sha256:a1b2c3d4e5f6789..." }
+macos-arm64 = { asset_pattern = "gitlab-runner-macos-arm64", checksum = "sha256:b2c3d4e5f6789..." }
 ```
 
 ### `size`
@@ -96,8 +90,10 @@ You can specify different sizes for different platforms:
 ```toml
 [tools."gitlab:gitlab-org/gitlab-runner"]
 version = "latest"
-platforms_linux_x64_size = "12345678"
-platforms_macos_arm64_size = "9876543"
+
+[tools."gitlab:gitlab-org/gitlab-runner".platforms]
+linux-x64 = { size = "12345678" }
+macos-arm64 = { size = "9876543" }
 ```
 
 ### `strip_components`
