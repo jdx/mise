@@ -1,5 +1,8 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform::lookup_platform_key;
+use crate::backend::static_helpers::{
+    get_filename_from_url, install_artifact, template_string, verify_artifact, verify_checksum_str,
+};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
@@ -7,9 +10,9 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
-use crate::{backend::Backend, file, github, gitlab, hash};
+use crate::{backend::Backend, github, gitlab};
 use async_trait::async_trait;
-use eyre::{Result, bail};
+use eyre::Result;
 use regex::Regex;
 use std::fmt::Debug;
 use std::path::Path;
@@ -77,18 +80,18 @@ impl Backend for UnifiedGitBackend {
         let asset_url = self.resolve_asset_url(&tv, &opts, repo, api_url).await?;
 
         // Download
-        let filename = self.get_filename_from_url(&asset_url)?;
+        let filename = get_filename_from_url(&asset_url);
         let file_path = tv.download_path().join(&filename);
 
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(&asset_url, &file_path, Some(&ctx.pr))
             .await?;
 
-        // Verify
-        self.verify_artifact(&tv, &file_path, &opts)?;
+        // Verify (shared)
+        verify_artifact(&tv, &file_path, &opts)?;
 
-        // Install
-        self.install_artifact(&tv, &file_path, &opts)?;
+        // Install (shared)
+        install_artifact(&tv, &file_path, &opts)?;
 
         // Verify checksum if specified
         self.verify_checksum(ctx, &mut tv, &file_path)?;
@@ -103,7 +106,7 @@ impl Backend for UnifiedGitBackend {
     ) -> Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
         if let Some(bin_path_template) = opts.get("bin_path") {
-            let bin_path = self.template_bin_path(bin_path_template, tv)?;
+            let bin_path = template_string(bin_path_template, tv);
             Ok(vec![tv.install_path().join(bin_path)])
         } else {
             // Look for bin directory in the install path
@@ -173,7 +176,7 @@ impl UnifiedGitBackend {
 
     async fn resolve_github_asset_url(
         &self,
-        _tv: &ToolVersion,
+        tv: &ToolVersion,
         opts: &ToolVersionOptions,
         repo: &str,
         api_url: &str,
@@ -187,7 +190,7 @@ impl UnifiedGitBackend {
             .unwrap_or("{name}-{version}-{os}-{arch}.{ext}".to_string());
 
         // Template the pattern with actual values
-        let templated_pattern = self.template_pattern(&pattern, repo, version)?;
+        let templated_pattern = template_string(&pattern, tv);
 
         // Find matching asset - pattern is already templated by mise.toml parsing
         let asset = release
@@ -203,7 +206,7 @@ impl UnifiedGitBackend {
 
     async fn resolve_gitlab_asset_url(
         &self,
-        _tv: &ToolVersion,
+        tv: &ToolVersion,
         opts: &ToolVersionOptions,
         repo: &str,
         api_url: &str,
@@ -217,7 +220,7 @@ impl UnifiedGitBackend {
             .unwrap_or("{name}-{version}-{os}-{arch}.{ext}".to_string());
 
         // Template the pattern with actual values
-        let templated_pattern = self.template_pattern(&pattern, repo, version)?;
+        let templated_pattern = template_string(&pattern, tv);
 
         // Find matching asset - pattern is already templated by mise.toml parsing
         let asset = release
@@ -230,30 +233,6 @@ impl UnifiedGitBackend {
             })?;
 
         Ok(asset.direct_asset_url)
-    }
-
-    fn template_pattern(&self, pattern: &str, repo: &str, version: &str) -> Result<String> {
-        // If the pattern doesn't contain template variables, return it as-is
-        if !pattern.contains('{') {
-            return Ok(pattern.to_string());
-        }
-
-        let name = repo.split('/').next_back().unwrap_or(repo);
-        let settings = Settings::get();
-        let os = settings.os();
-        let arch = settings.arch();
-
-        // Determine extension dynamically based on platform
-        let ext = if cfg!(windows) { "zip" } else { "tar.gz" };
-
-        let templated = pattern
-            .replace("{name}", name)
-            .replace("{version}", version)
-            .replace("{os}", os)
-            .replace("{arch}", arch)
-            .replace("{ext}", ext);
-
-        Ok(templated)
     }
 
     fn matches_pattern(&self, asset_name: &str, pattern: &str) -> bool {
@@ -271,116 +250,16 @@ impl UnifiedGitBackend {
         }
     }
 
-    fn get_filename_from_url(&self, url: &str) -> Result<String> {
-        Ok(url.split('/').next_back().unwrap_or("download").to_string())
-    }
+    // get_filename_from_url now in static_helpers.rs
 
-    fn verify_artifact(
-        &self,
-        _tv: &ToolVersion,
-        file_path: &Path,
-        opts: &ToolVersionOptions,
-    ) -> Result<()> {
-        // Check platform-specific checksum first
+    fn verify_checksum(ctx: &InstallContext, tv: &mut ToolVersion, file_path: &Path) -> Result<()> {
+        let opts = tv.request.options();
         let checksum =
-            lookup_platform_key(opts, "checksum").or_else(|| opts.get("checksum").cloned());
+            lookup_platform_key(&opts, "checksum").or_else(|| opts.get("checksum").cloned());
 
         if let Some(checksum) = checksum {
-            self.verify_checksum_str(file_path, &checksum)?;
-        }
-
-        // Check platform-specific size
-        let size = lookup_platform_key(opts, "size").or_else(|| opts.get("size").cloned());
-
-        if let Some(size_str) = size {
-            let expected_size: u64 = size_str.parse()?;
-            let actual_size = file_path.metadata()?.len();
-            if actual_size != expected_size {
-                bail!(
-                    "Size mismatch: expected {}, got {}",
-                    expected_size,
-                    actual_size
-                );
-            }
-        }
-
-        Ok(())
-    }
-
-    fn verify_checksum_str(&self, file_path: &Path, checksum: &str) -> Result<()> {
-        if let Some((algo, hash_str)) = checksum.split_once(':') {
-            hash::ensure_checksum(file_path, hash_str, None, algo)?;
-        } else {
-            bail!("Invalid checksum format: {}", checksum);
+            verify_checksum_str(file_path, &checksum)?;
         }
         Ok(())
-    }
-
-    fn install_artifact(
-        &self,
-        tv: &ToolVersion,
-        file_path: &Path,
-        opts: &ToolVersionOptions,
-    ) -> Result<()> {
-        let install_path = tv.install_path();
-        let strip_components = opts
-            .get("strip_components")
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
-
-        file::remove_all(&install_path)?;
-        file::create_dir_all(&install_path)?;
-
-        // Use TarFormat for format detection
-        let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
-        let format = file::TarFormat::from_ext(ext);
-        let tar_opts = file::TarOptions {
-            format,
-            strip_components,
-            pr: None,
-        };
-        if format == file::TarFormat::Zip {
-            file::unzip(file_path, &install_path)?;
-        } else if format == file::TarFormat::Raw {
-            // Copy the file directly to the bin_path directory or install_path
-            if let Some(bin_path_template) = opts.get("bin_path") {
-                let bin_path = self.template_bin_path(bin_path_template, tv)?;
-                let bin_dir = install_path.join(bin_path);
-                file::create_dir_all(&bin_dir)?;
-                let dest = bin_dir.join(file_path.file_name().unwrap());
-                file::copy(file_path, &dest)?;
-                file::make_executable(&dest)?;
-            } else {
-                let dest = install_path.join(file_path.file_name().unwrap());
-                file::copy(file_path, &dest)?;
-                file::make_executable(&dest)?;
-            }
-        } else {
-            file::untar(file_path, &install_path, &tar_opts)?;
-        }
-        Ok(())
-    }
-
-    fn template_bin_path(&self, bin_path_template: &str, tv: &ToolVersion) -> Result<String> {
-        // If the bin_path doesn't contain template variables, return it as-is
-        if !bin_path_template.contains('{') {
-            return Ok(bin_path_template.to_string());
-        }
-        let name = tv.ba().tool_name();
-        let version = &tv.version;
-        let settings = Settings::get();
-        let os = settings.os();
-        let arch = settings.arch();
-
-        // Determine extension dynamically based on platform
-        let ext = if cfg!(windows) { "zip" } else { "tar.gz" };
-
-        let templated = bin_path_template
-            .replace("{name}", &name)
-            .replace("{version}", version)
-            .replace("{os}", os)
-            .replace("{arch}", arch)
-            .replace("{ext}", ext);
-        Ok(templated)
     }
 }
