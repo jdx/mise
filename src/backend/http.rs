@@ -1,8 +1,7 @@
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
-use crate::backend::platform::lookup_platform_key;
 use crate::backend::static_helpers::{
-    get_filename_from_url, install_artifact, template_string, verify_artifact,
+    get_filename_from_url, install_artifact, lookup_platform_key, template_string, verify_artifact,
 };
 use crate::cli::args::BackendArg;
 use crate::config::Config;
