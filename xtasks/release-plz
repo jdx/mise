@@ -8,12 +8,12 @@ cur_version="$(cargo pkgid mise | cut -d# -f2)"
 latest_version="$(cargo info --registry "crates-io" --color never --quiet mise | grep "^version:" | cut -d' ' -f2)"
 if [[ $cur_version != "$latest_version" ]]; then
 	echo "Releasing $cur_version"
+	cargo set-version "$cur_version" --workspace
+	cargo publish --allow-dirty -p vfox
+	cargo publish --allow-dirty -p mise
 	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
 	changelog="$(echo "$changelog" | tail -n +3)"
-	cargo set-version "$cur_version" --workspace
-	git add Cargo.lock crates/vfox/Cargo.toml
-	git commit --amend --no-edit
-	cargo release -x --no-confirm --workspace --sign
+	git tag "v$cur_version" -s -m "$changelog"
 	git push --tags
 	gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog" --draft
 	exit 0
