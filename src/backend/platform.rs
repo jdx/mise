@@ -42,8 +42,12 @@ pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<
             if let Some(val) = opts.get_nested_string(&nested_key) {
                 return Some(val);
             }
+            // Try flat format: platforms_macos_arm64_url
+            let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
+            if let Some(val) = opts.get(&flat_key) {
+                return Some(val.clone());
+            }
         }
     }
-
     None
 }

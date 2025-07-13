@@ -185,12 +185,15 @@ impl UnifiedGitBackend {
             .or_else(|| opts.get("asset_pattern").cloned())
             .unwrap_or("{name}-{version}-{target}.{ext}".to_string());
 
+        // Template the pattern with actual values
+        let templated_pattern = self.template_pattern(&pattern, repo, version)?;
+
         // Find matching asset - pattern is already templated by mise.toml parsing
         let asset = release
             .assets
             .into_iter()
-            .find(|a| self.matches_pattern(&a.name, &pattern))
-            .ok_or_else(|| eyre::eyre!("No matching asset found for pattern: {}", pattern))?;
+            .find(|a| self.matches_pattern(&a.name, &templated_pattern))
+            .ok_or_else(|| eyre::eyre!("No matching asset found for pattern: {}", templated_pattern))?;
 
         Ok(asset.browser_download_url)
     }
@@ -210,15 +213,39 @@ impl UnifiedGitBackend {
             .or_else(|| opts.get("asset_pattern").cloned())
             .unwrap_or("{name}-{version}-{os}-{arch}.{ext}".to_string());
 
+        // Template the pattern with actual values
+        let templated_pattern = self.template_pattern(&pattern, repo, version)?;
+
         // Find matching asset - pattern is already templated by mise.toml parsing
         let asset = release
             .assets
             .links
             .into_iter()
-            .find(|a| self.matches_pattern(&a.name, &pattern))
-            .ok_or_else(|| eyre::eyre!("No matching asset found for pattern: {}", pattern))?;
+            .find(|a| self.matches_pattern(&a.name, &templated_pattern))
+            .ok_or_else(|| eyre::eyre!("No matching asset found for pattern: {}", templated_pattern))?;
 
         Ok(asset.direct_asset_url)
+    }
+
+    fn template_pattern(&self, pattern: &str, repo: &str, version: &str) -> Result<String> {
+        // If the pattern doesn't contain template variables, return it as-is
+        if !pattern.contains('{') {
+            return Ok(pattern.to_string());
+        }
+
+        let name = repo.split('/').next_back().unwrap_or(repo);
+        let os = std::env::consts::OS;
+        let arch = std::env::consts::ARCH;
+        let ext = "tar.gz"; // Default extension
+
+        let templated = pattern
+            .replace("{name}", name)
+            .replace("{version}", version)
+            .replace("{os}", os)
+            .replace("{arch}", arch)
+            .replace("{ext}", ext);
+
+        Ok(templated)
     }
 
     fn matches_pattern(&self, asset_name: &str, pattern: &str) -> bool {
