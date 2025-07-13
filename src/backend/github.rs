@@ -1,7 +1,7 @@
 use crate::backend::backend_type::BackendType;
 use crate::backend::platform::lookup_platform_key;
 use crate::backend::static_helpers::{
-    get_filename_from_url, install_artifact, template_string, verify_artifact, verify_checksum_str,
+    get_filename_from_url, install_artifact, template_string, verify_artifact,
 };
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -15,7 +15,6 @@ use async_trait::async_trait;
 use eyre::Result;
 use regex::Regex;
 use std::fmt::Debug;
-use std::path::Path;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -248,18 +247,5 @@ impl UnifiedGitBackend {
             // Fallback to simple contains check
             asset_name.contains(pattern)
         }
-    }
-
-    // get_filename_from_url now in static_helpers.rs
-
-    fn verify_checksum(ctx: &InstallContext, tv: &mut ToolVersion, file_path: &Path) -> Result<()> {
-        let opts = tv.request.options();
-        let checksum =
-            lookup_platform_key(&opts, "checksum").or_else(|| opts.get("checksum").cloned());
-
-        if let Some(checksum) = checksum {
-            verify_checksum_str(file_path, &checksum)?;
-        }
-        Ok(())
     }
 }
