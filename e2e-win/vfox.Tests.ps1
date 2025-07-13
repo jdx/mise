@@ -40,12 +40,14 @@ Describe 'vfox' {
         mise plugin install vfox-npm https://github.com/jdx/vfox-npm
         
         # Test installing a specific npm tool through vfox-npm
-        $result = mise install vfox-npm:prettier@3.4.2
+        mise install vfox-npm:prettier@3.4.1 --debug
         # The install result might be empty but the tool should still work
         
         # Test using the installed npm tool
-        $version = mise x vfox-npm:prettier@3.4.2 -- prettier --version
-        $version | Should -Be "3.4.2"
+        $which = mise which vfox-npm:prettier@3.4.1
+        $which | Should -Match "mise\\installs\\vfox-npm-prettier\\3.4.1\\bin\\prettier.cmd"
+        $version = mise x vfox-npm:prettier@3.4.1 -- prettier --version
+        $version | Should -Be "3.4.1"
         
         # Test that the tool is available in the current environment
         $prettierVersion = mise x vfox-npm:prettier -- prettier --version
