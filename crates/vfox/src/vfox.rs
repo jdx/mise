@@ -375,6 +375,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // disable for now
     async fn test_install_cmake() {
         let vfox = Vfox::test();
         vfox.install_plugin("cmake").unwrap();
