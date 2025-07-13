@@ -5,6 +5,7 @@
 ### 🚀 Features
 
 - add static backends (Github, GitLab, and HTTP) by [@jdx](https://github.com/jdx) in [#5602](https://github.com/jdx/mise/pull/5602)
+- blake3 support by [@jdx](https://github.com/jdx) in [#5605](https://github.com/jdx/mise/pull/5605)
 
 ### 🐛 Bug Fixes
 
@@ -34,6 +35,10 @@
 - Add cursor rule for conventional commits by [@jdx](https://github.com/jdx) in [#5592](https://github.com/jdx/mise/pull/5592)
 - Create GitHub action for vfox.rs tests by [@jdx](https://github.com/jdx) in [#5593](https://github.com/jdx/mise/pull/5593)
 - tweak paths for test-vfox workflow by [@jdx](https://github.com/jdx) in [0189372](https://github.com/jdx/mise/commit/0189372aadad456cdac459317bb96ae3987cfd15)
+- set workspace resolver by [@jdx](https://github.com/jdx) in [#5606](https://github.com/jdx/mise/pull/5606)
+- add workspace resolver = 3 by [@jdx](https://github.com/jdx) in [304547a](https://github.com/jdx/mise/commit/304547a0b9a324b5d925c45e2841cadc3f6e938b)
+- fix release-plz with workspace by [@jdx](https://github.com/jdx) in [5b3be6e](https://github.com/jdx/mise/commit/5b3be6eb8f06c509964a2b030eccb2f6e006f398)
+- only bump mise version for release-plz by [@jdx](https://github.com/jdx) in [8f14d10](https://github.com/jdx/mise/commit/8f14d1014d217c91c36a96beaad4565a3aaf567e)
 
 ## [2025.7.4](https://github.com/jdx/mise/compare/v2025.7.3..v2025.7.4) - 2025-07-11
 
