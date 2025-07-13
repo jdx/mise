@@ -38,13 +38,17 @@ Specifies the pattern to match against release asset names. This is useful when 
 
 ### Platform-specific Asset Patterns
 
-You can specify different asset patterns for different platforms:
+For different asset patterns per platform:
 
 ```toml
 [tools."github:cli/cli"]
 version = "latest"
-platforms_linux_x64_asset_pattern = "gh_*_linux_x64.tar.gz"
-platforms_macos_arm64_asset_pattern = "gh_*_macOS_arm64.tar.gz"
+
+[tools."github:cli/cli".platforms.linux-x64]
+asset_pattern = "gh_*_linux_x64.tar.gz"
+
+[tools."github:cli/cli".platforms.macos-arm64]
+asset_pattern = "gh_*_macOS_arm64.tar.gz"
 ```
 
 ### `checksum`
@@ -62,13 +66,17 @@ checksum = "sha256:a1b2c3d4e5f6789..."
 
 ### Platform-specific Checksums
 
-You can specify different checksums for different platforms:
-
 ```toml
 [tools."github:cli/cli"]
 version = "latest"
-platforms_linux_x64_checksum = "sha256:a1b2c3d4e5f6789..."
-platforms_macos_arm64_checksum = "sha256:b2c3d4e5f6789..."
+
+[tools."github:cli/cli".platforms.linux-x64]
+asset_pattern = "gh_*_linux_x64.tar.gz"
+checksum = "sha256:a1b2c3d4e5f6789..."
+
+[tools."github:cli/cli".platforms.macos-arm64]
+asset_pattern = "gh_*_macOS_arm64.tar.gz"
+checksum = "sha256:b2c3d4e5f6789..."
 ```
 
 ### `size`

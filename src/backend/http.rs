@@ -43,8 +43,7 @@ impl Backend for HttpBackend {
         let opts = tv.request.options();
 
         // Use the new helper to get platform-specific URL first, then fall back to general URL
-        let url = lookup_platform_key(&opts.opts, "url")
-            .cloned()
+        let url = lookup_platform_key(&opts, "url")
             .or_else(|| opts.get("url").cloned())
             .ok_or_else(|| eyre::eyre!("Http backend requires 'url' option"))?;
 

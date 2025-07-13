@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use crate::toolset::ToolVersionOptions;
 
 /// Returns all possible aliases for the current platform (os, arch),
 /// with the preferred spelling first (macos/x64, linux/x64, etc).
@@ -30,19 +30,20 @@ pub fn platform_aliases() -> Vec<(String, String)> {
     aliases
 }
 
-/// Looks up a value in a BTreeMap using all possible platform key aliases.
-/// Example: for key_type = "url", will check platform_macos_x64_url, platform_darwin_amd64_url, etc.
-/// Also supports both "platforms_" and "platform_" prefixes.
-pub fn lookup_platform_key<'a>(
-    opts: &'a BTreeMap<String, String>,
-    key_type: &str,
-) -> Option<&'a String> {
+/// Looks up a value in ToolVersionOptions using nested platform key format.
+/// Supports nested format (platforms.macos-x64.url) with os-arch dash notation.
+/// Also supports both "platforms" and "platform" prefixes.
+pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<String> {
+    // Try nested platform structure with os-arch format
     for (os, arch) in platform_aliases() {
         for prefix in ["platforms", "platform"] {
-            if let Some(val) = opts.get(&format!("{prefix}_{os}_{arch}_{key_type}")) {
+            // Try nested format: platforms.macos-x64.url
+            let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
+            if let Some(val) = opts.get_nested_string(&nested_key) {
                 return Some(val);
             }
         }
     }
+
     None
 }

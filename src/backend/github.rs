@@ -157,8 +157,8 @@ impl UnifiedGitBackend {
         };
 
         // Check for direct platform-specific URLs first using the helper
-        if let Some(direct_url) = lookup_platform_key(&opts.opts, "url") {
-            return Ok(direct_url.clone());
+        if let Some(direct_url) = lookup_platform_key(opts, "url") {
+            return Ok(direct_url);
         }
 
         if self.is_gitlab() {
@@ -181,16 +181,15 @@ impl UnifiedGitBackend {
         let release = github::get_release_for_url(api_url, repo, version).await?;
 
         // Get platform-specific pattern first, then fall back to general pattern
-        let pattern = lookup_platform_key(&opts.opts, "asset_pattern")
-            .or_else(|| opts.get("asset_pattern"))
-            .map(|s| s.as_str())
-            .unwrap_or("{name}-{version}-{target}.{ext}");
+        let pattern = lookup_platform_key(opts, "asset_pattern")
+            .or_else(|| opts.get("asset_pattern").cloned())
+            .unwrap_or("{name}-{version}-{target}.{ext}".to_string());
 
         // Find matching asset - pattern is already templated by mise.toml parsing
         let asset = release
             .assets
             .into_iter()
-            .find(|a| self.matches_pattern(&a.name, pattern))
+            .find(|a| self.matches_pattern(&a.name, &pattern))
             .ok_or_else(|| eyre::eyre!("No matching asset found for pattern: {}", pattern))?;
 
         Ok(asset.browser_download_url)
@@ -207,17 +206,16 @@ impl UnifiedGitBackend {
         let release = gitlab::get_release_for_url(api_url, repo, version).await?;
 
         // Get platform-specific pattern first, then fall back to general pattern
-        let pattern = lookup_platform_key(&opts.opts, "asset_pattern")
-            .or_else(|| opts.get("asset_pattern"))
-            .map(|s| s.as_str())
-            .unwrap_or("{name}-{version}-{os}-{arch}.{ext}");
+        let pattern = lookup_platform_key(opts, "asset_pattern")
+            .or_else(|| opts.get("asset_pattern").cloned())
+            .unwrap_or("{name}-{version}-{os}-{arch}.{ext}".to_string());
 
         // Find matching asset - pattern is already templated by mise.toml parsing
         let asset = release
             .assets
             .links
             .into_iter()
-            .find(|a| self.matches_pattern(&a.name, pattern))
+            .find(|a| self.matches_pattern(&a.name, &pattern))
             .ok_or_else(|| eyre::eyre!("No matching asset found for pattern: {}", pattern))?;
 
         Ok(asset.direct_asset_url)
@@ -249,14 +247,15 @@ impl UnifiedGitBackend {
         opts: &ToolVersionOptions,
     ) -> Result<()> {
         // Check platform-specific checksum first
-        let checksum = lookup_platform_key(&opts.opts, "checksum").or_else(|| opts.get("checksum"));
+        let checksum =
+            lookup_platform_key(opts, "checksum").or_else(|| opts.get("checksum").cloned());
 
         if let Some(checksum) = checksum {
-            self.verify_checksum_str(file_path, checksum)?;
+            self.verify_checksum_str(file_path, &checksum)?;
         }
 
         // Check platform-specific size
-        let size = lookup_platform_key(&opts.opts, "size").or_else(|| opts.get("size"));
+        let size = lookup_platform_key(opts, "size").or_else(|| opts.get("size").cloned());
 
         if let Some(size_str) = size {
             let expected_size: u64 = size_str.parse()?;

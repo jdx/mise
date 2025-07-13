@@ -129,6 +129,7 @@ impl dyn ConfigFile {
         let mut ts = self.to_toolset()?.to_owned();
         ts.resolve(config).await?;
         trace!("resolved toolset");
+        #[allow(clippy::mutable_key_type)]
         let mut plugins_to_update = HashMap::new();
         for ta in tools {
             if let Some(tv) = &ta.tvr {

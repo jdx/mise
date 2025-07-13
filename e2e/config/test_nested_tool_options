@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# Test nested tool options functionality
+cat <<EOF >mise.toml
+[tools."http:nested-test"]
+version = "1.0.0"
+platforms.macos-x64.url = "https://example.com/macos-x64.tar.gz"
+platforms.macos-x64.checksum = "sha256:abc123"
+platforms.linux-x64.url = "https://example.com/linux-x64.tar.gz"
+platforms.linux-x64.checksum = "sha256:def456"
+strip_components = 1
+EOF
+
+# Test that nested options are properly accessible
+assert_contains "mise tool http:nested-test --tool-options" "platforms"
+assert_contains "mise tool http:nested-test --tool-options" "strip_components"
+
+# Test table format with os-arch dash notation
+cat <<EOF >mise.toml
+[tools."http:table-test"]
+version = "1.0.0"
+
+[tools."http:table-test".platforms.macos-x64]
+url = "https://example.com/macos-x64.tar.gz"
+checksum = "sha256:abc123"
+
+[tools."http:table-test".platforms.linux-x64]
+url = "https://example.com/linux-x64.tar.gz"
+checksum = "sha256:def456"
+EOF
+
+assert_contains "mise tool http:table-test --tool-options" "platforms"
+
+# Test generic nested options (non-platform)
+cat <<EOF >mise.toml
+[tools."http:generic-test"]
+version = "1.0.0"
+
+[tools."http:generic-test".config.database]
+host = "localhost"
+port = 5432
+
+[tools."http:generic-test".config.cache]
+ttl = 3600
+EOF
+
+assert_contains "mise tool http:generic-test --tool-options" "config"
+
+echo "All nested tool options tests passed!"

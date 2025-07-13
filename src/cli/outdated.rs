@@ -47,6 +47,7 @@ impl Outdated {
             .with_args(&self.tool)
             .build(&config)
             .await?;
+        #[allow(clippy::mutable_key_type)]
         let tool_set = self
             .tool
             .iter()

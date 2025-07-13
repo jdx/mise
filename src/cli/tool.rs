@@ -160,7 +160,8 @@ impl Tool {
             if info.tool_options.is_empty() {
                 miseprintln!("[none]");
             } else {
-                for (k, v) in info.tool_options.opts {
+                // Display all available options including nested ones
+                for (k, v) in &info.tool_options.opts {
                     miseprintln!("{k}={v:?}");
                 }
             }
