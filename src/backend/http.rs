@@ -55,12 +55,6 @@ impl Backend for HttpBackend {
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &file_path, Some(&ctx.pr)).await?;
 
-        // Only add checksum if it doesn't already exist (for lockfile verification)
-        if let std::collections::btree_map::Entry::Vacant(e) = tv.checksums.entry(filename) {
-            let hash = hash::file_hash_sha256(&file_path, Some(&ctx.pr))?;
-            e.insert(format!("sha256:{hash}"));
-        }
-
         // Verify
         self.verify_artifact(&tv, &file_path, &opts)?;
 
