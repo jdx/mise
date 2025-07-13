@@ -1,19 +1,27 @@
-use std::collections::BTreeMap;
+use indexmap::IndexMap;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct ToolVersionOptions {
     pub os: Option<Vec<String>>,
-    pub install_env: BTreeMap<String, String>,
+    pub install_env: IndexMap<String, String>,
     #[serde(flatten)]
-    pub opts: BTreeMap<String, String>,
+    pub opts: IndexMap<String, String>,
 }
 
-// Implement Hash manually to exclude any interior mutability concerns
+// Implement Hash manually to ensure deterministic hashing across IndexMap
 impl std::hash::Hash for ToolVersionOptions {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.os.hash(state);
-        self.install_env.hash(state);
-        self.opts.hash(state);
+
+        // Hash install_env in sorted order for deterministic hashing
+        let mut install_env_sorted: Vec<_> = self.install_env.iter().collect();
+        install_env_sorted.sort_by_key(|(k, _)| *k);
+        install_env_sorted.hash(state);
+
+        // Hash opts in sorted order for deterministic hashing
+        let mut opts_sorted: Vec<_> = self.opts.iter().collect();
+        opts_sorted.sort_by_key(|(k, _)| *k);
+        opts_sorted.hash(state);
     }
 }
 
@@ -34,7 +42,7 @@ impl ToolVersionOptions {
         None
     }
 
-    pub fn merge(&mut self, other: &BTreeMap<String, String>) {
+    pub fn merge(&mut self, other: &IndexMap<String, String>) {
         for (key, value) in other {
             self.opts
                 .entry(key.to_string())
@@ -201,7 +209,7 @@ mod tests {
 
     #[test]
     fn test_nested_option_with_os_arch_dash() {
-        let mut opts = BTreeMap::new();
+        let mut opts = IndexMap::new();
         opts.insert(
             "platforms".to_string(),
             r#"
@@ -241,7 +249,7 @@ checksum = "sha256:def456"
 
     #[test]
     fn test_generic_nested_options() {
-        let mut opts = BTreeMap::new();
+        let mut opts = IndexMap::new();
         opts.insert(
             "config".to_string(),
             r#"
@@ -281,7 +289,7 @@ port = 6379
 
     #[test]
     fn test_direct_and_nested_options() {
-        let mut opts = BTreeMap::new();
+        let mut opts = IndexMap::new();
         opts.insert(
             "platforms".to_string(),
             r#"
@@ -308,7 +316,7 @@ url = "https://example.com/macos-x64.tar.gz"
 
     #[test]
     fn test_contains_key_with_nested_options() {
-        let mut opts = BTreeMap::new();
+        let mut opts = IndexMap::new();
         opts.insert(
             "platforms".to_string(),
             r#"
@@ -330,7 +338,7 @@ url = "https://example.com/macos-x64.tar.gz"
 
     #[test]
     fn test_merge_functionality() {
-        let mut opts = BTreeMap::new();
+        let mut opts = IndexMap::new();
         opts.insert(
             "platforms".to_string(),
             r#"
@@ -349,7 +357,7 @@ url = "https://example.com/macos-x64.tar.gz"
         assert!(tool_opts.contains_key("platforms.macos-x64.url"));
 
         // Merge new options
-        let mut new_opts = BTreeMap::new();
+        let mut new_opts = IndexMap::new();
         new_opts.insert("simple_option".to_string(), "value".to_string());
         tool_opts.merge(&new_opts);
 
@@ -360,7 +368,7 @@ url = "https://example.com/macos-x64.tar.gz"
 
     #[test]
     fn test_non_existent_nested_paths() {
-        let mut opts = BTreeMap::new();
+        let mut opts = IndexMap::new();
         opts.insert(
             "platforms".to_string(),
             r#"
@@ -385,5 +393,19 @@ url = "https://example.com/macos-x64.tar.gz"
             None
         );
         assert_eq!(tool_opts.get_nested_string("config.database.host"), None);
+    }
+
+    #[test]
+    fn test_indexmap_preserves_order() {
+        let mut tvo = ToolVersionOptions::default();
+
+        // Insert options in a specific order
+        tvo.opts.insert("zebra".to_string(), "last".to_string());
+        tvo.opts.insert("alpha".to_string(), "first".to_string());
+        tvo.opts.insert("beta".to_string(), "second".to_string());
+
+        // Collect keys to verify order is preserved
+        let keys: Vec<_> = tvo.opts.keys().collect();
+        assert_eq!(keys, vec!["zebra", "alpha", "beta"]);
     }
 }
