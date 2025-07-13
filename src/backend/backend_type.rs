@@ -49,8 +49,12 @@ impl BackendType {
         // Handle vfox-backend prefix for backend plugins
         if prefix == "vfox-backend" {
             // For vfox-backend:plugin-name format, we need to extract the plugin name from the full string
-            let (_, plugin_name) = s.split_once(':').unwrap_or(("", s));
-            return BackendType::VfoxBackend(plugin_name.to_string());
+            if let Some((_, plugin_name)) = s.split_once(':') {
+                return BackendType::VfoxBackend(plugin_name.to_string());
+            } else {
+                // If no colon is found, this is not a valid vfox-backend format
+                return BackendType::Unknown;
+            }
         }
 
         let s = prefix.split('-').next().unwrap_or(prefix);

@@ -74,9 +74,9 @@ Registry-based package manager with strong security features:
 
 Support for external plugin ecosystems:
 
+- **Tool Plugins** - Hook-based plugins for single tools (`my-tool`) - a superset of vfox plugins functionality
+- **asdf Plugins** - Legacy plugin ecosystem (`asdf:postgres`, `asdf:redis`) - generally Linux/macOS only
 - **Backend Plugins** - Enhanced plugins using the `plugin:tool` format (`my-plugin:some-tool`) - enables private/custom tools with backend methods
-- **Tool Plugins** - Hook-based plugins for single tools (`my-tool`) - traditional vfox format with hooks
-- **asdf Plugins** - Legacy plugin ecosystem (`asdf:postgres`, `asdf:redis`) - Linux/macOS only
 
 ## How Backend Selection Works
 
@@ -102,7 +102,7 @@ terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 
 ## Backend Capabilities Comparison
 
-| Feature | Core | npm/pipx/cargo | ubi | aqua | Backend Plugins | Tool Plugins | asdf Plugins |
+| Feature | Core | npm/pipx/cargo | ubi | aqua | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
 |---------|------|----------------|-----|------|---------------|-------------|-------------|
 | **Speed** | ✅ | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ |
 | **Security** | ✅ | ⚠️ | ⚠️ | ✅ | ⚠️ | ⚠️ | ⚠️ |

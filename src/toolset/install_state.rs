@@ -147,6 +147,7 @@ fn is_banned_plugin(path: &Path) -> bool {
 }
 
 fn has_backend_methods(plugin_path: &Path) -> bool {
+    // to be a backend plugin, it must have a backend_install.lua file so we don't need to check for other files
     plugin_path
         .join("hooks")
         .join("backend_install.lua")
