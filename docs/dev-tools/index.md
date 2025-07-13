@@ -106,13 +106,9 @@ The cleanest way to specify nested options is using TOML tables:
 [tools."http:my-tool"]
 version = "1.0.0"
 
-[tools."http:my-tool".platforms.macos-x64]
-url = "https://example.com/my-tool-macos-x64.tar.gz"
-checksum = "sha256:abc123"
-
-[tools."http:my-tool".platforms.linux-x64]
-url = "https://example.com/my-tool-linux-x64.tar.gz"
-checksum = "sha256:def456"
+[tools."http:my-tool".platforms]
+macos-x64 = { url = "https://example.com/my-tool-macos-x64.tar.gz", checksum = "sha256:abc123" }
+linux-x64 = { url = "https://example.com/my-tool-linux-x64.tar.gz", checksum = "sha256:def456" }
 ```
 
 ### Dotted Notation

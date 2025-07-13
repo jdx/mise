@@ -20,13 +20,9 @@ cat <<EOF >mise.toml
 [tools."http:table-test"]
 version = "1.0.0"
 
-[tools."http:table-test".platforms.macos-x64]
-url = "https://example.com/macos-x64.tar.gz"
-checksum = "sha256:abc123"
-
-[tools."http:table-test".platforms.linux-x64]
-url = "https://example.com/linux-x64.tar.gz"
-checksum = "sha256:def456"
+[tools."http:table-test".platforms]
+macos-x64 = { url = "https://example.com/macos-x64.tar.gz", checksum = "sha256:abc123" }
+linux-x64 = { url = "https://example.com/linux-x64.tar.gz", checksum = "sha256:def456" }
 EOF
 
 assert_contains "mise tool http:table-test --tool-options" "platforms"
