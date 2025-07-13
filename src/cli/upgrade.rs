@@ -1,8 +1,10 @@
 use std::sync::Arc;
+use std::path::Path;
 
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::ToolArg;
 use crate::config::{Config, config_file};
+use crate::config::config_file::ConfigFile;
 use crate::file::display_path;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
@@ -101,12 +103,27 @@ impl Upgrade {
         let config_file_updates = outdated
             .iter()
             .filter_map(|o| {
-                if let (Some(path), Some(_bump)) = (o.source.path(), &o.bump) {
-                    match config_file::parse(path) {
-                        Ok(cf) => Some((o, cf)),
-                        Err(e) => {
-                            warn!("failed to parse {}: {e}", display_path(path));
-                            None
+                if let (Some(_path), Some(_bump)) = (o.source.path(), &o.bump) {
+                    // When --bump is used, prefer non-local config files over local ones
+                    // This fixes the issue where tools in .mise.toml get overridden by .mise.local.toml
+                    // but the upgrade tries to update the local file instead of the main file
+                    let preferred_config_file = self.find_preferred_config_file_for_tool(config, o);
+                    
+                    match preferred_config_file {
+                        Some(cf) => Some((o, cf)),
+                        None => {
+                            // Fallback to original behavior if no preferred config file found
+                            if let Some(path) = o.source.path() {
+                                match config_file::parse(path) {
+                                    Ok(cf) => Some((o, cf)),
+                                    Err(e) => {
+                                        warn!("failed to parse {}: {e}", display_path(path));
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            }
                         }
                     }
                 } else {
@@ -266,6 +283,48 @@ impl Upgrade {
                 Err(eyre!(e))
             }
         }
+    }
+
+    /// Find the preferred config file for a tool when bumping versions.
+    /// Prefers non-local config files over local ones to avoid the issue
+    /// where tools in .mise.toml get updated in .mise.local.toml instead.
+    fn find_preferred_config_file_for_tool(&self, config: &Arc<Config>, outdated_info: &OutdatedInfo) -> Option<Arc<dyn ConfigFile>> {
+        let tool_ba = outdated_info.tool_request.ba();
+        
+        // Check all config files for this tool, preferring non-local ones
+        let mut candidates = Vec::new();
+        
+        for cf in config.config_files.values() {
+            if let Ok(trs) = cf.to_tool_request_set() {
+                if trs.tools.contains_key(tool_ba) {
+                    candidates.push(cf.clone());
+                }
+            }
+        }
+        
+        // Sort candidates by preference: non-local files first
+        candidates.sort_by(|a, b| {
+            let a_is_local = self.is_local_config_file(a.get_path());
+            let b_is_local = self.is_local_config_file(b.get_path());
+            
+            match (a_is_local, b_is_local) {
+                (false, true) => std::cmp::Ordering::Less,    // non-local comes first
+                (true, false) => std::cmp::Ordering::Greater, // local comes second
+                _ => std::cmp::Ordering::Equal,               // same priority
+            }
+        });
+        
+        candidates.first().cloned()
+    }
+
+    /// Check if a config file path is a local config file
+    fn is_local_config_file(&self, path: &Path) -> bool {
+        let filename = path.file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("");
+        
+        // Check if it's a local config file based on filename patterns
+        filename.contains(".local.") || filename.ends_with(".local.toml")
     }
 }
 
