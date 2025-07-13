@@ -10,8 +10,10 @@ if [[ $cur_version != "$latest_version" ]]; then
 	echo "Releasing $cur_version"
 	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
 	changelog="$(echo "$changelog" | tail -n +3)"
-	cargo set-version "$cur_version" --all
-	cargo release -x --no-confirm --workspace
+	cargo set-version "$cur_version" --workspace
+	git add Cargo.lock crates/vfox/Cargo.toml
+	git commit --amend
+	cargo release -x --no-confirm --workspace --sign
 	git push --tags
 	gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog" --draft
 	exit 0
