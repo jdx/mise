@@ -102,7 +102,8 @@ impl Backend for UnifiedGitBackend {
         tv: &ToolVersion,
     ) -> Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
-        if let Some(bin_path) = opts.get("bin_path") {
+        if let Some(bin_path_template) = opts.get("bin_path") {
+            let bin_path = self.template_bin_path(bin_path_template, tv)?;
             Ok(vec![tv.install_path().join(bin_path)])
         } else {
             // Look for bin directory in the install path
@@ -183,7 +184,7 @@ impl UnifiedGitBackend {
         // Get platform-specific pattern first, then fall back to general pattern
         let pattern = lookup_platform_key(opts, "asset_pattern")
             .or_else(|| opts.get("asset_pattern").cloned())
-            .unwrap_or("{name}-{version}-{target}.{ext}".to_string());
+            .unwrap_or("{name}-{version}-{os}-{arch}.{ext}".to_string());
 
         // Template the pattern with actual values
         let templated_pattern = self.template_pattern(&pattern, repo, version)?;
@@ -193,7 +194,9 @@ impl UnifiedGitBackend {
             .assets
             .into_iter()
             .find(|a| self.matches_pattern(&a.name, &templated_pattern))
-            .ok_or_else(|| eyre::eyre!("No matching asset found for pattern: {}", templated_pattern))?;
+            .ok_or_else(|| {
+                eyre::eyre!("No matching asset found for pattern: {}", templated_pattern)
+            })?;
 
         Ok(asset.browser_download_url)
     }
@@ -222,7 +225,9 @@ impl UnifiedGitBackend {
             .links
             .into_iter()
             .find(|a| self.matches_pattern(&a.name, &templated_pattern))
-            .ok_or_else(|| eyre::eyre!("No matching asset found for pattern: {}", templated_pattern))?;
+            .ok_or_else(|| {
+                eyre::eyre!("No matching asset found for pattern: {}", templated_pattern)
+            })?;
 
         Ok(asset.direct_asset_url)
     }
@@ -234,9 +239,12 @@ impl UnifiedGitBackend {
         }
 
         let name = repo.split('/').next_back().unwrap_or(repo);
-        let os = std::env::consts::OS;
-        let arch = std::env::consts::ARCH;
-        let ext = "tar.gz"; // Default extension
+        let settings = Settings::get();
+        let os = settings.os();
+        let arch = settings.arch();
+
+        // Determine extension dynamically based on platform
+        let ext = if cfg!(windows) { "zip" } else { "tar.gz" };
 
         let templated = pattern
             .replace("{name}", name)
@@ -335,7 +343,8 @@ impl UnifiedGitBackend {
             file::unzip(file_path, &install_path)?;
         } else if format == file::TarFormat::Raw {
             // Copy the file directly to the bin_path directory or install_path
-            if let Some(bin_path) = opts.get("bin_path") {
+            if let Some(bin_path_template) = opts.get("bin_path") {
+                let bin_path = self.template_bin_path(bin_path_template, tv)?;
                 let bin_dir = install_path.join(bin_path);
                 file::create_dir_all(&bin_dir)?;
                 let dest = bin_dir.join(file_path.file_name().unwrap());
@@ -350,5 +359,28 @@ impl UnifiedGitBackend {
             file::untar(file_path, &install_path, &tar_opts)?;
         }
         Ok(())
+    }
+
+    fn template_bin_path(&self, bin_path_template: &str, tv: &ToolVersion) -> Result<String> {
+        // If the bin_path doesn't contain template variables, return it as-is
+        if !bin_path_template.contains('{') {
+            return Ok(bin_path_template.to_string());
+        }
+        let name = tv.ba().tool_name();
+        let version = &tv.version;
+        let settings = Settings::get();
+        let os = settings.os();
+        let arch = settings.arch();
+
+        // Determine extension dynamically based on platform
+        let ext = if cfg!(windows) { "zip" } else { "tar.gz" };
+
+        let templated = bin_path_template
+            .replace("{name}", &name)
+            .replace("{version}", version)
+            .replace("{os}", os)
+            .replace("{arch}", arch)
+            .replace("{ext}", ext);
+        Ok(templated)
     }
 }

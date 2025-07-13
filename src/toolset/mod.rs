@@ -839,15 +839,3 @@ fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<ToolReque
 }
 
 type TVTuple = (Arc<dyn Backend>, ToolVersion);
-
-#[cfg(test)]
-mod tests {
-    use test_log::test;
-
-    #[test]
-    fn test_basic_toolset_functionality() {
-        // This is a placeholder test since we moved ToolVersionOptions tests
-        // to tool_version_options.rs
-        assert!(true);
-    }
-}

@@ -116,13 +116,13 @@ strip_components = 1
 
 ### `bin_path`
 
-Specify the directory containing binaries within the extracted archive, or where to place the downloaded file:
+Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with `{name}`, `{version}`, `{os}`, `{arch}`, and `{ext}`:
 
 ```toml
 [tools."http:my-tool"]
 version = "1.0.0"
 url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
-bin_path = "bin"
+bin_path = "{name}-{version}/bin" # expands to my-tool-1.0.0/bin
 ```
 
 **Binary path lookup order:**

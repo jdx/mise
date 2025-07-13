@@ -43,9 +43,12 @@ impl Backend for HttpBackend {
         let opts = tv.request.options();
 
         // Use the new helper to get platform-specific URL first, then fall back to general URL
-        let url = lookup_platform_key(&opts, "url")
+        let url_template = lookup_platform_key(&opts, "url")
             .or_else(|| opts.get("url").cloned())
             .ok_or_else(|| eyre::eyre!("Http backend requires 'url' option"))?;
+
+        // Template the URL with actual values
+        let url = self.template_url(&url_template, &tv)?;
 
         // Download
         let filename = self.get_filename_from_url(&url)?;
@@ -72,8 +75,8 @@ impl Backend for HttpBackend {
         tv: &ToolVersion,
     ) -> Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
-        if let Some(bin_path) = opts.get("bin_path") {
-            // Always treat bin_path as a directory
+        if let Some(bin_path_template) = opts.get("bin_path") {
+            let bin_path = self.template_url(bin_path_template, tv)?;
             Ok(vec![tv.install_path().join(bin_path)])
         } else {
             // Look for bin directory in the install path
@@ -108,6 +111,28 @@ impl HttpBackend {
 
     fn get_filename_from_url(&self, url: &str) -> Result<String> {
         Ok(url.split('/').next_back().unwrap_or("download").to_string())
+    }
+
+    fn template_url(&self, url_template: &str, tv: &ToolVersion) -> Result<String> {
+        // If the URL doesn't contain template variables, return it as-is
+        if !url_template.contains('{') {
+            return Ok(url_template.to_string());
+        }
+
+        let name = tv.ba().tool_name();
+        let version = &tv.version;
+        let os = std::env::consts::OS;
+        let arch = std::env::consts::ARCH;
+        let ext = "tar.gz"; // Default extension
+
+        let templated = url_template
+            .replace("{name}", &name)
+            .replace("{version}", version)
+            .replace("{os}", os)
+            .replace("{arch}", arch)
+            .replace("{ext}", ext);
+
+        Ok(templated)
     }
 
     fn verify_artifact(
@@ -173,7 +198,8 @@ impl HttpBackend {
             file::unzip(file_path, &install_path)?;
         } else if format == file::TarFormat::Raw {
             // Copy the file directly to the bin_path directory or install_path
-            if let Some(bin_path) = opts.get("bin_path") {
+            if let Some(bin_path_template) = opts.get("bin_path") {
+                let bin_path = self.template_url(bin_path_template, tv)?;
                 let bin_dir = install_path.join(bin_path);
                 file::create_dir_all(&bin_dir)?;
                 let dest = bin_dir.join(file_path.file_name().unwrap());

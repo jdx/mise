@@ -107,11 +107,12 @@ Number of directory components to strip when extracting archives:
 
 ### `bin_path`
 
-Specify the directory containing binaries within the extracted archive:
+Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with `{name}`, `{version}`, `{os}`, `{arch}`, and `{ext}`:
 
 ```toml
-[tools]
-"gitlab:gitlab-org/gitlab-runner" = { version = "latest", bin_path = "bin" }
+[tools."gitlab:gitlab-org/gitlab-runner"]
+version = "latest"
+bin_path = "{name}-{version}/bin" # expands to gitlab-runner-1.0.0/bin
 ```
 
 **Binary path lookup order:**

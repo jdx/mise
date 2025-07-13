@@ -89,9 +89,7 @@ impl ToolRequestSet {
             }
         }
         self.iter()
-            .filter(|(ba, ..)| {
-                tools.contains(&ba.short) || tools.contains(&ba.full())
-            })
+            .filter(|(ba, ..)| tools.contains(&ba.short) || tools.contains(&ba.full()))
             .map(|(ba, trl, ts)| (ba.clone(), trl.clone(), ts.clone()))
             .collect::<ToolRequestSet>()
     }
