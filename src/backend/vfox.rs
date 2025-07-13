@@ -293,6 +293,9 @@ mod test {
         let _config = Config::get().await.unwrap();
         let backend = VfoxBackend::from_arg("vfox:version-fox/vfox-golang".into(), None);
         assert_eq!(backend.pathname, "vfox-version-fox-vfox-golang");
-        assert_eq!(backend.plugin.full, Some("vfox:version-fox/vfox-golang".to_string()));
+        assert_eq!(
+            backend.plugin.full,
+            Some("vfox:version-fox/vfox-golang".to_string())
+        );
     }
 }
