@@ -110,7 +110,7 @@ impl Backend for VfoxBackend {
                     return Ok(tv);
                 }
                 Err(e) => {
-                    return Err(eyre::eyre!("Backend install method failed: {}", e));
+                    return Err(e.wrap_err("Backend install method failed"));
                 }
             }
         }
