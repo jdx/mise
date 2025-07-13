@@ -5,8 +5,8 @@ use std::fmt::Display;
 use indoc::formatdoc;
 
 use crate::config::Settings;
+use crate::path::{PathEscape, to_path_list};
 use crate::shell::{ActivateOptions, Shell};
-use crate::path::{to_path_list, PathEscape};
 
 #[derive(Default)]
 pub struct Bash {}

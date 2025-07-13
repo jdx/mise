@@ -56,8 +56,8 @@ pub(crate) fn to_path_list(escapes: &[PathEscape], path: &str) -> String {
 
 #[cfg(windows)]
 mod windows_path {
-    use which::which;
     use once_cell::sync::Lazy;
+    use which::which;
 
     static CYGPATH_AVAILABLE: Lazy<bool> = Lazy::new(|| which("cygpath").is_ok());
 
@@ -80,7 +80,7 @@ mod windows_path {
 
 #[cfg(test)]
 mod tests {
-    use super::{to_path_list, PathEscape};
+    use super::{PathEscape, to_path_list};
 
     #[test]
     fn test_to_path_list_backslash() {
@@ -91,9 +91,9 @@ mod tests {
 
     #[cfg(windows)]
     mod windows_tests {
-        use super::{to_path_list, PathEscape};
-        use which::which;
+        use super::{PathEscape, to_path_list};
         use once_cell::sync::Lazy;
+        use which::which;
 
         static CYGPATH_AVAILABLE: Lazy<bool> = Lazy::new(|| which("cygpath").is_ok());
 
@@ -111,7 +111,7 @@ mod tests {
 
     #[cfg(not(windows))]
     mod unix_tests {
-        use super::{to_path_list, PathEscape};
+        use super::{PathEscape, to_path_list};
 
         #[test]
         fn test_to_path_list_unix() {
