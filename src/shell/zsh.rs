@@ -7,6 +7,7 @@ use indoc::formatdoc;
 use crate::config::Settings;
 use crate::shell::bash::Bash;
 use crate::shell::{ActivateOptions, Shell};
+use crate::path::{to_path_list, PathEscape};
 
 #[derive(Default)]
 pub struct Zsh {}
@@ -15,11 +16,7 @@ impl Shell for Zsh {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.to_string_lossy();
-
-        #[cfg(windows)]
-        let exe: std::borrow::Cow<str> =
-            std::borrow::Cow::Owned(crate::path::to_unix_path_list(&exe));
+        let exe = to_path_list(&[PathEscape::Unix], &exe.to_string_lossy());
 
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude(&opts.prelude));

@@ -3,6 +3,7 @@
 use std::fmt::Display;
 
 use crate::shell::{ActivateOptions, Shell};
+use crate::path::{to_path_list, PathEscape};
 use indoc::formatdoc;
 
 #[derive(Default)]
@@ -12,11 +13,7 @@ impl Shell for Elvish {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.to_string_lossy();
-
-        #[cfg(windows)]
-        let exe: std::borrow::Cow<str> =
-            std::borrow::Cow::Owned(crate::path::to_unix_path_list(&exe));
+        let exe = to_path_list(&[PathEscape::Unix], &exe.to_string_lossy());
 
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude(&opts.prelude));
@@ -77,14 +74,10 @@ impl Shell for Elvish {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
-        #[cfg(windows)]
-        let v_cow = if k == "PATH" {
-            std::borrow::Cow::Owned(crate::path::to_unix_path_list(v))
-        } else {
-            std::borrow::Cow::Borrowed(v)
+        let v = match k {
+            "PATH" => to_path_list(&[PathEscape::Unix], v),
+            _ => v.to_string(),
         };
-        #[cfg(windows)]
-        let v: &str = v_cow.as_ref();
 
         let k = shell_escape::unix::escape(k.into());
         let v = shell_escape::unix::escape(v.into());

@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter};
 
 use crate::config::Settings;
 use crate::shell::{ActivateOptions, Shell};
+use crate::path::{to_path_list, PathEscape};
 use indoc::formatdoc;
 use shell_escape::unix::escape;
 
@@ -14,11 +15,7 @@ impl Shell for Fish {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.to_string_lossy();
-
-        #[cfg(windows)]
-        let exe: std::borrow::Cow<str> =
-            std::borrow::Cow::Owned(crate::path::to_unix_path_list(&exe));
+        let exe = to_path_list(&[PathEscape::Unix], &exe.to_string_lossy());
 
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
@@ -126,14 +123,10 @@ impl Shell for Fish {
     }
 
     fn set_env(&self, key: &str, v: &str) -> String {
-        #[cfg(windows)]
-        let v_cow = if key == "PATH" {
-            std::borrow::Cow::Owned(crate::path::to_unix_path_list(v))
-        } else {
-            std::borrow::Cow::Borrowed(v)
+        let v = match key {
+            "PATH" => to_path_list(&[PathEscape::Unix], v),
+            _ => v.to_string(),
         };
-        #[cfg(windows)]
-        let v: &str = v_cow.as_ref();
 
         let k = escape(key.into());
         let v = escape(v.into());
