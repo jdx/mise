@@ -129,18 +129,18 @@ impl dyn ConfigFile {
         let mut ts = self.to_toolset()?.to_owned();
         ts.resolve(config).await?;
         trace!("resolved toolset");
-        #[allow(clippy::mutable_key_type)]
         let mut plugins_to_update = HashMap::new();
         for ta in tools {
             if let Some(tv) = &ta.tvr {
                 plugins_to_update
-                    .entry(ta.ba.clone())
+                    .entry(ta.ba.short.clone())
                     .or_insert_with(Vec::new)
                     .push(tv);
             }
         }
         trace!("plugins to update: {plugins_to_update:?}");
-        for (ba, versions) in &plugins_to_update {
+        for (ba_short, versions) in &plugins_to_update {
+            let ba = Arc::new(BackendArg::new(ba_short.clone(), None));
             let mut tvl = ToolVersionList::new(
                 ba.clone(),
                 ts.source.clone().unwrap_or(ToolSource::Argument),
@@ -148,12 +148,13 @@ impl dyn ConfigFile {
             for tv in versions {
                 tvl.requests.push((*tv).clone());
             }
-            ts.versions.insert(ba.clone(), tvl);
+            ts.versions.insert(ba, tvl);
         }
         trace!("resolving toolset 2");
         ts.resolve(config).await?;
         trace!("resolved toolset 2");
-        for (ba, versions) in plugins_to_update {
+        for (ba_short, versions) in plugins_to_update {
+            let ba = Arc::new(BackendArg::new(ba_short, None));
             let mut new = vec![];
             for tr in versions {
                 let mut tr = tr.clone();

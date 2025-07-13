@@ -47,14 +47,13 @@ impl Outdated {
             .with_args(&self.tool)
             .build(&config)
             .await?;
-        #[allow(clippy::mutable_key_type)]
         let tool_set = self
             .tool
             .iter()
-            .map(|t| t.ba.clone())
+            .map(|t| t.ba.short.clone())
             .collect::<HashSet<_>>();
         ts.versions
-            .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));
+            .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend.short));
         let outdated = ts.list_outdated_versions(&config, self.bump).await;
         self.display(outdated).await?;
         Ok(())

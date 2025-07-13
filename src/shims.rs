@@ -374,13 +374,15 @@ async fn err_no_version_set(
             "{bin_name} is not a valid shim. This likely means you uninstalled a tool and the shim does not point to anything. Run `mise use <TOOL>` to reinstall the tool."
         );
     }
-    #[allow(clippy::mutable_key_type)]
-    let missing_plugins = tvs.iter().map(|tv| tv.ba()).collect::<HashSet<_>>();
+    let missing_plugins = tvs
+        .iter()
+        .map(|tv| tv.ba().short.clone())
+        .collect::<HashSet<_>>();
     let mut missing_tools = ts
         .list_missing_versions(config)
         .await
         .into_iter()
-        .filter(|t| missing_plugins.contains(t.ba()))
+        .filter(|t| missing_plugins.contains(&t.ba().short))
         .collect_vec();
     if missing_tools.is_empty() {
         let mut msg = format!("No version is set for shim: {bin_name}\n");
