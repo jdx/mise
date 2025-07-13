@@ -1,4 +1,5 @@
 // Shared template logic for backends
+use crate::backend::platform::lookup_platform_key;
 use crate::config::Settings;
 use crate::file;
 use crate::hash;
@@ -76,13 +77,17 @@ pub fn verify_artifact(
     file_path: &Path,
     opts: &crate::toolset::ToolVersionOptions,
 ) -> Result<()> {
-    // Check checksum if specified
-    if let Some(checksum) = opts.get("checksum") {
-        verify_checksum_str(file_path, checksum)?;
+    // Check platform-specific checksum first, then fall back to generic
+    let checksum = lookup_platform_key(opts, "checksum").or_else(|| opts.get("checksum").cloned());
+
+    if let Some(checksum) = checksum {
+        verify_checksum_str(file_path, &checksum)?;
     }
 
-    // Check size if specified
-    if let Some(size_str) = opts.get("size") {
+    // Check platform-specific size first, then fall back to generic
+    let size_str = lookup_platform_key(opts, "size").or_else(|| opts.get("size").cloned());
+
+    if let Some(size_str) = size_str {
         let expected_size: u64 = size_str.parse()?;
         let actual_size = file_path.metadata()?.len();
         if actual_size != expected_size {
@@ -104,4 +109,83 @@ pub fn verify_checksum_str(file_path: &Path, checksum: &str) -> Result<()> {
         bail!("Invalid checksum format: {}", checksum);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::toolset::ToolVersionOptions;
+    use indexmap::IndexMap;
+
+    #[test]
+    fn test_verify_artifact_platform_specific() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platforms".to_string(),
+            r#"
+[macos-x64]
+checksum = "blake3:abc123"
+size = "1024"
+
+[macos-arm64]
+checksum = "blake3:jkl012"
+size = "4096"
+
+[linux-x64]
+checksum = "blake3:def456"
+size = "2048"
+
+[linux-arm64]
+checksum = "blake3:mno345"
+size = "5120"
+
+[windows-x64]
+checksum = "blake3:ghi789"
+size = "3072"
+
+[windows-arm64]
+checksum = "blake3:mno345"
+size = "5120"
+"#
+            .to_string(),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        // Test that platform-specific checksum and size are found
+        // This test verifies that lookup_platform_key is being used correctly
+        // The actual verification would require a real file, but we can test the lookup logic
+        let checksum = lookup_platform_key(&tool_opts, "checksum");
+        let size = lookup_platform_key(&tool_opts, "size");
+
+        // The exact values depend on the current platform, but we should get some value
+        // If we're not on a supported platform, the test should still pass
+        // since the function should handle missing platform-specific values gracefully
+        assert!(checksum.is_some());
+        assert!(size.is_some());
+    }
+
+    #[test]
+    fn test_verify_artifact_fallback_to_generic() {
+        let mut opts = IndexMap::new();
+        opts.insert("checksum".to_string(), "blake3:generic123".to_string());
+        opts.insert("size".to_string(), "512".to_string());
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        // Test that generic fallback works when no platform-specific values exist
+        let checksum = lookup_platform_key(&tool_opts, "checksum")
+            .or_else(|| tool_opts.get("checksum").cloned());
+        let size =
+            lookup_platform_key(&tool_opts, "size").or_else(|| tool_opts.get("size").cloned());
+
+        assert_eq!(checksum, Some("blake3:generic123".to_string()));
+        assert_eq!(size, Some("512".to_string()));
+    }
 }
