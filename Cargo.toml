@@ -1,10 +1,9 @@
 [workspace]
-resolver = "3"
 members = ["crates/vfox"]
 
 [package]
 name = "mise"
-version = "2025.7.5"
+version = "2025.7.4"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
