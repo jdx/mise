@@ -200,7 +200,7 @@ function PLUGIN:ParseLegacyFile(ctx)
     local versions = ctx:getInstalledVersions()
     
     -- Read and parse the file
-    local file = require("vfox.file")
+    local file = require("file")
     local content = file.read(filepath)
     local version = content:match("v?([%d%.]+)")
     
@@ -453,7 +453,7 @@ end
 function PLUGIN:ParseLegacyFile(ctx)
     local filename = ctx.filename
     local filepath = ctx.filepath
-    local file = require("vfox.file")
+    local file = require("file")
     
     -- Read file content
     local content = file.read(filepath)

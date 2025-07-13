@@ -143,7 +143,7 @@ The strings module provides various string manipulation utilities.
 ### String Operations
 
 ```lua
-local strings = require("vfox.strings")
+local strings = require("strings")
 
 -- Split string into parts
 local parts = strings.split("hello,world,test", ",")
@@ -163,7 +163,7 @@ print(trimmed)  -- "hello world"
 ### String Checks
 
 ```lua
-local strings = require("vfox.strings")
+local strings = require("strings")
 
 -- Check prefixes and suffixes
 local text = "hello world"
@@ -179,7 +179,7 @@ print(trimmed)  -- "hello "
 ### Version String Utilities
 
 ```lua
-local strings = require("vfox.strings")
+local strings = require("strings")
 
 -- Common version string operations
 local function normalize_version(version)
@@ -297,7 +297,7 @@ The archiver module provides functionality for extracting compressed archives.
 ### Basic Extraction
 
 ```lua
-local archiver = require("vfox.archiver")
+local archiver = require("archiver")
 
 -- Extract archive to directory
 local err = archiver.decompress("archive.tar.gz", "extracted/")
@@ -315,7 +315,7 @@ end
 ### Real-World Example: Plugin Installation
 
 ```lua
-local archiver = require("vfox.archiver")
+local archiver = require("archiver")
 local http = require("http")
 
 function install_from_archive(download_url, install_path)
@@ -347,7 +347,7 @@ The file module provides file system operations.
 ### File Operations
 
 ```lua
-local file = require("vfox.file")
+local file = require("file")
 
 -- Read file content
 local content = file.read("/path/to/file.txt")
@@ -372,7 +372,7 @@ end
 ### Directory Operations
 
 ```lua
-local file = require("vfox.file")
+local file = require("file")
 
 -- Create directory
 local success = file.mkdir("/path/to/new/directory")
@@ -393,6 +393,18 @@ for _, filename in ipairs(files) do
 end
 ```
 
+### Path Joining
+
+```lua
+local file = require("file")
+
+-- Join path segments using the OS-specific separator
+local full_path = file.join_path("/foo", "bar", "baz.txt")
+print(full_path)  -- On Unix: /foo/bar/baz.txt, on Windows: \foo\bar\baz.txt
+```
+
+The `file.join_path(...)` function joins any number of path segments using the correct separator for the current operating system. This is the recommended way to construct file paths in cross-platform plugins.
+
 ## Environment Module
 
 The env module provides environment variable operations.
@@ -400,7 +412,7 @@ The env module provides environment variable operations.
 ### Environment Variables
 
 ```lua
-local env = require("vfox.env")
+local env = require("env")
 
 -- Get environment variable
 local home = env.get("HOME")
@@ -418,7 +430,7 @@ end
 ### Path Operations
 
 ```lua
-local env = require("vfox.env")
+local env = require("env")
 
 -- Get current PATH
 local current_path = env.get("PATH")
@@ -452,6 +464,33 @@ if not success then
     error("Command failed: " .. output)
 end
 ```
+
+### Command Execution with Options
+
+```lua
+local cmd = require("cmd")
+
+-- Execute command in a specific directory
+local output = cmd.exec("pwd", {cwd = "/tmp"})
+print("Current directory:", output)
+
+-- Execute command with custom environment variables
+local result = cmd.exec("echo $TEST_VAR", {
+    cwd = "/path/to/project",
+    env = {TEST_VAR = "hello", NODE_ENV = "production"}
+})
+
+-- Install package in specific directory
+local result = cmd.exec("npm install package-name", {cwd = "/path/to/project"})
+```
+
+### Available Options
+
+The options table supports the following keys:
+
+- **`cwd`** (string): Set the working directory for the command
+- **`env`** (table): Set environment variables for the command execution
+- **`timeout`** (number): Set a timeout for command execution (future feature)
 
 ### Platform-Specific Commands
 
@@ -513,7 +552,7 @@ end
 
 ```lua
 local http = require("http")
-local file = require("vfox.file")
+local file = require("file")
 
 function download_with_verification(url, dest_path, expected_sha256)
     -- Download file
@@ -542,9 +581,9 @@ end
 ### Configuration File Parsing
 
 ```lua
-local file = require("vfox.file")
+local file = require("file")
 local json = require("json")
-local strings = require("vfox.strings")
+local strings = require("strings")
 
 function parse_config_file(config_path)
     if not file.exists(config_path) then
@@ -574,7 +613,7 @@ end
 ```lua
 local http = require("http")
 local html = require("html")
-local strings = require("vfox.strings")
+local strings = require("strings")
 
 function scrape_versions_from_releases(base_url)
     local resp, err = http.get({

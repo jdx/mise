@@ -8,17 +8,32 @@ use std::os::windows::fs::symlink_dir;
 use std::os::windows::fs::symlink_file;
 use std::path::Path;
 
+fn join_path(_lua: &Lua, args: MultiValue) -> mlua::Result<String> {
+    let sep = std::path::MAIN_SEPARATOR;
+    let mut parts = vec![];
+    for v in args {
+        let s = v.to_string()?;
+        if !s.is_empty() {
+            parts.push(s);
+        }
+    }
+    Ok(parts.join(&sep.to_string()))
+}
+
 pub fn mod_file(lua: &Lua) -> Result<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
     Ok(loaded.set(
         "file",
-        lua.create_table_from(vec![(
-            "symlink",
-            lua.create_async_function(|_lua: mlua::Lua, input| async move {
-                symlink(&_lua, input).await
-            })?,
-        )])?,
+        lua.create_table_from(vec![
+            (
+                "symlink",
+                lua.create_async_function(|_lua: mlua::Lua, input| async move {
+                    symlink(&_lua, input).await
+                })?,
+            ),
+            ("join_path", lua.create_function(join_path)?),
+        ])?,
     )?)
 }
 
