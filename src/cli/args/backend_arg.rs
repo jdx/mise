@@ -173,15 +173,22 @@ impl BackendArg {
         } else if let Some(full) = install_state::get_tool_full(short) {
             full
         } else if let Some((plugin_name, _tool_name)) = short.split_once(':') {
-            // Check if this is a vfox plugin:tool format
+            // Check if this is a plugin:tool format
             if let Some(pt) = install_state::get_plugin_type(plugin_name) {
                 match pt {
-                    PluginType::Asdf => format!("asdf:{short}"),
+                    PluginType::Asdf => {
+                        // For asdf plugins, plugin:tool format is invalid
+                        // Return just the plugin name since asdf doesn't support plugin:tool structure
+                        plugin_name.to_string()
+                    }
                     // For vfox plugins, when already in plugin:tool format, return as-is
                     // because the plugin itself is the backend specification
                     PluginType::Vfox => short.to_string(),
                     PluginType::VfoxBackend => short.to_string(),
                 }
+            } else if plugin_name.starts_with("asdf-") {
+                // Handle asdf plugin:tool format even if not installed
+                plugin_name.to_string()
             } else {
                 short.to_string()
             }
@@ -189,7 +196,7 @@ impl BackendArg {
             match pt {
                 PluginType::Asdf => format!("asdf:{short}"),
                 PluginType::Vfox => format!("vfox:{short}"),
-                PluginType::VfoxBackend => format!("vfox:{short}"),
+                PluginType::VfoxBackend => format!("vfox-backend:{short}"),
             }
         } else if let Some(full) = REGISTRY
             .get(short)
@@ -373,5 +380,23 @@ mod tests {
             "vfox-version-fox-vfox-nodejs",
         );
         t("vfox:version-fox/nodejs", "vfox-version-fox-nodejs");
+    }
+
+    #[tokio::test]
+    async fn test_backend_arg_bug_fixes() {
+        let _config = Config::get().await.unwrap();
+
+        // Test that asdf plugins in plugin:tool format return just the plugin name
+        // (asdf doesn't support plugin:tool structure)
+        let fa: BackendArg = "asdf-plugin:tool".into();
+        assert_str_eq!("asdf-plugin", fa.full());
+
+        // Test that vfox plugins in plugin:tool format return as-is
+        let fa: BackendArg = "vfox-plugin:tool".into();
+        assert_str_eq!("vfox-plugin:tool", fa.full());
+
+        // Test that vfox-backend plugins in plugin:tool format return as-is
+        let fa: BackendArg = "vfox-backend-plugin:tool".into();
+        assert_str_eq!("vfox-backend-plugin:tool", fa.full());
     }
 }

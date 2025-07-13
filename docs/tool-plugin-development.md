@@ -21,46 +21,24 @@ graph TD
     A[User Request] --> B[mise CLI]
     B --> C[Tool Plugin]
     
-    C --> D[Available Hook]
-    C --> E[PreInstall Hook]
-    C --> F[PostInstall Hook]
-    C --> G[EnvKeys Hook]
-    C --> H[PreUse Hook]
-    C --> I[ParseLegacyFile Hook]
+    C --> D[Available Hook<br/>List Versions]
+    C --> E[PreInstall Hook<br/>Download]
+    C --> F[PostInstall Hook<br/>Setup]
+    C --> G[EnvKeys Hook<br/>Configure]
     
-    D --> J[List Available Versions]
-    E --> K[Download & Extract]
-    F --> L[Compile & Configure]
-    G --> M[Set Environment Variables]
-    H --> N[Modify Version Before Use]
-    I --> O[Parse Version Files]
-    
-    subgraph "Plugin Structure"
-        P[metadata.lua]
-        Q[hooks/available.lua]
-        R[hooks/pre_install.lua]
-        S[hooks/env_keys.lua]
-        T[hooks/post_install.lua]
-        U[hooks/pre_use.lua]
-        V[hooks/parse_legacy_file.lua]
-        W[lib/helper.lua]
+    subgraph "Plugin Files"
+        H[metadata.lua]
+        I[hooks/available.lua]
+        J[hooks/pre_install.lua]
+        K[hooks/env_keys.lua]
+        L[hooks/post_install.lua]
     end
-    
-    C --> P
-    D --> Q
-    E --> R
-    G --> S
-    F --> T
-    H --> U
-    I --> V
     
     style C fill:#e1f5fe
     style D fill:#e8f5e8
     style E fill:#e8f5e8
     style F fill:#e8f5e8
     style G fill:#e8f5e8
-    style H fill:#fff3e0
-    style I fill:#fff3e0
 ```
 
 ## Hook Functions

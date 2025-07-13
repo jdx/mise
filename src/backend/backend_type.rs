@@ -36,7 +36,7 @@ pub enum BackendType {
 impl Display for BackendType {
     fn fmt(&self, formatter: &mut Formatter) -> std::fmt::Result {
         match self {
-            BackendType::VfoxBackend(plugin_name) => write!(formatter, "{}", plugin_name),
+            BackendType::VfoxBackend(plugin_name) => write!(formatter, "{plugin_name}"),
             _ => write!(formatter, "{}", format!("{self:?}").to_lowercase()),
         }
     }
