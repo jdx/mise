@@ -32,14 +32,16 @@ pub fn platform_aliases() -> Vec<(String, String)> {
 
 /// Looks up a value in a BTreeMap using all possible platform key aliases.
 /// Example: for key_type = "url", will check platform_macos_x64_url, platform_darwin_amd64_url, etc.
+/// Also supports both "platforms_" and "platform_" prefixes.
 pub fn lookup_platform_key<'a>(
     opts: &'a BTreeMap<String, String>,
     key_type: &str,
 ) -> Option<&'a String> {
     for (os, arch) in platform_aliases() {
-        let key = format!("platform_{os}_{arch}_{key_type}");
-        if let Some(val) = opts.get(&key) {
-            return Some(val);
+        for prefix in ["platforms", "platform"] {
+            if let Some(val) = opts.get(&format!("{prefix}_{os}_{arch}_{key_type}")) {
+                return Some(val);
+            }
         }
     }
     None
