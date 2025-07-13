@@ -130,7 +130,14 @@ impl BackendArg {
     }
 
     pub fn backend_type(&self) -> BackendType {
-        // Check if this is a vfox plugin:tool format first, before checking install state
+        // Check if this is a valid backend:tool format first
+        if let Some((backend_prefix, _tool_name)) = self.short.split_once(':') {
+            if let Ok(backend_type) = backend_prefix.parse::<BackendType>() {
+                return backend_type;
+            }
+        }
+
+        // Then check if this is a vfox plugin:tool format
         if let Some((plugin_name, _tool_name)) = self.short.split_once(':') {
             if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
                 return match plugin_type {
