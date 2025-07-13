@@ -561,6 +561,11 @@ mod tests {
 
     #[test]
     fn test_token_overwrite() {
+        // Clean up any existing environment variables that might interfere
+        remove_var("MISE_GITHUB_TOKEN");
+        remove_var("GITHUB_TOKEN");
+        remove_var("GITHUB_API_TOKEN");
+
         set_var("MISE_GITHUB_TOKEN", "");
         set_var("GITHUB_TOKEN", "invalid_token");
         assert_eq!(
@@ -575,5 +580,6 @@ mod tests {
         );
         remove_var("MISE_GITHUB_TOKEN");
         remove_var("GITHUB_TOKEN");
+        remove_var("GITHUB_API_TOKEN");
     }
 }

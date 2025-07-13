@@ -46,8 +46,8 @@ pub mod go;
 pub mod http;
 pub mod npm;
 pub mod pipx;
-pub mod platform;
 pub mod spm;
+pub mod static_helpers;
 pub mod ubi;
 pub mod vfox;
 

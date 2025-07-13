@@ -188,7 +188,7 @@ pub struct CliGlobalOutputFlags {
 #[strum(serialize_all = "kebab-case")]
 pub enum Commands {
     Activate(activate::Activate),
-    Alias(alias::Alias),
+    Alias(Box<alias::Alias>),
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
