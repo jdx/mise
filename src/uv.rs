@@ -75,7 +75,8 @@ async fn get_or_create_venv(ts: &Toolset, venv_path: PathBuf, uv_path: PathBuf) 
 }
 
 fn uv_root() -> Option<PathBuf> {
-    file::find_up(dirs::CWD.as_ref()?, &["uv.lock"]).map(|p| p.parent().unwrap().to_path_buf())
+    file::find_up(dirs::CWD.as_ref()?, &["uv.lock"])
+        .and_then(|p| p.parent().map(|parent| parent.to_path_buf()))
 }
 fn venv_path() -> Option<PathBuf> {
     Some(uv_root()?.join(".venv"))

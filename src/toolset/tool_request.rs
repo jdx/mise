@@ -83,12 +83,18 @@ impl ToolRequest {
                 backend,
                 source,
             },
-            Some((p, v)) if p.starts_with("sub-") => Self::Sub {
-                sub: p.split_once('-').unwrap().1.to_string(),
-                options: backend.opts(),
-                orig_version: v.to_string(),
-                backend,
-                source,
+            Some((p, v)) if p.starts_with("sub-") => {
+                let sub = p.split_once('-')
+                    .ok_or_else(|| eyre::eyre!("Invalid sub-version format: {}", p))?
+                    .1
+                    .to_string();
+                Self::Sub {
+                    sub,
+                    options: backend.opts(),
+                    orig_version: v.to_string(),
+                    backend,
+                    source,
+                }
             },
             None => {
                 if s == "system" {

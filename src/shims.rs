@@ -18,6 +18,7 @@ use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
 use indoc::formatdoc;
 use itertools::Itertools;
+use log::warn;
 use path_absolutize::Absolutize;
 use tokio::task::JoinSet;
 
@@ -78,10 +79,18 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
     }
     // fallback for "system"
     for path in &*env::PATH {
-        if fs::canonicalize(path).unwrap_or_default()
-            == fs::canonicalize(*dirs::SHIMS).unwrap_or_default()
-        {
-            continue;
+        // Safe canonicalization to prevent path traversal vulnerabilities
+        match (path.canonicalize(), dirs::SHIMS.canonicalize()) {
+            (Ok(canonical_path), Ok(canonical_shims)) => {
+                if canonical_path == canonical_shims {
+                    continue;
+                }
+            }
+            (Err(_), _) | (_, Err(_)) => {
+                // Log the error and skip this path for security
+                warn!("Failed to canonicalize path for comparison: {}", path.display());
+                continue;
+            }
         }
         let bin = path.join(bin_name);
         if bin.exists() {
