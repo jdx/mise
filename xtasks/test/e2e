@@ -6,6 +6,38 @@ set -euo pipefail
 
 export RUST_TEST_THREADS=1
 
+# Show help
+if [[ ${1:-} == --help ]]; then
+	cat >&2 <<EOF
+Usage: mise run test:e2e [OPTIONS] [TEST_PATTERNS...]
+
+Options:
+  --help     Show this help message
+  --list     List all available tests
+  --all      Run all tests
+
+Arguments:
+  TEST_PATTERNS...  Test patterns to run (e.g., "tasks", "cli", "test_task_run")
+
+Examples:
+  mise run test:e2e --list                    # List all available tests
+  mise run test:e2e --all                     # Run all tests
+  mise run test:e2e -- tasks                  # Run all task-related tests
+  mise run test:e2e -- cli                    # Run all CLI-related tests
+  mise run test:e2e -- test_task_run          # Run specific test
+EOF
+	exit 0
+fi
+
+# List all available tests
+if [[ ${1:-} == --list ]]; then
+	echo "Available tests:" >&2
+	pushd e2e >/dev/null
+	fd -tf "^test_" | sort
+	popd >/dev/null
+	exit 0
+fi
+
 if [[ ${1:-} == --all ]]; then
 	./e2e/run_all_tests
 else
