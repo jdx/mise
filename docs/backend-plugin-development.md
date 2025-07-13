@@ -118,12 +118,10 @@ PLUGIN = {
 
 ```lua
 function PLUGIN:BackendListVersions(ctx)
-    local tool = ctx.tool
-    
-    -- Use npm view to get real versions
     local cmd = require("cmd")
-    local result = cmd.exec("npm view " .. tool .. " versions --json 2>/dev/null")
     local json = require("json")
+
+    local result = cmd.exec("npm view " .. ctx.tool .. " versions --json")
     local versions = json.decode(result)
     
     return {versions = versions}
@@ -138,13 +136,10 @@ function PLUGIN:BackendInstall(ctx)
     local version = ctx.version
     local install_path = ctx.install_path
     
-    -- Create install directory
-    os.execute("mkdir -p " .. install_path)
-    
     -- Install the package directly using npm install
     local cmd = require("cmd")
-    local npm_cmd = "cd " .. install_path .. " && npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent 2>/dev/null"
-    local result = cmd.exec(npm_cmd)
+    local npm_cmd = "npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent"
+    local result = cmd.exec(npm_cmd, {cwd = install_path})
     
     -- If we get here, the command succeeded
     return {}
@@ -155,12 +150,10 @@ end
 
 ```lua
 function PLUGIN:BackendExecEnv(ctx)
-    local install_path = ctx.install_path
-    -- Add node_modules/.bin to PATH for npm-installed binaries
-    local bin_path = install_path .. "/node_modules/.bin"
+    local file = require("file")
     return {
         env_vars = {
-            {key = "PATH", value = bin_path}
+            {key = "PATH", value = file.join_path(ctx.install_path, "node_modules", ".bin")}
         }
     }
 end
