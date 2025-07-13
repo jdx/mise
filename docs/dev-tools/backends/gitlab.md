@@ -19,7 +19,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ```toml
 [tools]
-"gitlab:gitlab-org/gitlab-runner" = "latest"
+"gitlab:gitlab-org/gitlab-runner" = { version = "latest", asset_pattern = "gitlab-runner-linux-x64" }
 ```
 
 ## Tool Options
@@ -32,8 +32,9 @@ go in `[tools]` in `mise.toml`.
 Specifies the pattern to match against release asset names. This is useful when there are multiple assets for your OS/arch combination.
 
 ```toml
-[tools]
-"gitlab:gitlab-org/gitlab-runner" = { version = "latest", asset_pattern = "gitlab-runner-linux-x64" }
+[tools."gitlab:gitlab-org/gitlab-runner"]
+version = "latest"
+asset_pattern = "gitlab-runner-linux-x64"
 ```
 
 ### Platform-specific Asset Patterns
@@ -41,12 +42,10 @@ Specifies the pattern to match against release asset names. This is useful when 
 You can specify different asset patterns for different platforms:
 
 ```toml
-[tools]
-"gitlab:gitlab-org/gitlab-runner" = { 
-  version = "latest",
-  platforms_linux_x64_asset_pattern = "gitlab-runner-linux-x64",
-  platforms_macos_arm64_asset_pattern = "gitlab-runner-macos-arm64"
-}
+[tools."gitlab:gitlab-org/gitlab-runner"]
+version = "latest"
+platforms_linux_x64_asset_pattern = "gitlab-runner-linux-x64"
+platforms_macos_arm64_asset_pattern = "gitlab-runner-macos-arm64"
 ```
 
 ### `checksum`
@@ -67,12 +66,10 @@ checksum = "sha256:a1b2c3d4e5f6789..."
 You can specify different checksums for different platforms:
 
 ```toml
-[tools]
-"gitlab:gitlab-org/gitlab-runner" = { 
-  version = "latest",
-  platforms_linux_x64_checksum = "sha256:a1b2c3d4e5f6789...",
-  platforms_macos_arm64_checksum = "sha256:b2c3d4e5f6789..."
-}
+[tools."gitlab:gitlab-org/gitlab-runner"]
+version = "latest"
+platforms_linux_x64_checksum = "sha256:a1b2c3d4e5f6789..."
+platforms_macos_arm64_checksum = "sha256:b2c3d4e5f6789..."
 ```
 
 ### `size`
@@ -81,10 +78,7 @@ Verify the downloaded asset size:
 
 ```toml
 [tools]
-"gitlab:gitlab-org/gitlab-runner" = { 
-  version = "latest", 
-  size = "12345678" 
-}
+"gitlab:gitlab-org/gitlab-runner" = { version = "latest", size = "12345678" }
 ```
 
 ### Platform-specific Size
@@ -92,12 +86,10 @@ Verify the downloaded asset size:
 You can specify different sizes for different platforms:
 
 ```toml
-[tools]
-"gitlab:gitlab-org/gitlab-runner" = { 
-  version = "latest",
-  platforms_linux_x64_size = "12345678",
-  platforms_macos_arm64_size = "9876543"
-}
+[tools."gitlab:gitlab-org/gitlab-runner"]
+version = "latest"
+platforms_linux_x64_size = "12345678"
+platforms_macos_arm64_size = "9876543"
 ```
 
 ### `strip_components`
@@ -106,10 +98,7 @@ Number of directory components to strip when extracting archives:
 
 ```toml
 [tools]
-"gitlab:gitlab-org/gitlab-runner" = { 
-  version = "latest", 
-  strip_components = 1 
-}
+"gitlab:gitlab-org/gitlab-runner" = { version = "latest", strip_components = 1 }
 ```
 
 ### `bin_path`
@@ -118,10 +107,7 @@ Specify the directory containing binaries within the extracted archive:
 
 ```toml
 [tools]
-"gitlab:gitlab-org/gitlab-runner" = { 
-  version = "latest", 
-  bin_path = "bin" 
-}
+"gitlab:gitlab-org/gitlab-runner" = { version = "latest", bin_path = "bin" }
 ```
 
 **Binary path lookup order:**
@@ -137,10 +123,7 @@ For self-hosted GitLab instances, specify the API URL:
 
 ```toml
 [tools]
-"gitlab:myorg/mytool" = { 
-  version = "latest", 
-  api_url = "https://gitlab.mycompany.com/api/v4" 
-}
+"gitlab:myorg/mytool" = { version = "latest", api_url = "https://gitlab.mycompany.com/api/v4" }
 ```
 
 ## Self-hosted GitLab
