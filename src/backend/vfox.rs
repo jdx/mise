@@ -110,7 +110,7 @@ impl Backend for VfoxBackend {
                     return Ok(tv);
                 }
                 Err(e) => {
-                    return Err(e.wrap_err("Backend install method failed"));
+                    return Err(e).wrap_err("Backend install method failed");
                 }
             }
         }
@@ -245,7 +245,7 @@ impl VfoxBackend {
                         }
                         Err(e) => {
                             debug!("Backend method failed: {}", e);
-                            return Err(eyre::eyre!("Backend exec env method failed: {}", e));
+                            return Err(e).wrap_err("Backend exec env method failed");
                         }
                     }
                 }
