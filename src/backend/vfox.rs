@@ -1,6 +1,7 @@
 use crate::{env, plugins::PluginEnum, timeout};
 use async_trait::async_trait;
 use eyre::WrapErr;
+use heck::ToKebabCase;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::path::PathBuf;
@@ -156,20 +157,13 @@ impl Backend for VfoxBackend {
 
 impl VfoxBackend {
     pub fn from_arg(ba: BackendArg, backend_plugin_name: Option<String>) -> Self {
-        let plugin_name = match &backend_plugin_name {
+        let pathname = match &backend_plugin_name {
             Some(plugin_name) => plugin_name.clone(),
-            None => {
-                // For plugin:tool format, extract just the plugin name
-                if let Some((name, _)) = ba.short.split_once(':') {
-                    name.to_string()
-                } else {
-                    ba.short.clone()
-                }
-            }
+            None => ba.short.to_kebab_case(),
         };
 
-        let plugin_path = dirs::PLUGINS.join(&plugin_name);
-        let mut plugin = VfoxPlugin::new(plugin_name.clone(), plugin_path.clone());
+        let plugin_path = dirs::PLUGINS.join(&pathname);
+        let mut plugin = VfoxPlugin::new(pathname.clone(), plugin_path.clone());
         plugin.full = Some(ba.full());
         let plugin = Arc::new(plugin);
 
@@ -188,7 +182,7 @@ impl VfoxBackend {
                 None => PluginEnum::Vfox(plugin),
             },
             ba: Arc::new(ba),
-            pathname: plugin_name,
+            pathname,
             tool_name,
         }
     }
@@ -287,5 +281,18 @@ impl VfoxBackend {
         self.plugin
             .ensure_installed(config, &MultiProgressReport::get(), false)
             .await
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_vfox_props() {
+        let _config = Config::get().await.unwrap();
+        let backend = VfoxBackend::from_arg("vfox:version-fox/vfox-golang".into(), None);
+        assert_eq!(backend.pathname, "vfox-version-fox-vfox-golang");
+        assert_eq!(backend.plugin.full, Some("vfox:version-fox/vfox-golang".to_string()));
     }
 }

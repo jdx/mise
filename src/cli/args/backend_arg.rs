@@ -227,7 +227,7 @@ impl BackendArg {
             match pt {
                 PluginType::Asdf => format!("asdf:{short}"),
                 PluginType::Vfox => format!("vfox:{short}"),
-                PluginType::VfoxBackend => format!("vfox-backend:{short}"),
+                PluginType::VfoxBackend => short.to_string(),
             }
         } else if let Some(full) = REGISTRY
             .get(short)
@@ -425,10 +425,6 @@ mod tests {
         // Test that vfox plugins in plugin:tool format return as-is
         let fa: BackendArg = "vfox-plugin:tool".into();
         assert_str_eq!("vfox-plugin:tool", fa.full());
-
-        // Test that vfox-backend plugins in plugin:tool format return as-is
-        let fa: BackendArg = "vfox-backend-plugin:tool".into();
-        assert_str_eq!("vfox-backend-plugin:tool", fa.full());
     }
 
     #[tokio::test]

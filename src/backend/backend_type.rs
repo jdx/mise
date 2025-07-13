@@ -46,19 +46,7 @@ impl BackendType {
     pub fn guess(s: &str) -> BackendType {
         let prefix = s.split(':').next().unwrap_or(s);
 
-        // Handle vfox-backend prefix for backend plugins
-        if prefix == "vfox-backend" {
-            // For vfox-backend:plugin-name format, we need to extract the plugin name from the full string
-            if let Some((_, plugin_name)) = s.split_once(':') {
-                return BackendType::VfoxBackend(plugin_name.to_string());
-            } else {
-                // If no colon is found, this is not a valid vfox-backend format
-                return BackendType::Unknown;
-            }
-        }
-
-        let s = prefix.split('-').next().unwrap_or(prefix);
-        match s {
+        match prefix {
             "aqua" => BackendType::Aqua,
             "asdf" => BackendType::Asdf,
             "cargo" => BackendType::Cargo,

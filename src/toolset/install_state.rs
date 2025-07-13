@@ -39,7 +39,7 @@ pub(crate) async fn init() -> Result<()> {
 }
 
 async fn init_plugins() -> MutexResult<InstallStatePlugins> {
-    if let Some(plugins) = INSTALL_STATE_PLUGINS.lock().unwrap().clone() {
+    if let Some(plugins) = INSTALL_STATE_PLUGINS.lock().expect("INSTALL_STATE_PLUGINS lock failed").clone() {
         return Ok(plugins);
     }
     let dirs = file::dir_subdirs(&dirs::PLUGINS)?;
@@ -66,12 +66,12 @@ async fn init_plugins() -> MutexResult<InstallStatePlugins> {
         })
         .collect();
     let plugins = Arc::new(plugins);
-    *INSTALL_STATE_PLUGINS.lock().unwrap() = Some(plugins.clone());
+    *INSTALL_STATE_PLUGINS.lock().expect("INSTALL_STATE_PLUGINS lock failed") = Some(plugins.clone());
     Ok(plugins)
 }
 
 async fn init_tools() -> MutexResult<InstallStateTools> {
-    if let Some(tools) = INSTALL_STATE_TOOLS.lock().unwrap().clone() {
+    if let Some(tools) = INSTALL_STATE_TOOLS.lock().expect("INSTALL_STATE_TOOLS lock failed").clone() {
         return Ok(tools);
     }
     let mut jset = JoinSet::new();
@@ -111,7 +111,7 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         let full = match pt {
             PluginType::Asdf => format!("asdf:{short}"),
             PluginType::Vfox => format!("vfox:{short}"),
-            PluginType::VfoxBackend => format!("vfox-backend:{short}"), // Use vfox-backend prefix
+            PluginType::VfoxBackend => short.clone(),
         };
         let tool = tools
             .entry(short.clone())
@@ -123,16 +123,16 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
         tool.full = Some(full);
     }
     let tools = Arc::new(tools);
-    *INSTALL_STATE_TOOLS.lock().unwrap() = Some(tools.clone());
+    *INSTALL_STATE_TOOLS.lock().expect("INSTALL_STATE_TOOLS lock failed") = Some(tools.clone());
     Ok(tools)
 }
 
 pub fn list_plugins() -> Arc<BTreeMap<String, PluginType>> {
     INSTALL_STATE_PLUGINS
         .lock()
-        .unwrap()
+        .expect("INSTALL_STATE_PLUGINS lock failed")
         .as_ref()
-        .unwrap()
+        .expect("INSTALL_STATE_PLUGINS is None")
         .clone()
 }
 
@@ -165,9 +165,9 @@ pub fn get_plugin_type(short: &str) -> Option<PluginType> {
 pub fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
     INSTALL_STATE_TOOLS
         .lock()
-        .unwrap()
+        .expect("INSTALL_STATE_TOOLS lock failed")
         .as_ref()
-        .unwrap()
+        .expect("INSTALL_STATE_TOOLS is None")
         .clone()
 }
 
@@ -176,6 +176,13 @@ pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
         .get(short)
         .and_then(|ist| ist.full.as_ref())
         .map(|full| BackendType::guess(full));
+    if let Some(BackendType::Unknown) = backend_type {
+        if let Some((plugin_name, _)) = short.split_once(':') {
+            if let Some(PluginType::VfoxBackend) = get_plugin_type(plugin_name) {
+                return Ok(Some(BackendType::VfoxBackend(plugin_name.to_string())));
+            }
+        }
+    }
     Ok(backend_type)
 }
 
@@ -189,7 +196,7 @@ pub fn list_versions(short: &str) -> Vec<String> {
 pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
     let mut plugins = init_plugins().await?.deref().clone();
     plugins.insert(short.to_string(), plugin_type);
-    *INSTALL_STATE_PLUGINS.lock().unwrap() = Some(Arc::new(plugins));
+    *INSTALL_STATE_PLUGINS.lock().expect("INSTALL_STATE_PLUGINS lock failed") = Some(Arc::new(plugins));
     Ok(())
 }
 
@@ -268,6 +275,6 @@ pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
 }
 
 pub fn reset() {
-    *INSTALL_STATE_PLUGINS.lock().unwrap() = None;
-    *INSTALL_STATE_TOOLS.lock().unwrap() = None;
+    *INSTALL_STATE_PLUGINS.lock().expect("INSTALL_STATE_PLUGINS lock failed") = None;
+    *INSTALL_STATE_TOOLS.lock().expect("INSTALL_STATE_TOOLS lock failed") = None;
 }
