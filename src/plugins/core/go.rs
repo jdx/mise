@@ -121,14 +121,8 @@ impl GoPlugin {
             .await?;
 
         if !settings.go_skip_checksum {
-            let asset_info = tv
-                .assets
-                .entry(filename.clone())
-                .or_insert_with(|| AssetInfo {
-                    checksum: None,
-                    size: None,
-                    url: None,
-                });
+            let asset_info = tv.assets.entry(filename.clone()).or_default();
+            asset_info.url = Some(tarball_url.to_string());
             if asset_info.checksum.is_none() {
                 let checksum = checksum_handle.await.unwrap()?;
                 asset_info.checksum = Some(format!("sha256:{checksum}"));

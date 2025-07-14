@@ -111,9 +111,12 @@ impl JavaPlugin {
         pr.set_message(format!("download {filename}"));
         HTTP.download_file(&m.url, &tarball_path, Some(pr)).await?;
 
-        if !tv.assets.contains_key(filename) && m.checksum.is_some() {
+        if !tv.assets.contains_key(filename) {
             let asset_info = tv.assets.entry(filename.to_string()).or_default();
-            asset_info.checksum = m.checksum.clone();
+            asset_info.url = Some(m.url.clone());
+            if m.checksum.is_some() {
+                asset_info.checksum = m.checksum.clone();
+            }
         }
         self.verify_checksum(ctx, tv, &tarball_path)?;
 
@@ -393,8 +396,37 @@ impl Backend for JavaPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let metadata = self.tv_to_metadata(&tv).await?;
-        let tarball_path = self.download(ctx, &mut tv, &ctx.pr, metadata).await?;
+        // Check if URL already exists in lockfile assets first
+        let (metadata, tarball_path) = if let Some(existing_asset) = tv
+            .assets
+            .iter()
+            .find(|(_, asset)| asset.url.is_some())
+            .map(|(filename, asset)| (filename.clone(), asset.url.clone().unwrap()))
+        {
+            let (filename, url) = existing_asset;
+            debug!("Using existing URL from lockfile for {}: {}", filename, url);
+
+            // Reconstruct metadata from URL for reuse
+            let filename = url.split('/').next_back().unwrap();
+            let tarball_path = tv.download_path().join(filename);
+
+            // Check if the file exists, if not we need to download it
+            if !tarball_path.exists() {
+                debug!("File not found, downloading from cached URL: {}", url);
+                // We need to fetch metadata to get the full JavaMetadata for download
+                let metadata = self.tv_to_metadata(&tv).await?;
+                let _ = self.download(ctx, &mut tv, &ctx.pr, metadata).await?;
+            }
+
+            // We need to fetch metadata to get the full JavaMetadata for installation
+            let metadata = self.tv_to_metadata(&tv).await?;
+            (metadata, tarball_path)
+        } else {
+            let metadata = self.tv_to_metadata(&tv).await?;
+            let tarball_path = self.download(ctx, &mut tv, &ctx.pr, metadata).await?;
+            (metadata, tarball_path)
+        };
+
         self.install(&tv, &ctx.pr, &tarball_path, metadata)?;
         self.verify(&tv, &ctx.pr)?;
 
