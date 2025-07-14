@@ -16,7 +16,6 @@ use crate::install_context::InstallContext;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
-use crate::lockfile::AssetInfo;
 use async_trait::async_trait;
 use color_eyre::eyre::{Result, eyre};
 use indoc::formatdoc;

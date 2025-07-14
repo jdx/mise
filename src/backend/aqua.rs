@@ -363,23 +363,10 @@ impl AquaBackend {
         self.verify_slsa(ctx, tv, pkg, v, filename).await?;
         self.verify_minisign(ctx, tv, pkg, v, filename).await?;
         
-        // Get download path before mutable borrow
         let download_path = tv.download_path();
-        
-        // Get or create asset info for this filename
-        let asset_info_entry = tv.assets.entry(filename.to_string());
-        let mut needs_checksum = false;
-        {
-            let asset_info = asset_info_entry.or_insert_with(|| AssetInfo {
-                checksum: None,
-                size: None,
-                url: None,
-            });
-            if asset_info.checksum.is_none() {
-                needs_checksum = true;
-            }
-        }
-        if needs_checksum {
+        let asset_info = tv.assets.entry(filename.to_string()).or_default();
+        asset_info.url = Some(pkg.url(v)?);
+        if asset_info.checksum.is_none() {
             if let Some(checksum) = &pkg.checksum {
                 if checksum.enabled() {
                     let url = match checksum._type() {
@@ -393,24 +380,30 @@ impl AquaBackend {
                     HTTP.download_file(&url, &checksum_path, Some(&ctx.pr)).await?;
                     self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path).await?;
                     let mut checksum_file = file::read_to_string(&checksum_path)?;
-                    if checksum_file.starts_with("-----BEGIN PGP SIGNATURE-----") {
-                        let lines: Vec<&str> = checksum_file.lines().collect();
-                        let mut in_signature = false;
-                        checksum_file = lines
-                            .into_iter()
-                            .filter(|line| {
-                                if line.starts_with("-----BEGIN PGP SIGNATURE-----") {
-                                    in_signature = true;
-                                    false
-                                } else if line.starts_with("-----END PGP SIGNATURE-----") {
-                                    in_signature = false;
-                                    false
-                                } else {
-                                    !in_signature
-                                }
-                            })
-                            .collect::<Vec<&str>>()
-                            .join("\n");
+                    if checksum.file_format() == "regexp" {
+                        let pattern = checksum.pattern();
+                        if let Some(file) = &pattern.file {
+                            let re = regex::Regex::new(file.as_str())?;
+                            if let Some(line) = checksum_file.lines().find(|l| {
+                                re.captures(l).is_some_and(|c| c[1].to_string() == filename)
+                            }) {
+                                checksum_file = line.to_string();
+                            } else {
+                                debug!(
+                                    "no line found matching {} in {} for {}",
+                                    file, checksum_file, filename
+                                );
+                            }
+                        }
+                        let re = regex::Regex::new(pattern.checksum.as_str())?;
+                        if let Some(caps) = re.captures(checksum_file.as_str()) {
+                            checksum_file = caps[1].to_string();
+                        } else {
+                            debug!(
+                                "no checksum found matching {} in {}",
+                                pattern.checksum, checksum_file
+                            );
+                        }
                     }
                     let checksum_str = checksum_file
                         .lines()

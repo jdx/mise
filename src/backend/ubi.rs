@@ -9,7 +9,6 @@ use crate::plugins::VERSION_REGEX;
 use crate::toolset::ToolVersion;
 use crate::{backend::Backend, toolset::ToolVersionOptions};
 use crate::{file, github, gitlab, hash};
-use crate::lockfile::AssetInfo;
 use async_trait::async_trait;
 use eyre::bail;
 use itertools::Itertools;

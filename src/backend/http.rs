@@ -8,7 +8,6 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::AssetInfo;
 use crate::toolset::ToolVersion;
 use async_trait::async_trait;
 use eyre::Result;

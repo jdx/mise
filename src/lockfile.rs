@@ -127,7 +127,7 @@ impl Lockfile {
 
     fn migrate_legacy_format(&mut self) {
         // Move checksums and sizes from separate sections to consolidated assets section
-        for (_tool_name, versions) in &mut self.tools {
+        for versions in self.tools.values_mut() {
             for version in versions {
                 // Migrate checksums to assets section
                 let checksums_to_migrate: Vec<(String, String)> = version.checksums.clone().into_iter().collect();
@@ -177,30 +177,6 @@ impl Lockfile {
 
     fn is_empty(&self) -> bool {
         self.tools.is_empty()
-    }
-    
-    // Helper method to get checksum for a filename from a specific tool
-    pub fn get_checksum(&self, tool_name: &str, filename: &str) -> Option<&String> {
-        self.tools.get(tool_name)?
-            .first()?
-            .assets.get(filename)?
-            .checksum.as_ref()
-    }
-    
-    // Helper method to get size for a filename from a specific tool
-    pub fn get_size(&self, tool_name: &str, filename: &str) -> Option<u64> {
-        self.tools.get(tool_name)?
-            .first()?
-            .assets.get(filename)?
-            .size
-    }
-    
-    // Helper method to get URL for a filename from a specific tool
-    pub fn get_url(&self, tool_name: &str, filename: &str) -> Option<&String> {
-        self.tools.get(tool_name)?
-            .first()?
-            .assets.get(filename)?
-            .url.as_ref()
     }
 }
 

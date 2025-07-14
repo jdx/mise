@@ -10,7 +10,6 @@ use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, gpg, hash, http, plugins};
-use crate::lockfile::AssetInfo;
 use async_trait::async_trait;
 use eyre::{Result, bail, ensure};
 use serde_derive::Deserialize;
@@ -165,6 +164,8 @@ impl NodePlugin {
             if asset_info.checksum.is_none() {
                 asset_info.checksum = Some(self.get_checksum(ctx, local, version).await?);
             }
+            // Store the URL in the asset info
+            asset_info.url = Some(url.to_string());
         }
         self.verify_checksum(ctx, tv, local)?;
         Ok(())
