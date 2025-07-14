@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 if [[ "$(uname)" == "Darwin" ]]; then
-  echo "Skipping test_config_alias_github_edit on macOS (no macOS asset available)"
-  exit 0
+	echo "Skipping test_config_alias_github_edit on macOS (no macOS asset available)"
+	exit 0
 fi
 
 cat <<EOF >mise.toml
