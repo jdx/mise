@@ -6,6 +6,7 @@ use crate::config::Settings;
 use crate::file::TarOptions;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::lockfile::AssetInfo;
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
@@ -18,7 +19,6 @@ use crate::{
 };
 use crate::{backend::Backend, config::Config};
 use crate::{file, github, minisign};
-use crate::lockfile::AssetInfo;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use eyre::{ContextCompat, Result, bail};
@@ -122,15 +122,18 @@ impl Backend for AquaBackend {
             Err(err) => return Err(err),
         };
         let filename = url.split('/').next_back().unwrap();
-        
+
         // Store the asset URL in the tool version
-        let asset_info = tv.assets.entry(filename.to_string()).or_insert_with(|| AssetInfo {
-            checksum: None,
-            size: None,
-            url: None,
-        });
+        let asset_info = tv
+            .assets
+            .entry(filename.to_string())
+            .or_insert_with(|| AssetInfo {
+                checksum: None,
+                size: None,
+                url: None,
+            });
         asset_info.url = Some(url.clone());
-        
+
         self.download(ctx, &tv, &url, filename).await?;
         self.verify(ctx, &mut tv, &pkg, v, filename).await?;
         self.install(ctx, &tv, &pkg, v, filename)?;
@@ -362,7 +365,7 @@ impl AquaBackend {
     ) -> Result<()> {
         self.verify_slsa(ctx, tv, pkg, v, filename).await?;
         self.verify_minisign(ctx, tv, pkg, v, filename).await?;
-        
+
         let download_path = tv.download_path();
         let asset_info = tv.assets.entry(filename.to_string()).or_default();
         asset_info.url = Some(pkg.url(v)?);
@@ -377,8 +380,10 @@ impl AquaBackend {
                         AquaChecksumType::Http => checksum.url(pkg, v)?,
                     };
                     let checksum_path = download_path.join(format!("{filename}.checksum"));
-                    HTTP.download_file(&url, &checksum_path, Some(&ctx.pr)).await?;
-                    self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path).await?;
+                    HTTP.download_file(&url, &checksum_path, Some(&ctx.pr))
+                        .await?;
+                    self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
+                        .await?;
                     let mut checksum_file = file::read_to_string(&checksum_path)?;
                     if checksum.file_format() == "regexp" {
                         let pattern = checksum.pattern();

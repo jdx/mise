@@ -11,8 +11,8 @@ use crate::config::Config;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
-use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
 use crate::lockfile::AssetInfo;
+use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
 use console::style;
 use dashmap::DashMap;
 use eyre::Result;
@@ -49,11 +49,14 @@ impl ToolVersion {
                 let mut tv = Self::new(request.clone(), lt.version);
                 // Convert lockfile assets to tool version assets
                 for (filename, asset_info) in &lt.assets {
-                    tv.assets.insert(filename.clone(), AssetInfo {
-                        checksum: asset_info.checksum.clone(),
-                        size: asset_info.size,
-                        url: asset_info.url.clone(),
-                    });
+                    tv.assets.insert(
+                        filename.clone(),
+                        AssetInfo {
+                            checksum: asset_info.checksum.clone(),
+                            size: asset_info.size,
+                            url: asset_info.url.clone(),
+                        },
+                    );
                 }
                 return Ok(tv);
             }
