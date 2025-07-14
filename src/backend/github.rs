@@ -440,24 +440,41 @@ impl UnifiedGitBackend {
     ) -> Result<String> {
         let release = github::get_release_for_url(api_url, repo, version).await?;
 
-        // Get platform-specific pattern first, then fall back to general pattern
-        let pattern = lookup_platform_key(opts, "asset_pattern")
-            .or_else(|| opts.get("asset_pattern").cloned())
-            .unwrap_or("{name}-{version}-{os}-{arch}.{ext}".to_string());
-
-        // Template the pattern with actual values
-        let templated_pattern = template_string(&pattern, tv);
-
-        // Find matching asset - pattern is already templated by mise.toml parsing
         let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
+
+        // Try explicit pattern first, then fall back to auto-detection
+        if let Some(pattern) = lookup_platform_key(opts, "asset_pattern")
+            .or_else(|| opts.get("asset_pattern").cloned())
+        {
+            // Template the pattern with actual values
+            let templated_pattern = template_string(&pattern, tv);
+
+            // Find matching asset using pattern
+            let asset = release
+                .assets
+                .into_iter()
+                .find(|a| self.matches_pattern(&a.name, &templated_pattern))
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "No matching asset found for pattern: {}\nAvailable assets: {}",
+                        templated_pattern,
+                        Self::format_asset_list(available_assets.iter())
+                    )
+                })?;
+
+            return Ok(asset.browser_download_url);
+        }
+
+        // Fall back to auto-detection
+        let asset_name = self.auto_detect_asset(&available_assets)?;
         let asset = release
             .assets
             .into_iter()
-            .find(|a| self.matches_pattern(&a.name, &templated_pattern))
+            .find(|a| a.name == asset_name)
             .ok_or_else(|| {
                 eyre::eyre!(
-                    "No matching asset found for pattern: {}\nAvailable assets: {}",
-                    templated_pattern,
+                    "Auto-detected asset not found: {}\nAvailable assets: {}",
+                    asset_name,
                     Self::format_asset_list(available_assets.iter())
                 )
             })?;
@@ -475,30 +492,48 @@ impl UnifiedGitBackend {
     ) -> Result<String> {
         let release = gitlab::get_release_for_url(api_url, repo, version).await?;
 
-        // Get platform-specific pattern first, then fall back to general pattern
-        let pattern = lookup_platform_key(opts, "asset_pattern")
-            .or_else(|| opts.get("asset_pattern").cloned())
-            .unwrap_or("{name}-{version}-{os}-{arch}.{ext}".to_string());
-
-        // Template the pattern with actual values
-        let templated_pattern = template_string(&pattern, tv);
-
         let available_assets: Vec<String> = release
             .assets
             .links
             .iter()
             .map(|a| a.name.clone())
             .collect();
-        // Find matching asset - pattern is already templated by mise.toml parsing
+
+        // Try explicit pattern first, then fall back to auto-detection
+        if let Some(pattern) = lookup_platform_key(opts, "asset_pattern")
+            .or_else(|| opts.get("asset_pattern").cloned())
+        {
+            // Template the pattern with actual values
+            let templated_pattern = template_string(&pattern, tv);
+
+            // Find matching asset using pattern
+            let asset = release
+                .assets
+                .links
+                .into_iter()
+                .find(|a| self.matches_pattern(&a.name, &templated_pattern))
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "No matching asset found for pattern: {}\nAvailable assets: {}",
+                        templated_pattern,
+                        Self::format_asset_list(available_assets.iter())
+                    )
+                })?;
+
+            return Ok(asset.direct_asset_url);
+        }
+
+        // Fall back to auto-detection
+        let asset_name = self.auto_detect_asset(&available_assets)?;
         let asset = release
             .assets
             .links
             .into_iter()
-            .find(|a| self.matches_pattern(&a.name, &templated_pattern))
+            .find(|a| a.name == asset_name)
             .ok_or_else(|| {
                 eyre::eyre!(
-                    "No matching asset found for pattern: {}\nAvailable assets: {}",
-                    templated_pattern,
+                    "Auto-detected asset not found: {}\nAvailable assets: {}",
+                    asset_name,
                     Self::format_asset_list(available_assets.iter())
                 )
             })?;
@@ -506,44 +541,7 @@ impl UnifiedGitBackend {
         Ok(asset.direct_asset_url)
     }
 
-    /// Resolves the asset name using either explicit patterns or auto-detection
-    fn resolve_asset_name(
-        &self,
-        tv: &ToolVersion,
-        opts: &ToolVersionOptions,
-        available_assets: &[String],
-    ) -> Result<String> {
-        // Try explicit pattern first
-        if let Some(pattern) = lookup_platform_key(opts, "asset_pattern")
-            .or_else(|| opts.get("asset_pattern").cloned())
-        {
-            return self.find_asset_by_pattern(tv, &pattern, available_assets);
-        }
 
-        // Fall back to auto-detection
-        self.auto_detect_asset(available_assets)
-    }
-
-    fn find_asset_by_pattern(
-        &self,
-        tv: &ToolVersion,
-        pattern: &str,
-        available_assets: &[String],
-    ) -> Result<String> {
-        let templated_pattern = template_string(pattern, tv);
-
-        available_assets
-            .iter()
-            .find(|asset| self.matches_pattern(asset, &templated_pattern))
-            .cloned()
-            .ok_or_else(|| {
-                eyre::eyre!(
-                    "No matching asset found for pattern: {}\nAvailable assets: {}",
-                    templated_pattern,
-                    available_assets.join(", ")
-                )
-            })
-    }
 
     fn auto_detect_asset(&self, available_assets: &[String]) -> Result<String> {
         let settings = Settings::get();
