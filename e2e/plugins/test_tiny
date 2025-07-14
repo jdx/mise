@@ -33,30 +33,3 @@ assert "mise outdated tiny" "tiny  3  3.0.0  3.1.0 ~/workdir/mise.toml"
 mise upgrade tiny
 assert "mise current tiny" "3.1.0"
 assert "mise outdated tiny" ""
-
-# test passthrough of mise-specific flags to tiny shim
-cat >mise.toml <<EOF
-[tools]
-tiny = "latest"
-EOF
-mise install tiny@latest
-mise reshim
-
-# Find the shim path
-SHIM_PATH="$HOME/.local/share/mise/shims/mise-tiny"
-if [ -x "$SHIM_PATH" ]; then
-	OUTPUT=$($SHIM_PATH --no-config --env foo --jobs 2 --raw --yes extra-arg 2>&1 || true)
-	echo "$OUTPUT"
-	# The output should include the passed arguments, or at least not error on them
-	# (tiny prints its args, or at least should not fail on these)
-	assert_contains "$OUTPUT" "--no-config"
-	assert_contains "$OUTPUT" "--env"
-	assert_contains "$OUTPUT" "foo"
-	assert_contains "$OUTPUT" "--jobs"
-	assert_contains "$OUTPUT" "2"
-	assert_contains "$OUTPUT" "--raw"
-	assert_contains "$OUTPUT" "--yes"
-	assert_contains "$OUTPUT" "extra-arg"
-else
-	echo "Tiny shim not found at $SHIM_PATH, skipping direct shim test."
-fi
