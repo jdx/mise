@@ -10,3 +10,5 @@ alwaysApply: true
 - `mise run lint-fix` - run linting and fix issues
 
 Don't run e2e tests by trying to execute them directly, always use `mise run test:e2e -- [test_filename]...`
+
+Run `mise run lint-fix` and `git add` any lint fixes before trying to commit.
