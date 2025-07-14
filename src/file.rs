@@ -11,11 +11,11 @@ use std::os::unix::prelude::*;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use bzip2::read::BzDecoder;
 use color_eyre::eyre::{Context, Result};
 use eyre::bail;
 use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
-use bzip2::read::BzDecoder;
 use itertools::Itertools;
 use std::sync::LazyLock as Lazy;
 use tar::Archive;
