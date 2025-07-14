@@ -1,4 +1,3 @@
 #!/usr/bin/env bash
 
-# Test GitHub backend with ripgrep
-assert_contains "mise x github:BurntSushi/ripgrep@14.1.1 -- rg --version" "ripgrep"
+assert_contains "mise x github:BurntSushi/ripgrep -- rg --version" "ripgrep"
