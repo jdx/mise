@@ -892,9 +892,37 @@ pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<(St
     Ok(top_level_components.into_iter().collect())
 }
 
+/// Inspects the top-level contents of a zip archive without extracting it
+pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
+    let f = File::open(archive)?;
+    let mut archive = ZipArchive::new(f)
+        .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?;
+    let mut top_level_components = std::collections::HashMap::new();
+
+    for i in 0..archive.len() {
+        let file = archive.by_index(i)?;
+        if let Some(path) = file.enclosed_name() {
+            if let Some(first_component) = path.components().next() {
+                let name = first_component.as_os_str().to_string_lossy().to_string();
+
+                // Check if this entry indicates the component is a directory
+                let is_directory = file.is_dir() || path.components().count() > 1; // If there are nested components, it's a directory
+
+                let existing = top_level_components.entry(name.clone()).or_insert(false);
+                *existing = *existing || is_directory;
+            }
+        }
+    }
+
+    Ok(top_level_components.into_iter().collect())
+}
+
 /// Determines if strip_components=1 should be applied based on archive structure
 pub fn should_strip_components(archive: &Path, format: TarFormat) -> Result<bool> {
-    let top_level_entries = inspect_tar_contents(archive, format)?;
+    let top_level_entries = match format {
+        TarFormat::Zip => inspect_zip_contents(archive)?,
+        _ => inspect_tar_contents(archive, format)?,
+    };
 
     // If there's exactly one top-level entry and it's a directory, we should strip it
     if top_level_entries.len() == 1 {
