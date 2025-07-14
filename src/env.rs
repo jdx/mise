@@ -444,6 +444,20 @@ fn prefer_offline(args: &[String]) -> bool {
 fn environment(args: &[String]) -> Vec<String> {
     let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
+    // Don't process --env when running as a shim
+    if !is_direct_mise_invocation() {
+        // Return environment from env vars only, ignore command line args
+        return var("MISE_ENV")
+            .ok()
+            .or_else(|| var("MISE_PROFILE").ok())
+            .or_else(|| var("MISE_ENVIRONMENT").ok())
+            .unwrap_or_default()
+            .split(',')
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect();
+    }
+
     args.windows(2)
         .take_while(|window| !window.iter().any(|a| a == "--"))
         .find_map(|window| {
@@ -521,6 +535,24 @@ pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
         path_absolutize::update_cwd();
     }
     Ok(())
+}
+
+/// Returns true if the current process is a direct mise invocation (not a shim)
+pub fn is_direct_mise_invocation() -> bool {
+    // When running tests, always treat as direct mise invocation
+    // to avoid interfering with test expectations
+    #[cfg(test)]
+    return true;
+
+    #[cfg(not(test))]
+    {
+        #[cfg(unix)]
+        let mise_bin = "mise";
+        #[cfg(windows)]
+        let mise_bin = "mise.exe";
+        let bin_name = *MISE_BIN_NAME;
+        bin_name == mise_bin || bin_name.starts_with("mise-")
+    }
 }
 
 #[cfg(test)]

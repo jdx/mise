@@ -252,6 +252,24 @@ impl Settings {
 
     pub fn add_cli_matches(cli: &Cli) {
         let mut s = SettingsPartial::empty();
+
+        // Don't process mise-specific flags when running as a shim
+        if !crate::env::is_direct_mise_invocation() {
+            // Only process non-mise-specific flags when running as shim
+            for arg in &*env::ARGS.read().unwrap() {
+                if arg == "--" {
+                    break;
+                }
+                // Only process --raw flag when running as shim (it affects output formatting)
+                if arg == "--raw" {
+                    s.raw = Some(true);
+                }
+            }
+            Self::reset(Some(s));
+            return;
+        }
+
+        // Process all flags when running as mise directly
         for arg in &*env::ARGS.read().unwrap() {
             if arg == "--" {
                 break;
@@ -458,9 +476,9 @@ impl Settings {
 
     pub fn no_config() -> bool {
         *env::MISE_NO_CONFIG || {
-            // Don't process --no-config when running as a shim
+            // Don't process mise-specific flags when running as a shim
             // If MISE_BIN_NAME doesn't start with "mise", we're running as a shim
-            // and --no-config is meant for the shimmed tool, not for mise
+            // and these flags are meant for the shimmed tool, not for mise
             let bin_name = *env::MISE_BIN_NAME;
             if !bin_name.starts_with("mise") {
                 return false;
