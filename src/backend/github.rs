@@ -237,7 +237,12 @@ impl UnifiedGitBackend {
         // Template the pattern with actual values
         let templated_pattern = template_string(&pattern, tv);
 
-        let available_assets: Vec<String> = release.assets.links.iter().map(|a| a.name.clone()).collect();
+        let available_assets: Vec<String> = release
+            .assets
+            .links
+            .iter()
+            .map(|a| a.name.clone())
+            .collect();
         // Find matching asset - pattern is already templated by mise.toml parsing
         let asset = release
             .assets
