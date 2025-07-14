@@ -42,6 +42,8 @@ pub struct AssetInfo {
     pub checksum: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 impl Lockfile {
@@ -93,10 +95,13 @@ impl Lockfile {
         for (_tool_name, versions) in &mut self.tools {
             for version in versions {
                 // Migrate checksums
-                for (filename, checksum) in version.checksums.drain() {
+                let checksums_to_migrate: Vec<(String, String)> = version.checksums.clone().into_iter().collect();
+                version.checksums.clear();
+                for (filename, checksum) in checksums_to_migrate {
                     let asset = self.assets.entry(filename).or_insert_with(|| AssetInfo {
                         checksum: None,
                         size: None,
+                        url: None,
                     });
                     if asset.checksum.is_none() {
                         asset.checksum = Some(checksum);
@@ -104,10 +109,13 @@ impl Lockfile {
                 }
                 
                 // Migrate sizes
-                for (filename, size) in version.sizes.drain() {
+                let sizes_to_migrate: Vec<(String, u64)> = version.sizes.clone().into_iter().collect();
+                version.sizes.clear();
+                for (filename, size) in sizes_to_migrate {
                     let asset = self.assets.entry(filename).or_insert_with(|| AssetInfo {
                         checksum: None,
                         size: None,
+                        url: None,
                     });
                     if asset.size.is_none() {
                         asset.size = Some(size);
@@ -164,17 +172,26 @@ impl Lockfile {
         self.assets.get(filename)?.size
     }
     
+    // Helper method to get URL for a filename
+    pub fn get_url(&self, filename: &str) -> Option<&String> {
+        self.assets.get(filename)?.url.as_ref()
+    }
+    
     // Helper method to set asset info
-    pub fn set_asset_info(&mut self, filename: String, checksum: Option<String>, size: Option<u64>) {
+    pub fn set_asset_info(&mut self, filename: String, checksum: Option<String>, size: Option<u64>, url: Option<String>) {
         let asset = self.assets.entry(filename).or_insert_with(|| AssetInfo {
             checksum: None,
             size: None,
+            url: None,
         });
         if let Some(checksum) = checksum {
             asset.checksum = Some(checksum);
         }
         if let Some(size) = size {
             asset.size = Some(size);
+        }
+        if let Some(url) = url {
+            asset.url = Some(url);
         }
     }
 }
@@ -248,9 +265,22 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         });
 
         for (short, tvl) in tools {
-            existing_lockfile
-                .tools
-                .insert(short.to_string(), tvl.clone().into());
+            let mut lockfile_tools: Vec<LockfileTool> = tvl.clone().into();
+            
+            // Extract asset info from the tools and add to the assets section
+            for tool in &mut lockfile_tools {
+                for (filename, checksum) in &tool.checksums {
+                    existing_lockfile.set_asset_info(filename.clone(), Some(checksum.clone()), None, None);
+                }
+                for (filename, size) in &tool.sizes {
+                    existing_lockfile.set_asset_info(filename.clone(), None, Some(*size), None);
+                }
+                // Clear the legacy fields since they're now in the assets section
+                tool.checksums.clear();
+                tool.sizes.clear();
+            }
+            
+            existing_lockfile.tools.insert(short.to_string(), lockfile_tools);
         }
 
         existing_lockfile.save(&lockfile_path)?;
@@ -276,6 +306,9 @@ fn read_all_lockfiles(config: &Config) -> Lockfile {
         .fold(Lockfile::default(), |mut acc, l| {
             for (short, tvl) in l.tools {
                 acc.tools.insert(short, tvl);
+            }
+            for (filename, asset_info) in l.assets {
+                acc.assets.insert(filename, asset_info);
             }
             acc
         })
@@ -322,7 +355,19 @@ pub fn get_locked_version(
             // TODO: this likely won't work right when using `python@latest python@3.12`
             .find(|v| prefix == "latest" || v.version.starts_with(prefix))
             .inspect(|v| trace!("[{short}@{prefix}] found {} in lockfile", v.version))
-            .cloned())
+            .cloned()
+            .map(|mut tool| {
+                // Populate checksums and sizes from the assets section for backward compatibility
+                for (filename, asset_info) in &lockfile.assets {
+                    if let Some(checksum) = &asset_info.checksum {
+                        tool.checksums.insert(filename.clone(), checksum.clone());
+                    }
+                    if let Some(size) = asset_info.size {
+                        tool.sizes.insert(filename.clone(), size);
+                    }
+                }
+                tool
+            }))
     } else {
         Ok(None)
     }
@@ -389,12 +434,7 @@ impl LockfileTool {
         if let Some(backend) = self.backend {
             table.insert("backend".to_string(), backend.into());
         }
-        if !self.checksums.is_empty() {
-            table.insert("checksums".to_string(), self.checksums.into());
-        }
-        if !self.sizes.is_empty() {
-            table.insert("sizes".to_string(), self.sizes.into());
-        }
+        // Don't serialize legacy checksums and sizes fields - they're now in the assets section
         table.into()
     }
 }
@@ -406,6 +446,7 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
             .map(|tv| LockfileTool {
                 version: tv.version.clone(),
                 backend: Some(tv.ba().full()),
+                // Store checksums and sizes temporarily for extraction to assets section
                 checksums: tv.checksums.clone(),
                 sizes: tv.sizes.clone(),
             })
@@ -439,5 +480,13 @@ fn format(mut doc: DocumentMut) -> String {
             }
         }
     }
+    
+    // Sort assets section by filename for consistency
+    if let Some(assets) = doc.get_mut("assets") {
+        if let toml_edit::Item::Table(table) = assets {
+            table.sort_values();
+        }
+    }
+    
     doc.to_string()
 }
