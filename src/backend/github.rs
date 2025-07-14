@@ -541,8 +541,6 @@ impl UnifiedGitBackend {
         Ok(asset.direct_asset_url)
     }
 
-
-
     fn auto_detect_asset(&self, available_assets: &[String]) -> Result<String> {
         let settings = Settings::get();
         let picker = asset_detector::AssetPicker::new(
