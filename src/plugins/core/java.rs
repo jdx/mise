@@ -16,6 +16,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
+use crate::lockfile::AssetInfo;
 use async_trait::async_trait;
 use color_eyre::eyre::{Result, eyre};
 use indoc::formatdoc;
@@ -111,9 +112,9 @@ impl JavaPlugin {
         pr.set_message(format!("download {filename}"));
         HTTP.download_file(&m.url, &tarball_path, Some(pr)).await?;
 
-        if !tv.checksums.contains_key(filename) && m.checksum.is_some() {
-            tv.checksums
-                .insert(filename.to_string(), m.checksum.as_ref().unwrap().clone());
+        if !tv.assets.contains_key(filename) && m.checksum.is_some() {
+            let asset_info = tv.assets.entry(filename.to_string()).or_default();
+            asset_info.checksum = m.checksum.clone();
         }
         self.verify_checksum(ctx, tv, &tarball_path)?;
 

@@ -12,6 +12,7 @@ use crate::config::Config;
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
+use crate::lockfile::AssetInfo;
 use console::style;
 use dashmap::DashMap;
 use eyre::Result;
@@ -23,9 +24,7 @@ use path_absolutize::Absolutize;
 pub struct ToolVersion {
     pub request: ToolRequest,
     pub version: String,
-    pub checksums: BTreeMap<String, String>,
-    pub sizes: BTreeMap<String, u64>,
-    pub urls: BTreeMap<String, String>,
+    pub assets: BTreeMap<String, AssetInfo>,
     pub install_path: Option<PathBuf>,
 }
 
@@ -34,9 +33,7 @@ impl ToolVersion {
         ToolVersion {
             request,
             version,
-            checksums: Default::default(),
-            sizes: Default::default(),
-            urls: Default::default(),
+            assets: Default::default(),
             install_path: None,
         }
     }
@@ -50,9 +47,14 @@ impl ToolVersion {
         if opts.use_locked_version {
             if let Some(lt) = request.lockfile_resolve(config)? {
                 let mut tv = Self::new(request.clone(), lt.version);
-                tv.checksums = lt.checksums;
-                tv.sizes = lt.sizes;
-                // TODO: Extract URLs from lockfile assets when needed
+                // Convert lockfile assets to tool version assets
+                for (filename, asset_info) in &lt.assets {
+                    tv.assets.insert(filename.clone(), AssetInfo {
+                        checksum: asset_info.checksum.clone(),
+                        size: asset_info.size,
+                        url: asset_info.url.clone(),
+                    });
+                }
                 return Ok(tv);
             }
         }
