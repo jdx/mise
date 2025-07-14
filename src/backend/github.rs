@@ -37,15 +37,15 @@ impl Backend for UnifiedGitBackend {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let repo = &self.ba.tool_name;
+        let repo = self.ba.tool_name();
         if self.is_gitlab() {
-            let releases = gitlab::list_releases(repo).await?;
+            let releases = gitlab::list_releases(&repo).await?;
             Ok(releases
                 .into_iter()
                 .map(|r| r.tag_name.trim_start_matches('v').to_string())
                 .collect())
         } else {
-            let releases = github::list_releases(repo).await?;
+            let releases = github::list_releases(&repo).await?;
             Ok(releases
                 .into_iter()
                 .map(|r| r.tag_name.trim_start_matches('v').to_string())
@@ -76,7 +76,7 @@ impl Backend for UnifiedGitBackend {
             });
 
         // Find the asset URL for this specific version
-        let asset_url = self.resolve_asset_url(&tv, &opts, repo, api_url).await?;
+        let asset_url = self.resolve_asset_url(&tv, &opts, &repo, api_url).await?;
 
         // Download
         let filename = get_filename_from_url(&asset_url);
@@ -142,8 +142,19 @@ impl UnifiedGitBackend {
         self.ba.backend_type() == BackendType::Gitlab
     }
 
-    fn repo(&self) -> &str {
-        &self.ba.tool_name // e.g., "BurntSushi/ripgrep" or "gitlab-org/gitlab-runner"
+    fn repo(&self) -> String {
+        // Use tool_name() method to properly resolve aliases
+        // This ensures that when an alias like "test-edit = github:microsoft/edit" is used,
+        // the repository name is correctly extracted as "microsoft/edit"
+        self.ba.tool_name()
+    }
+
+    // Helper to format asset names for error messages
+    fn format_asset_list<'a, I>(assets: I) -> String
+    where
+        I: Iterator<Item = &'a String>,
+    {
+        assets.cloned().collect::<Vec<_>>().join(", ")
     }
 
     async fn resolve_asset_url(
@@ -192,12 +203,17 @@ impl UnifiedGitBackend {
         let templated_pattern = template_string(&pattern, tv);
 
         // Find matching asset - pattern is already templated by mise.toml parsing
+        let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
         let asset = release
             .assets
             .into_iter()
             .find(|a| self.matches_pattern(&a.name, &templated_pattern))
             .ok_or_else(|| {
-                eyre::eyre!("No matching asset found for pattern: {}", templated_pattern)
+                eyre::eyre!(
+                    "No matching asset found for pattern: {}\nAvailable assets: {}",
+                    templated_pattern,
+                    Self::format_asset_list(available_assets.iter())
+                )
             })?;
 
         Ok(asset.browser_download_url)
@@ -221,6 +237,7 @@ impl UnifiedGitBackend {
         // Template the pattern with actual values
         let templated_pattern = template_string(&pattern, tv);
 
+        let available_assets: Vec<String> = release.assets.links.iter().map(|a| a.name.clone()).collect();
         // Find matching asset - pattern is already templated by mise.toml parsing
         let asset = release
             .assets
@@ -228,7 +245,11 @@ impl UnifiedGitBackend {
             .into_iter()
             .find(|a| self.matches_pattern(&a.name, &templated_pattern))
             .ok_or_else(|| {
-                eyre::eyre!("No matching asset found for pattern: {}", templated_pattern)
+                eyre::eyre!(
+                    "No matching asset found for pattern: {}\nAvailable assets: {}",
+                    templated_pattern,
+                    Self::format_asset_list(available_assets.iter())
+                )
             })?;
 
         Ok(asset.direct_asset_url)
