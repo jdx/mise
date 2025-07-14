@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
 
-assert_contains "mise x github:BurntSushi/ripgrep -- rg --version" "ripgrep"
+assert "mise use github:BurntSushi/ripgrep@14.1.0"
+assert "mise which rg"
+assert_contains "mise x -- rg --version" "ripgrep 14.1.0"
