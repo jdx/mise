@@ -38,8 +38,7 @@ impl Backend for GemBackend {
     async fn search(&self, query: &str) -> eyre::Result<Vec<SearchResult>> {
         let response: Vec<GemRegistryObject> = HTTP_FETCH
             .json(format!(
-                "https://rubygems.org/api/v1/search.json?query={}",
-                query
+                "https://rubygems.org/api/v1/search.json?query={query}"
             ))
             .await?;
         let found = response

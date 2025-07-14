@@ -48,8 +48,7 @@ impl Backend for CargoBackend {
     async fn search(&self, query: &str) -> eyre::Result<Vec<SearchResult>> {
         let response: CargoRegistryResponse = HTTP_FETCH
             .json(format!(
-                "https://crates.io/api/v1/crates?q={}&per_page=10",
-                query
+                "https://crates.io/api/v1/crates?q={query}&per_page=10"
             ))
             .await?;
         let found = response

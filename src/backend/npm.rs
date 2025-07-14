@@ -53,8 +53,7 @@ impl Backend for NPMBackend {
     async fn search(&self, query: &str) -> eyre::Result<Vec<SearchResult>> {
         let response: NpmRegistryResponse = HTTP_FETCH
             .json(format!(
-                "https://registry.npmjs.com/-/v1/search?text={}&size=10",
-                query
+                "https://registry.npmjs.com/-/v1/search?text={query}&size=10"
             ))
             .await?;
         let found = response

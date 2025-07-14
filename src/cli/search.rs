@@ -78,11 +78,7 @@ impl Search {
         for t in tools.iter() {
             let name = &t.name;
             let description = &t.description;
-            s = s.option(
-                DemandOption::new(name)
-                    .label(name)
-                    .description(&description),
-            );
+            s = s.option(DemandOption::new(name).label(name).description(description));
         }
         match s.run() {
             Ok(_) => Ok(()),
