@@ -185,6 +185,16 @@ pub trait Backend: Debug + Send + Sync {
         BackendType::Core
     }
     fn ba(&self) -> &Arc<BackendArg>;
+
+    /// Generates a platform key for lockfile storage.
+    /// Default implementation uses os-arch format, but backends can override for more specific keys.
+    fn get_platform_key(&self) -> String {
+        let settings = Settings::get();
+        let os = settings.os();
+        let arch = settings.arch();
+        format!("{os}-{arch}")
+    }
+
     async fn description(&self) -> Option<String> {
         None
     }
@@ -737,10 +747,13 @@ pub trait Backend: Debug + Send + Sync {
         let filename = file.file_name().unwrap().to_string_lossy().to_string();
         let lockfile_enabled = settings.lockfile && settings.experimental;
 
-        // Get or create asset info for this filename
-        let asset_info = tv.assets.entry(filename.clone()).or_default();
+        // Get the platform key for this tool and platform
+        let platform_key = self.get_platform_key();
 
-        if let Some(checksum) = &asset_info.checksum {
+        // Get or create asset info for this platform
+        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
+
+        if let Some(checksum) = &platform_info.checksum {
             ctx.pr.set_message(format!("checksum {filename}"));
             if let Some((algo, check)) = checksum.split_once(':') {
                 hash::ensure_checksum(file, check, Some(&ctx.pr), algo)?;
@@ -750,11 +763,11 @@ pub trait Backend: Debug + Send + Sync {
         } else if lockfile_enabled {
             ctx.pr.set_message(format!("generate checksum {filename}"));
             let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
-            asset_info.checksum = Some(format!("blake3:{hash}"));
+            platform_info.checksum = Some(format!("blake3:{hash}"));
         }
 
         // Handle size verification and generation
-        if let Some(expected_size) = asset_info.size {
+        if let Some(expected_size) = platform_info.size {
             ctx.pr.set_message(format!("verify size {filename}"));
             let actual_size = file.metadata()?.len();
             if actual_size != expected_size {
@@ -768,7 +781,7 @@ pub trait Backend: Debug + Send + Sync {
         } else if lockfile_enabled {
             ctx.pr.set_message(format!("record size {filename}"));
             let size = file.metadata()?.len();
-            asset_info.size = Some(size);
+            platform_info.size = Some(size);
         }
         Ok(())
     }

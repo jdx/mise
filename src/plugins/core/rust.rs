@@ -313,7 +313,11 @@ fn rustup_url(_settings: &Settings) -> String {
 
 #[cfg(windows)]
 fn rustup_url(settings: &Settings) -> String {
-    let arch = settings.arch();
+    let arch = match settings.arch() {
+        "x64" => "x86_64",
+        "arm64" => "aarch64",
+        other => other,
+    };
     format!("https://win.rustup.rs/{arch}")
 }
 

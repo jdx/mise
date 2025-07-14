@@ -74,16 +74,18 @@ impl Backend for UnifiedGitBackend {
         let opts = tv.request.options();
         let api_url = self.get_api_url(&opts);
 
-        // Check if URL already exists in lockfile assets first
-        let asset_url = if let Some(existing_asset) = tv
-            .assets
-            .iter()
-            .find(|(_, asset)| asset.url.is_some())
-            .map(|(filename, asset)| (filename.clone(), asset.url.clone().unwrap()))
+        // Check if URL already exists in lockfile platforms first
+        let platform_key = self.get_platform_key();
+        let asset_url = if let Some(existing_platform) = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|asset| asset.url.clone())
         {
-            let (filename, url) = existing_asset;
-            debug!("Using existing URL from lockfile for {}: {}", filename, url);
-            url
+            debug!(
+                "Using existing URL from lockfile for platform {}: {}",
+                platform_key, existing_platform
+            );
+            existing_platform
         } else {
             // Find the asset URL for this specific version
             self.resolve_asset_url(&tv, &opts, &repo, &api_url).await?
@@ -163,8 +165,9 @@ impl UnifiedGitBackend {
         };
 
         // Store the asset URL in the tool version
-        let asset_info = tv.assets.entry(filename.clone()).or_default();
-        asset_info.url = Some(asset_url.to_string());
+        let platform_key = self.get_platform_key();
+        let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+        platform_info.url = Some(asset_url.to_string());
 
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file_with_headers(asset_url, &file_path, &headers, Some(&ctx.pr))

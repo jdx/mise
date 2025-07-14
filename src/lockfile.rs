@@ -28,14 +28,11 @@ pub struct LockfileTool {
     pub version: String,
     pub backend: Option<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub assets: BTreeMap<String, AssetInfo>,
-    // Legacy fields for backward compatibility during migration
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    checksums: BTreeMap<String, String>,
+    pub platforms: BTreeMap<String, PlatformInfo>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct AssetInfo {
+pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,16 +41,16 @@ pub struct AssetInfo {
     pub url: Option<String>,
 }
 
-impl TryFrom<toml::Value> for AssetInfo {
+impl TryFrom<toml::Value> for PlatformInfo {
     type Error = Report;
     fn try_from(value: toml::Value) -> Result<Self> {
         match value {
-            toml::Value::String(checksum) => Ok(AssetInfo {
+            toml::Value::String(checksum) => Ok(PlatformInfo {
                 checksum: Some(checksum),
                 size: None,
                 url: None,
             }),
-            toml::Value::Integer(size) => Ok(AssetInfo {
+            toml::Value::Integer(size) => Ok(PlatformInfo {
                 checksum: None,
                 size: Some(size.try_into()?),
                 url: None,
@@ -72,7 +69,7 @@ impl TryFrom<toml::Value> for AssetInfo {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
                 };
-                Ok(AssetInfo {
+                Ok(PlatformInfo {
                     checksum,
                     size,
                     url,
@@ -83,16 +80,16 @@ impl TryFrom<toml::Value> for AssetInfo {
     }
 }
 
-impl From<AssetInfo> for toml::Value {
-    fn from(asset_info: AssetInfo) -> Self {
+impl From<PlatformInfo> for toml::Value {
+    fn from(platform_info: PlatformInfo) -> Self {
         let mut table = toml::Table::new();
-        if let Some(checksum) = asset_info.checksum {
+        if let Some(checksum) = platform_info.checksum {
             table.insert("checksum".to_string(), checksum.into());
         }
-        if let Some(size) = asset_info.size {
+        if let Some(size) = platform_info.size {
             table.insert("size".to_string(), (size as i64).into());
         }
-        if let Some(url) = asset_info.url {
+        if let Some(url) = platform_info.url {
             table.insert("url".to_string(), url.into());
         }
         toml::Value::Table(table)
@@ -127,29 +124,7 @@ impl Lockfile {
             lockfile.tools.insert(short, versions);
         }
 
-        // Migrate legacy format to new format
-        lockfile.migrate_legacy_format();
-
         Ok(lockfile)
-    }
-
-    fn migrate_legacy_format(&mut self) {
-        // Move checksums from separate sections to consolidated assets section
-        for versions in self.tools.values_mut() {
-            for version in versions {
-                // Migrate checksums to assets section
-                let checksums_to_migrate: Vec<(String, String)> =
-                    version.checksums.clone().into_iter().collect();
-
-                version.checksums.clear();
-
-                // Combine checksums into assets
-                for (filename, checksum) in checksums_to_migrate {
-                    let asset = version.assets.entry(filename).or_default();
-                    asset.checksum = Some(checksum);
-                }
-            }
-        }
     }
 
     fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
@@ -350,23 +325,14 @@ impl TryFrom<toml::Value> for LockfileTool {
             toml::Value::String(v) => LockfileTool {
                 version: v,
                 backend: Default::default(),
-                assets: Default::default(),
-                checksums: Default::default(),
+                platforms: Default::default(),
             },
             toml::Value::Table(mut t) => {
-                let mut assets = BTreeMap::new();
-                let mut checksums = BTreeMap::new();
-
-                if let Some(assets_table) = t.remove("assets") {
-                    let assets_table: toml::Table = assets_table.try_into()?;
-                    for (filename, asset_info) in assets_table {
-                        assets.insert(filename, asset_info.try_into()?);
-                    }
-                }
-                if let Some(checksums_table) = t.remove("checksums") {
-                    let checksums_table: toml::Table = checksums_table.try_into()?;
-                    for (filename, checksum) in checksums_table {
-                        checksums.insert(filename, checksum.try_into()?);
+                let mut platforms = BTreeMap::new();
+                if let Some(platforms_table) = t.remove("platforms") {
+                    let platforms_table: toml::Table = platforms_table.try_into()?;
+                    for (platform, platform_info) in platforms_table {
+                        platforms.insert(platform, platform_info.try_into()?);
                     }
                 }
                 LockfileTool {
@@ -380,8 +346,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                         .map(|v| v.try_into())
                         .transpose()?
                         .unwrap_or_default(),
-                    assets,
-                    checksums,
+                    platforms,
                 }
             }
             _ => bail!("unsupported lockfile format {}", value),
@@ -397,10 +362,9 @@ impl LockfileTool {
         if let Some(backend) = self.backend {
             table.insert("backend".to_string(), backend.into());
         }
-        if !self.assets.is_empty() {
-            table.insert("assets".to_string(), self.assets.clone().into());
+        if !self.platforms.is_empty() {
+            table.insert("platforms".to_string(), self.platforms.clone().into());
         }
-        // Don't serialize legacy checksums field - they're now in the assets section
         table.into()
     }
 }
@@ -410,16 +374,16 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
         tvl.versions
             .iter()
             .map(|tv| {
-                let mut assets = BTreeMap::new();
+                let mut platforms = BTreeMap::new();
 
-                // Convert tool version assets to lockfile assets
-                for (filename, asset_info) in &tv.assets {
-                    assets.insert(
-                        filename.clone(),
-                        AssetInfo {
-                            checksum: asset_info.checksum.clone(),
-                            size: asset_info.size,
-                            url: asset_info.url.clone(),
+                // Convert tool version lock_platforms to lockfile platforms
+                for (platform, platform_info) in &tv.lock_platforms {
+                    platforms.insert(
+                        platform.clone(),
+                        PlatformInfo {
+                            checksum: platform_info.checksum.clone(),
+                            size: platform_info.size,
+                            url: platform_info.url.clone(),
                         },
                     );
                 }
@@ -427,9 +391,7 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
                 LockfileTool {
                     version: tv.version.clone(),
                     backend: Some(tv.ba().full()),
-                    assets,
-                    // Keep empty legacy fields for compatibility
-                    checksums: BTreeMap::new(),
+                    platforms,
                 }
             })
             .collect()
@@ -448,10 +410,10 @@ fn format(mut doc: DocumentMut) -> String {
                             }
                             a.to_string().cmp(&b.to_string())
                         });
-                        // Sort assets section within each tool
-                        if let Some(assets) = t.get_mut("assets") {
-                            if let toml_edit::Item::Table(assets_table) = assets {
-                                assets_table.sort_values();
+                        // Sort platforms section within each tool
+                        if let Some(platforms) = t.get_mut("platforms") {
+                            if let toml_edit::Item::Table(platforms_table) = platforms {
+                                platforms_table.sort_values();
                             }
                         }
                     }
@@ -463,10 +425,10 @@ fn format(mut doc: DocumentMut) -> String {
                         }
                         a.to_string().cmp(&b.to_string())
                     });
-                    // Sort assets section within each tool
-                    if let Some(assets) = t.get_mut("assets") {
-                        if let toml_edit::Item::Table(assets_table) = assets {
-                            assets_table.sort_values();
+                    // Sort platforms section within each tool
+                    if let Some(platforms) = t.get_mut("platforms") {
+                        if let toml_edit::Item::Table(platforms_table) = platforms {
+                            platforms_table.sort_values();
                         }
                     }
                 }

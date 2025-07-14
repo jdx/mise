@@ -12,11 +12,9 @@ touch mise.lock
 # Install a tool via aqua backend that should have URLs
 mise use ripgrep@14.1.1
 
-# Check that the lockfile was created and contains URLs
-assert_contains "cat mise.lock" '[tools.ripgrep.assets."ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"]'
-
-# Check that there's a URL in the assets section
-assert_contains "cat mise.lock" "url ="
+# Check that URLs are stored in lockfile
+assert_contains "cat mise.lock" '[tools.ripgrep.platforms.linux-x64]'
+assert_contains "cat mise.lock" 'url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"'
 
 echo "Lockfile content:"
 cat mise.lock

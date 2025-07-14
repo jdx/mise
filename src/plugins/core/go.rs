@@ -120,11 +120,12 @@ impl GoPlugin {
             .await?;
 
         if !settings.go_skip_checksum {
-            let asset_info = tv.assets.entry(filename.clone()).or_default();
-            asset_info.url = Some(tarball_url.to_string());
-            if asset_info.checksum.is_none() {
+            let platform_key = self.get_platform_key();
+            let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+            platform_info.url = Some(tarball_url.to_string());
+            if platform_info.checksum.is_none() {
                 let checksum = checksum_handle.await.unwrap()?;
-                asset_info.checksum = Some(format!("sha256:{checksum}"));
+                platform_info.checksum = Some(format!("sha256:{checksum}"));
             }
         }
         Ok(tarball_path)
@@ -279,15 +280,12 @@ fn platform() -> &'static str {
 }
 
 fn arch(settings: &Settings) -> &str {
-    let arch = settings.arch();
-    if arch == "x86_64" {
-        "amd64"
-    } else if arch == "arm" {
-        "armv6l"
-    } else if arch == "aarch64" {
-        "arm64"
-    } else {
-        arch
+    match settings.arch() {
+        "x64" => "amd64",
+        "arm64" => "arm64",
+        "arm" => "armv6l",
+        "riscv64" => "riscv64",
+        other => other,
     }
 }
 

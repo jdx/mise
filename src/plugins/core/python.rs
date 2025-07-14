@@ -550,7 +550,11 @@ fn python_arch(settings: &Settings) -> &str {
     if let Some(arch) = &settings.python.precompiled_arch {
         return arch.as_str();
     }
-    let arch = settings.arch();
+    let arch = match settings.arch() {
+        "x64" => "x86_64",
+        "arm64" => "aarch64",
+        other => other,
+    };
     if cfg!(windows) {
         "x86_64"
     } else if cfg!(linux) && arch == "x86_64" {

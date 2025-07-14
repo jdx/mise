@@ -101,14 +101,15 @@ impl Backend for AquaBackend {
         }
         validate(&pkg)?;
 
-        // Check if URL already exists in lockfile assets first
-        let (url, v, filename) = if let Some(existing_asset) = tv
-            .assets
-            .iter()
-            .find(|(_, asset)| asset.url.is_some())
-            .map(|(filename, asset)| (filename.clone(), asset.url.clone().unwrap()))
+        // Check if URL already exists in lockfile platforms first
+        let platform_key = self.get_platform_key();
+        let (url, v, filename) = if let Some(existing_platform) = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|asset| asset.url.clone())
         {
-            let (filename, url) = existing_asset;
+            let url = existing_platform;
+            let filename = url.split('/').next_back().unwrap_or("download").to_string();
             // Determine which version variant was used based on the URL or filename
             let v = if url.contains(&format!("v{}", tv.version))
                 || filename.contains(&format!("v{}", tv.version))
@@ -136,7 +137,8 @@ impl Backend for AquaBackend {
             let filename = url.split('/').next_back().unwrap().to_string();
 
             // Store the asset URL in the tool version
-            tv.assets.entry(filename.clone()).or_default().url = Some(url.clone());
+            let platform_key = self.get_platform_key();
+            tv.lock_platforms.entry(platform_key).or_default().url = Some(url.clone());
 
             (url, v.to_string(), filename)
         };
@@ -374,8 +376,9 @@ impl AquaBackend {
         self.verify_minisign(ctx, tv, pkg, v, filename).await?;
 
         let download_path = tv.download_path();
-        let asset_info = tv.assets.entry(filename.to_string()).or_default();
-        if asset_info.checksum.is_none() {
+        let platform_key = self.get_platform_key();
+        let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+        if platform_info.checksum.is_none() {
             if let Some(checksum) = &pkg.checksum {
                 if checksum.enabled() {
                     let url = match checksum._type() {
@@ -440,8 +443,9 @@ impl AquaBackend {
                     let checksum_str = checksum_str.split_whitespace().next().unwrap();
                     let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
                     // Now set the checksum after all borrows are done
-                    let asset_info = tv.assets.get_mut(filename).unwrap();
-                    asset_info.checksum = Some(checksum_val);
+                    let platform_key = self.get_platform_key();
+                    let platform_info = tv.lock_platforms.get_mut(&platform_key).unwrap();
+                    platform_info.checksum = Some(checksum_val);
                 }
             }
         }
