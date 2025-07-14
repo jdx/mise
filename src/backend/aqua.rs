@@ -100,28 +100,50 @@ impl Backend for AquaBackend {
             }
         }
         validate(&pkg)?;
-        // try v-prefixed version first because most aqua packages use v-prefixed versions
-        let (url, v) = match self
-            .fetch_url(&pkg, v_prefixed.as_ref().unwrap_or(&v))
-            .await
+
+        // Check if URL already exists in lockfile assets first
+        let (url, v, filename) = if let Some(existing_asset) = tv
+            .assets
+            .iter()
+            .find(|(_, asset)| asset.url.is_some())
+            .map(|(filename, asset)| (filename.clone(), asset.url.clone().unwrap()))
         {
-            Ok(url) => (url, v_prefixed.as_ref().unwrap_or(&v)),
-            Err(err) if v_prefixed.is_some() => (
-                self.fetch_url(&pkg, &v)
-                    .await
-                    .map_err(|e| err.wrap_err(e))?,
-                &v,
-            ),
-            Err(err) => return Err(err),
+            let (filename, url) = existing_asset;
+            // Determine which version variant was used based on the URL or filename
+            let v = if url.contains(&format!("v{}", tv.version))
+                || filename.contains(&format!("v{}", tv.version))
+            {
+                format!("v{}", tv.version)
+            } else {
+                tv.version.clone()
+            };
+            (url, v, filename)
+        } else {
+            // try v-prefixed version first because most aqua packages use v-prefixed versions
+            let (url, v) = match self
+                .fetch_url(&pkg, v_prefixed.as_ref().unwrap_or(&v))
+                .await
+            {
+                Ok(url) => (url, v_prefixed.as_ref().unwrap_or(&v)),
+                Err(err) if v_prefixed.is_some() => (
+                    self.fetch_url(&pkg, &v)
+                        .await
+                        .map_err(|e| err.wrap_err(e))?,
+                    &v,
+                ),
+                Err(err) => return Err(err),
+            };
+            let filename = url.split('/').next_back().unwrap().to_string();
+
+            // Store the asset URL in the tool version
+            tv.assets.entry(filename.clone()).or_default().url = Some(url.clone());
+
+            (url, v.to_string(), filename)
         };
-        let filename = url.split('/').next_back().unwrap();
 
-        // Store the asset URL in the tool version
-        tv.assets.entry(filename.to_string()).or_default().url = Some(url.clone());
-
-        self.download(ctx, &tv, &url, filename).await?;
-        self.verify(ctx, &mut tv, &pkg, v, filename).await?;
-        self.install(ctx, &tv, &pkg, v, filename)?;
+        self.download(ctx, &tv, &url, &filename).await?;
+        self.verify(ctx, &mut tv, &pkg, &v, &filename).await?;
+        self.install(ctx, &tv, &pkg, &v, &filename)?;
 
         Ok(tv)
     }
