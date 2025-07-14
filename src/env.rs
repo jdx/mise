@@ -158,6 +158,22 @@ pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
 // true if running inside a shim
 pub static __MISE_SHIM: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SHIM"));
 
+// true if the current process is running as a shim (not direct mise invocation)
+pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
+    // When running tests, always treat as direct mise invocation
+    // to avoid interfering with test expectations
+    if cfg!(test) {
+        return false;
+    }
+
+    #[cfg(unix)]
+    let mise_bin = "mise";
+    #[cfg(windows)]
+    let mise_bin = "mise.exe";
+    let bin_name = *MISE_BIN_NAME;
+    bin_name != mise_bin && !bin_name.starts_with("mise-")
+});
+
 #[cfg(test)]
 pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| 80);
 
@@ -445,7 +461,7 @@ fn environment(args: &[String]) -> Vec<String> {
     let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
     // Get environment value from args or env vars
-    if is_running_as_shim() {
+    if *IS_RUNNING_AS_SHIM {
         // When running as shim, ignore command line args and use env vars only
         None
     } else {
@@ -530,21 +546,7 @@ pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
-/// Returns true if the current process is running as a shim (not direct mise invocation)
-pub fn is_running_as_shim() -> bool {
-    // When running tests, always treat as direct mise invocation
-    // to avoid interfering with test expectations
-    if cfg!(test) {
-        return false;
-    }
 
-    #[cfg(unix)]
-    let mise_bin = "mise";
-    #[cfg(windows)]
-    let mise_bin = "mise.exe";
-    let bin_name = *MISE_BIN_NAME;
-    bin_name != mise_bin && !bin_name.starts_with("mise-")
-}
 
 #[cfg(test)]
 mod tests {
