@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tools.test-edit]
+version = "1.2.0"
+asset_pattern = "edit-1.2.0-aarch64-linux-gnu.tar.zst"
+
+[alias]
+test-edit = "github:microsoft/edit"
+EOF
+assert "mise install test-edit"
+
+# Test that the alias works and test-edit command can be executed
+assert "mise which edit" ~/.local/share/mise/installs/test-edit/1.2.0/edit

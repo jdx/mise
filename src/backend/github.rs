@@ -331,6 +331,14 @@ impl UnifiedGitBackend {
         self.ba.tool_name()
     }
 
+    // Helper to format asset names for error messages
+    fn format_asset_list<'a, I>(assets: I) -> String
+    where
+        I: Iterator<Item = &'a String>,
+    {
+        assets.cloned().collect::<Vec<_>>().join(", ")
+    }
+
     fn get_api_url(&self, opts: &ToolVersionOptions) -> String {
         opts.get("api_url")
             .map(|s| s.as_str())
@@ -431,14 +439,28 @@ impl UnifiedGitBackend {
         version: &str,
     ) -> Result<String> {
         let release = github::get_release_for_url(api_url, repo, version).await?;
-        let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
 
-        let asset_name = self.resolve_asset_name(tv, opts, &available_assets)?;
+        // Get platform-specific pattern first, then fall back to general pattern
+        let pattern = lookup_platform_key(opts, "asset_pattern")
+            .or_else(|| opts.get("asset_pattern").cloned())
+            .unwrap_or("{name}-{version}-{os}-{arch}.{ext}".to_string());
+
+        // Template the pattern with actual values
+        let templated_pattern = template_string(&pattern, tv);
+
+        // Find matching asset - pattern is already templated by mise.toml parsing
+        let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
         let asset = release
             .assets
             .into_iter()
-            .find(|a| a.name == asset_name)
-            .ok_or_else(|| eyre::eyre!("Asset not found: {}", asset_name))?;
+            .find(|a| self.matches_pattern(&a.name, &templated_pattern))
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "No matching asset found for pattern: {}\nAvailable assets: {}",
+                    templated_pattern,
+                    Self::format_asset_list(available_assets.iter())
+                )
+            })?;
 
         Ok(asset.browser_download_url)
     }
@@ -452,20 +474,34 @@ impl UnifiedGitBackend {
         version: &str,
     ) -> Result<String> {
         let release = gitlab::get_release_for_url(api_url, repo, version).await?;
+
+        // Get platform-specific pattern first, then fall back to general pattern
+        let pattern = lookup_platform_key(opts, "asset_pattern")
+            .or_else(|| opts.get("asset_pattern").cloned())
+            .unwrap_or("{name}-{version}-{os}-{arch}.{ext}".to_string());
+
+        // Template the pattern with actual values
+        let templated_pattern = template_string(&pattern, tv);
+
         let available_assets: Vec<String> = release
             .assets
             .links
             .iter()
             .map(|a| a.name.clone())
             .collect();
-
-        let asset_name = self.resolve_asset_name(tv, opts, &available_assets)?;
+        // Find matching asset - pattern is already templated by mise.toml parsing
         let asset = release
             .assets
             .links
             .into_iter()
-            .find(|a| a.name == asset_name)
-            .ok_or_else(|| eyre::eyre!("Asset not found: {}", asset_name))?;
+            .find(|a| self.matches_pattern(&a.name, &templated_pattern))
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "No matching asset found for pattern: {}\nAvailable assets: {}",
+                    templated_pattern,
+                    Self::format_asset_list(available_assets.iter())
+                )
+            })?;
 
         Ok(asset.direct_asset_url)
     }
