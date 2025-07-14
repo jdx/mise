@@ -82,7 +82,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 pub static V: Lazy<Versioning> = Lazy::new(|| Versioning::new(env!("CARGO_PKG_VERSION")).unwrap());
 
 pub fn print_version_if_requested(args: &[String]) -> std::io::Result<bool> {
-    if args.len() == 2 && !crate::env::is_running_as_shim() {
+    if args.len() == 2 && !*crate::env::IS_RUNNING_AS_SHIM {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" || cmd == "v" {
             show_version()?;

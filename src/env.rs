@@ -546,8 +546,6 @@ pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;

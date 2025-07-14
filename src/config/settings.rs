@@ -254,21 +254,14 @@ impl Settings {
         let mut s = SettingsPartial::empty();
 
         // Don't process mise-specific flags when running as a shim
-        if crate::env::is_running_as_shim() {
+        if *crate::env::IS_RUNNING_AS_SHIM {
             Self::reset(Some(s));
             return;
         }
 
-        for arg in &*env::ARGS.read().unwrap() {
-            if arg == "--" {
-                break;
-            }
-            if arg == "--raw" {
-                s.raw = Some(true);
-                break;
-            }
+        if cli.raw {
+            s.raw = Some(true);
         }
-
         if let Some(cd) = &cli.cd {
             s.cd = Some(cd.clone());
         }
@@ -467,7 +460,7 @@ impl Settings {
 
     pub fn no_config() -> bool {
         *env::MISE_NO_CONFIG
-            || !crate::env::is_running_as_shim()
+            || !*crate::env::IS_RUNNING_AS_SHIM
                 && env::ARGS
                     .read()
                     .unwrap()
