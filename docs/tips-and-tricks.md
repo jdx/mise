@@ -211,7 +211,7 @@ touch mise.lock
 mise i
 ```
 
-The lockfile uses a consolidated format with an `[assets]` section to avoid duplication of filenames across tools. Asset information includes checksums, file sizes, and optional download URLs. Legacy lockfiles with individual `[tools.name.checksums]` sections are automatically migrated to the new format.
+The lockfile uses a consolidated format with `[tools.name.assets]` sections to organize asset information under each tool. Asset information includes checksums, file sizes, and optional download URLs. Legacy lockfiles with separate `[tools.name.checksums]` and `[tools.name.sizes]` sections are automatically migrated to the new format.
 
 Note that at least currently mise needs to actually install the tool to get the tarball checksum (otherwise it would need to download the tarball just
 to get the checksum of it since normally that gets deleted). So you may need to run something like `mise uninstall --all` first in order to have it
