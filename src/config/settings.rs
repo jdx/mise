@@ -467,13 +467,13 @@ impl Settings {
 
     pub fn no_config() -> bool {
         *env::MISE_NO_CONFIG
-            || crate::env::is_running_as_shim()
-            || env::ARGS
-                .read()
-                .unwrap()
-                .iter()
-                .take_while(|a| *a != "--")
-                .any(|a| a == "--no-config")
+            || !crate::env::is_running_as_shim()
+                && env::ARGS
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .take_while(|a| *a != "--")
+                    .any(|a| a == "--no-config")
     }
 }
 
