@@ -33,6 +33,7 @@ When no `asset_pattern` is specified, mise automatically selects the best asset 
 
 - **OS compatibility** (linux, macos, windows)
 - **Architecture compatibility** (x64, arm64, x86, arm)
+- **Libc variant** (gnu or musl, for Linux)
 - **Archive format preference** (tar.gz, zip, etc.)
 - **Build type** (avoids debug/test builds)
 
@@ -42,7 +43,7 @@ For most tools, you can simply install without specifying patterns:
 mise install github:user/repo
 ```
 
-The autodetection logic is implemented in [`src/backend/github.rs`](https://github.com/jdx/mise/blob/main/src/backend/github.rs) in the `asset_detector` module.
+> **Note:** The autodetection logic is implemented in [`src/backend/asset_detector.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_detector.rs), which is shared by both the GitHub and GitLab backends.
 
 ### `asset_pattern`
 
