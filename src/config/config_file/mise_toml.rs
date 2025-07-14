@@ -28,9 +28,10 @@ use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::task::Task;
 use crate::tera::{BASE_CONTEXT, get_tera};
-use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions, parse_tool_options};
 use crate::watch_files::WatchFile;
 use crate::{dirs, file};
+use xx::regex;
 
 use super::{ConfigFileType, config_root};
 
@@ -353,10 +354,18 @@ impl ConfigFile for MiseToml {
             if opts.os.is_some() || !opts.install_env.is_empty() {
                 return false;
             }
-            if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba()) {
-                if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
-                    // in this case the options specified are the same as in the registry so output no options and rely on the defaults
-                    return true;
+            // Check if the options match those from the registry
+            if let Some(registry_tool) = REGISTRY.get(ba.short.as_str()) {
+                // Get the first backend from the registry
+                if let Some(first_backend) = registry_tool.backends().first() {
+                    // Extract options from the backend string directly
+                    if let Some(captures) = regex!(r"^(.+)\[(.+)\]$").captures(first_backend) {
+                        let registry_opts = parse_tool_options(captures.get(2).unwrap().as_str());
+                        if registry_opts == *opts {
+                            // Options match the registry defaults, so don't output them
+                            return true;
+                        }
+                    }
                 }
             }
             opts.is_empty()
