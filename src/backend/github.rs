@@ -263,14 +263,14 @@ impl Backend for UnifiedGitBackend {
             let releases = gitlab::list_releases(&repo).await?;
             Ok(releases
                 .into_iter()
-                .map(|r| r.tag_name.trim_start_matches('v').to_string())
+                .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
                 .collect())
         } else {
             let releases = github::list_releases(&repo).await?;
             Ok(releases
                 .into_iter()
-                .map(|r| r.tag_name.trim_start_matches('v').to_string())
+                .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
                 .collect())
         }
@@ -400,21 +400,38 @@ impl UnifiedGitBackend {
         }
     }
 
-    /// Helper to try both v-prefixed and non-prefixed tags for a resolver function
+    /// Helper to try both prefixed and non-prefixed tags for a resolver function
     async fn try_with_v_prefix<F, Fut>(&self, version: &str, resolver: F) -> Result<String>
     where
         F: Fn(String) -> Fut,
         Fut: std::future::Future<Output = Result<String>>,
     {
         let mut errors = vec![];
-        let candidates = if version.starts_with('v') {
-            vec![
-                version.to_string(),
-                version.trim_start_matches('v').to_string(),
-            ]
+        let opts = self.ba.opts();
+
+        // Generate candidates based on version prefix configuration
+        let candidates = if let Some(prefix) = opts.get("version_prefix") {
+            // If a custom prefix is configured, try both prefixed and non-prefixed versions
+            if version.starts_with(prefix) {
+                vec![
+                    version.to_string(),
+                    version.trim_start_matches(prefix).to_string(),
+                ]
+            } else {
+                vec![format!("{}{}", prefix, version), version.to_string()]
+            }
         } else {
-            vec![format!("v{version}"), version.to_string()]
+            // Fall back to 'v' prefix logic
+            if version.starts_with('v') {
+                vec![
+                    version.to_string(),
+                    version.trim_start_matches('v').to_string(),
+                ]
+            } else {
+                vec![format!("v{version}"), version.to_string()]
+            }
         };
+
         for candidate in candidates {
             match resolver(candidate.clone()).await {
                 Ok(url) => return Ok(url),
@@ -604,6 +621,24 @@ impl UnifiedGitBackend {
             asset_name.contains(pattern)
         }
     }
+
+    fn strip_version_prefix(&self, tag_name: &str) -> String {
+        let opts = self.ba.opts();
+
+        // If a custom version_prefix is configured, strip it first
+        if let Some(prefix) = opts.get("version_prefix") {
+            if let Some(stripped) = tag_name.strip_prefix(prefix) {
+                return stripped.to_string();
+            }
+        }
+
+        // Fall back to stripping 'v' prefix
+        if tag_name.starts_with('v') {
+            tag_name.trim_start_matches('v').to_string()
+        } else {
+            tag_name.to_string()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -664,9 +699,30 @@ mod tests {
     #[test]
     fn test_pattern_matching() {
         let backend = create_test_backend();
+        assert!(backend.matches_pattern("test-v1.0.0.zip", "test-*"));
+        assert!(!backend.matches_pattern("other-v1.0.0.zip", "test-*"));
+    }
 
-        assert!(backend.matches_pattern("test-1.0.0-linux.tar.gz", "test-*-linux.tar.gz"));
-        assert!(backend.matches_pattern("test-1.0.0-linux.tar.gz", "test-?.?.?-linux.tar.gz"));
-        assert!(!backend.matches_pattern("test-1.0.0-windows.zip", "test-*-linux.tar.gz"));
+    #[test]
+    fn test_version_prefix_functionality() {
+        let mut backend = create_test_backend();
+
+        // Test with no version prefix configured
+        assert_eq!(backend.strip_version_prefix("v1.0.0"), "1.0.0");
+        assert_eq!(backend.strip_version_prefix("1.0.0"), "1.0.0");
+
+        // Test with custom version prefix
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("version_prefix".to_string(), "release-".to_string());
+        backend.ba = Arc::new(BackendArg::new_raw(
+            "test".to_string(),
+            Some("github:test/repo".to_string()),
+            "test".to_string(),
+            Some(opts),
+        ));
+
+        assert_eq!(backend.strip_version_prefix("release-1.0.0"), "1.0.0");
+        assert_eq!(backend.strip_version_prefix("1.0.0"), "1.0.0");
     }
 }

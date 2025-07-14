@@ -54,6 +54,28 @@ version = "latest"
 asset_pattern = "gitlab-runner-linux-x64"
 ```
 
+### `version_prefix`
+
+Specifies a custom version prefix for release tags. By default, mise handles the common `v` prefix (e.g., `v1.0.0`), but some repositories use different prefixes like `release-`, `version-`, or no prefix at all.
+
+When `version_prefix` is configured, mise will:
+- Strip the prefix when listing available versions
+- Add the prefix when searching for releases
+- Try both prefixed and non-prefixed versions during installation
+
+```toml
+[tools]
+"gitlab:user/repo" = { version = "latest", version_prefix = "release-" }
+```
+
+**Examples:**
+- With `version_prefix = "release-"`:
+  - User specifies `1.0.0` → mise searches for `release-1.0.0` tag
+  - Available versions show as `1.0.0` (prefix stripped)
+- With `version_prefix = ""` (empty string):
+  - User specifies `1.0.0` → mise searches for `1.0.0` tag (no prefix)
+  - Useful for repositories that don't use any prefix
+
 ### Platform-specific Asset Patterns
 
 For different asset patterns per platform:
@@ -174,5 +196,4 @@ The GitLab backend is experimental and requires the `mise.experimental` setting 
 ```sh
 mise settings set experimental true
 ```
-
 :::
