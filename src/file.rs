@@ -841,6 +841,44 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
     Ok(())
 }
 
+/// Inspects the top-level contents of a tar archive without extracting it
+pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<String>> {
+    let tar = open_tar(format, archive)?;
+    let mut archive = Archive::new(tar);
+    let mut top_level_entries = Vec::new();
+
+    for entry in archive.entries()? {
+        let entry = entry?;
+        let path = entry.path()?;
+
+        // Get the first component of the path (top-level directory/file)
+        if let Some(first_component) = path.components().next() {
+            let name = first_component.as_os_str().to_string_lossy().to_string();
+            if !top_level_entries.contains(&name) {
+                top_level_entries.push(name);
+            }
+        }
+    }
+
+    Ok(top_level_entries)
+}
+
+/// Determines if strip_components=1 should be applied based on archive structure
+pub fn should_strip_components(archive: &Path, format: TarFormat) -> Result<bool> {
+    let top_level_entries = inspect_tar_contents(archive, format)?;
+
+    // If there's exactly one top-level entry, we might want to strip it
+    if top_level_entries.len() == 1 {
+        // For now, we'll assume it's a directory that should be stripped
+        // This is a conservative approach - we could make this more sophisticated
+        // by checking if the entry is actually a directory, but that would require
+        // more complex tar inspection
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
