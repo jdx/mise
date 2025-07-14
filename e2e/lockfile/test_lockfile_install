@@ -17,7 +17,7 @@ assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.0"
 # validates checksum
 mise use gh@2.62.0
 cat mise.lock
-assert_contains "cat mise.lock" "[tools.gh.assets]"
+assert_contains "cat mise.lock" "[tools.gh.assets"
 cat <<EOF >mise.lock
 [tools.gh]
 version = "2.62.0"

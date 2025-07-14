@@ -6,7 +6,6 @@ use crate::config::Settings;
 use crate::file::TarOptions;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::AssetInfo;
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
@@ -118,15 +117,7 @@ impl Backend for AquaBackend {
         let filename = url.split('/').next_back().unwrap();
 
         // Store the asset URL in the tool version
-        let asset_info = tv
-            .assets
-            .entry(filename.to_string())
-            .or_insert_with(|| AssetInfo {
-                checksum: None,
-                size: None,
-                url: None,
-            });
-        asset_info.url = Some(url.clone());
+        tv.assets.entry(filename.to_string()).or_default().url = Some(url.clone());
 
         self.download(ctx, &tv, &url, filename).await?;
         self.verify(ctx, &mut tv, &pkg, v, filename).await?;
@@ -362,7 +353,6 @@ impl AquaBackend {
 
         let download_path = tv.download_path();
         let asset_info = tv.assets.entry(filename.to_string()).or_default();
-        asset_info.url = Some(pkg.url(v)?);
         if asset_info.checksum.is_none() {
             if let Some(checksum) = &pkg.checksum {
                 if checksum.enabled() {

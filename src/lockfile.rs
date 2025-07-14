@@ -145,11 +145,7 @@ impl Lockfile {
 
                 // Combine checksums into assets
                 for (filename, checksum) in checksums_to_migrate {
-                    let asset = version.assets.entry(filename).or_insert_with(|| AssetInfo {
-                        checksum: None,
-                        size: None,
-                        url: None,
-                    });
+                    let asset = version.assets.entry(filename).or_default();
                     asset.checksum = Some(checksum);
                 }
             }
