@@ -15,6 +15,7 @@ cargo-binstall = "latest"
 "cargo:toml-cli" = "latest"
 "cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
 cosign = "latest"
+gh = "2.62.0"
 hk = "latest"
 "jq" = "latest"
 "npm:markdownlint-cli" = "latest"
