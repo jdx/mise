@@ -134,7 +134,7 @@ impl Lockfile {
     }
 
     fn migrate_legacy_format(&mut self) {
-        // Move checksums and sizes from separate sections to consolidated assets section
+        // Move checksums from separate sections to consolidated assets section
         for versions in self.tools.values_mut() {
             for version in versions {
                 // Migrate checksums to assets section
