@@ -43,7 +43,9 @@ For most tools, you can simply install without specifying patterns:
 mise install gitlab:user/repo
 ```
 
-> **Note:** The autodetection logic is implemented in [`src/backend/asset_detector.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_detector.rs), which is shared by both the GitHub and GitLab backends.
+::: tip
+The autodetection logic is implemented in [`src/backend/asset_detector.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_detector.rs), which is shared by both the GitHub and GitLab backends.
+:::
 
 ### `asset_pattern`
 
@@ -145,7 +147,9 @@ Number of directory components to strip when extracting archives:
 "gitlab:gitlab-org/gitlab-runner" = { version = "latest", strip_components = 1 }
 ```
 
-**Auto-detection:** If `strip_components` is not explicitly set, mise will automatically detect when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
+::: info
+If `strip_components` is not explicitly set, mise will automatically detect when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
+:::
 
 ### `bin_path`
 
@@ -192,11 +196,3 @@ export MISE_GITLAB_ENTERPRISE_TOKEN="your-token"
 import Settings from '/components/settings.vue';
 </script>
 <Settings child="gitlab" :level="3" />
-
-::: warning
-The GitLab backend is experimental and requires the `mise.experimental` setting to be enabled:
-
-```sh
-mise settings set experimental true
-```
-:::

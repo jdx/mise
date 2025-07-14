@@ -77,12 +77,14 @@ and `mise deactivate` to work without wrapping them in `eval "$(mise shell)"`.
 
 ## Windows support?
 
+::: warning
 While mise runs great in WSL, native Windows is also supported, though via the use of shims until
 someone adds [powershell](https://github.com/jdx/mise/issues/3451) support.
 
 As you'll need to use shims, this means you won't have environment variables from mise.toml unless you run mise via
 [`mise x`](/cli/exec) or [`mise run`](/cli/run)—though that's actually how I use mise on my mac so
 for me that's my preferred workflow anyway.
+:::
 
 ## How do I use mise with http proxies?
 
@@ -131,8 +133,10 @@ wouldn't want to install a version that is already installed.
 - remove asdf from your shell rc file
 - Run `mise install` in a directory with an asdf `.tool-versions` file and mise will install the tools
 
+::: info
 Note that `mise` does not consider `~/.tool-versions` files to be a global config file like `asdf` does. `mise` uses a
 `~/.config/mise/config.toml` file for global configuration.
+:::
 
 Here is an example script you can use to migrate your global `.tool-versions` file to mise:
 
@@ -152,11 +156,13 @@ multiple tools can be specified at once. However, asdf-style syntax is still sup
 install node 20.0.0`). This is the case for most commands, though the help for the command may
 say that asdf-style syntax is supported. When in doubt, just try asdf syntax and see if it works—it probably does.
 
+::: info
 UPDATE (2025-01-01): mise was designed to be compatible with the asdf written in bash (<=0.15). The new asdf written in go (>=0.16)
 has commands mise does not support like `asdf set`. `mise set` is an existing command that is completely different than `asdf set`—in mise that sets env vars.
 
 This isn't important for usability reasons so much as making it so plugins continue to work that
 call asdf commands inside of the plugin code.
+:::
 
 Using commands like `mise use` may output `.tool-versions` files that are not compatible with asdf,
 such as using fuzzy versions. You can set `--pin` or `MISE_PIN=1` to make `mise use` output asdf-compatible versions
@@ -172,8 +178,8 @@ teams which use both in tandem, issues with such a setup are unlikely to be prio
 mise uses [console.rs](https://docs.rs/console/latest/console/fn.colors_enabled.html) which
 honors the [clicolors spec](https://bixense.com/clicolors/):
 
-- `CLICOLOR != 0`: ANSI colors are supported and should be used when the program isn’t piped.
-- `CLICOLOR == 0`: Don’t output ANSI color escape codes.
+- `CLICOLOR != 0`: ANSI colors are supported and should be used when the program isn't piped.
+- `CLICOLOR == 0`: Don't output ANSI color escape codes.
 - `CLICOLOR_FORCE != 0`: ANSI colors should be enabled no matter what.
 
 ## Is mise secure?
