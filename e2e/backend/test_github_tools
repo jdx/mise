@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+assert "mise use github:BurntSushi/ripgrep@14.1.0"
+assert "mise which rg"
+assert_contains "mise x -- rg --version" "ripgrep 14.1.0"
+
+# zip file with strip_components=1
+assert "mise use github:nats-io/natscli@0.2.3"
+assert "mise which nats"
+assert_contains "mise x -- nats --version" "0.2.3"

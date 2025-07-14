@@ -244,7 +244,7 @@ impl ErlangPlugin {
             .await?;
         self.verify_checksum(ctx, &mut tv, &zip_path)?;
         ctx.pr.set_message(format!("Extracting {}", zip_name));
-        file::unzip(&zip_path, &tv.install_path())?;
+        file::unzip(&zip_path, &tv.install_path(), &Default::default())?;
         Ok(Some(tv))
     }
 
