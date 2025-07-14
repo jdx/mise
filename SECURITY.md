@@ -43,7 +43,7 @@ mise has support for [lockfiles](https://mise.jdx.dev/configuration/settings.htm
 store/verify the checksum of tool tarballs. Committing this into your repository is a good way to ensure
 that the exact same version of a tool is installed across all developers and CI/CD systems.
 
-The lockfile uses a consolidated format with an `[assets]` section that stores checksums, file sizes, and optional download URLs for all tools in one place, avoiding duplication and improving maintainability.
+The lockfile uses a consolidated format with `[tools.name.assets]` sections that store checksums, file sizes, and optional download URLs organized under each tool, improving maintainability and organization.
 
 Not all backends support this—notably asdf plugins do not.
 

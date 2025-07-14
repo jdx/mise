@@ -25,8 +25,8 @@ mise ls
 echo "After migration:"
 cat mise.lock
 
-# Should now have assets section
-assert_contains "cat mise.lock" "[assets]"
+# Should now have assets section under the tool
+assert_contains "cat mise.lock" "[tools.tiny.assets]"
 assert_contains "cat mise.lock" 'checksum = "sha256:abc123"'
 assert_contains "cat mise.lock" 'size = 1024'
 
