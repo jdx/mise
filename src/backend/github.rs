@@ -150,6 +150,9 @@ impl UnifiedGitBackend {
             github::get_headers(asset_url)
         };
 
+        // Store the asset URL in the tool version
+        tv.urls.insert(filename.clone(), asset_url.to_string());
+
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file_with_headers(asset_url, &file_path, &headers, Some(&ctx.pr))
             .await?;

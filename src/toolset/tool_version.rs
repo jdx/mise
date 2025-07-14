@@ -25,6 +25,7 @@ pub struct ToolVersion {
     pub version: String,
     pub checksums: BTreeMap<String, String>,
     pub sizes: BTreeMap<String, u64>,
+    pub urls: BTreeMap<String, String>,
     pub install_path: Option<PathBuf>,
 }
 
@@ -35,6 +36,7 @@ impl ToolVersion {
             version,
             checksums: Default::default(),
             sizes: Default::default(),
+            urls: Default::default(),
             install_path: None,
         }
     }
@@ -50,6 +52,7 @@ impl ToolVersion {
                 let mut tv = Self::new(request.clone(), lt.version);
                 tv.checksums = lt.checksums;
                 tv.sizes = lt.sizes;
+                // TODO: Extract URLs from lockfile assets when needed
                 return Ok(tv);
             }
         }

@@ -54,6 +54,9 @@ impl Backend for HttpBackend {
         let filename = get_filename_from_url(&url);
         let file_path = tv.download_path().join(&filename);
 
+        // Store the asset URL in the tool version
+        tv.urls.insert(filename.clone(), url.clone());
+
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &file_path, Some(&ctx.pr)).await?;
 

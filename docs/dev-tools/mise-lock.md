@@ -114,12 +114,13 @@ mise use node@22
 
 ## Backend Support
 
-Not all backends support checksums in lockfiles:
+Backend support for lockfile features varies:
 
-- ✅ **Full support** (version + checksum + size): `http`, `github`, `gitlab`, `ubi`
-- ⚠️ **Partial support** (version + checksum): `aqua`, `core` (some tools)
+- ✅ **Full support** (version + checksum + size + URL): `aqua`, `http`, `github`, `gitlab`
+- ⚠️ **Partial support** (version + checksum + size): `ubi`
+- 📝 **Basic support** (version + checksum): `core` (some tools)
 - 📝 **Version only**: `asdf`, `npm`, `cargo`, `pipx`
-- 📝 **Planned**: More backends will add checksum and size support over time
+- 📝 **Planned**: More backends will add full asset tracking support over time
 
 ## Best Practices
 
@@ -218,6 +219,8 @@ The consolidated assets format provides several advantages:
 3. **Extended Metadata**: Support for file sizes and download URLs
 4. **Better Maintainability**: Clear separation of tool versions and their assets
 5. **Easier Navigation**: Tool-specific assets are easier to locate and manage
+6. **Full Traceability**: URLs provide complete audit trail of asset sources
+7. **Enhanced Security**: Better compliance and security auditing capabilities
 
 ## See Also
 

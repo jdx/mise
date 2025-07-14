@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+# Test that aqua backend stores URLs in lockfile
+rm -rf mise.lock
+
+# Install a tool via aqua backend that should have URLs
+mise use ripgrep@14.1.1
+
+# Check that the lockfile was created and contains URLs
+assert_contains "cat mise.lock" "[tools.ripgrep.assets]"
+
+# Check that there's a URL in the assets section
+assert_contains "cat mise.lock" "url ="
+
+echo "Lockfile content:"
+cat mise.lock
+
+echo ""
+echo "Aqua URL storage test passed!"
