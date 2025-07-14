@@ -31,15 +31,54 @@ lockfile = true
 
 ## File Format
 
-`mise.lock` is a TOML file that stores:
+`mise.lock` is a TOML file with a consolidated format that avoids duplication:
 
 ```toml
 # Example mise.lock
-[tools]
-"node" = { version = "20.11.0", checksum = "sha256:abc123..." }
-"python" = { version = "3.11.7", checksum = "sha256:def456..." }
-"go" = { version = "1.21.5" }  # No checksum if backend doesn't support it
+[tools.node]
+version = "20.11.0"
+backend = "core:node"
+
+[tools.python]
+version = "3.11.7"
+backend = "core:python"
+
+[tools.go]
+version = "1.21.5"
+backend = "core:go"
+
+[tools.ripgrep]
+version = "14.1.1"
+backend = "aqua:BurntSushi/ripgrep"
+
+# Consolidated assets section - no duplication of filenames
+[assets]
+"node-v20.11.0-linux-x64.tar.xz" = { 
+  checksum = "sha256:a6c213b7a2c3b8b9c0aaf8d7f5b3a5c8d4e2f4a5b6c7d8e9f0a1b2c3d4e5f6a7", 
+  size = 23456789,
+  url = "https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.xz"
+}
+"python-3.11.7-linux-x64.tar.xz" = { 
+  checksum = "sha256:def456...",
+  size = 12345678
+}
+"ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz" = { 
+  checksum = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e",
+  size = 1234567
+}
 ```
+
+### Asset Information
+
+Each asset in the `[assets]` section can contain:
+
+- **`checksum`** (optional): SHA256 or Blake3 hash for integrity verification
+- **`size`** (optional): File size in bytes for download validation
+- **`url`** (optional): Original download URL for reference or re-downloading
+
+### Legacy Format Migration
+
+Older lockfiles with individual `[tools.name.checksums]` sections are automatically migrated to the new consolidated format when read. The migration is seamless and maintains all existing functionality.
 
 ## Workflow
 
@@ -78,9 +117,10 @@ mise use node@22
 
 Not all backends support checksums in lockfiles:
 
-- ✅ **Full support** (version + checksum): `http`, `github`, `gitlab`
-- ⚠️ **Partial support** (version only): `core`, `asdf`, `npm`, `cargo`, `pipx`
-- 📝 **Planned**: More backends will add checksum support over time
+- ✅ **Full support** (version + checksum + size): `http`, `github`, `gitlab`, `ubi`
+- ⚠️ **Partial support** (version + checksum): `aqua`, `core` (some tools)
+- 📝 **Version only**: `asdf`, `npm`, `cargo`, `pipx`
+- 📝 **Planned**: More backends will add checksum and size support over time
 
 ## Best Practices
 
@@ -169,6 +209,16 @@ Since lockfiles are still experimental, enable them with:
 mise settings experimental=true
 mise settings lockfile=true
 ```
+
+## Benefits of the New Format
+
+The consolidated assets format provides several advantages:
+
+1. **Reduced Duplication**: Filenames are no longer repeated across multiple tools
+2. **Centralized Management**: All asset information is in one place
+3. **Extended Metadata**: Support for file sizes and download URLs
+4. **Better Performance**: Smaller lockfiles load faster
+5. **Easier Maintenance**: Simpler structure for tools and automation
 
 ## See Also
 
