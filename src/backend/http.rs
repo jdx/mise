@@ -58,10 +58,10 @@ impl Backend for HttpBackend {
         HTTP.download_file(&url, &file_path, Some(&ctx.pr)).await?;
 
         // Verify (shared)
-        verify_artifact(&tv, &file_path, &opts)?;
+        verify_artifact(&tv, &file_path, &opts, Some(&ctx.pr))?;
 
         // Install (shared)
-        install_artifact(&tv, &file_path, &opts)?;
+        install_artifact(&tv, &file_path, &opts, Some(&ctx.pr))?;
 
         // Verify checksum if specified
         self.verify_checksum(ctx, &mut tv, &file_path)?;

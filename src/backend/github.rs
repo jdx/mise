@@ -148,8 +148,8 @@ impl UnifiedGitBackend {
             .await?;
 
         // Verify and install
-        verify_artifact(tv, &file_path, opts)?;
-        install_artifact(tv, &file_path, opts)?;
+        verify_artifact(tv, &file_path, opts, Some(&ctx.pr))?;
+        install_artifact(tv, &file_path, opts, Some(&ctx.pr))?;
         self.verify_checksum(ctx, tv, &file_path)?;
 
         Ok(())

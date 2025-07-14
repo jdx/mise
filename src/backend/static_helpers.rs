@@ -1,5 +1,5 @@
 // Shared template logic for backends
-use crate::config::Settings;
+use crate::{config::Settings, ui::progress_report::SingleReport};
 use crate::file;
 use crate::hash;
 use crate::toolset::ToolVersion;
@@ -83,12 +83,12 @@ pub fn install_artifact(
     tv: &crate::toolset::ToolVersion,
     file_path: &Path,
     opts: &ToolVersionOptions,
+    pr: Option<&Box<dyn SingleReport>>
 ) -> eyre::Result<()> {
     let install_path = tv.install_path();
-    let strip_components = opts
+    let mut strip_components = opts
         .get("strip_components")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
+        .and_then(|s| s.parse().ok());
 
     file::remove_all(&install_path)?;
     file::create_dir_all(&install_path)?;
@@ -96,11 +96,6 @@ pub fn install_artifact(
     // Use TarFormat for format detection
     let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
     let format = file::TarFormat::from_ext(ext);
-    let mut tar_opts = file::TarOptions {
-        format,
-        strip_components,
-        pr: None,
-    };
     if format == file::TarFormat::Zip {
         file::unzip(file_path, &install_path)?;
     } else if format == file::TarFormat::Raw {
@@ -120,16 +115,21 @@ pub fn install_artifact(
     } else {
         // Auto-detect if we need strip_components=1 before extracting
         // Only do this if strip_components was not explicitly set by the user
-        if strip_components == 0 {
+        if strip_components.is_none() {
             if let Ok(should_strip) = file::should_strip_components(file_path, format) {
                 if should_strip {
                     debug!(
                         "Auto-detected single directory archive, extracting with strip_components=1"
                     );
-                    tar_opts.strip_components = 1;
+                    strip_components = Some(1);
                 }
             }
         }
+        let tar_opts = file::TarOptions {
+            format,
+            strip_components: strip_components.unwrap_or(0),
+            pr,
+        };
 
         // Extract with determined strip_components
         file::untar(file_path, &install_path, &tar_opts)?;
@@ -141,12 +141,13 @@ pub fn verify_artifact(
     _tv: &crate::toolset::ToolVersion,
     file_path: &Path,
     opts: &crate::toolset::ToolVersionOptions,
+    pr: Option<&Box<dyn SingleReport>>,
 ) -> Result<()> {
     // Check platform-specific checksum first, then fall back to generic
     let checksum = lookup_platform_key(opts, "checksum").or_else(|| opts.get("checksum").cloned());
 
     if let Some(checksum) = checksum {
-        verify_checksum_str(file_path, &checksum)?;
+        verify_checksum_str(file_path, &checksum, pr)?;
     }
 
     // Check platform-specific size first, then fall back to generic
@@ -167,9 +168,9 @@ pub fn verify_artifact(
     Ok(())
 }
 
-pub fn verify_checksum_str(file_path: &Path, checksum: &str) -> Result<()> {
+pub fn verify_checksum_str(file_path: &Path, checksum: &str, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
     if let Some((algo, hash_str)) = checksum.split_once(':') {
-        hash::ensure_checksum(file_path, hash_str, None, algo)?;
+        hash::ensure_checksum(file_path, hash_str, pr, algo)?;
     } else {
         bail!("Invalid checksum format: {}", checksum);
     }
