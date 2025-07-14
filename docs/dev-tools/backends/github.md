@@ -27,9 +27,26 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 The following [tool-options](/dev-tools/#tool-options) are available for the `github` backend—these
 go in `[tools]` in `mise.toml`.
 
+### Asset Autodetection
+
+When no `asset_pattern` is specified, mise automatically selects the best asset for your platform. The system scores assets based on:
+
+- **OS compatibility** (linux, macos, windows)
+- **Architecture compatibility** (x64, arm64, x86, arm)
+- **Archive format preference** (tar.gz, zip, etc.)
+- **Build type** (avoids debug/test builds)
+
+For most tools, you can simply install without specifying patterns:
+
+```sh
+mise install github:user/repo
+```
+
+The autodetection logic is implemented in [`src/backend/github.rs`](https://github.com/jdx/mise/blob/main/src/backend/github.rs) in the `asset_detector` module.
+
 ### `asset_pattern`
 
-Specifies the pattern to match against release asset names. This is useful when there are multiple assets for your OS/arch combination.
+Specifies the pattern to match against release asset names. This is useful when there are multiple assets for your OS/arch combination or when you need to override autodetection.
 
 ```toml
 [tools]
