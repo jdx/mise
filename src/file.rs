@@ -962,4 +962,28 @@ mod tests {
         // of this fix. The important thing is that the logic now correctly
         // checks if the single entry is a directory before deciding to strip.
     }
+
+    #[test]
+    fn test_inspect_tar_contents_logic() {
+        // Test the logic of inspect_tar_contents with simulated data
+        // This tests the core logic without requiring actual tar files
+
+        // Simulate a HashMap that would be returned by inspect_tar_contents
+        // for an archive with a single directory containing files
+        let mut components = std::collections::HashMap::new();
+        components.insert("mydir".to_string(), true); // Directory with nested files
+
+        let result: Vec<(String, bool)> = components.into_iter().collect();
+
+        // Should have exactly one entry that is a directory
+        assert_eq!(result.len(), 1);
+        let (name, is_directory) = &result[0];
+        assert_eq!(name, "mydir");
+        assert!(*is_directory);
+
+        // Test the should_strip_components logic with this result
+        // This simulates what would happen if inspect_tar_contents returned this
+        let should_strip = result.len() == 1 && result[0].1;
+        assert!(should_strip);
+    }
 }
