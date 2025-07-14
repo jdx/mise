@@ -101,7 +101,11 @@ impl NodePlugin {
         let tarball_name = &opts.binary_tarball_name;
         ctx.pr.set_message(format!("extract {tarball_name}"));
         let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap())?;
-        file::unzip(&opts.binary_tarball_path, tmp_extract_path.path(), &Default::default())?;
+        file::unzip(
+            &opts.binary_tarball_path,
+            tmp_extract_path.path(),
+            &Default::default(),
+        )?;
         file::remove_all(&opts.install_path)?;
         file::rename(
             tmp_extract_path.path().join(slug(&opts.version)),
