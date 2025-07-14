@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::backend::Backend;
+use crate::backend::{Backend, SearchResult};
 use crate::backend::backend_type::BackendType;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
@@ -124,6 +124,34 @@ impl Backend for NPMBackend {
         tv: &crate::toolset::ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
         Ok(vec![tv.install_path()])
+    }
+
+    async fn search(
+        &self,
+        config: &Arc<Config>,
+        query: &str,
+    ) -> eyre::Result<Option<Vec<SearchResult>>> {
+        timeout::run_with_timeout_async(
+            async || {
+                let raw = cmd!(NPM_PROGRAM, "search", query, "--json")
+                    .full_env(self.dependency_env(config).await?)
+                    .read()?;
+                
+                let search_results: Vec<Value> = serde_json::from_str(&raw)?;
+                let results = search_results
+                    .into_iter()
+                    .map(|result| SearchResult {
+                        name: format!("{}:{}", self.get_type().to_string().to_lowercase(), result["name"].as_str().unwrap_or("unknown")),
+                        description: result["description"].as_str().map(|s| s.to_string()),
+                        version: result["version"].as_str().map(|s| s.to_string()),
+                        backend: self.get_type().to_string().to_lowercase(),
+                    })
+                    .collect();
+                Ok(Some(results))
+            },
+            Settings::get().fetch_remote_versions_timeout(),
+        )
+        .await
     }
 }
 

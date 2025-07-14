@@ -1,4 +1,4 @@
-use std::sync::LazyLock as Lazy;
+use std::sync::{Arc, LazyLock as Lazy};
 
 use clap::ValueEnum;
 use demand::DemandOption;
@@ -13,7 +13,8 @@ use xx::regex;
 
 use crate::registry::RegistryTool;
 use crate::{
-    config::Settings,
+    backend::{self, SearchResult},
+    config::{Config, Settings},
     registry::{REGISTRY, tool_enabled},
     ui::table::MiseTable,
 };
@@ -56,28 +57,40 @@ pub struct Search {
 impl Search {
     pub async fn run(self) -> Result<()> {
         if self.interactive {
-            self.interactive()?;
+            self.interactive().await?;
         } else {
-            self.display_table()?;
+            self.display_table().await?;
         }
         Ok(())
     }
 
-    fn interactive(&self) -> Result<()> {
-        let tools = self.get_tools();
+    async fn interactive(&self) -> Result<()> {
+        let (registry_tools, backend_results) = self.get_all_matches().await?;
         let mut s = Select::new("Tool")
             .description("Search a tool")
             .filtering(true)
             .filterable(true);
-        for t in tools.iter() {
-            let short = t.0.as_str();
-            let description = get_description(t.1);
+        
+        // Add registry tools
+        for (short, rt) in registry_tools.iter() {
+            let description = get_description(rt);
             s = s.option(
-                DemandOption::new(short)
-                    .label(short)
+                DemandOption::new(short.as_str())
+                    .label(short.as_str())
                     .description(&description),
             );
         }
+        
+        // Add backend results
+        for result in backend_results.iter() {
+            let description = result.description.as_deref().unwrap_or("");
+            s = s.option(
+                DemandOption::new(&result.name)
+                    .label(&result.name)
+                    .description(description),
+            );
+        }
+        
         match s.run() {
             Ok(_) => Ok(()),
             Err(err) => {
@@ -91,14 +104,25 @@ impl Search {
         }
     }
 
-    fn display_table(&self) -> Result<()> {
-        let tools = self
-            .get_matches()
+    async fn display_table(&self) -> Result<()> {
+        let (registry_matches, backend_results) = self.get_all_matches().await?;
+        
+        // Convert registry matches to table rows
+        let mut tools: Vec<Vec<String>> = registry_matches
             .into_iter()
-            .map(|(short, description)| vec![short, description])
-            .collect_vec();
+            .map(|(short, rt)| vec![short, get_description(rt)])
+            .collect();
+        
+        // Add backend results
+        tools.extend(backend_results.into_iter().map(|result| {
+            vec![
+                result.name,
+                result.description.unwrap_or_default(),
+            ]
+        }));
+        
         if tools.is_empty() {
-            bail!("tool {} not found in registry", self.name.as_ref().unwrap());
+            bail!("no tools found matching query: {}", self.name.as_ref().unwrap_or(&"".to_string()));
         }
 
         let mut table = MiseTable::new(self.no_header, &["Tool", "Description"]);
@@ -108,7 +132,13 @@ impl Search {
         table.print()
     }
 
-    fn get_matches(&self) -> Vec<(String, String)> {
+    async fn get_all_matches(&self) -> Result<(Vec<(String, &'static RegistryTool)>, Vec<SearchResult>)> {
+        let registry_matches = self.get_registry_matches();
+        let backend_results = self.get_backend_matches().await?;
+        Ok((registry_matches, backend_results))
+    }
+
+    fn get_registry_matches(&self) -> Vec<(String, &'static RegistryTool)> {
         self.get_tools()
             .iter()
             .filter_map(|(short, rt)| {
@@ -138,7 +168,42 @@ impl Search {
                 }
             })
             .sorted_by_key(|(score, _short, _rt)| -1 * *score)
-            .map(|(_score, short, rt)| (short.to_string(), get_description(rt)))
+            .map(|(_score, short, rt)| (short.to_string(), *rt))
+            .collect()
+    }
+
+    async fn get_backend_matches(&self) -> Result<Vec<SearchResult>> {
+        let query = match &self.name {
+            Some(name) => name,
+            None => return Ok(vec![]), // Don't search backends if no query provided
+        };
+
+        let config = Arc::new(Config::load()?);
+        let mut all_results = Vec::new();
+
+        // Get all available backends and search each one that supports search
+        for backend in backend::list() {
+            match backend.search(&config, query).await {
+                Ok(Some(results)) => {
+                    all_results.extend(results);
+                }
+                Ok(None) => {
+                    // Backend doesn't support search, skip
+                }
+                Err(e) => {
+                    // Log error but don't fail the entire search
+                    debug!("Search failed for backend {}: {:#}", backend.id(), e);
+                }
+            }
+        }
+
+        Ok(all_results)
+    }
+
+    fn get_matches(&self) -> Vec<(String, String)> {
+        self.get_registry_matches()
+            .into_iter()
+            .map(|(short, rt)| (short, get_description(rt)))
             .collect()
     }
 

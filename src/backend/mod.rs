@@ -757,6 +757,25 @@ pub trait Backend: Debug + Send + Sync {
     ) -> Result<Option<OutdatedInfo>> {
         Ok(None)
     }
+
+    /// Search for tools/packages in this backend
+    /// Returns None if backend doesn't support search
+    async fn search(
+        &self,
+        _config: &Arc<Config>,
+        _query: &str,
+    ) -> Result<Option<Vec<SearchResult>>> {
+        Ok(None)
+    }
+}
+
+/// Result from a backend search operation
+#[derive(Debug, Clone)]
+pub struct SearchResult {
+    pub name: String,
+    pub description: Option<String>,
+    pub version: Option<String>,
+    pub backend: String,
 }
 
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
