@@ -487,12 +487,8 @@ impl Settings {
     }
 
     pub fn no_config() -> bool {
-        *env::MISE_NO_CONFIG || {
-            // Don't process --no-config when running as a shim
-            if Self::is_running_as_shim() {
-                return false;
-            }
-
+        *env::MISE_NO_CONFIG || !Self::is_running_as_shim() ||
+        {
             env::ARGS
                 .read()
                 .unwrap()
