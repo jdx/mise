@@ -39,14 +39,16 @@ Specifies the HTTP URL to download the tool from:
 
 ### Platform-specific URLs
 
-You can specify different URLs for different platforms:
+For tools that need different downloads per platform, use the table format:
 
 ```toml
 [tools."http:my-tool"]
 version = "1.0.0"
-platforms_macos_x64_url = "https://example.com/releases/my-tool-v1.0.0-macos-x64.tar.gz"
-platforms_macos_arm64_url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.tar.gz"
-platforms_linux_x64_url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz"
+
+[tools."http:my-tool".platforms]
+macos-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-x64.tar.gz" }
+macos-arm64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.tar.gz" }
+linux-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz" }
 ```
 
 > **Note:** You can use either `macos` or `darwin`, and `x64` or `amd64` for platform keys. `macos` and `x64` are preferred in documentation and examples, but all variants are accepted.
@@ -66,17 +68,14 @@ checksum = "sha256:a1b2c3d4e5f6789..."
 
 ### Platform-specific Checksums
 
-You can specify different checksums for different platforms:
-
 ```toml
 [tools."http:my-tool"]
 version = "1.0.0"
-platforms_macos_x64_url = "https://example.com/releases/my-tool-v1.0.0-macos-x64.tar.gz"
-platforms_macos_x64_checksum = "sha256:a1b2c3d4e5f6789..."
-platforms_macos_arm64_url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.tar.gz"
-platforms_macos_arm64_checksum = "sha256:b2c3d4e5f6789..."
-platforms_linux_x64_url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz"
-platforms_linux_x64_checksum = "sha256:a1b2c3d4e5f6789..."
+
+[tools."http:my-tool".platforms]
+macos-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-x64.tar.gz", checksum = "sha256:a1b2c3d4e5f6789..." }
+macos-arm64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.tar.gz", checksum = "sha256:b2c3d4e5f6789..." }
+linux-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz", checksum = "sha256:c3d4e5f6789..." }
 ```
 
 ### `size`
@@ -88,6 +87,20 @@ Verify the downloaded file size:
 version = "1.0.0"
 url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
 size = "12345678"
+```
+
+### Platform-specific Size
+
+You can specify different sizes for different platforms:
+
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+
+[tools."http:my-tool".platforms]
+macos-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-x64.tar.gz", size = "12345678" }
+macos-arm64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-arm64.tar.gz", size = "9876543" }
+linux-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-linux-x64.tar.gz", size = "11111111" }
 ```
 
 ### `strip_components`
@@ -103,13 +116,13 @@ strip_components = 1
 
 ### `bin_path`
 
-Specify the directory containing binaries within the extracted archive, or where to place the downloaded file:
+Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with `{name}`, `{version}`, `{os}`, `{arch}`, and `{ext}`:
 
 ```toml
 [tools."http:my-tool"]
 version = "1.0.0"
 url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
-bin_path = "bin"
+bin_path = "{name}-{version}/bin" # expands to my-tool-1.0.0/bin
 ```
 
 **Binary path lookup order:**

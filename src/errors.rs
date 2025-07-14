@@ -18,7 +18,7 @@ pub enum Error {
     #[error("[{0}] plugin not installed")]
     PluginNotInstalled(String),
     #[error("{0}@{1} not installed")]
-    VersionNotInstalled(BackendArg, String),
+    VersionNotInstalled(Box<BackendArg>, String),
     #[error("{} exited with non-zero status: {}", .0, render_exit_status(.1))]
     ScriptFailed(String, Option<ExitStatus>),
     #[error(

@@ -1,6 +1,22 @@
 # Changelog
 
-## [2025.7.5](https://github.com/jdx/mise/compare/v2025.7.4..v2025.7.5) - 2025-07-13
+## [2025.7.8](https://github.com/jdx/mise/compare/v2025.7.7..v2025.7.8) - 2025-07-13
+
+### 🚀 Features
+
+- custom backends through plugins by [@jdx](https://github.com/jdx) in [#5579](https://github.com/jdx/mise/pull/5579)
+- nested tool options by [@jdx](https://github.com/jdx) in [#5614](https://github.com/jdx/mise/pull/5614)
+
+### 🐛 Bug Fixes
+
+- accept platform_ or platforms_ in http/github backends by [@jdx](https://github.com/jdx) in [#5608](https://github.com/jdx/mise/pull/5608)
+
+### 📚 Documentation
+
+- correct toml syntax by [@jdx](https://github.com/jdx) in [#5609](https://github.com/jdx/mise/pull/5609)
+- removed some markdownlint rules by [@jdx](https://github.com/jdx) in [#5615](https://github.com/jdx/mise/pull/5615)
+
+## [2025.7.7](https://github.com/jdx/mise/compare/v2025.7.4..v2025.7.7) - 2025-07-13
 
 ### 🚀 Features
 
@@ -39,6 +55,17 @@
 - add workspace resolver = 3 by [@jdx](https://github.com/jdx) in [304547a](https://github.com/jdx/mise/commit/304547a0b9a324b5d925c45e2841cadc3f6e938b)
 - fix release-plz with workspace by [@jdx](https://github.com/jdx) in [5b3be6e](https://github.com/jdx/mise/commit/5b3be6eb8f06c509964a2b030eccb2f6e006f398)
 - only bump mise version for release-plz by [@jdx](https://github.com/jdx) in [8f14d10](https://github.com/jdx/mise/commit/8f14d1014d217c91c36a96beaad4565a3aaf567e)
+- add cargo-release by [@jdx](https://github.com/jdx) in [f657db5](https://github.com/jdx/mise/commit/f657db512fdb7ea4f58ac98af729ac6495e61100)
+- mise up by [@jdx](https://github.com/jdx) in [4872ae6](https://github.com/jdx/mise/commit/4872ae6b4d63de54de4ac93e72e9a3cd51e20c2e)
+- fix release-plz with workspace by [@jdx](https://github.com/jdx) in [bdb7119](https://github.com/jdx/mise/commit/bdb71196d6930091c68a6198d445fa16e108f75e)
+- set-version by [@jdx](https://github.com/jdx) in [82fcd4f](https://github.com/jdx/mise/commit/82fcd4f22116bb92e1e615d9f1c03723d02aaaba)
+- set-version by [@jdx](https://github.com/jdx) in [54388a4](https://github.com/jdx/mise/commit/54388a419427c664e557aa4ea034e13a2443bb8e)
+- set-version by [@jdx](https://github.com/jdx) in [fe0a0a9](https://github.com/jdx/mise/commit/fe0a0a93b27219bd132b39f1f0b522bed1ad2b51)
+- set-version by [@jdx](https://github.com/jdx) in [d9f24e2](https://github.com/jdx/mise/commit/d9f24e2b45fb7a9f5c2b795b490ba64a8d9eb207)
+- set-version by [@jdx](https://github.com/jdx) in [97f6f4f](https://github.com/jdx/mise/commit/97f6f4febaf03f7c0d6d754701308edeb2287b53)
+- set-version by [@jdx](https://github.com/jdx) in [13296e1](https://github.com/jdx/mise/commit/13296e10947ea5a96768e07bd95d009e95bace32)
+- set-version by [@jdx](https://github.com/jdx) in [587a707](https://github.com/jdx/mise/commit/587a70744c4127f92cfe9381e7e273ac101c4a4f)
+- set-version by [@jdx](https://github.com/jdx) in [1e80d52](https://github.com/jdx/mise/commit/1e80d52144144aaebc804aeef17010980f3a0caf)
 
 ## [2025.7.4](https://github.com/jdx/mise/compare/v2025.7.3..v2025.7.4) - 2025-07-11
 

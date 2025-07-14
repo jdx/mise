@@ -39,13 +39,15 @@ asset_pattern = "gitlab-runner-linux-x64"
 
 ### Platform-specific Asset Patterns
 
-You can specify different asset patterns for different platforms:
+For different asset patterns per platform:
 
 ```toml
 [tools."gitlab:gitlab-org/gitlab-runner"]
 version = "latest"
-platforms_linux_x64_asset_pattern = "gitlab-runner-linux-x64"
-platforms_macos_arm64_asset_pattern = "gitlab-runner-macos-arm64"
+
+[tools."gitlab:gitlab-org/gitlab-runner".platforms]
+linux-x64 = { asset_pattern = "gitlab-runner-linux-x64" }
+macos-arm64 = { asset_pattern = "gitlab-runner-macos-arm64" }
 ```
 
 ### `checksum`
@@ -63,13 +65,13 @@ checksum = "sha256:a1b2c3d4e5f6789..."
 
 ### Platform-specific Checksums
 
-You can specify different checksums for different platforms:
-
 ```toml
 [tools."gitlab:gitlab-org/gitlab-runner"]
 version = "latest"
-platforms_linux_x64_checksum = "sha256:a1b2c3d4e5f6789..."
-platforms_macos_arm64_checksum = "sha256:b2c3d4e5f6789..."
+
+[tools."gitlab:gitlab-org/gitlab-runner".platforms]
+linux-x64 = { asset_pattern = "gitlab-runner-linux-x64", checksum = "sha256:a1b2c3d4e5f6789..." }
+macos-arm64 = { asset_pattern = "gitlab-runner-macos-arm64", checksum = "sha256:b2c3d4e5f6789..." }
 ```
 
 ### `size`
@@ -88,8 +90,10 @@ You can specify different sizes for different platforms:
 ```toml
 [tools."gitlab:gitlab-org/gitlab-runner"]
 version = "latest"
-platforms_linux_x64_size = "12345678"
-platforms_macos_arm64_size = "9876543"
+
+[tools."gitlab:gitlab-org/gitlab-runner".platforms]
+linux-x64 = { size = "12345678" }
+macos-arm64 = { size = "9876543" }
 ```
 
 ### `strip_components`
@@ -103,11 +107,12 @@ Number of directory components to strip when extracting archives:
 
 ### `bin_path`
 
-Specify the directory containing binaries within the extracted archive:
+Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with `{name}`, `{version}`, `{os}`, `{arch}`, and `{ext}`:
 
 ```toml
-[tools]
-"gitlab:gitlab-org/gitlab-runner" = { version = "latest", bin_path = "bin" }
+[tools."gitlab:gitlab-org/gitlab-runner"]
+version = "latest"
+bin_path = "{name}-{version}/bin" # expands to gitlab-runner-1.0.0/bin
 ```
 
 **Binary path lookup order:**

@@ -94,6 +94,54 @@ mise supports nested configuration that cascades from broad to specific settings
 
 Each level can override or extend the previous ones, giving you fine-grained control over tool versions across different contexts.
 
+## Tool Options
+
+Tool options allow you to customize how tools are installed and configured. They support nested configurations for better organization, particularly useful for platform-specific settings.
+
+### Table Format (Recommended)
+
+The cleanest way to specify nested options is using TOML tables:
+
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+
+[tools."http:my-tool".platforms]
+macos-x64 = { url = "https://example.com/my-tool-macos-x64.tar.gz", checksum = "sha256:abc123" }
+linux-x64 = { url = "https://example.com/my-tool-linux-x64.tar.gz", checksum = "sha256:def456" }
+```
+
+### Dotted Notation
+
+You can also use dotted notation for simpler nested configurations:
+
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+platforms.macos-x64.url = "https://example.com/my-tool-macos-x64.tar.gz"
+platforms.linux-x64.url = "https://example.com/my-tool-linux-x64.tar.gz"
+simple_option = "value"
+```
+
+### Generic Nested Support
+
+Any backend can use nested options for organizing complex configurations:
+
+```toml
+[tools."custom:my-backend"]
+version = "1.0.0"
+
+[tools."custom:my-backend".database]
+host = "localhost"
+port = 5432
+
+[tools."custom:my-backend".cache.redis]
+host = "redis.example.com"
+port = 6379
+```
+
+Internally, nested options are flattened to dot notation (e.g., `platforms.macos-x64.url`, `database.host`, `cache.redis.port`) for backend access.
+
 ### Caching and Performance
 
 mise uses intelligent caching to minimize overhead:
@@ -208,38 +256,3 @@ alias mx="mise x --"
 
 Similarly, `mise run` can be used to [execute tasks](/tasks/) which will also activate the mise
 environment with all of your tools.
-
-## Tool Options
-
-mise plugins may accept configuration in the form of tool options specified in `mise.toml`:
-
-```toml
-[tools]
-# send arbitrary options to the plugin, passed as:
-# MISE_TOOL_OPTS__FOO=bar
-mytool = { version = '3.10', foo = 'bar' }
-```
-
-All tools can accept a `postinstall` option which is a shell command to run after the tool is installed:
-
-```toml
-[tools]
-node = { version = '20', postinstall = 'corepack enable' }
-```
-
-It's yet not possible to specify this via the CLI in `mise use`. As a workaround, you can use [mise config set](/cli/config/set.html):
-
-```shell
-mise config set tools.node.version 20
-mise config set tools.node.postinstall 'corepack enable'
-mise install
-```
-
-### `install_env`
-
-`install_env` is a special option that can be used to set environment variables during tool installation:
-
-```toml
-[tools]
-teleport-ent = { version = "11.3.11", install_env = { TELEPORT_ENT_ARCH = "amd64" } }
-```

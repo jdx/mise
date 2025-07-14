@@ -1151,20 +1151,30 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                                 return Err(de::Error::custom("env must be a table"));
                             }
                         },
-                        _ => match v {
-                            toml::Value::Boolean(v) => {
-                                options.opts.insert(k, v.to_string());
+                        _ => {
+                            // Handle nested structures
+                            match v {
+                                toml::Value::Table(_) => {
+                                    // Store as TOML string, will be flattened later
+                                    options.opts.insert(k, v.to_string());
+                                }
+                                toml::Value::String(s) => {
+                                    options.opts.insert(k, s);
+                                }
+                                toml::Value::Boolean(b) => {
+                                    options.opts.insert(k, b.to_string());
+                                }
+                                toml::Value::Integer(i) => {
+                                    options.opts.insert(k, i.to_string());
+                                }
+                                toml::Value::Float(f) => {
+                                    options.opts.insert(k, f.to_string());
+                                }
+                                _ => {
+                                    return Err(de::Error::custom("invalid value type"));
+                                }
                             }
-                            toml::Value::Integer(v) => {
-                                options.opts.insert(k, v.to_string());
-                            }
-                            toml::Value::String(v) => {
-                                options.opts.insert(k, v);
-                            }
-                            _ => {
-                                return Err(de::Error::custom("invalid value type"));
-                            }
-                        },
+                        }
                     }
                 }
                 if let Some(tt) = tt {
