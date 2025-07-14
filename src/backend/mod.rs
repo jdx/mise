@@ -744,7 +744,25 @@ pub trait Backend: Debug + Send + Sync {
         } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr.set_message(format!("generate checksum {filename}"));
             let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
-            tv.checksums.insert(filename, format!("blake3:{hash}"));
+            tv.checksums.insert(filename.clone(), format!("blake3:{hash}"));
+        }
+
+        // Handle size verification and generation
+        if let Some(expected_size) = tv.sizes.get(&filename) {
+            ctx.pr.set_message(format!("verify size {filename}"));
+            let actual_size = file.metadata()?.len();
+            if actual_size != *expected_size {
+                bail!(
+                    "Size mismatch for {}: expected {}, got {}",
+                    filename,
+                    expected_size,
+                    actual_size
+                );
+            }
+        } else if Settings::get().lockfile && Settings::get().experimental {
+            ctx.pr.set_message(format!("record size {filename}"));
+            let size = file.metadata()?.len();
+            tv.sizes.insert(filename, size);
         }
         Ok(())
     }

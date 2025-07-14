@@ -29,6 +29,8 @@ pub struct LockfileTool {
     pub backend: Option<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub checksums: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub sizes: BTreeMap<String, u64>,
 }
 
 impl Lockfile {
@@ -255,13 +257,21 @@ impl TryFrom<toml::Value> for LockfileTool {
                 version: v,
                 backend: Default::default(),
                 checksums: Default::default(),
+                sizes: Default::default(),
             },
             toml::Value::Table(mut t) => {
                 let mut checksums = BTreeMap::new();
+                let mut sizes = BTreeMap::new();
                 if let Some(checksums_table) = t.remove("checksums") {
                     let checksums_table: toml::Table = checksums_table.try_into()?;
                     for (filename, checksum) in checksums_table {
                         checksums.insert(filename, checksum.try_into()?);
+                    }
+                }
+                if let Some(sizes_table) = t.remove("sizes") {
+                    let sizes_table: toml::Table = sizes_table.try_into()?;
+                    for (filename, size) in sizes_table {
+                        sizes.insert(filename, size.try_into()?);
                     }
                 }
                 LockfileTool {
@@ -276,6 +286,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                         .transpose()?
                         .unwrap_or_default(),
                     checksums,
+                    sizes,
                 }
             }
             _ => bail!("unsupported lockfile format {}", value),
@@ -294,6 +305,9 @@ impl LockfileTool {
         if !self.checksums.is_empty() {
             table.insert("checksums".to_string(), self.checksums.into());
         }
+        if !self.sizes.is_empty() {
+            table.insert("sizes".to_string(), self.sizes.into());
+        }
         table.into()
     }
 }
@@ -306,6 +320,7 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
                 version: tv.version.clone(),
                 backend: Some(tv.ba().full()),
                 checksums: tv.checksums.clone(),
+                sizes: tv.sizes.clone(),
             })
             .collect()
     }
