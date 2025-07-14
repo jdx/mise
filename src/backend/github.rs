@@ -17,7 +17,6 @@ use eyre::Result;
 use regex::Regex;
 use std::fmt::Debug;
 use std::sync::Arc;
-use crate::lockfile::AssetInfo;
 
 #[derive(Debug)]
 pub struct UnifiedGitBackend {
