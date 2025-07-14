@@ -143,6 +143,9 @@ impl UnifiedGitBackend {
         let filename = get_filename_from_url(asset_url);
         let file_path = tv.download_path().join(&filename);
 
+        // Store the asset URL in the tool version
+        tv.urls.insert(filename.clone(), asset_url.to_string());
+
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(asset_url, &file_path, Some(&ctx.pr))
             .await?;

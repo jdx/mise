@@ -121,6 +121,10 @@ impl Backend for AquaBackend {
             Err(err) => return Err(err),
         };
         let filename = url.split('/').next_back().unwrap();
+        
+        // Store the asset URL in the tool version
+        tv.urls.insert(filename.to_string(), url.clone());
+        
         self.download(ctx, &tv, &url, filename).await?;
         self.verify(ctx, &mut tv, &pkg, v, filename).await?;
         self.install(ctx, &tv, &pkg, v, filename)?;

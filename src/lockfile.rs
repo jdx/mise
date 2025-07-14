@@ -315,13 +315,17 @@ pub fn get_locked_version(
             .inspect(|v| trace!("[{short}@{prefix}] found {} in lockfile", v.version))
             .cloned()
             .map(|mut tool| {
-                // Populate checksums and sizes from the assets section for backward compatibility
+                // Populate checksums, sizes, and URLs from the assets section for backward compatibility
                 for (filename, asset_info) in &tool.assets {
                     if let Some(checksum) = &asset_info.checksum {
                         tool.checksums.insert(filename.clone(), checksum.clone());
                     }
                     if let Some(size) = asset_info.size {
                         tool.sizes.insert(filename.clone(), size);
+                    }
+                    if let Some(url) = &asset_info.url {
+                        // Note: URLs will be populated in ToolVersion when lockfile is used
+                        // This is handled in ToolVersion::resolve when use_locked_version is true
                     }
                 }
                 tool
@@ -418,7 +422,7 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
             .map(|tv| {
                 let mut assets = BTreeMap::new();
                 
-                // Convert checksums and sizes to assets format
+                // Convert checksums, sizes, and URLs to assets format
                 for (filename, checksum) in &tv.checksums {
                     let asset = assets.entry(filename.clone()).or_insert_with(|| AssetInfo {
                         checksum: None,
@@ -435,6 +439,15 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
                         url: None,
                     });
                     asset.size = Some(*size);
+                }
+                
+                for (filename, url) in &tv.urls {
+                    let asset = assets.entry(filename.clone()).or_insert_with(|| AssetInfo {
+                        checksum: None,
+                        size: None,
+                        url: None,
+                    });
+                    asset.url = Some(url.clone());
                 }
                 
                 LockfileTool {
