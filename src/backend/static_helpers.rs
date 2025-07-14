@@ -1,9 +1,9 @@
 // Shared template logic for backends
-use crate::{config::Settings, ui::progress_report::SingleReport};
 use crate::file;
 use crate::hash;
 use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
+use crate::{config::Settings, ui::progress_report::SingleReport};
 use eyre::{Result, bail};
 use std::path::Path;
 
@@ -83,12 +83,10 @@ pub fn install_artifact(
     tv: &crate::toolset::ToolVersion,
     file_path: &Path,
     opts: &ToolVersionOptions,
-    pr: Option<&Box<dyn SingleReport>>
+    pr: Option<&Box<dyn SingleReport>>,
 ) -> eyre::Result<()> {
     let install_path = tv.install_path();
-    let mut strip_components = opts
-        .get("strip_components")
-        .and_then(|s| s.parse().ok());
+    let mut strip_components = opts.get("strip_components").and_then(|s| s.parse().ok());
 
     file::remove_all(&install_path)?;
     file::create_dir_all(&install_path)?;
@@ -168,7 +166,11 @@ pub fn verify_artifact(
     Ok(())
 }
 
-pub fn verify_checksum_str(file_path: &Path, checksum: &str, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
+pub fn verify_checksum_str(
+    file_path: &Path,
+    checksum: &str,
+    pr: Option<&Box<dyn SingleReport>>,
+) -> Result<()> {
     if let Some((algo, hash_str)) = checksum.split_once(':') {
         hash::ensure_checksum(file_path, hash_str, pr, algo)?;
     } else {

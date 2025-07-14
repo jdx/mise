@@ -845,7 +845,7 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
 pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<(String, bool)>> {
     let tar = open_tar(format, archive)?;
     let mut archive = Archive::new(tar);
-    let mut top_level_entries = Vec::new();
+    let mut top_level_components = std::collections::HashMap::new();
 
     for entry in archive.entries()? {
         let entry = entry?;
@@ -855,19 +855,18 @@ pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<(St
         // Get the first component of the path (top-level directory/file)
         if let Some(first_component) = path.components().next() {
             let name = first_component.as_os_str().to_string_lossy().to_string();
-            let is_directory = header.entry_type().is_dir();
 
-            // Only add if we haven't seen this entry before
-            if !top_level_entries
-                .iter()
-                .any(|(existing_name, _)| existing_name == &name)
-            {
-                top_level_entries.push((name, is_directory));
-            }
+            // Check if this entry indicates the component is a directory
+            let is_directory = header.entry_type().is_dir() || path.components().count() > 1; // If there are nested components, it's a directory
+
+            // Update the component's directory status
+            // A component is a directory if ANY entry indicates it's a directory
+            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            *existing = *existing || is_directory;
         }
     }
 
-    Ok(top_level_entries)
+    Ok(top_level_components.into_iter().collect())
 }
 
 /// Determines if strip_components=1 should be applied based on archive structure
