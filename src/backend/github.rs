@@ -264,12 +264,14 @@ impl Backend for UnifiedGitBackend {
             Ok(releases
                 .into_iter()
                 .map(|r| r.tag_name.trim_start_matches('v').to_string())
+                .rev()
                 .collect())
         } else {
             let releases = github::list_releases(&repo).await?;
             Ok(releases
                 .into_iter()
                 .map(|r| r.tag_name.trim_start_matches('v').to_string())
+                .rev()
                 .collect())
         }
     }
@@ -398,6 +400,39 @@ impl UnifiedGitBackend {
         }
     }
 
+    /// Helper to try both v-prefixed and non-prefixed tags for a resolver function
+    async fn try_with_v_prefix<F, Fut>(&self, version: &str, resolver: F) -> Result<String>
+    where
+        F: Fn(String) -> Fut,
+        Fut: std::future::Future<Output = Result<String>>,
+    {
+        let mut errors = vec![];
+        let candidates = if version.starts_with('v') {
+            vec![
+                version.to_string(),
+                version.trim_start_matches('v').to_string(),
+            ]
+        } else {
+            vec![format!("v{version}"), version.to_string()]
+        };
+        for candidate in candidates {
+            match resolver(candidate.clone()).await {
+                Ok(url) => return Ok(url),
+                Err(e) => {
+                    let is_404 = crate::http::error_code(&e) == Some(404);
+                    if is_404 {
+                        errors.push(e);
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+        Err(errors
+            .pop()
+            .unwrap_or_else(|| eyre::eyre!("No matching release found for {version}")))
+    }
+
     /// Resolves the asset URL using either explicit patterns or auto-detection
     async fn resolve_asset_url(
         &self,
@@ -406,27 +441,24 @@ impl UnifiedGitBackend {
         repo: &str,
         api_url: &str,
     ) -> Result<String> {
-        let version = self.normalize_version(&tv.version);
-
         // Check for direct platform-specific URLs first
         if let Some(direct_url) = lookup_platform_key(opts, "url") {
             return Ok(direct_url);
         }
 
+        let version = &tv.version;
         if self.is_gitlab() {
-            self.resolve_gitlab_asset_url(tv, opts, repo, api_url, &version)
-                .await
+            self.try_with_v_prefix(version, |candidate| async move {
+                self.resolve_gitlab_asset_url(tv, opts, repo, api_url, &candidate)
+                    .await
+            })
+            .await
         } else {
-            self.resolve_github_asset_url(tv, opts, repo, api_url, &version)
-                .await
-        }
-    }
-
-    fn normalize_version(&self, version: &str) -> String {
-        if version.starts_with('v') {
-            version.to_string()
-        } else {
-            format!("v{version}")
+            self.try_with_v_prefix(version, |candidate| async move {
+                self.resolve_github_asset_url(tv, opts, repo, api_url, &candidate)
+                    .await
+            })
+            .await
         }
     }
 
@@ -636,13 +668,5 @@ mod tests {
         assert!(backend.matches_pattern("test-1.0.0-linux.tar.gz", "test-*-linux.tar.gz"));
         assert!(backend.matches_pattern("test-1.0.0-linux.tar.gz", "test-?.?.?-linux.tar.gz"));
         assert!(!backend.matches_pattern("test-1.0.0-windows.zip", "test-*-linux.tar.gz"));
-    }
-
-    #[test]
-    fn test_version_normalization() {
-        let backend = create_test_backend();
-
-        assert_eq!(backend.normalize_version("1.0.0"), "v1.0.0");
-        assert_eq!(backend.normalize_version("v1.0.0"), "v1.0.0");
     }
 }
