@@ -838,6 +838,7 @@ pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
 #[derive(Default)]
 pub struct SevenZipOptions {
     pub strip_components: usize,
@@ -943,10 +944,42 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     Ok(top_level_components.into_iter().collect())
 }
 
+/// Adapted from inspect_tar_contents for 7z archives
+#[cfg(windows)]
+pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
+    let sevenz = sevenz_rust::SevenZReader::open(archive, sevenz_rust::Password::empty())?;
+    let mut top_level_components = std::collections::HashMap::new();
+
+    for file in &sevenz.archive().files {
+        let path = PathBuf::from(file.name());
+
+        if let Some(first_component) = path.components().next() {
+            let name = first_component.as_os_str().to_string_lossy().to_string();
+            let is_directory = file.is_directory() || path.components().count() > 1;
+
+            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            *existing = *existing || is_directory;
+        }
+    }
+
+    Ok(top_level_components.into_iter().collect())
+}
+
 /// Determines if strip_components=1 should be applied based on archive structure
 pub fn should_strip_components(archive: &Path, format: TarFormat) -> Result<bool> {
     let top_level_entries = match format {
         TarFormat::Zip => inspect_zip_contents(archive)?,
+        TarFormat::SevenZip => {
+            #[cfg(windows)]
+            {
+                inspect_7z_contents(archive)?
+            }
+
+            #[cfg(not(windows))]
+            {
+                bail!("7z format not supported on this platform");
+            }
+        }
         _ => inspect_tar_contents(archive, format)?,
     };
 
