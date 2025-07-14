@@ -250,34 +250,46 @@ impl Settings {
         }
     }
 
-    pub fn add_cli_matches(cli: &Cli) {
-        let mut s = SettingsPartial::empty();
+    /// Check if the current process is running as a shim
+    ///
+    /// Returns true if we're not running as a direct mise invocation,
+    /// meaning we should pass through flags to the underlying tool.
+    fn is_running_as_shim() -> bool {
+        !crate::env::is_direct_mise_invocation()
+    }
 
-        // Don't process mise-specific flags when running as a shim
-        if !crate::env::is_direct_mise_invocation() {
-            // Only process non-mise-specific flags when running as shim
-            for arg in &*env::ARGS.read().unwrap() {
-                if arg == "--" {
-                    break;
-                }
-                // Only process --raw flag when running as shim (it affects output formatting)
-                if arg == "--raw" {
-                    s.raw = Some(true);
-                }
-            }
-            Self::reset(Some(s));
-            return;
-        }
-
-        // Process all flags when running as mise directly
+    /// Process raw output flag from command line arguments
+    ///
+    /// This function scans the command line arguments for the `--raw` flag
+    /// and sets the raw output setting if found. It stops processing
+    /// at the first `--` argument to avoid processing arguments meant
+    /// for the underlying tool.
+    fn process_raw_flag(s: &mut SettingsPartial) {
         for arg in &*env::ARGS.read().unwrap() {
             if arg == "--" {
                 break;
             }
             if arg == "--raw" {
                 s.raw = Some(true);
+                break;
             }
         }
+    }
+
+    pub fn add_cli_matches(cli: &Cli) {
+        let mut s = SettingsPartial::empty();
+
+        // Don't process mise-specific flags when running as a shim
+        if Self::is_running_as_shim() {
+            // Only process non-mise-specific flags when running as shim
+            Self::process_raw_flag(&mut s);
+            Self::reset(Some(s));
+            return;
+        }
+
+        // Process all flags when running as mise directly
+        Self::process_raw_flag(&mut s);
+
         if let Some(cd) = &cli.cd {
             s.cd = Some(cd.clone());
         }
@@ -476,11 +488,8 @@ impl Settings {
 
     pub fn no_config() -> bool {
         *env::MISE_NO_CONFIG || {
-            // Don't process mise-specific flags when running as a shim
-            // If MISE_BIN_NAME doesn't start with "mise", we're running as a shim
-            // and these flags are meant for the shimmed tool, not for mise
-            let bin_name = *env::MISE_BIN_NAME;
-            if !bin_name.starts_with("mise") {
+            // Don't process --no-config when running as a shim
+            if Self::is_running_as_shim() {
                 return false;
             }
 
