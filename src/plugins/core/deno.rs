@@ -78,7 +78,7 @@ impl DenoPlugin {
         pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
         file::create_dir_all(tv.install_path().join("bin"))?;
-        file::unzip(tarball_path, &tv.download_path())?;
+        file::unzip(tarball_path, &tv.download_path(), &Default::default())?;
         file::rename(
             tv.download_path().join(if cfg!(target_os = "windows") {
                 "deno.exe"

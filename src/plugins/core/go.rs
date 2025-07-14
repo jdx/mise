@@ -139,7 +139,7 @@ impl GoPlugin {
         pr.set_message(format!("extract {tarball}"));
         let tmp_extract_path = tempdir_in(tv.install_path().parent().unwrap())?;
         if cfg!(windows) {
-            file::unzip(tarball_path, tmp_extract_path.path())?;
+            file::unzip(tarball_path, tmp_extract_path.path(), &Default::default())?;
         } else {
             file::untar(
                 tarball_path,
