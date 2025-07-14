@@ -1,0 +1,31 @@
+{
+  "name": "Rust Development Environment",
+  "description": "Environment with Rust toolchain installed via rustup",
+  "setup": [
+    {
+      "name": "Install rustup",
+      "command": "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable",
+      "description": "Install rustup and the stable Rust toolchain"
+    },
+    {
+      "name": "Source cargo environment",
+      "command": "source $HOME/.cargo/env",
+      "description": "Make cargo available in the current shell"
+    }
+  ],
+  "environment": {
+    "PATH": "$HOME/.cargo/bin:$PATH",
+    "CARGO_HOME": "$HOME/.cargo",
+    "RUSTUP_HOME": "$HOME/.rustup"
+  },
+  "verify": [
+    {
+      "command": "rustc --version",
+      "description": "Verify Rust compiler is installed"
+    },
+    {
+      "command": "cargo --version",
+      "description": "Verify Cargo is installed"
+    }
+  ]
+}
