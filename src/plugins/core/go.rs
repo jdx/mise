@@ -10,7 +10,6 @@ use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::AssetInfo;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file, plugins};
