@@ -45,11 +45,15 @@ impl Display for TaskDep {
             write!(f, " {}", self.args.join(" "))?;
         }
         if !self.env.is_empty() {
-            write!(f, " (env: {})", 
-                self.env.iter()
-                    .map(|(k, v)| format!("{}={}", k, v))
+            write!(
+                f,
+                " (env: {})",
+                self.env
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
                     .collect::<Vec<_>>()
-                    .join(", "))?;
+                    .join(", ")
+            )?;
         }
         Ok(())
     }
@@ -153,7 +157,7 @@ impl<'de> Deserialize<'de> for TaskDep {
 impl Serialize for TaskDep {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
-        
+
         // If we have env vars, always serialize as object
         if !self.env.is_empty() {
             let mut map = serializer.serialize_map(Some(3))?;
@@ -205,14 +209,18 @@ mod tests {
         let td = TaskDep {
             task: "task".to_string(),
             args: vec![],
-            env: [("VAR".to_string(), "value".to_string())].into_iter().collect(),
+            env: [("VAR".to_string(), "value".to_string())]
+                .into_iter()
+                .collect(),
         };
         assert_eq!(td.to_string(), "task (env: VAR=value)");
 
         let td = TaskDep {
             task: "task".to_string(),
             args: vec!["arg1".to_string()],
-            env: [("VAR".to_string(), "value".to_string())].into_iter().collect(),
+            env: [("VAR".to_string(), "value".to_string())]
+                .into_iter()
+                .collect(),
         };
         assert_eq!(td.to_string(), "task arg1 (env: VAR=value)");
     }
@@ -237,13 +245,16 @@ mod tests {
         );
 
         // Test object format with env
-        let td: TaskDep = serde_json::from_str(r#"{"task": "test", "env": {"PROP": "a"}}"#).unwrap();
+        let td: TaskDep =
+            serde_json::from_str(r#"{"task": "test", "env": {"PROP": "a"}}"#).unwrap();
         assert_eq!(td.task, "test");
         assert!(td.args.is_empty());
         assert_eq!(td.env.get("PROP"), Some(&"a".to_string()));
 
         // Test object format with args and env
-        let td: TaskDep = serde_json::from_str(r#"{"task": "test", "args": ["arg1"], "env": {"PROP": "b"}}"#).unwrap();
+        let td: TaskDep =
+            serde_json::from_str(r#"{"task": "test", "args": ["arg1"], "env": {"PROP": "b"}}"#)
+                .unwrap();
         assert_eq!(td.task, "test");
         assert_eq!(td.args, vec!["arg1"]);
         assert_eq!(td.env.get("PROP"), Some(&"b".to_string()));

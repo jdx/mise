@@ -579,7 +579,10 @@ fn match_tasks(tasks: &BTreeMap<String, &Task>, td: &TaskDep) -> Result<Vec<Task
             t.args = td.args.clone();
             // Apply environment variables from dependency
             for (key, value) in &td.env {
-                t.env.insert(key.clone(), crate::task::EitherStringOrIntOrBool(either::Either::Left(value.clone())));
+                t.env.insert(
+                    key.clone(),
+                    crate::task::EitherStringOrIntOrBool(either::Either::Left(value.clone())),
+                );
             }
             t
         })
