@@ -457,6 +457,11 @@ impl Settings {
     }
 
     pub fn no_config() -> bool {
+        // If running as a shim, ignore --no-config flag since it's meant for the shimmed tool
+        if std::env::var("__MISE_SHIM").is_ok_and(|v| v == "1") {
+            return *env::MISE_NO_CONFIG;
+        }
+
         *env::MISE_NO_CONFIG
             || env::ARGS
                 .read()
@@ -519,4 +524,50 @@ where
         // collect into HashSet to remove duplicates
         .collect::<Result<BTreeSet<_>, _>>()
         .map(|set| set.into_iter().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::env::{self, set_var, remove_var};
+
+    #[test]
+    fn test_no_config_with_shim() {
+        // Save original state
+        let original_args = env::ARGS.read().unwrap().clone();
+
+        // Test: When running as a shim, --no-config should be ignored
+        {
+            // Simulate running as a shim with --no-config in args
+            *env::ARGS.write().unwrap() = vec!["rg".to_string(), "--version".to_string(), "--no-config".to_string()];
+            set_var("__MISE_SHIM", "1");
+
+            // no_config() should return false because we're in a shim
+            assert!(!Settings::no_config(), "no_config should return false when running as a shim, even with --no-config in args");
+        }
+
+        // Test: When NOT running as a shim, --no-config should be respected
+        {
+            // Simulate running as regular mise with --no-config in args
+            *env::ARGS.write().unwrap() = vec!["mise".to_string(), "list".to_string(), "--no-config".to_string()];
+            remove_var("__MISE_SHIM");
+
+            // no_config() should return true because --no-config is present
+            assert!(Settings::no_config(), "no_config should return true when running as regular mise with --no-config");
+        }
+
+        // Test: When not running as shim and no --no-config, should return false
+        {
+            // Simulate running as regular mise without --no-config
+            *env::ARGS.write().unwrap() = vec!["mise".to_string(), "list".to_string()];
+            remove_var("__MISE_SHIM");
+
+            // no_config() should return false because --no-config is not present
+            assert!(!Settings::no_config(), "no_config should return false when running as regular mise without --no-config");
+        }
+
+        // Restore original state
+        *env::ARGS.write().unwrap() = original_args;
+        remove_var("__MISE_SHIM");
+    }
 }
