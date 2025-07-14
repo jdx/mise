@@ -9,6 +9,7 @@ The lockfile serves similar purposes to `package-lock.json` in npm or `Cargo.loc
 - **Reproducible builds**: Ensures everyone on your team uses exactly the same tool versions
 - **Security**: Verifies tool integrity with checksums when supported by the backend
 - **Version pinning**: Locks tools to specific versions while allowing flexibility in `mise.toml`
+- **Avoids API rate limits**: By storing download URLs, future installs use the lockfile and do not need to call GitHub (or other providers), avoiding rate limits and the need for `GITHUB_TOKEN` in most cases
 
 ## Enabling Lockfiles
 
@@ -221,6 +222,7 @@ The consolidated assets format provides several advantages:
 5. **Easier Navigation**: Tool-specific assets are easier to locate and manage
 6. **Full Traceability**: URLs provide complete audit trail of asset sources
 7. **Enhanced Security**: Better compliance and security auditing capabilities
+8. **Avoids Rate Limits**: By storing URLs, future installs do not need to make API calls to GitHub or other providers, reducing the risk of hitting rate limits and removing the need for `GITHUB_TOKEN` in simple workflows
 
 ## See Also
 

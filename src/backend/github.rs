@@ -74,8 +74,20 @@ impl Backend for UnifiedGitBackend {
         let opts = tv.request.options();
         let api_url = self.get_api_url(&opts);
 
-        // Find the asset URL for this specific version
-        let asset_url = self.resolve_asset_url(&tv, &opts, &repo, &api_url).await?;
+        // Check if URL already exists in lockfile assets first
+        let asset_url = if let Some(existing_asset) = tv
+            .assets
+            .iter()
+            .find(|(_, asset)| asset.url.is_some())
+            .map(|(filename, asset)| (filename.clone(), asset.url.clone().unwrap()))
+        {
+            let (filename, url) = existing_asset;
+            debug!("Using existing URL from lockfile for {}: {}", filename, url);
+            url
+        } else {
+            // Find the asset URL for this specific version
+            self.resolve_asset_url(&tv, &opts, &repo, &api_url).await?
+        };
 
         // Download and install
         self.download_and_install(ctx, &mut tv, &asset_url, &opts)
