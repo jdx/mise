@@ -133,6 +133,25 @@ pub fn install_artifact(
 
         // Extract with determined strip_components
         file::untar(file_path, &install_path, &tar_opts)?;
+
+        // Auto-detect if we need strip_components=1
+        // Only do this if strip_components was not explicitly set by the user
+        if strip_components == 0 {
+            let entries = file::ls(&install_path)?;
+            let dirs: Vec<_> = entries.iter().filter(|p| p.is_dir()).collect();
+            let files: Vec<_> = entries.iter().filter(|p| p.is_file()).collect();
+
+            // If there's exactly one directory and no files, re-extract with strip_components=1
+            if dirs.len() == 1 && files.is_empty() {
+                debug!(
+                    "Auto-detected single directory archive, re-extracting with strip_components=1"
+                );
+                file::remove_all(&install_path)?;
+                file::create_dir_all(&install_path)?;
+                tar_opts.strip_components = 1;
+                file::untar(file_path, &install_path, &tar_opts)?;
+            }
+        }
     }
     Ok(())
 }
