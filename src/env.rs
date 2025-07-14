@@ -541,18 +541,16 @@ pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 pub fn is_direct_mise_invocation() -> bool {
     // When running tests, always treat as direct mise invocation
     // to avoid interfering with test expectations
-    #[cfg(test)]
-    return true;
-
-    #[cfg(not(test))]
-    {
-        #[cfg(unix)]
-        let mise_bin = "mise";
-        #[cfg(windows)]
-        let mise_bin = "mise.exe";
-        let bin_name = *MISE_BIN_NAME;
-        bin_name == mise_bin || bin_name.starts_with("mise-")
+    if cfg!(test) {
+        return true;
     }
+
+    #[cfg(unix)]
+    let mise_bin = "mise";
+    #[cfg(windows)]
+    let mise_bin = "mise.exe";
+    let bin_name = *MISE_BIN_NAME;
+    bin_name == mise_bin || bin_name.starts_with("mise-")
 }
 
 #[cfg(test)]
