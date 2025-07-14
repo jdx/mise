@@ -13,7 +13,6 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
-use crate::lockfile::AssetInfo;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, tool_enabled};
@@ -739,14 +738,7 @@ pub trait Backend: Debug + Send + Sync {
         let lockfile_enabled = settings.lockfile && settings.experimental;
 
         // Get or create asset info for this filename
-        let asset_info = tv
-            .assets
-            .entry(filename.clone())
-            .or_insert_with(|| AssetInfo {
-                checksum: None,
-                size: None,
-                url: None,
-            });
+        let asset_info = tv.assets.entry(filename.clone()).or_default();
 
         if let Some(checksum) = &asset_info.checksum {
             ctx.pr.set_message(format!("checksum {filename}"));
