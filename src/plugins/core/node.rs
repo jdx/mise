@@ -159,13 +159,10 @@ impl NodePlugin {
             pr.set_message(format!("download {tarball_name}"));
             HTTP.download_file(url.clone(), local, Some(pr)).await?;
         }
-        if *env::MISE_NODE_VERIFY {
-            let asset_info = tv.assets.entry(tarball_name.clone()).or_default();
-            if asset_info.checksum.is_none() {
-                asset_info.checksum = Some(self.get_checksum(ctx, local, version).await?);
-            }
-            // Store the URL in the asset info
-            asset_info.url = Some(url.to_string());
+        let asset_info = tv.assets.entry(tarball_name.clone()).or_default();
+        asset_info.url = Some(url.to_string());
+        if *env::MISE_NODE_VERIFY && asset_info.checksum.is_none() {
+            asset_info.checksum = Some(self.get_checksum(ctx, local, version).await?);
         }
         self.verify_checksum(ctx, tv, local)?;
         Ok(())
