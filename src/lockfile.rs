@@ -63,12 +63,20 @@ impl TryFrom<toml::Value> for AssetInfo {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
                 };
-                let size = t.remove("size").and_then(|v| v.as_integer()).map(|i| i.try_into()).transpose()?;
+                let size = t
+                    .remove("size")
+                    .and_then(|v| v.as_integer())
+                    .map(|i| i.try_into())
+                    .transpose()?;
                 let url = match t.remove("url") {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
                 };
-                Ok(AssetInfo { checksum, size, url })
+                Ok(AssetInfo {
+                    checksum,
+                    size,
+                    url,
+                })
             }
             _ => bail!("unsupported asset info format"),
         }
@@ -100,14 +108,14 @@ impl Lockfile {
         trace!("reading lockfile {}", path.display_user());
         let content = file::read_to_string(path)?;
         let mut table: toml::Table = toml::from_str(&content)?;
-        
+
         let tools: toml::Table = table
             .remove("tools")
             .unwrap_or(toml::Table::new().into())
             .try_into()?;
-        
+
         let mut lockfile = Lockfile::default();
-        
+
         for (short, value) in tools {
             let versions = match value {
                 toml::Value::Array(arr) => arr
@@ -118,10 +126,10 @@ impl Lockfile {
             };
             lockfile.tools.insert(short, versions);
         }
-        
+
         // Migrate legacy format to new format
         lockfile.migrate_legacy_format();
-        
+
         Ok(lockfile)
     }
 
@@ -130,10 +138,11 @@ impl Lockfile {
         for versions in self.tools.values_mut() {
             for version in versions {
                 // Migrate checksums to assets section
-                let checksums_to_migrate: Vec<(String, String)> = version.checksums.clone().into_iter().collect();
-                
+                let checksums_to_migrate: Vec<(String, String)> =
+                    version.checksums.clone().into_iter().collect();
+
                 version.checksums.clear();
-                
+
                 // Combine checksums into assets
                 for (filename, checksum) in checksums_to_migrate {
                     let asset = version.assets.entry(filename).or_insert_with(|| AssetInfo {
@@ -167,7 +176,7 @@ impl Lockfile {
             }
             let mut lockfile = toml::Table::new();
             lockfile.insert("tools".to_string(), tools.into());
-            
+
             let content = toml::to_string_pretty(&toml::Value::Table(lockfile))?;
             let content = format(content.parse()?);
             file::write(path, content)?;
@@ -250,7 +259,9 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 
         for (short, tvl) in tools {
             let lockfile_tools: Vec<LockfileTool> = tvl.clone().into();
-            existing_lockfile.tools.insert(short.to_string(), lockfile_tools);
+            existing_lockfile
+                .tools
+                .insert(short.to_string(), lockfile_tools);
         }
 
         existing_lockfile.save(&lockfile_path)?;
@@ -349,7 +360,7 @@ impl TryFrom<toml::Value> for LockfileTool {
             toml::Value::Table(mut t) => {
                 let mut assets = BTreeMap::new();
                 let mut checksums = BTreeMap::new();
-                
+
                 if let Some(assets_table) = t.remove("assets") {
                     let assets_table: toml::Table = assets_table.try_into()?;
                     for (filename, asset_info) in assets_table {
@@ -404,16 +415,19 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
             .iter()
             .map(|tv| {
                 let mut assets = BTreeMap::new();
-                
+
                 // Convert tool version assets to lockfile assets
                 for (filename, asset_info) in &tv.assets {
-                    assets.insert(filename.clone(), AssetInfo {
-                        checksum: asset_info.checksum.clone(),
-                        size: asset_info.size,
-                        url: asset_info.url.clone(),
-                    });
+                    assets.insert(
+                        filename.clone(),
+                        AssetInfo {
+                            checksum: asset_info.checksum.clone(),
+                            size: asset_info.size,
+                            url: asset_info.url.clone(),
+                        },
+                    );
                 }
-                
+
                 LockfileTool {
                     version: tv.version.clone(),
                     backend: Some(tv.ba().full()),
@@ -464,6 +478,6 @@ fn format(mut doc: DocumentMut) -> String {
             }
         }
     }
-    
+
     doc.to_string()
 }

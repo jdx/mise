@@ -232,10 +232,10 @@ impl Backend for UbiBackend {
             checksum_key = format!("{checksum_key}-{matching}");
         }
         checksum_key = format!("{}-{}-{}", checksum_key, env::consts::OS, env::consts::ARCH);
-        
+
         // Get or create asset info for this checksum key
         let asset_info = tv.assets.entry(checksum_key.clone()).or_default();
-        
+
         if let Some(checksum) = &asset_info.checksum {
             ctx.pr
                 .set_message(format!("checksum verify {checksum_key}"));
