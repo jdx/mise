@@ -11,6 +11,7 @@ use std::os::unix::prelude::*;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use bzip2::read::BzDecoder;
 use color_eyre::eyre::{Context, Result};
 use eyre::bail;
 use filetime::{FileTime, set_file_times};
@@ -623,7 +624,7 @@ pub fn un_zst(input: &Path, dest: &Path) -> Result<()> {
 pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
     debug!("bzip2 -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = bzip2::read::BzDecoder::new(f);
+    let mut dec = BzDecoder::new(f);
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-bz2: {}", display_path(input)))?;
@@ -746,7 +747,7 @@ fn open_tar(format: TarFormat, archive: &Path) -> Result<Box<dyn std::io::Read>>
         // TODO: we probably shouldn't assume raw is tar.gz, but this was to retain existing behavior
         TarFormat::TarGz | TarFormat::Raw => Box::new(GzDecoder::new(f)),
         TarFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
-        TarFormat::TarBz2 => Box::new(bzip2::read::BzDecoder::new(f)),
+        TarFormat::TarBz2 => Box::new(BzDecoder::new(f)),
         TarFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
         TarFormat::Zip => bail!("zip format not supported"),
         TarFormat::Auto => match archive.extension().and_then(|s| s.to_str()) {

@@ -33,6 +33,7 @@ When no `asset_pattern` is specified, mise automatically selects the best asset 
 
 - **OS compatibility** (linux, macos, windows)
 - **Architecture compatibility** (x64, arm64, x86, arm)
+- **Libc variant** (gnu or musl, for Linux)
 - **Archive format preference** (tar.gz, zip, etc.)
 - **Build type** (avoids debug/test builds)
 
@@ -42,7 +43,7 @@ For most tools, you can simply install without specifying patterns:
 mise install github:user/repo
 ```
 
-The autodetection logic is implemented in [`src/backend/github.rs`](https://github.com/jdx/mise/blob/main/src/backend/github.rs) in the `asset_detector` module.
+> **Note:** The autodetection logic is implemented in [`src/backend/asset_detector.rs`](https://github.com/jdx/mise/blob/main/src/backend/asset_detector.rs), which is shared by both the GitHub and GitLab backends.
 
 ### `asset_pattern`
 
@@ -52,6 +53,28 @@ Specifies the pattern to match against release asset names. This is useful when 
 [tools]
 "github:cli/cli" = { version = "latest", asset_pattern = "gh_*_linux_x64.tar.gz" }
 ```
+
+### `version_prefix`
+
+Specifies a custom version prefix for release tags. By default, mise handles the common `v` prefix (e.g., `v1.0.0`), but some repositories use different prefixes like `release-`, `version-`, or no prefix at all.
+
+When `version_prefix` is configured, mise will:
+- Strip the prefix when listing available versions
+- Add the prefix when searching for releases
+- Try both prefixed and non-prefixed versions during installation
+
+```toml
+[tools]
+"github:user/repo" = { version = "latest", version_prefix = "release-" }
+```
+
+**Examples:**
+- With `version_prefix = "release-"`:
+  - User specifies `1.0.0` → mise searches for `release-1.0.0` tag
+  - Available versions show as `1.0.0` (prefix stripped)
+- With `version_prefix = ""` (empty string):
+  - User specifies `1.0.0` → mise searches for `1.0.0` tag (no prefix)
+  - Useful for repositories that don't use any prefix
 
 ### Platform-specific Asset Patterns
 
@@ -108,6 +131,8 @@ Number of directory components to strip when extracting archives:
 "github:cli/cli" = { version = "latest", strip_components = 1 }
 ```
 
+**Auto-detection:** If `strip_components` is not explicitly set, mise will automatically detect when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
+
 ### `bin_path`
 
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with `{name}`, `{version}`, `{os}`, `{arch}`, and `{ext}`:
@@ -163,5 +188,4 @@ The GitHub backend is experimental and requires the `mise.experimental` setting 
 ```sh
 mise settings set experimental true
 ```
-
 :::

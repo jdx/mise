@@ -1,0 +1,412 @@
+use regex::Regex;
+use std::sync::LazyLock;
+
+/// Platform detection patterns
+pub struct PlatformPatterns {
+    pub os_patterns: &'static [(AssetOs, Regex)],
+    pub arch_patterns: &'static [(AssetArch, Regex)],
+    pub libc_patterns: &'static [(AssetLibc, Regex)],
+    pub archive_extensions: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AssetOs {
+    Linux,
+    Macos,
+    Windows,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AssetArch {
+    X64,
+    Arm64,
+    X86,
+    Arm,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AssetLibc {
+    Gnu,
+    Musl,
+}
+
+impl AssetOs {
+    pub fn matches_target(&self, target: &str) -> bool {
+        match self {
+            AssetOs::Linux => target == "linux",
+            AssetOs::Macos => target == "macos" || target == "darwin",
+            AssetOs::Windows => target == "windows",
+        }
+    }
+}
+
+impl AssetArch {
+    pub fn matches_target(&self, target: &str) -> bool {
+        match self {
+            AssetArch::X64 => target == "x86_64" || target == "amd64" || target == "x64",
+            AssetArch::Arm64 => target == "aarch64" || target == "arm64",
+            AssetArch::X86 => target == "x86" || target == "i386" || target == "i686",
+            AssetArch::Arm => target == "arm",
+        }
+    }
+}
+
+impl AssetLibc {
+    pub fn matches_target(&self, target: &str) -> bool {
+        match self {
+            AssetLibc::Gnu => target == "gnu",
+            AssetLibc::Musl => target == "musl",
+        }
+    }
+}
+
+static OS_PATTERNS: LazyLock<Vec<(AssetOs, Regex)>> = LazyLock::new(|| {
+    vec![
+        (
+            AssetOs::Linux,
+            Regex::new(r"(?i)(?:\b|_)linux(?:\b|_|32|64)").unwrap(),
+        ),
+        (
+            AssetOs::Macos,
+            Regex::new(r"(?i)(?:\b|_)(?:darwin|mac(?:osx?)?|osx)(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetOs::Windows,
+            Regex::new(r"(?i)(?:\b|_)win(?:32|64|dows)?(?:\b|_)").unwrap(),
+        ),
+    ]
+});
+
+static ARCH_PATTERNS: LazyLock<Vec<(AssetArch, Regex)>> = LazyLock::new(|| {
+    vec![
+        (
+            AssetArch::X64,
+            Regex::new(r"(?i)(?:\b|_)(?:x86[_-]64|x64|amd64)(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetArch::Arm64,
+            Regex::new(r"(?i)(?:\b|_)(?:aarch_?64|arm_?64)(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetArch::X86,
+            Regex::new(r"(?i)(?:\b|_)(?:x86|i386|i686)(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetArch::Arm,
+            Regex::new(r"(?i)(?:\b|_)arm(?:v[0-7])?(?:\b|_)").unwrap(),
+        ),
+    ]
+});
+
+static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
+    vec![
+        (
+            AssetLibc::Gnu,
+            Regex::new(r"(?i)(?:\b|_)(?:gnu|glibc)(?:\b|_)").unwrap(),
+        ),
+        (
+            AssetLibc::Musl,
+            Regex::new(r"(?i)(?:\b|_)(?:musl)(?:\b|_)").unwrap(),
+        ),
+    ]
+});
+
+static ARCHIVE_EXTENSIONS: &[&str] = &[
+    ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tgz", ".tbz2", ".txz", ".tzst", ".zip", ".7z",
+    ".tar",
+];
+
+pub static PLATFORM_PATTERNS: LazyLock<PlatformPatterns> = LazyLock::new(|| PlatformPatterns {
+    os_patterns: &OS_PATTERNS,
+    arch_patterns: &ARCH_PATTERNS,
+    libc_patterns: &LIBC_PATTERNS,
+    archive_extensions: ARCHIVE_EXTENSIONS,
+});
+
+/// Automatically detects the best asset for the current platform
+pub struct AssetPicker {
+    target_os: String,
+    target_arch: String,
+    target_libc: String,
+}
+
+impl AssetPicker {
+    pub fn new(target_os: String, target_arch: String) -> Self {
+        // Determine the libc variant based on how mise was built
+        let target_libc = if cfg!(target_env = "musl") {
+            "musl".to_string()
+        } else {
+            "gnu".to_string()
+        };
+
+        Self {
+            target_os,
+            target_arch,
+            target_libc,
+        }
+    }
+
+    /// Picks the best asset from available options
+    pub fn pick_best_asset(&self, assets: &[String]) -> Option<String> {
+        let candidates = self.filter_archive_assets(assets);
+        let mut scored_assets = self.score_all_assets(&candidates);
+
+        // Sort by score (higher is better)
+        scored_assets.sort_by(|a, b| b.0.cmp(&a.0));
+
+        // Return the best match if it has a positive score
+        scored_assets
+            .first()
+            .filter(|(score, _)| *score > 0)
+            .map(|(_, asset)| asset.clone())
+    }
+
+    /// Filters assets to prefer archive formats
+    fn filter_archive_assets(&self, assets: &[String]) -> Vec<String> {
+        let archive_assets: Vec<String> = assets
+            .iter()
+            .filter(|name| {
+                PLATFORM_PATTERNS
+                    .archive_extensions
+                    .iter()
+                    .any(|ext| name.ends_with(ext))
+            })
+            .cloned()
+            .collect();
+
+        if archive_assets.is_empty() {
+            assets.to_vec()
+        } else {
+            archive_assets
+        }
+    }
+
+    /// Scores all assets based on platform compatibility
+    fn score_all_assets(&self, assets: &[String]) -> Vec<(i32, String)> {
+        assets
+            .iter()
+            .map(|asset| (self.score_asset(asset), asset.clone()))
+            .collect()
+    }
+
+    /// Scores a single asset based on platform compatibility
+    pub fn score_asset(&self, asset: &str) -> i32 {
+        let mut score = 0;
+
+        // OS scoring
+        score += self.score_os_match(asset);
+
+        // Architecture scoring
+        score += self.score_arch_match(asset);
+
+        // Libc variant scoring (only for Linux)
+        if self.target_os == "linux" {
+            score += self.score_libc_match(asset);
+        }
+
+        // Format preferences
+        score += self.score_format_preferences(asset);
+
+        // Penalties for unwanted builds
+        score += self.score_build_penalties(asset);
+
+        score
+    }
+
+    fn score_os_match(&self, asset: &str) -> i32 {
+        for (os, pattern) in PLATFORM_PATTERNS.os_patterns.iter() {
+            if pattern.is_match(asset) {
+                return if os.matches_target(&self.target_os) {
+                    100 // Exact OS match
+                } else {
+                    -50 // Wrong OS
+                };
+            }
+        }
+        0 // No OS detected
+    }
+
+    fn score_arch_match(&self, asset: &str) -> i32 {
+        for (arch, pattern) in PLATFORM_PATTERNS.arch_patterns.iter() {
+            if pattern.is_match(asset) {
+                return if arch.matches_target(&self.target_arch) {
+                    50 // Exact arch match
+                } else {
+                    -25 // Wrong arch
+                };
+            }
+        }
+        0 // No arch detected
+    }
+
+    fn score_libc_match(&self, asset: &str) -> i32 {
+        for (libc, pattern) in PLATFORM_PATTERNS.libc_patterns.iter() {
+            if pattern.is_match(asset) {
+                return if libc.matches_target(&self.target_libc) {
+                    25 // Exact libc match
+                } else {
+                    -10 // Wrong libc
+                };
+            }
+        }
+        0 // No libc detected
+    }
+
+    fn score_format_preferences(&self, asset: &str) -> i32 {
+        if PLATFORM_PATTERNS
+            .archive_extensions
+            .iter()
+            .any(|ext| asset.ends_with(ext))
+        {
+            10 // Prefer archive formats
+        } else {
+            0
+        }
+    }
+
+    fn score_build_penalties(&self, asset: &str) -> i32 {
+        let mut penalty = 0;
+        if asset.contains("debug") || asset.contains("test") {
+            penalty -= 20;
+        }
+        penalty
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_asset_picker_functionality() {
+        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let assets = vec![
+            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+            "tool-1.0.0-darwin-x86_64.tar.gz".to_string(),
+            "tool-1.0.0-windows-x86_64.zip".to_string(),
+        ];
+
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+    }
+
+    #[test]
+    fn test_asset_scoring() {
+        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+
+        let score_linux = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
+        let score_windows = picker.score_asset("tool-1.0.0-windows-x86_64.zip");
+        let score_linux_arm = picker.score_asset("tool-1.0.0-linux-arm64.tar.gz");
+
+        assert!(
+            score_linux > score_windows,
+            "Linux should score higher than Windows"
+        );
+        assert!(
+            score_linux > score_linux_arm,
+            "x86_64 should score higher than arm64"
+        );
+    }
+
+    #[test]
+    fn test_archive_preference() {
+        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let assets = vec![
+            "tool-1.0.0-linux-x86_64".to_string(),
+            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+        ];
+
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
+    }
+
+    #[test]
+    fn test_libc_variant_detection() {
+        // Test ripgrep assets with libc variants
+        let ripgrep_assets = vec![
+            "ripgrep-14.1.1-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            "ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz".to_string(),
+            "ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz".to_string(),
+            "ripgrep-14.1.1-aarch64-unknown-linux-musl.tar.gz".to_string(),
+            "ripgrep-14.1.1-x86_64-apple-darwin.tar.gz".to_string(),
+            "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz".to_string(),
+        ];
+
+        // Test Linux x86_64 with gnu (default)
+        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
+        assert_eq!(picked, "ripgrep-14.1.1-x86_64-unknown-linux-gnu.tar.gz");
+
+        // Test Linux aarch64 with gnu (default)
+        let picker = AssetPicker::new("linux".to_string(), "aarch64".to_string());
+        let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
+        assert_eq!(picked, "ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz");
+
+        // Test macOS (should not be affected by libc)
+        let picker = AssetPicker::new("macos".to_string(), "x86_64".to_string());
+        let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
+        assert_eq!(picked, "ripgrep-14.1.1-x86_64-apple-darwin.tar.gz");
+    }
+
+    #[test]
+    fn test_libc_scoring() {
+        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+
+        // Test that gnu variant scores higher than musl when built with gnu
+        let gnu_score = picker.score_asset("ripgrep-14.1.1-x86_64-unknown-linux-gnu.tar.gz");
+        let musl_score = picker.score_asset("ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz");
+
+        assert!(
+            gnu_score > musl_score,
+            "GNU variant should score higher than musl when built with gnu"
+        );
+
+        // Test that non-linux assets are not affected by libc scoring
+        let macos_score = picker.score_asset("ripgrep-14.1.1-x86_64-apple-darwin.tar.gz");
+        assert!(
+            macos_score > 0,
+            "macOS assets should still score positively"
+        );
+    }
+
+    #[test]
+    fn test_ripgrep_real_assets() {
+        // Real ripgrep assets from the example
+        let ripgrep_assets = vec![
+            "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz".to_string(),
+            "ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz".to_string(),
+            "ripgrep-14.1.1-armv7-unknown-linux-gnueabihf.tar.gz".to_string(),
+            "ripgrep-14.1.1-armv7-unknown-linux-musleabi.tar.gz".to_string(),
+            "ripgrep-14.1.1-armv7-unknown-linux-musleabihf.tar.gz".to_string(),
+            "ripgrep-14.1.1-i686-pc-windows-msvc.zip".to_string(),
+            "ripgrep-14.1.1-i686-unknown-linux-gnu.tar.gz".to_string(),
+            "ripgrep-14.1.1-powerpc64-unknown-linux-gnu.tar.gz".to_string(),
+            "ripgrep-14.1.1-s390x-unknown-linux-gnu.tar.gz".to_string(),
+            "ripgrep-14.1.1-x86_64-apple-darwin.tar.gz".to_string(),
+            "ripgrep-14.1.1-x86_64-pc-windows-gnu.zip".to_string(),
+            "ripgrep-14.1.1-x86_64-pc-windows-msvc.zip".to_string(),
+            "ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz".to_string(),
+            "ripgrep_14.1.1-1_amd64.deb".to_string(),
+        ];
+
+        // Test Linux x86_64 - should prefer musl over other variants when only musl is available
+        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
+        assert_eq!(picked, "ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz");
+
+        // Test Linux aarch64 - should prefer gnu over musl
+        let picker = AssetPicker::new("linux".to_string(), "aarch64".to_string());
+        let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
+        assert_eq!(picked, "ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz");
+
+        // Test macOS x86_64 - should not be affected by libc
+        let picker = AssetPicker::new("macos".to_string(), "x86_64".to_string());
+        let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
+        assert_eq!(picked, "ripgrep-14.1.1-x86_64-apple-darwin.tar.gz");
+
+        // Test macOS aarch64 - should not be affected by libc
+        let picker = AssetPicker::new("macos".to_string(), "aarch64".to_string());
+        let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
+        assert_eq!(picked, "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz");
+    }
+}

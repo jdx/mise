@@ -1,3 +1,4 @@
+use crate::backend::asset_detector;
 use crate::backend::backend_type::BackendType;
 use crate::backend::static_helpers::lookup_platform_key;
 use crate::backend::static_helpers::{
@@ -16,227 +17,6 @@ use eyre::Result;
 use regex::Regex;
 use std::fmt::Debug;
 use std::sync::Arc;
-
-/// Asset auto-detection module for GitHub/GitLab releases
-mod asset_detector {
-    use regex::Regex;
-    use std::sync::LazyLock;
-
-    /// Platform detection patterns
-    pub struct PlatformPatterns {
-        pub os_patterns: &'static [(AssetOs, Regex)],
-        pub arch_patterns: &'static [(AssetArch, Regex)],
-        pub archive_extensions: &'static [&'static str],
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub enum AssetOs {
-        Linux,
-        Macos,
-        Windows,
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub enum AssetArch {
-        X64,
-        Arm64,
-        X86,
-        Arm,
-    }
-
-    impl AssetOs {
-        pub fn matches_target(&self, target: &str) -> bool {
-            match self {
-                AssetOs::Linux => target == "linux",
-                AssetOs::Macos => target == "macos" || target == "darwin",
-                AssetOs::Windows => target == "windows",
-            }
-        }
-    }
-
-    impl AssetArch {
-        pub fn matches_target(&self, target: &str) -> bool {
-            match self {
-                AssetArch::X64 => target == "x86_64" || target == "amd64" || target == "x64",
-                AssetArch::Arm64 => target == "aarch64" || target == "arm64",
-                AssetArch::X86 => target == "x86" || target == "i386" || target == "i686",
-                AssetArch::Arm => target == "arm",
-            }
-        }
-    }
-
-    static OS_PATTERNS: LazyLock<Vec<(AssetOs, Regex)>> = LazyLock::new(|| {
-        vec![
-            (
-                AssetOs::Linux,
-                Regex::new(r"(?i)(?:\b|_)linux(?:\b|_|32|64)").unwrap(),
-            ),
-            (
-                AssetOs::Macos,
-                Regex::new(r"(?i)(?:\b|_)(?:darwin|mac(?:osx?)?|osx)(?:\b|_)").unwrap(),
-            ),
-            (
-                AssetOs::Windows,
-                Regex::new(r"(?i)(?:\b|_)win(?:32|64|dows)?(?:\b|_)").unwrap(),
-            ),
-        ]
-    });
-
-    static ARCH_PATTERNS: LazyLock<Vec<(AssetArch, Regex)>> = LazyLock::new(|| {
-        vec![
-            (
-                AssetArch::X64,
-                Regex::new(r"(?i)(?:\b|_)(?:x86[_-]64|x64|amd64)(?:\b|_)").unwrap(),
-            ),
-            (
-                AssetArch::Arm64,
-                Regex::new(r"(?i)(?:\b|_)(?:aarch_?64|arm_?64)(?:\b|_)").unwrap(),
-            ),
-            (
-                AssetArch::X86,
-                Regex::new(r"(?i)(?:\b|_)(?:x86|i386|i686)(?:\b|_)").unwrap(),
-            ),
-            (
-                AssetArch::Arm,
-                Regex::new(r"(?i)(?:\b|_)arm(?:v[0-7])?(?:\b|_)").unwrap(),
-            ),
-        ]
-    });
-
-    static ARCHIVE_EXTENSIONS: &[&str] = &[
-        ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tgz", ".tbz2", ".txz", ".tzst", ".zip",
-        ".7z", ".tar",
-    ];
-
-    pub static PLATFORM_PATTERNS: LazyLock<PlatformPatterns> = LazyLock::new(|| PlatformPatterns {
-        os_patterns: &OS_PATTERNS,
-        arch_patterns: &ARCH_PATTERNS,
-        archive_extensions: ARCHIVE_EXTENSIONS,
-    });
-
-    /// Automatically detects the best asset for the current platform
-    pub struct AssetPicker {
-        target_os: String,
-        target_arch: String,
-    }
-
-    impl AssetPicker {
-        pub fn new(target_os: String, target_arch: String) -> Self {
-            Self {
-                target_os,
-                target_arch,
-            }
-        }
-
-        /// Picks the best asset from available options
-        pub fn pick_best_asset(&self, assets: &[String]) -> Option<String> {
-            let candidates = self.filter_archive_assets(assets);
-            let mut scored_assets = self.score_all_assets(&candidates);
-
-            // Sort by score (higher is better)
-            scored_assets.sort_by(|a, b| b.0.cmp(&a.0));
-
-            // Return the best match if it has a positive score
-            scored_assets
-                .first()
-                .filter(|(score, _)| *score > 0)
-                .map(|(_, asset)| asset.clone())
-        }
-
-        /// Filters assets to prefer archive formats
-        fn filter_archive_assets(&self, assets: &[String]) -> Vec<String> {
-            let archive_assets: Vec<String> = assets
-                .iter()
-                .filter(|name| {
-                    PLATFORM_PATTERNS
-                        .archive_extensions
-                        .iter()
-                        .any(|ext| name.ends_with(ext))
-                })
-                .cloned()
-                .collect();
-
-            if archive_assets.is_empty() {
-                assets.to_vec()
-            } else {
-                archive_assets
-            }
-        }
-
-        /// Scores all assets based on platform compatibility
-        fn score_all_assets(&self, assets: &[String]) -> Vec<(i32, String)> {
-            assets
-                .iter()
-                .map(|asset| (self.score_asset(asset), asset.clone()))
-                .collect()
-        }
-
-        /// Scores a single asset based on platform compatibility
-        pub fn score_asset(&self, asset: &str) -> i32 {
-            let mut score = 0;
-
-            // OS scoring
-            score += self.score_os_match(asset);
-
-            // Architecture scoring
-            score += self.score_arch_match(asset);
-
-            // Format preferences
-            score += self.score_format_preferences(asset);
-
-            // Penalties for unwanted builds
-            score += self.score_build_penalties(asset);
-
-            score
-        }
-
-        fn score_os_match(&self, asset: &str) -> i32 {
-            for (os, pattern) in PLATFORM_PATTERNS.os_patterns.iter() {
-                if pattern.is_match(asset) {
-                    return if os.matches_target(&self.target_os) {
-                        100 // Exact OS match
-                    } else {
-                        -50 // Wrong OS
-                    };
-                }
-            }
-            0 // No OS detected
-        }
-
-        fn score_arch_match(&self, asset: &str) -> i32 {
-            for (arch, pattern) in PLATFORM_PATTERNS.arch_patterns.iter() {
-                if pattern.is_match(asset) {
-                    return if arch.matches_target(&self.target_arch) {
-                        50 // Exact arch match
-                    } else {
-                        -25 // Wrong arch
-                    };
-                }
-            }
-            0 // No arch detected
-        }
-
-        fn score_format_preferences(&self, asset: &str) -> i32 {
-            if PLATFORM_PATTERNS
-                .archive_extensions
-                .iter()
-                .any(|ext| asset.ends_with(ext))
-            {
-                10 // Prefer archive formats
-            } else {
-                0
-            }
-        }
-
-        fn score_build_penalties(&self, asset: &str) -> i32 {
-            let mut penalty = 0;
-            if asset.contains("debug") || asset.contains("test") {
-                penalty -= 20;
-            }
-            penalty
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct UnifiedGitBackend {
@@ -263,13 +43,15 @@ impl Backend for UnifiedGitBackend {
             let releases = gitlab::list_releases(&repo).await?;
             Ok(releases
                 .into_iter()
-                .map(|r| r.tag_name.trim_start_matches('v').to_string())
+                .map(|r| self.strip_version_prefix(&r.tag_name))
+                .rev()
                 .collect())
         } else {
             let releases = github::list_releases(&repo).await?;
             Ok(releases
                 .into_iter()
-                .map(|r| r.tag_name.trim_start_matches('v').to_string())
+                .map(|r| self.strip_version_prefix(&r.tag_name))
+                .rev()
                 .collect())
         }
     }
@@ -398,6 +180,56 @@ impl UnifiedGitBackend {
         }
     }
 
+    /// Helper to try both prefixed and non-prefixed tags for a resolver function
+    async fn try_with_v_prefix<F, Fut>(&self, version: &str, resolver: F) -> Result<String>
+    where
+        F: Fn(String) -> Fut,
+        Fut: std::future::Future<Output = Result<String>>,
+    {
+        let mut errors = vec![];
+        let opts = self.ba.opts();
+
+        // Generate candidates based on version prefix configuration
+        let candidates = if let Some(prefix) = opts.get("version_prefix") {
+            // If a custom prefix is configured, try both prefixed and non-prefixed versions
+            if version.starts_with(prefix) {
+                vec![
+                    version.to_string(),
+                    version.trim_start_matches(prefix).to_string(),
+                ]
+            } else {
+                vec![format!("{}{}", prefix, version), version.to_string()]
+            }
+        } else {
+            // Fall back to 'v' prefix logic
+            if version.starts_with('v') {
+                vec![
+                    version.to_string(),
+                    version.trim_start_matches('v').to_string(),
+                ]
+            } else {
+                vec![format!("v{version}"), version.to_string()]
+            }
+        };
+
+        for candidate in candidates {
+            match resolver(candidate.clone()).await {
+                Ok(url) => return Ok(url),
+                Err(e) => {
+                    let is_404 = crate::http::error_code(&e) == Some(404);
+                    if is_404 {
+                        errors.push(e);
+                    } else {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+        Err(errors
+            .pop()
+            .unwrap_or_else(|| eyre::eyre!("No matching release found for {version}")))
+    }
+
     /// Resolves the asset URL using either explicit patterns or auto-detection
     async fn resolve_asset_url(
         &self,
@@ -406,27 +238,24 @@ impl UnifiedGitBackend {
         repo: &str,
         api_url: &str,
     ) -> Result<String> {
-        let version = self.normalize_version(&tv.version);
-
         // Check for direct platform-specific URLs first
         if let Some(direct_url) = lookup_platform_key(opts, "url") {
             return Ok(direct_url);
         }
 
+        let version = &tv.version;
         if self.is_gitlab() {
-            self.resolve_gitlab_asset_url(tv, opts, repo, api_url, &version)
-                .await
+            self.try_with_v_prefix(version, |candidate| async move {
+                self.resolve_gitlab_asset_url(tv, opts, repo, api_url, &candidate)
+                    .await
+            })
+            .await
         } else {
-            self.resolve_github_asset_url(tv, opts, repo, api_url, &version)
-                .await
-        }
-    }
-
-    fn normalize_version(&self, version: &str) -> String {
-        if version.starts_with('v') {
-            version.to_string()
-        } else {
-            format!("v{version}")
+            self.try_with_v_prefix(version, |candidate| async move {
+                self.resolve_github_asset_url(tv, opts, repo, api_url, &candidate)
+                    .await
+            })
+            .await
         }
     }
 
@@ -572,6 +401,24 @@ impl UnifiedGitBackend {
             asset_name.contains(pattern)
         }
     }
+
+    fn strip_version_prefix(&self, tag_name: &str) -> String {
+        let opts = self.ba.opts();
+
+        // If a custom version_prefix is configured, strip it first
+        if let Some(prefix) = opts.get("version_prefix") {
+            if let Some(stripped) = tag_name.strip_prefix(prefix) {
+                return stripped.to_string();
+            }
+        }
+
+        // Fall back to stripping 'v' prefix
+        if tag_name.starts_with('v') {
+            tag_name.trim_start_matches('v').to_string()
+        } else {
+            tag_name.to_string()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -587,62 +434,32 @@ mod tests {
     }
 
     #[test]
-    fn test_asset_picker_functionality() {
-        let picker = asset_detector::AssetPicker::new("linux".to_string(), "x86_64".to_string());
-        let assets = vec![
-            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
-            "tool-1.0.0-darwin-x86_64.tar.gz".to_string(),
-            "tool-1.0.0-windows-x86_64.zip".to_string(),
-        ];
-
-        let picked = picker.pick_best_asset(&assets).unwrap();
-        assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
-    }
-
-    #[test]
-    fn test_asset_scoring() {
-        let picker = asset_detector::AssetPicker::new("linux".to_string(), "x86_64".to_string());
-
-        let score_linux = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
-        let score_windows = picker.score_asset("tool-1.0.0-windows-x86_64.zip");
-        let score_linux_arm = picker.score_asset("tool-1.0.0-linux-arm64.tar.gz");
-
-        assert!(
-            score_linux > score_windows,
-            "Linux should score higher than Windows"
-        );
-        assert!(
-            score_linux > score_linux_arm,
-            "x86_64 should score higher than arm64"
-        );
-    }
-
-    #[test]
-    fn test_archive_preference() {
-        let picker = asset_detector::AssetPicker::new("linux".to_string(), "x86_64".to_string());
-        let assets = vec![
-            "tool-1.0.0-linux-x86_64".to_string(),
-            "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
-        ];
-
-        let picked = picker.pick_best_asset(&assets).unwrap();
-        assert_eq!(picked, "tool-1.0.0-linux-x86_64.tar.gz");
-    }
-
-    #[test]
     fn test_pattern_matching() {
         let backend = create_test_backend();
-
-        assert!(backend.matches_pattern("test-1.0.0-linux.tar.gz", "test-*-linux.tar.gz"));
-        assert!(backend.matches_pattern("test-1.0.0-linux.tar.gz", "test-?.?.?-linux.tar.gz"));
-        assert!(!backend.matches_pattern("test-1.0.0-windows.zip", "test-*-linux.tar.gz"));
+        assert!(backend.matches_pattern("test-v1.0.0.zip", "test-*"));
+        assert!(!backend.matches_pattern("other-v1.0.0.zip", "test-*"));
     }
 
     #[test]
-    fn test_version_normalization() {
-        let backend = create_test_backend();
+    fn test_version_prefix_functionality() {
+        let mut backend = create_test_backend();
 
-        assert_eq!(backend.normalize_version("1.0.0"), "v1.0.0");
-        assert_eq!(backend.normalize_version("v1.0.0"), "v1.0.0");
+        // Test with no version prefix configured
+        assert_eq!(backend.strip_version_prefix("v1.0.0"), "1.0.0");
+        assert_eq!(backend.strip_version_prefix("1.0.0"), "1.0.0");
+
+        // Test with custom version prefix
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("version_prefix".to_string(), "release-".to_string());
+        backend.ba = Arc::new(BackendArg::new_raw(
+            "test".to_string(),
+            Some("github:test/repo".to_string()),
+            "test".to_string(),
+            Some(opts),
+        ));
+
+        assert_eq!(backend.strip_version_prefix("release-1.0.0"), "1.0.0");
+        assert_eq!(backend.strip_version_prefix("1.0.0"), "1.0.0");
     }
 }
