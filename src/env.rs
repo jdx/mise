@@ -444,37 +444,30 @@ fn prefer_offline(args: &[String]) -> bool {
 fn environment(args: &[String]) -> Vec<String> {
     let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
-    // Don't process --env when running as a shim
+    // Get environment value from args or env vars
     if is_running_as_shim() {
-        // Return environment from env vars only, ignore command line args
-        return var("MISE_ENV")
-            .ok()
-            .or_else(|| var("MISE_PROFILE").ok())
-            .or_else(|| var("MISE_ENVIRONMENT").ok())
-            .unwrap_or_default()
-            .split(',')
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect();
+        // When running as shim, ignore command line args and use env vars only
+        None
+    } else {
+        // Try to get from command line args first
+        args.windows(2)
+            .take_while(|window| !window.iter().any(|a| a == "--"))
+            .find_map(|window| {
+                if arg_defs.contains(&*window[0]) {
+                    Some(window[1].clone())
+                } else {
+                    None
+                }
+            })
     }
-
-    args.windows(2)
-        .take_while(|window| !window.iter().any(|a| a == "--"))
-        .find_map(|window| {
-            if arg_defs.contains(&*window[0]) {
-                Some(window[1].clone())
-            } else {
-                None
-            }
-        })
-        .or_else(|| var("MISE_ENV").ok())
-        .or_else(|| var("MISE_PROFILE").ok())
-        .or_else(|| var("MISE_ENVIRONMENT").ok())
-        .unwrap_or_default()
-        .split(',')
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect()
+    .or_else(|| var("MISE_ENV").ok())
+    .or_else(|| var("MISE_PROFILE").ok())
+    .or_else(|| var("MISE_ENVIRONMENT").ok())
+    .unwrap_or_default()
+    .split(',')
+    .filter(|s| !s.is_empty())
+    .map(String::from)
+    .collect()
 }
 
 fn log_file_level() -> Option<LevelFilter> {
@@ -536,8 +529,6 @@ pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     }
     Ok(())
 }
-
-
 
 /// Returns true if the current process is running as a shim (not direct mise invocation)
 pub fn is_running_as_shim() -> bool {
