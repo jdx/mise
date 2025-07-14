@@ -1,5 +1,16 @@
 # Changelog
 
+## [2025.7.9](https://github.com/jdx/mise/compare/v2025.7.8..v2025.7.9) - 2025-07-14
+
+### 🚀 Features
+
+- **(shim)** prevent mise-specific flags from interfering with shim execution by [@jdx](https://github.com/jdx) in [#5616](https://github.com/jdx/mise/pull/5616)
+- github asset auto-detection by [@jdx](https://github.com/jdx) in [#5622](https://github.com/jdx/mise/pull/5622)
+
+### 🐛 Bug Fixes
+
+- resolve GitHub alias tool name parsing and add platform-specific asset support by [@jdx](https://github.com/jdx) in [#5621](https://github.com/jdx/mise/pull/5621)
+
 ## [2025.7.8](https://github.com/jdx/mise/compare/v2025.7.7..v2025.7.8) - 2025-07-13
 
 ### 🚀 Features
