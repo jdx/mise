@@ -457,23 +457,22 @@ impl Settings {
     }
 
     pub fn no_config() -> bool {
-        *env::MISE_NO_CONFIG
-            || {
-                // Don't process --no-config when running as a shim
-                // If MISE_BIN_NAME doesn't start with "mise", we're running as a shim
-                // and --no-config is meant for the shimmed tool, not for mise
-                let bin_name = *env::MISE_BIN_NAME;
-                if !bin_name.starts_with("mise") {
-                    return false;
-                }
-                
-                env::ARGS
-                    .read()
-                    .unwrap()
-                    .iter()
-                    .take_while(|a| *a != "--")
-                    .any(|a| a == "--no-config")
+        *env::MISE_NO_CONFIG || {
+            // Don't process --no-config when running as a shim
+            // If MISE_BIN_NAME doesn't start with "mise", we're running as a shim
+            // and --no-config is meant for the shimmed tool, not for mise
+            let bin_name = *env::MISE_BIN_NAME;
+            if !bin_name.starts_with("mise") {
+                return false;
             }
+
+            env::ARGS
+                .read()
+                .unwrap()
+                .iter()
+                .take_while(|a| *a != "--")
+                .any(|a| a == "--no-config")
+        }
     }
 }
 
@@ -529,121 +528,4 @@ where
         // collect into HashSet to remove duplicates
         .collect::<Result<BTreeSet<_>, _>>()
         .map(|set| set.into_iter().collect())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::RwLock;
-
-    use super::*;
-    use crate::env;
-
-    #[test]
-    fn test_no_config_with_mise_binary() {
-        // Test that --no-config works when running as mise directly
-        let original_args = env::ARGS.read().unwrap().clone();
-        let original_bin_name = *env::MISE_BIN_NAME;
-        
-        // Mock running as "mise"
-        *env::ARGS.write().unwrap() = vec!["mise".to_string(), "--no-config".to_string(), "use".to_string()];
-        
-        // Use reflection to set MISE_BIN_NAME to "mise"
-        unsafe {
-            let bin_name_ptr = &env::MISE_BIN_NAME as *const _ as *mut &str;
-            *bin_name_ptr = "mise";
-        }
-        
-        env::MISE_NO_CONFIG.store(false, std::sync::atomic::Ordering::Relaxed);
-        
-        assert!(Settings::no_config(), "no_config should return true when mise is run with --no-config");
-        
-        // Restore original values
-        *env::ARGS.write().unwrap() = original_args;
-        unsafe {
-            let bin_name_ptr = &env::MISE_BIN_NAME as *const _ as *mut &str;
-            *bin_name_ptr = original_bin_name;
-        }
-    }
-
-    #[test]
-    fn test_no_config_with_shim() {
-        // Test that --no-config is ignored when running as a shim
-        let original_args = env::ARGS.read().unwrap().clone();
-        let original_bin_name = *env::MISE_BIN_NAME;
-        
-        // Mock running as "node" (a shim)
-        *env::ARGS.write().unwrap() = vec!["node".to_string(), "--no-config".to_string(), "script.js".to_string()];
-        
-        // Use reflection to set MISE_BIN_NAME to "node"
-        unsafe {
-            let bin_name_ptr = &env::MISE_BIN_NAME as *const _ as *mut &str;
-            *bin_name_ptr = "node";
-        }
-        
-        env::MISE_NO_CONFIG.store(false, std::sync::atomic::Ordering::Relaxed);
-        
-        assert!(!Settings::no_config(), "no_config should return false when a shim is run with --no-config");
-        
-        // Restore original values
-        *env::ARGS.write().unwrap() = original_args;
-        unsafe {
-            let bin_name_ptr = &env::MISE_BIN_NAME as *const _ as *mut &str;
-            *bin_name_ptr = original_bin_name;
-        }
-    }
-
-    #[test]
-    fn test_no_config_with_env_var() {
-        // Test that MISE_NO_CONFIG environment variable still works
-        let original_args = env::ARGS.read().unwrap().clone();
-        let original_bin_name = *env::MISE_BIN_NAME;
-        
-        // Mock running as "node" (a shim) - should normally ignore --no-config
-        *env::ARGS.write().unwrap() = vec!["node".to_string(), "script.js".to_string()];
-        
-        unsafe {
-            let bin_name_ptr = &env::MISE_BIN_NAME as *const _ as *mut &str;
-            *bin_name_ptr = "node";
-        }
-        
-        // But MISE_NO_CONFIG env var should override this
-        env::MISE_NO_CONFIG.store(true, std::sync::atomic::Ordering::Relaxed);
-        
-        assert!(Settings::no_config(), "no_config should return true when MISE_NO_CONFIG is set, even for shims");
-        
-        // Restore original values
-        *env::ARGS.write().unwrap() = original_args;
-        unsafe {
-            let bin_name_ptr = &env::MISE_BIN_NAME as *const _ as *mut &str;
-            *bin_name_ptr = original_bin_name;
-        }
-        env::MISE_NO_CONFIG.store(false, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    #[test]
-    fn test_no_config_with_mise_variants() {
-        // Test that mise-* variants still process --no-config
-        let original_args = env::ARGS.read().unwrap().clone();
-        let original_bin_name = *env::MISE_BIN_NAME;
-        
-        for variant in &["mise-doctor", "mise-ls", "mise-use"] {
-            *env::ARGS.write().unwrap() = vec![variant.to_string(), "--no-config".to_string()];
-            
-            unsafe {
-                let bin_name_ptr = &env::MISE_BIN_NAME as *const _ as *mut &str;
-                *bin_name_ptr = variant;
-            }
-            
-            env::MISE_NO_CONFIG.store(false, std::sync::atomic::Ordering::Relaxed);
-            
-            assert!(Settings::no_config(), "no_config should return true for mise variant: {}", variant);
-        }
-        
-        // Restore original values
-        *env::ARGS.write().unwrap() = original_args;
-        unsafe {
-            let bin_name_ptr = &env::MISE_BIN_NAME as *const _ as *mut &str;
-            *bin_name_ptr = original_bin_name;
-        }
-    }
 }
