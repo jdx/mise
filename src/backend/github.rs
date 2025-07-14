@@ -17,6 +17,7 @@ use eyre::Result;
 use regex::Regex;
 use std::fmt::Debug;
 use std::sync::Arc;
+use crate::lockfile::AssetInfo;
 
 #[derive(Debug)]
 pub struct UnifiedGitBackend {
@@ -144,7 +145,8 @@ impl UnifiedGitBackend {
         let file_path = tv.download_path().join(&filename);
 
         // Store the asset URL in the tool version
-        tv.urls.insert(filename.clone(), asset_url.to_string());
+        let asset_info = tv.assets.entry(filename.clone()).or_default();
+        asset_info.url = Some(asset_url.to_string());
 
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(asset_url, &file_path, Some(&ctx.pr))

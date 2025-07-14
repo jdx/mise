@@ -13,6 +13,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, env, file, plugins};
+use crate::lockfile::AssetInfo;
 use async_trait::async_trait;
 use itertools::Itertools;
 use tempfile::tempdir_in;
@@ -119,9 +120,16 @@ impl GoPlugin {
         HTTP.download_file(&*tarball_url, &tarball_path, Some(pr))
             .await?;
 
-        if !settings.go_skip_checksum && !tv.checksums.contains_key(&filename) {
-            let checksum = checksum_handle.await.unwrap()?;
-            tv.checksums.insert(filename, format!("sha256:{checksum}"));
+        if !settings.go_skip_checksum {
+            let asset_info = tv.assets.entry(filename.clone()).or_insert_with(|| AssetInfo {
+                checksum: None,
+                size: None,
+                url: None,
+            });
+            if asset_info.checksum.is_none() {
+                let checksum = checksum_handle.await.unwrap()?;
+                asset_info.checksum = Some(format!("sha256:{checksum}"));
+            }
         }
         Ok(tarball_path)
     }

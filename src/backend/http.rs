@@ -8,6 +8,7 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::lockfile::AssetInfo;
 use crate::toolset::ToolVersion;
 use async_trait::async_trait;
 use eyre::Result;
@@ -55,7 +56,8 @@ impl Backend for HttpBackend {
         let file_path = tv.download_path().join(&filename);
 
         // Store the asset URL in the tool version
-        tv.urls.insert(filename.clone(), url.clone());
+        let asset_info = tv.assets.entry(filename.clone()).or_default();
+        asset_info.url = Some(url.clone());
 
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &file_path, Some(&ctx.pr)).await?;

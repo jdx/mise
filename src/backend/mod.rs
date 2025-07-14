@@ -17,8 +17,9 @@ use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, tool_enabled};
 use crate::runtime_symlinks::is_runtime_symlink;
+use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset, ToolRequest, install_state, is_outdated_version};
+use crate::lockfile::AssetInfo;
 use crate::toolset::outdated_info::OutdatedInfo;
-use crate::toolset::{ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version};
 use crate::ui::progress_report::SingleReport;
 use crate::{
     cache::{CacheManager, CacheManagerBuilder},
@@ -734,7 +735,15 @@ pub trait Backend: Debug + Send + Sync {
         file: &Path,
     ) -> Result<()> {
         let filename = file.file_name().unwrap().to_string_lossy().to_string();
-        if let Some(checksum) = &tv.checksums.get(&filename) {
+        
+        // Get or create asset info for this filename
+        let asset_info = tv.assets.entry(filename.clone()).or_insert_with(|| AssetInfo {
+            checksum: None,
+            size: None,
+            url: None,
+        });
+        
+        if let Some(checksum) = &asset_info.checksum {
             ctx.pr.set_message(format!("checksum {filename}"));
             if let Some((algo, check)) = checksum.split_once(':') {
                 hash::ensure_checksum(file, check, Some(&ctx.pr), algo)?;
@@ -744,14 +753,14 @@ pub trait Backend: Debug + Send + Sync {
         } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr.set_message(format!("generate checksum {filename}"));
             let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
-            tv.checksums.insert(filename.clone(), format!("blake3:{hash}"));
+            asset_info.checksum = Some(format!("blake3:{hash}"));
         }
 
         // Handle size verification and generation
-        if let Some(expected_size) = tv.sizes.get(&filename) {
+        if let Some(expected_size) = asset_info.size {
             ctx.pr.set_message(format!("verify size {filename}"));
             let actual_size = file.metadata()?.len();
-            if actual_size != *expected_size {
+            if actual_size != expected_size {
                 bail!(
                     "Size mismatch for {}: expected {}, got {}",
                     filename,
@@ -762,7 +771,7 @@ pub trait Backend: Debug + Send + Sync {
         } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr.set_message(format!("record size {filename}"));
             let size = file.metadata()?.len();
-            tv.sizes.insert(filename, size);
+            asset_info.size = Some(size);
         }
         Ok(())
     }

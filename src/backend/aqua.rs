@@ -18,6 +18,7 @@ use crate::{
 };
 use crate::{backend::Backend, config::Config};
 use crate::{file, github, minisign};
+use crate::lockfile::AssetInfo;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use eyre::{ContextCompat, Result, bail};
@@ -123,7 +124,12 @@ impl Backend for AquaBackend {
         let filename = url.split('/').next_back().unwrap();
         
         // Store the asset URL in the tool version
-        tv.urls.insert(filename.to_string(), url.clone());
+        let asset_info = tv.assets.entry(filename.to_string()).or_insert_with(|| AssetInfo {
+            checksum: None,
+            size: None,
+            url: None,
+        });
+        asset_info.url = Some(url.clone());
         
         self.download(ctx, &tv, &url, filename).await?;
         self.verify(ctx, &mut tv, &pkg, v, filename).await?;
@@ -356,7 +362,24 @@ impl AquaBackend {
     ) -> Result<()> {
         self.verify_slsa(ctx, tv, pkg, v, filename).await?;
         self.verify_minisign(ctx, tv, pkg, v, filename).await?;
-        if !tv.checksums.contains_key(filename) {
+        
+        // Get download path before mutable borrow
+        let download_path = tv.download_path();
+        
+        // Get or create asset info for this filename
+        let asset_info_entry = tv.assets.entry(filename.to_string());
+        let mut needs_checksum = false;
+        {
+            let asset_info = asset_info_entry.or_insert_with(|| AssetInfo {
+                checksum: None,
+                size: None,
+                url: None,
+            });
+            if asset_info.checksum.is_none() {
+                needs_checksum = true;
+            }
+        }
+        if needs_checksum {
             if let Some(checksum) = &pkg.checksum {
                 if checksum.enabled() {
                     let url = match checksum._type() {
@@ -366,37 +389,28 @@ impl AquaBackend {
                         }
                         AquaChecksumType::Http => checksum.url(pkg, v)?,
                     };
-                    let download_path = tv.download_path();
                     let checksum_path = download_path.join(format!("{filename}.checksum"));
-                    HTTP.download_file(&url, &checksum_path, Some(&ctx.pr))
-                        .await?;
-                    self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
-                        .await?;
+                    HTTP.download_file(&url, &checksum_path, Some(&ctx.pr)).await?;
+                    self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path).await?;
                     let mut checksum_file = file::read_to_string(&checksum_path)?;
-                    if checksum.file_format() == "regexp" {
-                        let pattern = checksum.pattern();
-                        if let Some(file) = &pattern.file {
-                            let re = regex::Regex::new(file.as_str())?;
-                            if let Some(line) = checksum_file.lines().find(|l| {
-                                re.captures(l).is_some_and(|c| c[1].to_string() == filename)
-                            }) {
-                                checksum_file = line.to_string();
-                            } else {
-                                debug!(
-                                    "no line found matching {} in {} for {}",
-                                    file, checksum_file, filename
-                                );
-                            }
-                        }
-                        let re = regex::Regex::new(pattern.checksum.as_str())?;
-                        if let Some(caps) = re.captures(checksum_file.as_str()) {
-                            checksum_file = caps[1].to_string();
-                        } else {
-                            debug!(
-                                "no checksum found matching {} in {}",
-                                pattern.checksum, checksum_file
-                            );
-                        }
+                    if checksum_file.starts_with("-----BEGIN PGP SIGNATURE-----") {
+                        let lines: Vec<&str> = checksum_file.lines().collect();
+                        let mut in_signature = false;
+                        checksum_file = lines
+                            .into_iter()
+                            .filter(|line| {
+                                if line.starts_with("-----BEGIN PGP SIGNATURE-----") {
+                                    in_signature = true;
+                                    false
+                                } else if line.starts_with("-----END PGP SIGNATURE-----") {
+                                    in_signature = false;
+                                    false
+                                } else {
+                                    !in_signature
+                                }
+                            })
+                            .collect::<Vec<&str>>()
+                            .join("\n");
                     }
                     let checksum_str = checksum_file
                         .lines()
@@ -420,8 +434,10 @@ impl AquaBackend {
                         .map(|(c, _)| c)
                         .unwrap_or(checksum_file);
                     let checksum_str = checksum_str.split_whitespace().next().unwrap();
-                    let checksum = format!("{}:{}", checksum.algorithm(), checksum_str);
-                    tv.checksums.insert(filename.to_string(), checksum);
+                    let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
+                    // Now set the checksum after all borrows are done
+                    let asset_info = tv.assets.get_mut(filename).unwrap();
+                    asset_info.checksum = Some(checksum_val);
                 }
             }
         }
