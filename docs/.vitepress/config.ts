@@ -61,6 +61,7 @@ export default withMermaid(
             { text: "Shims", link: "/dev-tools/shims" },
             { text: "Aliases", link: "/dev-tools/aliases" },
             { text: "Registry", link: "/registry" },
+            { text: "mise.lock Lockfile", link: "/dev-tools/mise-lock" },
             {
               text: "Backend Architecture",
               link: "/dev-tools/backend_architecture",
@@ -94,17 +95,16 @@ export default withMermaid(
                 { text: "cargo", link: "/dev-tools/backends/cargo" },
                 { text: "dotnet", link: "/dev-tools/backends/dotnet" },
                 { text: "gem", link: "/dev-tools/backends/gem" },
+                { text: "github", link: "/dev-tools/backends/github" },
+                { text: "gitlab", link: "/dev-tools/backends/gitlab" },
                 { text: "go", link: "/dev-tools/backends/go" },
+                { text: "http", link: "/dev-tools/backends/http" },
                 { text: "npm", link: "/dev-tools/backends/npm" },
                 { text: "pipx", link: "/dev-tools/backends/pipx" },
                 { text: "spm", link: "/dev-tools/backends/spm" },
                 { text: "ubi", link: "/dev-tools/backends/ubi" },
                 { text: "vfox", link: "/dev-tools/backends/vfox" },
               ],
-            },
-            {
-              text: "Plugins",
-              link: "/plugins",
             },
           ],
         },
@@ -126,6 +126,24 @@ export default withMermaid(
             { text: "TOML Tasks", link: "/tasks/toml-tasks" },
             { text: "File Tasks", link: "/tasks/file-tasks" },
             { text: "Task Configuration", link: "/tasks/task-configuration" },
+          ],
+        },
+        {
+          text: "Plugins",
+          items: [
+            { text: "Plugin Overview", link: "/plugins" },
+            { text: "Using Plugins", link: "/plugin-usage" },
+            {
+              text: "Backend Plugin Development",
+              link: "/backend-plugin-development",
+            },
+            {
+              text: "Tool Plugin Development",
+              link: "/tool-plugin-development",
+            },
+            { text: "Plugin Lua Modules", link: "/plugin-lua-modules" },
+            { text: "Plugin Publishing", link: "/plugin-publishing" },
+            { text: "asdf (Legacy) Plugins", link: "/asdf-legacy-plugins" },
           ],
         },
         {

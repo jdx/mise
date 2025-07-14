@@ -158,6 +158,22 @@ pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
 // true if running inside a shim
 pub static __MISE_SHIM: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SHIM"));
 
+// true if the current process is running as a shim (not direct mise invocation)
+pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
+    // When running tests, always treat as direct mise invocation
+    // to avoid interfering with test expectations
+    if cfg!(test) {
+        return false;
+    }
+
+    #[cfg(unix)]
+    let mise_bin = "mise";
+    #[cfg(windows)]
+    let mise_bin = "mise.exe";
+    let bin_name = *MISE_BIN_NAME;
+    bin_name != mise_bin && !bin_name.starts_with("mise-")
+});
+
 #[cfg(test)]
 pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| 80);
 
@@ -444,23 +460,30 @@ fn prefer_offline(args: &[String]) -> bool {
 fn environment(args: &[String]) -> Vec<String> {
     let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
-    args.windows(2)
-        .take_while(|window| !window.iter().any(|a| a == "--"))
-        .find_map(|window| {
-            if arg_defs.contains(&*window[0]) {
-                Some(window[1].clone())
-            } else {
-                None
-            }
-        })
-        .or_else(|| var("MISE_ENV").ok())
-        .or_else(|| var("MISE_PROFILE").ok())
-        .or_else(|| var("MISE_ENVIRONMENT").ok())
-        .unwrap_or_default()
-        .split(',')
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect()
+    // Get environment value from args or env vars
+    if *IS_RUNNING_AS_SHIM {
+        // When running as shim, ignore command line args and use env vars only
+        None
+    } else {
+        // Try to get from command line args first
+        args.windows(2)
+            .take_while(|window| !window.iter().any(|a| a == "--"))
+            .find_map(|window| {
+                if arg_defs.contains(&*window[0]) {
+                    Some(window[1].clone())
+                } else {
+                    None
+                }
+            })
+    }
+    .or_else(|| var("MISE_ENV").ok())
+    .or_else(|| var("MISE_PROFILE").ok())
+    .or_else(|| var("MISE_ENVIRONMENT").ok())
+    .unwrap_or_default()
+    .split(',')
+    .filter(|s| !s.is_empty())
+    .map(String::from)
+    .collect()
 }
 
 fn log_file_level() -> Option<LevelFilter> {
@@ -561,6 +584,11 @@ mod tests {
 
     #[test]
     fn test_token_overwrite() {
+        // Clean up any existing environment variables that might interfere
+        remove_var("MISE_GITHUB_TOKEN");
+        remove_var("GITHUB_TOKEN");
+        remove_var("GITHUB_API_TOKEN");
+
         set_var("MISE_GITHUB_TOKEN", "");
         set_var("GITHUB_TOKEN", "invalid_token");
         assert_eq!(
@@ -575,5 +603,6 @@ mod tests {
         );
         remove_var("MISE_GITHUB_TOKEN");
         remove_var("GITHUB_TOKEN");
+        remove_var("GITHUB_API_TOKEN");
     }
 }

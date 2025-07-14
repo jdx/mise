@@ -243,8 +243,8 @@ impl Backend for UbiBackend {
         } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr
                 .set_message(format!("checksum generate {checksum_key}"));
-            let hash = hash::file_hash_sha256(file, Some(&ctx.pr))?;
-            tv.checksums.insert(checksum_key, format!("sha256:{hash}"));
+            let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
+            tv.checksums.insert(checksum_key, format!("blake3:{hash}"));
         }
         Ok(())
     }
@@ -256,6 +256,7 @@ impl Backend for UbiBackend {
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
         if let Some(bin_path) = opts.get("bin_path") {
+            // bin_path should always point to a directory containing binaries
             Ok(vec![tv.install_path().join(bin_path)])
         } else if opts.get("extract_all").is_some_and(|v| v == "true") {
             Ok(vec![tv.install_path()])

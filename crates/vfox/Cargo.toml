@@ -5,8 +5,8 @@ edition = "2021"
 license = "MIT"
 description = "Interface to vfox plugins"
 documentation = "https://docs.rs/vfox"
-homepage = "https://github.com/jdx/vfox.rs"
-repository = "https://github.com/jdx/vfox.rs"
+homepage = "https://github.com/jdx/mise"
+repository = "https://github.com/jdx/mise"
 include = ["src", "lua", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
 
 [lib]
@@ -22,7 +22,7 @@ homedir = "0.3"
 indexmap = "2"
 itertools = "0.14"
 log = "0.4"
-mlua = { version = "0.10", features = [
+mlua = { version = "0.11.0-beta.3", features = [
   "async",
   "lua51",
   "macros",

@@ -27,7 +27,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ## Default plugin backend
 
-If you'd like to use vfox plugins by default like on Windows, set the following settings:
+If you'd like to use plugins by default like on Windows, set the following settings:
 
 ```sh
 mise settings asdf=false
@@ -63,3 +63,27 @@ vlang          vfox:ahai-code/vfox-vlang
 
 And they will be installed when running commands such as `mise use -g cmake` without needing to
 specify `vfox:cmake`.
+
+## Plugins
+
+In addition to the standard vfox plugins, mise supports modern plugins that can manage multiple tools using the `plugin:tool` format. These plugins are perfect for:
+
+- Installing tools from private repositories
+- Package managers (npm, pip, etc.)
+- Custom tool families
+
+### Example: Plugin Usage
+
+```bash
+# Install a plugin
+mise plugin install my-plugin https://github.com/username/my-plugin
+
+# Use the plugin:tool format
+mise install my-plugin:some-tool@1.0.0
+mise use my-plugin:some-tool@latest
+```
+
+For more information, see:
+
+- [Using Plugins](../../plugin-usage.md) - End-user guide
+- [Plugin Development](../../tool-plugin-development.md) - Developer guide

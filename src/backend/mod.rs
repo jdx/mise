@@ -41,10 +41,13 @@ pub mod cargo;
 pub mod dotnet;
 mod external_plugin_cache;
 pub mod gem;
+pub mod github;
 pub mod go;
+pub mod http;
 pub mod npm;
 pub mod pipx;
 pub mod spm;
+pub mod static_helpers;
 pub mod ubi;
 pub mod vfox;
 
@@ -153,11 +156,18 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Dotnet => Some(Arc::new(dotnet::DotnetBackend::from_arg(ba))),
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
         BackendType::Gem => Some(Arc::new(gem::GemBackend::from_arg(ba))),
+        BackendType::Github => Some(Arc::new(github::UnifiedGitBackend::from_arg(ba))),
+        BackendType::Gitlab => Some(Arc::new(github::UnifiedGitBackend::from_arg(ba))),
         BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
+        BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::Ubi => Some(Arc::new(ubi::UbiBackend::from_arg(ba))),
-        BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba))),
+        BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba, None))),
+        BackendType::VfoxBackend(plugin_name) => Some(Arc::new(vfox::VfoxBackend::from_arg(
+            ba,
+            Some(plugin_name.to_string()),
+        ))),
         BackendType::Unknown => None,
     }
 }
@@ -246,7 +256,7 @@ pub trait Backend: Debug + Send + Sync {
                         }
                     })
                     .collect_vec();
-                if versions.is_empty() {
+                if versions.is_empty() && self.get_type() != BackendType::Http {
                     warn!("No versions found for {id}");
                 }
                 Ok(versions)
@@ -494,6 +504,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> eyre::Result<()> {
         CmdLineRunner::new(&*env::SHELL)
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
+            .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .with_pr(&ctx.pr)
             .arg("-c")
             .arg(script)
@@ -714,8 +725,8 @@ pub trait Backend: Debug + Send + Sync {
             }
         } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr.set_message(format!("generate checksum {filename}"));
-            let hash = hash::file_hash_sha256(file, Some(&ctx.pr))?;
-            tv.checksums.insert(filename, format!("sha256:{hash}"));
+            let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
+            tv.checksums.insert(filename, format!("blake3:{hash}"));
         }
         Ok(())
     }

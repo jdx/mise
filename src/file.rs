@@ -657,16 +657,19 @@ pub enum TarFormat {
     TarZst,
     #[strum(serialize = "zip")]
     Zip,
+    #[strum(serialize = "raw")]
+    Raw,
 }
 
 impl TarFormat {
     pub fn from_ext(ext: &str) -> Self {
         match ext {
-            "xz" => TarFormat::TarXz,
-            "bz2" => TarFormat::TarBz2,
-            "zst" => TarFormat::TarZst,
+            "gz" | "tgz" => TarFormat::TarGz,
+            "xz" | "txz" => TarFormat::TarXz,
+            "bz2" | "tbz2" => TarFormat::TarBz2,
+            "zst" | "tzst" => TarFormat::TarZst,
             "zip" => TarFormat::Zip,
-            _ => TarFormat::TarGz,
+            _ => TarFormat::Raw,
         }
     }
 }
@@ -753,7 +756,8 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
 fn open_tar(format: TarFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
     let f = File::open(archive)?;
     Ok(match format {
-        TarFormat::TarGz => Box::new(GzDecoder::new(f)),
+        // TODO: we probably shouldn't assume raw is tar.gz, but this was to retain existing behavior
+        TarFormat::TarGz | TarFormat::Raw => Box::new(GzDecoder::new(f)),
         TarFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
         TarFormat::TarBz2 => Box::new(bzip2::read::BzDecoder::new(f)),
         TarFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),

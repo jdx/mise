@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -41,48 +41,9 @@ mod tool_request_set;
 mod tool_source;
 mod tool_version;
 mod tool_version_list;
+mod tool_version_options;
 
-#[derive(Debug, Default, Clone, Hash, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-pub struct ToolVersionOptions {
-    pub os: Option<Vec<String>>,
-    pub install_env: BTreeMap<String, String>,
-    #[serde(flatten)]
-    pub opts: BTreeMap<String, String>,
-}
-
-impl ToolVersionOptions {
-    pub fn is_empty(&self) -> bool {
-        self.install_env.is_empty() && self.opts.is_empty()
-    }
-
-    pub fn get(&self, key: &str) -> Option<&String> {
-        self.opts.get(key)
-    }
-
-    pub fn merge(&mut self, other: &BTreeMap<String, String>) {
-        for (key, value) in other {
-            self.opts
-                .entry(key.to_string())
-                .or_insert(value.to_string());
-        }
-    }
-
-    pub fn contains_key(&self, key: &str) -> bool {
-        self.opts.contains_key(key)
-    }
-}
-
-pub fn parse_tool_options(s: &str) -> ToolVersionOptions {
-    let mut tvo = ToolVersionOptions::default();
-    for opt in s.split(',') {
-        let (k, v) = opt.split_once('=').unwrap_or((opt, ""));
-        if k.is_empty() {
-            continue;
-        }
-        tvo.opts.insert(k.to_string(), v.to_string());
-    }
-    tvo
-}
+pub use tool_version_options::{ToolVersionOptions, parse_tool_options};
 
 #[derive(Debug, Clone)]
 pub struct InstallOptions {
@@ -878,42 +839,3 @@ fn get_leaf_dependencies(requests: &[ToolRequest]) -> eyre::Result<Vec<ToolReque
 }
 
 type TVTuple = (Arc<dyn Backend>, ToolVersion);
-
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_eq;
-    use test_log::test;
-
-    use super::ToolVersionOptions;
-    #[test]
-    fn test_tool_version_options() {
-        let t = |input, f| {
-            let opts = super::parse_tool_options(input);
-            assert_eq!(opts, f);
-        };
-        t("", ToolVersionOptions::default());
-        t(
-            "exe=rg",
-            ToolVersionOptions {
-                opts: [("exe".to_string(), "rg".to_string())]
-                    .iter()
-                    .cloned()
-                    .collect(),
-                ..Default::default()
-            },
-        );
-        t(
-            "exe=rg,match=musl",
-            ToolVersionOptions {
-                opts: [
-                    ("exe".to_string(), "rg".to_string()),
-                    ("match".to_string(), "musl".to_string()),
-                ]
-                .iter()
-                .cloned()
-                .collect(),
-                ..Default::default()
-            },
-        );
-    }
-}

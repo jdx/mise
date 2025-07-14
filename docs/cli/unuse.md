@@ -9,7 +9,6 @@ Removes installed tool versions from mise.toml
 By default, this will use the `mise.toml` file that has the tool defined.
 
 In the following order:
-
 - If `--global` is set, it will use the global config file.
 - If `--path` is set, it will use the config file at the given path.
 - If `--env` is set, it will use `mise.<env>.toml`.

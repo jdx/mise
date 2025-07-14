@@ -86,14 +86,14 @@ impl Plugin {
         Ok(ctx)
     }
 
-    pub(crate) async fn exec_async<'a>(&self, chunk: impl AsChunk<'a>) -> Result<()> {
+    pub(crate) async fn exec_async(&self, chunk: impl AsChunk) -> Result<()> {
         self.load()?;
         let chunk = self.lua.load(chunk);
         chunk.exec_async().await?;
         Ok(())
     }
 
-    pub(crate) async fn eval_async<'a, R>(&self, chunk: impl AsChunk<'a>) -> Result<R>
+    pub(crate) async fn eval_async<R>(&self, chunk: impl AsChunk) -> Result<R>
     where
         R: FromLuaMulti,
     {
@@ -103,6 +103,7 @@ impl Plugin {
         Ok(result)
     }
 
+    // Backend plugin methods
     fn load(&self) -> Result<&Metadata> {
         self.metadata.get_or_try_init(|| {
             debug!("Getting metadata for {self}");
@@ -116,6 +117,7 @@ impl Plugin {
             )?;
 
             lua_mod::archiver(&self.lua)?;
+            lua_mod::cmd(&self.lua)?;
             lua_mod::file(&self.lua)?;
             lua_mod::html(&self.lua)?;
             lua_mod::http(&self.lua)?;

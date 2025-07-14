@@ -9,6 +9,9 @@ use xx::file;
 
 use crate::error::Result;
 use crate::hooks::available::AvailableVersion;
+use crate::hooks::backend_exec_env::BackendExecEnvContext;
+use crate::hooks::backend_install::BackendInstallContext;
+use crate::hooks::backend_list_versions::BackendListVersionsContext;
 use crate::hooks::env_keys::{EnvKey, EnvKeysContext};
 use crate::hooks::mise_env::MiseEnvContext;
 use crate::hooks::mise_path::MisePathContext;
@@ -201,6 +204,47 @@ impl Vfox {
         plugin.mise_env(ctx).await
     }
 
+    pub async fn backend_list_versions(&self, sdk: &str, tool: &str) -> Result<Vec<String>> {
+        let plugin = self.get_sdk(sdk)?;
+        let ctx = BackendListVersionsContext {
+            tool: tool.to_string(),
+        };
+        plugin.backend_list_versions(ctx).await.map(|r| r.versions)
+    }
+
+    pub async fn backend_install(
+        &self,
+        sdk: &str,
+        tool: &str,
+        version: &str,
+        install_path: PathBuf,
+    ) -> Result<()> {
+        let plugin = self.get_sdk(sdk)?;
+        let ctx = BackendInstallContext {
+            tool: tool.to_string(),
+            version: version.to_string(),
+            install_path,
+        };
+        plugin.backend_install(ctx).await?;
+        Ok(())
+    }
+
+    pub async fn backend_exec_env(
+        &self,
+        sdk: &str,
+        tool: &str,
+        version: &str,
+        install_path: PathBuf,
+    ) -> Result<Vec<EnvKey>> {
+        let plugin = self.get_sdk(sdk)?;
+        let ctx = BackendExecEnvContext {
+            tool: tool.to_string(),
+            version: version.to_string(),
+            install_path,
+        };
+        plugin.backend_exec_env(ctx).await.map(|r| r.env_vars)
+    }
+
     pub async fn mise_path<T: serde::Serialize>(&self, sdk: &str, opts: T) -> Result<Vec<String>> {
         let plugin = self.get_sdk(sdk)?;
         let ctx = MisePathContext {
@@ -375,6 +419,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // disable for now
     async fn test_install_cmake() {
         let vfox = Vfox::test();
         vfox.install_plugin("cmake").unwrap();

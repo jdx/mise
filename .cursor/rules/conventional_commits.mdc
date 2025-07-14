@@ -1,3 +1,8 @@
+---
+alwaysApply: false
+description: how to write commit and PR titles
+---
+
 ## Conventional Commits (REQUIRED)
 
 All commit messages and PR titles MUST follow conventional commit format:
@@ -11,7 +16,7 @@ All commit messages and PR titles MUST follow conventional commit format:
 - `feat:` - New features
 - `fix:` - Bug fixes  
 - `refactor:` - Code refactoring
-- `doc:` - Documentation
+- `docs:` - Documentation
 - `style:` - Code style/formatting
 - `perf:` - Performance improvements
 - `test:` - Testing changes

@@ -1,5 +1,72 @@
 # Changelog
 
+## [2025.7.8](https://github.com/jdx/mise/compare/v2025.7.7..v2025.7.8) - 2025-07-13
+
+### 🚀 Features
+
+- custom backends through plugins by [@jdx](https://github.com/jdx) in [#5579](https://github.com/jdx/mise/pull/5579)
+- nested tool options by [@jdx](https://github.com/jdx) in [#5614](https://github.com/jdx/mise/pull/5614)
+
+### 🐛 Bug Fixes
+
+- accept platform_ or platforms_ in http/github backends by [@jdx](https://github.com/jdx) in [#5608](https://github.com/jdx/mise/pull/5608)
+
+### 📚 Documentation
+
+- correct toml syntax by [@jdx](https://github.com/jdx) in [#5609](https://github.com/jdx/mise/pull/5609)
+- removed some markdownlint rules by [@jdx](https://github.com/jdx) in [#5615](https://github.com/jdx/mise/pull/5615)
+
+## [2025.7.7](https://github.com/jdx/mise/compare/v2025.7.4..v2025.7.7) - 2025-07-13
+
+### 🚀 Features
+
+- add static backends (Github, GitLab, and HTTP) by [@jdx](https://github.com/jdx) in [#5602](https://github.com/jdx/mise/pull/5602)
+- blake3 support by [@jdx](https://github.com/jdx) in [#5605](https://github.com/jdx/mise/pull/5605)
+
+### 🐛 Bug Fixes
+
+- **(e2e)** simplify test path handling logic by [@jdx](https://github.com/jdx) in [#5600](https://github.com/jdx/mise/pull/5600)
+- skip gh release edit on dry run in release workflow by [@jdx](https://github.com/jdx) in [#5603](https://github.com/jdx/mise/pull/5603)
+
+### 📚 Documentation
+
+- **(cursor)** fix conventional commits rule formatting by [@jdx](https://github.com/jdx) in [#5597](https://github.com/jdx/mise/pull/5597)
+- **(cursor)** add testing rule for mise codebase by [@jdx](https://github.com/jdx) in [#5598](https://github.com/jdx/mise/pull/5598)
+
+### 🧪 Testing
+
+- disable cmake test for now by [@jdx](https://github.com/jdx) in [d521c31](https://github.com/jdx/mise/commit/d521c31eff1675cd18333c5c258b5d41110fc81a)
+
+### 📦️ Dependency Updates
+
+- pin dependencies by [@renovate[bot]](https://github.com/renovate[bot]) in [#5511](https://github.com/jdx/mise/pull/5511)
+
+### Chore
+
+- **(release)** mark a release as draft until assets are added by [@risu729](https://github.com/risu729) in [#5584](https://github.com/jdx/mise/pull/5584)
+- added reverts to git-cliff by [@jdx](https://github.com/jdx) in [#5577](https://github.com/jdx/mise/pull/5577)
+- reduce binary size for linux by [@jdx](https://github.com/jdx) in [#5587](https://github.com/jdx/mise/pull/5587)
+- `cargo check` fixes by [@jdx](https://github.com/jdx) in [#5589](https://github.com/jdx/mise/pull/5589)
+- Merge vfox.rs into jdx/mise monorepo by [@jdx](https://github.com/jdx) in [#5590](https://github.com/jdx/mise/pull/5590)
+- Add cursor rule for conventional commits by [@jdx](https://github.com/jdx) in [#5592](https://github.com/jdx/mise/pull/5592)
+- Create GitHub action for vfox.rs tests by [@jdx](https://github.com/jdx) in [#5593](https://github.com/jdx/mise/pull/5593)
+- tweak paths for test-vfox workflow by [@jdx](https://github.com/jdx) in [0189372](https://github.com/jdx/mise/commit/0189372aadad456cdac459317bb96ae3987cfd15)
+- set workspace resolver by [@jdx](https://github.com/jdx) in [#5606](https://github.com/jdx/mise/pull/5606)
+- add workspace resolver = 3 by [@jdx](https://github.com/jdx) in [304547a](https://github.com/jdx/mise/commit/304547a0b9a324b5d925c45e2841cadc3f6e938b)
+- fix release-plz with workspace by [@jdx](https://github.com/jdx) in [5b3be6e](https://github.com/jdx/mise/commit/5b3be6eb8f06c509964a2b030eccb2f6e006f398)
+- only bump mise version for release-plz by [@jdx](https://github.com/jdx) in [8f14d10](https://github.com/jdx/mise/commit/8f14d1014d217c91c36a96beaad4565a3aaf567e)
+- add cargo-release by [@jdx](https://github.com/jdx) in [f657db5](https://github.com/jdx/mise/commit/f657db512fdb7ea4f58ac98af729ac6495e61100)
+- mise up by [@jdx](https://github.com/jdx) in [4872ae6](https://github.com/jdx/mise/commit/4872ae6b4d63de54de4ac93e72e9a3cd51e20c2e)
+- fix release-plz with workspace by [@jdx](https://github.com/jdx) in [bdb7119](https://github.com/jdx/mise/commit/bdb71196d6930091c68a6198d445fa16e108f75e)
+- set-version by [@jdx](https://github.com/jdx) in [82fcd4f](https://github.com/jdx/mise/commit/82fcd4f22116bb92e1e615d9f1c03723d02aaaba)
+- set-version by [@jdx](https://github.com/jdx) in [54388a4](https://github.com/jdx/mise/commit/54388a419427c664e557aa4ea034e13a2443bb8e)
+- set-version by [@jdx](https://github.com/jdx) in [fe0a0a9](https://github.com/jdx/mise/commit/fe0a0a93b27219bd132b39f1f0b522bed1ad2b51)
+- set-version by [@jdx](https://github.com/jdx) in [d9f24e2](https://github.com/jdx/mise/commit/d9f24e2b45fb7a9f5c2b795b490ba64a8d9eb207)
+- set-version by [@jdx](https://github.com/jdx) in [97f6f4f](https://github.com/jdx/mise/commit/97f6f4febaf03f7c0d6d754701308edeb2287b53)
+- set-version by [@jdx](https://github.com/jdx) in [13296e1](https://github.com/jdx/mise/commit/13296e10947ea5a96768e07bd95d009e95bace32)
+- set-version by [@jdx](https://github.com/jdx) in [587a707](https://github.com/jdx/mise/commit/587a70744c4127f92cfe9381e7e273ac101c4a4f)
+- set-version by [@jdx](https://github.com/jdx) in [1e80d52](https://github.com/jdx/mise/commit/1e80d52144144aaebc804aeef17010980f3a0caf)
+
 ## [2025.7.4](https://github.com/jdx/mise/compare/v2025.7.3..v2025.7.4) - 2025-07-11
 
 ### 🐛 Bug Fixes
