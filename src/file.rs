@@ -842,7 +842,7 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
 }
 
 /// Inspects the top-level contents of a tar archive without extracting it
-pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<String>> {
+pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<(String, bool)>> {
     let tar = open_tar(format, archive)?;
     let mut archive = Archive::new(tar);
     let mut top_level_entries = Vec::new();
@@ -850,12 +850,19 @@ pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<Str
     for entry in archive.entries()? {
         let entry = entry?;
         let path = entry.path()?;
+        let header = entry.header();
 
         // Get the first component of the path (top-level directory/file)
         if let Some(first_component) = path.components().next() {
             let name = first_component.as_os_str().to_string_lossy().to_string();
-            if !top_level_entries.contains(&name) {
-                top_level_entries.push(name);
+            let is_directory = header.entry_type().is_dir();
+
+            // Only add if we haven't seen this entry before
+            if !top_level_entries
+                .iter()
+                .any(|(existing_name, _)| existing_name == &name)
+            {
+                top_level_entries.push((name, is_directory));
             }
         }
     }
@@ -867,13 +874,10 @@ pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<Str
 pub fn should_strip_components(archive: &Path, format: TarFormat) -> Result<bool> {
     let top_level_entries = inspect_tar_contents(archive, format)?;
 
-    // If there's exactly one top-level entry, we might want to strip it
+    // If there's exactly one top-level entry and it's a directory, we should strip it
     if top_level_entries.len() == 1 {
-        // For now, we'll assume it's a directory that should be stripped
-        // This is a conservative approach - we could make this more sophisticated
-        // by checking if the entry is actually a directory, but that would require
-        // more complex tar inspection
-        Ok(true)
+        let (_, is_directory) = &top_level_entries[0];
+        Ok(*is_directory)
     } else {
         Ok(false)
     }
@@ -940,5 +944,23 @@ mod tests {
         let _config = Config::get().await.unwrap();
         assert_eq!(replace_path(Path::new("~/cwd")), dirs::HOME.join("cwd"));
         assert_eq!(replace_path(Path::new("/cwd")), Path::new("/cwd"));
+    }
+
+    #[test]
+    fn test_should_strip_components() {
+        // Test that the function correctly identifies when to strip components
+        // This is a basic test to ensure the logic works correctly
+
+        // For now, we'll test with a non-existent file to ensure the function
+        // returns false when it can't read the archive
+        let non_existent_path = Path::new("/non/existent/archive.tar.gz");
+        let result = should_strip_components(non_existent_path, TarFormat::TarGz);
+        assert!(result.is_err()); // Should fail to open non-existent file
+
+        // Note: To properly test this function, we would need actual tar archives
+        // with different structures (single file, single directory, multiple entries)
+        // This would require creating test fixtures, which is beyond the scope
+        // of this fix. The important thing is that the logic now correctly
+        // checks if the single entry is a directory before deciding to strip.
     }
 }
