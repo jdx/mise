@@ -24,6 +24,7 @@ pub struct ToolVersion {
     pub request: ToolRequest,
     pub version: String,
     pub checksums: BTreeMap<String, String>,
+    pub sizes: BTreeMap<String, u64>,
     pub install_path: Option<PathBuf>,
 }
 
@@ -33,6 +34,7 @@ impl ToolVersion {
             request,
             version,
             checksums: Default::default(),
+            sizes: Default::default(),
             install_path: None,
         }
     }
@@ -47,6 +49,7 @@ impl ToolVersion {
             if let Some(lt) = request.lockfile_resolve(config)? {
                 let mut tv = Self::new(request.clone(), lt.version);
                 tv.checksums = lt.checksums;
+                tv.sizes = lt.sizes;
                 return Ok(tv);
             }
         }
