@@ -1,14 +1,16 @@
 use crate::Result;
-use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
+use crate::backend::{Backend, SearchResult};
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
 use async_trait::async_trait;
+use serde::Deserialize;
 use serde_json::Value;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
@@ -18,6 +20,22 @@ pub struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
     latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NpmRegistryResponse {
+    objects: Vec<NpmRegistryObject>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NpmRegistryObject {
+    package: NpmRegistryObjectPackage,
+}
+
+#[derive(Debug, Deserialize)]
+struct NpmRegistryObjectPackage {
+    name: String,
+    description: String,
 }
 
 const NPM_PROGRAM: &str = if cfg!(windows) { "npm.cmd" } else { "npm" };
@@ -30,6 +48,26 @@ impl Backend for NPMBackend {
 
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    async fn search(&self, query: &str) -> eyre::Result<Vec<SearchResult>> {
+        let response: NpmRegistryResponse = HTTP_FETCH
+            .json(format!(
+                "https://registry.npmjs.com/-/v1/search?text={}&size=10",
+                query
+            ))
+            .await?;
+        let found = response
+            .objects
+            .into_iter()
+            .filter_map(|obj| {
+                Some(SearchResult {
+                    name: format!("npm:{}", obj.package.name),
+                    description: obj.package.description,
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(found)
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {

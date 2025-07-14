@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::LazyLock as Lazy;
 
 use clap::ValueEnum;
@@ -11,6 +12,11 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use itertools::Itertools;
 use xx::regex;
 
+use crate::backend;
+use crate::backend::SearchResult;
+use crate::backend::backend_type::BackendType::Cargo;
+use crate::backend::backend_type::BackendType::Gem;
+use crate::backend::backend_type::BackendType::Npm;
 use crate::registry::RegistryTool;
 use crate::{
     config::Settings,
@@ -56,25 +62,25 @@ pub struct Search {
 impl Search {
     pub async fn run(self) -> Result<()> {
         if self.interactive {
-            self.interactive()?;
+            self.interactive().await?;
         } else {
-            self.display_table()?;
+            self.display_table().await?;
         }
         Ok(())
     }
 
-    fn interactive(&self) -> Result<()> {
-        let tools = self.get_tools();
+    async fn interactive(&self) -> Result<()> {
+        let tools = self.get_tools().await;
         let mut s = Select::new("Tool")
             .description("Search a tool")
             .filtering(true)
             .filterable(true);
         for t in tools.iter() {
-            let short = t.0.as_str();
-            let description = get_description(t.1);
+            let name = &t.name;
+            let description = &t.description;
             s = s.option(
-                DemandOption::new(short)
-                    .label(short)
+                DemandOption::new(name)
+                    .label(name)
                     .description(&description),
             );
         }
@@ -91,11 +97,12 @@ impl Search {
         }
     }
 
-    fn display_table(&self) -> Result<()> {
+    async fn display_table(&self) -> Result<()> {
         let tools = self
             .get_matches()
+            .await
             .into_iter()
-            .map(|(short, description)| vec![short, description])
+            .map(|result| vec![result.name, result.description])
             .collect_vec();
         if tools.is_empty() {
             bail!("tool {} not found in registry", self.name.as_ref().unwrap());
@@ -108,47 +115,99 @@ impl Search {
         table.print()
     }
 
-    fn get_matches(&self) -> Vec<(String, String)> {
+    async fn get_matches(&self) -> Vec<SearchResult> {
         self.get_tools()
+            .await
             .iter()
-            .filter_map(|(short, rt)| {
+            .filter_map(|result| {
                 let name = self.name.as_deref().unwrap_or("");
                 if name.is_empty() {
-                    Some((0, short, rt))
+                    Some((0, result))
                 } else {
                     match self.match_type {
                         MatchType::Equal => {
-                            if *short == name {
-                                Some((0, short, rt))
+                            if result.name == name {
+                                Some((0, result))
                             } else {
                                 None
                             }
                         }
                         MatchType::Contains => {
-                            if short.contains(name) {
-                                Some((0, short, rt))
+                            if result.name.contains(name) {
+                                Some((0, result))
                             } else {
                                 None
                             }
                         }
                         MatchType::Fuzzy => FUZZY_MATCHER
-                            .fuzzy_match(&short.to_lowercase(), name.to_lowercase().as_str())
-                            .map(|score| (score, short, rt)),
+                            .fuzzy_match(&result.name.to_lowercase(), name.to_lowercase().as_str())
+                            .map(|score| (score, result)),
                     }
                 }
             })
-            .sorted_by_key(|(score, _short, _rt)| -1 * *score)
-            .map(|(_score, short, rt)| (short.to_string(), get_description(rt)))
+            .sorted_by_key(|(score, _result)| -1 * *score)
+            .map(|(_score, result)| result.clone())
             .collect()
     }
 
-    fn get_tools(&self) -> Vec<(String, &'static RegistryTool)> {
+    async fn get_tools(&self) -> Vec<SearchResult> {
+        // get tools from registry and backend
+        let registry_tools = self.get_registry_tools().await;
+        let backend_tools = self.get_backend_tools().await;
+        // combine and sort them
+        let mut all_tools = registry_tools;
+        all_tools.extend(backend_tools);
+        all_tools
+            .into_iter()
+            .sorted_by(|a, b| a.name.cmp(&b.name))
+            .collect_vec()
+    }
+
+    async fn get_registry_tools(&self) -> Vec<SearchResult> {
         REGISTRY
             .iter()
             .filter(|(short, _)| filter_enabled(short))
-            .map(|(short, rt)| (short.to_string(), rt))
-            .sorted_by(|(a, _), (b, _)| a.cmp(b))
+            .map(|(short, rt)| SearchResult {
+                name: short.to_string(),
+                description: get_description(rt),
+            })
+            .sorted_by(|a, b| a.cmp(b))
             .collect_vec()
+    }
+
+    async fn get_backend_tools(&self) -> Vec<SearchResult> {
+        let query = self.name.as_deref().unwrap_or("");
+        if query.is_empty() {
+            return vec![];
+        }
+
+        // since backend:list() returns backends from installed state,
+        // we need to ensure we only use each backend type once
+        let backend_list_raw = backend::list();
+        let mut seen = HashSet::new();
+        let backend_list = backend_list_raw
+            .iter()
+            .filter(|b| {
+                let backend_type = b.ba().backend_type();
+                !Settings::get().disable_backends.contains(&b.ba().short)
+                    && matches!(backend_type, Cargo | Npm | Gem)
+                    && seen.insert(backend_type)
+            })
+            .collect_vec();
+        let mut result = Vec::new();
+        for backend in backend_list.iter() {
+            let results = backend.search(query).await;
+            if results.is_err() {
+                trace!(
+                    "Error searching backend {}: {}",
+                    backend.ba(),
+                    results.unwrap_err()
+                );
+                continue;
+            }
+            result.extend(results.unwrap());
+        }
+        result
     }
 }
 

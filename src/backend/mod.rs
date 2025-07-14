@@ -6,6 +6,7 @@ use std::hash::Hash;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::vec;
 use tokio::sync::Mutex as TokioMutex;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
@@ -168,6 +169,12 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SearchResult {
+    pub name: String,
+    pub description: String,
+}
+
 #[async_trait]
 pub trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
@@ -182,6 +189,9 @@ pub trait Backend: Debug + Send + Sync {
     fn ba(&self) -> &Arc<BackendArg>;
     async fn description(&self) -> Option<String> {
         None
+    }
+    async fn search(&self, _query: &str) -> Result<Vec<SearchResult>> {
+        Ok(vec![])
     }
     fn get_plugin_type(&self) -> Option<PluginType> {
         None

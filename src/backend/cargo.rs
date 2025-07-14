@@ -3,12 +3,13 @@ use std::{fmt::Debug, sync::Arc};
 use async_trait::async_trait;
 use color_eyre::Section;
 use eyre::{bail, eyre};
+use serde::Deserialize;
 use serde_json::Deserializer;
 use url::Url;
 
 use crate::Result;
-use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
+use crate::backend::{Backend, SearchResult};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -23,6 +24,17 @@ pub struct CargoBackend {
     ba: Arc<BackendArg>,
 }
 
+#[derive(Debug, Deserialize)]
+struct CargoRegistryResponse {
+    crates: Vec<CargoRegistryCrate>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CargoRegistryCrate {
+    name: String,
+    description: String,
+}
+
 #[async_trait]
 impl Backend for CargoBackend {
     fn get_type(&self) -> BackendType {
@@ -31,6 +43,26 @@ impl Backend for CargoBackend {
 
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    async fn search(&self, query: &str) -> eyre::Result<Vec<SearchResult>> {
+        let response: CargoRegistryResponse = HTTP_FETCH
+            .json(format!(
+                "https://crates.io/api/v1/crates?q={}&per_page=10",
+                query
+            ))
+            .await?;
+        let found = response
+            .crates
+            .into_iter()
+            .filter_map(|c| {
+                Some(SearchResult {
+                    name: format!("cargo:{}", c.name),
+                    description: c.description,
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(found)
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {

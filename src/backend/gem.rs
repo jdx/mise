@@ -1,5 +1,5 @@
-use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
+use crate::backend::{Backend, SearchResult};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
@@ -10,12 +10,19 @@ use crate::toolset::ToolVersion;
 use crate::{Result, config::Config};
 use async_trait::async_trait;
 use indoc::formatdoc;
+use serde::Deserialize;
 use std::{fmt::Debug, sync::Arc};
 use url::Url;
 
 #[derive(Debug)]
 pub struct GemBackend {
     ba: Arc<BackendArg>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GemRegistryObject {
+    name: String,
+    info: String,
 }
 
 #[async_trait]
@@ -26,6 +33,25 @@ impl Backend for GemBackend {
 
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    async fn search(&self, query: &str) -> eyre::Result<Vec<SearchResult>> {
+        let response: Vec<GemRegistryObject> = HTTP_FETCH
+            .json(format!(
+                "https://rubygems.org/api/v1/search.json?query={}",
+                query
+            ))
+            .await?;
+        let found = response
+            .into_iter()
+            .filter_map(|obj| {
+                Some(SearchResult {
+                    name: format!("gem:{}", obj.name),
+                    description: obj.info,
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(found)
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
