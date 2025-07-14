@@ -35,6 +35,7 @@ mod install;
 mod install_into;
 mod latest;
 mod link;
+mod lock;
 mod local;
 mod ls;
 mod ls_remote;
@@ -212,6 +213,7 @@ pub enum Commands {
     InstallInto(install_into::InstallInto),
     Latest(latest::Latest),
     Link(link::Link),
+    Lock(lock::Lock),
     Local(local::Local),
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
@@ -278,6 +280,7 @@ impl Commands {
             Self::InstallInto(cmd) => cmd.run().await,
             Self::Latest(cmd) => cmd.run().await,
             Self::Link(cmd) => cmd.run().await,
+            Self::Lock(cmd) => cmd.run().await,
             Self::Local(cmd) => cmd.run().await,
             Self::Ls(cmd) => cmd.run().await,
             Self::LsRemote(cmd) => cmd.run().await,

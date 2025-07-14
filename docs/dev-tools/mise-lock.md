@@ -86,7 +86,7 @@ Older lockfiles with separate `[tools.name.checksums]` and `[tools.name.sizes]` 
 
 ```sh
 # Create the lockfile
-touch mise.lock
+mise lock
 
 # Install tools (this will populate the lockfile)
 mise install

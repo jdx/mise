@@ -14,7 +14,7 @@ cat <<EOF >mise.toml
 EOF
 
 # Create lockfile
-touch mise.lock
+mise lock
 
 # First install - should fetch URL from GitHub API
 echo "=== First install - fetching URL from GitHub API ==="

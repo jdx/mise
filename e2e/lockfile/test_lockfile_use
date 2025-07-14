@@ -3,7 +3,7 @@
 export MISE_LOCKFILE=1
 export MISE_EXPERIMENTAL=1
 
-touch mise.lock
+mise lock
 assert "mise install tiny@1.0.0"
 assert "mise use tiny@1"
 assert "mise install tiny@1.0.1"

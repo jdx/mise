@@ -37,7 +37,7 @@ assert_contains "mise x -- hello-world" "hello world"
 export MISE_LOCKFILE=1
 export MISE_EXPERIMENTAL=1
 
-touch mise.lock
+mise lock
 cat <<EOF >mise.toml
 [tools]
 "github:jdx/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }

@@ -575,7 +575,7 @@ files next to mise.toml files containing pinned versions. When installing tools,
 The lockfiles are not created automatically. To generate them, run the following (assuming the config file is `mise.toml`):
 
 ```sh
-touch mise.lock && mise install
+mise lock && mise install
 ```
 
 The lockfile is named the same as the config file but with `.lock` instead of `.toml` as the extension, e.g.:

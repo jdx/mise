@@ -207,7 +207,7 @@ If you enable experimental mode, mise will update `mise.lock` with full versions
 These can be updated with [`mise up`](/cli/upgrade.html). You need to manually create the lockfile, then mise will add the tools to it:
 
 ```sh
-touch mise.lock
+mise lock
 mise i
 ```
 

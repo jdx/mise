@@ -7,7 +7,7 @@ export MISE_EXPERIMENTAL=1
 rm -rf mise.lock
 
 # Create an empty lockfile so that the lockfile gets created when tools are installed
-touch mise.lock
+mise lock
 
 # Install a tool via aqua backend that should have URLs
 mise use ripgrep@14.1.1
