@@ -250,21 +250,15 @@ impl Settings {
         }
     }
 
-    /// Check if the current process is running as a shim
-    ///
-    /// Returns true if we're not running as a direct mise invocation,
-    /// meaning we should pass through flags to the underlying tool.
-    fn is_running_as_shim() -> bool {
-        !crate::env::is_direct_mise_invocation()
-    }
+    pub fn add_cli_matches(cli: &Cli) {
+        let mut s = SettingsPartial::empty();
 
-    /// Process raw output flag from command line arguments
-    ///
-    /// This function scans the command line arguments for the `--raw` flag
-    /// and sets the raw output setting if found. It stops processing
-    /// at the first `--` argument to avoid processing arguments meant
-    /// for the underlying tool.
-    fn process_raw_flag(s: &mut SettingsPartial) {
+        // Don't process mise-specific flags when running as a shim
+        if crate::env::is_running_as_shim() {
+            Self::reset(Some(s));
+            return;
+        }
+
         for arg in &*env::ARGS.read().unwrap() {
             if arg == "--" {
                 break;
@@ -274,21 +268,6 @@ impl Settings {
                 break;
             }
         }
-    }
-
-    pub fn add_cli_matches(cli: &Cli) {
-        let mut s = SettingsPartial::empty();
-
-        // Don't process mise-specific flags when running as a shim
-        if Self::is_running_as_shim() {
-            // Only process non-mise-specific flags when running as shim
-            Self::process_raw_flag(&mut s);
-            Self::reset(Some(s));
-            return;
-        }
-
-        // Process all flags when running as mise directly
-        Self::process_raw_flag(&mut s);
 
         if let Some(cd) = &cli.cd {
             s.cd = Some(cd.clone());
@@ -487,15 +466,13 @@ impl Settings {
     }
 
     pub fn no_config() -> bool {
-        *env::MISE_NO_CONFIG || !Self::is_running_as_shim() ||
-        {
-            env::ARGS
-                .read()
-                .unwrap()
-                .iter()
-                .take_while(|a| *a != "--")
-                .any(|a| a == "--no-config")
-        }
+        *env::MISE_NO_CONFIG || crate::env::is_running_as_shim() ||
+        env::ARGS
+            .read()
+            .unwrap()
+            .iter()
+            .take_while(|a| *a != "--")
+            .any(|a| a == "--no-config")
     }
 }
 

@@ -445,7 +445,7 @@ fn environment(args: &[String]) -> Vec<String> {
     let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
     // Don't process --env when running as a shim
-    if !is_direct_mise_invocation() {
+    if is_running_as_shim() {
         // Return environment from env vars only, ignore command line args
         return var("MISE_ENV")
             .ok()
@@ -537,12 +537,14 @@ pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
-/// Returns true if the current process is a direct mise invocation (not a shim)
-pub fn is_direct_mise_invocation() -> bool {
+
+
+/// Returns true if the current process is running as a shim (not direct mise invocation)
+pub fn is_running_as_shim() -> bool {
     // When running tests, always treat as direct mise invocation
     // to avoid interfering with test expectations
     if cfg!(test) {
-        return true;
+        return false;
     }
 
     #[cfg(unix)]
@@ -550,7 +552,7 @@ pub fn is_direct_mise_invocation() -> bool {
     #[cfg(windows)]
     let mise_bin = "mise.exe";
     let bin_name = *MISE_BIN_NAME;
-    bin_name == mise_bin || bin_name.starts_with("mise-")
+    bin_name != mise_bin && !bin_name.starts_with("mise-")
 }
 
 #[cfg(test)]
