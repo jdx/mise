@@ -1,5 +1,16 @@
 # Changelog
 
+## [2025.7.10](https://github.com/jdx/mise/compare/v2025.7.9..v2025.7.10) - 2025-07-14
+
+### 🐛 Bug Fixes
+
+- **(backend)** avoid double untar by [@jdx](https://github.com/jdx) in [#5626](https://github.com/jdx/mise/pull/5626)
+- **(github)** handle missing "v" prefix by [@jdx](https://github.com/jdx) in [#5625](https://github.com/jdx/mise/pull/5625)
+
+### 📚 Documentation
+
+- add asset autodetection documentation to GitHub/GitLab backends by [@jdx](https://github.com/jdx) in [#5623](https://github.com/jdx/mise/pull/5623)
+
 ## [2025.7.9](https://github.com/jdx/mise/compare/v2025.7.8..v2025.7.9) - 2025-07-14
 
 ### 🚀 Features
