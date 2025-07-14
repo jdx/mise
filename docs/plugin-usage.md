@@ -161,7 +161,9 @@ mise use vfox-npm:prettier@latest
 mise exec vfox-npm:prettier -- --check .
 ```
 
-**Note**: This is just an example plugin for testing. mise already has built-in npm support that you should use instead: `mise install npm:prettier@latest`
+::: info
+This is just an example plugin for testing. mise already has built-in npm support that you should use instead: `mise install npm:prettier@latest`
+:::
 
 ## Backend Plugins (Advanced)
 
@@ -186,12 +188,14 @@ Both architectures provide a flexible plugin system that can handle diverse inst
 
 ## Security Considerations
 
+::: danger
 When using plugins, be aware that:
 
 - **Plugins execute arbitrary code** during installation and use
 - **Only install plugins from trusted sources**
 - **Review plugin code** before installation when possible
-- **Use version pinning** to avoid unexpected updates
+- **Use version pinning** to avoid unexpected updates like [`mise.lock`](/dev-tools/mise-lock.md)
+:::
 
 ## Troubleshooting
 

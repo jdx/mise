@@ -86,11 +86,11 @@ setting `MISE_USE_VERSIONS_HOST=0`.
 
 ## Windows problems
 
+::: warning
 Very basic support for windows is currently available, however because Windows can't support asdf
 plugins, they must use core and vfox only—which means only a handful of tools are available on
 Windows.
-
-As of this writing, env var management and task execution are not yet supported on Windows.
+:::
 
 ## mise isn't working when calling from tmux or another shell initialization script
 

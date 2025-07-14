@@ -93,7 +93,7 @@ Different configuration sections merge in different ways:
 # Result: experimental = true, jobs = 4
 ```
 
-:::tip
+::: tip
 Run `mise config` to see what files mise has loaded in order of precedence.
 :::
 

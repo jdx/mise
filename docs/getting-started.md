@@ -115,7 +115,7 @@ mise exec -- node my-script.js
 
 Another useful command is [`mise r|run`](/cli/run.html) which allows you to run a [`mise task`](/tasks/) or a script with the `mise` context.
 
-:::tip
+::: tip
 You can set a shell alias in your shell's rc file like `alias x="mise x --"` to save some keystrokes.
 :::
 
