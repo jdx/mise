@@ -1,6 +1,7 @@
 use crate::config::config_file::toml::deserialize_arr;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
@@ -9,6 +10,7 @@ use std::str::FromStr;
 pub struct TaskDep {
     pub task: String,
     pub args: Vec<String>,
+    pub env: BTreeMap<String, String>,
 }
 
 impl TaskDep {
@@ -20,6 +22,9 @@ impl TaskDep {
         self.task = tera.render_str(&self.task, tera_ctx)?;
         for a in &mut self.args {
             *a = tera.render_str(a, tera_ctx)?;
+        }
+        for (k, v) in &mut self.env {
+            *v = tera.render_str(v, tera_ctx)?;
         }
         if self.args.is_empty() {
             let s = self.task.clone();
@@ -39,6 +44,13 @@ impl Display for TaskDep {
         if !self.args.is_empty() {
             write!(f, " {}", self.args.join(" "))?;
         }
+        if !self.env.is_empty() {
+            write!(f, " (env: {})", 
+                self.env.iter()
+                    .map(|(k, v)| format!("{}={}", k, v))
+                    .collect::<Vec<_>>()
+                    .join(", "))?;
+        }
         Ok(())
     }
 }
@@ -56,29 +68,102 @@ impl FromStr for TaskDep {
         Ok(Self {
             task: s.to_string(),
             args: Default::default(),
+            env: Default::default(),
+        })
+    }
+}
+
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
+
+// Helper struct for deserializing object format
+#[derive(Deserialize)]
+struct TaskDepObject {
+    task: String,
+    #[serde(default, deserialize_with = "deserialize_arr")]
+    args: Vec<String>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+}
+
+struct TaskDepVisitor;
+
+impl<'de> Visitor<'de> for TaskDepVisitor {
+    type Value = TaskDep;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a string, array, or object")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(TaskDep {
+            task: value.to_string(),
+            args: Default::default(),
+            env: Default::default(),
+        })
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut input = Vec::new();
+        while let Some(elem) = seq.next_element::<String>()? {
+            input.push(elem);
+        }
+
+        if input.is_empty() {
+            Err(de::Error::custom("Task name is required"))
+        } else if input.len() == 1 {
+            Ok(TaskDep {
+                task: input[0].clone(),
+                args: Default::default(),
+                env: Default::default(),
+            })
+        } else {
+            Ok(TaskDep {
+                task: input[0].clone(),
+                args: input[1..].to_vec(),
+                env: Default::default(),
+            })
+        }
+    }
+
+    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let obj = TaskDepObject::deserialize(de::value::MapAccessDeserializer::new(map))?;
+        Ok(TaskDep {
+            task: obj.task,
+            args: obj.args,
+            env: obj.env,
         })
     }
 }
 
 impl<'de> Deserialize<'de> for TaskDep {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let input: Vec<String> = deserialize_arr(deserializer)?;
-        if input.is_empty() {
-            Err(serde::de::Error::custom("Task name is required"))
-        } else if input.len() == 1 {
-            Ok(input[0].to_string().into())
-        } else {
-            Ok(Self {
-                task: input[0].clone(),
-                args: input[1..].to_vec(),
-            })
-        }
+        deserializer.deserialize_any(TaskDepVisitor)
     }
 }
 
 impl Serialize for TaskDep {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        if self.args.is_empty() {
+        use serde::ser::SerializeMap;
+        
+        // If we have env vars, always serialize as object
+        if !self.env.is_empty() {
+            let mut map = serializer.serialize_map(Some(3))?;
+            map.serialize_entry("task", &self.task)?;
+            if !self.args.is_empty() {
+                map.serialize_entry("args", &self.args)?;
+            }
+            map.serialize_entry("env", &self.env)?;
+            map.end()
+        } else if self.args.is_empty() {
             serializer.serialize_str(&self.task)
         } else {
             // TODO: it would be possible to track if the user specified a string and if so, continue that format
@@ -113,23 +198,54 @@ mod tests {
         let td = TaskDep {
             task: "task".to_string(),
             args: vec!["arg1".to_string(), "arg2".to_string()],
+            env: Default::default(),
         };
         assert_eq!(td.to_string(), "task arg1 arg2");
+
+        let td = TaskDep {
+            task: "task".to_string(),
+            args: vec![],
+            env: [("VAR".to_string(), "value".to_string())].into_iter().collect(),
+        };
+        assert_eq!(td.to_string(), "task (env: VAR=value)");
+
+        let td = TaskDep {
+            task: "task".to_string(),
+            args: vec!["arg1".to_string()],
+            env: [("VAR".to_string(), "value".to_string())].into_iter().collect(),
+        };
+        assert_eq!(td.to_string(), "task arg1 (env: VAR=value)");
     }
 
     #[test]
     fn test_task_dep_deserialize() {
+        // Test string format
         let td: TaskDep = serde_json::from_str(r#""task""#).unwrap();
         assert_eq!(td.task, "task");
         assert!(td.args.is_empty());
+        assert!(td.env.is_empty());
         assert_eq!(&serde_json::to_string(&td).unwrap(), r#""task""#);
 
+        // Test array format
         let td: TaskDep = serde_json::from_str(r#"["task", "arg1", "arg2"]"#).unwrap();
         assert_eq!(td.task, "task");
         assert_eq!(td.args, vec!["arg1", "arg2"]);
+        assert!(td.env.is_empty());
         assert_eq!(
             &serde_json::to_string(&td).unwrap(),
             r#"["task","arg1","arg2"]"#
         );
+
+        // Test object format with env
+        let td: TaskDep = serde_json::from_str(r#"{"task": "test", "env": {"PROP": "a"}}"#).unwrap();
+        assert_eq!(td.task, "test");
+        assert!(td.args.is_empty());
+        assert_eq!(td.env.get("PROP"), Some(&"a".to_string()));
+
+        // Test object format with args and env
+        let td: TaskDep = serde_json::from_str(r#"{"task": "test", "args": ["arg1"], "env": {"PROP": "b"}}"#).unwrap();
+        assert_eq!(td.task, "test");
+        assert_eq!(td.args, vec!["arg1"]);
+        assert_eq!(td.env.get("PROP"), Some(&"b".to_string()));
     }
 }
