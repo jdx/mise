@@ -2,22 +2,22 @@
 version = "1.7.7"
 backend = "aqua:rhysd/actionlint"
 
-[tools.actionlint.checksums]
-"actionlint_1.7.7_linux_amd64.tar.gz" = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+[tools.actionlint.assets."actionlint_1.7.7_linux_amd64.tar.gz"]
+checksum = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
 
 [tools.bun]
 version = "1.2.18"
 backend = "core:bun"
 
-[tools.bun.checksums]
-"bun-linux-x64-baseline.zip" = "sha256:c7504c216d8729105d1781385665e3ac2c63debdbb5de4efdc12e2d6c4a6cb4a"
+[tools.bun.assets."bun-linux-x64-baseline.zip"]
+checksum = "sha256:c7504c216d8729105d1781385665e3ac2c63debdbb5de4efdc12e2d6c4a6cb4a"
 
 [tools.cargo-binstall]
 version = "1.14.1"
 backend = "aqua:cargo-bins/cargo-binstall"
 
-[tools.cargo-binstall.checksums]
-"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:e1d1231720e6ed497a4b0f8881b08f5df9ce1a938fb3ae6f2444e95eb601fe99"
+[tools.cargo-binstall.assets."cargo-binstall-x86_64-unknown-linux-musl.tgz"]
+checksum = "sha256:e1d1231720e6ed497a4b0f8881b08f5df9ce1a938fb3ae6f2444e95eb601fe99"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.6"
@@ -47,15 +47,15 @@ backend = "cargo:usage-cli"
 version = "2.5.2"
 backend = "aqua:sigstore/cosign"
 
-[tools.cosign.checksums]
-cosign-linux-amd64 = "sha256:bcfeae05557a9f313ee4392d2f335d0ff69ebbfd232019e3736fb04999fe1734"
+[tools.cosign.assets.cosign-linux-amd64]
+checksum = "sha256:bcfeae05557a9f313ee4392d2f335d0ff69ebbfd232019e3736fb04999fe1734"
 
 [tools.hk]
 version = "1.2.1"
 backend = "aqua:jdx/hk"
 
-[tools.hk.checksums]
-"hk-x86_64-unknown-linux-gnu.tar.gz" = "sha256:1cf3749b28958acb2697935bf5566414024a67ad44d53339f16501dfd8f7a72d"
+[tools.hk.assets."hk-x86_64-unknown-linux-gnu.tar.gz"]
+checksum = "sha256:1cf3749b28958acb2697935bf5566414024a67ad44d53339f16501dfd8f7a72d"
 
 [tools.jq]
 version = "1.8.1"
@@ -77,23 +77,25 @@ backend = "pipx:toml-sort"
 version = "0.28.2"
 backend = "aqua:apple/pkl"
 
-[tools.pkl.checksums]
-pkl-linux-amd64 = "sha256:ba8722ba6971f7cb2b8b90fdca76c947a9510a57119baf05263bf4fcf9f9b0ba"
+[tools.pkl.assets.pkl-linux-amd64]
+checksum = "sha256:ba8722ba6971f7cb2b8b90fdca76c947a9510a57119baf05263bf4fcf9f9b0ba"
 
 [tools.pre-commit]
 version = "4.2.0"
 backend = "aqua:pre-commit/pre-commit"
 
-[tools.pre-commit.checksums]
-"pre-commit-4.2.0.pyz" = "sha256:0d4d80fd598dd1f7c268569de49e7c7a692a3de6f7a97cf14ad4e6cce993bbdf"
+[tools.pre-commit.assets."pre-commit-4.2.0.pyz"]
+checksum = "sha256:0d4d80fd598dd1f7c268569de49e7c7a692a3de6f7a97cf14ad4e6cce993bbdf"
 
 [tools.ripgrep]
 version = "14.1.1"
 backend = "aqua:BurntSushi/ripgrep"
 
-[tools.ripgrep.checksums]
-"ripgrep-14.1.1-aarch64-apple-darwin.tar.gz" = "sha256:24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be"
-"ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz" = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
+[tools.ripgrep.assets."ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"]
+checksum = "sha256:24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be"
+
+[tools.ripgrep.assets."ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"]
+checksum = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
 
 [tools.shellcheck]
 version = "0.10.0"
@@ -107,19 +109,19 @@ backend = "asdf:shfmt"
 version = "2.7.1"
 backend = "ubi:slsa-framework/slsa-verifier"
 
-[tools.slsa-verifier.checksums]
-slsa-verifier-linux-x86_64 = "sha256:946dbec729094195e88ef78e1734324a27869f03e2c6bd2f61cbc06bd5350339"
+[tools.slsa-verifier.assets.slsa-verifier-linux-x86_64]
+checksum = "sha256:946dbec729094195e88ef78e1734324a27869f03e2c6bd2f61cbc06bd5350339"
 
 [tools.taplo]
 version = "0.10.0"
 backend = "aqua:tamasfe/taplo"
 
-[tools.taplo.checksums]
-"taplo-linux-x86_64.gz" = "sha256:8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156"
+[tools.taplo.assets."taplo-linux-x86_64.gz"]
+checksum = "sha256:8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156"
 
 [tools.wait-for-gh-rate-limit]
 version = "1.0.0"
 backend = "ubi:jdx/wait-for-gh-rate-limit"
 
-[tools.wait-for-gh-rate-limit.checksums]
-wait-for-gh-rate-limit-linux-x86_64 = "sha256:fd8bb89c91936cf530e1da2699810c9a3793922315611b6938c89c9364ee2e76"
+[tools.wait-for-gh-rate-limit.assets.wait-for-gh-rate-limit-linux-x86_64]
+checksum = "sha256:fd8bb89c91936cf530e1da2699810c9a3793922315611b6938c89c9364ee2e76"
