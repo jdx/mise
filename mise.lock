@@ -2,13 +2,27 @@
 version = "1.7.7"
 backend = "aqua:rhysd/actionlint"
 
+[tools.actionlint.assets."actionlint_1.7.7_linux_amd64.tar.gz"]
+checksum = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+size = 2080472
+url = "https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz"
+
 [tools.bun]
 version = "1.2.18"
 backend = "core:bun"
 
+[tools.bun.assets."bun-linux-x64-baseline.zip"]
+checksum = "blake3:c85190159152314ed8cac74c30d8355c9b71f18dcd40ffa214e742038bf6a897"
+size = 38291778
+
 [tools.cargo-binstall]
 version = "1.14.1"
 backend = "aqua:cargo-bins/cargo-binstall"
+
+[tools.cargo-binstall.assets."cargo-binstall-x86_64-unknown-linux-musl.tgz"]
+checksum = "blake3:f7e2fda3111092730a03feec1fabf436a89ddab1ffa8ae51b953f3183c8617e3"
+size = 6821106
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.14.1/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.6"
@@ -38,16 +52,28 @@ backend = "cargo:usage-cli"
 version = "2.5.2"
 backend = "aqua:sigstore/cosign"
 
+[tools.cosign.assets.cosign-linux-amd64]
+checksum = "sha256:bcfeae05557a9f313ee4392d2f335d0ff69ebbfd232019e3736fb04999fe1734"
+size = 132561156
+url = "https://github.com/sigstore/cosign/releases/download/v2.5.2/cosign-linux-amd64"
+
 [tools.gh]
 version = "2.62.0"
 backend = "aqua:cli/cli"
 
-[tools.gh.checksums]
-"gh_2.62.0_linux_amd64.tar.gz" = "sha256:41c8b0698ad3003cb5c44bde672a1ffd5f818595abd80162fbf8cc999418446a"
+[tools.gh.assets."gh_2.62.0_linux_amd64.tar.gz"]
+checksum = "sha256:41c8b0698ad3003cb5c44bde672a1ffd5f818595abd80162fbf8cc999418446a"
+size = 13065800
+url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz"
 
 [tools.hk]
 version = "1.2.1"
 backend = "aqua:jdx/hk"
+
+[tools.hk.assets."hk-x86_64-unknown-linux-gnu.tar.gz"]
+checksum = "blake3:92cba0567a4b0f022dba17f3cc578dd5993e49f00cf8a7fcca9af64e3c68faf2"
+size = 6194278
+url = "https://github.com/jdx/hk/releases/download/v1.2.1/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [tools.jq]
 version = "1.8.1"
@@ -69,13 +95,28 @@ backend = "pipx:toml-sort"
 version = "0.28.2"
 backend = "aqua:apple/pkl"
 
+[tools.pkl.assets.pkl-linux-amd64]
+checksum = "blake3:307c4fe33a13f5293dce699b1544d292537caa2c1b711f984f7d3ecc9e729ed2"
+size = 101155760
+url = "https://github.com/apple/pkl/releases/download/0.28.2/pkl-linux-amd64"
+
 [tools.pre-commit]
 version = "4.2.0"
 backend = "aqua:pre-commit/pre-commit"
 
+[tools.pre-commit.assets."pre-commit-4.2.0.pyz"]
+checksum = "sha256:0d4d80fd598dd1f7c268569de49e7c7a692a3de6f7a97cf14ad4e6cce993bbdf"
+size = 6544274
+url = "https://github.com/pre-commit/pre-commit/releases/download/v4.2.0/pre-commit-4.2.0.pyz"
+
 [tools.ripgrep]
 version = "14.1.1"
 backend = "aqua:BurntSushi/ripgrep"
+
+[tools.ripgrep.assets."ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"]
+checksum = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
+size = 2566310
+url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.shellcheck]
 version = "0.10.0"
@@ -89,9 +130,17 @@ backend = "asdf:shfmt"
 version = "2.7.1"
 backend = "ubi:slsa-framework/slsa-verifier"
 
+[tools.slsa-verifier.assets.slsa-verifier-linux-x86_64]
+checksum = "blake3:6b7c72ece3e3cbd9db12dd8e261e594bb24721db140692d4f5cbdf508df45156"
+
 [tools.taplo]
 version = "0.10.0"
 backend = "aqua:tamasfe/taplo"
+
+[tools.taplo.assets."taplo-linux-x86_64.gz"]
+checksum = "blake3:4871fab0e60275a1eb46e7190726e144f56c9a9527f59b0d1da5a042baead8e2"
+size = 5116068
+url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz"
 
 [tools.wait-for-gh-rate-limit]
 version = "1.0.0"
