@@ -645,6 +645,8 @@ pub enum TarFormat {
     TarZst,
     #[strum(serialize = "zip")]
     Zip,
+    #[strum(serialize = "7z")]
+    SevenZip,
     #[strum(serialize = "raw")]
     Raw,
 }
@@ -657,6 +659,7 @@ impl TarFormat {
             "bz2" | "tbz2" => TarFormat::TarBz2,
             "zst" | "tzst" => TarFormat::TarZst,
             "zip" => TarFormat::Zip,
+            "7z" => TarFormat::SevenZip,
             _ => TarFormat::Raw,
         }
     }
@@ -684,7 +687,17 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
                 strip_components: opts.strip_components,
             },
         );
+    } else if format == TarFormat::SevenZip {
+        #[cfg(windows)]
+        return un7z(
+            archive,
+            dest,
+            &SevenZipOptions {
+                strip_components: opts.strip_components,
+            },
+        );
     }
+
     debug!("tar -xf {} -C {}", archive.display(), dest.display());
     if let Some(pr) = &opts.pr {
         pr.set_message(format!(
@@ -738,6 +751,7 @@ fn open_tar(format: TarFormat, archive: &Path) -> Result<Box<dyn std::io::Read>>
         TarFormat::TarBz2 => Box::new(BzDecoder::new(f)),
         TarFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
         TarFormat::Zip => bail!("zip format not supported"),
+        TarFormat::SevenZip => bail!("7z format not supported"),
         TarFormat::Auto => match archive.extension().and_then(|s| s.to_str()) {
             Some("xz") => open_tar(TarFormat::TarXz, archive)?,
             Some("bz2") => open_tar(TarFormat::TarBz2, archive)?,
@@ -824,10 +838,22 @@ pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
     Ok(())
 }
 
+#[derive(Default)]
+pub struct SevenZipOptions {
+    pub strip_components: usize,
+}
+
 #[cfg(windows)]
-pub fn un7z(archive: &Path, dest: &Path) -> Result<()> {
+pub fn un7z(archive: &Path, dest: &Path, opts: &SevenZipOptions) -> Result<()> {
     sevenz_rust::decompress_file(archive, dest)
-        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))
+        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
+
+    strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+        format!(
+            "failed to strip path components from 7z archive: {}",
+            display_path(archive)
+        )
+    })
 }
 
 pub fn split_file_name(path: &Path) -> (String, String) {
