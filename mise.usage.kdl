@@ -345,7 +345,7 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
         after_long_help "Examples:\n\n    $ mise generate task-docs\n"
         flag "-I --index" help="write only an index of tasks, intended for use with `--multi`"
         flag "-i --inject" help="inserts the documentation into an existing file" {
-            long_help "inserts the documentation into an existing file\n\nThis will look for a special comment, <!-- mise-tasks -->, and replace it with the generated documentation.\nIt will replace everything between the comment and the next comment, <!-- /mise-tasks --> so it can be\nrun multiple times on the same file to update the documentation."
+            long_help "inserts the documentation into an existing file\n\nThis will look for a special comment, `<!-- mise-tasks -->`, and replace it with the generated documentation.\nIt will replace everything between the comment and the next comment, `<!-- /mise-tasks -->` so it can be\nrun multiple times on the same file to update the documentation."
         }
         flag "-m --multi" help="render each task as a separate document, requires `--output` to be a directory"
         flag "-o --output" help="writes the generated docs to a file/directory" {

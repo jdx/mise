@@ -75,9 +75,9 @@ impl TaskDocs {
                     let task_placeholder_end = "<!-- /mise-tasks -->";
                     let start = contents.find(task_placeholder_start).unwrap_or(0);
                     let end = contents[start..]
-                            .find(task_placeholder_end)
-                            .map(|e| e + start)
-                            .unwrap_or(contents.len());
+                        .find(task_placeholder_end)
+                        .map(|e| e + start)
+                        .unwrap_or(contents.len());
                     contents.replace_range((start + task_placeholder_start.len())..end, &doc);
                     file::write(output, &contents)?;
                 } else {
