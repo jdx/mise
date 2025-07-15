@@ -30,9 +30,19 @@ EOF
 
 mise generate task-docs --inject --output task_docs.md
 
-assert_contains "cat task_docs.md" 'hello world
+assert "cat task_docs.md" 'hello world
 
 <!-- mise-tasks -->
+## `another_task`
+
+- **Usage**: `another_task`
+- **Aliases**: `alias1`, `alias2`
+
+## `test`
+
+- **Usage**: `test`
+
+This is a test task
 <!-- /mise-tasks -->
 
 hello world'
