@@ -263,7 +263,12 @@ impl AquaBackend {
             }
             AquaPackageType::Http => {
                 let url = pkg.url(v)?;
-                HTTP.head(&url).await?;
+                // Gitea doesn't support HEAD requests for attachments, so use GET instead
+                if url.contains("gitea.com") {
+                    HTTP.get_async(&url).await?;
+                } else {
+                    HTTP.head(&url).await?;
+                }
                 Ok(url)
             }
             AquaPackageType::Cargo => {
