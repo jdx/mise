@@ -13,6 +13,7 @@ test aqua:crate-ci/typos@1.27.3 "typos --version" "typos-cli 1.27.3"
 test aqua:biomejs/biome@2.0.0 "biome --version" "Version: 2.0.0"
 test aqua:biomejs/biome@@biomejs/biome@2.0.0 "biome --version" "Version: 2.0.0"
 test aqua:gruntwork-io/terragrunt@0.77.22 "terragrunt --version" "terragrunt version v0.77.22"
+test aqua:gitea.com/gitea/tea@0.9.2 "tea --version" "Version: 0.9.2"
 
 assert_contains "MISE_USE_VERSIONS_HOST=0 mise ls-remote aqua:sharkdp/hyperfine" "1.9.0
 1.10.0"
