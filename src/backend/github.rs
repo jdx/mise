@@ -39,15 +39,17 @@ impl Backend for UnifiedGitBackend {
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let repo = self.ba.tool_name();
+        let opts = self.ba.opts();
+        let api_url = self.get_api_url(&opts);
         if self.is_gitlab() {
-            let releases = gitlab::list_releases(&repo).await?;
+            let releases = gitlab::list_releases_from_url(api_url.as_str(), &repo).await?;
             Ok(releases
                 .into_iter()
                 .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
                 .collect())
         } else {
-            let releases = github::list_releases(&repo).await?;
+            let releases = github::list_releases_from_url(api_url.as_str(), &repo).await?;
             Ok(releases
                 .into_iter()
                 .map(|r| self.strip_version_prefix(&r.tag_name))
@@ -142,9 +144,14 @@ impl UnifiedGitBackend {
     ) -> Result<()> {
         let filename = get_filename_from_url(asset_url);
         let file_path = tv.download_path().join(&filename);
+        let headers = if self.is_gitlab() {
+            gitlab::get_headers(asset_url)
+        } else {
+            github::get_headers(asset_url)
+        };
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(asset_url, &file_path, Some(&ctx.pr))
+        HTTP.download_file_with_headers(asset_url, &file_path, &headers, Some(&ctx.pr))
             .await?;
 
         // Verify and install
