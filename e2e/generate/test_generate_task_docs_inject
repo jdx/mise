@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 
 cat <<EOF >mise.toml
 [tasks.test]
