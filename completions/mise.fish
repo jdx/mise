@@ -11,7 +11,7 @@ if ! set -q _usage_spec_mise_2025_7_10
 end
 set -l tokens
 if commandline -x >/dev/null 2>&1
-    complete -xc mise -a '(usage complete-word --shell fish -s "$_usage_spec_mise_2025_7_10" -- (commandline -xpc) (commandline -t))'
+    complete -xc mise -a '(command usage complete-word --shell fish -s "$_usage_spec_mise_2025_7_10" -- (commandline -xpc) (commandline -t))'
 else
-    complete -xc mise -a '(usage complete-word --shell fish -s "$_usage_spec_mise_2025_7_10" -- (commandline -opc) (commandline -t))'
+    complete -xc mise -a '(command usage complete-word --shell fish -s "$_usage_spec_mise_2025_7_10" -- (commandline -opc) (commandline -t))'
 end
