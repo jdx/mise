@@ -68,8 +68,8 @@ impl TaskDocs {
                     doc.push_str(&task);
                     doc.push_str("\n\n");
                 }
-                doc = format!("\n{}\n", doc.trim());
                 if self.inject {
+                    doc = format!("\n{}\n", doc.trim());
                     let mut contents = file::read_to_string(output)?;
                     let task_placeholder_start = "<!-- mise-tasks -->";
                     let task_placeholder_end = "<!-- /mise-tasks -->";
@@ -81,6 +81,7 @@ impl TaskDocs {
                     contents.replace_range((start + task_placeholder_start.len())..end, &doc);
                     file::write(output, &contents)?;
                 } else {
+                    doc = format!("{}\n", doc.trim());
                     file::write(output, &doc)?;
                 }
             }
