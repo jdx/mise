@@ -965,21 +965,16 @@ pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     Ok(top_level_components.into_iter().collect())
 }
 
+#[cfg(not(windows))]
+pub fn inspect_7z_contents(_archive: &Path) -> Result<Vec<(String, bool)>> {
+    unimplemented!("7z format not supported on this platform")
+}
+
 /// Determines if strip_components=1 should be applied based on archive structure
 pub fn should_strip_components(archive: &Path, format: TarFormat) -> Result<bool> {
     let top_level_entries = match format {
         TarFormat::Zip => inspect_zip_contents(archive)?,
-        TarFormat::SevenZip => {
-            #[cfg(windows)]
-            {
-                inspect_7z_contents(archive)?
-            }
-
-            #[cfg(not(windows))]
-            {
-                bail!("7z format not supported on this platform");
-            }
-        }
+        TarFormat::SevenZip => inspect_7z_contents(archive)?,
         _ => inspect_tar_contents(archive, format)?,
     };
 
