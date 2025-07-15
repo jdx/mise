@@ -6,7 +6,7 @@ run = "echo 'running test task'"
 description = "This is a test task"
 [tasks.another_task]
 run = "echo 'running another task'"
-aliases = ["alias1", "alias2"]
+alias = ["alias1", "alias2"]
 EOF
 
 cat <<EOF >task_docs.md
