@@ -645,6 +645,8 @@ pub enum TarFormat {
     TarZst,
     #[strum(serialize = "zip")]
     Zip,
+    #[strum(serialize = "7z")]
+    SevenZip,
     #[strum(serialize = "raw")]
     Raw,
 }
@@ -657,6 +659,7 @@ impl TarFormat {
             "bz2" | "tbz2" => TarFormat::TarBz2,
             "zst" | "tzst" => TarFormat::TarZst,
             "zip" => TarFormat::Zip,
+            "7z" => TarFormat::SevenZip,
             _ => TarFormat::Raw,
         }
     }
@@ -684,7 +687,17 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
                 strip_components: opts.strip_components,
             },
         );
+    } else if format == TarFormat::SevenZip {
+        #[cfg(windows)]
+        return un7z(
+            archive,
+            dest,
+            &SevenZipOptions {
+                strip_components: opts.strip_components,
+            },
+        );
     }
+
     debug!("tar -xf {} -C {}", archive.display(), dest.display());
     if let Some(pr) = &opts.pr {
         pr.set_message(format!(
@@ -738,6 +751,7 @@ fn open_tar(format: TarFormat, archive: &Path) -> Result<Box<dyn std::io::Read>>
         TarFormat::TarBz2 => Box::new(BzDecoder::new(f)),
         TarFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
         TarFormat::Zip => bail!("zip format not supported"),
+        TarFormat::SevenZip => bail!("7z format not supported"),
         TarFormat::Auto => match archive.extension().and_then(|s| s.to_str()) {
             Some("xz") => open_tar(TarFormat::TarXz, archive)?,
             Some("bz2") => open_tar(TarFormat::TarBz2, archive)?,
@@ -825,9 +839,22 @@ pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
-pub fn un7z(archive: &Path, dest: &Path) -> Result<()> {
+#[derive(Default)]
+pub struct SevenZipOptions {
+    pub strip_components: usize,
+}
+
+#[cfg(windows)]
+pub fn un7z(archive: &Path, dest: &Path, opts: &SevenZipOptions) -> Result<()> {
     sevenz_rust::decompress_file(archive, dest)
-        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))
+        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
+
+    strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+        format!(
+            "failed to strip path components from 7z archive: {}",
+            display_path(archive)
+        )
+    })
 }
 
 pub fn split_file_name(path: &Path) -> (String, String) {
@@ -917,10 +944,37 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     Ok(top_level_components.into_iter().collect())
 }
 
+/// Adapted from inspect_tar_contents for 7z archives
+#[cfg(windows)]
+pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
+    let sevenz = sevenz_rust::SevenZReader::open(archive, sevenz_rust::Password::empty())?;
+    let mut top_level_components = std::collections::HashMap::new();
+
+    for file in &sevenz.archive().files {
+        let path = PathBuf::from(file.name());
+
+        if let Some(first_component) = path.components().next() {
+            let name = first_component.as_os_str().to_string_lossy().to_string();
+            let is_directory = file.is_directory() || path.components().count() > 1;
+
+            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            *existing = *existing || is_directory;
+        }
+    }
+
+    Ok(top_level_components.into_iter().collect())
+}
+
+#[cfg(not(windows))]
+pub fn inspect_7z_contents(_archive: &Path) -> Result<Vec<(String, bool)>> {
+    unimplemented!("7z format not supported on this platform")
+}
+
 /// Determines if strip_components=1 should be applied based on archive structure
 pub fn should_strip_components(archive: &Path, format: TarFormat) -> Result<bool> {
     let top_level_entries = match format {
         TarFormat::Zip => inspect_zip_contents(archive)?,
+        TarFormat::SevenZip => inspect_7z_contents(archive)?,
         _ => inspect_tar_contents(archive, format)?,
     };
 
