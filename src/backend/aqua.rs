@@ -263,8 +263,7 @@ impl AquaBackend {
             }
             AquaPackageType::Http => {
                 let url = pkg.url(v)?;
-                // should use HEAD, but some servers do not support it (e.g. Gitea Attachments)
-                HTTP.get_async(&url).await?;
+                HTTP.head(&url).await?;
                 Ok(url)
             }
             AquaPackageType::Cargo => {
