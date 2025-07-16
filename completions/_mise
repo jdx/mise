@@ -15,7 +15,7 @@ _mise() {
   typeset -A opt_args
   local curcontext="$curcontext" spec cache_policy
 
-  if ! command -v usage &> /dev/null; then
+  if ! command usage &> /dev/null; then
       echo >&2
       echo "Error: usage CLI not found. This is required for completions to work in mise." >&2
       echo "See https://usage.jdx.dev for more information." >&2
@@ -34,7 +34,7 @@ _mise() {
     _store_cache _usage_spec_mise_2025_7_11 spec
   fi
 
-  _arguments "*: :(($(usage complete-word --shell zsh -s "$spec" -- "${words[@]}" )))"
+  _arguments "*: :(($(command usage complete-word --shell zsh -s "$spec" -- "${words[@]}" )))"
   return 0
 }
 
