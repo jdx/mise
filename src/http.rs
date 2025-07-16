@@ -207,9 +207,22 @@ impl Client {
         pr: Option<&Box<dyn SingleReport>>,
     ) -> Result<()> {
         let url = url.into_url()?;
+        let headers = github_headers(&url);
+        self.download_file_with_headers(url, path, &headers, pr)
+            .await
+    }
+
+    pub async fn download_file_with_headers<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        headers: &HeaderMap,
+        pr: Option<&Box<dyn SingleReport>>,
+    ) -> Result<()> {
+        let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
 
-        let mut resp = self.get_async(url).await?;
+        let mut resp = self.get_async_with_headers(url, headers).await?;
         if let Some(length) = resp.content_length() {
             if let Some(pr) = pr {
                 pr.set_length(length);
