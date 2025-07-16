@@ -1,5 +1,35 @@
 # Changelog
 
+## [2025.7.11](https://github.com/jdx/mise/compare/v2025.7.10..v2025.7.11) - 2025-07-16
+
+### 🚀 Features
+
+- support extracting 7z archives for static backends by [@yjoer](https://github.com/yjoer) in [#5632](https://github.com/jdx/mise/pull/5632)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** improve warnings for packages without repo_owner and repo_name by [@risu729](https://github.com/risu729) in [#5644](https://github.com/jdx/mise/pull/5644)
+- **(generate)** fix task docs inject by [@risu729](https://github.com/risu729) in [#5651](https://github.com/jdx/mise/pull/5651)
+- **(static)** support `strip_components` for zip files by [@risu729](https://github.com/risu729) in [#5631](https://github.com/jdx/mise/pull/5631)
+- private forges by [@hamnis](https://github.com/hamnis) in [#5650](https://github.com/jdx/mise/pull/5650)
+
+### 🚜 Refactor
+
+- **(aqua)** move no_aset and error_message checks into validate by [@risu729](https://github.com/risu729) in [#5649](https://github.com/jdx/mise/pull/5649)
+
+### 📚 Documentation
+
+- **(vfox)** replace deprecated asdf and vfox settings with disable_backends by [@risu729](https://github.com/risu729) in [#5652](https://github.com/jdx/mise/pull/5652)
+- tweak static backend docs by [@jdx](https://github.com/jdx) in [#5627](https://github.com/jdx/mise/pull/5627)
+
+### 🧪 Testing
+
+- **(e2e)** move test_github_auto_detect to correct directory by [@risu729](https://github.com/risu729) in [#5640](https://github.com/jdx/mise/pull/5640)
+
+### New Contributors
+
+- @hamnis made their first contribution in [#5650](https://github.com/jdx/mise/pull/5650)
+
 ## [2025.7.10](https://github.com/jdx/mise/compare/v2025.7.9..v2025.7.10) - 2025-07-14
 
 ### 🐛 Bug Fixes
