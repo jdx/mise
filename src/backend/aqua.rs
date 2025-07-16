@@ -105,12 +105,6 @@ impl Backend for AquaBackend {
                 v_prefixed = v_prefixed.map(|v| format!("{prefix}{v}"));
             }
         }
-        if pkg.no_asset {
-            bail!("no asset released");
-        }
-        if pkg.error_message.is_some() {
-            bail!(pkg.error_message.unwrap());
-        }
         validate(&pkg)?;
         // try v-prefixed version first because most aqua packages use v-prefixed versions
         let (url, v) = match self
@@ -779,6 +773,12 @@ async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
 }
 
 fn validate(pkg: &AquaPackage) -> Result<()> {
+    if pkg.no_asset {
+        bail!("no asset released");
+    }
+    if let Some(message) = &pkg.error_message {
+        bail!("{}", message);
+    }
     let envs: HashSet<&str> = pkg.supported_envs.iter().map(|s| s.as_str()).collect();
     let os = os();
     let arch = arch();
