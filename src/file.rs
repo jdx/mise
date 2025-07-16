@@ -770,9 +770,10 @@ fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
         bail!("strip-components > 1 is not supported");
     }
 
-    let entries = ls(dir)?
-        .into_iter()
-        .map(|p| ls(&p))
+    let top_level_paths = ls(dir)?;
+    let entries: Vec<PathBuf> = top_level_paths
+        .iter()
+        .map(|p| ls(p))
         .collect::<Result<Vec<_>>>()?
         .into_iter()
         .flatten()
@@ -781,6 +782,11 @@ fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
         let mut new_dir = dir.to_path_buf();
         new_dir.push(entry.file_name().unwrap());
         fs::rename(entry, new_dir)?;
+    }
+    for path in top_level_paths {
+        if path.is_dir() {
+            remove_dir(path)?;
+        }
     }
     Ok(())
 }
