@@ -13,8 +13,8 @@ pub struct TaskDocs {
     index: bool,
     /// inserts the documentation into an existing file
     ///
-    /// This will look for a special comment, <!-- mise-tasks -->, and replace it with the generated documentation.
-    /// It will replace everything between the comment and the next comment, <!-- /mise-tasks --> so it can be
+    /// This will look for a special comment, `<!-- mise-tasks -->`, and replace it with the generated documentation.
+    /// It will replace everything between the comment and the next comment, `<!-- /mise-tasks -->` so it can be
     /// run multiple times on the same file to update the documentation.
     #[clap(long, short, verbatim_doc_comment)]
     inject: bool,
@@ -68,16 +68,20 @@ impl TaskDocs {
                     doc.push_str(&task);
                     doc.push_str("\n\n");
                 }
-                doc = format!("{}\n", doc.trim());
                 if self.inject {
+                    doc = format!("\n{}\n", doc.trim());
                     let mut contents = file::read_to_string(output)?;
-                    let start = contents.find("<!-- mise-tasks -->").unwrap_or(0);
+                    let task_placeholder_start = "<!-- mise-tasks -->";
+                    let task_placeholder_end = "<!-- /mise-tasks -->";
+                    let start = contents.find(task_placeholder_start).unwrap_or(0);
                     let end = contents[start..]
-                        .find("<!-- /mise-tasks -->")
+                        .find(task_placeholder_end)
+                        .map(|e| e + start)
                         .unwrap_or(contents.len());
-                    contents.replace_range(start..end, &doc);
+                    contents.replace_range((start + task_placeholder_start.len())..end, &doc);
                     file::write(output, &contents)?;
                 } else {
+                    doc = format!("{}\n", doc.trim());
                     file::write(output, &doc)?;
                 }
             }
