@@ -773,7 +773,7 @@ fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
     let top_level_paths = ls(dir)?;
     let entries: Vec<PathBuf> = top_level_paths
         .iter()
-        .map(|p| ls(p))
+        .map(ls)
         .collect::<Result<Vec<_>>>()?
         .into_iter()
         .flatten()
