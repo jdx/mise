@@ -58,19 +58,15 @@ impl Backend for AquaBackend {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        let version_tags = self.get_version_tags().await;
+        let version_tags = self.get_version_tags().await?;
         let mut versions = Vec::new();
-        match version_tags {
-            Ok(tags) => {
-                for (version, tag) in tags.iter() {
-                    if !version.starts_with('v') {
-                        versions.push(version.clone());
-                    }
-                    versions.push(tag.clone());
-                }
-            }
-            Err(e) => {
-                warn!("Remote versions cannot be fetched: {}", e);
+        for (v, tag) in version_tags.iter() {
+            let pkg = AQUA_REGISTRY
+                .package_with_version(&self.id, &[tag])
+                .await
+                .unwrap_or_default();
+            if !pkg.no_asset && pkg.error_message.is_none() {
+                versions.push(v.clone());
             }
         }
         Ok(versions)
@@ -83,10 +79,8 @@ impl Backend for AquaBackend {
     ) -> Result<ToolVersion> {
         let tag = self
             .get_version_tags()
-            .await
-            .ok()
-            .into_iter()
-            .flatten()
+            .await?
+            .iter()
             .find(|(version, _)| version == &tv.version)
             .map(|(_, tag)| tag);
         let mut v = tag.cloned().unwrap_or_else(|| tv.version.clone());
@@ -248,10 +242,7 @@ impl AquaBackend {
                         versions.push((version.to_string(), tag));
                     }
                 } else {
-                    bail!(
-                        "aqua package {} does not have repo_owner and/or repo_name.",
-                        self.id
-                    );
+                    warn!("no aqua registry found for {}", self.ba());
                 }
                 Ok(versions)
             })
