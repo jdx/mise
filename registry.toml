@@ -823,6 +823,9 @@ elm.test = ["elm --version", "{{version}}"]
 emsdk.backends = ["asdf:mise-plugins/mise-emsdk"]
 envcli.backends = ["ubi:EnvCLI/EnvCLI[exe=envcli]", "asdf:zekker6/asdf-envcli"]
 envcli.test = ["envcli --version", "EnvCLI version {{version}}"]
+envs.test = ["envs --version", "v{{version}}"]
+envs.description = "A CLI tool for manage .env files"
+envs.backends = ["ubi:longdog/envs[matching_regex=envs]", "asdf:longdog/asdf-envs"]
 envsubst.description = "Environment variables substitution for Go"
 envsubst.backends = ["aqua:a8m/envsubst", "asdf:dex4er/asdf-envsubst"]
 ephemeral-postgres.backends = ["asdf:mise-plugins/mise-ephemeral-postgres"]
