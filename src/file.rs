@@ -784,7 +784,7 @@ fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
         fs::rename(entry, new_dir)?;
     }
     for path in top_level_paths {
-        if path.metadata()?.is_dir() {
+        if path.symlink_metadata()?.is_dir() {
             remove_dir(path)?;
         }
     }
