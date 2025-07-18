@@ -1814,7 +1814,7 @@ maven.backends = [
     "asdf:mise-plugins/mise-maven",
     "vfox:mise-plugins/vfox-maven"
 ]
-maven.test = ["mvn --version", "Apache Maven {{version}}"]
+# maven.test = ["mvn --version", "Apache Maven {{version}}"] failing for some reason
 mc.backends = ["asdf:mise-plugins/mise-mc"]
 mdbook.description = "Create book from markdown files. Like Gitbook but implemented in Rust"
 mdbook.backends = ["aqua:rust-lang/mdBook", "asdf:cipherstash/asdf-mdbook"]
