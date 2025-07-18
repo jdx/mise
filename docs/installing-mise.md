@@ -19,6 +19,35 @@ curl https://mise.run | sh
 curl https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
 ```
 
+#### Shell-specific installation + activation
+
+For a more streamlined setup, you can use shell-specific endpoints that will install mise and automatically configure activation in your shell's configuration file:
+
+::: code-group
+
+```sh [zsh]
+curl https://mise.run/zsh | sh
+# Installs mise and adds activation to ~/.zshrc
+```
+
+```sh [bash]
+curl https://mise.run/bash | sh
+# Installs mise and adds activation to ~/.bashrc
+```
+
+```sh [fish]
+curl https://mise.run/fish | sh
+# Installs mise and adds activation to ~/.config/fish/config.fish
+```
+
+:::
+
+These shell-specific installers will:
+- Install mise using the same logic as the main installer
+- Automatically detect your shell's configuration file
+- Add the activation line if it's not already present
+- Skip adding activation if it's already configured (safe to run multiple times)
+
 Options:
 
 - `MISE_DEBUG=1` – enable debug logging

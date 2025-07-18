@@ -23,7 +23,7 @@ module ReshimInstaller
   def install(options)
     super
     # We don't know which gems were installed, so always reshim.
-    self.class.reshim
+    ReshimInstaller.reshim
   end
 end unless defined?(ReshimInstaller)
 

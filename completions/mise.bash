@@ -1,5 +1,5 @@
 _mise() {
-    if ! command usage &> /dev/null; then
+    if ! command -v usage &> /dev/null; then
         echo >&2
         echo "Error: usage CLI not found. This is required for completions to work in mise." >&2
         echo "See https://usage.jdx.dev for more information." >&2
@@ -13,7 +13,7 @@ _mise() {
 	local cur prev words cword was_split comp_args
     _comp_initialize -n : -- "$@" || return
     # shellcheck disable=SC2207
-	_comp_compgen -- -W "$(command usage complete-word --shell bash -s "${_usage_spec_mise_2025_7_12}" --cword="$cword" -- "${words[@]}")"
+	_comp_compgen -- -W "$(usage complete-word --shell bash -s "${_usage_spec_mise_2025_7_12}" --cword="$cword" -- "${words[@]}")"
 	_comp_ltrim_colon_completions "$cur"
     # shellcheck disable=SC2181
     if [[ $? -ne 0 ]]; then
