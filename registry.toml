@@ -232,7 +232,11 @@ bats.description = "Bash Automated Testing System"
 bats.backends = ["aqua:bats-core/bats-core", "asdf:timgluz/asdf-bats"]
 bats.os = ["linux", "macos"]
 bats.test = ["bats -v", "Bats"]
-bazel.backends = ["ubi:bazelbuild/bazel", "asdf:rajatvig/asdf-bazel"]
+bazel.backends = [
+    "aqua:bazelbuild/bazel",
+    "ubi:bazelbuild/bazel",
+    "asdf:rajatvig/asdf-bazel"
+]
 bazel.test = ["bazel --version", "bazel {{version}}"]
 bazel-watcher.description = "Tools for building Bazel targets when source files change"
 bazel-watcher.backends = ["aqua:bazelbuild/bazel-watcher"]
@@ -431,9 +435,11 @@ cidr-merger.test = ["cidr-merger --version 2>&1", "cidr merger {{version}}"]
 cidrchk.backends = ["ubi:mhausenblas/cidrchk", "asdf:ORCID/asdf-cidrchk"]
 cidrchk.test = ["cidrchk --version", "{{version}},"]
 cilium-cli.backends = [
+    "aqua:cilium/cilium-cli",
     "ubi:cilium/cilium-cli[exe=cilium]",
     "asdf:carnei-ro/asdf-cilium-cli"
 ]
+cilium-cli.test = ["cilium version", "cilium-cli: v{{version}}"]
 cilium-hubble.backends = [
     "ubi:cilium/hubble",
     "asdf:NitriKx/asdf-cilium-hubble"
@@ -441,9 +447,11 @@ cilium-hubble.backends = [
 cilium-hubble.test = ["hubble --version", "{{version}}"]
 circleci.aliases = ["circleci-cli"]
 circleci.backends = [
+    "aqua:CircleCI-Public/circleci-cli",
     "ubi:CircleCI-Public/circleci-cli[exe=circleci]",
     "asdf:ucpr/asdf-circleci-cli"
 ]
+circleci.test = ["circleci version", "{{version}}"]
 clang.backends = ["asdf:mise-plugins/mise-llvm", "vfox:mise-plugins/vfox-clang"]
 clang-format.backends = ["asdf:mise-plugins/mise-llvm"]
 clangd.backends = ["asdf:mise-plugins/mise-llvm"]
@@ -763,9 +771,11 @@ draft.backends = ["aqua:Azure/draft", "asdf:kristoflemmens/asdf-draft"]
 driftctl.description = "Detect, track and alert on infrastructure drift"
 driftctl.backends = ["aqua:snyk/driftctl", "asdf:nlamirault/asdf-driftctl"]
 drone.backends = [
+    "aqua:harness/drone-cli",
     "ubi:harness/drone-cli[exe=drone]",
     "asdf:virtualstaticvoid/asdf-drone"
 ]
+drone.test = ["drone --version", "drone version {{version}}"]
 dt.description = "dt - duct tape for your unix pipes"
 dt.backends = ["aqua:so-dang-cool/dt", "asdf:so-dang-cool/asdf-dt"]
 dtm.backends = [
@@ -918,7 +928,10 @@ flyctl.backends = [
     "asdf:chessmango/asdf-flyctl"
 ]
 flyway.backends = ["asdf:mise-plugins/mise-flyway"]
-foundry.backends = ["ubi:foundry-rs/foundry[extract_all=true]"]
+foundry.backends = [
+    "aqua:foundry-rs/foundry",
+    "ubi:foundry-rs/foundry[extract_all=true]"
+]
 foundry.test = ["forge -V", "{{version}}"]
 func-e.backends = ["ubi:tetratelabs/func-e", "asdf:mise-plugins/mise-func-e"]
 func-e.test = ["func-e --version", "func-e version {{version}}"]
@@ -937,9 +950,11 @@ fzf.test = ["fzf --version", "{{version}}"]
 gallery-dl.backends = ["asdf:mise-plugins/mise-gallery-dl"]
 gam.backends = ["ubi:GAM-team/GAM[exe=gam]", "asdf:offbyone/asdf-gam"]
 gator.backends = [
+    "aqua:open-policy-agent/gatekeeper",
     "ubi:open-policy-agent/gatekeeper[exe=gator]",
     "asdf:MxNxPx/asdf-gator"
 ]
+gator.test = ["gator --version", "gator version v{{version}}"]
 gauche.backends = ["asdf:mise-plugins/mise-gauche"]
 gcc-arm-none-eabi.backends = ["asdf:mise-plugins/mise-gcc-arm-none-eabi"]
 gcloud.backends = ["asdf:mise-plugins/mise-gcloud"]
@@ -963,6 +978,7 @@ ghc.backends = ["asdf:mise-plugins/mise-ghcup"]
 # takes forever
 # ghc.test = ["ghc --version", "The Glorious Glasgow Haskell Compilation System, version {{version}}"]
 ghcup.backends = [
+    "aqua:haskell/ghcup-hs",
     "ubi:haskell/ghcup-hs[exe=ghcup]",
     "asdf:mise-plugins/mise-ghcup"
 ]
@@ -1226,7 +1242,11 @@ hcl2json.description = "Convert hcl2 to json"
 hcl2json.backends = ["aqua:tmccombs/hcl2json", "asdf:dex4er/asdf-hcl2json"]
 hcloud.description = "A command-line interface for Hetzner Cloud"
 hcloud.backends = ["aqua:hetznercloud/cli", "asdf:chessmango/asdf-hcloud"]
-helix.backends = ["ubi:helix-editor/helix[extract_all=true]"]
+helix.backends = [
+    "aqua:helix-editor/helix",
+    "ubi:helix-editor/helix[extract_all=true]"
+]
+helix.test = ["hx --version", "helix {{version}}"]
 helm.description = "The Kubernetes Package Manager"
 helm.backends = ["aqua:helm/helm", "asdf:Antiarchitect/asdf-helm"]
 helm-cr.description = "Hosting Helm Charts via GitHub Pages and Releases"
@@ -1397,7 +1417,12 @@ just.backends = [
     "asdf:olofvndrhr/asdf-just"
 ]
 just.test = ["just --version", "just {{version}}"]
-jwt.backends = ["ubi:mike-engel/jwt-cli[exe=jwt]", "cargo:jwt-cli"]
+jwt.backends = [
+    "aqua:mike-engel/jwt-cli",
+    "ubi:mike-engel/jwt-cli[exe=jwt]",
+    "cargo:jwt-cli"
+]
+jwt.test = ["jwt --version", "jwt {{version}}"]
 jwtui.backends = ["ubi:jwt-rs/jwt-ui[exe=jwtui]", "cargo:jwt-ui"]
 jx.description = "Jenkins X provides automated CI+CD for Kubernetes with Preview Environments on Pull Requests using Cloud Native pipelines from Tekton"
 jx.backends = ["aqua:jenkins-x/jx", "ubi:jenkins-x/jx", "asdf:vbehar/asdf-jx"]
@@ -1883,9 +1908,11 @@ nerdctl.backends = ["aqua:containerd/nerdctl", "asdf:dmpe/asdf-nerdctl"]
 nerdctl.test = ["nerdctl --version", "nerdctl version {{version}}"]
 newrelic.aliases = ["newrelic-cli"]
 newrelic.backends = [
+    "aqua:newrelic/newrelic-cli",
     "ubi:newrelic/newrelic-cli[exe=newrelic]",
     "asdf:NeoHsu/asdf-newrelic-cli"
 ]
+newrelic.test = ["newrelic --version", "newrelic version {{version}}"]
 nfpm.description = "nFPM is Not FPM - a simple deb, rpm and apk packager written in Go"
 nfpm.backends = [
     "aqua:goreleaser/nfpm",
@@ -1944,7 +1971,7 @@ opa.backends = ["aqua:open-policy-agent/opa", "asdf:tochukwuvictor/asdf-opa"]
 opam.backends = ["ubi:ocaml/opam", "asdf:asdf-community/asdf-opam"]
 openbao.backends = ["ubi:openbao/openbao[exe=bao]"]
 opencode.description = "AI coding agent, built for the terminal"
-opencode.backends = ["ubi:sst/opencode"]
+opencode.backends = ["aqua:sst/opencode", "ubi:sst/opencode"]
 opencode.test = ["opencode --version", "{{version}}"]
 openfaas-cli.description = "Official CLI for OpenFaaS"
 openfaas-cli.backends = ["aqua:openfaas/faas-cli", "asdf:zekker6/asdf-faas-cli"]
@@ -2700,7 +2727,12 @@ updatecli.backends = [
 upt.backends = ["ubi:sigoden/upt", "asdf:ORCID/asdf-upt"]
 upx.description = "UPX - the Ultimate Packer for eXecutables"
 upx.backends = ["aqua:upx/upx", "asdf:jimmidyson/asdf-upx"]
-usage.backends = ["ubi:jdx/usage", "asdf:jdx/mise-usage", "cargo:usage-cli"]
+usage.backends = [
+    "aqua:jdx/usage",
+    "ubi:jdx/usage",
+    "asdf:jdx/mise-usage",
+    "cargo:usage-cli"
+]
 usage.os = ["linux", "macos"]
 usage.test = ["usage --version", "usage-cli {{version}}"]
 usql.description = "Universal command-line interface for SQL databases"
@@ -2856,6 +2888,7 @@ yj.test = ["yj -v", "v{{version}}"]
 yor.description = "Extensible auto-tagger for your IaC files. The ultimate way to link entities in the cloud back to the codified resource which created it"
 yor.backends = ["aqua:bridgecrewio/yor", "asdf:ordinaryexperts/asdf-yor"]
 youtube-dl.backends = [
+    "aqua:ytdl-org/ytdl-nightly",
     "ubi:ytdl-org/ytdl-nightly[matching_regex=^youtube-dl$,rename_exe=youtube-dl]",
     "asdf:mise-plugins/mise-youtube-dl"
 ]
