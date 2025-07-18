@@ -1153,7 +1153,7 @@ grain.backends = [
     "ubi:grain-lang/grain[tag_regex=^grain-]",
     "asdf:mise-plugins/mise-grain"
 ]
-grain.test = ["grain --version", "{{version}}"]
+# grain.test = ["grain --version", "{{version}}"] # TODO: use aqua to canonicalize version
 granted.backends = ["aqua:common-fate/granted", "asdf:dex4er/asdf-granted"]
 graphite.backends = ["npm:@withgraphite/graphite-cli"]
 graphite.test = ["gt --version", "{{version}}"]
@@ -1657,7 +1657,7 @@ kustomize.backends = [
 ]
 kustomize.test = ["kustomize version", "v{{version}}"]
 kwokctl.backends = ["aqua:kubernetes-sigs/kwok/kwokctl"]
-kwokctl.test = ["kwokctl --version", "kwokctl version v{{version}}"]
+kwokctl.test = ["kwokctl --version", "kwok version v{{version}}"]
 kwt.description = "Kubernetes Workstation Tools CLI"
 kwt.backends = ["aqua:carvel-dev/kwt", "asdf:vmware-tanzu/asdf-carvel"]
 kyverno.description = "Cloud Native Policy Management"
