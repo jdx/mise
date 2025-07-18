@@ -3248,8 +3248,21 @@ dependencies = [
  "console 0.15.11",
  "number_prefix",
  "portable-atomic",
+ "unicode-width 0.2.1",
+ "web-time",
+]
+
+[[package]]
+name = "indicatif"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70a646d946d06bedbbc4cac4c218acf4bbf2d87757a784857025f4d447e4e1cd"
+dependencies = [
+ "console 0.16.0",
+ "portable-atomic",
  "unicode-segmentation",
  "unicode-width 0.2.1",
+ "unit-prefix",
  "web-time",
 ]
 
@@ -3779,7 +3792,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.7.13"
+version = "2025.7.14"
 dependencies = [
  "async-backtrace",
  "async-trait",
@@ -3820,7 +3833,7 @@ dependencies = [
  "homedir",
  "indenter",
  "indexmap 2.10.0",
- "indicatif",
+ "indicatif 0.18.0",
  "indoc",
  "insta",
  "itertools 0.14.0",
@@ -5255,7 +5268,7 @@ dependencies = [
  "either",
  "flate2",
  "hyper",
- "indicatif",
+ "indicatif 0.17.11",
  "log",
  "quick-xml",
  "regex",
@@ -6410,6 +6423,12 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
+name = "unit-prefix"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "323402cff2dd658f39ca17c789b502021b3f18707c91cdf22e3838e1b4023817"
 
 [[package]]
 name = "universal-hash"
