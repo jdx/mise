@@ -3,7 +3,7 @@ members = ["crates/vfox"]
 
 [package]
 name = "mise"
-version = "2025.7.14"
+version = "2025.7.15"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
