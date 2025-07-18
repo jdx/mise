@@ -54,7 +54,7 @@ setup_${SHELL_NAME}_activation() {
   ${CONFIG_VAR_NAME}
   
   # Check if activation is already set up
-  if [ -f "$${CONFIG_FILE_VAR}" ] && grep -q "# added by https://mise.run/${SHELL_NAME}" "$${CONFIG_FILE_VAR}"; then
+  if [ -f "$${CONFIG_FILE_VAR}" ] && grep -qF "# added by https://mise.run/${SHELL_NAME}" "$${CONFIG_FILE_VAR}"; then
     info "mise: ${SHELL_NAME} activation already configured in $${CONFIG_FILE_VAR}"
     return
   fi
