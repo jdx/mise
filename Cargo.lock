@@ -789,6 +789,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "console"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e09ced7ebbccb63b4c65413d821f2e00ce54c5ca4514ddc6b3c892fdbcbc69d"
+dependencies = [
+ "encode_unicode",
+ "libc",
+ "once_cell",
+ "unicode-width 0.2.1",
+ "windows-sys 0.60.2",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1078,7 +1091,7 @@ version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "081fee97d4d3dfb2baf0333ccf376b5cae24448afe5c5652861bb987853d685c"
 dependencies = [
- "console",
+ "console 0.15.11",
  "fuzzy-matcher",
  "itertools 0.14.0",
  "signal-hook",
@@ -3232,7 +3245,7 @@ version = "0.17.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "183b3088984b400f4cfac3620d5e076c84da5364016b4f49473de574b2586235"
 dependencies = [
- "console",
+ "console 0.15.11",
  "number_prefix",
  "portable-atomic",
  "unicode-segmentation",
@@ -3261,7 +3274,7 @@ version = "1.43.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "154934ea70c58054b556dd430b99a98c2a7ff5309ac9891597e339b5c28f4371"
 dependencies = [
- "console",
+ "console 0.15.11",
  "once_cell",
  "regex",
  "serde",
@@ -3766,7 +3779,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.7.12"
+version = "2025.7.13"
 dependencies = [
  "async-backtrace",
  "async-trait",
@@ -3784,7 +3797,7 @@ dependencies = [
  "color-print",
  "comfy-table",
  "confique",
- "console",
+ "console 0.16.0",
  "contracts",
  "ctor",
  "dashmap 6.1.0",
