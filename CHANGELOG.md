@@ -1,9 +1,38 @@
 # Changelog
 
+## [2025.7.13](https://github.com/jdx/mise/compare/v2025.7.12..v2025.7.13) - 2025-07-18
+
+### 🚀 Features
+
+- https://mise.run/{bash,zsh,fish} by [@jdx](https://github.com/jdx) in [#5677](https://github.com/jdx/mise/pull/5677)
+
+### 🐛 Bug Fixes
+
+- don't follow symlink to ignore symlinks from deletion by [@risu729](https://github.com/risu729) in [#5672](https://github.com/jdx/mise/pull/5672)
+- update completions by [@risu729](https://github.com/risu729) in [#5682](https://github.com/jdx/mise/pull/5682)
+- NoMethodError with Bundler::Installer by [@hsbt](https://github.com/hsbt) in [#5678](https://github.com/jdx/mise/pull/5678)
+
+### 📚 Documentation
+
+- fix typo in RUSTUP_TOOLCHAIN env variable name by [@anderso](https://github.com/anderso) in [#5673](https://github.com/jdx/mise/pull/5673)
+
+### 📦️ Dependency Updates
+
+- update jdx/mise-action digest to bfb9fa0 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5681](https://github.com/jdx/mise/pull/5681)
+- pin dependencies by [@renovate[bot]](https://github.com/renovate[bot]) in [#5680](https://github.com/jdx/mise/pull/5680)
+- update rust crate console to 0.16 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5685](https://github.com/jdx/mise/pull/5685)
+- update taiki-e/install-action digest to 4fd6bde by [@renovate[bot]](https://github.com/renovate[bot]) in [#5684](https://github.com/jdx/mise/pull/5684)
+
+### New Contributors
+
+- @hsbt made their first contribution in [#5678](https://github.com/jdx/mise/pull/5678)
+- @anderso made their first contribution in [#5673](https://github.com/jdx/mise/pull/5673)
+
 ## [2025.7.12](https://github.com/jdx/mise/compare/v2025.7.11..v2025.7.12) - 2025-07-17
 
 ### 🐛 Bug Fixes
 
+- **(file)** remove top level directories in strip_archive_path_components by [@risu729](https://github.com/risu729) in [#5662](https://github.com/jdx/mise/pull/5662)
 - **(npm)** run bun in install_path instead of using --cwd flag of bun by [@risu729](https://github.com/risu729) in [#5656](https://github.com/jdx/mise/pull/5656)
 - **(nushell)** fix `get -i` deprecation by [@JoaquinTrinanes](https://github.com/JoaquinTrinanes) in [#5666](https://github.com/jdx/mise/pull/5666)
 

@@ -3779,7 +3779,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.7.12"
+version = "2025.7.13"
 dependencies = [
  "async-backtrace",
  "async-trait",
