@@ -256,3 +256,25 @@ alias mx="mise x --"
 
 Similarly, `mise run` can be used to [execute tasks](/tasks/) which will also activate the mise
 environment with all of your tools.
+
+## Auto-Install Mechanisms
+
+mise provides several mechanisms to automatically install missing tools or versions as needed. Below, these are grouped by how and when they are triggered, with relevant settings for each. All mechanisms require the global [auto_install](/configuration/settings.html#auto_install) setting to be enabled (**all auto_install settings are enabled by default**).
+
+### On-Demand Execution ([`mise x`](/cli/exec), [`mise r`](/cli/run))
+When you run a command like [`mise x`](/cli/exec) or [`mise r`](/cli/run), mise will automatically install any missing tool versions required to execute the command.
+- **When it triggers:** Whenever you use [`mise x`](/cli/exec) or [`mise r`](/cli/run) with a tool/version that is not yet installed.
+- **How to control:**
+  - Setting: [`exec_auto_install`](/configuration/settings.html#exec_auto_install) (default: true)
+  - Setting: [`task_auto_install`](/configuration/settings.html#task_auto_install) (default: true)
+
+### Command Not Found Handler (Shell Integration)
+If you type a command in your shell (e.g., `node`) and it is not found, mise can attempt to auto-install the missing tool version if it knows which tool provides that binary.
+- **When it triggers:** When a command is not found in the shell and the handler is enabled.
+- **How to control:**
+  - Setting: [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) (default: true)
+- **Limitation:** Only works for tools that already have at least one version installed, since mise cannot know which tool provides a binary otherwise.
+
+::: tip
+Disable auto_install for specific tools by setting [`auto_install_disable_tools`](/configuration/settings.html#auto_install_disable_tools) to a list of tool names.
+:::
