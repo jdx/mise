@@ -263,7 +263,7 @@ biome.backends = [
 biome.test = ["biome --version", "Version: {{version}}"]
 bitwarden.description = "Bitwarden CLI"
 bitwarden.backends = ["aqua:bitwarden/clients", "asdf:vixus0/asdf-bitwarden"]
-# bitwarden.test = ["bw --version", "{{version}}"] # latest version doesn't contain sha256
+bitwarden.test = ["bw --version", "{{version}}"]
 bitwarden-secrets-manager.backends = [
     "ubi:bitwarden/sdk[tag_regex=^bws,exe=bws]",
     "asdf:asdf-community/asdf-bitwarden-secrets-manager"
@@ -579,7 +579,6 @@ coursier.backends = [
     "ubi:coursier/coursier[exe=cs]",
     "asdf:jiahuili430/asdf-coursier"
 ]
-# ls-remote not available for aqua
 cowsay.backends = ["npm:cowsay"]
 crane.description = "Go library and CLIs for working with container registries"
 crane.backends = [
@@ -889,7 +888,7 @@ flarectl.backends = [
     "ubi:cloudflare/cloudflare-go[exe=flarectl]",
     "asdf:mise-plugins/asdf-flarectl"
 ]
-# flarectl.test = ["flarectl --version", "flarectl version {{version}}"] # TODO: no release assets in 4.0
+# flarectl.test = ["flarectl --version", "flarectl version {{version}}"] # flarectl removed since v4
 flatc.backends = [
     "ubi:google/flatbuffers[exe=flatc]",
     "asdf:TheOpenDictionary/asdf-flatc"
@@ -1026,10 +1025,10 @@ glab.backends = [
     "ubi:gitlab-org/cli[provider=gitlab,exe=glab]",
     "asdf:mise-plugins/mise-glab"
 ]
-# glab.test = ["glab version", "Current glab version: {{version}}"]
+glab.test = ["glab version", "glab {{version}}"]
 gleam.description = "A friendly language for building type-safe, scalable systems"
 gleam.backends = ["aqua:gleam-lang/gleam", "asdf:asdf-community/asdf-gleam"]
-# gleam.test = ["gleam --version", "gleam {{version}}"] reporting wrong version
+gleam.test = ["gleam --version", "gleam {{version}}"]
 glen.backends = ["ubi:lingrino/glen", "asdf:bradym/asdf-glen"]
 glen.test = ["glen version", "{{version}}"]
 glooctl.backends = ["ubi:solo-io/gloo", "asdf:halilkaya/asdf-glooctl"]
@@ -1154,7 +1153,7 @@ grain.backends = [
     "ubi:grain-lang/grain[tag_regex=^grain-]",
     "asdf:mise-plugins/mise-grain"
 ]
-grain.test = ["grain --version", ""] # versions are in a strange format
+# grain.test = ["grain --version", "{{version}}"] # TODO: use aqua to canonicalize version
 granted.backends = ["aqua:common-fate/granted", "asdf:dex4er/asdf-granted"]
 graphite.backends = ["npm:@withgraphite/graphite-cli"]
 graphite.test = ["gt --version", "{{version}}"]
@@ -1322,8 +1321,8 @@ iam-policy-json-to-terraform.backends = [
 ]
 iam-policy-json-to-terraform.test = [
     "iam-policy-json-to-terraform --version",
-    ""
-] # version is wrong for some reason
+    "{{version}}"
+]
 iamlive.description = "Generate an IAM policy from AWS calls using client-side monitoring (CSM) or embedded proxy"
 iamlive.backends = ["aqua:iann0036/iamlive", "asdf:chessmango/asdf-iamlive"]
 ibmcloud.backends = ["asdf:mise-plugins/mise-ibmcloud"]
@@ -1658,7 +1657,7 @@ kustomize.backends = [
 ]
 kustomize.test = ["kustomize version", "v{{version}}"]
 kwokctl.backends = ["aqua:kubernetes-sigs/kwok/kwokctl"]
-# kwokctl.test = ["kwokctl --version", "kwokctl version v{{version}}"]
+kwokctl.test = ["kwokctl --version", "kwok version v{{version}}"]
 kwt.description = "Kubernetes Workstation Tools CLI"
 kwt.backends = ["aqua:carvel-dev/kwt", "asdf:vmware-tanzu/asdf-carvel"]
 kyverno.description = "Cloud Native Policy Management"
@@ -1806,7 +1805,7 @@ mdbook-linkcheck.test = [
 melange.description = "build APKs from source code"
 melange.backends = ["aqua:chainguard-dev/melange", "asdf:omissis/asdf-melange"]
 melange.os = ["linux", "macos"]
-# melange.test = ["melange version", "v{{version}}"] sometimes releases without assets
+melange.test = ["melange version", "GitVersion:    v{{version}}"]
 melt.backends = ["ubi:charmbracelet/melt", "asdf:chessmango/asdf-melt"]
 memcached.backends = ["asdf:mise-plugins/mise-memcached"]
 mercury.backends = ["asdf:mise-plugins/mise-mercury"]
@@ -2416,7 +2415,7 @@ stack.backends = [
     "aqua:commercialhaskell/stack",
     "asdf:mise-plugins/mise-ghcup"
 ]
-# stack.test = ["stack --version", "Version {{version}}"] # flaky
+stack.test = ["stack --version", "Version {{version}}"]
 starboard.description = "Kubernetes-native security toolkit"
 starboard.backends = [
     "aqua:aquasecurity/starboard",
