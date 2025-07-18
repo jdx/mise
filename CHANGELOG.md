@@ -1,10 +1,18 @@
 # Changelog
 
+## [2025.7.14](https://github.com/jdx/mise/compare/v2025.7.13..v2025.7.14) - 2025-07-18
+
+### 📦️ Dependency Updates
+
+- update rust crate tabled to 0.20 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5688](https://github.com/jdx/mise/pull/5688)
+- update rust crate indicatif to 0.18 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5687](https://github.com/jdx/mise/pull/5687)
+
 ## [2025.7.13](https://github.com/jdx/mise/compare/v2025.7.12..v2025.7.13) - 2025-07-18
 
 ### 🚀 Features
 
 - https://mise.run/{bash,zsh,fish} by [@jdx](https://github.com/jdx) in [#5677](https://github.com/jdx/mise/pull/5677)
+- add opencode tool with description, backends, and test command by [@nipuna-perera](https://github.com/nipuna-perera) in [#5679](https://github.com/jdx/mise/pull/5679)
 
 ### 🐛 Bug Fixes
 
@@ -25,6 +33,7 @@
 
 ### New Contributors
 
+- @nipuna-perera made their first contribution in [#5679](https://github.com/jdx/mise/pull/5679)
 - @hsbt made their first contribution in [#5678](https://github.com/jdx/mise/pull/5678)
 - @anderso made their first contribution in [#5673](https://github.com/jdx/mise/pull/5673)
 
