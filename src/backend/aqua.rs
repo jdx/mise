@@ -100,24 +100,50 @@ impl Backend for AquaBackend {
             }
         }
         validate(&pkg)?;
-        // try v-prefixed version first because most aqua packages use v-prefixed versions
-        let (url, v) = match self
-            .fetch_url(&pkg, v_prefixed.as_ref().unwrap_or(&v))
-            .await
+
+        // Check if URL already exists in lockfile assets first
+        let (url, v, filename) = if let Some(existing_asset) = tv
+            .assets
+            .iter()
+            .find(|(_, asset)| asset.url.is_some())
+            .map(|(filename, asset)| (filename.clone(), asset.url.clone().unwrap()))
         {
-            Ok(url) => (url, v_prefixed.as_ref().unwrap_or(&v)),
-            Err(err) if v_prefixed.is_some() => (
-                self.fetch_url(&pkg, &v)
-                    .await
-                    .map_err(|e| err.wrap_err(e))?,
-                &v,
-            ),
-            Err(err) => return Err(err),
+            let (filename, url) = existing_asset;
+            // Determine which version variant was used based on the URL or filename
+            let v = if url.contains(&format!("v{}", tv.version))
+                || filename.contains(&format!("v{}", tv.version))
+            {
+                format!("v{}", tv.version)
+            } else {
+                tv.version.clone()
+            };
+            (url, v, filename)
+        } else {
+            // try v-prefixed version first because most aqua packages use v-prefixed versions
+            let (url, v) = match self
+                .fetch_url(&pkg, v_prefixed.as_ref().unwrap_or(&v))
+                .await
+            {
+                Ok(url) => (url, v_prefixed.as_ref().unwrap_or(&v)),
+                Err(err) if v_prefixed.is_some() => (
+                    self.fetch_url(&pkg, &v)
+                        .await
+                        .map_err(|e| err.wrap_err(e))?,
+                    &v,
+                ),
+                Err(err) => return Err(err),
+            };
+            let filename = url.split('/').next_back().unwrap().to_string();
+
+            // Store the asset URL in the tool version
+            tv.assets.entry(filename.clone()).or_default().url = Some(url.clone());
+
+            (url, v.to_string(), filename)
         };
-        let filename = url.split('/').next_back().unwrap();
-        self.download(ctx, &tv, &url, filename).await?;
-        self.verify(ctx, &mut tv, &pkg, v, filename).await?;
-        self.install(ctx, &tv, &pkg, v, filename)?;
+
+        self.download(ctx, &tv, &url, &filename).await?;
+        self.verify(ctx, &mut tv, &pkg, &v, &filename).await?;
+        self.install(ctx, &tv, &pkg, &v, &filename)?;
 
         Ok(tv)
     }
@@ -346,7 +372,10 @@ impl AquaBackend {
     ) -> Result<()> {
         self.verify_slsa(ctx, tv, pkg, v, filename).await?;
         self.verify_minisign(ctx, tv, pkg, v, filename).await?;
-        if !tv.checksums.contains_key(filename) {
+
+        let download_path = tv.download_path();
+        let asset_info = tv.assets.entry(filename.to_string()).or_default();
+        if asset_info.checksum.is_none() {
             if let Some(checksum) = &pkg.checksum {
                 if checksum.enabled() {
                     let url = match checksum._type() {
@@ -356,7 +385,6 @@ impl AquaBackend {
                         }
                         AquaChecksumType::Http => checksum.url(pkg, v)?,
                     };
-                    let download_path = tv.download_path();
                     let checksum_path = download_path.join(format!("{filename}.checksum"));
                     HTTP.download_file(&url, &checksum_path, Some(&ctx.pr))
                         .await?;
@@ -410,8 +438,10 @@ impl AquaBackend {
                         .map(|(c, _)| c)
                         .unwrap_or(checksum_file);
                     let checksum_str = checksum_str.split_whitespace().next().unwrap();
-                    let checksum = format!("{}:{}", checksum.algorithm(), checksum_str);
-                    tv.checksums.insert(filename.to_string(), checksum);
+                    let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
+                    // Now set the checksum after all borrows are done
+                    let asset_info = tv.assets.get_mut(filename).unwrap();
+                    asset_info.checksum = Some(checksum_val);
                 }
             }
         }

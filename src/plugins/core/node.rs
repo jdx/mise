@@ -163,9 +163,10 @@ impl NodePlugin {
             pr.set_message(format!("download {tarball_name}"));
             HTTP.download_file(url.clone(), local, Some(pr)).await?;
         }
-        if *env::MISE_NODE_VERIFY && !tv.checksums.contains_key(&tarball_name) {
-            tv.checksums
-                .insert(tarball_name, self.get_checksum(ctx, local, version).await?);
+        let asset_info = tv.assets.entry(tarball_name.clone()).or_default();
+        asset_info.url = Some(url.to_string());
+        if *env::MISE_NODE_VERIFY && asset_info.checksum.is_none() {
+            asset_info.checksum = Some(self.get_checksum(ctx, local, version).await?);
         }
         self.verify_checksum(ctx, tv, local)?;
         Ok(())

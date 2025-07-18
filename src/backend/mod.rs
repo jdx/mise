@@ -733,18 +733,42 @@ pub trait Backend: Debug + Send + Sync {
         tv: &mut ToolVersion,
         file: &Path,
     ) -> Result<()> {
+        let settings = Settings::get();
         let filename = file.file_name().unwrap().to_string_lossy().to_string();
-        if let Some(checksum) = &tv.checksums.get(&filename) {
+        let lockfile_enabled = settings.lockfile && settings.experimental;
+
+        // Get or create asset info for this filename
+        let asset_info = tv.assets.entry(filename.clone()).or_default();
+
+        if let Some(checksum) = &asset_info.checksum {
             ctx.pr.set_message(format!("checksum {filename}"));
             if let Some((algo, check)) = checksum.split_once(':') {
                 hash::ensure_checksum(file, check, Some(&ctx.pr), algo)?;
             } else {
                 bail!("Invalid checksum: {checksum}");
             }
-        } else if Settings::get().lockfile && Settings::get().experimental {
+        } else if lockfile_enabled {
             ctx.pr.set_message(format!("generate checksum {filename}"));
             let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
-            tv.checksums.insert(filename, format!("blake3:{hash}"));
+            asset_info.checksum = Some(format!("blake3:{hash}"));
+        }
+
+        // Handle size verification and generation
+        if let Some(expected_size) = asset_info.size {
+            ctx.pr.set_message(format!("verify size {filename}"));
+            let actual_size = file.metadata()?.len();
+            if actual_size != expected_size {
+                bail!(
+                    "Size mismatch for {}: expected {}, got {}",
+                    filename,
+                    expected_size,
+                    actual_size
+                );
+            }
+        } else if lockfile_enabled {
+            ctx.pr.set_message(format!("record size {filename}"));
+            let size = file.metadata()?.len();
+            asset_info.size = Some(size);
         }
         Ok(())
     }

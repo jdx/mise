@@ -119,9 +119,13 @@ impl GoPlugin {
         HTTP.download_file(&*tarball_url, &tarball_path, Some(pr))
             .await?;
 
-        if !settings.go_skip_checksum && !tv.checksums.contains_key(&filename) {
-            let checksum = checksum_handle.await.unwrap()?;
-            tv.checksums.insert(filename, format!("sha256:{checksum}"));
+        if !settings.go_skip_checksum {
+            let asset_info = tv.assets.entry(filename.clone()).or_default();
+            asset_info.url = Some(tarball_url.to_string());
+            if asset_info.checksum.is_none() {
+                let checksum = checksum_handle.await.unwrap()?;
+                asset_info.checksum = Some(format!("sha256:{checksum}"));
+            }
         }
         Ok(tarball_path)
     }

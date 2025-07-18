@@ -232,7 +232,11 @@ impl Backend for UbiBackend {
             checksum_key = format!("{checksum_key}-{matching}");
         }
         checksum_key = format!("{}-{}-{}", checksum_key, env::consts::OS, env::consts::ARCH);
-        if let Some(checksum) = &tv.checksums.get(&checksum_key) {
+
+        // Get or create asset info for this checksum key
+        let asset_info = tv.assets.entry(checksum_key.clone()).or_default();
+
+        if let Some(checksum) = &asset_info.checksum {
             ctx.pr
                 .set_message(format!("checksum verify {checksum_key}"));
             if let Some((algo, check)) = checksum.split_once(':') {
@@ -244,7 +248,7 @@ impl Backend for UbiBackend {
             ctx.pr
                 .set_message(format!("checksum generate {checksum_key}"));
             let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
-            tv.checksums.insert(checksum_key, format!("blake3:{hash}"));
+            asset_info.checksum = Some(format!("blake3:{hash}"));
         }
         Ok(())
     }

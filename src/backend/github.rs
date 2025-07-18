@@ -17,6 +17,7 @@ use eyre::Result;
 use regex::Regex;
 use std::fmt::Debug;
 use std::sync::Arc;
+use log::debug;
 
 #[derive(Debug)]
 pub struct UnifiedGitBackend {
@@ -74,8 +75,20 @@ impl Backend for UnifiedGitBackend {
         let opts = tv.request.options();
         let api_url = self.get_api_url(&opts);
 
-        // Find the asset URL for this specific version
-        let asset_url = self.resolve_asset_url(&tv, &opts, &repo, &api_url).await?;
+        // Check if URL already exists in lockfile assets first
+        let asset_url = if let Some(existing_asset) = tv
+            .assets
+            .iter()
+            .find(|(_, asset)| asset.url.is_some())
+            .map(|(filename, asset)| (filename.clone(), asset.url.clone().unwrap()))
+        {
+            let (filename, url) = existing_asset;
+            debug!("Using existing URL from lockfile for {}: {}", filename, url);
+            url
+        } else {
+            // Find the asset URL for this specific version
+            self.resolve_asset_url(&tv, &opts, &repo, &api_url).await?
+        };
 
         // Download and install
         self.download_and_install(ctx, &mut tv, &asset_url, &opts)
@@ -150,6 +163,18 @@ impl UnifiedGitBackend {
             github::get_headers(asset_url)
         };
 
+        // Store the asset URL in the tool version
+        let asset_info = tv.assets.entry(filename.clone()).or_default();
+        asset_info.url = Some(asset_url.to_string());
+
+        // Try to fetch checksum from GitHub release assets if not already specified
+        if asset_info.checksum.is_none() && !self.is_gitlab() {
+            if let Ok(Some(checksum)) = self.fetch_github_asset_checksum(tv, &filename).await {
+                debug!("Found checksum for {}: {}", filename, checksum);
+                asset_info.checksum = Some(checksum);
+            }
+        }
+
         ctx.pr.set_message(format!("download {filename}"));
         HTTP.download_file_with_headers(asset_url, &file_path, &headers, Some(&ctx.pr))
             .await?;
@@ -160,6 +185,42 @@ impl UnifiedGitBackend {
         self.verify_checksum(ctx, tv, &file_path)?;
 
         Ok(())
+    }
+
+    /// Fetches checksum for a GitHub release asset
+    async fn fetch_github_asset_checksum(
+        &self,
+        tv: &ToolVersion,
+        filename: &str,
+    ) -> Result<Option<String>> {
+        let repo = self.repo();
+        let opts = tv.request.options();
+        let api_url = self.get_api_url(&opts);
+        
+        // Try both the exact version and with v prefix
+        let version_candidates = if tv.version.starts_with('v') {
+            vec![tv.version.clone(), tv.version.trim_start_matches('v').to_string()]
+        } else {
+            vec![format!("v{}", tv.version), tv.version.clone()]
+        };
+        
+        for version in version_candidates {
+            match github::get_release_asset_checksum_for_url(&api_url, &repo, &version, filename).await {
+                Ok(Some(checksum)) => return Ok(Some(checksum)),
+                Ok(None) => continue,
+                Err(e) => {
+                    // Only log 404 errors as debug, other errors as warnings
+                    if crate::http::error_code(&e) == Some(404) {
+                        debug!("Release not found for {} version {}: {}", repo, version, e);
+                    } else {
+                        debug!("Error fetching checksum for {} version {}: {}", repo, version, e);
+                    }
+                    continue;
+                }
+            }
+        }
+        
+        Ok(None)
     }
 
     /// Discovers bin paths in the installation directory
