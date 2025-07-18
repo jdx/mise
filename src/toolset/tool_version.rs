@@ -11,6 +11,7 @@ use crate::config::Config;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
 use console::style;
 use dashmap::DashMap;
@@ -23,7 +24,7 @@ use path_absolutize::Absolutize;
 pub struct ToolVersion {
     pub request: ToolRequest,
     pub version: String,
-    pub checksums: BTreeMap<String, String>,
+    pub lock_platforms: BTreeMap<String, PlatformInfo>,
     pub install_path: Option<PathBuf>,
 }
 
@@ -32,7 +33,7 @@ impl ToolVersion {
         ToolVersion {
             request,
             version,
-            checksums: Default::default(),
+            lock_platforms: Default::default(),
             install_path: None,
         }
     }
@@ -46,7 +47,7 @@ impl ToolVersion {
         if opts.use_locked_version {
             if let Some(lt) = request.lockfile_resolve(config)? {
                 let mut tv = Self::new(request.clone(), lt.version);
-                tv.checksums = lt.checksums;
+                tv.lock_platforms = lt.platforms;
                 return Ok(tv);
             }
         }

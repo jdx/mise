@@ -2,22 +2,27 @@
 version = "1.7.7"
 backend = "aqua:rhysd/actionlint"
 
-[tools.actionlint.checksums]
-"actionlint_1.7.7_linux_amd64.tar.gz" = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+[tools.actionlint.platforms.linux-x64]
+checksum = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+size = 2080472
+url = "https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz"
 
 [tools.bun]
 version = "1.2.18"
 backend = "core:bun"
 
-[tools.bun.checksums]
-"bun-linux-x64-baseline.zip" = "sha256:c7504c216d8729105d1781385665e3ac2c63debdbb5de4efdc12e2d6c4a6cb4a"
+[tools.bun.platforms.linux-x64]
+checksum = "blake3:c85190159152314ed8cac74c30d8355c9b71f18dcd40ffa214e742038bf6a897"
+size = 38291778
 
 [tools.cargo-binstall]
 version = "1.14.1"
 backend = "aqua:cargo-bins/cargo-binstall"
 
-[tools.cargo-binstall.checksums]
-"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:e1d1231720e6ed497a4b0f8881b08f5df9ce1a938fb3ae6f2444e95eb601fe99"
+[tools.cargo-binstall.platforms.linux-x64]
+checksum = "blake3:f7e2fda3111092730a03feec1fabf436a89ddab1ffa8ae51b953f3183c8617e3"
+size = 6821106
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.14.1/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.6"
@@ -47,15 +52,28 @@ backend = "cargo:usage-cli"
 version = "2.5.2"
 backend = "aqua:sigstore/cosign"
 
-[tools.cosign.checksums]
-cosign-linux-amd64 = "sha256:bcfeae05557a9f313ee4392d2f335d0ff69ebbfd232019e3736fb04999fe1734"
+[tools.cosign.platforms.linux-x64]
+checksum = "sha256:bcfeae05557a9f313ee4392d2f335d0ff69ebbfd232019e3736fb04999fe1734"
+size = 132561156
+url = "https://github.com/sigstore/cosign/releases/download/v2.5.2/cosign-linux-amd64"
+
+[tools.gh]
+version = "2.62.0"
+backend = "aqua:cli/cli"
+
+[tools.gh.platforms.linux-x64]
+checksum = "sha256:41c8b0698ad3003cb5c44bde672a1ffd5f818595abd80162fbf8cc999418446a"
+size = 13065800
+url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz"
 
 [tools.hk]
 version = "1.2.1"
 backend = "aqua:jdx/hk"
 
-[tools.hk.checksums]
-"hk-x86_64-unknown-linux-gnu.tar.gz" = "sha256:1cf3749b28958acb2697935bf5566414024a67ad44d53339f16501dfd8f7a72d"
+[tools.hk.platforms.linux-x64]
+checksum = "blake3:92cba0567a4b0f022dba17f3cc578dd5993e49f00cf8a7fcca9af64e3c68faf2"
+size = 6194278
+url = "https://github.com/jdx/hk/releases/download/v1.2.1/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [tools.jq]
 version = "1.8.1"
@@ -77,23 +95,28 @@ backend = "pipx:toml-sort"
 version = "0.28.2"
 backend = "aqua:apple/pkl"
 
-[tools.pkl.checksums]
-pkl-linux-amd64 = "sha256:ba8722ba6971f7cb2b8b90fdca76c947a9510a57119baf05263bf4fcf9f9b0ba"
+[tools.pkl.platforms.linux-x64]
+checksum = "blake3:307c4fe33a13f5293dce699b1544d292537caa2c1b711f984f7d3ecc9e729ed2"
+size = 101155760
+url = "https://github.com/apple/pkl/releases/download/0.28.2/pkl-linux-amd64"
 
 [tools.pre-commit]
 version = "4.2.0"
 backend = "aqua:pre-commit/pre-commit"
 
-[tools.pre-commit.checksums]
-"pre-commit-4.2.0.pyz" = "sha256:0d4d80fd598dd1f7c268569de49e7c7a692a3de6f7a97cf14ad4e6cce993bbdf"
+[tools.pre-commit.platforms.linux-x64]
+checksum = "sha256:0d4d80fd598dd1f7c268569de49e7c7a692a3de6f7a97cf14ad4e6cce993bbdf"
+size = 6544274
+url = "https://github.com/pre-commit/pre-commit/releases/download/v4.2.0/pre-commit-4.2.0.pyz"
 
 [tools.ripgrep]
 version = "14.1.1"
 backend = "aqua:BurntSushi/ripgrep"
 
-[tools.ripgrep.checksums]
-"ripgrep-14.1.1-aarch64-apple-darwin.tar.gz" = "sha256:24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be"
-"ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz" = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
+[tools.ripgrep.platforms.linux-x64]
+checksum = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
+size = 2566310
+url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.shellcheck]
 version = "0.10.0"
@@ -107,19 +130,15 @@ backend = "asdf:shfmt"
 version = "2.7.1"
 backend = "ubi:slsa-framework/slsa-verifier"
 
-[tools.slsa-verifier.checksums]
-slsa-verifier-linux-x86_64 = "sha256:946dbec729094195e88ef78e1734324a27869f03e2c6bd2f61cbc06bd5350339"
-
 [tools.taplo]
 version = "0.10.0"
 backend = "aqua:tamasfe/taplo"
 
-[tools.taplo.checksums]
-"taplo-linux-x86_64.gz" = "sha256:8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156"
+[tools.taplo.platforms.linux-x64]
+checksum = "blake3:4871fab0e60275a1eb46e7190726e144f56c9a9527f59b0d1da5a042baead8e2"
+size = 5116068
+url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz"
 
 [tools.wait-for-gh-rate-limit]
 version = "1.0.0"
 backend = "ubi:jdx/wait-for-gh-rate-limit"
-
-[tools.wait-for-gh-rate-limit.checksums]
-wait-for-gh-rate-limit-linux-x86_64 = "sha256:fd8bb89c91936cf530e1da2699810c9a3793922315611b6938c89c9364ee2e76"

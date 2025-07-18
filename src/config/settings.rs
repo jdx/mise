@@ -451,11 +451,20 @@ impl Settings {
     }
 
     pub fn os(&self) -> &str {
-        self.os.as_deref().unwrap_or(OS)
+        match self.os.as_deref().unwrap_or(OS) {
+            "darwin" | "macos" => "macos",
+            "linux" => "linux",
+            "windows" => "windows",
+            other => other,
+        }
     }
 
     pub fn arch(&self) -> &str {
-        self.arch.as_deref().unwrap_or(ARCH)
+        match self.arch.as_deref().unwrap_or(ARCH) {
+            "x86_64" | "amd64" => "x64",
+            "aarch64" | "arm64" => "arm64",
+            other => other,
+        }
     }
 
     pub fn no_config() -> bool {

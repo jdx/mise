@@ -111,9 +111,13 @@ impl JavaPlugin {
         pr.set_message(format!("download {filename}"));
         HTTP.download_file(&m.url, &tarball_path, Some(pr)).await?;
 
-        if !tv.checksums.contains_key(filename) && m.checksum.is_some() {
-            tv.checksums
-                .insert(filename.to_string(), m.checksum.as_ref().unwrap().clone());
+        let platform_key = self.get_platform_key();
+        if !tv.lock_platforms.contains_key(&platform_key) {
+            let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+            platform_info.url = Some(m.url.clone());
+            if m.checksum.is_some() {
+                platform_info.checksum = m.checksum.clone();
+            }
         }
         self.verify_checksum(ctx, tv, &tarball_path)?;
 
@@ -393,8 +397,41 @@ impl Backend for JavaPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let metadata = self.tv_to_metadata(&tv).await?;
-        let tarball_path = self.download(ctx, &mut tv, &ctx.pr, metadata).await?;
+        // Check if URL already exists in lockfile platforms first
+        let platform_key = self.get_platform_key();
+        let (metadata, tarball_path) =
+            if let Some(platform_info) = tv.lock_platforms.get(&platform_key) {
+                if let Some(ref url) = platform_info.url {
+                    // Use the filename from the URL, not the platform key
+                    let filename = url.split('/').next_back().unwrap();
+                    debug!("Using existing URL from lockfile for {}: {}", filename, url);
+                    let tarball_path = tv.download_path().join(filename);
+
+                    // If the file does not exist, download using the lockfile URL
+                    if !tarball_path.exists() {
+                        debug!("File not found, downloading from cached URL: {}", url);
+                        // Download using the lockfile URL, not JavaMetadata
+                        HTTP.download_file(url, &tarball_path, Some(&ctx.pr))
+                            .await?;
+                        // Optionally verify checksum if present
+                        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+                    }
+
+                    // Fetch metadata for installation (for install/move logic)
+                    let metadata = self.tv_to_metadata(&tv).await?;
+                    (metadata, tarball_path)
+                } else {
+                    // No URL in lockfile, fallback to metadata
+                    let metadata = self.tv_to_metadata(&tv).await?;
+                    let tarball_path = self.download(ctx, &mut tv, &ctx.pr, metadata).await?;
+                    (metadata, tarball_path)
+                }
+            } else {
+                let metadata = self.tv_to_metadata(&tv).await?;
+                let tarball_path = self.download(ctx, &mut tv, &ctx.pr, metadata).await?;
+                (metadata, tarball_path)
+            };
+
         self.install(&tv, &ctx.pr, &tarball_path, metadata)?;
         self.verify(&tv, &ctx.pr)?;
 
@@ -453,15 +490,11 @@ fn os() -> &'static str {
 }
 
 fn arch(settings: &Settings) -> &str {
-    let arch = settings.arch();
-    if arch == "x86_64" {
-        "x86_64"
-    } else if arch == "arm" {
-        "arm32-vfp-hflt"
-    } else if arch == "aarch64" {
-        "aarch64"
-    } else {
-        arch
+    match settings.arch() {
+        "x64" => "x86_64",
+        "arm64" => "aarch64",
+        "arm" => "arm32-vfp-hflt",
+        other => other,
     }
 }
 

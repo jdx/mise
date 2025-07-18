@@ -28,7 +28,72 @@ pub struct LockfileTool {
     pub version: String,
     pub backend: Option<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub checksums: BTreeMap<String, String>,
+    pub platforms: BTreeMap<String, PlatformInfo>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct PlatformInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+impl TryFrom<toml::Value> for PlatformInfo {
+    type Error = Report;
+    fn try_from(value: toml::Value) -> Result<Self> {
+        match value {
+            toml::Value::String(checksum) => Ok(PlatformInfo {
+                checksum: Some(checksum),
+                size: None,
+                url: None,
+            }),
+            toml::Value::Integer(size) => Ok(PlatformInfo {
+                checksum: None,
+                size: Some(size.try_into()?),
+                url: None,
+            }),
+            toml::Value::Table(mut t) => {
+                let checksum = match t.remove("checksum") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
+                let size = t
+                    .remove("size")
+                    .and_then(|v| v.as_integer())
+                    .map(|i| i.try_into())
+                    .transpose()?;
+                let url = match t.remove("url") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
+                Ok(PlatformInfo {
+                    checksum,
+                    size,
+                    url,
+                })
+            }
+            _ => bail!("unsupported asset info format"),
+        }
+    }
+}
+
+impl From<PlatformInfo> for toml::Value {
+    fn from(platform_info: PlatformInfo) -> Self {
+        let mut table = toml::Table::new();
+        if let Some(checksum) = platform_info.checksum {
+            table.insert("checksum".to_string(), checksum.into());
+        }
+        if let Some(size) = platform_info.size {
+            table.insert("size".to_string(), (size as i64).into());
+        }
+        if let Some(url) = platform_info.url {
+            table.insert("url".to_string(), url.into());
+        }
+        toml::Value::Table(table)
+    }
 }
 
 impl Lockfile {
@@ -40,11 +105,14 @@ impl Lockfile {
         trace!("reading lockfile {}", path.display_user());
         let content = file::read_to_string(path)?;
         let mut table: toml::Table = toml::from_str(&content)?;
+
         let tools: toml::Table = table
             .remove("tools")
             .unwrap_or(toml::Table::new().into())
             .try_into()?;
+
         let mut lockfile = Lockfile::default();
+
         for (short, value) in tools {
             let versions = match value {
                 toml::Value::Array(arr) => arr
@@ -55,6 +123,7 @@ impl Lockfile {
             };
             lockfile.tools.insert(short, versions);
         }
+
         Ok(lockfile)
     }
 
@@ -78,6 +147,7 @@ impl Lockfile {
             }
             let mut lockfile = toml::Table::new();
             lockfile.insert("tools".to_string(), tools.into());
+
             let content = toml::to_string_pretty(&toml::Value::Table(lockfile))?;
             let content = format(content.parse()?);
             file::write(path, content)?;
@@ -159,9 +229,10 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         });
 
         for (short, tvl) in tools {
+            let lockfile_tools: Vec<LockfileTool> = tvl.clone().into();
             existing_lockfile
                 .tools
-                .insert(short.to_string(), tvl.clone().into());
+                .insert(short.to_string(), lockfile_tools);
         }
 
         existing_lockfile.save(&lockfile_path)?;
@@ -254,14 +325,14 @@ impl TryFrom<toml::Value> for LockfileTool {
             toml::Value::String(v) => LockfileTool {
                 version: v,
                 backend: Default::default(),
-                checksums: Default::default(),
+                platforms: Default::default(),
             },
             toml::Value::Table(mut t) => {
-                let mut checksums = BTreeMap::new();
-                if let Some(checksums_table) = t.remove("checksums") {
-                    let checksums_table: toml::Table = checksums_table.try_into()?;
-                    for (filename, checksum) in checksums_table {
-                        checksums.insert(filename, checksum.try_into()?);
+                let mut platforms = BTreeMap::new();
+                if let Some(platforms_table) = t.remove("platforms") {
+                    let platforms_table: toml::Table = platforms_table.try_into()?;
+                    for (platform, platform_info) in platforms_table {
+                        platforms.insert(platform, platform_info.try_into()?);
                     }
                 }
                 LockfileTool {
@@ -275,7 +346,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                         .map(|v| v.try_into())
                         .transpose()?
                         .unwrap_or_default(),
-                    checksums,
+                    platforms,
                 }
             }
             _ => bail!("unsupported lockfile format {}", value),
@@ -291,8 +362,8 @@ impl LockfileTool {
         if let Some(backend) = self.backend {
             table.insert("backend".to_string(), backend.into());
         }
-        if !self.checksums.is_empty() {
-            table.insert("checksums".to_string(), self.checksums.into());
+        if !self.platforms.is_empty() {
+            table.insert("platforms".to_string(), self.platforms.clone().into());
         }
         table.into()
     }
@@ -302,10 +373,26 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
     fn from(tvl: ToolVersionList) -> Self {
         tvl.versions
             .iter()
-            .map(|tv| LockfileTool {
-                version: tv.version.clone(),
-                backend: Some(tv.ba().full()),
-                checksums: tv.checksums.clone(),
+            .map(|tv| {
+                let mut platforms = BTreeMap::new();
+
+                // Convert tool version lock_platforms to lockfile platforms
+                for (platform, platform_info) in &tv.lock_platforms {
+                    platforms.insert(
+                        platform.clone(),
+                        PlatformInfo {
+                            checksum: platform_info.checksum.clone(),
+                            size: platform_info.size,
+                            url: platform_info.url.clone(),
+                        },
+                    );
+                }
+
+                LockfileTool {
+                    version: tv.version.clone(),
+                    backend: Some(tv.ba().full()),
+                    platforms,
+                }
             })
             .collect()
     }
@@ -323,6 +410,12 @@ fn format(mut doc: DocumentMut) -> String {
                             }
                             a.to_string().cmp(&b.to_string())
                         });
+                        // Sort platforms section within each tool
+                        if let Some(platforms) = t.get_mut("platforms") {
+                            if let toml_edit::Item::Table(platforms_table) = platforms {
+                                platforms_table.sort_values();
+                            }
+                        }
                     }
                 }
                 toml_edit::Item::Table(t) => {
@@ -332,10 +425,17 @@ fn format(mut doc: DocumentMut) -> String {
                         }
                         a.to_string().cmp(&b.to_string())
                     });
+                    // Sort platforms section within each tool
+                    if let Some(platforms) = t.get_mut("platforms") {
+                        if let toml_edit::Item::Table(platforms_table) = platforms {
+                            platforms_table.sort_values();
+                        }
+                    }
                 }
                 _ => {}
             }
         }
     }
+
     doc.to_string()
 }

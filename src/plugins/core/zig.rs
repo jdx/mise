@@ -208,16 +208,11 @@ fn os() -> &'static str {
 }
 
 fn arch(settings: &Settings) -> &str {
-    let arch = settings.arch();
-    if arch == "x86_64" {
-        "x86_64"
-    } else if arch == "aarch64" {
-        "aarch64"
-    } else if arch == "arm" {
-        "armv7a"
-    } else if arch == "riscv64" {
-        "riscv64"
-    } else {
-        arch
+    match settings.arch() {
+        "x64" => "x86_64",
+        "arm64" => "aarch64",
+        "arm" => "armv7a",
+        "riscv64" => "riscv64",
+        other => other,
     }
 }

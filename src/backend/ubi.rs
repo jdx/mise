@@ -15,8 +15,8 @@ use itertools::Itertools;
 use regex::Regex;
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::sync::OnceLock;
-use std::{env, sync::Arc};
 use std::{fmt::Debug, sync::LazyLock};
 use ubi::{ForgeType, UbiBuilder};
 use xx::regex;
@@ -224,27 +224,35 @@ impl Backend for UbiBackend {
         tv: &mut ToolVersion,
         file: &Path,
     ) -> eyre::Result<()> {
-        let mut checksum_key = file.file_name().unwrap().to_string_lossy().to_string();
+        // For ubi backend, generate a more specific platform key that includes tool-specific options
+        let mut platform_key = self.get_platform_key();
+        let filename = file.file_name().unwrap().to_string_lossy().to_string();
+
         if let Some(exe) = tv.request.options().get("exe") {
-            checksum_key = format!("{checksum_key}-{exe}");
+            platform_key = format!("{platform_key}-{exe}");
         }
         if let Some(matching) = tv.request.options().get("matching") {
-            checksum_key = format!("{checksum_key}-{matching}");
+            platform_key = format!("{platform_key}-{matching}");
         }
-        checksum_key = format!("{}-{}-{}", checksum_key, env::consts::OS, env::consts::ARCH);
-        if let Some(checksum) = &tv.checksums.get(&checksum_key) {
+        // Include filename to distinguish different downloads for the same platform
+        platform_key = format!("{platform_key}-{filename}");
+
+        // Get or create platform info for this platform key
+        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
+
+        if let Some(checksum) = &platform_info.checksum {
             ctx.pr
-                .set_message(format!("checksum verify {checksum_key}"));
+                .set_message(format!("checksum verify {platform_key}"));
             if let Some((algo, check)) = checksum.split_once(':') {
                 hash::ensure_checksum(file, check, Some(&ctx.pr), algo)?;
             } else {
-                bail!("Invalid checksum: {checksum_key}");
+                bail!("Invalid checksum: {platform_key}");
             }
         } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr
-                .set_message(format!("checksum generate {checksum_key}"));
+                .set_message(format!("checksum generate {platform_key}"));
             let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
-            tv.checksums.insert(checksum_key, format!("blake3:{hash}"));
+            platform_info.checksum = Some(format!("blake3:{hash}"));
         }
         Ok(())
     }

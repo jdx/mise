@@ -1,6 +1,22 @@
 # Changelog
 
+## [2025.7.16](https://github.com/jdx/mise/compare/v2025.7.15..v2025.7.16) - 2025-07-18
+
+### Chore
+
+- **(release)** increase timeout for macos tarballs by [@jdx](https://github.com/jdx) in [05e3a45](https://github.com/jdx/mise/commit/05e3a459982745f365d958501492430effab1fc0)
+
+## [2025.7.15](https://github.com/jdx/mise/compare/v2025.7.14..v2025.7.15) - 2025-07-18
+
+### 🧪 Testing
+
+- added .release-skip-e2e functionality by [@jdx](https://github.com/jdx) in [#5698](https://github.com/jdx/mise/pull/5698)
+
 ## [2025.7.14](https://github.com/jdx/mise/compare/v2025.7.13..v2025.7.14) - 2025-07-18
+
+### 🐛 Bug Fixes
+
+- mise.run cloudflare worker syntax by [@jdx](https://github.com/jdx) in [#5693](https://github.com/jdx/mise/pull/5693)
 
 ### 📦️ Dependency Updates
 

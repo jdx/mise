@@ -17,15 +17,18 @@ assert "mise ls tiny --json --current | jq -r '.[0].version'" "1.0.0"
 # validates checksum
 mise use gh@2.62.0
 cat mise.lock
-assert_contains "cat mise.lock" "[tools.gh.checksums]"
+assert_contains "cat mise.lock" '[tools.gh.platforms.linux-x64]'
+assert_contains "cat mise.lock" 'checksum = "sha256:'
+
+# Test rewriting existing lockfile section with same content
 cat <<EOF >mise.lock
 [tools.gh]
 version = "2.62.0"
-[tools.gh.checksums]
-"gh_2.62.0_macOS_arm64.zip" = "sha512:0000000000"
-"gh_2.62.0_windows_arm64.zip" = "sha512:0000000000"
-"gh_2.62.0_linux_arm64.tar.gz" = "sha512:0000000000"
-"gh_2.62.0_windows_amd64.zip" = "sha512:0000000000"
-"gh_2.62.0_linux_amd64.tar.gz" = "sha512:0000000000"
+backend = "aqua:cli/cli"
+
+[tools.gh.platforms.linux-x64]
+checksum = "blake3:aaaaa"
+size = 12345
+url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz"
 EOF
 assert_fail "mise i gh -f"

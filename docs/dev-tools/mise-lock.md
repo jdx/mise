@@ -9,6 +9,7 @@ The lockfile serves similar purposes to `package-lock.json` in npm or `Cargo.loc
 - **Reproducible builds**: Ensures everyone on your team uses exactly the same tool versions
 - **Security**: Verifies tool integrity with checksums when supported by the backend
 - **Version pinning**: Locks tools to specific versions while allowing flexibility in `mise.toml`
+- **Avoids API rate limits**: By storing download URLs, future installs use the lockfile and do not need to call GitHub (or other providers), avoiding rate limits and the need for `GITHUB_TOKEN` in most cases
 
 ## Enabling Lockfiles
 
@@ -31,15 +32,55 @@ lockfile = true
 
 ## File Format
 
-`mise.lock` is a TOML file that stores:
+`mise.lock` is a TOML file with a platform-based format that organizes asset information by platform:
 
 ```toml
 # Example mise.lock
-[tools]
-"node" = { version = "20.11.0", checksum = "sha256:abc123..." }
-"python" = { version = "3.11.7", checksum = "sha256:def456..." }
-"go" = { version = "1.21.5" }  # No checksum if backend doesn't support it
+[tools.node]
+version = "20.11.0"
+backend = "core:node"
+
+[tools.node.platforms.linux-x64]
+checksum = "sha256:a6c213b7a2c3b8b9c0aaf8d7f5b3a5c8d4e2f4a5b6c7d8e9f0a1b2c3d4e5f6a7"
+size = 23456789
+url = "https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.xz"
+
+[tools.python]
+version = "3.11.7"
+backend = "core:python"
+
+[tools.python.platforms.linux-x64]
+checksum = "sha256:def456..."
+size = 12345678
+
+[tools.ripgrep]
+version = "14.1.1"
+backend = "aqua:BurntSushi/ripgrep"
+
+[tools.ripgrep.platforms.linux-x64]
+checksum = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
+size = 1234567
 ```
+
+### Platform Information
+
+Each platform in a tool's `[tools.name.platforms]` section uses a key format like `"os-arch"` (e.g., `"linux-x64"`, `"macos-arm64"`) and can contain:
+
+- **`checksum`** (optional): SHA256 or Blake3 hash for integrity verification
+- **`size`** (optional): File size in bytes for download validation
+- **`url`** (optional): Original download URL for reference or re-downloading
+
+### Platform Keys
+
+The platform key format is generally `os-arch` but can be customized by backends:
+
+- **Standard format**: `linux-x64`, `macos-arm64`, `windows-x64`
+- **Backend-specific**: Some backends like Java may use more specific platform identifiers
+- **Tool-specific**: Backends like `ubi` may include additional tool-specific information in the platform key
+
+### Legacy Format Migration
+
+Older lockfiles with separate `[tools.name.assets]` and `[tools.name.checksums]` sections are automatically migrated to the new platform-based `[tools.name.platforms]` format when read. The migration is seamless and maintains all existing functionality.
 
 ## Workflow
 
@@ -76,11 +117,13 @@ mise use node@22
 
 ## Backend Support
 
-Not all backends support checksums in lockfiles:
+Backend support for lockfile features varies:
 
-- ✅ **Full support** (version + checksum): `http`, `github`, `gitlab`
-- ⚠️ **Partial support** (version only): `core`, `asdf`, `npm`, `cargo`, `pipx`
-- 📝 **Planned**: More backends will add checksum support over time
+- ✅ **Full support** (version + checksum + size + URL): `aqua`, `http`, `github`, `gitlab`
+- ⚠️ **Partial support** (version + checksum + size): `ubi`
+- 📝 **Basic support** (version + checksum): `core` (some tools)
+- 📝 **Version only**: `asdf`, `npm`, `cargo`, `pipx`
+- 📝 **Planned**: More backends will add full asset tracking support over time
 
 ## Best Practices
 
@@ -169,6 +212,21 @@ Since lockfiles are still experimental, enable them with:
 mise settings experimental=true
 mise settings lockfile=true
 ```
+
+## Benefits of the New Format
+
+The platform-based format provides several advantages:
+
+1. **Organized Structure**: Platform information is logically grouped by operating system and architecture
+2. **Cross-platform Support**: Each tool can have different assets for different platforms in the same lockfile
+3. **Reduced Duplication**: Platform-specific checksums and sizes are consolidated per platform
+4. **Extended Metadata**: Support for file sizes and download URLs per platform
+5. **Better Maintainability**: Clear separation of tool versions and their platform-specific assets
+6. **Easier Navigation**: Platform-specific assets are easier to locate and manage by os-arch keys
+7. **Full Traceability**: URLs provide complete audit trail of asset sources per platform
+8. **Enhanced Security**: Better compliance and security auditing capabilities across platforms
+9. **Avoids Rate Limits**: By storing URLs, future installs do not need to make API calls to GitHub or other providers, reducing the risk of hitting rate limits and removing the need for `GITHUB_TOKEN` in simple workflows
+10. **Backend Flexibility**: Backends can customize platform keys for tool-specific requirements (e.g., Java's detailed platform specifications)
 
 ## See Also
 
