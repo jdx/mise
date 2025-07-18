@@ -6,6 +6,16 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
 
+# Check for .release-skip-e2e and skip all tests if version matches
+RELEASE_SKIP_FILE="$ROOT/.release-skip-e2e"
+VERSION="$(. "$ROOT/scripts/get-version.sh" | tr -d '\n')"
+if [[ -f $RELEASE_SKIP_FILE ]]; then
+	if grep -Fxq "$VERSION" "$RELEASE_SKIP_FILE"; then
+		echo "[e2e] Skipping all e2e tests: .release-skip-e2e contains $VERSION" >&2
+		exit 0
+	fi
+fi
+
 pushd e2e
 # Avoid mapfile that is not available on bash 3.2 for compatibility with macOS
 SLOW_FILES=()
