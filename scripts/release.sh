@@ -91,7 +91,8 @@ if [[ $DRY_RUN != 1 ]]; then
 	#  echo "::group::Publish npm mise-cli"
 	#  NPM_PREFIX=mise-cli ./scripts/release-npm.sh
 	echo "::group::Publish r2"
-	./scripts/publish-r2.sh
+	# TODO: remove || true when working
+	./scripts/publish-r2.sh || true
 	echo "::group::Deploy Cloudflare Worker"
 	./scripts/deploy-worker.sh
 	echo "::group::Publish GitHub releases as draft"
