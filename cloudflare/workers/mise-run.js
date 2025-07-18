@@ -8,7 +8,6 @@ export default {
         },
       });
     }
-
     // Only GET requests work with this proxy.
     if (request.method !== "GET") return MethodNotAllowed(request);
 
