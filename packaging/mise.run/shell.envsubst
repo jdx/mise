@@ -1,0 +1,82 @@
+#!/bin/sh
+set -eu
+
+#region logging setup
+if [ "${MISE_DEBUG-}" = "true" ] || [ "${MISE_DEBUG-}" = "1" ]; then
+  debug() {
+    echo "$@" >&2
+  }
+else
+  debug() {
+    :
+  }
+fi
+
+if [ "${MISE_QUIET-}" = "1" ] || [ "${MISE_QUIET-}" = "true" ]; then
+  info() {
+    :
+  }
+else
+  info() {
+    echo "$@" >&2
+  }
+fi
+
+error() {
+  echo "$@" >&2
+  exit 1
+}
+#endregion
+
+install_mise() {
+  # Download and install mise using the main install script
+  info "mise: downloading and installing mise..."
+  
+  if [ -x "$(command -v curl)" ]; then
+    curl -fsSL https://mise.jdx.dev/install.sh | sh
+  elif [ -x "$(command -v wget)" ]; then
+    wget -qO- https://mise.jdx.dev/install.sh | sh
+  else
+    error "mise install requires curl or wget but neither is installed. Aborting."
+  fi
+  
+  install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
+  
+  if [ ! -f "$install_path" ]; then
+    error "mise installation failed"
+  fi
+  
+  info "mise: installed successfully to $install_path"
+}
+
+setup_${SHELL_NAME}_activation() {
+  install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
+  ${CONFIG_VAR_NAME}
+  
+  # Check if activation is already set up
+  if [ -f "$${CONFIG_FILE_VAR}" ] && grep -qF "# added by https://mise.run/${SHELL_NAME}" "$${CONFIG_FILE_VAR}"; then
+    info "mise: ${SHELL_NAME} activation already configured in $${CONFIG_FILE_VAR}"
+    return
+  fi
+  
+  # Add activation to ${SHELL_NAME} config
+  info "mise: adding activation to $${CONFIG_FILE_VAR}"
+  
+  ${CONFIG_SETUP_COMMANDS}
+  
+  # Add activation line
+  echo "" >> "$${CONFIG_FILE_VAR}"
+  ${ACTIVATION_COMMAND}
+  
+  info "mise: activation added to $${CONFIG_FILE_VAR}"
+  info "mise: restart your shell or run '${SOURCE_COMMAND}' to activate mise"
+  info "mise: run 'mise doctor' to verify setup"
+}
+
+# Main execution
+install_mise
+setup_${SHELL_NAME}_activation
+
+info ""
+info "mise: setup complete! 🎉"
+info "mise: ${FINAL_MESSAGE}"
