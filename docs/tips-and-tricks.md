@@ -211,7 +211,19 @@ touch mise.lock
 mise i
 ```
 
+The lockfile uses a consolidated format with `[tools.name.assets]` sections to organize asset information under each tool. Asset information includes checksums, file sizes, and optional download URLs. Legacy lockfiles with separate `[tools.name.checksums]` and `[tools.name.sizes]` sections are automatically migrated to the new format.
+
 Note that at least currently mise needs to actually install the tool to get the tarball checksum (otherwise it would need to download the tarball just
 to get the checksum of it since normally that gets deleted). So you may need to run something like `mise uninstall --all` first in order to have it
 reinstall everything. It will store the full versions even if it doesn't know the checksum though so it'll still lock the version just not have a checksum
 to go with it.
+
+## Lockfile URL Tracking (Avoiding Rate Limits)
+
+When you use a lockfile (`mise.lock`), mise stores the exact download URLs for each tool asset. This means that after the initial install, future `mise install` runs will use the URLs from the lockfile instead of making API calls to GitHub (or other providers). This has several benefits:
+
+- **Avoids GitHub API rate limits**: No need to make repeated API calls for every install, which can quickly exhaust your rate limit, especially in CI or large teams.
+- **No need for GITHUB_TOKEN**: Since the URLs are already known, you don’t need to set up a `GITHUB_TOKEN` for simple installs.
+- **Faster installs**: Skipping API lookups speeds up repeated installs.
+
+This is especially useful in CI/CD or when working in environments with strict network or authentication requirements.

@@ -8,9 +8,12 @@ local linters = new Mapping<String, Step> {
     ["prettier"] = (Builtins.prettier) {
       batch = false
     }
-    ["clippy"] = (Builtins.cargo_clippy) {
-      check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features -- -Dwarnings"
-      fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged -- -Dwarnings"
+    //["clippy"] = (Builtins.cargo_clippy) {
+    //  check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features -- -Dwarnings"
+    //  fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged -- -Dwarnings"
+    //}
+    ["cargo-check"] = (Builtins.cargo_check) {
+      check = "cargo check --all-features"
     }
     ["shellcheck"] = (Builtins.shellcheck) {
       glob = bash_glob

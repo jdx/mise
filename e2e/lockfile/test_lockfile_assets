@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+# Test creating a lockfile with platforms sections
+cat <<EOF >mise.lock
+[tools.tiny]
+version = "1.0.0"
+backend = "asdf:tiny"
+
+[tools.tiny.platforms.linux-x64]
+checksum = "sha256:abc123"
+size = 1024
+
+[tools.dummy]
+version = "2.0.0"
+backend = "core:dummy"
+
+[tools.dummy.platforms.linux-x64]
+checksum = "sha256:def456"
+size = 2048
+url = "https://example.com/dummy-2.0.0-linux-x64.tar.gz"
+EOF
+
+echo "New format lockfile:"
+cat mise.lock
+
+# Test that the lockfile is read correctly
+mise ls
+
+echo "After reading:"
+cat mise.lock
+
+# Should have platforms sections under each tool
+assert_contains "cat mise.lock" "[tools.tiny.platforms"
+assert_contains "cat mise.lock" "[tools.dummy.platforms"
+assert_contains "cat mise.lock" 'checksum = "sha256:abc123"'
+assert_contains "cat mise.lock" 'size = 1024'
+assert_contains "cat mise.lock" 'checksum = "sha256:def456"'
+assert_contains "cat mise.lock" 'size = 2048'
+assert_contains "cat mise.lock" 'url = "https://example.com/dummy-2.0.0-linux-x64.tar.gz"'
+
+# Should not have individual tool asset sections in the new format
+assert_not_contains "cat mise.lock" "[tools.tiny.assets]"
+assert_not_contains "cat mise.lock" "[tools.dummy.assets]"
+assert_not_contains "cat mise.lock" "[tools.tiny.checksums]"
+assert_not_contains "cat mise.lock" "[tools.dummy.checksums]"
+
+echo "Platform-based format test passed!"

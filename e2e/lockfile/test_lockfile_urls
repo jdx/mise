@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+# Test that aqua backend stores URLs in lockfile
+rm -rf mise.lock
+
+# Create an empty lockfile so that the lockfile gets created when tools are installed
+touch mise.lock
+
+# Install a tool via aqua backend that should have URLs
+mise use ripgrep@14.1.1
+
+# Check that URLs are stored in lockfile
+assert_contains "cat mise.lock" '[tools.ripgrep.platforms.linux-x64]'
+assert_contains "cat mise.lock" 'url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"'
+
+echo "Lockfile content:"
+cat mise.lock
+
+echo ""
+echo "Aqua URL storage test passed!"

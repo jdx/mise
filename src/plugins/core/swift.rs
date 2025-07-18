@@ -254,9 +254,9 @@ fn extension() -> &'static str {
 
 fn architecture(settings: &Settings) -> Option<&str> {
     let arch = settings.arch();
-    if cfg!(target_os = "linux") && arch != "x86_64" {
+    if cfg!(target_os = "linux") && arch != "x64" {
         return Some(arch);
-    } else if cfg!(windows) && arch == "aarch64" {
+    } else if cfg!(windows) && arch == "arm64" {
         return Some("arm64");
     }
     None
