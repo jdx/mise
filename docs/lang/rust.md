@@ -7,7 +7,7 @@ not set. You can change this by setting the `MISE_RUSTUP_HOME` and `MISE_CARGO_H
 to isolate mise's rustup/cargo from your other rustup/cargo installations.
 
 Unlike most tools, these won't exist inside of `~/.local/share/mise/installs` because they are managed by rustup.
-All mise does is set the `RUST_TOOLCHAIN` environment variable to the requested version and rustup will
+All mise does is set the `RUSTUP_TOOLCHAIN` environment variable to the requested version and rustup will
 automatically install it if it doesn't exist.
 
 ## Usage

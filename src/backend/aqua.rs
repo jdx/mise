@@ -99,12 +99,6 @@ impl Backend for AquaBackend {
                 v_prefixed = v_prefixed.map(|v| format!("{prefix}{v}"));
             }
         }
-        if pkg.no_asset {
-            bail!("no asset released");
-        }
-        if pkg.error_message.is_some() {
-            bail!(pkg.error_message.unwrap());
-        }
         validate(&pkg)?;
 
         // Check if URL already exists in lockfile assets first
@@ -713,7 +707,7 @@ impl AquaBackend {
         } else if format.starts_with("tar") {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
         } else if format == "zip" {
-            file::unzip(&tarball_path, &install_path)?;
+            file::unzip(&tarball_path, &install_path, &Default::default())?;
         } else if format == "gz" {
             file::create_dir_all(&install_path)?;
             file::un_gz(&tarball_path, &bin_path)?;
@@ -800,6 +794,12 @@ async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
 }
 
 fn validate(pkg: &AquaPackage) -> Result<()> {
+    if pkg.no_asset {
+        bail!("no asset released");
+    }
+    if let Some(message) = &pkg.error_message {
+        bail!("{}", message);
+    }
     let envs: HashSet<&str> = pkg.supported_envs.iter().map(|s| s.as_str()).collect();
     let os = os();
     let arch = arch();

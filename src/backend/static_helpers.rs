@@ -94,9 +94,7 @@ pub fn install_artifact(
     // Use TarFormat for format detection
     let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
     let format = file::TarFormat::from_ext(ext);
-    if format == file::TarFormat::Zip {
-        file::unzip(file_path, &install_path)?;
-    } else if format == file::TarFormat::Raw {
+    if format == file::TarFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
         if let Some(bin_path_template) = opts.get("bin_path") {
             let bin_path = template_string(bin_path_template, tv);

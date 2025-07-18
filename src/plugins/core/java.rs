@@ -133,7 +133,7 @@ impl JavaPlugin {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         pr.set_message(format!("extract {filename}"));
         match m.file_type.as_deref() {
-            Some("zip") => file::unzip(tarball_path, &tv.download_path())?,
+            Some("zip") => file::unzip(tarball_path, &tv.download_path(), &Default::default())?,
             _ => file::untar(
                 tarball_path,
                 &tv.download_path(),

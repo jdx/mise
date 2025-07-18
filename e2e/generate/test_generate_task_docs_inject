@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+cat <<EOF >mise.toml
+[tasks.test]
+run = "echo 'running test task'"
+description = "This is a test task"
+[tasks.another_task]
+run = "echo 'running another task'"
+alias = ["alias1", "alias2"]
+EOF
+
+cat <<EOF >task_docs.md
+hello world
+
+<!-- mise-tasks -->
+## \`test\`
+
+- **Usage**: \`test\`
+
+This is a test task.
+
+## \`another_task\`
+
+- **Usage**: \`another_task\`
+- **Aliases**: \`alias1\`, \`alias2\`
+<!-- /mise-tasks -->
+
+hello world
+EOF
+
+mise generate task-docs --inject --output task_docs.md
+
+assert "cat task_docs.md" 'hello world
+
+<!-- mise-tasks -->
+## `another_task`
+
+- **Usage**: `another_task`
+- **Aliases**: `alias1`, `alias2`
+
+## `test`
+
+- **Usage**: `test`
+
+This is a test task
+<!-- /mise-tasks -->
+
+hello world'

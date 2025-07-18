@@ -645,6 +645,8 @@ pub enum TarFormat {
     TarZst,
     #[strum(serialize = "zip")]
     Zip,
+    #[strum(serialize = "7z")]
+    SevenZip,
     #[strum(serialize = "raw")]
     Raw,
 }
@@ -657,6 +659,7 @@ impl TarFormat {
             "bz2" | "tbz2" => TarFormat::TarBz2,
             "zst" | "tzst" => TarFormat::TarZst,
             "zip" => TarFormat::Zip,
+            "7z" => TarFormat::SevenZip,
             _ => TarFormat::Raw,
         }
     }
@@ -677,67 +680,65 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
         _ => opts.format,
     };
     if format == TarFormat::Zip {
-        unzip(archive, dest)?;
-    } else {
-        debug!("tar -xf {} -C {}", archive.display(), dest.display());
+        return unzip(
+            archive,
+            dest,
+            &ZipOptions {
+                strip_components: opts.strip_components,
+            },
+        );
+    } else if format == TarFormat::SevenZip {
+        #[cfg(windows)]
+        return un7z(
+            archive,
+            dest,
+            &SevenZipOptions {
+                strip_components: opts.strip_components,
+            },
+        );
+    }
+
+    debug!("tar -xf {} -C {}", archive.display(), dest.display());
+    if let Some(pr) = &opts.pr {
+        pr.set_message(format!(
+            "extract {}",
+            archive.file_name().unwrap().to_string_lossy()
+        ));
+    }
+    let tar = open_tar(format, archive)?;
+    let err = || {
+        let archive = display_path(archive);
+        let dest = display_path(dest);
+        format!("failed to extract tar: {archive} to {dest}")
+    };
+    // TODO: put this back in when we can read+write in parallel
+    // let mut cur = Cursor::new(vec![]);
+    // let mut total = 0;
+    // loop {
+    //     let mut buf = Cursor::new(vec![0; 1024 * 1024]);
+    //     let n = tar.read(buf.get_mut()).wrap_err_with(err)?;
+    //     cur.get_mut().extend_from_slice(&buf.get_ref()[..n]);
+    //     if n == 0 {
+    //         break;
+    //     }
+    //     if let Some(pr) = &opts.pr {
+    //         total += n as u64;
+    //         pr.set_length(total);
+    //     }
+    // }
+    create_dir_all(dest).wrap_err_with(err)?;
+    for entry in Archive::new(tar).entries().wrap_err_with(err)? {
+        let mut entry = entry.wrap_err_with(err)?;
+        trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
+        entry.unpack_in(dest).wrap_err_with(err)?;
         if let Some(pr) = &opts.pr {
-            pr.set_message(format!(
-                "extract {}",
-                archive.file_name().unwrap().to_string_lossy()
-            ));
+            pr.set_length(entry.raw_file_position());
         }
-        let tar = open_tar(format, archive)?;
-        let err = || {
-            let archive = display_path(archive);
-            let dest = display_path(dest);
-            format!("failed to extract tar: {archive} to {dest}")
-        };
-        // TODO: put this back in when we can read+write in parallel
-        // let mut cur = Cursor::new(vec![]);
-        // let mut total = 0;
-        // loop {
-        //     let mut buf = Cursor::new(vec![0; 1024 * 1024]);
-        //     let n = tar.read(buf.get_mut()).wrap_err_with(err)?;
-        //     cur.get_mut().extend_from_slice(&buf.get_ref()[..n]);
-        //     if n == 0 {
-        //         break;
-        //     }
-        //     if let Some(pr) = &opts.pr {
-        //         total += n as u64;
-        //         pr.set_length(total);
-        //     }
-        // }
-        create_dir_all(dest).wrap_err_with(err)?;
-        for entry in Archive::new(tar).entries().wrap_err_with(err)? {
-            let mut entry = entry.wrap_err_with(err)?;
-            trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
-            entry.unpack_in(dest).wrap_err_with(err)?;
-            if let Some(pr) = &opts.pr {
-                pr.set_length(entry.raw_file_position());
-            }
-        }
-        // if let Some(pr) = &opts.pr {
-        //     pr.set_position(total);
-        // }
     }
-    match opts.strip_components {
-        0 => {}
-        1 => {
-            let entries = ls(dest)?
-                .into_iter()
-                .map(|p| ls(&p))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
-            for entry in entries {
-                let mut new_dest = dest.to_path_buf();
-                new_dest.push(entry.file_name().unwrap());
-                fs::rename(entry, new_dest)?;
-            }
-        }
-        _ => bail!("strip-components > 1 is not supported"),
-    }
+    // if let Some(pr) = &opts.pr {
+    //     pr.set_position(total);
+    // }
+    strip_archive_path_components(dest, opts.strip_components).wrap_err_with(err)?;
     Ok(())
 }
 
@@ -750,6 +751,7 @@ fn open_tar(format: TarFormat, archive: &Path) -> Result<Box<dyn std::io::Read>>
         TarFormat::TarBz2 => Box::new(BzDecoder::new(f)),
         TarFormat::TarZst => Box::new(zstd::stream::read::Decoder::new(f)?),
         TarFormat::Zip => bail!("zip format not supported"),
+        TarFormat::SevenZip => bail!("7z format not supported"),
         TarFormat::Auto => match archive.extension().and_then(|s| s.to_str()) {
             Some("xz") => open_tar(TarFormat::TarXz, archive)?,
             Some("bz2") => open_tar(TarFormat::TarBz2, archive)?,
@@ -760,13 +762,54 @@ fn open_tar(format: TarFormat, archive: &Path) -> Result<Box<dyn std::io::Read>>
     })
 }
 
-pub fn unzip(archive: &Path, dest: &Path) -> Result<()> {
+fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
+    if strip_depth == 0 {
+        return Ok(());
+    }
+    if strip_depth > 1 {
+        bail!("strip-components > 1 is not supported");
+    }
+
+    let top_level_paths = ls(dir)?;
+    let entries: Vec<PathBuf> = top_level_paths
+        .iter()
+        .map(|p| ls(p))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    for entry in entries {
+        let mut new_dir = dir.to_path_buf();
+        new_dir.push(entry.file_name().unwrap());
+        fs::rename(entry, new_dir)?;
+    }
+    for path in top_level_paths {
+        if path.symlink_metadata()?.is_dir() {
+            remove_dir(path)?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+pub struct ZipOptions {
+    pub strip_components: usize,
+}
+
+pub fn unzip(archive: &Path, dest: &Path, opts: &ZipOptions) -> Result<()> {
     // TODO: show progress
     debug!("unzip {} -d {}", archive.display(), dest.display());
     ZipArchive::new(File::open(archive)?)
         .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
         .extract(dest)
-        .wrap_err_with(|| format!("failed to extract zip archive: {}", display_path(archive)))
+        .wrap_err_with(|| format!("failed to extract zip archive: {}", display_path(archive)))?;
+
+    strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+        format!(
+            "failed to strip path components from zip archive: {}",
+            display_path(archive)
+        )
+    })
 }
 
 pub fn un_dmg(archive: &Path, dest: &Path) -> Result<()> {
@@ -802,9 +845,22 @@ pub fn un_pkg(archive: &Path, dest: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
-pub fn un7z(archive: &Path, dest: &Path) -> Result<()> {
+#[derive(Default)]
+pub struct SevenZipOptions {
+    pub strip_components: usize,
+}
+
+#[cfg(windows)]
+pub fn un7z(archive: &Path, dest: &Path, opts: &SevenZipOptions) -> Result<()> {
     sevenz_rust::decompress_file(archive, dest)
-        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))
+        .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
+
+    strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+        format!(
+            "failed to strip path components from 7z archive: {}",
+            display_path(archive)
+        )
+    })
 }
 
 pub fn split_file_name(path: &Path) -> (String, String) {
@@ -869,9 +925,64 @@ pub fn inspect_tar_contents(archive: &Path, format: TarFormat) -> Result<Vec<(St
     Ok(top_level_components.into_iter().collect())
 }
 
+/// Inspects the top-level contents of a zip archive without extracting it
+pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
+    let f = File::open(archive)?;
+    let mut archive = ZipArchive::new(f)
+        .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?;
+    let mut top_level_components = std::collections::HashMap::new();
+
+    for i in 0..archive.len() {
+        let file = archive.by_index(i)?;
+        if let Some(path) = file.enclosed_name() {
+            if let Some(first_component) = path.components().next() {
+                let name = first_component.as_os_str().to_string_lossy().to_string();
+
+                // Check if this entry indicates the component is a directory
+                let is_directory = file.is_dir() || path.components().count() > 1; // If there are nested components, it's a directory
+
+                let existing = top_level_components.entry(name.clone()).or_insert(false);
+                *existing = *existing || is_directory;
+            }
+        }
+    }
+
+    Ok(top_level_components.into_iter().collect())
+}
+
+/// Adapted from inspect_tar_contents for 7z archives
+#[cfg(windows)]
+pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
+    let sevenz = sevenz_rust::SevenZReader::open(archive, sevenz_rust::Password::empty())?;
+    let mut top_level_components = std::collections::HashMap::new();
+
+    for file in &sevenz.archive().files {
+        let path = PathBuf::from(file.name());
+
+        if let Some(first_component) = path.components().next() {
+            let name = first_component.as_os_str().to_string_lossy().to_string();
+            let is_directory = file.is_directory() || path.components().count() > 1;
+
+            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            *existing = *existing || is_directory;
+        }
+    }
+
+    Ok(top_level_components.into_iter().collect())
+}
+
+#[cfg(not(windows))]
+pub fn inspect_7z_contents(_archive: &Path) -> Result<Vec<(String, bool)>> {
+    unimplemented!("7z format not supported on this platform")
+}
+
 /// Determines if strip_components=1 should be applied based on archive structure
 pub fn should_strip_components(archive: &Path, format: TarFormat) -> Result<bool> {
-    let top_level_entries = inspect_tar_contents(archive, format)?;
+    let top_level_entries = match format {
+        TarFormat::Zip => inspect_zip_contents(archive)?,
+        TarFormat::SevenZip => inspect_7z_contents(archive)?,
+        _ => inspect_tar_contents(archive, format)?,
+    };
 
     // If there's exactly one top-level entry and it's a directory, we should strip it
     if top_level_entries.len() == 1 {

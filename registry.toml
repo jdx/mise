@@ -1944,6 +1944,9 @@ opa.description = "Open Policy Agent (OPA) is an open source, general-purpose po
 opa.backends = ["aqua:open-policy-agent/opa", "asdf:tochukwuvictor/asdf-opa"]
 opam.backends = ["ubi:ocaml/opam", "asdf:asdf-community/asdf-opam"]
 openbao.backends = ["ubi:openbao/openbao[exe=bao]"]
+opencode.description = "AI coding agent, built for the terminal"
+opencode.backends = ["ubi:sst/opencode"]
+opencode.test = ["opencode --version", "{{version}}"]
 openfaas-cli.description = "Official CLI for OpenFaaS"
 openfaas-cli.backends = ["aqua:openfaas/faas-cli", "asdf:zekker6/asdf-faas-cli"]
 openresty.backends = ["asdf:mise-plugins/mise-openresty"]

@@ -72,7 +72,7 @@ impl ElixirPlugin {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
-        file::unzip(tarball_path, &tv.install_path())?;
+        file::unzip(tarball_path, &tv.install_path(), &Default::default())?;
 
         Ok(())
     }

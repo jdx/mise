@@ -134,7 +134,7 @@ impl RubyPlugin {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         ctx.pr.set_message(format!("extract {filename}"));
         file::remove_all(tv.install_path())?;
-        file::un7z(tarball_path, &tv.download_path())?;
+        file::un7z(tarball_path, &tv.download_path(), &Default::default())?;
         file::rename(
             tv.download_path()
                 .join(format!("rubyinstaller-{}-1-{arch}", tv.version)),
