@@ -626,6 +626,10 @@ docs = """
 Set to false to disable the "command not found" handler to autoinstall missing tool versions.
 Disable this if experiencing strange behavior in your shell when a command is not found.
 
+**Important limitation**: This handler only installs missing versions of tools that already have 
+at least one version installed. mise cannot determine which tool provides a binary without having 
+the tool installed first, so it cannot auto-install completely new tools.
+
 This also runs in shims if the terminal is interactive.
 """
 
