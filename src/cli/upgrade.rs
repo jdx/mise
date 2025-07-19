@@ -161,25 +161,24 @@ impl Upgrade {
             ..Default::default()
         };
 
+        // Collect all tool requests for parallel installation
+        let tool_requests: Vec<_> = outdated.iter().map(|o| o.tool_request.clone()).collect();
+        
+        // Install all tools in parallel
+        let install_results = ts.install_all_versions_parallel(config, tool_requests, &opts).await;
+        
+        // Separate successful installations from failures
         let mut successful_versions = Vec::new();
         let mut had_errors = false;
-
-        for outdated_info in &outdated {
-            let tool_request = outdated_info.tool_request.clone();
-            let tool_name = outdated_info.name.clone();
-
-            match ts
-                .install_all_versions(config, vec![tool_request], &opts)
-                .await
-            {
-                Ok(versions) => {
-                    for version in versions {
-                        successful_versions.push(version);
-                    }
+        
+        for (outdated_info, result) in outdated.iter().zip(install_results.iter()) {
+            match result {
+                Ok(version) => {
+                    successful_versions.push(version.clone());
                 }
                 Err(e) => {
                     had_errors = true;
-                    warn!("Failed to upgrade {}: {}", tool_name, e);
+                    warn!("Failed to upgrade {}: {}", outdated_info.name, e);
                 }
             }
         }
