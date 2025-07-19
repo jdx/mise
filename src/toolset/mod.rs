@@ -384,6 +384,9 @@ impl Toolset {
             }
         };
 
+        // Track plugin installation errors to avoid early returns
+        let mut plugin_errors = Vec::new();
+
         // Ensure plugins are installed
         for (backend, trs) in &queue {
             if let Some(plugin) = backend.plugin() {
@@ -403,21 +406,18 @@ impl Toolset {
                                 }
                             })
                     {
-                        // If plugin installation fails, return error for all tools in this batch using this backend
+                        // Collect plugin installation errors instead of returning early
                         let plugin_name = backend.ba().short.clone();
-                        return trs
-                            .iter()
-                            .map(|tr| {
-                                (
-                                    tr.clone(),
-                                    Err(eyre::eyre!(
-                                        "Plugin '{}' installation failed: {}",
-                                        plugin_name,
-                                        e
-                                    )),
-                                )
-                            })
-                            .collect();
+                        for tr in trs {
+                            plugin_errors.push((
+                                tr.clone(),
+                                Err(eyre::eyre!(
+                                    "Plugin '{}' installation failed: {}",
+                                    plugin_name,
+                                    e
+                                )),
+                            ));
+                        }
                     }
                 }
             }
@@ -433,16 +433,20 @@ impl Toolset {
         let mut tset: JoinSet<Vec<(ToolRequest, Result<ToolVersion>)>> = JoinSet::new();
         let opts = Arc::new(opts.clone());
 
+        // Track semaphore acquisition errors
+        let mut semaphore_errors = Vec::new();
+
         for (ba, trs) in queue {
             let ts = ts.clone();
             let permit = match semaphore.clone().acquire_owned().await {
                 Ok(p) => p,
                 Err(e) => {
-                    // If we can't acquire semaphore, return error for these tools
-                    return trs
-                        .into_iter()
-                        .map(|tr| (tr, Err(eyre::eyre!("Failed to acquire semaphore: {}", e))))
-                        .collect();
+                    // Collect semaphore acquisition errors instead of returning early
+                    for tr in trs {
+                        semaphore_errors
+                            .push((tr, Err(eyre::eyre!("Failed to acquire semaphore: {}", e))));
+                    }
+                    continue;
                 }
             };
             let opts = opts.clone();
@@ -477,6 +481,14 @@ impl Toolset {
         }
 
         let mut all_results = vec![];
+
+        // Add plugin errors first
+        all_results.extend(plugin_errors);
+
+        // Add semaphore errors
+        all_results.extend(semaphore_errors);
+
+        // Collect results from spawned tasks
         while let Some(res) = tset.join_next().await {
             match res {
                 Ok(results) => all_results.extend(results),
