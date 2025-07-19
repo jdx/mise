@@ -61,6 +61,28 @@ impl Display for InstallError {
 
 impl std::error::Error for InstallError {}
 
+/// Helper function to format install error messages
+fn format_install_error_message(failed_installations: &[(ToolRequest, eyre::Report)]) -> String {
+    if failed_installations.is_empty() {
+        return String::new();
+    }
+
+    let failed_tools: Vec<String> = failed_installations
+        .iter()
+        .map(|(tr, e)| format!("{}@{} ({})", tr.ba().short, tr.version(), e))
+        .collect();
+
+    format!(
+        "Failed to install {}: {}",
+        if failed_tools.len() == 1 {
+            "tool"
+        } else {
+            "tools"
+        },
+        failed_tools.join(", ")
+    )
+}
+
 #[derive(Debug, Clone)]
 pub struct InstallOptions {
     pub force: bool,
@@ -250,39 +272,22 @@ impl Toolset {
                 debug!("installing {} leaf tools first", leaf_deps.len());
             }
             versions.retain(|tr| !leaf_deps.contains(tr));
-            let leaf_deps_clone = leaf_deps.clone();
             let results = self.install_some_versions(config, leaf_deps, opts).await;
 
             // Collect successful installations and check for errors
             let mut failed_installations = vec![];
-            for (i, result) in results.into_iter().enumerate() {
+            for (tr, result) in results.into_iter() {
                 match result {
                     Ok(tv) => installed.push(tv),
                     Err(e) => {
-                        // Get the original tool request for this failed installation
-                        let failed_request = leaf_deps_clone.get(i).cloned();
-                        if let Some(tr) = failed_request {
-                            failed_installations.push((tr, e));
-                        }
+                        failed_installations.push((tr, e));
                     }
                 }
             }
 
             // If there were errors in this batch, return with successful installations so far
             if !failed_installations.is_empty() {
-                let failed_tools: Vec<String> = failed_installations
-                    .iter()
-                    .map(|(tr, e)| format!("{}@{} ({})", tr.ba().short, tr.version(), e))
-                    .collect();
-                let error_message = format!(
-                    "Failed to install {}: {}",
-                    if failed_tools.len() == 1 {
-                        "tool"
-                    } else {
-                        "tools"
-                    },
-                    failed_tools.join(", ")
-                );
+                let error_message = format_install_error_message(&failed_installations);
                 return Err(InstallError {
                     successful_installations: installed,
                     failed_installations,
@@ -355,10 +360,11 @@ impl Toolset {
         config: &Arc<Config>,
         versions: Vec<ToolRequest>,
         opts: &InstallOptions,
-    ) -> Vec<Result<ToolVersion>> {
+    ) -> Vec<(ToolRequest, Result<ToolVersion>)> {
         debug!("install_some_versions: {}", versions.iter().join(" "));
 
         // Group versions by backend
+        let versions_clone = versions.clone();
         let queue: Result<Vec<_>> = versions
             .into_iter()
             .rev()
@@ -371,7 +377,10 @@ impl Toolset {
             Ok(q) => q,
             Err(e) => {
                 // If we can't build the queue, return error for all versions
-                return vec![Err(e)];
+                return versions_clone
+                    .into_iter()
+                    .map(|tr| (tr, Err(eyre::eyre!("{}", e))))
+                    .collect();
             }
         };
 
@@ -398,12 +407,15 @@ impl Toolset {
                         let plugin_name = backend.ba().short.clone();
                         return trs
                             .iter()
-                            .map(|_| {
-                                Err(eyre::eyre!(
-                                    "Plugin '{}' installation failed: {}",
-                                    plugin_name,
-                                    e
-                                ))
+                            .map(|tr| {
+                                (
+                                    tr.clone(),
+                                    Err(eyre::eyre!(
+                                        "Plugin '{}' installation failed: {}",
+                                        plugin_name,
+                                        e
+                                    )),
+                                )
                             })
                             .collect();
                     }
@@ -418,7 +430,7 @@ impl Toolset {
         };
         let semaphore = Arc::new(Semaphore::new(jobs));
         let ts = Arc::new(self.clone());
-        let mut tset: JoinSet<Vec<Result<ToolVersion>>> = JoinSet::new();
+        let mut tset: JoinSet<Vec<(ToolRequest, Result<ToolVersion>)>> = JoinSet::new();
         let opts = Arc::new(opts.clone());
 
         for (ba, trs) in queue {
@@ -429,7 +441,7 @@ impl Toolset {
                     // If we can't acquire semaphore, return error for these tools
                     return trs
                         .into_iter()
-                        .map(|_| Err(eyre::eyre!("Failed to acquire semaphore: {}", e)))
+                        .map(|tr| (tr, Err(eyre::eyre!("Failed to acquire semaphore: {}", e))))
                         .collect();
                 }
             };
@@ -458,7 +470,7 @@ impl Toolset {
                     }
                     .await;
 
-                    results.push(result);
+                    results.push((tr, result));
                 }
                 results
             });
@@ -470,7 +482,20 @@ impl Toolset {
                 Ok(results) => all_results.extend(results),
                 Err(e) => {
                     // Task join error - this shouldn't happen but handle it
-                    all_results.push(Err(e.into()));
+                    // We can't map this to a specific tool request, so we'll create a generic error
+                    all_results.push((
+                        ToolRequest::new(
+                            Arc::new(BackendArg::new("unknown".to_string(), None)),
+                            "unknown",
+                            ToolSource::Unknown,
+                        )
+                        .unwrap_or_else(|_| ToolRequest::System {
+                            backend: Arc::new(BackendArg::new("unknown".to_string(), None)),
+                            source: ToolSource::Unknown,
+                            options: Default::default(),
+                        }),
+                        Err(e.into()),
+                    ));
                 }
             }
         }
