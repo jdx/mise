@@ -45,6 +45,44 @@ mod tool_version_options;
 
 pub use tool_version_options::{ToolVersionOptions, parse_tool_options};
 
+/// Error type that carries successful installations when some installations fail
+#[derive(Debug)]
+pub struct InstallError {
+    pub successful_installations: Vec<ToolVersion>,
+    pub failed_installations: Vec<(ToolRequest, eyre::Report)>,
+    pub error_message: String,
+}
+
+impl Display for InstallError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.error_message)
+    }
+}
+
+impl std::error::Error for InstallError {}
+
+/// Helper function to format install error messages
+fn format_install_error_message(failed_installations: &[(ToolRequest, eyre::Report)]) -> String {
+    if failed_installations.is_empty() {
+        return String::new();
+    }
+
+    let failed_tools: Vec<String> = failed_installations
+        .iter()
+        .map(|(tr, e)| format!("{}@{} ({})", tr.ba().short, tr.version(), e))
+        .collect();
+
+    format!(
+        "Failed to install {}: {}",
+        if failed_tools.len() == 1 {
+            "tool"
+        } else {
+            "tools"
+        },
+        failed_tools.join(", ")
+    )
+}
+
 #[derive(Debug, Clone)]
 pub struct InstallOptions {
     pub force: bool,
@@ -204,33 +242,92 @@ impl Toolset {
         config: &mut Arc<Config>,
         mut versions: Vec<ToolRequest>,
         opts: &InstallOptions,
-    ) -> Result<Vec<ToolVersion>> {
+    ) -> Result<Vec<ToolVersion>, InstallError> {
         if versions.is_empty() {
             return Ok(vec![]);
         }
+
+        // Run pre-install hook
         hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
+
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
+
+        // Handle dependencies by installing in dependency order
         let mut installed = vec![];
-        let mut leaf_deps = get_leaf_dependencies(&versions)?;
+        let leaf_deps_result = get_leaf_dependencies(&versions);
+        let mut leaf_deps = match leaf_deps_result {
+            Ok(deps) => deps,
+            Err(e) => {
+                return Err(InstallError {
+                    successful_installations: vec![],
+                    failed_installations: vec![],
+                    error_message: format!("Failed to resolve dependencies: {e}"),
+                });
+            }
+        };
+
         while !leaf_deps.is_empty() {
             if leaf_deps.len() < versions.len() {
                 debug!("installing {} leaf tools first", leaf_deps.len());
             }
             versions.retain(|tr| !leaf_deps.contains(tr));
-            installed.extend(self.install_some_versions(config, leaf_deps, opts).await?);
-            leaf_deps = get_leaf_dependencies(&versions)?;
+            let results = self.install_some_versions(config, leaf_deps, opts).await;
+
+            // Collect successful installations and check for errors
+            let mut failed_installations = vec![];
+            for (tr, result) in results.into_iter() {
+                match result {
+                    Ok(tv) => installed.push(tv),
+                    Err(e) => {
+                        failed_installations.push((tr, e));
+                    }
+                }
+            }
+
+            // If there were errors in this batch, return with successful installations so far
+            if !failed_installations.is_empty() {
+                let error_message = format_install_error_message(&failed_installations);
+                return Err(InstallError {
+                    successful_installations: installed,
+                    failed_installations,
+                    error_message,
+                });
+            }
+
+            let leaf_deps_result = get_leaf_dependencies(&versions);
+            leaf_deps = match leaf_deps_result {
+                Ok(deps) => deps,
+                Err(e) => {
+                    return Err(InstallError {
+                        successful_installations: installed,
+                        failed_installations: vec![],
+                        error_message: format!("Failed to resolve remaining dependencies: {e}"),
+                    });
+                }
+            };
         }
 
+        // Reload config and resolve (ignoring errors like the original does)
         trace!("install: reloading config");
-        *config = Config::reset().await?;
+        *config = Config::reset().await.map_err(|e| InstallError {
+            successful_installations: installed.clone(),
+            failed_installations: vec![],
+            error_message: format!("Failed to reset config: {e}"),
+        })?;
         trace!("install: resolving");
         if let Err(err) = self.resolve(config).await {
             debug!("error resolving versions after install: {err:#}");
         }
+
+        // Debug logging for successful installations
         if log::log_enabled!(log::Level::Debug) {
             for tv in installed.iter() {
-                let backend = tv.backend()?;
+                let backend = tv.backend().map_err(|e| InstallError {
+                    successful_installations: installed.clone(),
+                    failed_installations: vec![],
+                    error_message: format!("Failed to get backend for {tv}: {e}"),
+                })?;
                 let bin_paths = backend
                     .list_bin_paths(config, tv)
                     .await
@@ -251,7 +348,10 @@ impl Toolset {
                 }
             }
         }
-        hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
+
+        // Run post-install hook (ignoring errors)
+        let _ = hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
+
         Ok(installed)
     }
 
@@ -260,33 +360,69 @@ impl Toolset {
         config: &Arc<Config>,
         versions: Vec<ToolRequest>,
         opts: &InstallOptions,
-    ) -> Result<Vec<ToolVersion>> {
+    ) -> Vec<(ToolRequest, Result<ToolVersion>)> {
         debug!("install_some_versions: {}", versions.iter().join(" "));
-        let queue: Vec<_> = versions
+
+        // Group versions by backend
+        let versions_clone = versions.clone();
+        let queue: Result<Vec<_>> = versions
             .into_iter()
             .rev()
             .chunk_by(|v| v.ba().clone())
             .into_iter()
             .map(|(ba, v)| Ok((ba.backend()?, v.collect_vec())))
-            .collect::<Result<_>>()?;
-        for (backend, _) in &queue {
+            .collect();
+
+        let queue = match queue {
+            Ok(q) => q,
+            Err(e) => {
+                // If we can't build the queue, return error for all versions
+                return versions_clone
+                    .into_iter()
+                    .map(|tr| (tr, Err(eyre::eyre!("{}", e))))
+                    .collect();
+            }
+        };
+
+        // Track plugin installation errors to avoid early returns
+        let mut plugin_errors = Vec::new();
+
+        // Ensure plugins are installed
+        for (backend, trs) in &queue {
             if let Some(plugin) = backend.plugin() {
                 if !plugin.is_installed() {
                     let mpr = MultiProgressReport::get();
-                    plugin
-                        .ensure_installed(config, &mpr, false)
-                        .await
-                        .or_else(|err| {
-                            if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>()
-                            {
-                                Ok(())
-                            } else {
-                                Err(err)
-                            }
-                        })?;
+                    if let Err(e) =
+                        plugin
+                            .ensure_installed(config, &mpr, false)
+                            .await
+                            .or_else(|err| {
+                                if let Some(&Error::PluginNotInstalled(_)) =
+                                    err.downcast_ref::<Error>()
+                                {
+                                    Ok(())
+                                } else {
+                                    Err(err)
+                                }
+                            })
+                    {
+                        // Collect plugin installation errors instead of returning early
+                        let plugin_name = backend.ba().short.clone();
+                        for tr in trs {
+                            plugin_errors.push((
+                                tr.clone(),
+                                Err(eyre::eyre!(
+                                    "Plugin '{}' installation failed: {}",
+                                    plugin_name,
+                                    e
+                                )),
+                            ));
+                        }
+                    }
                 }
             }
         }
+
         let raw = opts.raw || Settings::get().raw;
         let jobs = match raw {
             true => 1,
@@ -294,42 +430,101 @@ impl Toolset {
         };
         let semaphore = Arc::new(Semaphore::new(jobs));
         let ts = Arc::new(self.clone());
-        let mut tset: JoinSet<Result<Vec<ToolVersion>, eyre::Report>> = JoinSet::new();
+        let mut tset: JoinSet<Vec<(ToolRequest, Result<ToolVersion>)>> = JoinSet::new();
         let opts = Arc::new(opts.clone());
+
+        // Track semaphore acquisition errors
+        let mut semaphore_errors = Vec::new();
+
+        // Track which tools are being processed by each task for better error reporting
+        let mut task_tools: Vec<Vec<ToolRequest>> = Vec::new();
+
         for (ba, trs) in queue {
             let ts = ts.clone();
-            let permit = semaphore.clone().acquire_owned().await?;
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(p) => p,
+                Err(e) => {
+                    // Collect semaphore acquisition errors instead of returning early
+                    for tr in trs {
+                        semaphore_errors
+                            .push((tr, Err(eyre::eyre!("Failed to acquire semaphore: {}", e))));
+                    }
+                    continue;
+                }
+            };
             let opts = opts.clone();
             let ba = ba.clone();
             let config = config.clone();
+
+            // Track the tools for this task
+            task_tools.push(trs.clone());
+
             tset.spawn(async move {
                 let _permit = permit;
                 let mpr = MultiProgressReport::get();
-                let mut installed = vec![];
+                let mut results = vec![];
+
                 for tr in trs {
-                    let tv = tr.resolve(&config, &opts.resolve_options).await?;
-                    let ctx = InstallContext {
-                        config: config.clone(),
-                        ts: ts.clone(),
-                        pr: mpr.add(&tv.style()),
-                        force: opts.force,
-                    };
-                    let old_tv = tv.clone();
-                    let tv = ba
-                        .install_version(ctx, tv)
-                        .await
-                        .wrap_err_with(|| format!("failed to install {old_tv}"))?;
-                    installed.push(tv);
+                    let result = async {
+                        let tv = tr.resolve(&config, &opts.resolve_options).await?;
+                        let ctx = InstallContext {
+                            config: config.clone(),
+                            ts: ts.clone(),
+                            pr: mpr.add(&tv.style()),
+                            force: opts.force,
+                        };
+                        let old_tv = tv.clone();
+                        ba.install_version(ctx, tv)
+                            .await
+                            .wrap_err_with(|| format!("failed to install {old_tv}"))
+                    }
+                    .await;
+
+                    results.push((tr, result));
                 }
-                Ok(installed)
+                results
             });
         }
-        let mut installed = vec![];
+
+        let mut all_results = vec![];
+        let mut task_index = 0;
+
+        // Add plugin errors first
+        all_results.extend(plugin_errors);
+
+        // Add semaphore errors
+        all_results.extend(semaphore_errors);
+
+        // Collect results from spawned tasks
         while let Some(res) = tset.join_next().await {
-            installed.extend(res??);
+            match res {
+                Ok(results) => all_results.extend(results),
+                Err(e) => {
+                    // Task join error - this shouldn't happen but handle it
+                    // Use the tracked tools for this task to provide meaningful error information
+                    if task_index < task_tools.len() {
+                        let trs = &task_tools[task_index];
+                        for tr in trs {
+                            all_results.push((
+                                tr.clone(),
+                                Err(eyre::eyre!("Task failed to complete: {}", e)),
+                            ));
+                        }
+                    } else {
+                        // Fallback if we somehow don't have the tools tracked
+                        warn!(
+                            "Task join failed but no tools tracked for task index {}",
+                            task_index
+                        );
+                    }
+                }
+            }
+            task_index += 1;
         }
-        installed.reverse();
-        Ok(installed)
+
+        // Reverse to maintain original order (since we reversed when building queue)
+        all_results.reverse();
+        all_results
     }
 
     pub async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
