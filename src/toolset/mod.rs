@@ -49,6 +49,7 @@ pub use tool_version_options::{ToolVersionOptions, parse_tool_options};
 #[derive(Debug)]
 pub struct InstallError {
     pub successful_installations: Vec<ToolVersion>,
+    pub failed_installations: Vec<(ToolRequest, eyre::Report)>,
     pub error_message: String,
 }
 
@@ -238,6 +239,7 @@ impl Toolset {
             Err(e) => {
                 return Err(InstallError {
                     successful_installations: vec![],
+                    failed_installations: vec![],
                     error_message: format!("Failed to resolve dependencies: {}", e),
                 });
             }
@@ -248,25 +250,43 @@ impl Toolset {
                 debug!("installing {} leaf tools first", leaf_deps.len());
             }
             versions.retain(|tr| !leaf_deps.contains(tr));
+            let leaf_deps_clone = leaf_deps.clone();
             let results = self.install_some_versions(config, leaf_deps, opts).await;
 
             // Collect successful installations and check for errors
-            let mut had_errors = false;
-            for result in results {
+            let mut failed_installations = vec![];
+            for (i, result) in results.into_iter().enumerate() {
                 match result {
                     Ok(tv) => installed.push(tv),
                     Err(e) => {
-                        had_errors = true;
-                        warn!("Failed to install tool: {}", e);
+                        // Get the original tool request for this failed installation
+                        let failed_request = leaf_deps_clone.get(i).cloned();
+                        if let Some(tr) = failed_request {
+                            failed_installations.push((tr, e));
+                        }
                     }
                 }
             }
 
             // If there were errors in this batch, return with successful installations so far
-            if had_errors {
+            if !failed_installations.is_empty() {
+                let failed_tools: Vec<String> = failed_installations
+                    .iter()
+                    .map(|(tr, e)| format!("{}@{} ({})", tr.ba().short, tr.version(), e))
+                    .collect();
+                let error_message = format!(
+                    "Failed to install {}: {}",
+                    if failed_tools.len() == 1 {
+                        "tool"
+                    } else {
+                        "tools"
+                    },
+                    failed_tools.join(", ")
+                );
                 return Err(InstallError {
                     successful_installations: installed,
-                    error_message: "Some tools failed to install".to_string(),
+                    failed_installations,
+                    error_message,
                 });
             }
 
@@ -276,6 +296,7 @@ impl Toolset {
                 Err(e) => {
                     return Err(InstallError {
                         successful_installations: installed,
+                        failed_installations: vec![],
                         error_message: format!("Failed to resolve remaining dependencies: {}", e),
                     });
                 }
@@ -286,6 +307,7 @@ impl Toolset {
         trace!("install: reloading config");
         *config = Config::reset().await.map_err(|e| InstallError {
             successful_installations: installed.clone(),
+            failed_installations: vec![],
             error_message: format!("Failed to reset config: {}", e),
         })?;
         trace!("install: resolving");
@@ -298,6 +320,7 @@ impl Toolset {
             for tv in installed.iter() {
                 let backend = tv.backend().map_err(|e| InstallError {
                     successful_installations: installed.clone(),
+                    failed_installations: vec![],
                     error_message: format!("Failed to get backend for {}: {}", tv, e),
                 })?;
                 let bin_paths = backend
@@ -372,9 +395,16 @@ impl Toolset {
                             })
                     {
                         // If plugin installation fails, return error for all tools in this batch using this backend
+                        let plugin_name = backend.ba().short.clone();
                         return trs
                             .iter()
-                            .map(|_| Err(eyre::eyre!("Plugin installation failed: {}", e)))
+                            .map(|_| {
+                                Err(eyre::eyre!(
+                                    "Plugin '{}' installation failed: {}",
+                                    plugin_name,
+                                    e
+                                ))
+                            })
                             .collect();
                     }
                 }

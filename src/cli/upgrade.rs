@@ -220,7 +220,10 @@ impl Upgrade {
                 });
         }
 
-        install_error.wrap_err("Some tools failed to upgrade")
+        match install_error {
+            Ok(()) => Ok(()),
+            Err(install_error) => Err(eyre::eyre!("{}", install_error.error_message)),
+        }
     }
 
     async fn uninstall_old_version(
