@@ -1,10 +1,34 @@
 # Changelog
 
+## [2025.7.17](https://github.com/jdx/mise/compare/v2025.7.16..v2025.7.17) - 2025-07-19
+
+### 🚀 Features
+
+- consolidate lockfile assets and add URL tracking by [@jdx](https://github.com/jdx) in [#5629](https://github.com/jdx/mise/pull/5629)
+
+### 🐛 Bug Fixes
+
+- **(registry)** use aqua backend for available tools by [@risu729](https://github.com/risu729) in [#5707](https://github.com/jdx/mise/pull/5707)
+
+### 📚 Documentation
+
+- document auto_install behavior by [@jdx](https://github.com/jdx) in [#5697](https://github.com/jdx/mise/pull/5697)
+
+### 🧪 Testing
+
+- **(registry)** enable disabled tests by [@risu729](https://github.com/risu729) in [#5708](https://github.com/jdx/mise/pull/5708)
+- **(registry)** comment out failing maven test in configuration by [@jdx](https://github.com/jdx) in [ae3e62b](https://github.com/jdx/mise/commit/ae3e62b232ab974058cf7b7c7a05d05086f48e48)
+
 ## [2025.7.16](https://github.com/jdx/mise/compare/v2025.7.15..v2025.7.16) - 2025-07-18
+
+### 🐛 Bug Fixes
+
+- mise.run cloudflare worker publish by [@jdx](https://github.com/jdx) in [#5704](https://github.com/jdx/mise/pull/5704)
 
 ### Chore
 
 - **(release)** increase timeout for macos tarballs by [@jdx](https://github.com/jdx) in [05e3a45](https://github.com/jdx/mise/commit/05e3a459982745f365d958501492430effab1fc0)
+- disable tests for 2025.7.16 by [@jdx](https://github.com/jdx) in [30d3b97](https://github.com/jdx/mise/commit/30d3b974dc3893158c10bfac500ac671407214b3)
 
 ## [2025.7.15](https://github.com/jdx/mise/compare/v2025.7.14..v2025.7.15) - 2025-07-18
 
