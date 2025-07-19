@@ -167,18 +167,7 @@ impl Toolset {
             })
             .map(|tv| tv.request)
             .collect_vec();
-        let versions = match self.install_all_versions(config, versions, opts).await {
-            Ok(versions) => versions,
-            Err(install_error) => {
-                // If there were successful installations, continue with those
-                if !install_error.successful_installations.is_empty() {
-                    warn!("{}", install_error.error_message);
-                    install_error.successful_installations
-                } else {
-                    return Err(eyre::eyre!("{}", install_error.error_message));
-                }
-            }
-        };
+        let versions = self.install_all_versions(config, versions, opts).await?;
         if !versions.is_empty() {
             let ts = config.get_toolset().await?;
             config::rebuild_shims_and_runtime_symlinks(config, ts, &versions).await?;
@@ -791,21 +780,9 @@ impl Toolset {
                 .map(|tv| tv.request)
                 .collect_vec();
             if !versions.is_empty() {
-                let versions = match self
+                let versions = self
                     .install_all_versions(config, versions.clone(), &InstallOptions::default())
-                    .await
-                {
-                    Ok(versions) => versions,
-                    Err(install_error) => {
-                        // If there were successful installations, continue with those
-                        if !install_error.successful_installations.is_empty() {
-                            warn!("{}", install_error.error_message);
-                            install_error.successful_installations
-                        } else {
-                            return Err(eyre::eyre!("{}", install_error.error_message));
-                        }
-                    }
-                };
+                    .await?;
                 if !versions.is_empty() {
                     let ts = config.get_toolset().await?;
                     config::rebuild_shims_and_runtime_symlinks(config, ts, &versions).await?;

@@ -165,13 +165,13 @@ impl Upgrade {
         let tool_requests: Vec<_> = outdated.iter().map(|o| o.tool_request.clone()).collect();
 
         // Install all tools in parallel
-        let (successful_versions, had_errors) =
+        let (successful_versions, install_error) =
             match ts.install_all_versions(config, tool_requests, &opts).await {
-                Ok(versions) => (versions, false),
-                Err(install_error) => {
-                    warn!("{}", install_error.error_message);
-                    (install_error.successful_installations, true)
-                }
+                Ok(versions) => (versions, Ok(())),
+                Err(install_error) => (
+                    install_error.successful_installations.clone(),
+                    Err(install_error),
+                ),
             };
 
         // Only update config files for tools that were successfully installed
@@ -220,11 +220,7 @@ impl Upgrade {
                 });
         }
 
-        if had_errors {
-            return Err(eyre!("Some tools failed to upgrade"));
-        }
-
-        Ok(())
+        install_error.wrap_err("Some tools failed to upgrade")
     }
 
     async fn uninstall_old_version(
