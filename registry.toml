@@ -2035,7 +2035,7 @@ periphery.backends = [
 ]
 perl.description = "self-contained, portable perl binaries"
 perl.backends = ["aqua:skaji/relocatable-perl", "asdf:ouest/asdf-perl"]
-php.backends = ["asdf:mise-plugins/asdf-php", "vfox:mise-plugins/vfox-php"]
+php.backends = ["ubi:adwinying/php", "asdf:mise-plugins/asdf-php", "vfox:mise-plugins/vfox-php"]
 pinact.description = "pinact is a CLI to edit GitHub Workflow and Composite action files and pin versions of Actions and Reusable Workflows. pinact can also update their versions and verify version annotations"
 pinact.backends = ["aqua:suzuki-shunsuke/pinact", "ubi:suzuki-shunsuke/pinact"]
 pinact.test = ["pinact version", "{{version}}"]
