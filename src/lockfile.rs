@@ -411,10 +411,10 @@ fn format(mut doc: DocumentMut) -> String {
                             a.to_string().cmp(&b.to_string())
                         });
                         // Sort platforms section within each tool
-                        if let Some(platforms) = t.get_mut("platforms") {
-                            if let toml_edit::Item::Table(platforms_table) = platforms {
-                                platforms_table.sort_values();
-                            }
+                        if let Some(toml_edit::Item::Table(platforms_table)) =
+                            t.get_mut("platforms")
+                        {
+                            platforms_table.sort_values();
                         }
                     }
                 }
@@ -426,10 +426,8 @@ fn format(mut doc: DocumentMut) -> String {
                         a.to_string().cmp(&b.to_string())
                     });
                     // Sort platforms section within each tool
-                    if let Some(platforms) = t.get_mut("platforms") {
-                        if let toml_edit::Item::Table(platforms_table) = platforms {
-                            platforms_table.sort_values();
-                        }
+                    if let Some(toml_edit::Item::Table(platforms_table)) = t.get_mut("platforms") {
+                        platforms_table.sort_values();
                     }
                 }
                 _ => {}
