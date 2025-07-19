@@ -353,7 +353,7 @@ impl Toolset {
         };
 
         // Ensure plugins are installed
-        for (backend, _) in &queue {
+        for (backend, trs) in &queue {
             if let Some(plugin) = backend.plugin() {
                 if !plugin.is_installed() {
                     let mpr = MultiProgressReport::get();
@@ -371,13 +371,9 @@ impl Toolset {
                                 }
                             })
                     {
-                        // If plugin installation fails, return error for all tools using this backend
-                        let tool_count = queue
+                        // If plugin installation fails, return error for all tools in this batch using this backend
+                        return trs
                             .iter()
-                            .filter(|(b, _)| b.ba() == backend.ba())
-                            .map(|(_, trs)| trs.len())
-                            .sum();
-                        return (0..tool_count)
                             .map(|_| Err(eyre::eyre!("Plugin installation failed: {}", e)))
                             .collect();
                     }
