@@ -240,7 +240,7 @@ impl Toolset {
                 return Err(InstallError {
                     successful_installations: vec![],
                     failed_installations: vec![],
-                    error_message: format!("Failed to resolve dependencies: {}", e),
+                    error_message: format!("Failed to resolve dependencies: {e}"),
                 });
             }
         };
@@ -297,7 +297,7 @@ impl Toolset {
                     return Err(InstallError {
                         successful_installations: installed,
                         failed_installations: vec![],
-                        error_message: format!("Failed to resolve remaining dependencies: {}", e),
+                        error_message: format!("Failed to resolve remaining dependencies: {e}"),
                     });
                 }
             };
@@ -308,7 +308,7 @@ impl Toolset {
         *config = Config::reset().await.map_err(|e| InstallError {
             successful_installations: installed.clone(),
             failed_installations: vec![],
-            error_message: format!("Failed to reset config: {}", e),
+            error_message: format!("Failed to reset config: {e}"),
         })?;
         trace!("install: resolving");
         if let Err(err) = self.resolve(config).await {
@@ -321,7 +321,7 @@ impl Toolset {
                 let backend = tv.backend().map_err(|e| InstallError {
                     successful_installations: installed.clone(),
                     failed_installations: vec![],
-                    error_message: format!("Failed to get backend for {}: {}", tv, e),
+                    error_message: format!("Failed to get backend for {tv}: {e}"),
                 })?;
                 let bin_paths = backend
                     .list_bin_paths(config, tv)
