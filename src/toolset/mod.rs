@@ -436,6 +436,9 @@ impl Toolset {
         // Track semaphore acquisition errors
         let mut semaphore_errors = Vec::new();
 
+        // Track which tools are being processed by each task for better error reporting
+        let mut task_tools: Vec<Vec<ToolRequest>> = Vec::new();
+
         for (ba, trs) in queue {
             let ts = ts.clone();
             let permit = match semaphore.clone().acquire_owned().await {
@@ -452,6 +455,9 @@ impl Toolset {
             let opts = opts.clone();
             let ba = ba.clone();
             let config = config.clone();
+
+            // Track the tools for this task
+            task_tools.push(trs.clone());
 
             tset.spawn(async move {
                 let _permit = permit;
@@ -481,6 +487,7 @@ impl Toolset {
         }
 
         let mut all_results = vec![];
+        let mut task_index = 0;
 
         // Add plugin errors first
         all_results.extend(plugin_errors);
@@ -494,22 +501,25 @@ impl Toolset {
                 Ok(results) => all_results.extend(results),
                 Err(e) => {
                     // Task join error - this shouldn't happen but handle it
-                    // We can't map this to a specific tool request, so we'll create a generic error
-                    all_results.push((
-                        ToolRequest::new(
-                            Arc::new(BackendArg::new("unknown".to_string(), None)),
-                            "unknown",
-                            ToolSource::Unknown,
-                        )
-                        .unwrap_or_else(|_| ToolRequest::System {
-                            backend: Arc::new(BackendArg::new("unknown".to_string(), None)),
-                            source: ToolSource::Unknown,
-                            options: Default::default(),
-                        }),
-                        Err(e.into()),
-                    ));
+                    // Use the tracked tools for this task to provide meaningful error information
+                    if task_index < task_tools.len() {
+                        let trs = &task_tools[task_index];
+                        for tr in trs {
+                            all_results.push((
+                                tr.clone(),
+                                Err(eyre::eyre!("Task failed to complete: {}", e)),
+                            ));
+                        }
+                    } else {
+                        // Fallback if we somehow don't have the tools tracked
+                        warn!(
+                            "Task join failed but no tools tracked for task index {}",
+                            task_index
+                        );
+                    }
                 }
             }
+            task_index += 1;
         }
 
         // Reverse to maintain original order (since we reversed when building queue)
