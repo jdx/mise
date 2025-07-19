@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# Test object syntax with env
+cat <<EOF >mise.toml
+[tasks.test]
+run = 'echo "PROP=\$PROP"'
+
+[tasks.test-all]
+depends = [
+  {task = "test", env = {PROP = "a"}},
+  {task = "test", env = {PROP = "b"}},
+]
+EOF
+
+assert "mise run test-all | sort" "[test] PROP=a
+[test] PROP=b"
+
+# Test mixed syntax
+cat <<EOF >mise.toml
+[tasks.test]
+run = 'echo "PROP=\$PROP"'
+
+[tasks.build]
+run = 'echo "building"'
+
+[tasks.test-mixed]
+depends = [
+  "build",
+  {task = "test", env = {PROP = "mixed"}},
+]
+EOF
+
+assert "mise run test-mixed" "building
+PROP=mixed"
+
+# Test with args and env
+cat <<EOF >mise.toml
+[tasks.test]
+run = 'echo "PROP=\$PROP args: \$*"'
+
+[tasks.test-with-args]
+depends = [
+  {task = "test", args = ["arg1", "arg2"], env = {PROP = "value"}},
+]
+EOF
+
+assert "mise run test-with-args" "PROP=value args: arg1 arg2"
