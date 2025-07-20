@@ -82,7 +82,7 @@ jobs:
           toolchain: stable
 
       - name: Install cargo-vendor
-        run: cargo install cargo-vendor
+        run: mise use -g cargo-binstall cargo:cargo-vendor
 
       - name: Configure Git
         run: |
