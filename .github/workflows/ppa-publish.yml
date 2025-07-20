@@ -71,7 +71,11 @@ jobs:
             quilt \
             fakeroot \
             debian-keyring \
-            gpg
+            gpg \
+            rustc \
+            cargo \
+            libssl-dev \
+            pkg-config
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -147,7 +151,7 @@ jobs:
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
-          Build-Depends: debhelper-compat (= 13), cargo, rustc
+          Build-Depends: debhelper-compat (= 13), rustc (>= 1.70), cargo, libssl-dev, pkg-config
           Standards-Version: 4.6.0
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
