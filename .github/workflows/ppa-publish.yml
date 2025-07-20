@@ -103,16 +103,33 @@ jobs:
 
       - name: Configure GPG for package signing
         run: |
-          # List available keys and configure for the maintainer email
-          gpg --list-secret-keys
+          # List available keys
+          echo "Available GPG keys:"
+          gpg --list-secret-keys --with-colons
           
-          # Get the key ID and configure it for the maintainer email
+          # Get the key ID  
           KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^sec:' | cut -d: -f5 | head -1)
           if [ -n "$KEY_ID" ]; then
             echo "Using GPG key: $KEY_ID"
             echo "DEBSIGN_KEYID=$KEY_ID" >> "$GITHUB_ENV"
+            
+            # Configure debsign to use this key specifically
+            cat > ~/.devscripts << EOF
+          DEBSIGN_KEYID=$KEY_ID
+          DEBUILD_DPKG_BUILDPACKAGE_OPTS="-i -I -us -uc"
+          DEBUILD_LINTIAN_OPTS="-i -I --show-overrides"
+          EOF
+            
+            echo "devscripts configuration:"
+            cat ~/.devscripts
+            
+            # Test that the key works for signing
+            echo "Testing GPG signing..."
+            echo "test" | gpg --clearsign --default-key "$KEY_ID" --armor || echo "Warning: GPG signing test failed"
+            
           else
-            echo "Warning: No GPG key found"
+            echo "Error: No GPG key found"
+            exit 1
           fi
 
       - name: Create source package for each distribution
