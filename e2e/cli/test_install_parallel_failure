@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+# Test that `mise install` with parallel installation handles failures correctly:
+# - Command exits with non-zero status when some tools fail
+# - Successful tools are still installed
+# - Failed tools don't get installed
+# - All tools are attempted (no early returns)
+
+# Clean up any existing installations
+mise uninstall dummy --all 2>/dev/null || true
+mise uninstall tiny --all 2>/dev/null || true
+
+# Test 1: Install multiple tools where one will fail
+# This tests the parallel installation logic
+
+# Set up config with multiple tools
+cat <<EOF >mise.toml
+[tools]
+dummy = "other-dummy"  # This version will fail to install  
+tiny = "latest"        # This should install successfully
+EOF
+
+# Try to install both tools in parallel
+# The dummy tool should fail, but tiny should succeed
+assert_fail "mise install" "Failed to install tool: dummy@other-dummy"
+
+# Verify tiny was installed successfully despite dummy failure
+assert_contains "mise ls --installed tiny" "3.1.0"
+
+# Verify dummy failed to install the bad version
+assert_not_contains "mise ls --installed dummy" "other-dummy"
+
+# Test 2: Install with missing plugin that would cause early return
+# This tests the plugin installation error handling
+
+# Try to install a non-existent plugin
+assert_fail "mise install nonexistent@latest" "nonexistent not found in mise tool registry"
+
+# Test 3: Install multiple tools with mixed success/failure
+# This tests that all tools are attempted even when some fail
+
+# Clean up
+rm -f mise.toml
+mise uninstall jq --all 2>/dev/null || true
+mise uninstall tiny --all 2>/dev/null || true
+
+# Create a scenario with one valid and one invalid tool
+assert_fail "mise install tiny@latest jq@999.999.999" "Failed to install tool: jq@999.999.999"
+
+# Verify the valid tool was installed
+assert_contains "mise ls --installed tiny" "3.1.0"
+
+# Verify the invalid tool was not installed
+assert_not_contains "mise ls --installed jq" "999.999.999"
+
+# Clean up
+mise uninstall tiny --all 2>/dev/null || true
+mise uninstall jq --all 2>/dev/null || true

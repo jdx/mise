@@ -2,8 +2,9 @@ use std::path::PathBuf;
 use std::process::ExitStatus;
 
 use crate::cli::args::BackendArg;
+use crate::env::RUST_BACKTRACE;
 use crate::file::display_path;
-use crate::toolset::{ToolRequest, ToolSource};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
 use eyre::Report;
 use thiserror::Error;
 
@@ -26,6 +27,11 @@ pub enum Error {
         display_path(.0)
     )]
     UntrustedConfig(PathBuf),
+    #[error("{}", format_install_failures(.failed_installations))]
+    InstallFailed {
+        successful_installations: Vec<ToolVersion>,
+        failed_installations: Vec<(ToolRequest, Report)>,
+    },
 }
 
 fn render_exit_status(exit_status: &Option<ExitStatus>) -> String {
@@ -33,6 +39,57 @@ fn render_exit_status(exit_status: &Option<ExitStatus>) -> String {
         Some(exit_status) => format!("exit code {exit_status}"),
         None => "no exit status".into(),
     }
+}
+
+fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> String {
+    if failed_installations.is_empty() {
+        return "Installation failed".to_string();
+    }
+
+    let mut output = String::new();
+    let failed_tools: Vec<String> = failed_installations
+        .iter()
+        .map(|(tr, _)| format!("{}@{}", tr.ba().short, tr.version()))
+        .collect();
+
+    output.push_str(&format!(
+        "Failed to install {}: {}",
+        if failed_tools.len() == 1 {
+            "tool"
+        } else {
+            "tools"
+        },
+        failed_tools.join(", ")
+    ));
+
+    // Show detailed errors for each failure
+    output.push_str("\n\nIndividual error details:");
+    for (i, (tr, error)) in failed_installations.iter().enumerate() {
+        output.push_str(&format!(
+            "\n  {}. {}@{}:",
+            i + 1,
+            tr.ba().short,
+            tr.version()
+        ));
+
+        // Use {:#} to show the full error chain with tracebacks if RUST_BACKTRACE is set
+        // Otherwise use {:#?} for debug format without tracebacks
+        let error_str = if *RUST_BACKTRACE {
+            format!("{error:#}")
+        } else {
+            format!("{error:#?}")
+        };
+
+        for line in error_str.lines() {
+            output.push_str(&format!("\n     {line}"));
+        }
+
+        if i < failed_installations.len() - 1 {
+            output.push('\n');
+        }
+    }
+
+    output
 }
 
 impl Error {

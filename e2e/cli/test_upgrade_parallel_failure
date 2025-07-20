@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# Test that `mise up` with parallel installation handles failures correctly:
+# - Command exits with non-zero status when some tools fail
+# - Successful tools are still installed
+# - Failed tools don't get installed
+
+# Clean up any existing installations
+mise uninstall dummy --all 2>/dev/null || true
+mise uninstall tiny --all 2>/dev/null || true
+
+# Test 1: Create a scenario with mixed success/failure during parallel upgrade
+# Follow the pattern from the existing upgrade test
+
+# Set up config with multiple tools
+cat <<EOF >mise.toml
+[tools]
+dummy = "other-dummy"  # This version will fail to install  
+tiny = "latest"        # This should upgrade successfully
+EOF
+
+# Manually create outdated installations to trigger upgrades
+# Create dummy@1.0.0 installation (this will be "outdated" vs other-dummy)
+mkdir -p "$MISE_DATA_DIR/installs/dummy/1.0.0"
+echo "1.0.0" >"$MISE_DATA_DIR/installs/dummy/1.0.0/version"
+
+# Create tiny@1.0.0 installation (this will be outdated vs latest 3.1.0)
+mkdir -p "$MISE_DATA_DIR/installs/tiny/1.0.0"
+echo "1.0.0" >"$MISE_DATA_DIR/installs/tiny/1.0.0/version"
+
+# Now `mise up` should try to install/upgrade both:
+# - dummy: install other-dummy (will fail)
+# - tiny: upgrade to latest 3.1.0 (will succeed)
+assert_fail "mise up" "Failed to install tool: dummy@other-dummy"
+
+# Verify tiny was upgraded successfully despite dummy failure
+assert_contains "mise ls --installed tiny" "3.1.0"
+
+# Verify dummy failed to install the bad version (should still show 1.0.0)
+assert_contains "mise ls --installed dummy" "1.0.0"
+assert_not_contains "mise ls --installed dummy" "other-dummy"
+
+# Clean up
+rm -f mise.toml
