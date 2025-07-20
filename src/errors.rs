@@ -72,9 +72,9 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
         ));
 
         // Use {:#} to show the full error chain with tracebacks
-        let error_str = format!("{:#}", error);
+        let error_str = format!("{error:#}");
         for line in error_str.lines() {
-            output.push_str(&format!("\n     {}", line));
+            output.push_str(&format!("\n     {line}"));
         }
 
         if i < failed_installations.len() - 1 {
