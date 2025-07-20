@@ -5,10 +5,6 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to package (e.g., 2025.7.17)'
-        required: true
-        type: string
       distributions:
         description: 'Ubuntu distributions to target (space-separated)'
         required: false
@@ -37,11 +33,11 @@ jobs:
 
       - name: Set up environment variables
         run: |
+          VERSION=$(./scripts/get-version.sh | sed 's/^v//')
+          
           if [ "${{ github.event_name }}" = "release" ]; then
-            VERSION=$(./scripts/get-version.sh | sed 's/^v//')
             DISTRIBUTIONS="jammy noble"
           else
-            VERSION="${{ inputs.version }}"
             DISTRIBUTIONS="${{ inputs.distributions }}"
           fi
           

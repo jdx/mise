@@ -87,7 +87,7 @@ You can manually trigger the workflow via GitHub Actions:
 1. Go to the Actions tab in your repository
 2. Select "Publish to PPA" workflow
 3. Click "Run workflow"
-4. Specify the version and target distributions
+4. Specify the target distributions (optional)
 5. Optionally enable the "serious" profile for optimized builds with LTO
 
 ### Supported Ubuntu Distributions
