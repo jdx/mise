@@ -175,8 +175,6 @@ jobs:
           override_dh_auto_build:
           	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           	. ~/.cargo/env
-          	mkdir -p .cargo
-          	cp debian/cargo.config .cargo/config
           	tar xzf debian/vendor.tar.gz
           	cargo build --profile ${BUILD_PROFILE} --frozen --bin mise
           
