@@ -32,3 +32,5 @@ megalinter-reports/
 testResults.xml
 .mise/
 comment.md
+
+.claude/settings.local.json
