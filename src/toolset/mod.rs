@@ -272,27 +272,17 @@ impl Toolset {
                 debug!("installing {} leaf tools first", leaf_deps.len());
             }
             versions.retain(|tr| !leaf_deps.contains(tr));
-            let results = self.install_some_versions(config, leaf_deps, opts).await;
-
-            // Collect successful installations and check for errors
-            let mut failed_installations = vec![];
-            for (tr, result) in results.into_iter() {
-                match result {
-                    Ok(tv) => installed.push(tv),
-                    Err(e) => {
-                        failed_installations.push((tr, e));
-                    }
+            match self.install_some_versions(config, leaf_deps, opts).await {
+                Ok(versions) => installed.extend(versions),
+                Err(install_error) => {
+                    // Combine successful installations from this batch with previous ones
+                    installed.extend(install_error.successful_installations);
+                    return Err(InstallError {
+                        successful_installations: installed,
+                        failed_installations: install_error.failed_installations,
+                        error_message: install_error.error_message,
+                    });
                 }
-            }
-
-            // If there were errors in this batch, return with successful installations so far
-            if !failed_installations.is_empty() {
-                let error_message = format_install_error_message(&failed_installations);
-                return Err(InstallError {
-                    successful_installations: installed,
-                    failed_installations,
-                    error_message,
-                });
             }
 
             let leaf_deps_result = get_leaf_dependencies(&versions);
@@ -360,7 +350,7 @@ impl Toolset {
         config: &Arc<Config>,
         versions: Vec<ToolRequest>,
         opts: &InstallOptions,
-    ) -> Vec<(ToolRequest, Result<ToolVersion>)> {
+    ) -> Result<Vec<ToolVersion>, InstallError> {
         debug!("install_some_versions: {}", versions.iter().join(" "));
 
         // Group versions by backend
@@ -377,10 +367,16 @@ impl Toolset {
             Ok(q) => q,
             Err(e) => {
                 // If we can't build the queue, return error for all versions
-                return versions_clone
+                let failed_installations: Vec<_> = versions_clone
                     .into_iter()
-                    .map(|tr| (tr, Err(eyre::eyre!("{}", e))))
+                    .map(|tr| (tr, eyre::eyre!("{}", e)))
                     .collect();
+                let error_message = format_install_error_message(&failed_installations);
+                return Err(InstallError {
+                    successful_installations: vec![],
+                    failed_installations,
+                    error_message,
+                });
             }
         };
 
@@ -411,11 +407,7 @@ impl Toolset {
                         for tr in trs {
                             plugin_errors.push((
                                 tr.clone(),
-                                Err(eyre::eyre!(
-                                    "Plugin '{}' installation failed: {}",
-                                    plugin_name,
-                                    e
-                                )),
+                                eyre::eyre!("Plugin '{}' installation failed: {}", plugin_name, e),
                             ));
                         }
                     }
@@ -437,7 +429,14 @@ impl Toolset {
         let mut semaphore_errors = Vec::new();
 
         // Track which tools are being processed by each task for better error reporting
-        let mut task_tools: Vec<Vec<ToolRequest>> = Vec::new();
+        // Use a HashMap to map task IDs to their tools
+        let mut task_tools: HashMap<usize, Vec<ToolRequest>> = HashMap::new();
+
+        // Track which tools already have plugin errors to avoid duplicate reporting
+        let mut tools_with_plugin_errors: HashSet<ToolRequest> = HashSet::new();
+        for (tr, _) in &plugin_errors {
+            tools_with_plugin_errors.insert(tr.clone());
+        }
 
         for (ba, trs) in queue {
             let ts = ts.clone();
@@ -447,7 +446,7 @@ impl Toolset {
                     // Collect semaphore acquisition errors instead of returning early
                     for tr in trs {
                         semaphore_errors
-                            .push((tr, Err(eyre::eyre!("Failed to acquire semaphore: {}", e))));
+                            .push((tr, eyre::eyre!("Failed to acquire semaphore: {}", e)));
                     }
                     continue;
                 }
@@ -456,15 +455,27 @@ impl Toolset {
             let ba = ba.clone();
             let config = config.clone();
 
-            // Track the tools for this task
-            task_tools.push(trs.clone());
+            // Filter out tools that already have plugin errors
+            let filtered_trs: Vec<ToolRequest> = trs
+                .into_iter()
+                .filter(|tr| !tools_with_plugin_errors.contains(tr))
+                .collect();
+
+            // Skip spawning task if no tools remain after filtering
+            if filtered_trs.is_empty() {
+                continue;
+            }
+
+            // Track the tools for this task using the task ID
+            let task_id = tset.len();
+            task_tools.insert(task_id, filtered_trs.clone());
 
             tset.spawn(async move {
                 let _permit = permit;
                 let mpr = MultiProgressReport::get();
                 let mut results = vec![];
 
-                for tr in trs {
+                for tr in filtered_trs {
                     let result = async {
                         let tv = tr.resolve(&config, &opts.resolve_options).await?;
                         let ctx = InstallContext {
@@ -487,13 +498,12 @@ impl Toolset {
         }
 
         let mut all_results = vec![];
-        let mut task_index = 0;
 
         // Add plugin errors first
-        all_results.extend(plugin_errors);
+        all_results.extend(plugin_errors.into_iter().map(|(tr, e)| (tr, Err(e))));
 
         // Add semaphore errors
-        all_results.extend(semaphore_errors);
+        all_results.extend(semaphore_errors.into_iter().map(|(tr, e)| (tr, Err(e))));
 
         // Collect results from spawned tasks
         while let Some(res) = tset.join_next().await {
@@ -501,30 +511,46 @@ impl Toolset {
                 Ok(results) => all_results.extend(results),
                 Err(e) => {
                     // Task join error - this shouldn't happen but handle it
-                    // Use the tracked tools for this task to provide meaningful error information
-                    if task_index < task_tools.len() {
-                        let trs = &task_tools[task_index];
-                        for tr in trs {
-                            all_results.push((
-                                tr.clone(),
-                                Err(eyre::eyre!("Task failed to complete: {}", e)),
-                            ));
-                        }
-                    } else {
-                        // Fallback if we somehow don't have the tools tracked
-                        warn!(
-                            "Task join failed but no tools tracked for task index {}",
-                            task_index
-                        );
+                    // Find the task ID by looking at the remaining tasks
+                    let task_id = tset.len();
+                    let trs = task_tools
+                        .get(&task_id)
+                        .expect("task_tools should have this task");
+                    for tr in trs {
+                        all_results.push((
+                            tr.clone(),
+                            Err(eyre::eyre!("Task failed to complete: {}", e)),
+                        ));
                     }
                 }
             }
-            task_index += 1;
         }
 
         // Reverse to maintain original order (since we reversed when building queue)
         all_results.reverse();
-        all_results
+
+        // Process results and separate successes from failures
+        let mut successful_installations = vec![];
+        let mut failed_installations = vec![];
+
+        for (tr, result) in all_results {
+            match result {
+                Ok(tv) => successful_installations.push(tv),
+                Err(e) => failed_installations.push((tr, e)),
+            }
+        }
+
+        // Return appropriate result
+        if failed_installations.is_empty() {
+            Ok(successful_installations)
+        } else {
+            let error_message = format_install_error_message(&failed_installations);
+            Err(InstallError {
+                successful_installations,
+                failed_installations,
+                error_message,
+            })
+        }
     }
 
     pub async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
