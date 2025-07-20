@@ -132,11 +132,13 @@ jobs:
           } > .cargo/config
           
           cargo vendor vendor/
-          tar -czf debian/vendor.tar.gz vendor/
-          cp .cargo/config debian/cargo.config
           
           # Create debian directory structure
           mkdir -p debian/source
+          
+          # Create vendor tarball and copy config
+          tar -czf debian/vendor.tar.gz vendor/
+          cp .cargo/config debian/cargo.config
           echo "3.0 (quilt)" > debian/source/format
           
           # Create basic debian files
