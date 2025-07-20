@@ -41,18 +41,20 @@ jobs:
             DISTRIBUTIONS="${{ inputs.distributions }}"
           fi
           
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "DISTRIBUTIONS=${DISTRIBUTIONS}" >> $GITHUB_ENV
-          echo "PACKAGE_NAME=mise" >> $GITHUB_ENV
-          echo "MAINTAINER_NAME=${{ vars.PPA_MAINTAINER_NAME || 'mise Release Bot' }}" >> $GITHUB_ENV
-          echo "MAINTAINER_EMAIL=${{ vars.PPA_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}" >> $GITHUB_ENV
-          echo "PPA_NAME=${{ vars.PPA_NAME || 'ppa:jdxcode/mise' }}" >> $GITHUB_ENV
+          {
+            echo "VERSION=${VERSION}"
+            echo "DISTRIBUTIONS=${DISTRIBUTIONS}"
+            echo "PACKAGE_NAME=mise"
+            echo "MAINTAINER_NAME=${{ vars.PPA_MAINTAINER_NAME || 'mise Release Bot' }}"
+            echo "MAINTAINER_EMAIL=${{ vars.PPA_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}"
+            echo "PPA_NAME=${{ vars.PPA_NAME || 'ppa:jdxcode/mise' }}"
+          } >> "$GITHUB_ENV"
           
           # Set build profile
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.use_serious_profile }}" = "true" ]; then
-            echo "BUILD_PROFILE=serious" >> $GITHUB_ENV
+            echo "BUILD_PROFILE=serious" >> "$GITHUB_ENV"
           else
-            echo "BUILD_PROFILE=release" >> $GITHUB_ENV
+            echo "BUILD_PROFILE=release" >> "$GITHUB_ENV"
           fi
 
       - name: Install packaging dependencies
@@ -89,9 +91,8 @@ jobs:
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
 
-      - name: Create source package for each distribution
+              - name: Create source package for each distribution
         run: |
-          ORIG_VERSION="${VERSION}"
           
           # Create original tarball with submodules
           git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar"
@@ -115,11 +116,13 @@ jobs:
           
           # Vendor dependencies
           mkdir -p .cargo
-          echo '[source.crates-io]' > .cargo/config
-          echo 'replace-with = "vendored-sources"' >> .cargo/config
-          echo '' >> .cargo/config
-          echo '[source.vendored-sources]' >> .cargo/config
-          echo 'directory = "vendor"' >> .cargo/config
+          {
+            echo '[source.crates-io]'
+            echo 'replace-with = "vendored-sources"'
+            echo ''
+            echo '[source.vendored-sources]'
+            echo 'directory = "vendor"'
+          } > .cargo/config
           
           cargo vendor vendor/
           tar -czf debian/vendor.tar.gz vendor/
@@ -211,7 +214,7 @@ jobs:
           EOF
           
           # Build source packages for each distribution
-          for DIST in $DISTRIBUTIONS; do
+          for DIST in ${DISTRIBUTIONS}; do
             echo "Building source package for $DIST"
             
             # Create distribution-specific version
@@ -231,13 +234,13 @@ jobs:
             
             # Move built packages
             mkdir -p "/tmp/packages"
-            mv ../*${DIST_VERSION}*.dsc "/tmp/packages/"
-            mv ../*${DIST_VERSION}*.tar.* "/tmp/packages/"
-            mv ../*${DIST_VERSION}*.changes "/tmp/packages/"
-            mv ../*${DIST_VERSION}*.buildinfo "/tmp/packages/" 2>/dev/null || true
+            mv ../*"${DIST_VERSION}"*.dsc "/tmp/packages/"
+            mv ../*"${DIST_VERSION}"*.tar.* "/tmp/packages/"
+            mv ../*"${DIST_VERSION}"*.changes "/tmp/packages/"
+            mv ../*"${DIST_VERSION}"*.buildinfo "/tmp/packages/" 2>/dev/null || true
             
             # Clean for next distribution
-            rm -f ../mise_${DIST_VERSION}*
+            rm -f ../mise_"${DIST_VERSION}"*
           done
 
       - name: Upload source packages to PPA
@@ -260,11 +263,11 @@ jobs:
             dput mise-ppa "$changes_file"
           done
 
-      - name: Create artifacts
+              - name: Create artifacts
         if: always()
         run: |
           cd /tmp/packages
-          tar -czf ../ppa-packages.tar.gz *.dsc *.tar.* *.changes *.buildinfo 2>/dev/null || true
+          tar -czf ../ppa-packages.tar.gz -- *.dsc *.tar.* *.changes *.buildinfo 2>/dev/null || true
 
       - name: Upload artifacts
         if: always()
