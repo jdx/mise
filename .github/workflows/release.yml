@@ -290,7 +290,7 @@ jobs:
           files: releases/${{github.ref_name}}/*
           generate_release_notes: true
           token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
-      - run: gh release edit --draft=false $(./scripts/get-version.sh)
+      - run: gh release edit --draft=false "$(./scripts/get-version.sh)"
         if: startsWith(github.event.ref, 'refs/tags/v')
   bump-alpine:
     runs-on: ubuntu-latest
