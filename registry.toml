@@ -1409,6 +1409,9 @@ jsonnet-bundler.backends = [
     "asdf:beardix/asdf-jb"
 ]
 jsonnet-bundler.test = ["jb --version 2>&1", "v{{version}}"]
+jsonschema.description = "The CLI for working with JSON Schema. Covers formatting, linting, testing, bundling, and more for both local development and CI/CD pipelines"
+jsonschema.backends = ["aqua:sourcemeta/jsonschema", "ubi:sourcemeta/jsonschema"]
+jsonschema.test = ["jsonschema version", "{{version}}"]
 julia.backends = ["asdf:mise-plugins/mise-julia"]
 just.description = "Just a command runner"
 just.backends = [
