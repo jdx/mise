@@ -153,21 +153,21 @@ jobs:
            pyenv, etc. and works with any language.
           EOF
           
-          cat > debian/rules << 'EOF'
+          cat > debian/rules << EOF
           #!/usr/bin/make -f
           
           %:
-          	dh $@
+          	dh \$@
           
           override_dh_auto_build:
           	mkdir -p .cargo
           	cp debian/cargo.config .cargo/config
           	tar xzf debian/vendor.tar.gz
-          	cargo build --profile $(BUILD_PROFILE) --frozen --bin mise
+          	cargo build --profile ${BUILD_PROFILE} --frozen --bin mise
           
           override_dh_auto_install:
           	mkdir -p debian/mise/usr/bin
-          	cp target/$(BUILD_PROFILE)/mise debian/mise/usr/bin/
+          	cp target/${BUILD_PROFILE}/mise debian/mise/usr/bin/
           	mkdir -p debian/mise/usr/share/man/man1
           	if [ -f man/man1/mise.1 ]; then cp man/man1/mise.1 debian/mise/usr/share/man/man1/; fi
           	mkdir -p debian/mise/usr/share/bash-completion/completions
