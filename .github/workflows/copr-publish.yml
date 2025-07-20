@@ -1,0 +1,267 @@
+name: Publish to COPR
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      chroots:
+        description: 'COPR chroots to target (space-separated)'
+        required: false
+        default: 'fedora-39-x86_64 fedora-40-x86_64 fedora-41-x86_64 epel-9-x86_64'
+        type: string
+      use_serious_profile:
+        description: 'Use the "serious" profile for optimized builds (LTO enabled)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PACKAGE_NAME: mise
+
+jobs:
+  publish-copr:
+    runs-on: ubuntu-latest
+    environment: copr-publishing
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Set up environment variables
+        run: |
+          VERSION=$(./scripts/get-version.sh | sed 's/^v//')
+          
+          if [ "${{ github.event_name }}" = "release" ]; then
+            CHROOTS="fedora-39-x86_64 fedora-40-x86_64 fedora-41-x86_64 epel-9-x86_64"
+          else
+            CHROOTS="${{ inputs.chroots }}"
+          fi
+          
+          {
+            echo "VERSION=${VERSION}"
+            echo "CHROOTS=${CHROOTS}"
+            echo "PACKAGE_NAME=${PACKAGE_NAME}"
+            echo "MAINTAINER_NAME=${{ vars.COPR_MAINTAINER_NAME || 'mise Release Bot' }}"
+            echo "MAINTAINER_EMAIL=${{ vars.COPR_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}"
+            echo "COPR_OWNER=${{ vars.COPR_OWNER || 'jdx' }}"
+            echo "COPR_PROJECT=${{ vars.COPR_PROJECT || 'mise' }}"
+          } >> "$GITHUB_ENV"
+          
+          # Set build profile
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.use_serious_profile }}" = "true" ]; then
+            echo "BUILD_PROFILE=serious" >> "$GITHUB_ENV"
+          else
+            echo "BUILD_PROFILE=release" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            rpm \
+            rpmbuild \
+            rpmdevtools \
+            python3-pip \
+            git
+
+      - name: Install copr-cli
+        run: |
+          pip3 install copr-cli
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-vendor
+        run: cargo install cargo-vendor
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "${{ env.MAINTAINER_NAME }}"
+          git config --global user.email "${{ env.MAINTAINER_EMAIL }}"
+
+      - name: Set up COPR configuration
+        run: |
+          mkdir -p ~/.config
+          cat > ~/.config/copr << EOF
+          [copr-cli]
+          login = ${{ secrets.COPR_API_LOGIN }}
+          username = ${{ env.COPR_OWNER }}
+          token = ${{ secrets.COPR_API_TOKEN }}
+          copr_url = https://copr.fedorainfracloud.org
+          EOF
+
+      - name: Create source RPM
+        run: |
+          # Create build directory structure
+          BUILD_DIR="/tmp/rpm-build"
+          mkdir -p "$BUILD_DIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          
+          # Set up RPM build environment
+          echo "%_topdir $BUILD_DIR" > ~/.rpmmacros
+          echo "%_tmppath %{_topdir}/tmp" >> ~/.rpmmacros
+          
+          cd "$BUILD_DIR"
+          
+          # Create original source tarball with submodules
+          git -C "$GITHUB_WORKSPACE" archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "SOURCES/${PACKAGE_NAME}-${VERSION}.tar"
+          
+          # Add aqua-registry submodule to the tarball
+          git -C "$GITHUB_WORKSPACE/aqua-registry" archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/aqua-registry/" HEAD >> "SOURCES/${PACKAGE_NAME}-${VERSION}.tar"
+          
+          # Compress the tarball
+          gzip "SOURCES/${PACKAGE_NAME}-${VERSION}.tar"
+          
+          # Extract source for vendoring
+          cd SOURCES
+          tar -xzf "${PACKAGE_NAME}-${VERSION}.tar.gz"
+          cd "${PACKAGE_NAME}-${VERSION}"
+          
+          # Vendor dependencies
+          mkdir -p .cargo
+          {
+            echo '[source.crates-io]'
+            echo 'replace-with = "vendored-sources"'
+            echo ''
+            echo '[source.vendored-sources]'
+            echo 'directory = "vendor"'
+          } > .cargo/config.toml
+          
+          cargo vendor vendor/
+          tar -czf "../${PACKAGE_NAME}-vendor-${VERSION}.tar.gz" vendor/ .cargo/
+          
+          # Clean up extracted source
+          cd ../..
+          rm -rf "SOURCES/${PACKAGE_NAME}-${VERSION}"
+          
+          # Create spec file from template
+          cat > "SPECS/${PACKAGE_NAME}.spec" << 'EOF'
+          %global debug_package %{nil}
+          %global _missing_build_ids_terminate_build 0
+          
+          Name:           mise
+          Version:        __VERSION__
+          Release:        1%{?dist}
+          Summary:        The front-end to your dev env
+          
+          License:        MIT
+          URL:            https://mise.jdx.dev
+          Source0:        https://github.com/jdx/mise/archive/v%{version}/mise-%{version}.tar.gz
+          Source1:        mise-vendor-%{version}.tar.gz
+          
+          BuildRequires:  rust >= 1.85
+          BuildRequires:  cargo
+          BuildRequires:  gcc
+          BuildRequires:  git
+          
+          %description
+          mise is a development environment setup tool that manages runtime versions,
+          environment variables, and tasks. It's a replacement for tools like nvm, rbenv,
+          pyenv, etc. and works with any language.
+          
+          %prep
+          %autosetup -n %{name}-%{version}
+          %setup -q -T -D -a 1
+          
+          %build
+          # Set up vendored dependencies
+          mkdir -p .cargo
+          cp .cargo/config.toml .cargo/config.toml.bak 2>/dev/null || true
+          cat > .cargo/config.toml << 'CARGO_EOF'
+          [source.crates-io]
+          replace-with = "vendored-sources"
+          
+          [source.vendored-sources]
+          directory = "vendor"
+          CARGO_EOF
+          
+          # Build with specified profile
+          cargo build --profile __BUILD_PROFILE__ --frozen --bin mise
+          
+          %install
+          mkdir -p %{buildroot}%{_bindir}
+          cp target/__BUILD_PROFILE__/mise %{buildroot}%{_bindir}/
+          
+          # Install man page if available
+          if [ -f man/man1/mise.1 ]; then
+            mkdir -p %{buildroot}%{_mandir}/man1
+            cp man/man1/mise.1 %{buildroot}%{_mandir}/man1/
+          fi
+          
+          # Install shell completions
+          mkdir -p %{buildroot}%{_datadir}/bash-completion/completions
+          if [ -f completions/mise.bash ]; then
+            cp completions/mise.bash %{buildroot}%{_datadir}/bash-completion/completions/mise
+          fi
+          
+          mkdir -p %{buildroot}%{_datadir}/zsh/site-functions
+          if [ -f completions/_mise ]; then
+            cp completions/_mise %{buildroot}%{_datadir}/zsh/site-functions/
+          fi
+          
+          mkdir -p %{buildroot}%{_datadir}/fish/vendor_completions.d
+          if [ -f completions/mise.fish ]; then
+            cp completions/mise.fish %{buildroot}%{_datadir}/fish/vendor_completions.d/
+          fi
+          
+          %files
+          %license LICENSE
+          %doc README.md
+          %{_bindir}/mise
+          %{_mandir}/man1/mise.1*
+          %{_datadir}/bash-completion/completions/mise
+          %{_datadir}/zsh/site-functions/_mise
+          %{_datadir}/fish/vendor_completions.d/mise.fish
+          
+          %changelog
+          * $(date +'%a %b %d %Y') ${{ env.MAINTAINER_NAME }} <${{ env.MAINTAINER_EMAIL }}> - %{version}-1
+          - New upstream release %{version}
+          EOF
+          
+          # Replace placeholders in spec file
+          sed -i "s/__VERSION__/${VERSION}/g" "SPECS/${PACKAGE_NAME}.spec"
+          sed -i "s/__BUILD_PROFILE__/${BUILD_PROFILE}/g" "SPECS/${PACKAGE_NAME}.spec"
+          
+          # Build source RPM
+          rpmbuild -bs "SPECS/${PACKAGE_NAME}.spec"
+          
+          # Copy SRPM to accessible location
+          cp SRPMS/*.src.rpm /tmp/
+
+      - name: Submit to COPR
+        run: |
+          # Find the SRPM file
+          SRPM_FILE=$(find /tmp -name "*.src.rpm" -type f | head -1)
+          
+          if [ -z "$SRPM_FILE" ]; then
+            echo "Error: No SRPM file found"
+            exit 1
+          fi
+          
+          echo "Submitting $SRPM_FILE to COPR project ${{ env.COPR_OWNER }}/${{ env.COPR_PROJECT }}"
+          
+          # Submit build to COPR
+          copr-cli build \
+            --chroot "${{ env.CHROOTS }}" \
+            "${{ env.COPR_OWNER }}/${{ env.COPR_PROJECT }}" \
+            "$SRPM_FILE"
+
+      - name: Create artifacts
+        if: always()
+        run: |
+          mkdir -p /tmp/artifacts
+          cp /tmp/*.src.rpm /tmp/artifacts/ 2>/dev/null || true
+          cp /tmp/rpm-build/SPECS/*.spec /tmp/artifacts/ 2>/dev/null || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: copr-source-packages
+          path: /tmp/artifacts/
+          retention-days: 30
