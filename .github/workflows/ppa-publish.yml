@@ -23,6 +23,7 @@ jobs:
   publish-ppa:
     runs-on: ubuntu-latest
     environment: ppa-publishing
+    timeout-minutes: 45
     
     steps:
       - name: Checkout repository
@@ -152,7 +153,7 @@ jobs:
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
-          Build-Depends: debhelper-compat (= 13), rustc, cargo, libssl-dev, pkg-config
+          Build-Depends: debhelper-compat (= 13), rustc (>= 1.75), cargo, libssl-dev, pkg-config
           Standards-Version: 4.6.0
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
