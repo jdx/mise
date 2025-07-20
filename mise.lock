@@ -135,6 +135,9 @@ backend = "asdf:shfmt"
 version = "2.7.1"
 backend = "ubi:slsa-framework/slsa-verifier"
 
+[tools.slsa-verifier.platforms.linux-x64-slsa-verifier]
+checksum = "blake3:6b7c72ece3e3cbd9db12dd8e261e594bb24721db140692d4f5cbdf508df45156"
+
 [tools.taplo]
 version = "0.10.0"
 backend = "aqua:tamasfe/taplo"
