@@ -124,8 +124,6 @@ jobs:
           tar -xzf "${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
           cd "${PACKAGE_NAME}-${VERSION}"
           
-          # We'll use the Ubuntu rustc-1.85 package in the PPA build
-          
           # Vendor dependencies
           mkdir -p .cargo
           {
@@ -153,7 +151,7 @@ jobs:
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
-          Build-Depends: debhelper-compat (= 13), rustc (>= 1.75), cargo, libssl-dev, pkg-config
+          Build-Depends: debhelper-compat (= 13), rustup, libssl-dev, pkg-config
           Standards-Version: 4.6.0
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
