@@ -10,7 +10,7 @@ This document explains how to set up and use the GitHub Actions workflow for pub
 
 ## Setting up Launchpad and PPA
 
-1. Create a Launchpad account at https://launchpad.net
+1. Create a Launchpad account at <https://launchpad.net>
 2. Create a new PPA for your project (e.g., `ppa:jdxcode/mise`)
 3. Generate and upload your GPG public key to Launchpad
 
@@ -112,7 +112,7 @@ sudo apt install mise
 
 ### Common Issues
 
-1. **GPG Signing Failures**: 
+1. **GPG Signing Failures**:
    - Ensure your GPG private key is correctly stored in the `MISE_GPG_KEY` secret
    - The workflow uses the same GPG setup as other mise workflows
 
