@@ -51,10 +51,8 @@ jobs:
           # Set build profile
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.use_serious_profile }}" = "true" ]; then
             echo "BUILD_PROFILE=serious" >> $GITHUB_ENV
-            echo "PACKAGE_SUFFIX=-optimized" >> $GITHUB_ENV
           else
             echo "BUILD_PROFILE=release" >> $GITHUB_ENV
-            echo "PACKAGE_SUFFIX=" >> $GITHUB_ENV
           fi
 
       - name: Install packaging dependencies
@@ -133,7 +131,7 @@ jobs:
           
           # Create basic debian files
           cat > debian/control << EOF
-          Source: ${PACKAGE_NAME}${PACKAGE_SUFFIX}
+          Source: ${PACKAGE_NAME}
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
@@ -143,13 +141,13 @@ jobs:
           Vcs-Git: https://github.com/jdx/mise.git
           Vcs-Browser: https://github.com/jdx/mise
           
-          Package: ${PACKAGE_NAME}${PACKAGE_SUFFIX}
+          Package: ${PACKAGE_NAME}
           Architecture: any
           Depends: \${shlibs:Depends}, \${misc:Depends}
-          Description: The front-end to your dev env$([ -n "$PACKAGE_SUFFIX" ] && echo " (optimized build)")
+          Description: The front-end to your dev env
            mise is a development environment setup tool that handles runtime versions,
            environment variables, and tasks. It's a replacement for tools like nvm, rbenv,
-           pyenv, etc. and works with any language.$([ -n "$PACKAGE_SUFFIX" ] && echo " This optimized build uses Link Time Optimization (LTO) for better performance.")
+           pyenv, etc. and works with any language.
           EOF
           
           cat > debian/rules << 'EOF'
@@ -165,16 +163,16 @@ jobs:
           	cargo build --profile $(BUILD_PROFILE) --frozen --bin mise
           
           override_dh_auto_install:
-          	mkdir -p debian/mise$(PACKAGE_SUFFIX)/usr/bin
-          	cp target/$(BUILD_PROFILE)/mise debian/mise$(PACKAGE_SUFFIX)/usr/bin/
-          	mkdir -p debian/mise$(PACKAGE_SUFFIX)/usr/share/man/man1
-          	if [ -f man/man1/mise.1 ]; then cp man/man1/mise.1 debian/mise$(PACKAGE_SUFFIX)/usr/share/man/man1/; fi
-          	mkdir -p debian/mise$(PACKAGE_SUFFIX)/usr/share/bash-completion/completions
-          	if [ -f completions/mise.bash ]; then cp completions/mise.bash debian/mise$(PACKAGE_SUFFIX)/usr/share/bash-completion/completions/mise; fi
-          	mkdir -p debian/mise$(PACKAGE_SUFFIX)/usr/share/zsh/site-functions
-          	if [ -f completions/_mise ]; then cp completions/_mise debian/mise$(PACKAGE_SUFFIX)/usr/share/zsh/site-functions/; fi
-          	mkdir -p debian/mise$(PACKAGE_SUFFIX)/usr/share/fish/vendor_completions.d
-          	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise$(PACKAGE_SUFFIX)/usr/share/fish/vendor_completions.d/; fi
+          	mkdir -p debian/mise/usr/bin
+          	cp target/$(BUILD_PROFILE)/mise debian/mise/usr/bin/
+          	mkdir -p debian/mise/usr/share/man/man1
+          	if [ -f man/man1/mise.1 ]; then cp man/man1/mise.1 debian/mise/usr/share/man/man1/; fi
+          	mkdir -p debian/mise/usr/share/bash-completion/completions
+          	if [ -f completions/mise.bash ]; then cp completions/mise.bash debian/mise/usr/share/bash-completion/completions/mise; fi
+          	mkdir -p debian/mise/usr/share/zsh/site-functions
+          	if [ -f completions/_mise ]; then cp completions/_mise debian/mise/usr/share/zsh/site-functions/; fi
+          	mkdir -p debian/mise/usr/share/fish/vendor_completions.d
+          	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
           
           override_dh_auto_clean:
           	cargo clean || true
@@ -221,7 +219,7 @@ jobs:
             
             # Create changelog
             cat > debian/changelog << EOF
-          ${PACKAGE_NAME}${PACKAGE_SUFFIX} (${DIST_VERSION}) ${DIST}; urgency=medium
+          ${PACKAGE_NAME} (${DIST_VERSION}) ${DIST}; urgency=medium
           
             * New upstream release ${VERSION}
           
@@ -239,7 +237,7 @@ jobs:
             mv ../*${DIST_VERSION}*.buildinfo "/tmp/packages/" 2>/dev/null || true
             
             # Clean for next distribution
-            rm -f ../mise${PACKAGE_SUFFIX}_${DIST_VERSION}*
+            rm -f ../mise_${DIST_VERSION}*
           done
 
       - name: Upload source packages to PPA
