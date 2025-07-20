@@ -112,13 +112,13 @@ jobs:
           WORK_DIR="/tmp/ppa-build"
           mkdir -p "$WORK_DIR"
           
-          # Copy the tarball to a known location
-          cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "/tmp/${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+          # Copy the tarball to the working directory (where debuild expects it to be in parent of source dir)
+          cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "$WORK_DIR/${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
           
           cd "$WORK_DIR"
           
           # Extract source
-          tar -xzf "/tmp/${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+          tar -xzf "${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
           cd "${PACKAGE_NAME}-${VERSION}"
           
           # Vendor dependencies
