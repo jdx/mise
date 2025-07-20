@@ -125,6 +125,9 @@ jobs:
           tar -xzf "${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
           cd "${PACKAGE_NAME}-${VERSION}"
           
+          # Fix Cargo.toml for older Rust versions - change edition from 2024 to 2021
+          sed -i 's/edition = "2024"/edition = "2021"/' Cargo.toml
+          
           # Vendor dependencies
           mkdir -p .cargo
           {
@@ -144,6 +147,7 @@ jobs:
           tar -czf debian/vendor.tar.gz vendor/
           cp .cargo/config debian/cargo.config
           echo "3.0 (quilt)" > debian/source/format
+          echo "debian/vendor.tar.gz" > debian/source/include-binaries
           
           # Create basic debian files
           cat > debian/control << EOF
