@@ -161,28 +161,21 @@ impl Upgrade {
             ..Default::default()
         };
 
-        let mut successful_versions = Vec::new();
-        let mut had_errors = false;
+        // Collect all tool requests for parallel installation
+        let tool_requests: Vec<_> = outdated.iter().map(|o| o.tool_request.clone()).collect();
 
-        for outdated_info in &outdated {
-            let tool_request = outdated_info.tool_request.clone();
-            let tool_name = outdated_info.name.clone();
-
-            match ts
-                .install_all_versions(config, vec![tool_request], &opts)
-                .await
-            {
-                Ok(versions) => {
-                    for version in versions {
-                        successful_versions.push(version);
-                    }
-                }
-                Err(e) => {
-                    had_errors = true;
-                    warn!("Failed to upgrade {}: {}", tool_name, e);
-                }
-            }
-        }
+        // Install all tools in parallel
+        let (successful_versions, install_error) =
+            match ts.install_all_versions(config, tool_requests, &opts).await {
+                Ok(versions) => (versions, eyre::Result::Ok(())),
+                Err(e) => match e.downcast_ref::<crate::errors::Error>() {
+                    Some(crate::errors::Error::InstallFailed {
+                        successful_installations,
+                        ..
+                    }) => (successful_installations.clone(), eyre::Result::Err(e)),
+                    _ => (vec![], eyre::Result::Err(e)),
+                },
+            };
 
         // Only update config files for tools that were successfully installed
         for (o, cf) in config_file_updates {
@@ -230,11 +223,7 @@ impl Upgrade {
                 });
         }
 
-        if had_errors {
-            return Err(eyre!("Some tools failed to upgrade"));
-        }
-
-        Ok(())
+        install_error
     }
 
     async fn uninstall_old_version(
