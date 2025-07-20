@@ -217,17 +217,7 @@ impl Toolset {
 
         // Handle dependencies by installing in dependency order
         let mut installed = vec![];
-        let leaf_deps_result = get_leaf_dependencies(&versions);
-        let mut leaf_deps = match leaf_deps_result {
-            Ok(deps) => deps,
-            Err(e) => {
-                // Check if this is a backend resolution error
-                if e.to_string().contains("not found in mise tool registry") {
-                    return Err(e);
-                }
-                return Err(eyre::eyre!("Failed to resolve dependencies"));
-            }
-        };
+        let mut leaf_deps = get_leaf_dependencies(&versions)?;
 
         while !leaf_deps.is_empty() {
             if leaf_deps.len() < versions.len() {
@@ -240,17 +230,6 @@ impl Toolset {
                     successful_installations,
                     failed_installations,
                 }) => {
-                    // Check if this is a backend resolution error
-                    if failed_installations.len() == 1
-                        && failed_installations[0]
-                            .1
-                            .to_string()
-                            .contains("not found in mise tool registry")
-                    {
-                        // This is a backend resolution error, propagate it directly
-                        return Err(eyre::eyre!("{}", failed_installations[0].1));
-                    }
-                    // For actual installation failures, use our detailed error reporting
                     installed.extend(successful_installations);
                     return Err(Error::InstallFailed {
                         successful_installations: installed,
@@ -261,17 +240,7 @@ impl Toolset {
                 Err(e) => return Err(e.into()),
             }
 
-            let leaf_deps_result = get_leaf_dependencies(&versions);
-            leaf_deps = match leaf_deps_result {
-                Ok(deps) => deps,
-                Err(e) => {
-                    // Check if this is a backend resolution error
-                    if e.to_string().contains("not found in mise tool registry") {
-                        return Err(e);
-                    }
-                    return Err(eyre::eyre!("Failed to resolve remaining dependencies"));
-                }
-            };
+            leaf_deps = get_leaf_dependencies(&versions)?;
         }
 
         // Reload config and resolve (ignoring errors like the original does)
