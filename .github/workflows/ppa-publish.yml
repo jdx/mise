@@ -173,7 +173,7 @@ jobs:
           	dh \$@
           
           override_dh_auto_build:
-          	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.85.0
+          	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           	source ~/.cargo/env
           	mkdir -p .cargo
           	cp debian/cargo.config .cargo/config
@@ -193,6 +193,7 @@ jobs:
           	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
           
           override_dh_auto_clean:
+          	source ~/.cargo/env
           	cargo clean
           	rm -rf .cargo vendor
           EOF
