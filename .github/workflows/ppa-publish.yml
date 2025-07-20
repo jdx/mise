@@ -151,7 +151,7 @@ jobs:
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
-          Build-Depends: debhelper-compat (= 13), rustup, libssl-dev, pkg-config
+          Build-Depends: debhelper-compat (= 13), curl, libssl-dev, pkg-config
           Standards-Version: 4.6.0
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
@@ -173,6 +173,8 @@ jobs:
           	dh \$@
           
           override_dh_auto_build:
+          	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.85.0
+          	source ~/.cargo/env
           	mkdir -p .cargo
           	cp debian/cargo.config .cargo/config
           	tar xzf debian/vendor.tar.gz
