@@ -123,8 +123,7 @@ jobs:
           tar -xzf "${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
           cd "${PACKAGE_NAME}-${VERSION}"
           
-          # Ensure we use the GitHub Actions Rust toolchain instead of system packages
-          export PATH="$HOME/.cargo/bin:$PATH"
+          # We'll use the Ubuntu rustc-1.85 package in the PPA build
           
           # Vendor dependencies
           mkdir -p .cargo
@@ -153,7 +152,7 @@ jobs:
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
-          Build-Depends: debhelper-compat (= 13), libssl-dev, pkg-config, wget, curl, gcc
+          Build-Depends: debhelper-compat (= 13), rustc-1.85, cargo-1.85, libssl-dev, pkg-config
           Standards-Version: 4.6.0
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
@@ -171,23 +170,14 @@ jobs:
           cat > debian/rules << EOF
           #!/usr/bin/make -f
           
-          RUST_VERSION := 1.83.0
-          export PATH := \$(HOME)/.cargo/bin:\$(PATH)
-          export CARGO_HOME := \$(HOME)/.cargo
-          
           %:
           	dh \$@
-          
-          override_dh_auto_configure:
-          	# Install Rust using rustup
-          	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain \$(RUST_VERSION)
-          	\$(HOME)/.cargo/bin/rustup component add rustfmt
           
           override_dh_auto_build:
           	mkdir -p .cargo
           	cp debian/cargo.config .cargo/config
           	tar xzf debian/vendor.tar.gz
-          	\$(HOME)/.cargo/bin/cargo build --profile ${BUILD_PROFILE} --frozen --bin mise
+          	cargo-1.85 build --profile ${BUILD_PROFILE} --frozen --bin mise
           
           override_dh_auto_install:
           	mkdir -p debian/mise/usr/bin
@@ -202,7 +192,7 @@ jobs:
           	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
           
           override_dh_auto_clean:
-          	\$(HOME)/.cargo/bin/cargo clean || true
+          	cargo-1.85 clean || true
           	rm -rf .cargo vendor
           EOF
           
