@@ -193,10 +193,9 @@ jobs:
           	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
           
           override_dh_auto_clean:
-          	if [ ! -f ~/.cargo/env ]; then curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y; fi
-          	. ~/.cargo/env
-          	cargo clean
-          	rm -rf .cargo vendor
+          	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          	~/.cargo/bin/cargo clean
+          	rm -rf vendor
           EOF
           
           chmod +x debian/rules
