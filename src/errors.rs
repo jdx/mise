@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::process::ExitStatus;
 
 use crate::cli::args::BackendArg;
+use crate::env::RUST_BACKTRACE;
 use crate::file::display_path;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
 use eyre::Report;
@@ -61,7 +62,7 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
         failed_tools.join(", ")
     ));
 
-    // Show detailed errors with full tracebacks for each failure
+    // Show detailed errors for each failure
     output.push_str("\n\nIndividual error details:");
     for (i, (tr, error)) in failed_installations.iter().enumerate() {
         output.push_str(&format!(
@@ -71,10 +72,16 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
             tr.version()
         ));
 
-        // Use {:#} to show the full error chain with tracebacks
-        let error_str = format!("{error:#}");
+        // Use {:#} to show the full error chain with tracebacks if RUST_BACKTRACE is set
+        // Otherwise use {:#?} for debug format without tracebacks
+        let error_str = if *RUST_BACKTRACE {
+            format!("{:#}", error)
+        } else {
+            format!("{:#?}", error)
+        };
+
         for line in error_str.lines() {
-            output.push_str(&format!("\n     {line}"));
+            output.push_str(&format!("\n     {}", line));
         }
 
         if i < failed_installations.len() - 1 {

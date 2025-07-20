@@ -223,10 +223,7 @@ impl Upgrade {
                 });
         }
 
-        match install_error {
-            Ok(()) => Ok(()),
-            Err(install_error) => Err(install_error),
-        }
+        install_error
     }
 
     async fn uninstall_old_version(
