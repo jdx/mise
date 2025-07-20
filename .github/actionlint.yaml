@@ -22,5 +22,7 @@ config-variables: null
 shellcheck:
   # Exclude specific shellcheck rules that are not applicable in GitHub Actions context
   exclude-ids:
+    - SC1090  # Can't follow non-constant source - common in dynamic scripts
+    - SC2046  # Quote to prevent word splitting - often intentional in controlled environments
     - SC2086  # Double quote to prevent globbing - often not needed in controlled GitHub Actions environment
     - SC2129  # Consider using { cmd1; cmd2; } >> file - fixed where reasonable, but some cases are clearer as-is

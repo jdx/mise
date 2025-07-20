@@ -5,7 +5,7 @@ set -euxo pipefail
 
 markdownlint --fix .
 taplo fmt
-SHELLCHECK_OPTS="--exclude=SC1090 --exclude=SC2046" actionlint
+actionlint
 toml-sort -i settings.toml --spaces-indent-inline-array 4
 toml-sort -i registry.toml --spaces-indent-inline-array 4
 

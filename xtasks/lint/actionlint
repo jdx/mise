@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export SHELLCHECK_OPTS="--exclude=SC1090 --exclude=SC2046"
 actionlint
