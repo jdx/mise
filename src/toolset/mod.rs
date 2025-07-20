@@ -45,44 +45,6 @@ mod tool_version_options;
 
 pub use tool_version_options::{ToolVersionOptions, parse_tool_options};
 
-/// Error type that carries successful installations when some installations fail
-#[derive(Debug)]
-pub struct InstallError {
-    pub successful_installations: Vec<ToolVersion>,
-    pub failed_installations: Vec<(ToolRequest, eyre::Report)>,
-    pub error_message: String,
-}
-
-impl Display for InstallError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.error_message)
-    }
-}
-
-impl std::error::Error for InstallError {}
-
-/// Helper function to format install error messages
-fn format_install_error_message(failed_installations: &[(ToolRequest, eyre::Report)]) -> String {
-    if failed_installations.is_empty() {
-        return String::new();
-    }
-
-    let failed_tools: Vec<String> = failed_installations
-        .iter()
-        .map(|(tr, e)| format!("{}@{} ({})", tr.ba().short, tr.version(), e))
-        .collect();
-
-    format!(
-        "Failed to install {}: {}",
-        if failed_tools.len() == 1 {
-            "tool"
-        } else {
-            "tools"
-        },
-        failed_tools.join(", ")
-    )
-}
-
 #[derive(Debug, Clone)]
 pub struct InstallOptions {
     pub force: bool,
@@ -242,7 +204,7 @@ impl Toolset {
         config: &mut Arc<Config>,
         mut versions: Vec<ToolRequest>,
         opts: &InstallOptions,
-    ) -> Result<Vec<ToolVersion>, InstallError> {
+    ) -> Result<Vec<ToolVersion>> {
         if versions.is_empty() {
             return Ok(vec![]);
         }
@@ -259,11 +221,11 @@ impl Toolset {
         let mut leaf_deps = match leaf_deps_result {
             Ok(deps) => deps,
             Err(e) => {
-                return Err(InstallError {
-                    successful_installations: vec![],
-                    failed_installations: vec![],
-                    error_message: format!("Failed to resolve dependencies: {e}"),
-                });
+                // Check if this is a backend resolution error
+                if e.to_string().contains("not found in mise tool registry") {
+                    return Err(e);
+                }
+                return Err(eyre::eyre!("Failed to resolve dependencies"));
             }
         };
 
@@ -273,38 +235,48 @@ impl Toolset {
             }
             versions.retain(|tr| !leaf_deps.contains(tr));
             match self.install_some_versions(config, leaf_deps, opts).await {
-                Ok(versions) => installed.extend(versions),
-                Err(install_error) => {
-                    // Combine successful installations from this batch with previous ones
-                    installed.extend(install_error.successful_installations);
-                    return Err(InstallError {
+                Ok(leaf_versions) => installed.extend(leaf_versions),
+                Err(Error::InstallFailed {
+                    successful_installations,
+                    failed_installations,
+                }) => {
+                    // Check if this is a backend resolution error
+                    if failed_installations.len() == 1
+                        && failed_installations[0]
+                            .1
+                            .to_string()
+                            .contains("not found in mise tool registry")
+                    {
+                        // This is a backend resolution error, propagate it directly
+                        return Err(eyre::eyre!("{}", failed_installations[0].1));
+                    }
+                    // For actual installation failures, use our detailed error reporting
+                    installed.extend(successful_installations);
+                    return Err(Error::InstallFailed {
                         successful_installations: installed,
-                        failed_installations: install_error.failed_installations,
-                        error_message: install_error.error_message,
-                    });
+                        failed_installations,
+                    }
+                    .into());
                 }
+                Err(e) => return Err(e.into()),
             }
 
             let leaf_deps_result = get_leaf_dependencies(&versions);
             leaf_deps = match leaf_deps_result {
                 Ok(deps) => deps,
                 Err(e) => {
-                    return Err(InstallError {
-                        successful_installations: installed,
-                        failed_installations: vec![],
-                        error_message: format!("Failed to resolve remaining dependencies: {e}"),
-                    });
+                    // Check if this is a backend resolution error
+                    if e.to_string().contains("not found in mise tool registry") {
+                        return Err(e);
+                    }
+                    return Err(eyre::eyre!("Failed to resolve remaining dependencies"));
                 }
             };
         }
 
         // Reload config and resolve (ignoring errors like the original does)
         trace!("install: reloading config");
-        *config = Config::reset().await.map_err(|e| InstallError {
-            successful_installations: installed.clone(),
-            failed_installations: vec![],
-            error_message: format!("Failed to reset config: {e}"),
-        })?;
+        *config = Config::reset().await?;
         trace!("install: resolving");
         if let Err(err) = self.resolve(config).await {
             debug!("error resolving versions after install: {err:#}");
@@ -313,11 +285,7 @@ impl Toolset {
         // Debug logging for successful installations
         if log::log_enabled!(log::Level::Debug) {
             for tv in installed.iter() {
-                let backend = tv.backend().map_err(|e| InstallError {
-                    successful_installations: installed.clone(),
-                    failed_installations: vec![],
-                    error_message: format!("Failed to get backend for {tv}: {e}"),
-                })?;
+                let backend = tv.backend()?;
                 let bin_paths = backend
                     .list_bin_paths(config, tv)
                     .await
@@ -350,7 +318,7 @@ impl Toolset {
         config: &Arc<Config>,
         versions: Vec<ToolRequest>,
         opts: &InstallOptions,
-    ) -> Result<Vec<ToolVersion>, InstallError> {
+    ) -> Result<Vec<ToolVersion>, Error> {
         debug!("install_some_versions: {}", versions.iter().join(" "));
 
         // Group versions by backend
@@ -371,11 +339,9 @@ impl Toolset {
                     .into_iter()
                     .map(|tr| (tr, eyre::eyre!("{}", e)))
                     .collect();
-                let error_message = format_install_error_message(&failed_installations);
-                return Err(InstallError {
+                return Err(Error::InstallFailed {
                     successful_installations: vec![],
                     failed_installations,
-                    error_message,
                 });
             }
         };
@@ -544,11 +510,9 @@ impl Toolset {
         if failed_installations.is_empty() {
             Ok(successful_installations)
         } else {
-            let error_message = format_install_error_message(&failed_installations);
-            Err(InstallError {
+            Err(Error::InstallFailed {
                 successful_installations,
                 failed_installations,
-                error_message,
             })
         }
     }

@@ -167,11 +167,14 @@ impl Upgrade {
         // Install all tools in parallel
         let (successful_versions, install_error) =
             match ts.install_all_versions(config, tool_requests, &opts).await {
-                Ok(versions) => (versions, Ok(())),
-                Err(install_error) => (
-                    install_error.successful_installations.clone(),
-                    Err(install_error),
-                ),
+                Ok(versions) => (versions, eyre::Result::Ok(())),
+                Err(e) => match e.downcast_ref::<crate::errors::Error>() {
+                    Some(crate::errors::Error::InstallFailed {
+                        successful_installations,
+                        ..
+                    }) => (successful_installations.clone(), eyre::Result::Err(e)),
+                    _ => (vec![], eyre::Result::Err(e)),
+                },
             };
 
         // Only update config files for tools that were successfully installed
@@ -222,7 +225,7 @@ impl Upgrade {
 
         match install_error {
             Ok(()) => Ok(()),
-            Err(install_error) => Err(eyre::eyre!("{}", install_error.error_message)),
+            Err(install_error) => Err(install_error),
         }
     }
 
