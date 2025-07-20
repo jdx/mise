@@ -1,0 +1,261 @@
+name: Publish to PPA
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to package (e.g., 2025.7.17)'
+        required: true
+        type: string
+      distributions:
+        description: 'Ubuntu distributions to target (space-separated)'
+        required: false
+        default: 'focal jammy noble'
+        type: string
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  publish-ppa:
+    runs-on: ubuntu-latest
+    environment: ppa-publishing
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Set up environment variables
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            # Remove 'v' prefix if present
+            VERSION="${VERSION#v}"
+            DISTRIBUTIONS="focal jammy noble"
+          else
+            VERSION="${{ inputs.version }}"
+            DISTRIBUTIONS="${{ inputs.distributions }}"
+          fi
+          
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "DISTRIBUTIONS=${DISTRIBUTIONS}" >> $GITHUB_ENV
+          echo "PACKAGE_NAME=mise" >> $GITHUB_ENV
+          echo "MAINTAINER_NAME=${{ vars.PPA_MAINTAINER_NAME || 'mise Release Bot' }}" >> $GITHUB_ENV
+          echo "MAINTAINER_EMAIL=${{ vars.PPA_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}" >> $GITHUB_ENV
+          echo "PPA_NAME=${{ vars.PPA_NAME || 'ppa:jdx/mise' }}" >> $GITHUB_ENV
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            devscripts \
+            debhelper \
+            dh-make \
+            build-essential \
+            git-buildpackage \
+            dput \
+            lintian \
+            quilt \
+            fakeroot \
+            debian-keyring \
+            gpg
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-vendor
+        run: cargo install cargo-vendor
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "${{ env.MAINTAINER_NAME }}"
+          git config --global user.email "${{ env.MAINTAINER_EMAIL }}"
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.PPA_GPG_PRIVATE_KEY }}" | gpg --batch --import
+          echo "${{ secrets.PPA_GPG_PASSPHRASE }}" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --sign /tmp/test.txt || true
+
+      - name: Create source package for each distribution
+        run: |
+          ORIG_VERSION="${VERSION}"
+          
+          # Create original tarball
+          git archive --format=tar.gz --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+          
+          # Create working directory
+          WORK_DIR="/tmp/ppa-build"
+          mkdir -p "$WORK_DIR"
+          cd "$WORK_DIR"
+          
+          # Extract source
+          tar -xzf "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+          cd "${PACKAGE_NAME}-${VERSION}"
+          
+          # Vendor dependencies
+          mkdir -p .cargo
+          echo '[source.crates-io]' > .cargo/config
+          echo 'replace-with = "vendored-sources"' >> .cargo/config
+          echo '' >> .cargo/config
+          echo '[source.vendored-sources]' >> .cargo/config
+          echo 'directory = "vendor"' >> .cargo/config
+          
+          cargo vendor vendor/
+          tar -czf debian/vendor.tar.gz vendor/
+          cp .cargo/config debian/cargo.config
+          
+          # Create debian directory structure
+          mkdir -p debian/source
+          echo "3.0 (quilt)" > debian/source/format
+          
+          # Create basic debian files
+          cat > debian/control << EOF
+          Source: ${PACKAGE_NAME}
+          Section: utils
+          Priority: optional
+          Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
+          Build-Depends: debhelper-compat (= 13), cargo, rustc
+          Standards-Version: 4.6.0
+          Homepage: https://mise.jdx.dev
+          Vcs-Git: https://github.com/jdx/mise.git
+          Vcs-Browser: https://github.com/jdx/mise
+          
+          Package: ${PACKAGE_NAME}
+          Architecture: any
+          Depends: \${shlibs:Depends}, \${misc:Depends}
+          Description: The front-end to your dev env
+           mise is a development environment setup tool that handles runtime versions,
+           environment variables, and tasks. It's a replacement for tools like nvm, rbenv,
+           pyenv, etc. and works with any language.
+          EOF
+          
+          cat > debian/rules << 'EOF'
+          #!/usr/bin/make -f
+          
+          %:
+          	dh $@
+          
+          override_dh_auto_build:
+          	mkdir -p .cargo
+          	cp debian/cargo.config .cargo/config
+          	tar xzf debian/vendor.tar.gz
+          	cargo build --release --frozen --bin mise
+          
+          override_dh_auto_install:
+          	mkdir -p debian/mise/usr/bin
+          	cp target/release/mise debian/mise/usr/bin/
+          	mkdir -p debian/mise/usr/share/man/man1
+          	if [ -f man/man1/mise.1 ]; then cp man/man1/mise.1 debian/mise/usr/share/man/man1/; fi
+          	mkdir -p debian/mise/usr/share/bash-completion/completions
+          	if [ -f completions/mise.bash ]; then cp completions/mise.bash debian/mise/usr/share/bash-completion/completions/mise; fi
+          	mkdir -p debian/mise/usr/share/zsh/site-functions
+          	if [ -f completions/_mise ]; then cp completions/_mise debian/mise/usr/share/zsh/site-functions/; fi
+          	mkdir -p debian/mise/usr/share/fish/vendor_completions.d
+          	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
+          
+          override_dh_auto_clean:
+          	cargo clean || true
+          	rm -rf .cargo vendor
+          EOF
+          
+          chmod +x debian/rules
+          
+          cat > debian/copyright << EOF
+          Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+          Upstream-Name: ${PACKAGE_NAME}
+          Source: https://github.com/jdx/mise
+          
+          Files: *
+          Copyright: 2023-2025 Jeff Dickey
+          License: MIT
+          
+          License: MIT
+           Permission is hereby granted, free of charge, to any person obtaining a
+           copy of this software and associated documentation files (the "Software"),
+           to deal in the Software without restriction, including without limitation
+           the rights to use, copy, modify, merge, publish, distribute, sublicense,
+           and/or sell copies of the Software, and to permit persons to whom the
+           Software is furnished to do so, subject to the following conditions:
+           .
+           The above copyright notice and this permission notice shall be included
+           in all copies or substantial portions of the Software.
+           .
+           THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+           OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+           MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+           IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+           CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+           TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+           SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+          EOF
+          
+          # Build source packages for each distribution
+          for DIST in $DISTRIBUTIONS; do
+            echo "Building source package for $DIST"
+            
+            # Create distribution-specific version
+            DIST_VERSION="${VERSION}-1${DIST}1"
+            
+            # Create changelog
+            cat > debian/changelog << EOF
+          ${PACKAGE_NAME} (${DIST_VERSION}) ${DIST}; urgency=medium
+          
+            * New upstream release ${VERSION}
+          
+           -- ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>  $(date -R)
+          EOF
+            
+            # Build source package
+            debuild -S -sa --lintian-opts --profile debian
+            
+            # Move built packages
+            mkdir -p "/tmp/packages"
+            mv ../*${DIST_VERSION}*.dsc "/tmp/packages/"
+            mv ../*${DIST_VERSION}*.tar.* "/tmp/packages/"
+            mv ../*${DIST_VERSION}*.changes "/tmp/packages/"
+            mv ../*${DIST_VERSION}*.buildinfo "/tmp/packages/" 2>/dev/null || true
+            
+            # Clean for next distribution
+            rm -f ../mise_${DIST_VERSION}*
+          done
+
+      - name: Upload source packages to PPA
+        run: |
+          cd /tmp/packages
+          
+          # Configure dput
+          cat > ~/.dput.cf << EOF
+          [mise-ppa]
+          fqdn = ppa.launchpad.net
+          method = ftp
+          incoming = ~${PPA_NAME#ppa:}/ubuntu/
+          login = anonymous
+          allow_unsigned_uploads = 0
+          EOF
+          
+          # Upload each changes file
+          for changes_file in *.changes; do
+            echo "Uploading $changes_file to PPA..."
+            dput mise-ppa "$changes_file"
+          done
+
+      - name: Create artifacts
+        if: always()
+        run: |
+          cd /tmp/packages
+          tar -czf ../ppa-packages.tar.gz *.dsc *.tar.* *.changes *.buildinfo 2>/dev/null || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ppa-source-packages
+          path: /tmp/ppa-packages.tar.gz
+          retention-days: 30
