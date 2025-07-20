@@ -81,15 +81,8 @@ impl Install {
             warn!("specify a version with `mise install <PLUGIN>@<VERSION>`");
             vec![]
         } else {
-            match ts
-                .install_all_versions(&mut config, tool_versions, &self.install_opts())
-                .await
-            {
-                Ok(versions) => versions,
-                Err(install_error) => {
-                    return Err(eyre::eyre!("{}", install_error.error_message));
-                }
-            }
+            ts.install_all_versions(&mut config, tool_versions, &self.install_opts())
+                .await?
         };
         // because we may be installing a tool that is not in config, we need to restore the original tool args and reset everything
         env::TOOL_ARGS
