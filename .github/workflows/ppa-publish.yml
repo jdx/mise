@@ -166,15 +166,15 @@ jobs:
            pyenv, etc. and works with any language.
           EOF
           
-          cat > debian/rules << EOF
+          cat > debian/rules << 'EOF'
           #!/usr/bin/make -f
           
           %:
-          	dh \$@
+          	dh $@
           
           override_dh_auto_build:
           	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            . ~/.cargo/env
+          	. ~/.cargo/env
           	mkdir -p .cargo
           	cp debian/cargo.config .cargo/config
           	tar xzf debian/vendor.tar.gz
@@ -193,7 +193,7 @@ jobs:
           	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
           
           override_dh_auto_clean:
-            . ~/.cargo/env
+          	. ~/.cargo/env
           	cargo clean
           	rm -rf .cargo vendor
           EOF
