@@ -432,37 +432,29 @@ impl Toolset {
             });
         }
 
-        let mut all_results = vec![];
-
-        // Add plugin errors first
-        all_results.extend(plugin_errors.into_iter().map(|(tr, e)| (tr, Err(e))));
-
-        // Add semaphore errors
-        all_results.extend(semaphore_errors.into_iter().map(|(tr, e)| (tr, Err(e))));
+        let mut task_results = vec![];
 
         // Collect results from spawned tasks
         while let Some(res) = tset.join_next().await {
             match res {
-                Ok(results) => all_results.extend(results),
-                Err(e) => {
-                    // Task join error - this shouldn't happen but handle it
-                    // Find the task ID by looking at the remaining tasks
-                    let task_id = tset.len();
-                    let trs = task_tools
-                        .get(&task_id)
-                        .expect("task_tools should have this task");
-                    for tr in trs {
-                        all_results.push((
-                            tr.clone(),
-                            Err(eyre::eyre!("Task failed to complete: {}", e)),
-                        ));
-                    }
-                }
+                Ok(results) => task_results.extend(results),
+                Err(e) => panic!("task join error: {e:#}"),
             }
         }
 
-        // Reverse to maintain original order (since we reversed when building queue)
-        all_results.reverse();
+        // Reverse task results to maintain original order (since we reversed when building queue)
+        task_results.reverse();
+
+        let mut all_results = vec![];
+
+        // Add plugin errors first (in original order)
+        all_results.extend(plugin_errors.into_iter().map(|(tr, e)| (tr, Err(e))));
+
+        // Add semaphore errors (in original order)
+        all_results.extend(semaphore_errors.into_iter().map(|(tr, e)| (tr, Err(e))));
+
+        // Add task results (already in correct order after reversal)
+        all_results.extend(task_results);
 
         // Process results and separate successes from failures
         let mut successful_installations = vec![];
