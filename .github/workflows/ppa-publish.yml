@@ -152,7 +152,7 @@ jobs:
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
-          Build-Depends: debhelper-compat (= 13), rustc-1.85, cargo-1.85, libssl-dev, pkg-config
+          Build-Depends: debhelper-compat (= 13), rustc, cargo, libssl-dev, pkg-config
           Standards-Version: 4.6.0
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
@@ -177,7 +177,7 @@ jobs:
           	mkdir -p .cargo
           	cp debian/cargo.config .cargo/config
           	tar xzf debian/vendor.tar.gz
-          	cargo-1.85 build --profile ${BUILD_PROFILE} --frozen --bin mise
+          	cargo build --profile ${BUILD_PROFILE} --frozen --bin mise
           
           override_dh_auto_install:
           	mkdir -p debian/mise/usr/bin
@@ -192,7 +192,7 @@ jobs:
           	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
           
           override_dh_auto_clean:
-          	cargo-1.85 clean || true
+          	cargo clean
           	rm -rf .cargo vendor
           EOF
           
