@@ -33,9 +33,7 @@ jobs:
       - name: Set up environment variables
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
-            VERSION="${{ github.event.release.tag_name }}"
-            # Remove 'v' prefix if present
-            VERSION="${VERSION#v}"
+            VERSION=$(./scripts/get-version.sh | sed 's/^v//')
             DISTRIBUTIONS="focal jammy noble"
           else
             VERSION="${{ inputs.version }}"
@@ -47,7 +45,7 @@ jobs:
           echo "PACKAGE_NAME=mise" >> $GITHUB_ENV
           echo "MAINTAINER_NAME=${{ vars.PPA_MAINTAINER_NAME || 'mise Release Bot' }}" >> $GITHUB_ENV
           echo "MAINTAINER_EMAIL=${{ vars.PPA_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}" >> $GITHUB_ENV
-          echo "PPA_NAME=${{ vars.PPA_NAME || 'ppa:jdx/mise' }}" >> $GITHUB_ENV
+          echo "PPA_NAME=${{ vars.PPA_NAME || 'ppa:jdxcode/mise' }}" >> $GITHUB_ENV
 
       - name: Install packaging dependencies
         run: |
@@ -79,16 +77,24 @@ jobs:
           git config --global user.email "${{ env.MAINTAINER_EMAIL }}"
 
       - name: Import GPG key
-        run: |
-          echo "${{ secrets.PPA_GPG_PRIVATE_KEY }}" | gpg --batch --import
-          echo "${{ secrets.PPA_GPG_PASSPHRASE }}" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --sign /tmp/test.txt || true
+        uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
+        with:
+          gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
 
       - name: Create source package for each distribution
         run: |
           ORIG_VERSION="${VERSION}"
           
-          # Create original tarball
-          git archive --format=tar.gz --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+          # Create original tarball with submodules
+          git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar"
+          
+          # Add aqua-registry submodule to the tarball
+          cd aqua-registry
+          git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/aqua-registry/" HEAD >> "../../${PACKAGE_NAME}_${VERSION}.orig.tar"
+          cd ..
+          
+          # Compress the tarball
+          gzip "../${PACKAGE_NAME}_${VERSION}.orig.tar"
           
           # Create working directory
           WORK_DIR="/tmp/ppa-build"
