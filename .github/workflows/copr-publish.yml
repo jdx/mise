@@ -22,7 +22,7 @@ env:
 jobs:
   publish-copr:
     runs-on: ubuntu-latest
-    environment: copr-publishing
+    timeout-minutes: 45
     
     steps:
       - name: Checkout repository
@@ -36,7 +36,7 @@ jobs:
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
           
           if [ "${{ github.event_name }}" = "release" ]; then
-            CHROOTS="fedora-39-x86_64 fedora-40-x86_64 fedora-41-x86_64 epel-9-x86_64"
+            CHROOTS="fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64"
           else
             CHROOTS="${{ inputs.chroots }}"
           fi
@@ -47,7 +47,7 @@ jobs:
             echo "PACKAGE_NAME=${PACKAGE_NAME}"
             echo "MAINTAINER_NAME=${{ vars.COPR_MAINTAINER_NAME || 'mise Release Bot' }}"
             echo "MAINTAINER_EMAIL=${{ vars.COPR_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}"
-            echo "COPR_OWNER=${{ vars.COPR_OWNER || 'jdx' }}"
+            echo "COPR_OWNER=${{ vars.COPR_OWNER || 'jdxcode' }}"
             echo "COPR_PROJECT=${{ vars.COPR_PROJECT || 'mise' }}"
           } >> "$GITHUB_ENV"
           
