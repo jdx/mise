@@ -66,7 +66,7 @@ The workflow follows the Rust PPA packaging guide and:
    - `debian/rules` - Build instructions
    - `debian/changelog` - Version history
    - `debian/copyright` - License information
-6. **Multi-distribution**: Builds packages for multiple Ubuntu versions (focal, jammy, noble)
+6. **Multi-distribution**: Builds packages for multiple Ubuntu versions (jammy, noble)
 7. **Signing**: Signs packages with your GPG key using the same pattern as other workflows
 8. **Upload**: Uploads source packages to your PPA using `dput`
 
@@ -92,7 +92,6 @@ You can manually trigger the workflow via GitHub Actions:
 ### Supported Ubuntu Distributions
 
 By default, the workflow targets:
-- Ubuntu 20.04 LTS (focal)
 - Ubuntu 22.04 LTS (jammy)
 - Ubuntu 24.04 LTS (noble)
 

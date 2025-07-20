@@ -12,7 +12,7 @@ on:
       distributions:
         description: 'Ubuntu distributions to target (space-separated)'
         required: false
-        default: 'focal jammy noble'
+        default: 'jammy noble'
         type: string
 
 env:
@@ -34,7 +34,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
             VERSION=$(./scripts/get-version.sh | sed 's/^v//')
-            DISTRIBUTIONS="focal jammy noble"
+            DISTRIBUTIONS="jammy noble"
           else
             VERSION="${{ inputs.version }}"
             DISTRIBUTIONS="${{ inputs.distributions }}"
