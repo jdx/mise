@@ -94,13 +94,16 @@ jobs:
       - name: Create source package for each distribution
         run: |
           
+          # Store the original working directory
+          ORIG_DIR="$(pwd)"
+          
           # Create original tarball with submodules
           git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar"
           
           # Add aqua-registry submodule to the tarball
           cd aqua-registry
           git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/aqua-registry/" HEAD >> "../../${PACKAGE_NAME}_${VERSION}.orig.tar"
-          cd ..
+          cd "$ORIG_DIR"
           
           # Compress the tarball
           gzip "../${PACKAGE_NAME}_${VERSION}.orig.tar"
@@ -108,10 +111,14 @@ jobs:
           # Create working directory
           WORK_DIR="/tmp/ppa-build"
           mkdir -p "$WORK_DIR"
+          
+          # Copy the tarball to a known location
+          cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "/tmp/${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+          
           cd "$WORK_DIR"
           
           # Extract source
-          tar -xzf "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+          tar -xzf "/tmp/${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
           cd "${PACKAGE_NAME}-${VERSION}"
           
           # Vendor dependencies
