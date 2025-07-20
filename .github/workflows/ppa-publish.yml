@@ -91,7 +91,7 @@ jobs:
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
 
-              - name: Create source package for each distribution
+      - name: Create source package for each distribution
         run: |
           
           # Create original tarball with submodules
@@ -263,7 +263,7 @@ jobs:
             dput mise-ppa "$changes_file"
           done
 
-              - name: Create artifacts
+      - name: Create artifacts
         if: always()
         run: |
           cd /tmp/packages
