@@ -95,7 +95,7 @@ All commit messages and PR titles MUST follow conventional commit format:
 
 **Types:**
 - `feat:` - New features
-- `fix:` - Bug fixes  
+- `fix:` - Bug fixes
 - `refactor:` - Code refactoring
 - `docs:` - Documentation
 - `style:` - Code style/formatting
