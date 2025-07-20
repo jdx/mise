@@ -81,6 +81,10 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Install mise
+        run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install cargo-vendor
         run: mise use -g cargo-binstall cargo:cargo-vendor
 
@@ -93,6 +97,23 @@ jobs:
         uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+          trust_level: 5
+
+      - name: Configure GPG for package signing
+        run: |
+          # List available keys and configure for the maintainer email
+          gpg --list-secret-keys
+          
+          # Get the key ID and configure it for the maintainer email
+          KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^sec:' | cut -d: -f5 | head -1)
+          if [ -n "$KEY_ID" ]; then
+            echo "Using GPG key: $KEY_ID"
+            echo "DEBSIGN_KEYID=$KEY_ID" >> "$GITHUB_ENV"
+          else
+            echo "Warning: No GPG key found"
+          fi
 
       - name: Create source package for each distribution
         run: |
@@ -154,7 +175,7 @@ jobs:
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
-          Build-Depends: debhelper-compat (= 13), curl, libssl-dev, pkg-config
+          Build-Depends: debhelper-compat (= 13), curl, libssl-dev, pkgconf
           Standards-Version: 4.6.0
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
