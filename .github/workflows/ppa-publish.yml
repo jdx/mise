@@ -1,4 +1,4 @@
-name: Publish to PPA
+name: ppa-publish
 
 on:
   release:
