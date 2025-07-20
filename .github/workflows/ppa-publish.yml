@@ -72,8 +72,6 @@ jobs:
             fakeroot \
             debian-keyring \
             gpg \
-            rustc \
-            cargo \
             libssl-dev \
             pkg-config
 
@@ -125,8 +123,8 @@ jobs:
           tar -xzf "${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
           cd "${PACKAGE_NAME}-${VERSION}"
           
-          # Fix Cargo.toml for older Rust versions - change edition from 2024 to 2021
-          sed -i 's/edition = "2024"/edition = "2021"/' Cargo.toml
+          # Ensure we use the GitHub Actions Rust toolchain instead of system packages
+          export PATH="$HOME/.cargo/bin:$PATH"
           
           # Vendor dependencies
           mkdir -p .cargo
@@ -155,7 +153,7 @@ jobs:
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
-          Build-Depends: debhelper-compat (= 13), rustc (>= 1.70), cargo, libssl-dev, pkg-config
+          Build-Depends: debhelper-compat (= 13), libssl-dev, pkg-config, wget, curl, gcc
           Standards-Version: 4.6.0
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
@@ -173,14 +171,23 @@ jobs:
           cat > debian/rules << EOF
           #!/usr/bin/make -f
           
+          RUST_VERSION := 1.83.0
+          export PATH := \$(HOME)/.cargo/bin:\$(PATH)
+          export CARGO_HOME := \$(HOME)/.cargo
+          
           %:
           	dh \$@
+          
+          override_dh_auto_configure:
+          	# Install Rust using rustup
+          	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain \$(RUST_VERSION)
+          	\$(HOME)/.cargo/bin/rustup component add rustfmt
           
           override_dh_auto_build:
           	mkdir -p .cargo
           	cp debian/cargo.config .cargo/config
           	tar xzf debian/vendor.tar.gz
-          	cargo build --profile ${BUILD_PROFILE} --frozen --bin mise
+          	\$(HOME)/.cargo/bin/cargo build --profile ${BUILD_PROFILE} --frozen --bin mise
           
           override_dh_auto_install:
           	mkdir -p debian/mise/usr/bin
@@ -195,7 +202,7 @@ jobs:
           	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
           
           override_dh_auto_clean:
-          	cargo clean || true
+          	\$(HOME)/.cargo/bin/cargo clean || true
           	rm -rf .cargo vendor
           EOF
           
