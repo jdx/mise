@@ -1,4 +1,4 @@
-name: Publish to PPA
+name: ppa-publish
 
 on:
   release:
@@ -15,6 +15,11 @@ on:
         required: false
         default: false
         type: boolean
+      build_revision:
+        description: 'Build revision number (increment for packaging fixes of same version)'
+        required: false
+        default: '1'
+        type: string
 
 env:
   DEBIAN_FRONTEND: noninteractive
@@ -23,6 +28,7 @@ jobs:
   publish-ppa:
     runs-on: ubuntu-latest
     environment: ppa-publishing
+    timeout-minutes: 45
     
     steps:
       - name: Checkout repository
@@ -37,13 +43,16 @@ jobs:
           
           if [ "${{ github.event_name }}" = "release" ]; then
             DISTRIBUTIONS="jammy noble"
+            BUILD_REVISION="1"
           else
             DISTRIBUTIONS="${{ inputs.distributions }}"
+            BUILD_REVISION="${{ inputs.build_revision || '1' }}"
           fi
           
           {
             echo "VERSION=${VERSION}"
             echo "DISTRIBUTIONS=${DISTRIBUTIONS}"
+            echo "BUILD_REVISION=${BUILD_REVISION}"
             echo "PACKAGE_NAME=mise"
             echo "MAINTAINER_NAME=${{ vars.PPA_MAINTAINER_NAME || 'mise Release Bot' }}"
             echo "MAINTAINER_EMAIL=${{ vars.PPA_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}"
@@ -51,7 +60,7 @@ jobs:
           } >> "$GITHUB_ENV"
           
           # Set build profile
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.use_serious_profile }}" = "true" ]; then
+          if [ "${{ github.event_name }}" = "release" ] || [ "${{ inputs.use_serious_profile }}" = "true" ]; then
             echo "BUILD_PROFILE=serious" >> "$GITHUB_ENV"
           else
             echo "BUILD_PROFILE=release" >> "$GITHUB_ENV"
@@ -71,15 +80,21 @@ jobs:
             quilt \
             fakeroot \
             debian-keyring \
-            gpg
+            gpg \
+            libssl-dev \
+            pkg-config
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
+      - name: Install mise
+        run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install cargo-vendor
-        run: cargo install cargo-vendor
+        run: mise use -g cargo-binstall cargo:cargo-vendor
 
       - name: Configure Git
         run: |
@@ -90,17 +105,55 @@ jobs:
         uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+          trust_level: 5
+
+      - name: Configure GPG for package signing
+        run: |
+          # List available keys
+          echo "Available GPG keys:"
+          gpg --list-secret-keys --with-colons
+          
+          # Get the key ID  
+          KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^sec:' | cut -d: -f5 | head -1)
+          if [ -n "$KEY_ID" ]; then
+            echo "Using GPG key: $KEY_ID"
+            echo "DEBSIGN_KEYID=$KEY_ID" >> "$GITHUB_ENV"
+            
+            # Configure debsign to use this key specifically
+            cat > ~/.devscripts << EOF
+          DEBSIGN_KEYID=$KEY_ID
+          DEBUILD_DPKG_BUILDPACKAGE_OPTS="-i -I -S -sa"
+          DEBUILD_LINTIAN_OPTS="-i -I --show-overrides --profile ubuntu"
+          DEBSIGN_PROGRAM=gpg
+          EOF
+            
+            echo "devscripts configuration:"
+            cat ~/.devscripts
+            
+            # Test that the key works for signing
+            echo "Testing GPG signing..."
+            echo "test" | gpg --clearsign --default-key "$KEY_ID" --armor || echo "Warning: GPG signing test failed"
+            
+          else
+            echo "Error: No GPG key found"
+            exit 1
+          fi
 
       - name: Create source package for each distribution
         run: |
           
-          # Create original tarball with submodules
+          # Store the original working directory
+          ORIG_DIR="$(pwd)"
+          
+          # Create original tarball with submodules (needed for aqua-registry)
           git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar"
           
-          # Add aqua-registry submodule to the tarball
+          # Add aqua-registry submodule to the tarball (required for build)
           cd aqua-registry
           git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/aqua-registry/" HEAD >> "../../${PACKAGE_NAME}_${VERSION}.orig.tar"
-          cd ..
+          cd "$ORIG_DIR"
           
           # Compress the tarball
           gzip "../${PACKAGE_NAME}_${VERSION}.orig.tar"
@@ -108,29 +161,27 @@ jobs:
           # Create working directory
           WORK_DIR="/tmp/ppa-build"
           mkdir -p "$WORK_DIR"
+          
+          # Copy the tarball to the working directory (where debuild expects it to be in parent of source dir)
+          cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "$WORK_DIR/${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+          
           cd "$WORK_DIR"
           
           # Extract source
-          tar -xzf "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+          tar -xzf "${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
           cd "${PACKAGE_NAME}-${VERSION}"
-          
-          # Vendor dependencies
-          mkdir -p .cargo
-          {
-            echo '[source.crates-io]'
-            echo 'replace-with = "vendored-sources"'
-            echo ''
-            echo '[source.vendored-sources]'
-            echo 'directory = "vendor"'
-          } > .cargo/config
-          
-          cargo vendor vendor/
-          tar -czf debian/vendor.tar.gz vendor/
-          cp .cargo/config debian/cargo.config
           
           # Create debian directory structure
           mkdir -p debian/source
+          
           echo "3.0 (quilt)" > debian/source/format
+          
+          # Create debian/watch file for upstream monitoring
+          cat > debian/watch << EOF
+          version=4
+          opts="filenamemangle=s/.+\/v?(\d\S+)\.tar\.gz/${PACKAGE_NAME}-\$1\.tar\.gz/" \\
+          https://github.com/jdx/mise/tags .*/v?(\d\S+)\.tar\.gz
+          EOF
           
           # Create basic debian files
           cat > debian/control << EOF
@@ -138,8 +189,8 @@ jobs:
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
-          Build-Depends: debhelper-compat (= 13), cargo, rustc
-          Standards-Version: 4.6.0
+          Build-Depends: debhelper-compat (= 13), curl, libssl-dev, pkgconf
+          Standards-Version: 4.6.2
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
           Vcs-Browser: https://github.com/jdx/mise
@@ -153,17 +204,16 @@ jobs:
            pyenv, etc. and works with any language.
           EOF
           
-          cat > debian/rules << EOF
+          cat > debian/rules << 'EOF'
           #!/usr/bin/make -f
           
           %:
-          	dh \$@
+          	dh $@
           
           override_dh_auto_build:
-          	mkdir -p .cargo
-          	cp debian/cargo.config .cargo/config
-          	tar xzf debian/vendor.tar.gz
-          	cargo build --profile ${BUILD_PROFILE} --frozen --bin mise
+          	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          	. ~/.cargo/env
+          	cargo build --profile ${BUILD_PROFILE} --locked --bin mise
           
           override_dh_auto_install:
           	mkdir -p debian/mise/usr/bin
@@ -179,7 +229,6 @@ jobs:
           
           override_dh_auto_clean:
           	cargo clean || true
-          	rm -rf .cargo vendor
           EOF
           
           chmod +x debian/rules
@@ -213,12 +262,18 @@ jobs:
            SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           EOF
           
+          # Ensure original tarball is available for all builds
+          cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz.backup"
+          
           # Build source packages for each distribution
           for DIST in ${DISTRIBUTIONS}; do
             echo "Building source package for $DIST"
             
+            # Restore original tarball for this build (in case previous build affected it)
+            cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz.backup" "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+            
             # Create distribution-specific version
-            DIST_VERSION="${VERSION}-1${DIST}1"
+            DIST_VERSION="${VERSION}-${BUILD_REVISION}${DIST}1"
             
             # Create changelog
             cat > debian/changelog << EOF
@@ -229,8 +284,8 @@ jobs:
            -- ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>  $(date -R)
           EOF
             
-            # Build source package
-            debuild -S -sa --lintian-opts --profile debian
+            # Build source package (devscripts configuration provides all options)
+            debuild
             
             # Move built packages
             mkdir -p "/tmp/packages"
@@ -242,6 +297,9 @@ jobs:
             # Clean for next distribution
             rm -f ../mise_"${DIST_VERSION}"*
           done
+          
+          # Move original source tarball to packages directory (after all distributions are built)
+          mv "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "/tmp/packages/" 2>/dev/null || true
 
       - name: Upload source packages to PPA
         run: |
@@ -262,17 +320,3 @@ jobs:
             echo "Uploading $changes_file to PPA..."
             dput mise-ppa "$changes_file"
           done
-
-      - name: Create artifacts
-        if: always()
-        run: |
-          cd /tmp/packages
-          tar -czf ../ppa-packages.tar.gz -- *.dsc *.tar.* *.changes *.buildinfo 2>/dev/null || true
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ppa-source-packages
-          path: /tmp/ppa-packages.tar.gz
-          retention-days: 30
