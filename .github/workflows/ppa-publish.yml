@@ -116,8 +116,9 @@ jobs:
             # Configure debsign to use this key specifically
             cat > ~/.devscripts << EOF
           DEBSIGN_KEYID=$KEY_ID
-          DEBUILD_DPKG_BUILDPACKAGE_OPTS="-i -I -sa"
+          DEBUILD_DPKG_BUILDPACKAGE_OPTS="-i -I -S -sa"
           DEBUILD_LINTIAN_OPTS="-i -I --show-overrides --profile ubuntu"
+          DEBSIGN_PROGRAM=gpg
           EOF
             
             echo "devscripts configuration:"
@@ -277,9 +278,15 @@ jobs:
            SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           EOF
           
+          # Ensure original tarball is available for all builds
+          cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz.backup"
+          
           # Build source packages for each distribution
           for DIST in ${DISTRIBUTIONS}; do
             echo "Building source package for $DIST"
+            
+            # Restore original tarball for this build (in case previous build affected it)
+            cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz.backup" "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
             
             # Create distribution-specific version
             DIST_VERSION="${VERSION}-1${DIST}1"
@@ -293,8 +300,8 @@ jobs:
            -- ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>  $(date -R)
           EOF
             
-            # Build source package
-            debuild -S -sa --lintian-opts --profile ubuntu
+            # Build source package (devscripts configuration provides all options)
+            debuild
             
             # Move built packages
             mkdir -p "/tmp/packages"
