@@ -8,7 +8,7 @@ on:
       distributions:
         description: 'Ubuntu distributions to target (space-separated)'
         required: false
-        default: 'oracular'
+        default: 'jammy noble'
         type: string
       use_serious_profile:
         description: 'Use the "serious" profile for optimized builds (LTO enabled)'
@@ -42,7 +42,7 @@ jobs:
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
           
           if [ "${{ github.event_name }}" = "release" ]; then
-            DISTRIBUTIONS="oracular"
+            DISTRIBUTIONS="jammy noble"
             BUILD_REVISION="1"
           else
             DISTRIBUTIONS="${{ inputs.distributions }}"
@@ -98,33 +98,31 @@ jobs:
             curl \
             xz-utils
 
-      - name: Install Rust 1.85 from Ubuntu Oracular
+      - name: Install Rust 1.88.0 from official tarball
         run: |
-          # Add Ubuntu Oracular sources for rustc-1.85
-          sudo tee /etc/apt/sources.list.d/oracular.list << EOF
-          deb http://archive.ubuntu.com/ubuntu/ oracular main restricted universe multiverse
-          deb http://archive.ubuntu.com/ubuntu/ oracular-updates main restricted universe multiverse
-          deb http://archive.ubuntu.com/ubuntu/ oracular-security main restricted universe multiverse
-          EOF
+          # Download official Rust 1.88.0 tarball
+          wget -O rust-1.88.0.tar.xz https://static.rust-lang.org/dist/rust-1.88.0-x86_64-unknown-linux-gnu.tar.xz
           
-          # Update package lists
-          sudo apt-get update
+          # Extract the tarball
+          tar -xf rust-1.88.0.tar.xz
+          cd rust-1.88.0-x86_64-unknown-linux-gnu
           
-          # Install rustc-1.85 and cargo-1.85 from Oracular
-          sudo apt-get install -y rustc-1.85 cargo-1.85 rust-std-1.85
+          # Install to /usr/local/rust
+          sudo ./install.sh --prefix=/usr/local/rust
           
           # Create symlinks to make them the default
-          sudo ln -sf /usr/bin/rustc-1.85 /usr/bin/rustc
-          sudo ln -sf /usr/bin/cargo-1.85 /usr/bin/cargo
+          sudo ln -sf /usr/local/rust/bin/rustc /usr/bin/rustc
+          sudo ln -sf /usr/local/rust/bin/cargo /usr/bin/cargo
           
           # Set up environment
-          echo "PATH=/usr/bin:\$PATH" >> "$GITHUB_ENV"
-          echo "RUSTC=/usr/bin/rustc-1.85" >> "$GITHUB_ENV"
-          echo "CARGO=/usr/bin/cargo-1.85" >> "$GITHUB_ENV"
+          echo "PATH=/usr/local/rust/bin:/usr/bin:\$PATH" >> "$GITHUB_ENV"
+          echo "RUSTC=/usr/local/rust/bin/rustc" >> "$GITHUB_ENV"
+          echo "CARGO=/usr/local/rust/bin/cargo" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=/usr/local/rust/lib:\$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
           
           # Verify installation
-          rustc-1.85 --version
-          cargo-1.85 --version
+          /usr/local/rust/bin/rustc --version
+          /usr/local/rust/bin/cargo --version
 
       - name: Set up Rust (fallback)
         uses: dtolnay/rust-toolchain@stable
@@ -255,11 +253,12 @@ jobs:
           	dh $@
           
           override_dh_auto_build:
-          	# Use system rustc-1.85/cargo-1.85
-          	export PATH=/usr/bin:$$PATH
-          	export RUSTC=/usr/bin/rustc-1.85
-          	export CARGO=/usr/bin/cargo-1.85
-          	cargo-1.85 build --profile ${BUILD_PROFILE} --locked --bin mise
+          	# Use official Rust 1.88.0
+          	export PATH=/usr/local/rust/bin:/usr/bin:$$PATH
+          	export RUSTC=/usr/local/rust/bin/rustc
+          	export CARGO=/usr/local/rust/bin/cargo
+          	export LD_LIBRARY_PATH=/usr/local/rust/lib:$$LD_LIBRARY_PATH
+          	cargo build --profile ${BUILD_PROFILE} --locked --bin mise
           
           override_dh_auto_install:
           	mkdir -p debian/mise/usr/bin
