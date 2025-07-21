@@ -93,6 +93,7 @@ jobs:
         run: |
           curl https://mise.run | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - name: Install cargo-vendor
         run: mise use -g cargo-binstall cargo:cargo-vendor
 
