@@ -117,7 +117,7 @@ jobs:
             cat > ~/.devscripts << EOF
           DEBSIGN_KEYID=$KEY_ID
           DEBUILD_DPKG_BUILDPACKAGE_OPTS="-i -I -sa"
-          DEBUILD_LINTIAN_OPTS="-i -I --show-overrides"
+          DEBUILD_LINTIAN_OPTS="-i -I --show-overrides --profile ubuntu"
           EOF
             
             echo "devscripts configuration:"
@@ -183,6 +183,13 @@ jobs:
           echo "3.0 (quilt)" > debian/source/format
           echo "debian/vendor.tar.gz" > debian/source/include-binaries
           
+          # Create debian/watch file for upstream monitoring
+          cat > debian/watch << EOF
+          version=4
+          opts="filenamemangle=s/.+\/v?(\d\S+)\.tar\.gz/${PACKAGE_NAME}-\$1\.tar\.gz/" \\
+          https://github.com/jdx/mise/tags .*/v?(\d\S+)\.tar\.gz
+          EOF
+          
           # Clean up cargo config from source tree to avoid dpkg-source detecting it as a local change
           rm -rf .cargo vendor
           
@@ -193,7 +200,7 @@ jobs:
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
           Build-Depends: debhelper-compat (= 13), curl, libssl-dev, pkgconf
-          Standards-Version: 4.6.0
+          Standards-Version: 4.6.2
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
           Vcs-Browser: https://github.com/jdx/mise
@@ -287,7 +294,7 @@ jobs:
           EOF
             
             # Build source package
-            debuild -S -sa --lintian-opts --profile debian
+            debuild -S -sa --lintian-opts --profile ubuntu
             
             # Move built packages
             mkdir -p "/tmp/packages"
@@ -295,6 +302,11 @@ jobs:
             mv ../*"${DIST_VERSION}"*.tar.* "/tmp/packages/"
             mv ../*"${DIST_VERSION}"*.changes "/tmp/packages/"
             mv ../*"${DIST_VERSION}"*.buildinfo "/tmp/packages/" 2>/dev/null || true
+            
+            # Move original source tarball (shared between distributions, only move once)
+            if [ ! -f "/tmp/packages/${PACKAGE_NAME}_${VERSION}.orig.tar.gz" ]; then
+              mv "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "/tmp/packages/" 2>/dev/null || true
+            fi
             
             # Clean for next distribution
             rm -f ../mise_"${DIST_VERSION}"*
