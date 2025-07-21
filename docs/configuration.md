@@ -170,7 +170,7 @@ This is similar
 to [`MISE_SHORTHANDS`](https://github.com/jdx/mise#mise_shorthands_fileconfigmiseshorthandstoml)
 but doesn't require a separate file.
 
-### `[aliases]` - Tool version aliases
+### `[alias]` - Tool version aliases
 
 The following makes `mise install node@my_custom_node` install node-20.x
 this can also be specified in a [plugin](/dev-tools/aliases.md).
