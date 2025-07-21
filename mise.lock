@@ -150,3 +150,6 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86
 [tools.wait-for-gh-rate-limit]
 version = "1.0.0"
 backend = "ubi:jdx/wait-for-gh-rate-limit"
+
+[tools.wait-for-gh-rate-limit.platforms.linux-x64-wait-for-gh-rate-limit]
+checksum = "blake3:2123971d2eea236d17fb0475c94bef89adf9239df4a8da53261d2eaf8551c622"

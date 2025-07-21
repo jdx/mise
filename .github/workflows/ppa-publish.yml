@@ -28,7 +28,7 @@ jobs:
   publish-ppa:
     runs-on: ubuntu-latest
     environment: ppa-publishing
-    timeout-minutes: 45
+    timeout-minutes: 180
     
     steps:
       - name: Checkout repository
@@ -93,35 +93,66 @@ jobs:
             llvm-dev \
             clang \
             libgcc-s1 \
-            libstdc++6
+            libstdc++6 \
+            git \
+            curl \
+            xz-utils
 
-      - name: Download and install rustc-1.85 packages
+      - name: Build and install Rust 1.85 from source
         run: |
-          # Create directory for packages
-          mkdir -p /tmp/rust-packages
-          cd /tmp/rust-packages
+          # Create build directory
+          mkdir -p /tmp/rust-build
+          cd /tmp/rust-build
           
-          # Download rustc-1.85 packages from Launchpad
-          wget -O rustc-1.85_1.85.0-1ubuntu1_amd64.deb "https://launchpad.net/ubuntu/+archive/primary/+files/rustc-1.85_1.85.0-1ubuntu1_amd64.deb"
-          wget -O cargo-1.85_1.85.0-1ubuntu1_amd64.deb "https://launchpad.net/ubuntu/+archive/primary/+files/cargo-1.85_1.85.0-1ubuntu1_amd64.deb"
-          wget -O rust-std-1.85_1.85.0-1ubuntu1_amd64.deb "https://launchpad.net/ubuntu/+archive/primary/+files/rust-std-1.85_1.85.0-1ubuntu1_amd64.deb"
-          wget -O rust-docs-1.85_1.85.0-1ubuntu1_all.deb "https://launchpad.net/ubuntu/+archive/primary/+files/rust-docs-1.85_1.85.0-1ubuntu1_all.deb"
+          # Clone Rust source for version 1.85.0
+          git clone --depth 1 --branch 1.85.0 https://github.com/rust-lang/rust.git
+          cd rust
           
-          # Install the packages
-          sudo dpkg -i -- *.deb || true
-          sudo apt-get install -f -y
+          # Configure build with minimal components for faster build
+          cat > config.toml << EOF
+          [llvm]
+          download-ci-llvm = true
+          
+          [build]
+          extended = false
+          docs = false
+          compiler-docs = false
+          tools = ["cargo"]
+          
+          [install]
+          prefix = "/usr/local/rust-1.85"
+          
+          [rust]
+          channel = "stable"
+          debug-assertions = false
+          optimize = true
+          
+          [target.x86_64-unknown-linux-gnu]
+          cc = "clang"
+          cxx = "clang++"
+          linker = "clang"
+          EOF
+          
+          # Build Rust (this will take a while)
+          python3 x.py build --stage 1 library/std
+          python3 x.py build --stage 1 src/tools/cargo
+          
+          # Install to custom prefix
+          sudo python3 x.py install --stage 1
           
           # Create symlinks to make them the default
-          sudo ln -sf /usr/bin/rustc-1.85 /usr/bin/rustc
-          sudo ln -sf /usr/bin/cargo-1.85 /usr/bin/cargo
+          sudo ln -sf /usr/local/rust-1.85/bin/rustc /usr/bin/rustc
+          sudo ln -sf /usr/local/rust-1.85/bin/cargo /usr/bin/cargo
           
           # Set up environment
-          echo "export RUSTC=/usr/bin/rustc" >> "$GITHUB_ENV"
-          echo "export CARGO=/usr/bin/cargo" >> "$GITHUB_ENV"
+          echo "PATH=/usr/local/rust-1.85/bin:/usr/bin:\$PATH" >> "$GITHUB_ENV"
+          echo "RUSTC=/usr/local/rust-1.85/bin/rustc" >> "$GITHUB_ENV"
+          echo "CARGO=/usr/local/rust-1.85/bin/cargo" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=/usr/local/rust-1.85/lib:\$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
           
           # Verify installation
-          rustc --version
-          cargo --version
+          /usr/local/rust-1.85/bin/rustc --version
+          /usr/local/rust-1.85/bin/cargo --version
 
       - name: Set up Rust (fallback)
         uses: dtolnay/rust-toolchain@stable
@@ -252,10 +283,11 @@ jobs:
           	dh $@
           
           override_dh_auto_build:
-          	# Use system-installed rustc/cargo
-          	export PATH=/usr/bin:$PATH
-          	export RUSTC=/usr/bin/rustc
-          	export CARGO=/usr/bin/cargo
+          	# Use custom-built rustc/cargo
+          	export PATH=/usr/local/rust-1.85/bin:/usr/bin:$$PATH
+          	export RUSTC=/usr/local/rust-1.85/bin/rustc
+          	export CARGO=/usr/local/rust-1.85/bin/cargo
+          	export LD_LIBRARY_PATH=/usr/local/rust-1.85/lib:$$LD_LIBRARY_PATH
           	cargo build --profile ${BUILD_PROFILE} --locked --bin mise
           
           override_dh_auto_install:
