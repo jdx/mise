@@ -116,7 +116,7 @@ jobs:
             # Configure debsign to use this key specifically
             cat > ~/.devscripts << EOF
           DEBSIGN_KEYID=$KEY_ID
-          DEBUILD_DPKG_BUILDPACKAGE_OPTS="-i -I -us -uc"
+          DEBUILD_DPKG_BUILDPACKAGE_OPTS="-i -I -sa"
           DEBUILD_LINTIAN_OPTS="-i -I --show-overrides"
           EOF
             
