@@ -4,8 +4,8 @@ use std::fmt::Display;
 
 use indoc::formatdoc;
 
+use crate::path::{PathEscape, to_path_list};
 use crate::shell::{ActivateOptions, ActivatePrelude, Shell};
-use crate::path::{to_path_list, PathEscape};
 use itertools::Itertools;
 
 #[derive(Default)]
@@ -49,7 +49,10 @@ impl Shell for Nushell {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = to_path_list(&[PathEscape::Unix, PathEscape::EscapeBackslash], &exe.to_string_lossy());
+        let exe = to_path_list(
+            &[PathEscape::Unix, PathEscape::EscapeBackslash],
+            &exe.to_string_lossy(),
+        );
 
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude_inline(&opts.prelude));

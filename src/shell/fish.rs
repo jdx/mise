@@ -3,8 +3,8 @@
 use std::fmt::{Display, Formatter};
 
 use crate::config::Settings;
+use crate::path::{PathEscape, to_path_list};
 use crate::shell::{ActivateOptions, Shell};
-use crate::path::{to_path_list, PathEscape};
 use indoc::formatdoc;
 use shell_escape::unix::escape;
 

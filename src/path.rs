@@ -58,8 +58,8 @@ pub(crate) fn to_path_list(escapes: &[PathEscape], path: &str) -> String {
 
 #[cfg(windows)]
 mod windows_path {
-    use which::which;
     use once_cell::sync::Lazy;
+    use which::which;
 
     // Check Unix-like shell env first, then cygpath.exe only if needed.
     static SHOULD_USE_UNIX_PATH: Lazy<bool> = Lazy::new(|| {
@@ -92,7 +92,7 @@ mod windows_path {
 
 #[cfg(test)]
 mod tests {
-    use super::{to_path_list, PathEscape};
+    use super::{PathEscape, to_path_list};
 
     #[test]
     fn test_to_path_list_backslash() {
@@ -103,8 +103,8 @@ mod tests {
 
     #[cfg(windows)]
     mod windows_tests {
-        use super::{to_path_list, PathEscape};
         use super::super::windows_path;
+        use super::{PathEscape, to_path_list};
 
         #[test]
         fn test_to_path_list_unix() {
@@ -120,7 +120,7 @@ mod tests {
 
     #[cfg(not(windows))]
     mod unix_tests {
-        use super::{to_path_list, PathEscape};
+        use super::{PathEscape, to_path_list};
 
         #[test]
         fn test_to_path_list_unix() {
