@@ -43,7 +43,9 @@ pub(crate) fn to_path_list(escapes: &[PathEscape], path: &str) -> String {
             PathEscape::Unix => {
                 #[cfg(windows)]
                 {
-                    out = windows_path::to_unix_path_list(&out);
+                    if windows_path::should_use_unix_path() {
+                        out = windows_path::to_unix_path_list(&out);
+                    }
                 }
             }
             PathEscape::EscapeBackslash => {
@@ -59,18 +61,28 @@ mod windows_path {
     use which::which;
     use once_cell::sync::Lazy;
 
-    static CYGPATH_AVAILABLE: Lazy<bool> = Lazy::new(|| which("cygpath").is_ok());
+    // Check Unix-like shell env first, then cygpath.exe only if needed.
+    static SHOULD_USE_UNIX_PATH: Lazy<bool> = Lazy::new(|| {
+        let unix_env = std::env::var("MSYSTEM").is_ok()
+            || std::env::var("OSTYPE").map_or(false, |v| v == "cygwin");
+        if !unix_env {
+            return false;
+        }
+        which("cygpath").is_ok()
+    });
+
+    pub(super) fn should_use_unix_path() -> bool {
+        *SHOULD_USE_UNIX_PATH
+    }
 
     pub(super) fn to_unix_path_list(path: &str) -> String {
-        if *CYGPATH_AVAILABLE {
-            if let Ok(output) = std::process::Command::new("cygpath")
-                .args(["-u", "-p", path])
-                .output()
-            {
-                if output.status.success() {
-                    if let Ok(s) = String::from_utf8(output.stdout) {
-                        return s.trim().to_string();
-                    }
+        if let Ok(output) = std::process::Command::new("cygpath")
+            .args(["-u", "-p", path])
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(s) = String::from_utf8(output.stdout) {
+                    return s.trim().to_string();
                 }
             }
         }
@@ -92,16 +104,13 @@ mod tests {
     #[cfg(windows)]
     mod windows_tests {
         use super::{to_path_list, PathEscape};
-        use which::which;
-        use once_cell::sync::Lazy;
-
-        static CYGPATH_AVAILABLE: Lazy<bool> = Lazy::new(|| which("cygpath").is_ok());
+        use super::super::windows_path;
 
         #[test]
         fn test_to_path_list_unix() {
             let input = "C:\\foo;D:\\bar";
             let output = to_path_list(&[PathEscape::Unix], input);
-            if *CYGPATH_AVAILABLE {
+            if windows_path::should_use_unix_path() {
                 assert_eq!(output, "/c/foo:/d/bar");
             } else {
                 assert_eq!(output, input);
