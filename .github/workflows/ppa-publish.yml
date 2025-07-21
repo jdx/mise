@@ -303,14 +303,12 @@ jobs:
             mv ../*"${DIST_VERSION}"*.changes "/tmp/packages/"
             mv ../*"${DIST_VERSION}"*.buildinfo "/tmp/packages/" 2>/dev/null || true
             
-            # Move original source tarball (shared between distributions, only move once)
-            if [ ! -f "/tmp/packages/${PACKAGE_NAME}_${VERSION}.orig.tar.gz" ]; then
-              mv "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "/tmp/packages/" 2>/dev/null || true
-            fi
-            
             # Clean for next distribution
             rm -f ../mise_"${DIST_VERSION}"*
           done
+          
+          # Move original source tarball to packages directory (after all distributions are built)
+          mv "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "/tmp/packages/" 2>/dev/null || true
 
       - name: Upload source packages to PPA
         run: |
