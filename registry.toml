@@ -1038,7 +1038,13 @@ gitui.backends = ["aqua:extrawurst/gitui", "asdf:looztra/asdf-gitui"]
 gitversion.description = "From git log to SemVer in no time"
 gitversion.backends = ["aqua:gittools/gitversion", "ubi:gittools/gitversion"]
 glab.backends = [
-    "ubi:gitlab-org/cli[provider=gitlab,exe=glab]",
+    {full = "ubi:gitlab-org/cli[provider=gitlab,exe=glab]", platforms = [
+        "linux",
+        "macos"
+    ]},
+    {full = "ubi:gitlab-org/cli[provider=gitlab,exe=glab,matching_regex=^glab\\.exe$]", platforms = [
+        "windows"
+    ]},
     "asdf:mise-plugins/mise-glab"
 ]
 glab.test = ["glab version", "glab {{version}}"]
