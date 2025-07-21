@@ -116,7 +116,6 @@ jobs:
           sudo ln -sf /usr/bin/cargo-1.85 /usr/bin/cargo
           
           # Set up environment
-          echo "export PATH=/usr/bin:\$PATH" >> "$GITHUB_ENV"
           echo "export RUSTC=/usr/bin/rustc" >> "$GITHUB_ENV"
           echo "export CARGO=/usr/bin/cargo" >> "$GITHUB_ENV"
           
