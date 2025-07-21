@@ -15,6 +15,11 @@ on:
         required: false
         default: false
         type: boolean
+      build_revision:
+        description: 'Build revision number (increment for packaging fixes of same version)'
+        required: false
+        default: '1'
+        type: string
 
 env:
   DEBIAN_FRONTEND: noninteractive
@@ -38,13 +43,16 @@ jobs:
           
           if [ "${{ github.event_name }}" = "release" ]; then
             DISTRIBUTIONS="jammy noble"
+            BUILD_REVISION="1"
           else
             DISTRIBUTIONS="${{ inputs.distributions }}"
+            BUILD_REVISION="${{ inputs.build_revision || '1' }}"
           fi
           
           {
             echo "VERSION=${VERSION}"
             echo "DISTRIBUTIONS=${DISTRIBUTIONS}"
+            echo "BUILD_REVISION=${BUILD_REVISION}"
             echo "PACKAGE_NAME=mise"
             echo "MAINTAINER_NAME=${{ vars.PPA_MAINTAINER_NAME || 'mise Release Bot' }}"
             echo "MAINTAINER_EMAIL=${{ vars.PPA_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}"
@@ -52,7 +60,7 @@ jobs:
           } >> "$GITHUB_ENV"
           
           # Set build profile
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.use_serious_profile }}" = "true" ]; then
+          if [ "${{ github.event_name }}" = "release" ] || [ "${{ inputs.use_serious_profile }}" = "true" ]; then
             echo "BUILD_PROFILE=serious" >> "$GITHUB_ENV"
           else
             echo "BUILD_PROFILE=release" >> "$GITHUB_ENV"
@@ -265,7 +273,7 @@ jobs:
             cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz.backup" "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
             
             # Create distribution-specific version
-            DIST_VERSION="${VERSION}-1${DIST}1"
+            DIST_VERSION="${VERSION}-${BUILD_REVISION}${DIST}1"
             
             # Create changelog
             cat > debian/changelog << EOF
@@ -312,17 +320,3 @@ jobs:
             echo "Uploading $changes_file to PPA..."
             dput mise-ppa "$changes_file"
           done
-
-      - name: Create artifacts
-        if: always()
-        run: |
-          cd /tmp/packages
-          tar -czf ../ppa-packages.tar.gz -- *.dsc *.tar.* *.changes *.buildinfo 2>/dev/null || true
-
-      - name: Upload artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ppa-source-packages
-          path: /tmp/ppa-packages.tar.gz
-          retention-days: 30
