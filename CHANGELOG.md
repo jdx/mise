@@ -1,5 +1,23 @@
 # Changelog
 
+## [2025.7.18](https://github.com/jdx/mise/compare/v2025.7.17..v2025.7.18) - 2025-07-21
+
+### 🚀 Features
+
+- **(registry)** add `jsonschema` CLI tool by [@mrazauskas](https://github.com/mrazauskas) in [#5714](https://github.com/jdx/mise/pull/5714)
+
+### 🐛 Bug Fixes
+
+- mise up parallel execution by [@jdx](https://github.com/jdx) in [#5591](https://github.com/jdx/mise/pull/5591)
+
+### 📚 Documentation
+
+- add comprehensive CLAUDE.md for Claude Code guidance by [@jdx](https://github.com/jdx) in [#5718](https://github.com/jdx/mise/pull/5718)
+
+### Chore
+
+- ubuntu ppa by [@jdx](https://github.com/jdx) in [#5715](https://github.com/jdx/mise/pull/5715)
+
 ## [2025.7.17](https://github.com/jdx/mise/compare/v2025.7.16..v2025.7.17) - 2025-07-19
 
 ### 🚀 Features
