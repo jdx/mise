@@ -98,31 +98,6 @@ jobs:
             curl \
             xz-utils
 
-      - name: Install Rust 1.88.0 from official tarball
-        run: |
-          # Download official Rust 1.88.0 tarball
-          wget -O rust-1.88.0.tar.xz https://static.rust-lang.org/dist/rust-1.88.0-x86_64-unknown-linux-gnu.tar.xz
-          
-          # Extract the tarball
-          tar -xf rust-1.88.0.tar.xz
-          cd rust-1.88.0-x86_64-unknown-linux-gnu
-          
-          # Install to /usr/local/rust
-          sudo ./install.sh --prefix=/usr/local/rust
-          
-          # Create symlinks to make them the default
-          sudo ln -sf /usr/local/rust/bin/rustc /usr/bin/rustc
-          sudo ln -sf /usr/local/rust/bin/cargo /usr/bin/cargo
-          
-          # Set up environment
-          echo "PATH=/usr/local/rust/bin:/usr/bin:\$PATH" >> "$GITHUB_ENV"
-          echo "RUSTC=/usr/local/rust/bin/rustc" >> "$GITHUB_ENV"
-          echo "CARGO=/usr/local/rust/bin/cargo" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=/usr/local/rust/lib:\$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
-          
-          # Verify installation
-          /usr/local/rust/bin/rustc --version
-          /usr/local/rust/bin/cargo --version
 
       - name: Set up Rust (fallback)
         uses: dtolnay/rust-toolchain@stable
@@ -189,6 +164,9 @@ jobs:
           # Store the original working directory
           ORIG_DIR="$(pwd)"
           
+          # Download Rust tarball to include in source package
+          wget -O rust-1.88.0-x86_64-unknown-linux-gnu.tar.xz https://static.rust-lang.org/dist/rust-1.88.0-x86_64-unknown-linux-gnu.tar.xz
+          
           # Create original tarball with submodules (needed for aqua-registry)
           git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar"
           
@@ -196,6 +174,9 @@ jobs:
           cd aqua-registry
           git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/aqua-registry/" HEAD >> "../../${PACKAGE_NAME}_${VERSION}.orig.tar"
           cd "$ORIG_DIR"
+          
+          # Add the Rust tarball to the source package
+          tar --append --file="../${PACKAGE_NAME}_${VERSION}.orig.tar" --transform="s,^,${PACKAGE_NAME}-${VERSION}/," rust-1.88.0-x86_64-unknown-linux-gnu.tar.xz
           
           # Compress the tarball
           gzip "../${PACKAGE_NAME}_${VERSION}.orig.tar"
@@ -231,7 +212,7 @@ jobs:
           Section: utils
           Priority: optional
           Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
-          Build-Depends: debhelper-compat (= 13), curl, libssl-dev, pkgconf
+          Build-Depends: debhelper-compat (= 13), curl, libssl-dev, pkgconf, xz-utils
           Standards-Version: 4.6.2
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
@@ -252,13 +233,21 @@ jobs:
           %:
           	dh $@
           
+          override_dh_auto_configure:
+          	# Extract and install bundled Rust toolchain
+          	if [ -f rust-1.88.0-x86_64-unknown-linux-gnu.tar.xz ]; then \
+          		tar -xf rust-1.88.0-x86_64-unknown-linux-gnu.tar.xz; \
+          		cd rust-1.88.0-x86_64-unknown-linux-gnu && ./install.sh --prefix=$$(pwd)/../rust-toolchain --disable-ldconfig; \
+          		cd ..; \
+          	fi
+          
           override_dh_auto_build:
-          	# Use official Rust 1.88.0
-          	export PATH=/usr/local/rust/bin:/usr/bin:$$PATH
-          	export RUSTC=/usr/local/rust/bin/rustc
-          	export CARGO=/usr/local/rust/bin/cargo
-          	export LD_LIBRARY_PATH=/usr/local/rust/lib:$$LD_LIBRARY_PATH
-          	cargo build --profile ${BUILD_PROFILE} --locked --bin mise
+          	# Use bundled Rust 1.88.0 toolchain
+          	export PATH=$$(pwd)/rust-toolchain/bin:$$PATH
+          	export RUSTC=$$(pwd)/rust-toolchain/bin/rustc
+          	export CARGO=$$(pwd)/rust-toolchain/bin/cargo
+          	export LD_LIBRARY_PATH=$$(pwd)/rust-toolchain/lib:$$LD_LIBRARY_PATH
+          	$$(pwd)/rust-toolchain/bin/cargo build --profile ${BUILD_PROFILE} --locked --bin mise
           
           override_dh_auto_install:
           	mkdir -p debian/mise/usr/bin
