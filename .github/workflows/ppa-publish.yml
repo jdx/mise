@@ -82,12 +82,53 @@ jobs:
             debian-keyring \
             gpg \
             libssl-dev \
-            pkg-config
+            pkg-config \
+            wget \
+            ca-certificates \
+            build-essential \
+            cmake \
+            python3 \
+            ninja-build \
+            libclang-dev \
+            llvm-dev \
+            clang \
+            libgcc-s1 \
+            libstdc++6
 
-      - name: Set up Rust
+      - name: Download and install rustc-1.85 packages
+        run: |
+          # Create directory for packages
+          mkdir -p /tmp/rust-packages
+          cd /tmp/rust-packages
+          
+          # Download rustc-1.85 packages from Launchpad
+          wget -O rustc-1.85_1.85.0-1ubuntu1_amd64.deb "https://launchpad.net/ubuntu/+archive/primary/+files/rustc-1.85_1.85.0-1ubuntu1_amd64.deb"
+          wget -O cargo-1.85_1.85.0-1ubuntu1_amd64.deb "https://launchpad.net/ubuntu/+archive/primary/+files/cargo-1.85_1.85.0-1ubuntu1_amd64.deb"
+          wget -O rust-std-1.85_1.85.0-1ubuntu1_amd64.deb "https://launchpad.net/ubuntu/+archive/primary/+files/rust-std-1.85_1.85.0-1ubuntu1_amd64.deb"
+          wget -O rust-docs-1.85_1.85.0-1ubuntu1_all.deb "https://launchpad.net/ubuntu/+archive/primary/+files/rust-docs-1.85_1.85.0-1ubuntu1_all.deb"
+          
+          # Install the packages
+          sudo dpkg -i -- *.deb || true
+          sudo apt-get install -f -y
+          
+          # Create symlinks to make them the default
+          sudo ln -sf /usr/bin/rustc-1.85 /usr/bin/rustc
+          sudo ln -sf /usr/bin/cargo-1.85 /usr/bin/cargo
+          
+          # Set up environment
+          echo "export PATH=/usr/bin:\$PATH" >> "$GITHUB_ENV"
+          echo "export RUSTC=/usr/bin/rustc" >> "$GITHUB_ENV"
+          echo "export CARGO=/usr/bin/cargo" >> "$GITHUB_ENV"
+          
+          # Verify installation
+          rustc --version
+          cargo --version
+
+      - name: Set up Rust (fallback)
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+        if: failure()
 
       - name: Install mise
         run: |
@@ -212,8 +253,10 @@ jobs:
           	dh $@
           
           override_dh_auto_build:
-          	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          	. ~/.cargo/env
+          	# Use system-installed rustc/cargo
+          	export PATH=/usr/bin:$PATH
+          	export RUSTC=/usr/bin/rustc
+          	export CARGO=/usr/bin/cargo
           	cargo build --profile ${BUILD_PROFILE} --locked --bin mise
           
           override_dh_auto_install:
