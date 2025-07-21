@@ -1,0 +1,10 @@
+Describe 'npm_backend' {
+    It 'installs npm:prettier 3.6.2 with npm' {
+        mise x node npm:prettier@3.6.2 -- prettier --version | Should -be "3.6.2"
+    }
+    It 'installs npm:prettier 5.7.2 with bun' {
+        $env:MISE_NPM_BUN = "true"
+        mise x node bun npm:prettier@3.6.2 -- prettier --version | Should -be "3.6.2"
+        Remove-Item Env:MISE_NPM_BUN
+    }
+}
