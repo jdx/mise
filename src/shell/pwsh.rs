@@ -24,6 +24,15 @@ impl Shell for Pwsh {
             $env:__MISE_ORIG_PATH = $env:PATH
 
             function mise {{
+                $previous_out_encoding = $OutputEncoding
+                $previous_console_out_encoding = [Console]::OutputEncoding
+                $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8
+
+                function _reset_output_encoding {{
+                    $OutputEncoding = $previous_out_encoding
+                    [Console]::OutputEncoding = $previous_console_out_encoding
+                }}
+
                 # Read line directly from input to workaround powershell input parsing for functions
                 $code = [System.Management.Automation.Language.Parser]::ParseInput($MyInvocation.Statement.Substring($MyInvocation.OffsetInLine - 1), [ref]$null, [ref]$null)
                 $myLine = $code.Find({{ $args[0].CommandElements }}, $true).CommandElements | ForEach-Object {{ $_.ToString() }} | Join-String -Separator ' '
@@ -31,24 +40,21 @@ impl Shell for Pwsh {
                 
                 if ($null -eq $arguments) {{ 
                     & {exe}
+                    _reset_output_encoding
+                    return
+                }} elseif ($arguments -contains '-h' -or $arguments -contains '--help') {{
+                    & D:\Dev\scoop\apps\mise\current\bin\mise.exe $arguments
+                    _reset_output_encoding
                     return
                 }} 
 
                 $command = $arguments[0]
                 $arguments = $arguments[1..$arguments.Length]
 
-                if ($arguments -contains '--help') {{
-                    return & {exe} $command $arguments 
-                }}
-
                 switch ($command) {{
                     {{ $_ -in 'deactivate', 'shell', 'sh' }} {{
-                        if ($arguments -contains '-h' -or $arguments -contains '--help') {{
-                            & {exe} $command $arguments
-                        }}
-                        else {{
-                            & {exe} $command $arguments | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
-                        }}
+                        & {exe} $command $arguments | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                        _reset_output_encoding
                     }}
                     default {{
                         & {exe} $command $arguments
@@ -56,6 +62,7 @@ impl Shell for Pwsh {
                         if ($(Test-Path -Path Function:\_mise_hook)){{
                             _mise_hook
                         }}
+                        _reset_output_encoding
                         # Pass down exit code from mise after _mise_hook
                         pwsh -NoProfile -Command exit $status 
                     }}
