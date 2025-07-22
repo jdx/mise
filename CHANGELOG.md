@@ -1,5 +1,25 @@
 # Changelog
 
+## [2025.7.20](https://github.com/jdx/mise/compare/v2025.7.19..v2025.7.20) - 2025-07-22
+
+### 🚀 Features
+
+- use mise.run for rosetta tip by [@jdx](https://github.com/jdx) in [#5739](https://github.com/jdx/mise/pull/5739)
+
+### 🐛 Bug Fixes
+
+- **(npm)** use bin/ as bin_paths when installed with bun on windows by [@risu729](https://github.com/risu729) in [#5725](https://github.com/jdx/mise/pull/5725)
+
+### 📚 Documentation
+
+- remove curl instructions by [@jdx](https://github.com/jdx) in [785d2f2](https://github.com/jdx/mise/commit/785d2f2fe4795b23cb196a70a0b7956707d40437)
+- add back in supported os/arch combinations by [@jdx](https://github.com/jdx) in [87b86b0](https://github.com/jdx/mise/commit/87b86b0f4f756dd6b7116192214c25e2995e9939)
+
+### Chore
+
+- set redirect for curl installs by [@jdx](https://github.com/jdx) in [#5740](https://github.com/jdx/mise/pull/5740)
+- reduce binary size for linux by [@jdx](https://github.com/jdx) in [#5741](https://github.com/jdx/mise/pull/5741)
+
 ## [2025.7.19](https://github.com/jdx/mise/compare/v2025.7.18..v2025.7.19) - 2025-07-22
 
 ### 🐛 Bug Fixes
@@ -15,6 +35,7 @@
 ### Chore
 
 - **(ppa)** wait for gh rate limit by [@jdx](https://github.com/jdx) in [#5721](https://github.com/jdx/mise/pull/5721)
+- **(vfox-test)** set GITHUB_TOKEN by [@jdx](https://github.com/jdx) in [cdbb62b](https://github.com/jdx/mise/commit/cdbb62b0f63bcb0a3b650c1d49aefb8c9798c6aa)
 
 ### New Contributors
 
