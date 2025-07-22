@@ -8,7 +8,7 @@ on:
       chroots:
         description: 'COPR chroots to target (space-separated)'
         required: false
-        default: 'fedora-39-x86_64 fedora-40-x86_64 fedora-41-x86_64 epel-9-x86_64'
+        default: 'fedora-42-aarch64 fedora-42-x86_64 epel-10-aarch64 epel-10-x86_64'
         type: string
       use_serious_profile:
         description: 'Use the "serious" profile for optimized builds (LTO enabled)'
