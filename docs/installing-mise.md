@@ -70,47 +70,6 @@ version was when it was downloaded with checksums inside the file. This makes do
 a project a great way to ensure that anyone installing with that script fetches the exact same mise bin.
 :::
 
-or if you're allergic to `| sh`:
-
-::: code-group
-
-```sh [macos-arm64]
-curl https://mise.jdx.dev/mise-latest-macos-arm64 > ~/.local/bin/mise
-chmod +x ~/.local/bin/mise
-```
-
-```sh [macos-x64]
-curl https://mise.jdx.dev/mise-latest-macos-x64 > ~/.local/bin/mise
-chmod +x ~/.local/bin/mise
-```
-
-```sh [linux-x64]
-curl https://mise.jdx.dev/mise-latest-linux-x64 > ~/.local/bin/mise
-chmod +x ~/.local/bin/mise
-```
-
-```sh [linux-arm64]
-curl https://mise.jdx.dev/mise-latest-linux-arm64 > ~/.local/bin/mise
-chmod +x ~/.local/bin/mise
-```
-
-:::
-
-It doesn't matter where you put it. So use `~/bin`, `/usr/local/bin`, `~/.local/bin` or whatever.
-
-Supported os/arch:
-
-- `macos-x64`
-- `macos-arm64`
-- `linux-x64`
-- `linux-x64-musl`
-- `linux-arm64`
-- `linux-arm64-musl`
-- `linux-armv6`
-- `linux-armv6-musl`
-- `linux-armv7`
-- `linux-armv7-musl`
-
 If you need something else, compile it with `cargo install mise` (see below).
 
 ### apk
