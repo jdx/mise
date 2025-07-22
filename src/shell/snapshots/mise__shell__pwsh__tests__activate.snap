@@ -25,7 +25,7 @@ function mise {
         _reset_output_encoding
         return
     } elseif ($arguments -contains '-h' -or $arguments -contains '--help') {
-        & D:\Dev\scoop\apps\mise\current\bin\mise.exe $arguments
+        & /some/dir/mise $arguments
         _reset_output_encoding
         return
     } 
