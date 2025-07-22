@@ -26,7 +26,7 @@ curl --fail-with-body -X PATCH "https://api.cloudflare.com/client/v4/zones/$ZONE
   "action_parameters": {
     "from_value": {
       "preserve_query_string": false,
-      "status_code": 301,
+      "status_code": 302,
       "target_url": {
         "expression": "concat(\"https://github.com/jdx/mise/releases/download/${CURRENT_VERSION}/\", wildcard_replace(http.request.uri.path, \"/mise-latest-*\", \"mise-${CURRENT_VERSION}-\${1}\"))"
       }
