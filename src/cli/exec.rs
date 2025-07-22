@@ -137,7 +137,6 @@ impl Exec {
         let cwd = crate::dirs::CWD.clone().unwrap_or_default();
         let program = program.to_executable();
         let path = env.get(&*env::PATH_KEY).map(OsString::from);
-        debug!("which_in: {:?}, path: {:?}, cwd: {:?}", program, path, cwd);
         let program = which::which_in(program, path, cwd)?;
         let mut cmd = cmd::cmd(program, args);
         for (k, v) in env.iter() {
