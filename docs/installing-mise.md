@@ -70,6 +70,19 @@ version was when it was downloaded with checksums inside the file. This makes do
 a project a great way to ensure that anyone installing with that script fetches the exact same mise bin.
 :::
 
+Supported os/arch:
+
+- `macos-x64`
+- `macos-arm64`
+- `linux-x64`
+- `linux-x64-musl`
+- `linux-arm64`
+- `linux-arm64-musl`
+- `linux-armv6`
+- `linux-armv6-musl`
+- `linux-armv7`
+- `linux-armv7-musl`
+
 If you need something else, compile it with `cargo install mise` (see below).
 
 ### apk
