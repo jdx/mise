@@ -27,12 +27,3 @@ RUN mise use -g cargo-binstall cargo:cargo-vendor
 
 # Set up RPM build environment
 RUN rpmdev-setuptree
-
-# Set working directory
-WORKDIR /workspace
-
-# Copy the build script
-COPY build-copr.sh /usr/local/bin/build-copr.sh
-RUN chmod +x /usr/local/bin/build-copr.sh
-
-ENTRYPOINT ["/usr/local/bin/build-copr.sh"]
