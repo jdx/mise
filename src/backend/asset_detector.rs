@@ -332,15 +332,23 @@ mod tests {
             "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz".to_string(),
         ];
 
-        // Test Linux x86_64 with gnu (default)
+        // Test Linux x86_64 - should prefer the libc variant that matches the build environment
         let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
         let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
-        assert_eq!(picked, "ripgrep-14.1.1-x86_64-unknown-linux-gnu.tar.gz");
+        if cfg!(target_env = "musl") {
+            assert_eq!(picked, "ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz");
+        } else {
+            assert_eq!(picked, "ripgrep-14.1.1-x86_64-unknown-linux-gnu.tar.gz");
+        }
 
-        // Test Linux aarch64 with gnu (default)
+        // Test Linux aarch64 - should prefer the libc variant that matches the build environment
         let picker = AssetPicker::new("linux".to_string(), "aarch64".to_string());
         let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
-        assert_eq!(picked, "ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz");
+        if cfg!(target_env = "musl") {
+            assert_eq!(picked, "ripgrep-14.1.1-aarch64-unknown-linux-musl.tar.gz");
+        } else {
+            assert_eq!(picked, "ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz");
+        }
 
         // Test macOS (should not be affected by libc)
         let picker = AssetPicker::new("macos".to_string(), "x86_64".to_string());
@@ -352,14 +360,21 @@ mod tests {
     fn test_libc_scoring() {
         let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
 
-        // Test that gnu variant scores higher than musl when built with gnu
+        // Test that the libc variant matching the build environment scores higher
         let gnu_score = picker.score_asset("ripgrep-14.1.1-x86_64-unknown-linux-gnu.tar.gz");
         let musl_score = picker.score_asset("ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz");
 
-        assert!(
-            gnu_score > musl_score,
-            "GNU variant should score higher than musl when built with gnu"
-        );
+        if cfg!(target_env = "musl") {
+            assert!(
+                musl_score > gnu_score,
+                "musl variant should score higher than gnu when built with musl"
+            );
+        } else {
+            assert!(
+                gnu_score > musl_score,
+                "GNU variant should score higher than musl when built with gnu"
+            );
+        }
 
         // Test that non-linux assets are not affected by libc scoring
         let macos_score = picker.score_asset("ripgrep-14.1.1-x86_64-apple-darwin.tar.gz");
