@@ -23,6 +23,8 @@ jobs:
   publish-copr:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    container:
+      image: ghcr.io/jdx/mise:copr
     
     steps:
       - name: Checkout repository
@@ -58,17 +60,9 @@ jobs:
             echo "BUILD_PROFILE=release" >> "$GITHUB_ENV"
           fi
 
-      - name: Build COPR Docker image
-        run: |
-          docker build -f packaging/copr/Dockerfile -t mise-copr packaging/copr/
-
       - name: Build and submit to COPR
         run: |
-          docker run --rm \
-            -v $(pwd):/workspace \
-            -e COPR_API_LOGIN="${{ secrets.COPR_API_LOGIN }}" \
-            -e COPR_API_TOKEN="${{ secrets.COPR_API_TOKEN }}" \
-            mise-copr \
+          ./packaging/copr/build-copr.sh \
             --version "${VERSION}" \
             --profile "${BUILD_PROFILE}" \
             --chroots "${CHROOTS}" \
@@ -77,3 +71,6 @@ jobs:
             --name "${PACKAGE_NAME}" \
             --maintainer-name "${MAINTAINER_NAME}" \
             --maintainer-email "${MAINTAINER_EMAIL}"
+        env:
+          COPR_API_LOGIN: ${{ secrets.COPR_API_LOGIN }}
+          COPR_API_TOKEN: ${{ secrets.COPR_API_TOKEN }}
