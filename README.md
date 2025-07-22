@@ -155,6 +155,10 @@ Find more examples in the [mise cookbook](https://mise.jdx.dev/mise-cookbook/).
 
 See [mise.jdx.dev](https://mise.jdx.dev)
 
+## Special Thanks
+
+We're grateful for Cloudflare's support us through [Project Alexandria](https://www.cloudflare.com/lp/project-alexandria/).
+
 ## Contributors
 
 [![Contributors](https://contrib.rocks/image?repo=jdx/mise)](https://github.com/jdx/mise/graphs/contributors)
