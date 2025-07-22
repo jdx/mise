@@ -1,5 +1,25 @@
 # Changelog
 
+## [2025.7.19](https://github.com/jdx/mise/compare/v2025.7.18..v2025.7.19) - 2025-07-22
+
+### 🐛 Bug Fixes
+
+- **(pwsh)** set console encoding to UTF-8 to prevent Unicode garbling by [@IMXEren](https://github.com/IMXEren) in [#5732](https://github.com/jdx/mise/pull/5732)
+- **(registry)** set matching_regex for glab on Windows to pick the correct asset by [@risu729](https://github.com/risu729) in [#5727](https://github.com/jdx/mise/pull/5727)
+
+### 📚 Documentation
+
+- **(config)** fix alias section name by [@malept](https://github.com/malept) in [#5736](https://github.com/jdx/mise/pull/5736)
+- fix typo in contributing commit message prefixes by [@malept](https://github.com/malept) in [#5737](https://github.com/jdx/mise/pull/5737)
+
+### Chore
+
+- **(ppa)** wait for gh rate limit by [@jdx](https://github.com/jdx) in [#5721](https://github.com/jdx/mise/pull/5721)
+
+### New Contributors
+
+- @malept made their first contribution in [#5736](https://github.com/jdx/mise/pull/5736)
+
 ## [2025.7.18](https://github.com/jdx/mise/compare/v2025.7.17..v2025.7.18) - 2025-07-21
 
 ### 🚀 Features
@@ -9,6 +29,7 @@
 ### 🐛 Bug Fixes
 
 - mise up parallel execution by [@jdx](https://github.com/jdx) in [#5591](https://github.com/jdx/mise/pull/5591)
+- ppa releases by [@jdx](https://github.com/jdx) in [#5717](https://github.com/jdx/mise/pull/5717)
 
 ### 📚 Documentation
 
