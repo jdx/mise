@@ -114,7 +114,7 @@ Variables can be redacted from the output by setting `redact = true`:
 ```toml
 [env]
 SECRET = { value = "my_secret", redact = true }
-_.file = { path = [".env.json"], redact = true }
+_.file = { path = ".env.json", redact = true }
 ```
 
 ## `env._` directives
