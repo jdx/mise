@@ -95,7 +95,7 @@ if [[ $DRY_RUN != 1 ]]; then
 	echo "::group::Deploy Cloudflare Worker"
 	./scripts/deploy-worker.sh
 	echo "::group::Update redirect"
-	./scripts/update-redirect.sh || true
+	./scripts/update-redirect.sh "$MISE_VERSION" || true
 	echo "::group::Publish GitHub releases as draft"
 	gh release edit --draft=true "$MISE_VERSION"
 fi
