@@ -82,8 +82,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     env:
-      MISE_DATA_DIR: ~\.local\share\mise
-      MISE_CACHE_DIR: ~\.cache\mise
+      MISE_DATA_DIR: ~/.local/share/mise
+      MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
@@ -235,8 +235,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     env:
-      MISE_DATA_DIR: ~\.local\share\mise
-      MISE_CACHE_DIR: ~\.cache\mise
+      MISE_DATA_DIR: ~/.local/share/mise
+      MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
@@ -254,8 +254,8 @@ jobs:
     timeout-minutes: 40
     needs: [build-windows]
     env:
-      MISE_DATA_DIR: ~\.local\share\mise
-      MISE_CACHE_DIR: ~\.cache\mise
+      MISE_DATA_DIR: ~/.local/share/mise
+      MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
