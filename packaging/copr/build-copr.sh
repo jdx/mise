@@ -141,18 +141,16 @@ echo "=== Creating Source Tarball ==="
 # Create original source tarball with submodules
 git -C "/workspace" archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD >"SOURCES/${PACKAGE_NAME}-${VERSION}.tar"
 
-# Add aqua-registry submodule to the tarball if it exists
-if [ -d "/workspace/aqua-registry" ]; then
-	echo "Adding aqua-registry submodule..."
-	# Create a temporary tar file for the submodule
-	git -C "/workspace/aqua-registry" archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/aqua-registry/" HEAD >"SOURCES/aqua-registry-temp.tar"
+# Add aqua-registry submodule to the tarball
+echo "Adding aqua-registry submodule..."
+# Create a temporary tar file for the submodule
+git -C "/workspace/aqua-registry" archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/aqua-registry/" HEAD >"SOURCES/aqua-registry-temp.tar"
 
-	# Use tar's --concatenate option to properly combine the archives
-	tar --concatenate --file="SOURCES/${PACKAGE_NAME}-${VERSION}.tar" "SOURCES/aqua-registry-temp.tar"
+# Use tar's --concatenate option to properly combine the archives
+tar --concatenate --file="SOURCES/${PACKAGE_NAME}-${VERSION}.tar" "SOURCES/aqua-registry-temp.tar"
 
-	# Clean up temporary file
-	rm "SOURCES/aqua-registry-temp.tar"
-fi
+# Clean up temporary file
+rm "SOURCES/aqua-registry-temp.tar"
 
 # Compress the tarball
 gzip "SOURCES/${PACKAGE_NAME}-${VERSION}.tar"
