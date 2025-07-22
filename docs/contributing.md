@@ -534,7 +534,7 @@ should follow this format:
 - **feat**: New features (🚀 Features)
 - **fix**: Bug fixes (🐛 Bug Fixes)
 - **refactor**: Code refactoring (🚜 Refactor)
-- **doc**: Documentation changes (📚 Documentation)
+- **docs**: Documentation changes (📚 Documentation)
 - **style**: Code style changes (🎨 Styling)
 - **perf**: Performance improvements (⚡ Performance)
 - **test**: Testing changes (🧪 Testing)
@@ -547,7 +547,7 @@ should follow this format:
 feat(cli): add new command for listing plugins
 fix(parser): handle edge case in version parsing
 refactor(config): simplify configuration loading logic
-doc(readme): update installation instructions
+docs(readme): update installation instructions
 test(e2e): add tests for new plugin functionality
 chore(deps): update dependencies to latest versions
 ```

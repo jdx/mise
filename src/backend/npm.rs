@@ -122,7 +122,11 @@ impl Backend for NPMBackend {
         _config: &Arc<Config>,
         tv: &crate::toolset::ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
-        Ok(vec![tv.install_path()])
+        if Settings::get().npm.bun {
+            Ok(vec![tv.install_path().join("bin")])
+        } else {
+            Ok(vec![tv.install_path()])
+        }
     }
 }
 

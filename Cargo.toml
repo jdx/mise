@@ -3,7 +3,7 @@ members = ["crates/vfox"]
 
 [package]
 name = "mise"
-version = "2025.7.17"
+version = "2025.7.20"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -43,7 +43,7 @@ path = "src/main.rs"
 #harness = false
 
 [profile.release]
-debug = 1 # note that higher levels greatly increase the binary size for linux
+# debug = 0 # note that higher levels greatly increase the binary size for linux
 
 [profile.serious]
 inherits = "release"

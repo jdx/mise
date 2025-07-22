@@ -13,9 +13,7 @@ setting or by using a dedicated rosetta mise bin as described below:
 First, you'll need a copy of mise that's built for x86_64:
 
 ```sh
-$ mkdir -p ~/.local/bin
-$ curl https://mise.jdx.dev/mise-latest-macos-x64 > ~/.local/bin/mise-x64
-$ chmod +x ~/.local/bin/mise-x64
+$ curl https://mise.run | MISE_INSTALL_PATH=~/.local/bin/mise-x64 MISE_INSTALL_ARCH=x64 sh
 $ ~/.local/bin/mise-x64 --version
 mise 2024.x.x
 ```

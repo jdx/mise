@@ -1,5 +1,65 @@
 # Changelog
 
+## [2025.7.20](https://github.com/jdx/mise/compare/v2025.7.19..v2025.7.20) - 2025-07-22
+
+### 🚀 Features
+
+- use mise.run for rosetta tip by [@jdx](https://github.com/jdx) in [#5739](https://github.com/jdx/mise/pull/5739)
+
+### 🐛 Bug Fixes
+
+- **(npm)** use bin/ as bin_paths when installed with bun on windows by [@risu729](https://github.com/risu729) in [#5725](https://github.com/jdx/mise/pull/5725)
+
+### 📚 Documentation
+
+- remove curl instructions by [@jdx](https://github.com/jdx) in [785d2f2](https://github.com/jdx/mise/commit/785d2f2fe4795b23cb196a70a0b7956707d40437)
+- add back in supported os/arch combinations by [@jdx](https://github.com/jdx) in [87b86b0](https://github.com/jdx/mise/commit/87b86b0f4f756dd6b7116192214c25e2995e9939)
+
+### Chore
+
+- set redirect for curl installs by [@jdx](https://github.com/jdx) in [#5740](https://github.com/jdx/mise/pull/5740)
+- reduce binary size for linux by [@jdx](https://github.com/jdx) in [#5741](https://github.com/jdx/mise/pull/5741)
+
+## [2025.7.19](https://github.com/jdx/mise/compare/v2025.7.18..v2025.7.19) - 2025-07-22
+
+### 🐛 Bug Fixes
+
+- **(pwsh)** set console encoding to UTF-8 to prevent Unicode garbling by [@IMXEren](https://github.com/IMXEren) in [#5732](https://github.com/jdx/mise/pull/5732)
+- **(registry)** set matching_regex for glab on Windows to pick the correct asset by [@risu729](https://github.com/risu729) in [#5727](https://github.com/jdx/mise/pull/5727)
+
+### 📚 Documentation
+
+- **(config)** fix alias section name by [@malept](https://github.com/malept) in [#5736](https://github.com/jdx/mise/pull/5736)
+- fix typo in contributing commit message prefixes by [@malept](https://github.com/malept) in [#5737](https://github.com/jdx/mise/pull/5737)
+
+### Chore
+
+- **(ppa)** wait for gh rate limit by [@jdx](https://github.com/jdx) in [#5721](https://github.com/jdx/mise/pull/5721)
+- **(vfox-test)** set GITHUB_TOKEN by [@jdx](https://github.com/jdx) in [cdbb62b](https://github.com/jdx/mise/commit/cdbb62b0f63bcb0a3b650c1d49aefb8c9798c6aa)
+
+### New Contributors
+
+- @malept made their first contribution in [#5736](https://github.com/jdx/mise/pull/5736)
+
+## [2025.7.18](https://github.com/jdx/mise/compare/v2025.7.17..v2025.7.18) - 2025-07-21
+
+### 🚀 Features
+
+- **(registry)** add `jsonschema` CLI tool by [@mrazauskas](https://github.com/mrazauskas) in [#5714](https://github.com/jdx/mise/pull/5714)
+
+### 🐛 Bug Fixes
+
+- mise up parallel execution by [@jdx](https://github.com/jdx) in [#5591](https://github.com/jdx/mise/pull/5591)
+- ppa releases by [@jdx](https://github.com/jdx) in [#5717](https://github.com/jdx/mise/pull/5717)
+
+### 📚 Documentation
+
+- add comprehensive CLAUDE.md for Claude Code guidance by [@jdx](https://github.com/jdx) in [#5718](https://github.com/jdx/mise/pull/5718)
+
+### Chore
+
+- ubuntu ppa by [@jdx](https://github.com/jdx) in [#5715](https://github.com/jdx/mise/pull/5715)
+
 ## [2025.7.17](https://github.com/jdx/mise/compare/v2025.7.16..v2025.7.17) - 2025-07-19
 
 ### 🚀 Features

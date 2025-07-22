@@ -1,12 +1,20 @@
 ---
 source: src/shell/pwsh.rs
 expression: pwsh.activate(opts)
-snapshot_kind: text
 ---
 $env:MISE_SHELL = 'pwsh'
 $env:__MISE_ORIG_PATH = $env:PATH
 
 function mise {
+    $previous_out_encoding = $OutputEncoding
+    $previous_console_out_encoding = [Console]::OutputEncoding
+    $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8
+
+    function _reset_output_encoding {
+        $OutputEncoding = $previous_out_encoding
+        [Console]::OutputEncoding = $previous_console_out_encoding
+    }
+
     # Read line directly from input to workaround powershell input parsing for functions
     $code = [System.Management.Automation.Language.Parser]::ParseInput($MyInvocation.Statement.Substring($MyInvocation.OffsetInLine - 1), [ref]$null, [ref]$null)
     $myLine = $code.Find({ $args[0].CommandElements }, $true).CommandElements | ForEach-Object { $_.ToString() } | Join-String -Separator ' '
@@ -14,24 +22,21 @@ function mise {
     
     if ($null -eq $arguments) { 
         & /some/dir/mise
+        _reset_output_encoding
+        return
+    } elseif ($arguments -contains '-h' -or $arguments -contains '--help') {
+        & D:\Dev\scoop\apps\mise\current\bin\mise.exe $arguments
+        _reset_output_encoding
         return
     } 
 
     $command = $arguments[0]
     $arguments = $arguments[1..$arguments.Length]
 
-    if ($arguments -contains '--help') {
-        return & /some/dir/mise $command $arguments 
-    }
-
     switch ($command) {
         { $_ -in 'deactivate', 'shell', 'sh' } {
-            if ($arguments -contains '-h' -or $arguments -contains '--help') {
-                & /some/dir/mise $command $arguments
-            }
-            else {
-                & /some/dir/mise $command $arguments | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
-            }
+            & /some/dir/mise $command $arguments | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+            _reset_output_encoding
         }
         default {
             & /some/dir/mise $command $arguments
@@ -39,6 +44,7 @@ function mise {
             if ($(Test-Path -Path Function:\_mise_hook)){
                 _mise_hook
             }
+            _reset_output_encoding
             # Pass down exit code from mise after _mise_hook
             pwsh -NoProfile -Command exit $status 
         }
