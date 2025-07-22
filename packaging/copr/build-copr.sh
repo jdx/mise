@@ -228,26 +228,18 @@ mkdir -p %{buildroot}%{_bindir}
 cp target/__BUILD_PROFILE__/mise %{buildroot}%{_bindir}/
 
 # Install man page if available
-if [ -f man/man1/mise.1 ]; then
-  mkdir -p %{buildroot}%{_mandir}/man1
-  cp man/man1/mise.1 %{buildroot}%{_mandir}/man1/
-fi
+mkdir -p %{buildroot}%{_mandir}/man1
+cp man/man1/mise.1 %{buildroot}%{_mandir}/man1/
 
 # Install shell completions
 mkdir -p %{buildroot}%{_datadir}/bash-completion/completions
-if [ -f completions/mise.bash ]; then
-  cp completions/mise.bash %{buildroot}%{_datadir}/bash-completion/completions/mise
-fi
+cp completions/mise.bash %{buildroot}%{_datadir}/bash-completion/completions/mise
 
 mkdir -p %{buildroot}%{_datadir}/zsh/site-functions
-if [ -f completions/_mise ]; then
-  cp completions/_mise %{buildroot}%{_datadir}/zsh/site-functions/
-fi
+cp completions/_mise %{buildroot}%{_datadir}/zsh/site-functions/
 
 mkdir -p %{buildroot}%{_datadir}/fish/vendor_completions.d
-if [ -f completions/mise.fish ]; then
-  cp completions/mise.fish %{buildroot}%{_datadir}/fish/vendor_completions.d/
-fi
+cp completions/mise.fish %{buildroot}%{_datadir}/fish/vendor_completions.d/
 
 %files
 %license LICENSE
