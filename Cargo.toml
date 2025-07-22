@@ -155,7 +155,7 @@ usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 walkdir = "2"
-which = "7"
+which = { version = "7", features = ["tracing"] }
 xx = { version = "2", features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "3", default-features = false, features = ["deflate"] }

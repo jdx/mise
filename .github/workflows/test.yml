@@ -280,4 +280,4 @@ jobs:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
-          command: pwsh e2e-win\run.ps1
+          command: pwsh e2e-win\run.ps1 npm_backend

@@ -6721,6 +6721,7 @@ dependencies = [
  "either",
  "env_home",
  "rustix 1.0.8",
+ "tracing",
  "winsafe",
 ]
 
