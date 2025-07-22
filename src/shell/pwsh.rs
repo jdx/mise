@@ -43,7 +43,7 @@ impl Shell for Pwsh {
                     _reset_output_encoding
                     return
                 }} elseif ($arguments -contains '-h' -or $arguments -contains '--help') {{
-                    & D:\Dev\scoop\apps\mise\current\bin\mise.exe $arguments
+                    & {exe} $arguments
                     _reset_output_encoding
                     return
                 }} 
