@@ -24,6 +24,7 @@ jobs:
           - alpine
           - deb
           - rpm
+          - copr
     runs-on: ubuntu-latest
     permissions:
       contents: read
