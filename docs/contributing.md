@@ -852,23 +852,16 @@ apt install -y mise
 mise -V
 ```
 
-### Amazon Linux 2 (yum)
-
-```sh
-docker run -ti --rm amazonlinux
-yum install -y yum-utils
-yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
-yum install -y mise
-mise -v
-```
-
 ### Fedora (dnf)
 
 ```sh
 docker run -ti --rm fedora
-dnf install -y dnf-plugins-core
-dnf config-manager addrepo \
-  --from-repofile=https://mise.jdx.dev/rpm/mise.repo
-dnf install -y mise
-mise -v
+dnf copr enable -y jdxcode/mise && dnf install -y mise && mise -v
+```
+
+### RHEL 10+ (dnf)
+
+```sh
+docker run -ti --rm registry.access.redhat.com/ubi9/ubi:latest
+dnf copr enable -y jdxcode/mise && dnf install -y mise && mise -v
 ```

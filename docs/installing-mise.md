@@ -153,20 +153,18 @@ cargo install mise --git https://github.com/jdx/mise --branch main
 
 ### dnf
 
-For Fedora 40, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
+#### Fedora 41+, RHEL 9+, CentOS Stream 9+
 
 ```sh
-dnf install -y dnf-plugins-core
-dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
-dnf install -y mise
+dnf copr enable jdxcode/mise
+dnf install mise
 ```
 
-Fedora 41+ (dnf5)
+#### RHEL 10, CentOS Stream 10, Rocky Linux 10, AlmaLinux 10
 
 ```sh
-dnf install -y dnf-plugins-core
-dnf config-manager addrepo --from-repofile=https://mise.jdx.dev/rpm/mise.repo
-dnf install -y mise
+dnf copr enable jdxcode/mise
+dnf install mise
 ```
 
 > [!NOTE]
@@ -226,7 +224,7 @@ You can also import the package directly using
 `mise-flake.packages.${system}.mise`. It supports all default Nix
 systems.
 
-### yum
+### yum (RHEL 8, CentOS Stream 8, Amazon Linux 2)
 
 ```sh
 yum install -y yum-utils

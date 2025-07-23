@@ -70,12 +70,21 @@ sudo apt update
 sudo apt install -y mise
 ```
 
-== Fedora (dnf)
+== Fedora/RHEL (dnf)
+
+**Fedora 41+, RHEL/CentOS Stream 9+:**
 
 ```sh
-sudo dnf install -y dnf-plugins-core
-sudo dnf config-manager addrepo --from-repofile=https://mise.jdx.dev/rpm/mise.repo
-sudo dnf install -y mise
+sudo dnf copr enable jdxcode/mise
+sudo dnf install mise
+```
+
+See the [copr page](https://copr.fedorainfracloud.org/coprs/jdxcode/mise/) for more information.
+
+For older versions of Fedora/RHEL/CentOS Stream, use the install script instead:
+
+```sh
+curl https://mise.run | sh
 ```
 
 :::
