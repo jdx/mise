@@ -2449,6 +2449,9 @@ sqlite3def.backends = ["aqua:sqldef/sqldef/sqlite3def"]
 sshi.backends = ["aqua:aakso/ssh-inscribe/sshi"]
 sshi.test = ["sshi version", "local: {{version}}"]
 sshuttle.backends = ["asdf:mise-plugins/mise-sshuttle"]
+sst.description = ["Build full-stack apps on your own infrastructure"]
+sst.backends = ["ubi:sst/sst"]
+sst.test = ["sst version", "sst {{version}}"]
 stack.description = "The Haskell Tool Stack"
 stack.backends = [
     "aqua:commercialhaskell/stack",
