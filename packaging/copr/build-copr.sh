@@ -201,6 +201,7 @@ BuildRequires:  rust >= 1.85
 BuildRequires:  cargo
 BuildRequires:  gcc
 BuildRequires:  git
+BuildRequires:  openssl-devel
 
 %description
 mise is a development environment setup tool that manages runtime versions,
