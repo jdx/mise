@@ -70,9 +70,7 @@ sudo apt update
 sudo apt install -y mise
 ```
 
-== Fedora/RHEL (dnf)
-
-**Fedora 41+, RHEL/CentOS Stream 9+:**
+== Fedora 41+, RHEL/CentOS Stream 9+ (dnf)
 
 ```sh
 sudo dnf copr enable jdxcode/mise
@@ -80,12 +78,6 @@ sudo dnf install mise
 ```
 
 See the [copr page](https://copr.fedorainfracloud.org/coprs/jdxcode/mise/) for more information.
-
-For older versions of Fedora/RHEL/CentOS Stream, use the install script instead:
-
-```sh
-curl https://mise.run | sh
-```
 
 :::
 

@@ -859,7 +859,7 @@ docker run -ti --rm fedora
 dnf copr enable -y jdxcode/mise && dnf install -y mise && mise -v
 ```
 
-### RHEL 10+ (dnf)
+### RHEL (dnf)
 
 ```sh
 docker run -ti --rm registry.access.redhat.com/ubi9/ubi:latest

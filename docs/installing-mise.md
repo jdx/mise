@@ -160,16 +160,6 @@ dnf copr enable jdxcode/mise
 dnf install mise
 ```
 
-#### RHEL 10, CentOS Stream 10, Rocky Linux 10, AlmaLinux 10
-
-```sh
-dnf copr enable jdxcode/mise
-dnf install mise
-```
-
-> [!NOTE]
-> This repository maintains only the latest version of the mise CLI. Previous versions are removed and are not available once a new release is made.
-
 ### Docker
 
 ```sh
