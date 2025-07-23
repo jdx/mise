@@ -80,6 +80,7 @@ impl Doctor {
                 .map(|(k, v)| (k.to_snake_case(), v))
                 .collect(),
         );
+
         let shell = shell();
         let mut shell_lines = shell.lines();
         let mut shell = serde_json::Map::new();
@@ -97,6 +98,12 @@ impl Doctor {
                 .map(|(k, p)| (k, p.to_string_lossy().to_string()))
                 .collect(),
         );
+        let mut aqua = serde_json::Map::new();
+        aqua.insert(
+            "baked_in_registry_tools".into(),
+            aqua_registry_count().into(),
+        );
+        data.insert("aqua".into(), aqua.into());
         data.insert("env_vars".into(), mise_env_vars().into_iter().collect());
         data.insert(
             "settings".into(),
@@ -190,6 +197,8 @@ impl Doctor {
             .join("\n");
         info::section("build_info", build_info)?;
         info::section("shell", shell())?;
+        info::section("aqua", aqua_registry_count_str())?;
+
         let mise_dirs = mise_dirs()
             .into_iter()
             .map(|(k, p)| format!("{k}: {}", display_path(p)))
@@ -532,6 +541,19 @@ fn shell() -> String {
             format!("{shell_cmd}\n{version}")
         }
         None => "(unknown)".to_string(),
+    }
+}
+
+fn aqua_registry_count() -> usize {
+    crate::aqua::aqua_registry::AQUA_STANDARD_REGISTRY_FILES.len()
+}
+
+fn aqua_registry_count_str() -> String {
+    let aqua_count = aqua_registry_count();
+    if aqua_count > 0 {
+        format!("baked in registry tools: {aqua_count}")
+    } else {
+        "baked in registry tools: 0 – aqua registry tools are not compiled into mise, will be fetched dynamically from https://mise-versions.jdx.dev".to_string()
     }
 }
 
