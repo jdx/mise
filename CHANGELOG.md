@@ -1,5 +1,33 @@
 # Changelog
 
+## [2025.7.21](https://github.com/jdx/mise/compare/v2025.7.20..v2025.7.21) - 2025-07-23
+
+### 🚀 Features
+
+- **(packaging)** add COPR publishing workflow and documentation by [@jdx](https://github.com/jdx) in [#5719](https://github.com/jdx/mise/pull/5719)
+
+### 🐛 Bug Fixes
+
+- **(pwsh)** resolve issue caused by previous #5732 patch (hardcoded path) by [@IMXEren](https://github.com/IMXEren) in [#5753](https://github.com/jdx/mise/pull/5753)
+- copr docker building by [@jdx](https://github.com/jdx) in [#5748](https://github.com/jdx/mise/pull/5748)
+
+### 📚 Documentation
+
+- **(README)** mention project alexandria by [@jdx](https://github.com/jdx) in [681bc75](https://github.com/jdx/mise/commit/681bc751025a848411b7dff322cd14d9487dd59f)
+- Removes invalid array in redaction example by [@EverlastingBugstopper](https://github.com/EverlastingBugstopper) in [#5752](https://github.com/jdx/mise/pull/5752)
+
+### 🧪 Testing
+
+- fix asset detector test on musl by [@jdx](https://github.com/jdx) in [#5744](https://github.com/jdx/mise/pull/5744)
+
+### Chore
+
+- use 302 redirects for curl installs by [@jdx](https://github.com/jdx) in [#5747](https://github.com/jdx/mise/pull/5747)
+
+### New Contributors
+
+- @EverlastingBugstopper made their first contribution in [#5752](https://github.com/jdx/mise/pull/5752)
+
 ## [2025.7.20](https://github.com/jdx/mise/compare/v2025.7.19..v2025.7.20) - 2025-07-22
 
 ### 🚀 Features
