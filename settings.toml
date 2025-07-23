@@ -1193,6 +1193,10 @@ a quick way for mise to query for new versions. This host regularly grabs all th
 latest versions of core and community plugins. It's faster than running a plugin's
 `list-all` command and gets around GitHub rate limiting problems when using it.
 
+mise-versions itself also struggles with rate limits but you can help it to fetch more frequently by authenticating
+with its [GitHub app](https://github.com/apps/mise-versions). It does not require any permissions since it simply
+fetches public repository information.
+
 See [Troubleshooting](/troubleshooting.html#new-version-of-a-tool-is-not-available) for more information.
 """
 
