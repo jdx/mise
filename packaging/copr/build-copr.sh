@@ -12,6 +12,9 @@ COPR_OWNER="${COPR_OWNER:-jdxcode}"
 COPR_PROJECT="${COPR_PROJECT:-mise}"
 DRY_RUN="${DRY_RUN:-false}"
 
+# Store the repository root directory
+REPO_ROOT="$(pwd)"
+
 # Function to show usage
 usage() {
 	echo "Usage: $0 [options]"
@@ -107,8 +110,8 @@ echo ""
 # Configure Git (needed for git archive)
 git config --global user.name "$MAINTAINER_NAME"
 git config --global user.email "$MAINTAINER_EMAIL"
-git config --global --add safe.directory /workspace
-git config --global --add safe.directory /workspace/aqua-registry
+git config --global --add safe.directory "$REPO_ROOT"
+git config --global --add safe.directory "$REPO_ROOT/aqua-registry"
 
 # Set up COPR configuration if not in dry-run mode
 if [ "$DRY_RUN" != "true" ]; then
@@ -139,12 +142,12 @@ cd "$BUILD_DIR"
 
 echo "=== Creating Source Tarball ==="
 # Create original source tarball with submodules
-git -C "/workspace" archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD >"SOURCES/${PACKAGE_NAME}-${VERSION}.tar"
+git -C "$REPO_ROOT" archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD >"SOURCES/${PACKAGE_NAME}-${VERSION}.tar"
 
 # Add aqua-registry submodule to the tarball
 echo "Adding aqua-registry submodule..."
 # Create a temporary tar file for the submodule
-git -C "/workspace/aqua-registry" archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/aqua-registry/" HEAD >"SOURCES/aqua-registry-temp.tar"
+git -C "$REPO_ROOT/aqua-registry" archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/aqua-registry/" HEAD >"SOURCES/aqua-registry-temp.tar"
 
 # Use tar's --concatenate option to properly combine the archives
 tar --concatenate --file="SOURCES/${PACKAGE_NAME}-${VERSION}.tar" "SOURCES/aqua-registry-temp.tar"
@@ -271,8 +274,8 @@ rpmbuild -bs "SPECS/${PACKAGE_NAME}.spec"
 # Copy SRPM to accessible location
 SRPM_FILE=$(find SRPMS -name "*.src.rpm" -type f | head -1)
 if [ -n "$SRPM_FILE" ]; then
-	cp "$SRPM_FILE" /workspace/
-	echo "SRPM created: /workspace/$(basename "$SRPM_FILE")"
+	cp "$SRPM_FILE" "$REPO_ROOT/"
+	echo "SRPM created: $REPO_ROOT/$(basename "$SRPM_FILE")"
 else
 	echo "Error: No SRPM file found"
 	exit 1
@@ -302,9 +305,9 @@ else
 fi
 
 # Create artifacts directory
-mkdir -p /workspace/artifacts
-cp "$SRPM_FILE" /workspace/artifacts/ 2>/dev/null || true
-cp "SPECS/${PACKAGE_NAME}.spec" /workspace/artifacts/ 2>/dev/null || true
+mkdir -p "$REPO_ROOT/artifacts"
+cp "$SRPM_FILE" "$REPO_ROOT/artifacts/" 2>/dev/null || true
+cp "SPECS/${PACKAGE_NAME}.spec" "$REPO_ROOT/artifacts/" 2>/dev/null || true
 
 echo "=== Build Complete ==="
-echo "Artifacts available in /workspace/artifacts/"
+echo "Artifacts available in $REPO_ROOT/artifacts/"
