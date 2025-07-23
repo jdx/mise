@@ -32,7 +32,7 @@ Examples:
 $ node-build 20.0.0 ~/.nodes/20.0.0
 $ mise link node@20.0.0 ~/.nodes/20.0.0
 
-# have mise use the python version provided by Homebrew
+# have mise use the node version provided by Homebrew
 $ brew install node
 $ mise link node@brew $(brew --prefix node)
 $ mise use node@brew
