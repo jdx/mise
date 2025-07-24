@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.7.24](https://github.com/jdx/mise/compare/v2025.7.23..v2025.7.24) - 2025-07-24
+
+### Chore
+
+- add MISE_INSTALL_FROM_GITHUB option for mise.run by [@jdx](https://github.com/jdx) in [#5772](https://github.com/jdx/mise/pull/5772)
+
 ## [2025.7.22](https://github.com/jdx/mise/compare/v2025.7.21..v2025.7.22) - 2025-07-24
 
 ### 🚀 Features
