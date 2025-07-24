@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.7.26](https://github.com/jdx/mise/compare/v2025.7.25..v2025.7.26) - 2025-07-24
+
+### Chore
+
+- use correct release dirname by [@jdx](https://github.com/jdx) in [c8e0b5b](https://github.com/jdx/mise/commit/c8e0b5b42f3d258ec977b68326461d2fc81c4724)
+
 ## [2025.7.25](https://github.com/jdx/mise/compare/v2025.7.24..v2025.7.25) - 2025-07-24
 
 ### Chore
