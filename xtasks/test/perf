@@ -28,7 +28,7 @@ time_command() {
 	shift
 	echo "running $cmd $* $runs times..." >&2
 	for _ in $(seq 1 $runs); do
-	 	# run $runs times before timing
+		# run $runs times before timing
 		if [ "$uncached" = "uncached" ]; then
 			"$cmd" cache clear
 		fi
