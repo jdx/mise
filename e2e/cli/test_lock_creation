@@ -64,4 +64,4 @@ assert_contains "mise lock --help" "Update lockfile checksums and URLs"
 echo "=== Cleanup ==="
 rm -f mise.toml mise.lock
 
-echo "mise lock creation tests passed!" 
+echo "mise lock creation tests passed!"

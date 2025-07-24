@@ -7,23 +7,23 @@ export MISE_EXPERIMENTAL=1
 OS=$(uname -s)
 ARCH=$(uname -m)
 case "$OS" in
-  Darwin)
-    if [ "$ARCH" = "arm64" ]; then
-      PLATFORM="macos-arm64"
-    else
-      PLATFORM="macos-x64"
-    fi
-    ;;
-  Linux)
-    if [ "$ARCH" = "aarch64" ]; then
-      PLATFORM="linux-arm64"
-    else
-      PLATFORM="linux-x64"
-    fi
-    ;;
-  *)
-    PLATFORM="unknown"
-    ;;
+Darwin)
+	if [ "$ARCH" = "arm64" ]; then
+		PLATFORM="macos-arm64"
+	else
+		PLATFORM="macos-x64"
+	fi
+	;;
+Linux)
+	if [ "$ARCH" = "aarch64" ]; then
+		PLATFORM="linux-arm64"
+	else
+		PLATFORM="linux-x64"
+	fi
+	;;
+*)
+	PLATFORM="unknown"
+	;;
 esac
 
 touch mise.lock
@@ -53,13 +53,13 @@ backend = "aqua:cli/cli"
 checksum = "blake3:aaaaa"
 size = 12345
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_$(
-  case "$PLATFORM" in
-    linux-x64) echo "linux_amd64" ;;
-    linux-arm64) echo "linux_arm64" ;;
-    macos-x64) echo "macOS_amd64" ;;
-    macos-arm64) echo "macOS_arm64" ;;
-    *) echo "$PLATFORM" ;;
-  esac
+	case "$PLATFORM" in
+	linux-x64) echo "linux_amd64" ;;
+	linux-arm64) echo "linux_arm64" ;;
+	macos-x64) echo "macOS_amd64" ;;
+	macos-arm64) echo "macOS_arm64" ;;
+	*) echo "$PLATFORM" ;;
+	esac
 ).zip"
 EOF
 assert_fail "mise i gh -f"

@@ -93,7 +93,7 @@ assert_contains "mise lock --platform macos-arm64" "Would update 2 tool(s) for 1
 # Test multiple platform filtering
 assert_contains "mise lock --platform linux-x64,macos-arm64" "Would update 2 tool(s) for 2 platform(s)"
 
-# Test non-existent platform filtering - when no matching platforms, no update line is shown  
+# Test non-existent platform filtering - when no matching platforms, no update line is shown
 assert_not_contains "mise lock --platform windows-x64" "Would update"
 
 echo "=== Testing combined filtering ==="
@@ -126,18 +126,18 @@ assert_not_contains "mise lock 'invalid@version'" "Would update"
 echo "=== Testing lockfile preservation ==="
 # Verify that running lock command doesn't modify lockfiles (in current phase)
 if command -v sha256sum >/dev/null; then
-    checksum_before=$(sha256sum mise.lock | cut -d' ' -f1)
-    mise lock >/dev/null 2>&1
-    checksum_after=$(sha256sum mise.lock | cut -d' ' -f1)
+	checksum_before=$(sha256sum mise.lock | cut -d' ' -f1)
+	mise lock >/dev/null 2>&1
+	checksum_after=$(sha256sum mise.lock | cut -d' ' -f1)
 elif command -v shasum >/dev/null; then
-    checksum_before=$(shasum -a 256 mise.lock | cut -d' ' -f1)
-    mise lock >/dev/null 2>&1
-    checksum_after=$(shasum -a 256 mise.lock | cut -d' ' -f1)
+	checksum_before=$(shasum -a 256 mise.lock | cut -d' ' -f1)
+	mise lock >/dev/null 2>&1
+	checksum_after=$(shasum -a 256 mise.lock | cut -d' ' -f1)
 else
-    # Skip checksum test if neither command is available
-    echo "Skipping checksum test - neither sha256sum nor shasum available"
-    checksum_before="test"
-    checksum_after="test"
+	# Skip checksum test if neither command is available
+	echo "Skipping checksum test - neither sha256sum nor shasum available"
+	checksum_before="test"
+	checksum_after="test"
 fi
 assert "echo $checksum_before" "$checksum_after"
 
@@ -149,4 +149,4 @@ echo "=== Cleanup ==="
 # Clean up test files
 rm -f mise.lock mise.toml
 
-echo "mise lock tests passed!" 
+echo "mise lock tests passed!"

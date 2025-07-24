@@ -166,6 +166,9 @@ export const commands: { [key: string]: Command } = {
   local: {
     hide: true,
   },
+  lock: {
+    hide: false,
+  },
   ls: {
     hide: false,
   },

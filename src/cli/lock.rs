@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use crate::{cli::args::ToolArg, config::Settings};
 use crate::config::Config;
 use crate::file::display_path;
 use crate::lockfile::Lockfile;
+use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
 use eyre::Result;
 
@@ -65,8 +65,16 @@ impl Lock {
 
     async fn analyze_lockfiles(&self, config: &Config) -> Result<()> {
         let potential_lockfiles = self.discover_lockfiles(config)?;
-        let existing_lockfiles: Vec<PathBuf> = potential_lockfiles.iter().filter(|p| p.exists()).cloned().collect();
-        let missing_lockfiles: Vec<PathBuf> = potential_lockfiles.iter().filter(|p| !p.exists()).cloned().collect();
+        let existing_lockfiles: Vec<PathBuf> = potential_lockfiles
+            .iter()
+            .filter(|p| p.exists())
+            .cloned()
+            .collect();
+        let missing_lockfiles: Vec<PathBuf> = potential_lockfiles
+            .iter()
+            .filter(|p| !p.exists())
+            .cloned()
+            .collect();
 
         if potential_lockfiles.is_empty() {
             miseprintln!("No config found in current directory");
@@ -100,34 +108,47 @@ impl Lock {
             }
             miseprintln!("No lockfile found, would create:");
             for lockfile_path in &missing_lockfiles {
-                miseprintln!("  {} {}", style("→").yellow(), style(display_path(lockfile_path)).cyan());
+                miseprintln!(
+                    "  {} {}",
+                    style("→").yellow(),
+                    style(display_path(lockfile_path)).cyan()
+                );
 
                 // Get tools from the corresponding config file
                 let config_path = lockfile_path.with_extension("toml");
-                
+
                 // Try to read tools from the config file or from the overall config
                 let tools = if config_path.exists() {
                     // Read directly from the local config file
                     match crate::config::config_file::parse(&config_path) {
                         Ok(config_file) => {
                             let tool_request_set = config_file.to_tool_request_set()?;
-                            tool_request_set.list_tools().iter().map(|ba| ba.short.clone()).collect()
+                            tool_request_set
+                                .list_tools()
+                                .iter()
+                                .map(|ba| ba.short.clone())
+                                .collect()
                         }
-                        Err(_) => Vec::new()
+                        Err(_) => Vec::new(),
                     }
                 } else {
                     // No local config file exists, but maybe get tools from current config context
                     if let Ok(tool_request_set) = config.get_tool_request_set().await {
-                        tool_request_set.list_tools().iter().map(|ba| ba.short.clone()).collect()
+                        tool_request_set
+                            .list_tools()
+                            .iter()
+                            .map(|ba| ba.short.clone())
+                            .collect()
                     } else {
                         Vec::new()
                     }
                 };
-                
+
                 if tools.is_empty() {
                     miseprintln!("    {} No tools configured", style("!").yellow());
                 } else {
-                    miseprintln!("    {} Would create lockfile with {} tool(s): {}", 
+                    miseprintln!(
+                        "    {} Would create lockfile with {} tool(s): {}",
                         style("→").green(),
                         tools.len(),
                         tools.join(", ")
@@ -159,7 +180,11 @@ impl Lock {
         Ok(())
     }
 
-    fn analyze_lockfile_content(&self, tools: &[String], platforms: &BTreeSet<String>) -> Result<()> {
+    fn analyze_lockfile_content(
+        &self,
+        tools: &[String],
+        platforms: &BTreeSet<String>,
+    ) -> Result<()> {
         if tools.is_empty() {
             miseprintln!("    {} No tools found", style("!").yellow());
             return Ok(());
@@ -181,7 +206,11 @@ impl Lock {
         let target_platforms = self.get_target_platforms(platforms);
 
         if !target_tools.is_empty() && (!target_platforms.is_empty() || platforms.is_empty()) {
-            let platform_count = if platforms.is_empty() { 1 } else { target_platforms.len() };
+            let platform_count = if platforms.is_empty() {
+                1
+            } else {
+                target_platforms.len()
+            };
             miseprintln!(
                 "    {} Would update {} tool(s) for {} platform(s)",
                 style("→").green(),
@@ -213,7 +242,7 @@ impl Lock {
         // Get the current/local config file path
         let local_config_path = crate::config::local_toml_config_path();
         let lockfile_path = local_config_path.with_extension("lock");
-        
+
         lockfiles.push(lockfile_path);
 
         Ok(lockfiles)

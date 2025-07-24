@@ -62,4 +62,4 @@ mise lock tiny
 echo "=== Cleanup ==="
 rm -f mise.lock mise.toml
 
-echo "Future implementation tests completed!" 
+echo "Future implementation tests completed!"
