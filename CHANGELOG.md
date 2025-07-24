@@ -1,5 +1,17 @@
 # Changelog
 
+## [2025.7.27](https://github.com/jdx/mise/compare/v2025.7.26..v2025.7.27) - 2025-07-24
+
+### 🐛 Bug Fixes
+
+- **(copr)** disable self-update by [@jdx](https://github.com/jdx) in [#5780](https://github.com/jdx/mise/pull/5780)
+- **(link.md)** correct example comment in mise link documentation by [@mmurdockk](https://github.com/mmurdockk) in [#5760](https://github.com/jdx/mise/pull/5760)
+- use github releases in install.sh for non-current version by [@jdx](https://github.com/jdx) in [c2b1ef1](https://github.com/jdx/mise/commit/c2b1ef1c53d736e14fb64365aa1339dc955d6c59)
+
+### New Contributors
+
+- @mmurdockk made their first contribution in [#5760](https://github.com/jdx/mise/pull/5760)
+
 ## [2025.7.26](https://github.com/jdx/mise/compare/v2025.7.25..v2025.7.26) - 2025-07-24
 
 ### Chore
