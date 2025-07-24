@@ -97,7 +97,7 @@ impl From<PlatformInfo> for toml::Value {
 }
 
 impl Lockfile {
-    fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         if !path.exists() {
             return Ok(Lockfile::default());
@@ -157,6 +157,10 @@ impl Lockfile {
 
     fn is_empty(&self) -> bool {
         self.tools.is_empty()
+    }
+
+    pub fn tools(&self) -> &BTreeMap<String, Vec<LockfileTool>> {
+        &self.tools
     }
 }
 
