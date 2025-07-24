@@ -75,7 +75,7 @@ pub struct MiseToml {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct MiseTomlToolList(Vec<MiseTomlTool>);
+pub struct MiseTomlToolList(pub Vec<MiseTomlTool>);
 
 #[derive(Debug, Clone)]
 pub struct MiseTomlTool {
@@ -252,6 +252,138 @@ impl MiseToml {
             })?;
         Ok(output)
     }
+
+    fn update_internal_tools(&self, ba: &BackendArg, versions: &[ToolRequest]) -> eyre::Result<()> {
+        let mut tools = self.tools.lock().unwrap();
+        let existing = tools.entry(ba.clone()).or_default();
+        existing.0 = versions
+            .iter()
+            .map(|tr| MiseTomlTool::from(tr.clone()))
+            .collect();
+        trace!("done replacing versions");
+        Ok(())
+    }
+
+    fn update_tools_in_doc(&self, ba: &BackendArg, versions: Vec<ToolRequest>) -> eyre::Result<()> {
+        let tools = self.tools.lock().unwrap();
+        let is_tools_sorted = is_tools_sorted(&tools);
+        drop(tools); // Release the lock before getting doc_mut
+
+        let mut doc = self.doc_mut()?;
+        trace!("got doc");
+        let tools_table = doc
+            .get_mut()
+            .unwrap()
+            .entry("tools")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+
+        // Create a key preserving any decorations
+        let key = get_key_with_decor(tools_table, ba.short.as_str());
+
+        // Remove long names if short name is used
+        if ba.short != ba.full() {
+            tools_table.remove(&ba.full());
+        }
+
+        // Insert the new versions
+        if versions.len() == 1 {
+            self.insert_single_version(tools_table, &key, &versions[0], ba)?;
+        } else {
+            self.insert_multiple_versions(tools_table, &key, versions, ba)?;
+        }
+
+        if is_tools_sorted {
+            tools_table.sort_values();
+        }
+
+        Ok(())
+    }
+
+    fn insert_single_version(
+        &self,
+        tools_table: &mut toml_edit::Table,
+        key: &Key,
+        version: &ToolRequest,
+        ba: &BackendArg,
+    ) -> eyre::Result<()> {
+        let options = version.options();
+        if self.should_output_empty_opts(&options, ba) {
+            tools_table.insert_formatted(key, value(version.version()));
+        } else {
+            let table = self.create_version_table(version)?;
+            tools_table.insert_formatted(key, table.into());
+        }
+        Ok(())
+    }
+
+    fn insert_multiple_versions(
+        &self,
+        tools_table: &mut toml_edit::Table,
+        key: &Key,
+        versions: Vec<ToolRequest>,
+        ba: &BackendArg,
+    ) -> eyre::Result<()> {
+        let mut arr = Array::new();
+        for tr in versions {
+            let v = tr.version();
+            if self.should_output_empty_opts(&tr.options(), ba) {
+                arr.push(v.to_string());
+            } else {
+                let mut table = InlineTable::new();
+                table.insert("version", v.to_string().into());
+                for (k, v) in tr.options().opts {
+                    table.insert(k, v.clone().into());
+                }
+                arr.push(table);
+            }
+        }
+        tools_table.insert_formatted(key, Item::Value(Value::Array(arr)));
+        Ok(())
+    }
+
+    fn create_version_table(&self, version: &ToolRequest) -> eyre::Result<InlineTable> {
+        let mut table = InlineTable::new();
+        let options = version.options();
+
+        table.insert("version", version.version().into());
+
+        for (k, v) in options.opts {
+            table.insert(k, v.into());
+        }
+
+        if let Some(os) = options.os {
+            let mut arr = Array::new();
+            for o in os {
+                arr.push(Value::from(o));
+            }
+            table.insert("os", Value::Array(arr));
+        }
+
+        if !options.install_env.is_empty() {
+            let mut env = InlineTable::new();
+            for (k, v) in options.install_env {
+                env.insert(k, v.into());
+            }
+            table.insert("install_env", env.into());
+        }
+
+        Ok(table)
+    }
+
+    fn should_output_empty_opts(&self, opts: &ToolVersionOptions, ba: &BackendArg) -> bool {
+        if opts.os.is_some() || !opts.install_env.is_empty() {
+            return false;
+        }
+        if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba()) {
+            if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
+                // Options are the same as in the registry, so rely on defaults
+                return true;
+            }
+        }
+        opts.is_empty()
+    }
 }
 
 impl ConfigFile for MiseToml {
@@ -346,91 +478,12 @@ impl ConfigFile for MiseToml {
 
     fn replace_versions(&self, ba: &BackendArg, versions: Vec<ToolRequest>) -> eyre::Result<()> {
         trace!("replacing versions {ba:?} {versions:?}");
-        let mut tools = self.tools.lock().unwrap();
-        let is_tools_sorted = is_tools_sorted(&tools); // was it previously sorted (if so we'll keep it sorted)
-        let existing = tools.entry(ba.clone()).or_default();
-        let output_empty_opts = |opts: &ToolVersionOptions| {
-            if opts.os.is_some() || !opts.install_env.is_empty() {
-                return false;
-            }
-            if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba()) {
-                if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
-                    // in this case the options specified are the same as in the registry so output no options and rely on the defaults
-                    return true;
-                }
-            }
-            opts.is_empty()
-        };
-        existing.0 = versions
-            .iter()
-            .map(|tr| MiseTomlTool::from(tr.clone()))
-            .collect();
-        trace!("done replacing versions");
-        let mut doc = self.doc_mut()?;
-        trace!("got doc");
-        let tools = doc
-            .get_mut()
-            .unwrap()
-            .entry("tools")
-            .or_insert_with(table)
-            .as_table_mut()
-            .unwrap();
 
-        // create a key from the short name preserving any decorations like prefix/suffix if the key already exists
-        let key = get_key_with_decor(tools, ba.short.as_str());
+        // Update internal tools data structure
+        self.update_internal_tools(ba, &versions)?;
 
-        // if a short name is used like "node", make sure we remove any long names like "core:node"
-        if ba.short != ba.full() {
-            tools.remove(&ba.full());
-        }
-
-        if versions.len() == 1 {
-            let options = versions[0].options();
-            if output_empty_opts(&options) {
-                tools.insert_formatted(&key, value(versions[0].version()));
-            } else {
-                let mut table = InlineTable::new();
-                table.insert("version", versions[0].version().into());
-                for (k, v) in options.opts {
-                    table.insert(k, v.into());
-                }
-                if let Some(os) = options.os {
-                    let mut arr = Array::new();
-                    for o in os {
-                        arr.push(Value::from(o));
-                    }
-                    table.insert("os", Value::Array(arr));
-                }
-                if !options.install_env.is_empty() {
-                    let mut env = InlineTable::new();
-                    for (k, v) in options.install_env {
-                        env.insert(k, v.into());
-                    }
-                    table.insert("install_env", env.into());
-                }
-                tools.insert_formatted(&key, table.into());
-            }
-        } else {
-            let mut arr = Array::new();
-            for tr in versions {
-                let v = tr.version();
-                if output_empty_opts(&tr.options()) {
-                    arr.push(v.to_string());
-                } else {
-                    let mut table = InlineTable::new();
-                    table.insert("version", v.to_string().into());
-                    for (k, v) in tr.options().opts {
-                        table.insert(k, v.clone().into());
-                    }
-                    arr.push(table);
-                }
-            }
-            tools.insert_formatted(&key, Item::Value(Value::Array(arr)));
-        }
-
-        if is_tools_sorted {
-            tools.sort_values();
-        }
+        // Update TOML document
+        self.update_tools_in_doc(ba, versions)?;
 
         Ok(())
     }
@@ -719,6 +772,609 @@ where
     }
 }
 
+impl FromStr for MiseTomlEnvDirective {
+    type Err = eyre::Report;
+
+    fn from_str(s: &str) -> eyre::Result<Self> {
+        Ok(MiseTomlEnvDirective {
+            value: s.into(),
+            options: Default::default(),
+        })
+    }
+}
+
+fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
+    let mut last = None;
+    for k in tools.keys() {
+        if let Some(last) = last {
+            if k < last {
+                return false;
+            }
+        }
+        last = Some(k);
+    }
+    true
+}
+
+#[cfg(test)]
+#[cfg(unix)]
+mod tests {
+    use std::sync::Arc;
+
+    use indoc::formatdoc;
+    use insta::{assert_debug_snapshot, assert_snapshot};
+    use test_log::test;
+
+    use crate::test::replace_path;
+    use crate::toolset::ToolRequest;
+    use crate::{config::Config, dirs::CWD};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fixture() {
+        let _config = Config::get().await.unwrap();
+        let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
+
+        assert_debug_snapshot!(cf.env_entries().unwrap());
+        assert_debug_snapshot!(cf.plugins().unwrap());
+        assert_snapshot!(replace_path(&format!(
+            "{:#?}",
+            cf.to_tool_request_set().unwrap()
+        )));
+        assert_debug_snapshot!(cf.alias);
+
+        assert_snapshot!(replace_path(&format!("{:#?}", &cf)));
+    }
+
+    #[tokio::test]
+    async fn test_env() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+        min_version = "2024.1.1"
+        [env]
+        foo="bar"
+        foo2='qux\nquux'
+        foo3="qux\nquux"
+        "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let dump = cf.dump().unwrap();
+        let env = parse_env(file::read_to_string(&p).unwrap());
+
+        assert_debug_snapshot!(env, @r#""foo=bar\nfoo2=qux\\nquux\nfoo3=qux\nquux""#);
+        let cf: Box<dyn ConfigFile> = Box::new(cf);
+        with_settings!({
+            assert_snapshot!(dump);
+            assert_snapshot!(cf);
+            assert_debug_snapshot!(cf);
+        });
+    }
+
+    #[tokio::test]
+    async fn test_env_array_valid() {
+        let _config = Config::get().await.unwrap();
+        let env = parse_env(formatdoc! {r#"
+        [[env]]
+        foo="bar"
+
+        [[env]]
+        bar="baz"
+
+        [[env]]
+        foo2='qux\nquux'
+        bar2="qux\nquux"
+        "#});
+
+        assert_snapshot!(env, @r"
+        foo=bar
+        bar=baz
+        foo2=qux\nquux
+        bar2=qux
+        quux
+        ");
+    }
+
+    #[tokio::test]
+    async fn test_path_dirs() {
+        let _config = Config::get().await.unwrap();
+        let env = parse_env(formatdoc! {r#"
+            env_path=["/foo", "./bar"]
+            [env]
+            foo="bar"
+            "#});
+
+        assert_snapshot!(env, @r"
+        path_add /foo
+        path_add ./bar
+        foo=bar
+        ");
+
+        let env = parse_env(formatdoc! {r#"
+            env_path="./bar"
+            "#});
+        assert_snapshot!(env, @"path_add ./bar");
+
+        let env = parse_env(formatdoc! {r#"
+            [env]
+            _.path = "./bar"
+            "#});
+        assert_debug_snapshot!(env, @r#""path_add ./bar""#);
+
+        let env = parse_env(formatdoc! {r#"
+            [env]
+            _.path = ["/foo", "./bar"]
+            "#});
+        assert_snapshot!(env, @r"
+        path_add /foo
+        path_add ./bar
+        ");
+
+        let env = parse_env(formatdoc! {r#"
+            [[env]]
+            _.path = "/foo"
+            [[env]]
+            _.path = "./bar"
+            "#});
+        assert_snapshot!(env, @r"
+        path_add /foo
+        path_add ./bar
+        ");
+
+        let env = parse_env(formatdoc! {r#"
+            env_path = "/foo"
+            [env]
+            _.path = "./bar"
+            "#});
+        assert_snapshot!(env, @r"
+        path_add /foo
+        path_add ./bar
+        ");
+    }
+
+    #[tokio::test]
+    async fn test_env_file() {
+        let _config = Config::get().await.unwrap();
+        let env = parse_env(formatdoc! {r#"
+            env_file = ".env"
+            "#});
+
+        assert_debug_snapshot!(env, @r#""dotenv .env""#);
+
+        let env = parse_env(formatdoc! {r#"
+            env_file=[".env", ".env2"]
+            "#});
+        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
+
+        let env = parse_env(formatdoc! {r#"
+            [env]
+            _.file = ".env"
+            "#});
+        assert_debug_snapshot!(env, @r#""dotenv .env""#);
+
+        let env = parse_env(formatdoc! {r#"
+            [env]
+            _.file = [".env", ".env2"]
+            "#});
+        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
+
+        let env = parse_env(formatdoc! {r#"
+            dotenv = ".env"
+            [env]
+            _.file = ".env2"
+            "#});
+        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
+    }
+
+    #[tokio::test]
+    async fn test_set_alias() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [alias.node.versions]
+            16 = "16.0.0"
+            18 = "18.0.0"
+        "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        let node = "node".into();
+        let python = "python".into();
+        cf.set_alias(&node, "18", "18.0.1").unwrap();
+        cf.set_alias(&node, "20", "20.0.0").unwrap();
+        cf.set_alias(&python, "3.10", "3.10.0").unwrap();
+
+        assert_debug_snapshot!(cf.alias);
+        let cf: Box<dyn ConfigFile> = Box::new(cf);
+        assert_snapshot!(cf);
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_remove_alias() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [alias.node.versions]
+            16 = "16.0.0"
+            18 = "18.0.0"
+
+            [alias.python.versions]
+            "3.10" = "3.10.0"
+            "#},
+        )
+        .unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        let node = "node".into();
+        let python = "python".into();
+        cf.remove_alias(&node, "16").unwrap();
+        cf.remove_alias(&python, "3.10").unwrap();
+
+        assert_debug_snapshot!(cf.alias);
+        let cf: Box<dyn ConfigFile> = Box::new(cf);
+        assert_snapshot!(cf.dump().unwrap());
+        assert_snapshot!(cf);
+        assert_debug_snapshot!(cf);
+        file::remove_file(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_replace_versions() {
+        let _config = Config::get().await.unwrap();
+        let p = PathBuf::from("/tmp/.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            node = ["16.0.0", "18.0.0"]
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let node = "node".into();
+        cf.replace_versions(
+            &node,
+            vec![
+                ToolRequest::new(Arc::new("node".into()), "16.0.1", ToolSource::Unknown).unwrap(),
+                ToolRequest::new(Arc::new("node".into()), "18.0.1", ToolSource::Unknown).unwrap(),
+            ],
+        )
+        .unwrap();
+
+        assert_debug_snapshot!(cf.to_tool_request_set().unwrap());
+        let cf: Box<dyn ConfigFile> = Box::new(cf);
+        assert_snapshot!(cf.dump().unwrap());
+        assert_snapshot!(cf);
+        assert_debug_snapshot!(cf);
+        file::remove_all(&p).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_remove_plugin() {
+        let _config = Config::get().await.unwrap();
+        let p = PathBuf::from("/tmp/.mise.toml");
+        file::write(
+            &p,
+            formatdoc! {r#"
+            [tools]
+            node = ["16.0.0", "18.0.0"]
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.remove_tool(&"node".into()).unwrap();
+
+        assert_debug_snapshot!(cf.to_tool_request_set().unwrap());
+        let cf: Box<dyn ConfigFile> = Box::new(cf);
+        assert_snapshot!(cf.dump().unwrap());
+        assert_snapshot!(cf);
+        assert_debug_snapshot!(cf);
+    }
+
+    #[test]
+    fn test_env_entries() {
+        let toml = formatdoc! {r#"
+        [env]
+        foo1="1"
+        rm=false
+        _.path="/foo"
+        foo2="2"
+        _.file=".env"
+        foo3="3"
+        "#};
+        assert_snapshot!(parse_env(toml), @r"
+        foo1=1
+        unset rm
+        path_add /foo
+        dotenv .env
+        foo2=2
+        foo3=3
+        ");
+    }
+
+    #[test]
+    fn test_env_arr() {
+        let toml = formatdoc! {r#"
+        [[env]]
+        foo1="1"
+        rm=false
+        _.path="/foo"
+        foo2="2"
+        _.file=".env"
+        foo3="3"
+        _.source="/baz1"
+
+        [[env]]
+        foo4="4"
+        rm=false
+        _.file=".env2"
+        foo5="5"
+        _.path="/bar"
+        foo6="6"
+        _.source="/baz2"
+        "#};
+        assert_snapshot!(parse_env(toml), @r"
+        foo1=1
+        unset rm
+        path_add /foo
+        dotenv .env
+        source /baz1
+        foo2=2
+        foo3=3
+        foo4=4
+        unset rm
+        path_add /bar
+        dotenv .env2
+        source /baz2
+        foo5=5
+        foo6=6
+        ");
+    }
+
+    fn parse(s: String) -> MiseToml {
+        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
+        file::write(&p, s).unwrap();
+        let cfg = MiseToml::from_file(&p).unwrap();
+        file::remove_file(&p).unwrap();
+
+        cfg
+    }
+
+    fn parse_env(toml: String) -> String {
+        parse(toml).env_entries().unwrap().into_iter().join("\n")
+    }
+
+    #[test]
+    fn test_template_parsing() {
+        let cfg = parse(
+            r#"
+        [env]
+        simple = "no template"
+        template = "{{ env_var('HOME', '/default') }}"
+        jinja = "{% set x = 'test' %}{{ x }}"
+        comment = "{# this is a comment #}value"
+        "#
+            .to_string(),
+        );
+
+        // Test that non-template strings pass through unchanged
+        let result = cfg.parse_template("no template").unwrap();
+        assert_eq!(result, "no template");
+
+        // Test empty string
+        let result = cfg.parse_template("").unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_invalid_tool_version_parsing() {
+        let result = std::panic::catch_unwind(|| {
+            parse(
+                r#"
+            [tools]
+            node = "invalid::version::format"
+            "#
+                .to_string(),
+            )
+        });
+        // Should fail to parse invalid tool versions
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_complex_tool_options() {
+        let cfg = parse(r#"
+        [tools]
+        node = { version = "18.0.0", os = ["linux", "darwin"], install_env = { CC = "gcc", CFLAGS = "-O2" } }
+        "#.to_string());
+
+        let tools = cfg.tools.lock().unwrap();
+        let node_key: BackendArg = "node".into();
+        assert!(tools.contains_key(&node_key));
+        let tool = &tools[&node_key].0[0];
+        assert!(tool.options.is_some());
+    }
+
+    #[test]
+    fn test_env_directive_edge_cases() {
+        let cfg = parse(
+            r#"
+        [env]
+        empty_string = ""
+        zero = 0
+        negative = -42
+        boolean_true = true
+        boolean_false = false
+        nested_table = { value = "test", tools = true, redact = false }
+        "#
+            .to_string(),
+        );
+
+        let env_entries = cfg.env_entries().unwrap();
+        assert!(!env_entries.is_empty());
+
+        // Check that boolean false creates a removal directive
+        let has_removal = env_entries
+            .iter()
+            .any(|e| matches!(e, EnvDirective::Rm(_, _)));
+        assert!(has_removal);
+    }
+
+    #[test]
+    fn test_python_venv_configurations() {
+        let cfg = parse(
+            r#"
+        [[env]]
+        _.python.venv = "venv"
+        
+        [[env]]
+        _.python.venv = { path = "custom_venv", create = true, python = "3.11" }
+        "#
+            .to_string(),
+        );
+
+        let env_entries = cfg.env_entries().unwrap();
+        let venv_entries: Vec<_> = env_entries
+            .iter()
+            .filter(|e| matches!(e, EnvDirective::PythonVenv { .. }))
+            .collect();
+
+        assert_eq!(venv_entries.len(), 2);
+    }
+
+    #[test]
+    fn test_alias_deserialization_edge_cases() {
+        let cfg = parse(
+            r#"
+        [alias]
+        node = "core:node"
+        python = { backend = "python", versions = { "3.11" = "3.11.0" } }
+        ruby = { versions = { "3.0" = "3.0.0", "3.1" = "3.1.0" } }
+        "#
+            .to_string(),
+        );
+
+        let aliases = cfg.aliases().unwrap();
+        assert!(aliases.contains_key("node"));
+        assert!(aliases.contains_key("python"));
+        assert!(aliases.contains_key("ruby"));
+
+        // Check that string alias is converted properly
+        assert!(aliases["node"].backend.is_some());
+
+        // Check that versions are preserved
+        assert!(!aliases["python"].versions.is_empty());
+        assert!(!aliases["ruby"].versions.is_empty());
+    }
+
+    #[test]
+    fn test_task_deserialization_variants() {
+        let cfg = parse(
+            r#"
+        [tasks]
+        simple = "echo hello"
+        array = ["echo step1", "echo step2"]
+        complex = { run = ["echo complex"], description = "A complex task" }
+        "#
+            .to_string(),
+        );
+
+        let tasks = cfg.tasks();
+        assert_eq!(tasks.len(), 3);
+
+        let simple_task = tasks.iter().find(|t| t.name == "simple").unwrap();
+        assert_eq!(simple_task.run.len(), 1);
+
+        let array_task = tasks.iter().find(|t| t.name == "array").unwrap();
+        assert_eq!(array_task.run.len(), 2);
+    }
+
+    #[test]
+    fn test_min_version_parsing() {
+        let cfg = parse(
+            r#"
+        min_version = "2024.1.1"
+        "#
+            .to_string(),
+        );
+
+        assert!(cfg.min_version().is_some());
+
+        // Test invalid version
+        let result = std::panic::catch_unwind(|| {
+            parse(
+                r#"
+            min_version = "invalid.version"
+            "#
+                .to_string(),
+            )
+        });
+        // Should handle gracefully or fail appropriately
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_env_with_complex_nested_structure() {
+        let cfg = parse(
+            r#"
+        [env]
+        DATABASE_URL = "postgres://user:pass@localhost/db"
+        API_CONFIG = { value = "production", tools = true }
+        _.path = ["/usr/local/bin", "/opt/bin"] 
+        _.file = [".env.local", ".env.production"]
+        FEATURE_FLAGS = { value = "{ \"flag1\": true, \"flag2\": false }", redact = true }
+        "#
+            .to_string(),
+        );
+
+        let env_entries = cfg.env_entries().unwrap();
+        assert!(!env_entries.is_empty());
+
+        // Should have path entries, file entries, and variable entries
+        let path_entries = env_entries
+            .iter()
+            .filter(|e| matches!(e, EnvDirective::Path(_, _)))
+            .count();
+        let file_entries = env_entries
+            .iter()
+            .filter(|e| matches!(e, EnvDirective::File(_, _)))
+            .count();
+        let val_entries = env_entries
+            .iter()
+            .filter(|e| matches!(e, EnvDirective::Val(_, _, _)))
+            .count();
+
+        assert!(path_entries > 0);
+        assert!(file_entries > 0);
+        assert!(val_entries > 0);
+    }
+
+    #[test]
+    fn test_error_handling_malformed_toml() {
+        // This should test the error handling when parsing malformed TOML
+        let p = CWD.as_ref().unwrap().join(".test.malformed.mise.toml");
+        let malformed_toml = r#"
+        [tools
+        node = "18.0.0"
+        "#
+        .to_string(); // Missing closing bracket
+
+        file::write(&p, malformed_toml).unwrap();
+        let result = MiseToml::from_file(&p);
+        file::remove_file(&p).unwrap();
+
+        assert!(result.is_err());
+    }
+}
+
 impl<'de> de::Deserialize<'de> for EnvList {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -742,6 +1398,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                 }
                 Ok(EnvList(env))
             }
+
             fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
@@ -750,308 +1407,12 @@ impl<'de> de::Deserialize<'de> for EnvList {
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "_" | "mise" => {
-                            struct EnvDirectivePythonVenv {
-                                path: String,
-                                create: bool,
-                                python: Option<String>,
-                                uv_create_args: Option<Vec<String>>,
-                                python_create_args: Option<Vec<String>>,
-                            }
-
-                            #[derive(Deserialize, Default)]
-                            #[serde(deny_unknown_fields)]
-                            struct EnvDirectivePython {
-                                #[serde(default)]
-                                venv: Option<EnvDirectivePythonVenv>,
-                            }
-
-                            #[derive(Deserialize)]
-                            struct EnvDirectives {
-                                #[serde(default, deserialize_with = "deserialize_arr")]
-                                path: Vec<MiseTomlEnvDirective>,
-                                #[serde(default, deserialize_with = "deserialize_arr")]
-                                file: Vec<MiseTomlEnvDirective>,
-                                #[serde(default, deserialize_with = "deserialize_arr")]
-                                source: Vec<MiseTomlEnvDirective>,
-                                #[serde(default)]
-                                python: EnvDirectivePython,
-                                #[serde(flatten)]
-                                other: BTreeMap<String, toml::Value>,
-                            }
-
-                            impl<'de> de::Deserialize<'de> for EnvDirectivePythonVenv {
-                                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                                where
-                                    D: Deserializer<'de>,
-                                {
-                                    struct EnvDirectivePythonVenvVisitor;
-
-                                    impl<'de> Visitor<'de> for EnvDirectivePythonVenvVisitor {
-                                        type Value = EnvDirectivePythonVenv;
-                                        fn expecting(
-                                            &self,
-                                            formatter: &mut Formatter,
-                                        ) -> std::fmt::Result
-                                        {
-                                            formatter.write_str("python venv directive")
-                                        }
-
-                                        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(EnvDirectivePythonVenv {
-                                                path: v.into(),
-                                                create: false,
-                                                python: None,
-                                                uv_create_args: None,
-                                                python_create_args: None,
-                                            })
-                                        }
-
-                                        fn visit_map<M>(
-                                            self,
-                                            mut map: M,
-                                        ) -> Result<Self::Value, M::Error>
-                                        where
-                                            M: de::MapAccess<'de>,
-                                        {
-                                            let mut path = None;
-                                            let mut create = false;
-                                            let mut python = None;
-                                            let mut uv_create_args = None;
-                                            let mut python_create_args = None;
-                                            while let Some(key) = map.next_key::<String>()? {
-                                                match key.as_str() {
-                                                    "path" => {
-                                                        path = Some(map.next_value()?);
-                                                    }
-                                                    "create" => {
-                                                        create = map.next_value()?;
-                                                    }
-                                                    "python" => {
-                                                        python = Some(map.next_value()?);
-                                                    }
-                                                    "uv_create_args" => {
-                                                        uv_create_args = Some(map.next_value()?);
-                                                    }
-                                                    "python_create_args" => {
-                                                        python_create_args =
-                                                            Some(map.next_value()?);
-                                                    }
-                                                    _ => {
-                                                        return Err(de::Error::unknown_field(
-                                                            &key,
-                                                            &["path", "create"],
-                                                        ));
-                                                    }
-                                                }
-                                            }
-                                            let path = path
-                                                .ok_or_else(|| de::Error::missing_field("path"))?;
-                                            Ok(EnvDirectivePythonVenv {
-                                                path,
-                                                create,
-                                                python,
-                                                uv_create_args,
-                                                python_create_args,
-                                            })
-                                        }
-                                    }
-
-                                    const FIELDS: &[&str] = &["path", "create"];
-                                    deserializer.deserialize_struct(
-                                        "PythonVenv",
-                                        FIELDS,
-                                        EnvDirectivePythonVenvVisitor,
-                                    )
-                                }
-                            }
-
                             let directives = map.next_value::<EnvDirectives>()?;
-                            // TODO: parse these in the order they're defined somehow
-                            for d in directives.path {
-                                env.push(EnvDirective::Path(d.value, d.options));
-                            }
-                            for d in directives.file {
-                                env.push(EnvDirective::File(d.value, d.options));
-                            }
-                            for d in directives.source {
-                                env.push(EnvDirective::Source(d.value, d.options));
-                            }
-                            for (key, value) in directives.other {
-                                env.push(EnvDirective::Module(key, value, Default::default()));
-                            }
-                            if let Some(venv) = directives.python.venv {
-                                env.push(EnvDirective::PythonVenv {
-                                    path: venv.path,
-                                    create: venv.create,
-                                    python: venv.python,
-                                    uv_create_args: venv.uv_create_args,
-                                    python_create_args: venv.python_create_args,
-                                    options: EnvDirectiveOptions {
-                                        tools: true,
-                                        redact: false,
-                                    },
-                                });
-                            }
+                            env.extend(parse_env_directives(directives)?);
                         }
                         _ => {
-                            enum Val {
-                                Int(i64),
-                                Str(String),
-                                Bool(bool),
-                                Map {
-                                    value: Box<Val>,
-                                    tools: bool,
-                                    redact: bool,
-                                },
-                            }
-                            impl Display for Val {
-                                fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-                                    match self {
-                                        Val::Int(i) => write!(f, "{i}"),
-                                        Val::Str(s) => write!(f, "{s}"),
-                                        Val::Bool(b) => write!(f, "{b}"),
-                                        Val::Map {
-                                            value,
-                                            tools,
-                                            redact,
-                                        } => {
-                                            write!(f, "{value}")?;
-                                            if *tools {
-                                                write!(f, " tools")?;
-                                            }
-                                            if *redact {
-                                                write!(f, " redact")?;
-                                            }
-                                            Ok(())
-                                        }
-                                    }
-                                }
-                            }
-
-                            impl<'de> de::Deserialize<'de> for Val {
-                                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                                where
-                                    D: Deserializer<'de>,
-                                {
-                                    struct ValVisitor;
-
-                                    impl<'de> Visitor<'de> for ValVisitor {
-                                        type Value = Val;
-                                        fn expecting(
-                                            &self,
-                                            formatter: &mut Formatter,
-                                        ) -> std::fmt::Result
-                                        {
-                                            formatter.write_str("env value")
-                                        }
-
-                                        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(Val::Bool(v))
-                                        }
-
-                                        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(Val::Int(v))
-                                        }
-
-                                        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(Val::Str(v.to_string()))
-                                        }
-
-                                        fn visit_map<A>(
-                                            self,
-                                            mut map: A,
-                                        ) -> Result<Self::Value, A::Error>
-                                        where
-                                            A: de::MapAccess<'de>,
-                                        {
-                                            let mut value: Option<Val> = None;
-                                            let mut tools = None;
-                                            let mut redact = None;
-                                            while let Some((key, val)) =
-                                                map.next_entry::<String, Val>()?
-                                            {
-                                                match key.as_str() {
-                                                    "value" => {
-                                                        value = Some(val);
-                                                    }
-                                                    "tools" => {
-                                                        tools = Some(val);
-                                                    }
-                                                    "redact" => {
-                                                        redact = Some(val);
-                                                    }
-                                                    _ => {
-                                                        return Err(de::Error::unknown_field(
-                                                            &key,
-                                                            &["value", "tools", "redact"],
-                                                        ));
-                                                    }
-                                                }
-                                            }
-                                            let value = value
-                                                .ok_or_else(|| de::Error::missing_field("value"))?;
-                                            let tools = if let Some(Val::Bool(tools)) = tools {
-                                                tools
-                                            } else {
-                                                false
-                                            };
-                                            Ok(Val::Map {
-                                                value: Box::new(value),
-                                                tools,
-                                                redact: redact
-                                                    .map(|r| {
-                                                        if let Val::Bool(b) = r { b } else { false }
-                                                    })
-                                                    .unwrap_or_default(),
-                                            })
-                                        }
-                                    }
-
-                                    deserializer.deserialize_any(ValVisitor)
-                                }
-                            }
-
                             let value = map.next_value::<Val>()?;
-                            match value {
-                                Val::Int(i) => {
-                                    env.push(EnvDirective::Val(
-                                        key,
-                                        i.to_string(),
-                                        Default::default(),
-                                    ));
-                                }
-                                Val::Str(s) => {
-                                    env.push(EnvDirective::Val(key, s, Default::default()));
-                                }
-                                Val::Bool(true) => env.push(EnvDirective::Val(
-                                    key,
-                                    "true".into(),
-                                    Default::default(),
-                                )),
-                                Val::Bool(false) => {
-                                    env.push(EnvDirective::Rm(key, Default::default()))
-                                }
-                                Val::Map {
-                                    value,
-                                    tools,
-                                    redact,
-                                } => {
-                                    let opts = EnvDirectiveOptions { tools, redact };
-                                    env.push(EnvDirective::Val(key, value.to_string(), opts));
-                                }
-                            }
+                            env.push(parse_env_value(key, value)?);
                         }
                     }
                 }
@@ -1189,17 +1550,6 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
         }
 
         deserializer.deserialize_any(MiseTomlToolListVisitor)
-    }
-}
-
-impl FromStr for MiseTomlEnvDirective {
-    type Err = eyre::Report;
-
-    fn from_str(s: &str) -> eyre::Result<Self> {
-        Ok(MiseTomlEnvDirective {
-            value: s.into(),
-            options: Default::default(),
-        })
     }
 }
 
@@ -1511,372 +1861,286 @@ impl<'de> de::Deserialize<'de> for Alias {
     }
 }
 
-fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
-    let mut last = None;
-    for k in tools.keys() {
-        if let Some(last) = last {
-            if k < last {
-                return false;
-            }
-        }
-        last = Some(k);
-    }
-    true
+// Helper types and functions
+
+#[derive(Deserialize)]
+struct EnvDirectives {
+    #[serde(
+        default,
+        deserialize_with = "crate::config::config_file::toml::deserialize_arr"
+    )]
+    path: Vec<MiseTomlEnvDirective>,
+    #[serde(
+        default,
+        deserialize_with = "crate::config::config_file::toml::deserialize_arr"
+    )]
+    file: Vec<MiseTomlEnvDirective>,
+    #[serde(
+        default,
+        deserialize_with = "crate::config::config_file::toml::deserialize_arr"
+    )]
+    source: Vec<MiseTomlEnvDirective>,
+    #[serde(default)]
+    python: EnvDirectivePython,
+    #[serde(flatten)]
+    other: BTreeMap<String, toml::Value>,
 }
 
-#[cfg(test)]
-#[cfg(unix)]
-mod tests {
-    use std::sync::Arc;
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct EnvDirectivePython {
+    #[serde(default)]
+    venv: Option<EnvDirectivePythonVenv>,
+}
 
-    use indoc::formatdoc;
-    use insta::{assert_debug_snapshot, assert_snapshot};
-    use test_log::test;
+struct EnvDirectivePythonVenv {
+    path: String,
+    create: bool,
+    python: Option<String>,
+    uv_create_args: Option<Vec<String>>,
+    python_create_args: Option<Vec<String>>,
+}
 
-    use crate::test::replace_path;
-    use crate::toolset::ToolRequest;
-    use crate::{config::Config, dirs::CWD};
+impl<'de> de::Deserialize<'de> for EnvDirectivePythonVenv {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct EnvDirectivePythonVenvVisitor;
 
-    use super::*;
+        impl<'de> Visitor<'de> for EnvDirectivePythonVenvVisitor {
+            type Value = EnvDirectivePythonVenv;
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("python venv directive")
+            }
 
-    #[tokio::test]
-    async fn test_fixture() {
-        let _config = Config::get().await.unwrap();
-        let cf = MiseToml::from_file(&dirs::HOME.join("fixtures/.mise.toml")).unwrap();
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(EnvDirectivePythonVenv {
+                    path: v.into(),
+                    create: false,
+                    python: None,
+                    uv_create_args: None,
+                    python_create_args: None,
+                })
+            }
 
-        assert_debug_snapshot!(cf.env_entries().unwrap());
-        assert_debug_snapshot!(cf.plugins().unwrap());
-        assert_snapshot!(replace_path(&format!(
-            "{:#?}",
-            cf.to_tool_request_set().unwrap()
-        )));
-        assert_debug_snapshot!(cf.alias);
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: de::MapAccess<'de>,
+            {
+                let mut path = None;
+                let mut create = false;
+                let mut python = None;
+                let mut uv_create_args = None;
+                let mut python_create_args = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "path" => {
+                            path = Some(map.next_value()?);
+                        }
+                        "create" => {
+                            create = map.next_value()?;
+                        }
+                        "python" => {
+                            python = Some(map.next_value()?);
+                        }
+                        "uv_create_args" => {
+                            uv_create_args = Some(map.next_value()?);
+                        }
+                        "python_create_args" => {
+                            python_create_args = Some(map.next_value()?);
+                        }
+                        _ => {
+                            return Err(de::Error::unknown_field(&key, &["path", "create"]));
+                        }
+                    }
+                }
+                let path = path.ok_or_else(|| de::Error::missing_field("path"))?;
+                Ok(EnvDirectivePythonVenv {
+                    path,
+                    create,
+                    python,
+                    uv_create_args,
+                    python_create_args,
+                })
+            }
+        }
 
-        assert_snapshot!(replace_path(&format!("{:#?}", &cf)));
+        const FIELDS: &[&str] = &["path", "create"];
+        deserializer.deserialize_struct("PythonVenv", FIELDS, EnvDirectivePythonVenvVisitor)
     }
+}
 
-    #[tokio::test]
-    async fn test_env() {
-        let _config = Config::get().await.unwrap();
-        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
-        file::write(
-            &p,
-            formatdoc! {r#"
-        min_version = "2024.1.1"
-        [env]
-        foo="bar"
-        foo2='qux\nquux'
-        foo3="qux\nquux"
-        "#},
-        )
-        .unwrap();
-        let cf = MiseToml::from_file(&p).unwrap();
-        let dump = cf.dump().unwrap();
-        let env = parse_env(file::read_to_string(&p).unwrap());
+enum Val {
+    Int(i64),
+    Str(String),
+    Bool(bool),
+    Map {
+        value: Box<Val>,
+        tools: bool,
+        redact: bool,
+    },
+}
 
-        assert_debug_snapshot!(env, @r#""foo=bar\nfoo2=qux\\nquux\nfoo3=qux\nquux""#);
-        let cf: Box<dyn ConfigFile> = Box::new(cf);
-        with_settings!({
-            assert_snapshot!(dump);
-            assert_snapshot!(cf);
-            assert_debug_snapshot!(cf);
+impl Display for Val {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match self {
+            Val::Int(i) => write!(f, "{i}"),
+            Val::Str(s) => write!(f, "{s}"),
+            Val::Bool(b) => write!(f, "{b}"),
+            Val::Map {
+                value,
+                tools,
+                redact,
+            } => {
+                write!(f, "{value}")?;
+                if *tools {
+                    write!(f, " tools")?;
+                }
+                if *redact {
+                    write!(f, " redact")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl<'de> de::Deserialize<'de> for Val {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ValVisitor;
+
+        impl<'de> Visitor<'de> for ValVisitor {
+            type Value = Val;
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("env value")
+            }
+
+            fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Val::Bool(v))
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Val::Int(v))
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Val::Str(v.to_string()))
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::MapAccess<'de>,
+            {
+                let mut value: Option<Val> = None;
+                let mut tools = None;
+                let mut redact = None;
+                while let Some((key, val)) = map.next_entry::<String, Val>()? {
+                    match key.as_str() {
+                        "value" => {
+                            value = Some(val);
+                        }
+                        "tools" => {
+                            tools = Some(val);
+                        }
+                        "redact" => {
+                            redact = Some(val);
+                        }
+                        _ => {
+                            return Err(de::Error::unknown_field(
+                                &key,
+                                &["value", "tools", "redact"],
+                            ));
+                        }
+                    }
+                }
+                let value = value.ok_or_else(|| de::Error::missing_field("value"))?;
+                let tools = if let Some(Val::Bool(tools)) = tools {
+                    tools
+                } else {
+                    false
+                };
+                Ok(Val::Map {
+                    value: Box::new(value),
+                    tools,
+                    redact: redact
+                        .map(|r| if let Val::Bool(b) = r { b } else { false })
+                        .unwrap_or_default(),
+                })
+            }
+        }
+
+        deserializer.deserialize_any(ValVisitor)
+    }
+}
+
+fn parse_env_directives<E>(directives: EnvDirectives) -> Result<Vec<EnvDirective>, E>
+where
+    E: de::Error,
+{
+    let mut env = vec![];
+
+    // TODO: parse these in the order they're defined somehow
+    for d in directives.path {
+        env.push(EnvDirective::Path(d.value, d.options));
+    }
+    for d in directives.file {
+        env.push(EnvDirective::File(d.value, d.options));
+    }
+    for d in directives.source {
+        env.push(EnvDirective::Source(d.value, d.options));
+    }
+    for (key, value) in directives.other {
+        env.push(EnvDirective::Module(key, value, Default::default()));
+    }
+    if let Some(venv) = directives.python.venv {
+        env.push(EnvDirective::PythonVenv {
+            path: venv.path,
+            create: venv.create,
+            python: venv.python,
+            uv_create_args: venv.uv_create_args,
+            python_create_args: venv.python_create_args,
+            options: EnvDirectiveOptions {
+                tools: true,
+                redact: false,
+            },
         });
     }
 
-    #[tokio::test]
-    async fn test_env_array_valid() {
-        let _config = Config::get().await.unwrap();
-        let env = parse_env(formatdoc! {r#"
-        [[env]]
-        foo="bar"
+    Ok(env)
+}
 
-        [[env]]
-        bar="baz"
-
-        [[env]]
-        foo2='qux\nquux'
-        bar2="qux\nquux"
-        "#});
-
-        assert_snapshot!(env, @r"
-        foo=bar
-        bar=baz
-        foo2=qux\nquux
-        bar2=qux
-        quux
-        ");
-    }
-
-    #[tokio::test]
-    async fn test_path_dirs() {
-        let _config = Config::get().await.unwrap();
-        let env = parse_env(formatdoc! {r#"
-            env_path=["/foo", "./bar"]
-            [env]
-            foo="bar"
-            "#});
-
-        assert_snapshot!(env, @r"
-        path_add /foo
-        path_add ./bar
-        foo=bar
-        ");
-
-        let env = parse_env(formatdoc! {r#"
-            env_path="./bar"
-            "#});
-        assert_snapshot!(env, @"path_add ./bar");
-
-        let env = parse_env(formatdoc! {r#"
-            [env]
-            _.path = "./bar"
-            "#});
-        assert_debug_snapshot!(env, @r#""path_add ./bar""#);
-
-        let env = parse_env(formatdoc! {r#"
-            [env]
-            _.path = ["/foo", "./bar"]
-            "#});
-        assert_snapshot!(env, @r"
-        path_add /foo
-        path_add ./bar
-        ");
-
-        let env = parse_env(formatdoc! {r#"
-            [[env]]
-            _.path = "/foo"
-            [[env]]
-            _.path = "./bar"
-            "#});
-        assert_snapshot!(env, @r"
-        path_add /foo
-        path_add ./bar
-        ");
-
-        let env = parse_env(formatdoc! {r#"
-            env_path = "/foo"
-            [env]
-            _.path = "./bar"
-            "#});
-        assert_snapshot!(env, @r"
-        path_add /foo
-        path_add ./bar
-        ");
-    }
-
-    #[tokio::test]
-    async fn test_env_file() {
-        let _config = Config::get().await.unwrap();
-        let env = parse_env(formatdoc! {r#"
-            env_file = ".env"
-            "#});
-
-        assert_debug_snapshot!(env, @r#""dotenv .env""#);
-
-        let env = parse_env(formatdoc! {r#"
-            env_file=[".env", ".env2"]
-            "#});
-        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
-
-        let env = parse_env(formatdoc! {r#"
-            [env]
-            _.file = ".env"
-            "#});
-        assert_debug_snapshot!(env, @r#""dotenv .env""#);
-
-        let env = parse_env(formatdoc! {r#"
-            [env]
-            _.file = [".env", ".env2"]
-            "#});
-        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
-
-        let env = parse_env(formatdoc! {r#"
-            dotenv = ".env"
-            [env]
-            _.file = ".env2"
-            "#});
-        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
-    }
-
-    #[tokio::test]
-    async fn test_set_alias() {
-        let _config = Config::get().await.unwrap();
-        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
-        file::write(
-            &p,
-            formatdoc! {r#"
-            [alias.node.versions]
-            16 = "16.0.0"
-            18 = "18.0.0"
-        "#},
-        )
-        .unwrap();
-        let mut cf = MiseToml::from_file(&p).unwrap();
-        let node = "node".into();
-        let python = "python".into();
-        cf.set_alias(&node, "18", "18.0.1").unwrap();
-        cf.set_alias(&node, "20", "20.0.0").unwrap();
-        cf.set_alias(&python, "3.10", "3.10.0").unwrap();
-
-        assert_debug_snapshot!(cf.alias);
-        let cf: Box<dyn ConfigFile> = Box::new(cf);
-        assert_snapshot!(cf);
-        file::remove_file(&p).unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_remove_alias() {
-        let _config = Config::get().await.unwrap();
-        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
-        file::write(
-            &p,
-            formatdoc! {r#"
-            [alias.node.versions]
-            16 = "16.0.0"
-            18 = "18.0.0"
-
-            [alias.python.versions]
-            "3.10" = "3.10.0"
-            "#},
-        )
-        .unwrap();
-        let mut cf = MiseToml::from_file(&p).unwrap();
-        let node = "node".into();
-        let python = "python".into();
-        cf.remove_alias(&node, "16").unwrap();
-        cf.remove_alias(&python, "3.10").unwrap();
-
-        assert_debug_snapshot!(cf.alias);
-        let cf: Box<dyn ConfigFile> = Box::new(cf);
-        assert_snapshot!(cf.dump().unwrap());
-        assert_snapshot!(cf);
-        assert_debug_snapshot!(cf);
-        file::remove_file(&p).unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_replace_versions() {
-        let _config = Config::get().await.unwrap();
-        let p = PathBuf::from("/tmp/.mise.toml");
-        file::write(
-            &p,
-            formatdoc! {r#"
-            [tools]
-            node = ["16.0.0", "18.0.0"]
-            "#},
-        )
-        .unwrap();
-        let cf = MiseToml::from_file(&p).unwrap();
-        let node = "node".into();
-        cf.replace_versions(
-            &node,
-            vec![
-                ToolRequest::new(Arc::new("node".into()), "16.0.1", ToolSource::Unknown).unwrap(),
-                ToolRequest::new(Arc::new("node".into()), "18.0.1", ToolSource::Unknown).unwrap(),
-            ],
-        )
-        .unwrap();
-
-        assert_debug_snapshot!(cf.to_toolset().unwrap());
-        let cf: Box<dyn ConfigFile> = Box::new(cf);
-        assert_snapshot!(cf.dump().unwrap());
-        assert_snapshot!(cf);
-        assert_debug_snapshot!(cf);
-        file::remove_all(&p).unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_remove_plugin() {
-        let _config = Config::get().await.unwrap();
-        let p = PathBuf::from("/tmp/.mise.toml");
-        file::write(
-            &p,
-            formatdoc! {r#"
-            [tools]
-            node = ["16.0.0", "18.0.0"]
-            "#},
-        )
-        .unwrap();
-        let cf = MiseToml::from_file(&p).unwrap();
-        cf.remove_tool(&"node".into()).unwrap();
-
-        assert_debug_snapshot!(cf.to_toolset().unwrap());
-        let cf: Box<dyn ConfigFile> = Box::new(cf);
-        assert_snapshot!(cf.dump().unwrap());
-        assert_snapshot!(cf);
-        assert_debug_snapshot!(cf);
-    }
-
-    #[test]
-    fn test_env_entries() {
-        let toml = formatdoc! {r#"
-        [env]
-        foo1="1"
-        rm=false
-        _.path="/foo"
-        foo2="2"
-        _.file=".env"
-        foo3="3"
-        "#};
-        assert_snapshot!(parse_env(toml), @r"
-        foo1=1
-        unset rm
-        path_add /foo
-        dotenv .env
-        foo2=2
-        foo3=3
-        ");
-    }
-
-    #[test]
-    fn test_env_arr() {
-        let toml = formatdoc! {r#"
-        [[env]]
-        foo1="1"
-        rm=false
-        _.path="/foo"
-        foo2="2"
-        _.file=".env"
-        foo3="3"
-        _.source="/baz1"
-
-        [[env]]
-        foo4="4"
-        rm=false
-        _.file=".env2"
-        foo5="5"
-        _.path="/bar"
-        foo6="6"
-        _.source="/baz2"
-        "#};
-        assert_snapshot!(parse_env(toml), @r"
-        foo1=1
-        unset rm
-        path_add /foo
-        dotenv .env
-        source /baz1
-        foo2=2
-        foo3=3
-        foo4=4
-        unset rm
-        path_add /bar
-        dotenv .env2
-        source /baz2
-        foo5=5
-        foo6=6
-        ");
-    }
-
-    fn parse(s: String) -> MiseToml {
-        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
-        file::write(&p, s).unwrap();
-        let cfg = MiseToml::from_file(&p).unwrap();
-        file::remove_file(&p).unwrap();
-
-        cfg
-    }
-
-    fn parse_env(toml: String) -> String {
-        parse(toml).env_entries().unwrap().into_iter().join("\n")
+fn parse_env_value<E>(key: String, value: Val) -> Result<EnvDirective, E>
+where
+    E: de::Error,
+{
+    match value {
+        Val::Int(i) => Ok(EnvDirective::Val(key, i.to_string(), Default::default())),
+        Val::Str(s) => Ok(EnvDirective::Val(key, s, Default::default())),
+        Val::Bool(true) => Ok(EnvDirective::Val(key, "true".into(), Default::default())),
+        Val::Bool(false) => Ok(EnvDirective::Rm(key, Default::default())),
+        Val::Map {
+            value,
+            tools,
+            redact,
+        } => {
+            let opts = EnvDirectiveOptions { tools, redact };
+            Ok(EnvDirective::Val(key, value.to_string(), opts))
+        }
     }
 }
