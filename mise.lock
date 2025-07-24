@@ -57,6 +57,11 @@ checksum = "sha256:bcfeae05557a9f313ee4392d2f335d0ff69ebbfd232019e3736fb04999fe1
 size = 132561156
 url = "https://github.com/sigstore/cosign/releases/download/v2.5.2/cosign-linux-amd64"
 
+[tools.cosign.platforms.macos-arm64]
+checksum = "sha256:51fdc6d8da8310d72df10065a52247b6bebfe990d4c946dd9f71e17588256011"
+size = 130867538
+url = "https://github.com/sigstore/cosign/releases/download/v2.5.2/cosign-darwin-arm64"
+
 [tools.gh]
 version = "2.62.0"
 backend = "aqua:cli/cli"
