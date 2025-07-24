@@ -164,6 +164,31 @@ impl Lockfile {
     }
 }
 
+/// Update lockfiles for specific tools and platforms
+pub async fn update_lockfiles_for_platforms(
+    config: &Config,
+    tool_filters: &[String],
+    platform_filters: &[String],
+) -> Result<()> {
+    if !Settings::get().lockfile || !Settings::get().experimental {
+        return Ok(());
+    }
+
+    let lockfiles = discover_lockfiles(config)?;
+    if lockfiles.is_empty() {
+        return Ok(());
+    }
+
+    // Process each lockfile
+    for lockfile_path in lockfiles {
+        let config_path = lockfile_path.with_extension("toml");
+        update_lockfile_for_platforms(&config_path, &lockfile_path, tool_filters, platform_filters)
+            .await?;
+    }
+
+    Ok(())
+}
+
 pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersion]) -> Result<()> {
     if !Settings::get().lockfile || !Settings::get().experimental {
         return Ok(());
@@ -320,6 +345,108 @@ fn handle_missing_lockfile(err: Report, lockfile_path: &Path) -> Lockfile {
         display_path(lockfile_path)
     );
     Lockfile::default()
+}
+
+/// Discover all lockfiles in the config
+fn discover_lockfiles(config: &Config) -> Result<Vec<PathBuf>> {
+    let mut lockfiles = Vec::new();
+
+    // Find all mise.toml files and check for corresponding .lock files
+    for (config_path, config_file) in &config.config_files {
+        if config_file.source().is_mise_toml() {
+            let lockfile_path = config_path.with_extension("lock");
+            if lockfile_path.exists() {
+                lockfiles.push(lockfile_path);
+            }
+        }
+    }
+
+    Ok(lockfiles)
+}
+
+/// Update a specific lockfile for given tools and platforms
+async fn update_lockfile_for_platforms(
+    _config_path: &Path,
+    lockfile_path: &Path,
+    tool_filters: &[String],
+    platform_filters: &[String],
+) -> Result<()> {
+    use std::collections::HashSet;
+
+    // Read existing lockfile
+    let lockfile = Lockfile::read(lockfile_path)?;
+
+    // Get all platforms to update
+    let target_platforms = if platform_filters.is_empty() {
+        // If no platform filters, get all existing platforms from lockfile
+        extract_all_platforms(&lockfile)
+    } else {
+        // Use specified platforms, but only those that exist in lockfile
+        let existing_platforms = extract_all_platforms(&lockfile);
+        platform_filters
+            .iter()
+            .filter(|p| existing_platforms.contains(*p))
+            .cloned()
+            .collect()
+    };
+
+    if target_platforms.is_empty() {
+        debug!(
+            "No target platforms found for {}",
+            display_path(lockfile_path)
+        );
+        return Ok(());
+    }
+
+    // Get all tools to update
+    let target_tools: Vec<String> = if tool_filters.is_empty() {
+        // If no tool filters, get all tools from lockfile
+        lockfile.tools().keys().cloned().collect()
+    } else {
+        // Use specified tools, but only those that exist in lockfile
+        let existing_tools: HashSet<String> = lockfile.tools().keys().cloned().collect();
+        tool_filters
+            .iter()
+            .filter(|t| existing_tools.contains(*t))
+            .cloned()
+            .collect()
+    };
+
+    if target_tools.is_empty() {
+        debug!("No target tools found for {}", display_path(lockfile_path));
+        return Ok(());
+    }
+
+    info!(
+        "Updating {} for {} tools across {} platforms",
+        display_path(lockfile_path),
+        target_tools.len(),
+        target_platforms.len()
+    );
+
+    // For now, just log what we would do - actual implementation will come in next phase
+    for tool in &target_tools {
+        for platform in &target_platforms {
+            debug!("Would update {} for platform {}", tool, platform);
+        }
+    }
+
+    Ok(())
+}
+
+/// Extract all unique platform keys from a lockfile
+fn extract_all_platforms(lockfile: &Lockfile) -> Vec<String> {
+    let mut platforms = std::collections::BTreeSet::new();
+
+    for tools in lockfile.tools().values() {
+        for tool in tools {
+            for platform_key in tool.platforms.keys() {
+                platforms.insert(platform_key.clone());
+            }
+        }
+    }
+
+    platforms.into_iter().collect()
 }
 
 impl TryFrom<toml::Value> for LockfileTool {

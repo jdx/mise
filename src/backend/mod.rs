@@ -192,7 +192,24 @@ pub trait Backend: Debug + Send + Sync {
         let settings = Settings::get();
         let os = settings.os();
         let arch = settings.arch();
+        self.get_platform_key_for(os, arch)
+    }
+
+    /// Generates a platform key for a specific OS/arch combination.
+    /// Default implementation uses os-arch format, but backends can override for more specific keys.
+    fn get_platform_key_for(&self, os: &str, arch: &str) -> String {
         format!("{os}-{arch}")
+    }
+
+    /// Parses a platform key back into OS and arch components.
+    /// Returns None if the platform key format is not recognized.
+    fn parse_platform_key(&self, platform_key: &str) -> Option<(String, String)> {
+        // Handle standard os-arch format
+        if let Some((os, arch)) = platform_key.split_once('-') {
+            // Skip backend-specific suffixes for now - they can override this method
+            return Some((os.to_string(), arch.to_string()));
+        }
+        None
     }
 
     async fn description(&self) -> Option<String> {
