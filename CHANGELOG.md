@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.7.25](https://github.com/jdx/mise/compare/v2025.7.24..v2025.7.25) - 2025-07-24
+
+### Chore
+
+- updated deps by [@jdx](https://github.com/jdx) in [#5771](https://github.com/jdx/mise/pull/5771)
+
 ## [2025.7.24](https://github.com/jdx/mise/compare/v2025.7.23..v2025.7.24) - 2025-07-24
 
 ### Chore
