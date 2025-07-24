@@ -1,33 +1,52 @@
 #:schema ./schema/mise-task.json
 
-clean = "cargo clean"
-release = "cargo release"
-signal-test = "node ./test/fixtures/signal-test.js"
-ci = { depends = ["format", "build", "test"] }
-lint = { depends = ["lint:*"] }
+[clean]
+description = 'Clean build artifacts'
+run = 'cargo clean'
+
+[release]
+description = 'Release the project'
+run = 'cargo release'
+
+[signal-test]
+description = 'Test signal handling in Node.js'
+run = 'node ./test/fixtures/signal-test.js'
+
+[ci]
+depends = ["format", "build", "test"]
+description = "Run all CI checks"
+
+[lint]
+description = 'Run all lint checks'
+depends = ['lint:*']
 
 [build]
 alias = "b"
 run = "cargo build --all-features"
 run_windows = "cargo build --features clap_mangen"
+description = "Build the project"
 #sources = ["Cargo.*", "src/**/*.rs"]
 #outputs = ["target/debug/mise"]
 
 [docs]
-depends = ["docs:setup"]
+description = 'Start the documentation development server'
+depends = ['docs:setup']
 dir = "docs"
 run = "bun run docs:dev"
 
 ["docs:setup"]
+description = 'Install documentation dependencies'
 dir = "docs"
 run = ["cd .. && bun i", "bun i"]
 
 ["docs:build"]
+description = 'Build the documentation site'
 depends = ["docs:setup"]
 dir = "docs"
 run = "bun run docs:build"
 
 ["docs:preview"]
+description = 'Preview the documentation site'
 depends = ["docs:build"]
 dir = "docs"
 run = "bun run docs:preview"
@@ -54,6 +73,7 @@ done
 """
 
 ["render:usage"]
+description = 'Generate usage documentation'
 depends = ["build"]
 env = { CLICOLOR_FORCE = "0" }
 run = [
@@ -65,6 +85,7 @@ run = [
 ]
 
 ["render:completions"]
+description = 'Generate shell completions'
 depends = ["build"]
 wait_for = ["render:usage"]
 env = { NO_COLOR = "1" }
@@ -77,15 +98,18 @@ mise completion fish > completions/mise.fish
 '''
 
 ["render:settings"]
+description = 'Render settings documentation'
 run = "tsx xtasks/render/settings.ts"
 depends = ['docs:setup']
 
 ["render:mangen"]
+description = 'Generate man pages'
 depends = ["build"]
 env = { NO_COLOR = "1" }
 run = "mise render-mangen"
 
 ["render:fig"]
+description = 'Generate Fig completion spec'
 wait_for = ["render:completions"]
 run = [
   "usage generate fig --file mise.usage.kdl --out-file xtasks/fig/src/mise.ts",
@@ -95,17 +119,18 @@ run = [
 depends = ['docs:setup']
 
 ["render:help"]
+description = 'Render help documentation'
 depends = ["build"]
 env = { NO_COLOR = "1" }
+sources = ["mise"]
+outputs = ["README.md"]
 run = [
   "mise render-help",
   "mise run show-output-on-failure -- mise x node@latest -- npx markdown-magic",
 ]
-sources = ["mise"]
-outputs = ["README.md"]
 
 [render]
-alias = "render"
+description = 'Run all render tasks'
 depends = ["render:*"]
 
 [snapshots]
@@ -149,10 +174,12 @@ description = "run e2e tests inside of development docker container"
 run = "mise tasks run docker:mise run test:e2e"
 
 ["test:shuffle"]
-run = "cargo +nightly test --all-features -- -Z unstable-options --shuffle"
+description = 'Run tests with shuffling enabled'
+run = 'cargo +nightly test --all-features -- -Z unstable-options --shuffle'
 
 [install-dev]
-run = "cargo install --path . --debug"
+description = 'Install the current project in debug mode'
+run = 'cargo install --path . --debug'
 
 [xxx]
 hide = true
@@ -161,10 +188,12 @@ run = "echo {{arg(name='greeting')}}; sleep 2; echo 2; sleep 2; echo 3; sleep 0.
 description = "a task for testing"
 
 [pre-commit]
+description = 'Run pre-commit hooks'
 env = { PRE_COMMIT = 1 }
 run = ["mise run lint"]
 
 [flamegraph]
+description = 'Generate a flamegraph for performance analysis'
 tools = { "cargo:flamegraph" = "latest" }
 env = { CARGO_PROFILE_RELEASE_DEBUG = "true" }
-run = "cargo flamegraph"
+run = 'cargo flamegraph'

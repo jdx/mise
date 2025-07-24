@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Release with release-plz"
 set -euxo pipefail
 
 git config user.name mise-en-dev

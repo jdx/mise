@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #MISE depends=["build"]
 #MISE alias=["e", "e2e"]
-#MISE description="run end-to-end tests"
+#MISE description="Run end-to-end tests"
 set -euo pipefail
 
 export RUST_TEST_THREADS=1
