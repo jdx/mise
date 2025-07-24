@@ -1,5 +1,39 @@
 # Changelog
 
+## [2025.7.22](https://github.com/jdx/mise/compare/v2025.7.21..v2025.7.22) - 2025-07-24
+
+### 🚀 Features
+
+- **(doctor)** display # of baked-in aqua registry tools by [@jdx](https://github.com/jdx) in [#5756](https://github.com/jdx/mise/pull/5756)
+- **(lock)** `mise lock` enhancements by [@jdx](https://github.com/jdx) in [#5765](https://github.com/jdx/mise/pull/5765)
+- registry.toml: add SST by [@juxuanu](https://github.com/juxuanu) in [#5758](https://github.com/jdx/mise/pull/5758)
+
+### 🐛 Bug Fixes
+
+- **(copr)** fix remaining issues by [@jdx](https://github.com/jdx) in [#5755](https://github.com/jdx/mise/pull/5755)
+
+### 📚 Documentation
+
+- add descriptions for all the tasks by [@jdx](https://github.com/jdx) in [#5764](https://github.com/jdx/mise/pull/5764)
+
+### 📦️ Dependency Updates
+
+- update fedora docker tag to v43 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5159](https://github.com/jdx/mise/pull/5159)
+
+### Chore
+
+- **(copr)** chmod +x by [@jdx](https://github.com/jdx) in [71cf6ee](https://github.com/jdx/mise/commit/71cf6eee0d1766bbc214c6cf307b3d7ae300cd33)
+- added `mise` shim for devcontainer by [@jdx](https://github.com/jdx) in [#5768](https://github.com/jdx/mise/pull/5768)
+
+### Task-configuration.md
+
+- typo by [@mustafa0x](https://github.com/mustafa0x) in [#5216](https://github.com/jdx/mise/pull/5216)
+
+### New Contributors
+
+- @mustafa0x made their first contribution in [#5216](https://github.com/jdx/mise/pull/5216)
+- @juxuanu made their first contribution in [#5758](https://github.com/jdx/mise/pull/5758)
+
 ## [2025.7.21](https://github.com/jdx/mise/compare/v2025.7.20..v2025.7.21) - 2025-07-23
 
 ### 🚀 Features
@@ -15,6 +49,7 @@
 
 - **(README)** mention project alexandria by [@jdx](https://github.com/jdx) in [681bc75](https://github.com/jdx/mise/commit/681bc751025a848411b7dff322cd14d9487dd59f)
 - Removes invalid array in redaction example by [@EverlastingBugstopper](https://github.com/EverlastingBugstopper) in [#5752](https://github.com/jdx/mise/pull/5752)
+- document mise-versions app by [@jdx](https://github.com/jdx) in [785ef24](https://github.com/jdx/mise/commit/785ef24e65259b95f56ecccebe9463a8a0c37519)
 
 ### 🧪 Testing
 
