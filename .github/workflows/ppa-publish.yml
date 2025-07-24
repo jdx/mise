@@ -227,6 +227,8 @@ jobs:
           	if [ -f completions/_mise ]; then cp completions/_mise debian/mise/usr/share/zsh/site-functions/; fi
           	mkdir -p debian/mise/usr/share/fish/vendor_completions.d
           	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
+          	mkdir -p debian/mise/usr/lib/mise
+          	touch debian/mise/usr/lib/mise/.disable-self-update
           
           override_dh_auto_clean:
           	cargo clean || true

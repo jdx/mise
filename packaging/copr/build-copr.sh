@@ -245,6 +245,10 @@ cp completions/_mise %{buildroot}%{_datadir}/zsh/site-functions/
 mkdir -p %{buildroot}%{_datadir}/fish/vendor_completions.d
 cp completions/mise.fish %{buildroot}%{_datadir}/fish/vendor_completions.d/
 
+# Disable self-update for package manager installations
+mkdir -p %{buildroot}%{_libdir}/mise
+touch %{buildroot}%{_libdir}/mise/.disable-self-update
+
 %files
 %license LICENSE
 %doc README.md
@@ -253,6 +257,7 @@ cp completions/mise.fish %{buildroot}%{_datadir}/fish/vendor_completions.d/
 %{_datadir}/bash-completion/completions/mise
 %{_datadir}/zsh/site-functions/_mise
 %{_datadir}/fish/vendor_completions.d/mise.fish
+%{_libdir}/mise/.disable-self-update
 
 %changelog
 * __CHANGELOG_DATE__ __MAINTAINER_NAME__ <__MAINTAINER_EMAIL__> - %{version}-1
