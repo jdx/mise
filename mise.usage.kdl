@@ -436,7 +436,7 @@ cmd latest help="Gets the latest available version for a plugin" {
 cmd link help="Symlinks a tool version into mise" {
     alias ln
     long_help "Symlinks a tool version into mise\n\nUse this for adding installs either custom compiled outside mise or built with a different tool."
-    after_long_help "Examples:\n\n    # build node-20.0.0 with node-build and link it into mise\n    $ node-build 20.0.0 ~/.nodes/20.0.0\n    $ mise link node@20.0.0 ~/.nodes/20.0.0\n\n    # have mise use the python version provided by Homebrew\n    $ brew install node\n    $ mise link node@brew $(brew --prefix node)\n    $ mise use node@brew\n"
+    after_long_help "Examples:\n\n    # build node-20.0.0 with node-build and link it into mise\n    $ node-build 20.0.0 ~/.nodes/20.0.0\n    $ mise link node@20.0.0 ~/.nodes/20.0.0\n\n    # have mise use the node version provided by Homebrew\n    $ brew install node\n    $ mise link node@brew $(brew --prefix node)\n    $ mise use node@brew\n"
     flag "-f --force" help="Overwrite an existing tool version if it exists"
     arg <TOOL@VERSION> help="Tool name and version to create a symlink for"
     arg <PATH> help="The local path to the tool version\ne.g.: ~/.nvm/versions/node/v20.0.0"
