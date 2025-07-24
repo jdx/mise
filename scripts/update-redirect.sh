@@ -33,7 +33,7 @@ curl --fail-with-body -X PATCH "https://api.cloudflare.com/client/v4/zones/$ZONE
     }
   },
   "description": "Redirect mise-latest-* to current version",
-  "enabled": true,
+  "enabled": false,
   "ref": "ba099b251b5647d7833d319a3f5e0416"
 }
 EOF
