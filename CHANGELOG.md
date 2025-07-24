@@ -23,6 +23,7 @@
 ### Chore
 
 - **(copr)** chmod +x by [@jdx](https://github.com/jdx) in [71cf6ee](https://github.com/jdx/mise/commit/71cf6eee0d1766bbc214c6cf307b3d7ae300cd33)
+- **(hyperfine)** temporarily remove uncached benchmarks since they are not reporting right by [@jdx](https://github.com/jdx) in [#5769](https://github.com/jdx/mise/pull/5769)
 - added `mise` shim for devcontainer by [@jdx](https://github.com/jdx) in [#5768](https://github.com/jdx/mise/pull/5768)
 
 ### Task-configuration.md
