@@ -8,12 +8,12 @@ size = 2080472
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz"
 
 [tools.bun]
-version = "1.2.18"
+version = "1.2.19"
 backend = "core:bun"
 
-[tools.bun.platforms.linux-x64]
-checksum = "blake3:c85190159152314ed8cac74c30d8355c9b71f18dcd40ffa214e742038bf6a897"
-size = 38291778
+[tools.bun.platforms.macos-arm64]
+checksum = "blake3:1d033789f9a12ddcc7b1e03c675af1dfcbf770aa7fbfa2c49dc6599e591e4779"
+size = 21573514
 
 [tools.cargo-binstall]
 version = "1.14.1"
@@ -49,13 +49,13 @@ version = "2.2.2"
 backend = "cargo:usage-cli"
 
 [tools.cosign]
-version = "2.5.2"
+version = "2.5.3"
 backend = "aqua:sigstore/cosign"
 
-[tools.cosign.platforms.linux-x64]
-checksum = "sha256:bcfeae05557a9f313ee4392d2f335d0ff69ebbfd232019e3736fb04999fe1734"
-size = 132561156
-url = "https://github.com/sigstore/cosign/releases/download/v2.5.2/cosign-linux-amd64"
+[tools.cosign.platforms.macos-arm64]
+checksum = "sha256:86e0cad94d0da4c0dab5e26672ede71447a08a0f0d8495b9381c117df27d7d09"
+size = 152385074
+url = "https://github.com/sigstore/cosign/releases/download/v2.5.3/cosign-darwin-arm64"
 
 [tools.gh]
 version = "2.62.0"
@@ -72,13 +72,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [tools.hk]
-version = "1.2.1"
+version = "1.2.2"
 backend = "aqua:jdx/hk"
 
-[tools.hk.platforms.linux-x64]
-checksum = "blake3:92cba0567a4b0f022dba17f3cc578dd5993e49f00cf8a7fcca9af64e3c68faf2"
-size = 6194278
-url = "https://github.com/jdx/hk/releases/download/v1.2.1/hk-x86_64-unknown-linux-gnu.tar.gz"
+[tools.hk.platforms.macos-arm64]
+checksum = "blake3:3af928c2c443cd4f4e3176b4137affd960d55e4c28e5245a0bc581396ab7b392"
+size = 5320365
+url = "https://github.com/jdx/hk/releases/download/v1.2.2/hk-aarch64-apple-darwin.tar.gz"
 
 [tools.jq]
 version = "1.8.1"
