@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Fetch GPG keys for signing or verification"
 # shellcheck disable=SC2129
 set -euxo pipefail
 

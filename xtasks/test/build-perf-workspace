@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Build the performance test workspace"
 set -euo pipefail
 
 mkdir -p perf-workspace

@@ -1,4 +1,5 @@
 #!/usr/bin/env fish
+#MISE description="Test Aqua configuration with fish shell"
 
 cargo b
 alias m target/debug/mise

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 #MISE depends=["test:build-perf-workspace"]
+#MISE description="Run performance tests"
 # shellcheck disable=SC2086,SC2129
 set -xeuo pipefail
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #MISE alias=["format", "fix"]
 #MISE wait_for=["render:settings"]
+#MISE description="Automatically fix lint issues"
 set -euxo pipefail
 
 markdownlint --fix .
