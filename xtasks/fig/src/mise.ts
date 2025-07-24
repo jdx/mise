@@ -1353,6 +1353,49 @@ const completionSpec: Fig.Spec = {
       ],
     },
     {
+      name: "lock",
+      description:
+        "Update lockfile checksums and URLs for all specified platforms",
+      options: [
+        {
+          name: ["-p", "--platform"],
+          description:
+            "Comma-separated list of platforms to target\ne.g.: linux-x64,macos-arm64,windows-x64\nIf not specified, all platforms already in lockfile will be updated",
+          isRepeatable: true,
+          args: {
+            name: "platform",
+          },
+        },
+        {
+          name: ["-f", "--force"],
+          description: "Update all tools even if lockfile data already exists",
+          isRepeatable: false,
+        },
+        {
+          name: ["-n", "--dry-run"],
+          description: "Show what would be updated without making changes",
+          isRepeatable: false,
+        },
+        {
+          name: ["-j", "--jobs"],
+          description: "Number of jobs to run in parallel\n[default: 4]",
+          isRepeatable: false,
+          args: {
+            name: "jobs",
+          },
+        },
+      ],
+      args: {
+        name: "tool",
+        description:
+          "Tool(s) to update in lockfile\ne.g.: node python\nIf not specified, all tools in lockfile will be updated",
+        isOptional: true,
+        isVariadic: true,
+        generators: completionGeneratorTemplate(`mise registry --complete`),
+        debounce: true,
+      },
+    },
+    {
       name: ["ls", "list"],
       description: "List installed and active tool versions",
       options: [

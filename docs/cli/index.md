@@ -96,6 +96,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise install-into <TOOL@VERSION> <PATH>`](/cli/install-into.md)
 - [`mise latest [-i --installed] <TOOL@VERSION>`](/cli/latest.md)
 - [`mise link [-f --force] <TOOL@VERSION> <PATH>`](/cli/link.md)
+- [`mise lock [FLAGS] [TOOL]…`](/cli/lock.md)
 - [`mise ls [FLAGS] [INSTALLED_TOOL]…`](/cli/ls.md)
 - [`mise ls-remote [--all] [TOOL@VERSION] [PREFIX]`](/cli/ls-remote.md)
 - [`mise outdated [FLAGS] [TOOL@VERSION]…`](/cli/outdated.md)
