@@ -77,16 +77,24 @@ jobs:
             cat out.md
             
             # Extract relative performance from hyperfine output
-            variance=$(grep "±.*±" out.md | awk '{print $(NF-3)}' | sed 's/%//')
-            variance=$(echo "($variance * 100 - 100)/1" | bc)
-            
-            # Add warning if variance exceeds 10%
-            if (( $(echo "$variance > 10" | bc -l) )); then
-              if grep -q "mise-${{ steps.versions.outputs.release }}.*±.*±" out.md; then
-                echo "✅  Performance improvement for \`$cmd\` is ${variance}%" >> comment.md
-              else
-                echo "⚠️  Warning: Performance variance for \`$cmd\` is ${variance}%" >> comment.md
-                failed=true
+            # Look for the "Relative" column which shows values like "1.15 ± 0.05"
+            relative_line=$(grep -E '\|\s*[0-9]+\.[0-9]+\s*±.*\|\s*[0-9]+\.[0-9]+.*±.*\|$' out.md | head -1)
+            if [ -n "$relative_line" ]; then
+              # Extract the relative value (like "1.15") from the last column
+              relative=$(echo "$relative_line" | awk -F'|' '{print $NF}' | awk '{print $1}')
+              if [ -n "$relative" ] && [ "$relative" != "1.00" ]; then
+                # Convert to percentage change: (relative - 1) * 100
+                variance=$(echo "($relative - 1) * 100" | bc -l | cut -d. -f1)
+                
+                # Add warning if variance exceeds 10%
+                if [ ${variance#-} -gt 10 ]; then
+                  if (( $(echo "$relative < 1" | bc -l) )); then
+                    echo "✅  Performance improvement for \`$cmd\` is ${variance#-}% faster" >> comment.md
+                  else
+                    echo "⚠️  Warning: Performance regression for \`$cmd\` is ${variance}% slower" >> comment.md
+                    failed=true
+                  fi
+                fi
               fi
             fi
           done
