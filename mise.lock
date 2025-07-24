@@ -8,12 +8,12 @@ size = 2080472
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz"
 
 [tools.bun]
-version = "1.2.18"
+version = "1.2.19"
 backend = "core:bun"
 
 [tools.bun.platforms.linux-x64]
-checksum = "blake3:c85190159152314ed8cac74c30d8355c9b71f18dcd40ffa214e742038bf6a897"
-size = 38291778
+checksum = "blake3:59b98062e8014acf0bebfccbae2825fb88ac4486269f2b04e596862f07b01c86"
+size = 38401482
 
 [tools.cargo-binstall]
 version = "1.14.1"
@@ -49,18 +49,13 @@ version = "2.2.2"
 backend = "cargo:usage-cli"
 
 [tools.cosign]
-version = "2.5.2"
+version = "2.5.3"
 backend = "aqua:sigstore/cosign"
 
 [tools.cosign.platforms.linux-x64]
-checksum = "sha256:bcfeae05557a9f313ee4392d2f335d0ff69ebbfd232019e3736fb04999fe1734"
-size = 132561156
-url = "https://github.com/sigstore/cosign/releases/download/v2.5.2/cosign-linux-amd64"
-
-[tools.cosign.platforms.macos-arm64]
-checksum = "sha256:51fdc6d8da8310d72df10065a52247b6bebfe990d4c946dd9f71e17588256011"
-size = 130867538
-url = "https://github.com/sigstore/cosign/releases/download/v2.5.2/cosign-darwin-arm64"
+checksum = "sha256:783b5d6c74105401c63946c68d9b2a4e1aab3c8abce043e06b8510b02b623ec9"
+size = 154068646
+url = "https://github.com/sigstore/cosign/releases/download/v2.5.3/cosign-linux-amd64"
 
 [tools.gh]
 version = "2.62.0"
@@ -71,23 +66,23 @@ checksum = "sha256:41c8b0698ad3003cb5c44bde672a1ffd5f818595abd80162fbf8cc9994184
 size = 13065800
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz"
 
-[tools.gh.platforms.macos-arm64]
-checksum = "sha256:fdb77f31b8a6dd23c3fd858758d692a45f7fc76383e37d475bdcae038df92afc"
-size = 12793347
-url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
-
 [tools.hk]
-version = "1.2.1"
+version = "1.2.2"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:92cba0567a4b0f022dba17f3cc578dd5993e49f00cf8a7fcca9af64e3c68faf2"
-size = 6194278
-url = "https://github.com/jdx/hk/releases/download/v1.2.1/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "blake3:9aac0892f6f18af3d14fbabc04c29cd65e115865d30f590b03ad00c54beb2786"
+size = 6200865
+url = "https://github.com/jdx/hk/releases/download/v1.2.2/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [tools.jq]
 version = "1.8.1"
-backend = "asdf:jq"
+backend = "aqua:jqlang/jq"
+
+[tools.jq.platforms.linux-x64]
+checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d"
+size = 2255816
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"
 
 [tools."npm:markdownlint-cli"]
 version = "0.45.0"
@@ -130,11 +125,21 @@ url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14
 
 [tools.shellcheck]
 version = "0.10.0"
-backend = "asdf:shellcheck"
+backend = "aqua:koalaman/shellcheck"
+
+[tools.shellcheck.platforms.linux-x64]
+checksum = "blake3:729ad9734a3d9ecaf613b25714d6c70812e8808270c13cbe19eca2412f0ffc2d"
+size = 2404716
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz"
 
 [tools.shfmt]
 version = "3.12.0"
-backend = "asdf:shfmt"
+backend = "aqua:mvdan/sh"
+
+[tools.shfmt.platforms.linux-x64]
+checksum = "sha256:d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a745ea"
+size = 2916536
+url = "https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_linux_amd64"
 
 [tools.slsa-verifier]
 version = "2.7.1"
@@ -155,6 +160,3 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86
 [tools.wait-for-gh-rate-limit]
 version = "1.0.0"
 backend = "ubi:jdx/wait-for-gh-rate-limit"
-
-[tools.wait-for-gh-rate-limit.platforms.linux-x64-wait-for-gh-rate-limit]
-checksum = "blake3:2123971d2eea236d17fb0475c94bef89adf9239df4a8da53261d2eaf8551c622"
