@@ -46,17 +46,26 @@ impl Lock {
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
 
-        // For Phase 1, just implement lockfile discovery and platform analysis
-        self.analyze_lockfiles(&config).await?;
-
-        if !self.dry_run {
-            miseprintln!(
-                "{} {}",
-                style("mise lock").bold().cyan(),
-                style("full implementation coming in next phase").yellow()
-            );
+        // Phase 2: Add actual implementation
+        if self.dry_run {
+            self.analyze_lockfiles(&config).await?;
+        } else {
+            self.update_lockfiles(&config).await?;
         }
 
+        Ok(())
+    }
+
+    async fn update_lockfiles(&self, config: &Config) -> Result<()> {
+        use crate::lockfile::update_lockfiles_for_platforms;
+
+        let tool_filters: Vec<String> = self.tool.iter().map(|t| t.ba.short.clone()).collect();
+
+        miseprintln!("{} Updating lockfiles...", style("→").green());
+
+        update_lockfiles_for_platforms(config, &tool_filters, &self.platform).await?;
+
+        miseprintln!("{} Lockfiles updated successfully", style("✓").green());
         Ok(())
     }
 
