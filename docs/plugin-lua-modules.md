@@ -380,7 +380,6 @@ env.setenv("MY_VAR", "my_value")
 
 > To read variables in Lua, use `os.getenv("MY_VAR")`.
 
-
 ### Path Operations
 
 ```lua
