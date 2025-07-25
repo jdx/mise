@@ -569,7 +569,7 @@ pub fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     if let Some(path) = CACHE.lock().unwrap().get(name) {
         return path.clone();
     }
-    let path = _which(name, &env::PATH);
+    let path = which_in_paths(name, &env::PATH);
     CACHE
         .lock()
         .unwrap()
@@ -580,14 +580,27 @@ pub fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
 /// returns the first executable in PATH
 /// will include mise bin paths or other paths added by mise
 pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
-    _which(name, &env::PATH_NON_PRISTINE)
+    which_in_paths(name, &env::PATH_NON_PRISTINE)
 }
 
-fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
+/// returns the first executable in paths
+pub fn which_in_paths<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
     let name = name.as_ref();
     paths.iter().find_map(|path| {
-        let bin = path.join(name);
-        if is_executable(&bin) { Some(bin) } else { None }
+        let paths_with_ext = if cfg!(windows) {
+            vec![
+                path.clone(),
+                path.join(name).with_extension("exe"),
+                path.join(name).with_extension("cmd"),
+                path.join(name).with_extension("bat"),
+                path.join(name).with_extension("ps1"),
+            ]
+        } else {
+            vec![path.join(name)]
+        };
+        paths_with_ext
+            .into_iter()
+            .find(|path| path.exists() && is_executable(path))
     })
 }
 
@@ -1026,6 +1039,12 @@ mod tests {
         let filenames = vec![".test-tool-versions"];
         let result = find_up(path, &filenames);
         assert_eq!(result, Some(dirs::HOME.join(".test-tool-versions")));
+    }
+    #[test]
+    fn test_which() {
+        let path = which("git");
+        print!("{path:?}");
+        assert!(path.is_some());
     }
 
     #[tokio::test]
