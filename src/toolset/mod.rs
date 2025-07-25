@@ -661,8 +661,8 @@ impl Toolset {
         let add_paths = entries
             .iter()
             .filter(|(k, _)| k == "MISE_ADD_PATH" || k == "RTX_ADD_PATH")
-            .map(|(_, v)| v)
-            .join(":");
+            .map(|(_, v)| v.clone())
+            .collect::<Vec<_>>();
         let mut env: EnvMap = entries
             .into_iter()
             .filter(|(k, _)| k != "RTX_ADD_PATH")
@@ -672,6 +672,9 @@ impl Toolset {
             .rev()
             .collect();
         if !add_paths.is_empty() {
+            let add_paths = std::env::join_paths(&add_paths)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default();
             env.insert(PATH_KEY.to_string(), add_paths);
         }
         env.extend(config.env().await?.clone());
