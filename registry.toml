@@ -1242,6 +1242,8 @@ hasura-cli.backends = [
     "aqua:hasura/graphql-engine",
     "asdf:gurukulkarni/asdf-hasura"
 ]
+hatch.backends = ["pipx:hatch"]
+hatch.test = ["hatch --version", "Hatch, version {{version}}"]
 haxe.backends = ["ubi:HaxeFoundation/haxe", "asdf:mise-plugins/mise-haxe"]
 haxe.test = ["haxe --version", "{{version}}"]
 hcl2json.description = "Convert hcl2 to json"
@@ -2038,8 +2040,6 @@ pandoc.backends = ["ubi:jgm/pandoc", "asdf:Fbrisset/asdf-pandoc"]
 patat.backends = ["ubi:jaspervdj/patat", "asdf:airtonix/asdf-patat"]
 pdm.backends = ["pipx:pdm", "asdf:1oglop1/asdf-pdm"]
 pdm.test = ["pdm --version", "PDM, version {{version}}"]
-hatch.backends = ["pipx:hatch"]
-hatch.test = ["hatch --version", "Hatch, version {{version}}"]
 peco.description = "Simplistic interactive filtering tool"
 peco.backends = ["aqua:peco/peco", "asdf:asdf-community/asdf-peco"]
 periphery.description = "A tool to identify unused code in Swift projects"
