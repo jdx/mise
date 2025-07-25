@@ -673,7 +673,7 @@ impl Toolset {
             .collect();
         if !add_paths.is_empty() {
             let add_paths = std::env::join_paths(&add_paths)
-                .map(|p| p.into_string().unwrap_or_default())
+                .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_default();
             env.insert(PATH_KEY.to_string(), add_paths);
         }
