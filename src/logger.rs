@@ -77,7 +77,7 @@ impl Logger {
             LevelFilter::Trace => {
                 let level = record.level();
                 let file = record.file().unwrap_or("<unknown>");
-                if level == LevelFilter::Trace && file.contains("/expr-lang-") {
+                if level == LevelFilter::Trace && file.contains("/expr-lang") {
                     return "".to_string();
                 };
                 let meta = ui::style::edim(format!(

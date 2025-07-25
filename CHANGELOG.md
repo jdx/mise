@@ -1,5 +1,99 @@
 # Changelog
 
+## [2025.7.27](https://github.com/jdx/mise/compare/v2025.7.26..v2025.7.27) - 2025-07-24
+
+### 🐛 Bug Fixes
+
+- **(copr)** disable self-update by [@jdx](https://github.com/jdx) in [#5780](https://github.com/jdx/mise/pull/5780)
+- **(link.md)** correct example comment in mise link documentation by [@mmurdockk](https://github.com/mmurdockk) in [#5760](https://github.com/jdx/mise/pull/5760)
+- use github releases in install.sh for non-current version by [@jdx](https://github.com/jdx) in [c2b1ef1](https://github.com/jdx/mise/commit/c2b1ef1c53d736e14fb64365aa1339dc955d6c59)
+
+### New Contributors
+
+- @mmurdockk made their first contribution in [#5760](https://github.com/jdx/mise/pull/5760)
+
+## [2025.7.26](https://github.com/jdx/mise/compare/v2025.7.25..v2025.7.26) - 2025-07-24
+
+### Chore
+
+- use correct release dirname by [@jdx](https://github.com/jdx) in [c8e0b5b](https://github.com/jdx/mise/commit/c8e0b5b42f3d258ec977b68326461d2fc81c4724)
+
+## [2025.7.25](https://github.com/jdx/mise/compare/v2025.7.24..v2025.7.25) - 2025-07-24
+
+### Chore
+
+- updated deps by [@jdx](https://github.com/jdx) in [#5771](https://github.com/jdx/mise/pull/5771)
+
+## [2025.7.24](https://github.com/jdx/mise/compare/v2025.7.23..v2025.7.24) - 2025-07-24
+
+### Chore
+
+- add MISE_INSTALL_FROM_GITHUB option for mise.run by [@jdx](https://github.com/jdx) in [#5772](https://github.com/jdx/mise/pull/5772)
+
+## [2025.7.22](https://github.com/jdx/mise/compare/v2025.7.21..v2025.7.22) - 2025-07-24
+
+### 🚀 Features
+
+- **(doctor)** display # of baked-in aqua registry tools by [@jdx](https://github.com/jdx) in [#5756](https://github.com/jdx/mise/pull/5756)
+- **(lock)** `mise lock` enhancements by [@jdx](https://github.com/jdx) in [#5765](https://github.com/jdx/mise/pull/5765)
+- registry.toml: add SST by [@juxuanu](https://github.com/juxuanu) in [#5758](https://github.com/jdx/mise/pull/5758)
+
+### 🐛 Bug Fixes
+
+- **(copr)** fix remaining issues by [@jdx](https://github.com/jdx) in [#5755](https://github.com/jdx/mise/pull/5755)
+
+### 📚 Documentation
+
+- add descriptions for all the tasks by [@jdx](https://github.com/jdx) in [#5764](https://github.com/jdx/mise/pull/5764)
+
+### 📦️ Dependency Updates
+
+- update fedora docker tag to v43 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5159](https://github.com/jdx/mise/pull/5159)
+
+### Chore
+
+- **(copr)** chmod +x by [@jdx](https://github.com/jdx) in [71cf6ee](https://github.com/jdx/mise/commit/71cf6eee0d1766bbc214c6cf307b3d7ae300cd33)
+- **(hyperfine)** temporarily remove uncached benchmarks since they are not reporting right by [@jdx](https://github.com/jdx) in [#5769](https://github.com/jdx/mise/pull/5769)
+- added `mise` shim for devcontainer by [@jdx](https://github.com/jdx) in [#5768](https://github.com/jdx/mise/pull/5768)
+
+### Task-configuration.md
+
+- typo by [@mustafa0x](https://github.com/mustafa0x) in [#5216](https://github.com/jdx/mise/pull/5216)
+
+### New Contributors
+
+- @mustafa0x made their first contribution in [#5216](https://github.com/jdx/mise/pull/5216)
+- @juxuanu made their first contribution in [#5758](https://github.com/jdx/mise/pull/5758)
+
+## [2025.7.21](https://github.com/jdx/mise/compare/v2025.7.20..v2025.7.21) - 2025-07-23
+
+### 🚀 Features
+
+- **(packaging)** add COPR publishing workflow and documentation by [@jdx](https://github.com/jdx) in [#5719](https://github.com/jdx/mise/pull/5719)
+
+### 🐛 Bug Fixes
+
+- **(pwsh)** resolve issue caused by previous #5732 patch (hardcoded path) by [@IMXEren](https://github.com/IMXEren) in [#5753](https://github.com/jdx/mise/pull/5753)
+- copr docker building by [@jdx](https://github.com/jdx) in [#5748](https://github.com/jdx/mise/pull/5748)
+
+### 📚 Documentation
+
+- **(README)** mention project alexandria by [@jdx](https://github.com/jdx) in [681bc75](https://github.com/jdx/mise/commit/681bc751025a848411b7dff322cd14d9487dd59f)
+- Removes invalid array in redaction example by [@EverlastingBugstopper](https://github.com/EverlastingBugstopper) in [#5752](https://github.com/jdx/mise/pull/5752)
+- document mise-versions app by [@jdx](https://github.com/jdx) in [785ef24](https://github.com/jdx/mise/commit/785ef24e65259b95f56ecccebe9463a8a0c37519)
+
+### 🧪 Testing
+
+- fix asset detector test on musl by [@jdx](https://github.com/jdx) in [#5744](https://github.com/jdx/mise/pull/5744)
+
+### Chore
+
+- use 302 redirects for curl installs by [@jdx](https://github.com/jdx) in [#5747](https://github.com/jdx/mise/pull/5747)
+
+### New Contributors
+
+- @EverlastingBugstopper made their first contribution in [#5752](https://github.com/jdx/mise/pull/5752)
+
 ## [2025.7.20](https://github.com/jdx/mise/compare/v2025.7.19..v2025.7.20) - 2025-07-22
 
 ### 🚀 Features

@@ -40,7 +40,7 @@ See [Getting started](https://mise.jdx.dev/getting-started.html) for more option
 ```sh-session
 $ curl https://mise.run | sh
 $ ~/.local/bin/mise --version
-2025.7.20 macos-arm64 (a1b2d3e 2025-07-22)
+2025.7.27 macos-arm64 (a1b2d3e 2025-07-24)
 ```
 
 Hook mise into your shell (pick the right one for your shell):
@@ -154,6 +154,10 @@ Find more examples in the [mise cookbook](https://mise.jdx.dev/mise-cookbook/).
 ## Full Documentation
 
 See [mise.jdx.dev](https://mise.jdx.dev)
+
+## Special Thanks
+
+We're grateful for Cloudflare's support us through [Project Alexandria](https://www.cloudflare.com/lp/project-alexandria/).
 
 ## Contributors
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 #MISE depends=["test:build-perf-workspace"]
+#MISE description="Run performance tests"
 # shellcheck disable=SC2086,SC2129
 set -xeuo pipefail
 
@@ -41,18 +42,16 @@ time_command() {
 
 benchmark() {
 	local name="$1"
-	local uncached_duration
+	# local uncached_duration
 	local cached_duration
 	shift
-	uncached_duration=$(time_command uncached mise "$@")
+	# uncached_duration=$(time_command uncached mise "$@")
 	cached_duration=$(time_command cached mise "$@")
-	benchmarks["$name-uncached"]=$uncached_duration
 	benchmarks["$name-cached"]=$cached_duration
 
 	if [ -n "${MISE_ALT:-}" ]; then
-		alt_uncached_duration=$(time_command uncached "$MISE_ALT" "$@")
+		# alt_uncached_duration=$(time_command uncached "$MISE_ALT" "$@")
 		alt_cached_duration=$(time_command cached "$MISE_ALT" "$@")
-		alt_benchmarks["$name-uncached"]=$alt_uncached_duration
 		alt_benchmarks["$name-cached"]=$alt_cached_duration
 	fi
 
@@ -98,18 +97,18 @@ print_performance_table() {
 		echo "| Command    | $MISE_ALT | mise | Variance |" >>"$output_file"
 		echo "|------------|-----------|------|----------|" >>"$output_file"
 		for name in "${names[@]}"; do
-			uncached_variance=$(((${alt_benchmarks["$name-uncached"]} - ${benchmarks["$name-uncached"]}) * 100 / ${benchmarks["$name-uncached"]}))
+			# uncached_variance=$(((${alt_benchmarks["$name-uncached"]} - ${benchmarks["$name-uncached"]}) * 100 / ${benchmarks["$name-uncached"]}))
 			cached_variance=$(((${alt_benchmarks["$name-cached"]} - ${benchmarks["$name-cached"]}) * 100 / ${benchmarks["$name-cached"]}))
 
-			uncached_emoji=$(get_performance_emoji "$uncached_variance")
+			# uncached_emoji=$(get_performance_emoji "$uncached_variance")
 			cached_emoji=$(get_performance_emoji "$cached_variance")
 
-			printf "| %-10s | %6dms | %s%6dms | %+d%% |\n" \
-				"$name (uncached)" \
-				"${alt_benchmarks["$name-uncached"]}" \
-				"$uncached_emoji" \
-				"${benchmarks["$name-uncached"]}" \
-				"$uncached_variance" >>"$output_file"
+			# printf "| %-10s | %6dms | %s%6dms | %+d%% |\n" \
+			#   "$name (uncached)" \
+			#   "${alt_benchmarks[\"$name-uncached\"]}" \
+			#   "$uncached_emoji" \
+			#   "${benchmarks[\"$name-uncached\"]}" \
+			#   "$uncached_variance" >>"$output_file"
 			printf "| %-10s | %6dms | %s%6dms | %+d%% |\n" \
 				"$name (cached)" \
 				"${alt_benchmarks["$name-cached"]}" \
@@ -121,7 +120,7 @@ print_performance_table() {
 		echo "| Command    | Time   |" >>"$output_file"
 		echo "|------------|--------|" >>"$output_file"
 		for name in "${names[@]}"; do
-			printf "| %-10s | %6dms |\n" "$name (uncached)" "${benchmarks["$name-uncached"]}" >>"$output_file"
+			# printf "| %-10s | %6dms |\n" "$name (uncached)" "${benchmarks[\"$name-uncached\"]}" >>"$output_file"
 			printf "| %-10s | %6dms |\n" "$name (cached)" "${benchmarks["$name-cached"]}" >>"$output_file"
 		done
 	fi
@@ -131,13 +130,13 @@ print_performance_warnings() {
 	local output_file="$1"
 	if [ -n "${MISE_ALT:-}" ]; then
 		for name in "${names[@]}"; do
-			uncached_variance=$(((${alt_benchmarks["$name-uncached"]} - ${benchmarks["$name-uncached"]}) * 100 / ${benchmarks["$name-uncached"]}))
+			# uncached_variance=$(((${alt_benchmarks["$name-uncached"]} - ${benchmarks["$name-uncached"]}) * 100 / ${benchmarks["$name-uncached"]}))
 			cached_variance=$(((${alt_benchmarks["$name-cached"]} - ${benchmarks["$name-cached"]}) * 100 / ${benchmarks["$name-cached"]}))
 
-			warning=$(get_performance_warning "$name" "$uncached_variance" "uncached")
-			if [ -n "$warning" ]; then
-				echo "$warning" >>"$output_file"
-			fi
+			# warning=$(get_performance_warning "$name" "$uncached_variance" "uncached")
+			# if [ -n "$warning" ]; then
+			#   echo "$warning" >>"$output_file"
+			# fi
 			warning=$(get_performance_warning "$name" "$cached_variance" "cached")
 			if [ -n "$warning" ]; then
 				echo "$warning" >>"$output_file"

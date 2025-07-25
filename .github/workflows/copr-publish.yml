@@ -1,0 +1,76 @@
+name: copr-publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      chroots:
+        description: 'COPR chroots to target (space-separated)'
+        required: false
+        default: 'fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-42-aarch64 fedora-42-x86_64 fedora-41-aarch64 fedora-41-x86_64 epel-10-aarch64 epel-10-x86_64 epel-9-aarch64 epel-9-x86_64'
+        type: string
+      use_serious_profile:
+        description: 'Use the "serious" profile for optimized builds (LTO enabled)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PACKAGE_NAME: mise
+
+jobs:
+  publish-copr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/jdx/mise:copr
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Set up environment variables
+        run: |
+          VERSION=$(./scripts/get-version.sh | sed 's/^v//')
+          
+          if [ "${{ github.event_name }}" = "release" ]; then
+            CHROOTS="fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-42-aarch64 fedora-42-x86_64 fedora-41-aarch64 fedora-41-x86_64 epel-10-aarch64 epel-10-x86_64 epel-9-aarch64 epel-9-x86_64"
+          else
+            CHROOTS="${{ inputs.chroots }}"
+          fi
+          
+          {
+            echo "VERSION=${VERSION}"
+            echo "CHROOTS=${CHROOTS}"
+            echo "PACKAGE_NAME=${PACKAGE_NAME}"
+            echo "MAINTAINER_NAME=${{ vars.COPR_MAINTAINER_NAME || 'mise Release Bot' }}"
+            echo "MAINTAINER_EMAIL=${{ vars.COPR_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}"
+            echo "COPR_OWNER=${{ vars.COPR_OWNER || 'jdxcode' }}"
+            echo "COPR_PROJECT=${{ vars.COPR_PROJECT || 'mise' }}"
+          } >> "$GITHUB_ENV"
+          
+          # Set build profile
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.use_serious_profile }}" = "true" ]; then
+            echo "BUILD_PROFILE=serious" >> "$GITHUB_ENV"
+          else
+            echo "BUILD_PROFILE=release" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build and submit to COPR
+        run: |
+          ./packaging/copr/build-copr.sh \
+            --version "${VERSION}" \
+            --profile "${BUILD_PROFILE}" \
+            --chroots "${CHROOTS}" \
+            --owner "${COPR_OWNER}" \
+            --project "${COPR_PROJECT}" \
+            --name "${PACKAGE_NAME}" \
+            --maintainer-name "${MAINTAINER_NAME}" \
+            --maintainer-email "${MAINTAINER_EMAIL}"
+        env:
+          COPR_API_LOGIN: ${{ secrets.COPR_API_LOGIN }}
+          COPR_API_TOKEN: ${{ secrets.COPR_API_TOKEN }}
