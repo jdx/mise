@@ -4,6 +4,7 @@ use std::fmt::Display;
 
 use indoc::formatdoc;
 
+use crate::path::{PathEscape, to_path_list};
 use crate::shell::{ActivateOptions, ActivatePrelude, Shell};
 use itertools::Itertools;
 
@@ -48,7 +49,10 @@ impl Shell for Nushell {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.to_string_lossy().replace('\\', r#"\\"#);
+        let exe = to_path_list(
+            &[PathEscape::Unix, PathEscape::EscapeBackslash],
+            &exe.to_string_lossy(),
+        );
 
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude_inline(&opts.prelude));
@@ -124,8 +128,13 @@ impl Shell for Nushell {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
+        let v = match k {
+            "PATH" => to_path_list(&[PathEscape::Unix], v),
+            _ => v.to_string(),
+        };
+
         let k = Nushell::escape_csv_value(k);
-        let v = Nushell::escape_csv_value(v);
+        let v = Nushell::escape_csv_value(&v);
 
         EnvOp::Set { key: &k, val: &v }.to_string()
     }

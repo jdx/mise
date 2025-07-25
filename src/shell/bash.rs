@@ -5,6 +5,7 @@ use std::fmt::Display;
 use indoc::formatdoc;
 
 use crate::config::Settings;
+use crate::path::{PathEscape, to_path_list};
 use crate::shell::{ActivateOptions, Shell};
 
 #[derive(Default)]
@@ -15,7 +16,7 @@ impl Shell for Bash {
         let exe = opts.exe;
         let flags = opts.flags;
         let settings = Settings::get();
-        let exe = exe.to_string_lossy();
+        let exe = to_path_list(&[PathEscape::Unix], &exe.to_string_lossy());
 
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude(&opts.prelude));
@@ -104,6 +105,11 @@ impl Shell for Bash {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
+        let v = match k {
+            "PATH" => to_path_list(&[PathEscape::Unix], v),
+            _ => v.to_string(),
+        };
+
         let k = shell_escape::unix::escape(k.into());
         let v = shell_escape::unix::escape(v.into());
         format!("export {k}={v}\n")
