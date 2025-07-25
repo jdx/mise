@@ -13,7 +13,7 @@ mise plugins have access to a comprehensive set of built-in Lua modules that pro
 - **`env`** - Environment variable operations
 - **`strings`** - String manipulation utilities
 - **`html`** - HTML parsing and manipulation
-- **`archiver`** - Archive extraction and compression
+- **`archiver`** - Archive extraction
 
 ## HTTP Module
 
@@ -289,10 +289,10 @@ The archiver module provides functionality for extracting compressed archives.
 
 ### Supported Formats
 
-- **tar.gz** / **tgz** - Gzipped tar archives
+- **tar.gz** - Gzipped tar archives
 - **tar.xz** - XZ compressed tar archives
+- **tar.bz2** - Bzip2 compressed tar archives
 - **zip** - ZIP archives
-- **7z** - 7-Zip archives
 
 ### Basic Extraction
 
@@ -344,55 +344,6 @@ end
 
 The file module provides file system operations.
 
-### File Operations
-
-```lua
-local file = require("file")
-
--- Read file content
-local content = file.read("/path/to/file.txt")
-if content then
-    print("File content: " .. content)
-else
-    error("Failed to read file")
-end
-
--- Write file content
-local success = file.write("/path/to/output.txt", "Hello, World!")
-if not success then
-    error("Failed to write file")
-end
-
--- Check if file exists
-if file.exists("/path/to/file.txt") then
-    print("File exists")
-end
-```
-
-### Directory Operations
-
-```lua
-local file = require("file")
-
--- Create directory
-local success = file.mkdir("/path/to/new/directory")
-if not success then
-    error("Failed to create directory")
-end
-
--- Create directory with parents
-local success = file.mkdir_all("/path/to/deep/nested/directory")
-if not success then
-    error("Failed to create directory tree")
-end
-
--- List directory contents
-local files = file.list_dir("/path/to/directory")
-for _, filename in ipairs(files) do
-    print("Found file: " .. filename)
-end
-```
-
 ### Path Joining
 
 ```lua
@@ -405,27 +356,30 @@ print(full_path)  -- On Unix: /foo/bar/baz.txt, on Windows: \foo\bar\baz.txt
 
 The `file.join_path(...)` function joins any number of path segments using the correct separator for the current operating system. This is the recommended way to construct file paths in cross-platform plugins.
 
+### Create Symbolic Links
+
+```lua
+local file = require("file")
+file.symlink("/path/to/source", "/path/to/new-symlink")
+```
+
 ## Environment Module
 
 The env module provides environment variable operations.
 
-### Environment Variables
+### Set Environment Variable
 
 ```lua
 local env = require("env")
 
--- Get environment variable
-local home = env.get("HOME")
-local path = env.get("PATH")
-
 -- Set environment variable
-env.set("MY_VARIABLE", "my_value")
-
--- Check if environment variable exists
-if env.exists("NODE_ENV") then
-    print("NODE_ENV is set to: " .. env.get("NODE_ENV"))
-end
+env.setenv("MY_VAR", "my_value")
 ```
+
+### Get Environment Variable
+
+> To read variables in Lua, use `os.getenv("MY_VAR")`.
+
 
 ### Path Operations
 
@@ -433,16 +387,16 @@ end
 local env = require("env")
 
 -- Get current PATH
-local current_path = env.get("PATH")
+local current_path = os.getenv("PATH")
 
 -- Add to PATH
 local new_path = "/usr/local/bin:" .. current_path
-env.set("PATH", new_path)
+env.setenv("PATH", new_path)
 
 -- Platform-specific PATH separator
 local separator = package.config:sub(1,1) == '\\' and ";" or ":"
 local paths = {"/usr/local/bin", "/opt/bin", current_path}
-env.set("PATH", table.concat(paths, separator))
+env.setenv("PATH", table.concat(paths, separator))
 ```
 
 ## Command Module
