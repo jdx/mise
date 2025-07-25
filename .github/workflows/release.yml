@@ -80,7 +80,7 @@ jobs:
       - if: matrix.runs-on != 'ubuntu-latest'
         run: rustup target add ${{matrix.target}}
       - if: matrix.runs-on == 'ubuntu-latest'
-        uses: taiki-e/install-action@4fd6bded9bf87df7896958594ca6d67b38b5350e # v2
+        uses: taiki-e/install-action@7fbb30f035445d55e5f819679e8e16009832db89 # v2
         with: { tool: cross }
       - name: build-tarball
         uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
@@ -96,7 +96,7 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@4fd6bded9bf87df7896958594ca6d67b38b5350e # v2
+      - uses: taiki-e/install-action@7fbb30f035445d55e5f819679e8e16009832db89 # v2
         with: { tool: cargo-cache }
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
@@ -152,7 +152,7 @@ jobs:
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: taiki-e/install-action@4fd6bded9bf87df7896958594ca6d67b38b5350e # v2
+      - uses: taiki-e/install-action@7fbb30f035445d55e5f819679e8e16009832db89 # v2
         with:
           tool: usage-cli
       - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
