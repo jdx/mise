@@ -134,6 +134,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise tasks run [FLAGS] [TASK] [ARGS]…`](/cli/tasks/run.md)
 - [`mise test-tool [FLAGS] [TOOL]`](/cli/test-tool.md)
 - [`mise tool [FLAGS] <TOOL>`](/cli/tool.md)
+- [`mise toml-shim <FILE> [ARGS]…`](/cli/toml-shim.md)
 - [`mise trust [FLAGS] [CONFIG_FILE]`](/cli/trust.md)
 - [`mise uninstall [-a --all] [-n --dry-run] [INSTALLED_TOOL@VERSION]…`](/cli/uninstall.md)
 - [`mise unset [-f --file <FILE>] [-g --global] [ENV_KEY]…`](/cli/unset.md)

@@ -921,6 +921,10 @@ cmd tool help="Gets information about a tool" {
     flag --tool-options help="Only show tool options"
     arg <TOOL> help="Tool name to get information about"
 }
+cmd toml-shim {
+    arg <FILE> help="The TOML shim file to execute"
+    arg "[ARGS]…" help="Arguments to pass to the tool" required=#false double_dash=automatic var=#true
+}
 cmd trust help="Marks a config file as trusted" {
     long_help "Marks a config file as trusted\n\nThis means mise will parse the file with potentially dangerous\nfeatures enabled.\n\nThis includes:\n- environment variables\n- templates\n- `path:` plugin versions"
     after_long_help "Examples:\n\n    # trusts ~/some_dir/mise.toml\n    $ mise trust ~/some_dir/mise.toml\n\n    # trusts mise.toml in the current or parent directory\n    $ mise trust\n"

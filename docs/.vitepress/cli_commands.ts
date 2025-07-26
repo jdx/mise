@@ -291,6 +291,9 @@ export const commands: { [key: string]: Command } = {
   "test-tool": {
     hide: false,
   },
+  "toml-shim": {
+    hide: false,
+  },
   tool: {
     hide: false,
   },

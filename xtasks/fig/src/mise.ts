@@ -2723,6 +2723,22 @@ const completionSpec: Fig.Spec = {
       },
     },
     {
+      name: "toml-shim",
+      args: [
+        {
+          name: "file",
+          description: "The TOML shim file to execute",
+          template: "filepaths",
+        },
+        {
+          name: "args",
+          description: "Arguments to pass to the tool",
+          isOptional: true,
+          isVariadic: true,
+        },
+      ],
+    },
+    {
       name: "trust",
       description: "Marks a config file as trusted",
       options: [

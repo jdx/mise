@@ -111,7 +111,7 @@ impl TomlShimFile {
         if !filtered_options.is_empty() {
             let option_parts: Vec<String> = filtered_options
                 .iter()
-                .map(|(key, value)| format!("{}={}", key, value))
+                .map(|(key, value)| format!("{key}={value}"))
                 .collect();
             tool_spec.push_str(&format!(",{}", option_parts.join(",")));
         }
@@ -136,7 +136,7 @@ impl BinPathCache {
                 .unwrap_or_default()
                 .as_secs()
         );
-        Ok(hash::hash_to_str(&format!("{}:{}", path_str, mtime_str)))
+        Ok(hash::hash_to_str(&format!("{path_str}:{mtime_str}")))
     }
 
     fn cache_file_path(cache_key: &str) -> PathBuf {
@@ -197,7 +197,7 @@ async fn find_cached_or_resolve_bin_path(
             // Cache the result
             if let Err(e) = BinPathCache::save(&bin_path, &cache_key) {
                 // Don't fail if caching fails, just log it
-                log::warn!("Failed to cache binary path: {}", e);
+                log::warn!("Failed to cache binary path: {e}");
             }
 
             return Ok(Some(bin_path));
