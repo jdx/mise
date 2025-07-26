@@ -82,3 +82,6 @@ EOF
 chmod +x bin/gh
 
 assert_contains "bin/gh --version" "gh version"
+assert_contains "bin/gh --version" "gh version" # short-circuit works
+mise uninstall --all
+assert_contains "bin/gh --version" "gh version" # refetches even if it's cached

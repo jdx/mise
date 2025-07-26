@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use crate::cli::args::ToolArg;
@@ -10,7 +9,6 @@ use crate::hash;
 use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersionOptions, ToolsetBuilder};
 use clap::Parser;
 use color_eyre::eyre::{Result, bail};
-use duct::IntoExecutablePath;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -265,7 +263,7 @@ async fn execute_with_tool_request(
         // Get the environment with proper PATH from toolset
         let env = toolset.env_with_path(config).await?;
 
-        return execute_tool(bin_path, args, env);
+        return crate::cli::exec::exec_program(bin_path, args, env);
     }
 
     bail!(
@@ -311,7 +309,7 @@ async fn execute_with_tool_arg(
         // Get the environment with proper PATH from toolset
         let env = toolset.env_with_path(config).await?;
 
-        return execute_tool(bin_path, args, env);
+        return crate::cli::exec::exec_program(bin_path, args, env);
     }
 
     bail!(
@@ -319,23 +317,6 @@ async fn execute_with_tool_arg(
         shim.tool_name,
         shim.bin_name
     );
-}
-
-fn execute_tool<T, U>(program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
-where
-    T: IntoExecutablePath,
-    U: IntoIterator,
-    U::Item: Into<OsString>,
-{
-    // Use the shared exec logic from exec.rs
-    let exec = crate::cli::exec::Exec {
-        tool: vec![],
-        command: None,
-        c: None,
-        jobs: None,
-        raw: false,
-    };
-    exec.exec(program, args, env)
 }
 
 // [experimental ]
@@ -375,19 +356,8 @@ pub(crate) async fn short_circuit_shim(args: &[String]) -> Result<()> {
 
     // Check if we have a cached binary path
     if let Some(bin_path) = BinPathCache::load(&cache_key) {
-        // We have a cached binary path, execute it directly
-        let shim_args = if args.len() > 1 {
-            args[1..].to_vec()
-        } else {
-            vec![]
-        };
-
-        // Create a minimal environment - for short circuit we don't set up full toolset environment
-        // This is a trade-off for performance vs completeness
-        let env = std::env::vars().collect::<BTreeMap<String, String>>();
-
-        // Execute the cached binary directly
-        return execute_tool(bin_path, shim_args, env);
+        let args = args[1..].to_vec();
+        return crate::cli::exec::exec_program(bin_path, args, BTreeMap::new());
     }
 
     // No cache hit, return Ok(()) to continue with normal processing
