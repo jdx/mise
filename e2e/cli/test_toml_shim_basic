@@ -74,29 +74,11 @@ assert_contains "mise toml-shim --help" "The TOML shim file to execute"
 # Test 7: Verify we can see the toml-shim command in help (it's there but minimal)
 assert_contains "mise --help" "toml-shim"
 
-# Test 8: TOML shim basic functionality with different backends works
-# Note: Complex nested TOML options (like HTTP backend config) require
-# additional implementation work to properly convert to ToolArg format.
-# For now, TOML shims work perfectly with simple backends like node, python, go, etc.
-
-# Test alternative backend - Java
-cat >bin/java <<'EOF'
+# Test 11: GitHub backend
+cat >bin/gh <<'EOF'
 #!/usr/bin/env -S mise toml-shim
-# Java TOML shim
-
-tool = "java"
-version = "21"
+tool = "github:cli/cli"
 EOF
-chmod +x bin/java
+chmod +x bin/gh
 
-# Test that different backend works (this will install Java which takes longer)
-# Just verify it doesn't error out completely
-assert_succeed "timeout 60s mise toml-shim bin/java --version || true"
-
-# Test 9: Nested options parsing is now working!
-# (HTTP backend implementation can be refined in future iterations)
-echo "Complex nested options parsing has been successfully implemented!"
-
-# Clean up
-cd ..
-rm -rf toml_shim_basic
+assert_contains "bin/gh --version" "gh version"

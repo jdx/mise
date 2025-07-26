@@ -23,9 +23,9 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct TomlShimFile {
+    #[serde(default = "default_version")]
     pub version: String,
-    pub bin: Option<String>, // defaults to filename if not specified
-    #[serde(skip)]
+    pub bin: Option<String>,  // defaults to filename if not specified
     pub tool: Option<String>, // explicit tool name override
     #[serde(default)]
     pub install_env: indexmap::IndexMap<String, String>,
@@ -37,6 +37,10 @@ pub struct TomlShimFile {
     pub tool_name: String,
     #[serde(skip)]
     pub bin_name: String,
+}
+
+fn default_version() -> String {
+    "latest".to_string()
 }
 
 impl TomlShimFile {
@@ -53,10 +57,9 @@ impl TomlShimFile {
 
         // Determine tool name from tool field or derive from shim name
         let tool_name = shim
-            .opts
-            .get("tool")
-            .map(|s| s.to_string())
-            .or_else(|| shim.tool.clone())
+            .tool
+            .clone()
+            .or_else(|| shim.opts.get("tool").map(|s| s.to_string()))
             .unwrap_or_else(|| shim_name.clone());
 
         // Determine bin name (what executable to run) - defaults to filename
@@ -192,7 +195,7 @@ async fn find_cached_or_resolve_bin_path(
     }
 
     // Cache miss - resolve the binary path
-    if let Some((backend, tv)) = toolset.which(config, &shim.tool_name).await {
+    if let Some((backend, tv)) = toolset.which(config, &shim.bin_name).await {
         if let Some(bin_path) = backend.which(config, &tv, &shim.bin_name).await? {
             // Cache the result
             if let Err(e) = BinPathCache::save(&bin_path, &cache_key) {
@@ -445,7 +448,7 @@ pub(crate) async fn short_circuit_shim(args: &[String]) -> Result<()> {
     // Check if the first argument looks like a TOML shim file path
     let potential_shim_path = std::path::Path::new(&args[0]);
 
-    // Only proceed if it's an existing file with a reasonable extension or in a shims directory
+    // Only proceed if it's an existing file with a reasonable extension
     if !potential_shim_path.exists() {
         return Ok(());
     }
