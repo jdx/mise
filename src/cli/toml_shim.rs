@@ -8,7 +8,8 @@ use crate::hash;
 use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersionOptions};
 use clap::Parser;
 use color_eyre::eyre::{Result, bail, eyre};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+use toml::Value;
 
 #[derive(Debug, Deserialize)]
 pub struct TomlShimFile {
@@ -20,12 +21,54 @@ pub struct TomlShimFile {
     pub install_env: indexmap::IndexMap<String, String>,
     #[serde(default)]
     pub os: Option<Vec<String>>,
-    #[serde(flatten)]
+    #[serde(flatten, deserialize_with = "deserialize_toml_options")]
     pub opts: indexmap::IndexMap<String, String>,
     #[serde(skip)]
     pub tool_name: String,
     #[serde(skip)]
     pub bin_name: String,
+}
+
+// Custom deserializer that converts TOML values to strings for storage in opts
+fn deserialize_toml_options<'de, D>(
+    deserializer: D,
+) -> Result<indexmap::IndexMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    let value = Value::deserialize(deserializer)?;
+    let mut opts = indexmap::IndexMap::new();
+
+    if let Value::Table(table) = value {
+        for (key, val) in table {
+            // Skip known special fields that are handled separately
+            if matches!(
+                key.as_str(),
+                "version" | "bin" | "tool" | "install_env" | "os"
+            ) {
+                continue;
+            }
+
+            // Convert TOML values to strings for storage
+            let string_value = match val {
+                Value::String(s) => s,
+                Value::Table(_) | Value::Array(_) => {
+                    // For complex values (tables, arrays), serialize them as TOML strings
+                    toml::to_string(&val).map_err(D::Error::custom)?
+                }
+                Value::Integer(i) => i.to_string(),
+                Value::Float(f) => f.to_string(),
+                Value::Boolean(b) => b.to_string(),
+                Value::Datetime(dt) => dt.to_string(),
+            };
+
+            opts.insert(key, string_value);
+        }
+    }
+
+    Ok(opts)
 }
 
 fn default_version() -> String {

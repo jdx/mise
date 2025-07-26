@@ -50,13 +50,4 @@ EOF
 chmod +x bin/hello-platform
 
 # This also now works for TOML parsing - nested tables are handled correctly
-assert_succeed "mise toml-shim bin/hello-platform || echo 'Platform-specific configs also parse correctly!'"
-
-# Clean up
-cd ..
-rm -rf toml_shim_http_test
-
-echo "SUCCESS: TOML shim HTTP backend option passing has been FIXED!"
-echo "TOML shims now properly pass backend options to HTTP backends."
-echo "The implementation preserves ToolRequest options when creating toolsets."
-echo "This enables HTTP backend URL, bin_path, postinstall and other options to work correctly."
+assert_succeed "mise toml-shim bin/hello-platform"
