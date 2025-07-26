@@ -134,14 +134,14 @@ impl Exec {
         U: IntoIterator,
         U::Item: Into<OsString>,
     {
+        for (k, v) in env.iter() {
+            env::set_var(k, v);
+        }
         let cwd = crate::dirs::CWD.clone().unwrap_or_default();
         let program = program.to_executable();
         let path = env.get(&*env::PATH_KEY).map(OsString::from);
         let program = which::which_in(program, path, cwd)?;
-        let mut cmd = cmd::cmd(program, args);
-        for (k, v) in env.iter() {
-            cmd = cmd.env(k, v);
-        }
+        let cmd = cmd::cmd(program, args);
 
         // Windows does not support exec in the same way as Unix,
         // so we emulate it instead by not handling Ctrl-C and letting
