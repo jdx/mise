@@ -74,7 +74,19 @@ cat >bin/node-dotslash <<'EOF'
           "url": "https://nodejs.org/dist/v20.0.0/node-v20.0.0-linux-x64.tar.gz"
         }
       ]
-    }
+    },
+	"macos-aarch64": {
+		"size": 41339150,
+		"hash": "blake3",
+		"digest": "1373835099da2743cc18f136e54bc5c08d91f5234ec2f313336d7b940d815c4b",
+		"format": "tar.gz",
+		"path": "node-v20.0.0-darwin-arm64/bin/node",
+		"providers": [
+			{
+				"url": "https://nodejs.org/dist/v20.0.0/node-v20.0.0-darwin-arm64.tar.gz"
+			}
+		]
+	}
   }
 }
 EOF
