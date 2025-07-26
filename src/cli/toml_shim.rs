@@ -86,31 +86,6 @@ impl TomlShimFile {
             ToolRequest::new_opts(backend_arg.into(), &self.version, options, source)
         }
     }
-
-    // Keep the old method for simple backends that work with ToolArg
-    pub fn to_tool_arg(&self) -> Result<ToolArg> {
-        // Check if we have any complex options that ToolArg can't handle
-        if !self.install_env.is_empty() || self.os.is_some() {
-            return Err(color_eyre::eyre::eyre!(
-                "Complex options (install_env, os) not supported in ToolArg format. Use to_tool_request instead."
-            ));
-        }
-
-        let mut tool_spec = format!("{}@{}", self.tool_name, self.version);
-
-        // Filter out the 'tool' field and add remaining options
-        let filtered_options: Vec<_> = self.opts.iter().filter(|(key, _)| *key != "tool").collect();
-
-        if !filtered_options.is_empty() {
-            let option_parts: Vec<String> = filtered_options
-                .iter()
-                .map(|(key, value)| format!("{key}={value}"))
-                .collect();
-            tool_spec.push_str(&format!(",{}", option_parts.join(",")));
-        }
-
-        tool_spec.parse::<ToolArg>()
-    }
 }
 
 // Cache just stores the binary path as a raw string
@@ -200,23 +175,6 @@ async fn find_cached_or_resolve_bin_path(
     Ok(None)
 }
 
-pub async fn execute_toml_shim(shim_path: &Path, args: Vec<String>) -> Result<()> {
-    let shim = TomlShimFile::from_file(shim_path)?;
-    let mut config = Config::get().await?;
-
-    // First try to use the simple ToolArg approach (faster and cleaner)
-    match shim.to_tool_arg() {
-        Ok(tool_arg) => {
-            // Simple case: no complex options, use ToolArg
-            return execute_with_tool_arg(tool_arg, &shim, &mut config, args, shim_path).await;
-        }
-        Err(_) => {
-            // Complex case: use direct ToolRequest approach
-            return execute_with_tool_request(&shim, &mut config, args, shim_path).await;
-        }
-    }
-}
-
 async fn execute_with_tool_request(
     shim: &TomlShimFile,
     config: &mut std::sync::Arc<Config>,
@@ -273,53 +231,7 @@ async fn execute_with_tool_request(
     );
 }
 
-async fn execute_with_tool_arg(
-    tool_arg: ToolArg,
-    shim: &TomlShimFile,
-    config: &mut std::sync::Arc<Config>,
-    args: Vec<String>,
-    shim_path: &Path,
-) -> Result<()> {
-    // Original simple approach for backends without complex nested options
-    let mut toolset = ToolsetBuilder::new()
-        .with_args(&[tool_arg])
-        .with_default_to_latest(true)
-        .build(config)
-        .await?;
-
-    // Install the tool if it's missing
-    let install_opts = InstallOptions {
-        force: false,
-        jobs: None,
-        raw: false,
-        missing_args_only: false,
-        resolve_options: Default::default(),
-        ..Default::default()
-    };
-
-    toolset
-        .install_missing_versions(config, &install_opts)
-        .await?;
-    toolset.notify_if_versions_missing(config).await;
-
-    // Find the binary path using cache
-    if let Some(bin_path) =
-        find_cached_or_resolve_bin_path(&toolset, &*config, shim, shim_path).await?
-    {
-        // Get the environment with proper PATH from toolset
-        let env = toolset.env_with_path(config).await?;
-
-        return crate::cli::exec::exec_program(bin_path, args, env);
-    }
-
-    bail!(
-        "Tool '{}' or bin '{}' not found",
-        shim.tool_name,
-        shim.bin_name
-    );
-}
-
-// [experimental ]
+// [experimental] Execute a custom toml shim.
 #[derive(Debug, Parser)]
 pub struct TomlShim {
     /// The TOML shim file to execute
@@ -333,7 +245,9 @@ pub struct TomlShim {
 
 impl TomlShim {
     pub async fn run(self) -> Result<()> {
-        execute_toml_shim(&self.file, self.args).await
+        let shim = TomlShimFile::from_file(&self.file)?;
+        let mut config = Config::get().await?;
+        return execute_with_tool_request(&shim, &mut config, self.args, &self.file).await;
     }
 }
 
