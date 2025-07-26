@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::dirs;
 use crate::file;
 use crate::hash;
-use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersionOptions, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersionOptions};
 use clap::Parser;
 use color_eyre::eyre::{Result, bail, eyre};
 use serde::Deserialize;
@@ -178,20 +177,10 @@ async fn execute_with_tool_request(
     // Use direct ToolRequest creation with ToolVersionOptions
     let tool_request = shim.to_tool_request(shim_path)?;
 
-    // Build a toolset with the tool request for caching compatibility
-    let backend_arg = tool_request.ba().clone();
-    let version_str = tool_request.version();
-
-    // Create a ToolArg that represents our parsed tool
-    let tool_spec = format!("{}@{}", backend_arg.short, version_str);
-    let tool_arg: ToolArg = tool_spec.parse()?;
-
-    // Build toolset and use caching
-    let mut toolset = ToolsetBuilder::new()
-        .with_args(&[tool_arg])
-        .with_default_to_latest(true)
-        .build(config)
-        .await?;
+    // Create a toolset directly and add the tool request with its options
+    let source = ToolSource::TomlShim(shim_path.to_path_buf());
+    let mut toolset = crate::toolset::Toolset::new(source);
+    toolset.add_version(tool_request);
 
     // Install the tool if it's missing
     let install_opts = InstallOptions {

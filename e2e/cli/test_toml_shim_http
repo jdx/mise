@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2103
 
-# Test to demonstrate current limitation with HTTP backend nested options in TOML shims
-# This test is expected to fail and documents the known limitation that needs to be addressed
+export MISE_EXPERIMENTAL=1
+
+# Test TOML shim with HTTP backend nested options
+# This test verifies that the TOML shim correctly passes backend options to the HTTP backend
 
 # Create a test project directory
 mkdir -p toml_shim_http_test/bin
@@ -16,16 +18,17 @@ cat >bin/hello-world <<'EOF'
 tool = "http:hello-toml-shim"
 version = "1.0.0"
 
-# These nested options cause issues with current ToolArg parsing implementation
+# These nested options are now properly handled by the TOML shim
 url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 bin_path = "hello-world-1.0.0/bin"
 postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
 EOF
 chmod +x bin/hello-world
 
-# This now works! No more "invalid prefix" error - nested options are handled correctly
-# However, it may still fail on tool installation/execution
-assert_succeed "mise toml-shim bin/hello-world || echo 'HTTP backend test - nested options parsing fixed!'"
+# The TOML shim now correctly passes options to the HTTP backend
+# No more "Http backend requires 'url' option" error
+assert_succeed "mise toml-shim bin/hello-world"
+mise uninstall --all && mise cache clear
 
 # Test: TOML shim with complex nested platform options (also currently not supported)
 cat >bin/hello-platform <<'EOF'
@@ -53,7 +56,7 @@ assert_succeed "mise toml-shim bin/hello-platform || echo 'Platform-specific con
 cd ..
 rm -rf toml_shim_http_test
 
-echo "SUCCESS: Complex nested options parsing has been FIXED!"
-echo "TOML shims now properly handle HTTP backend configurations with nested options."
-echo "The implementation creates temporary mise.toml files to handle complex structures."
-echo "This enables full support for HTTP backend, platform configs, and other advanced features."
+echo "SUCCESS: TOML shim HTTP backend option passing has been FIXED!"
+echo "TOML shims now properly pass backend options to HTTP backends."
+echo "The implementation preserves ToolRequest options when creating toolsets."
+echo "This enables HTTP backend URL, bin_path, postinstall and other options to work correctly."
