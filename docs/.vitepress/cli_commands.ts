@@ -291,10 +291,10 @@ export const commands: { [key: string]: Command } = {
   "test-tool": {
     hide: false,
   },
-  "toml-shim": {
+  tool: {
     hide: false,
   },
-  tool: {
+  "tool-stub": {
     hide: false,
   },
   trust: {

@@ -8,6 +8,7 @@ use crate::hash;
 use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersionOptions};
 use clap::Parser;
 use color_eyre::eyre::{Result, bail, eyre};
+use eyre::ensure;
 use serde::{Deserialize, Deserializer};
 use toml::Value;
 
@@ -201,7 +202,7 @@ async fn find_cached_or_resolve_bin_path(
             // Cache the result
             if let Err(e) = BinPathCache::save(&bin_path, &cache_key) {
                 // Don't fail if caching fails, just log it
-                log::warn!("Failed to cache binary path: {e}");
+                warn!("Failed to cache binary path: {e}");
             }
 
             return Ok(Some(bin_path));
@@ -224,6 +225,15 @@ async fn execute_with_tool_request(
     let source = ToolSource::ToolStub(stub_path.to_path_buf());
     let mut toolset = crate::toolset::Toolset::new(source);
     toolset.add_version(tool_request);
+
+    // Resolve the toolset to populate current versions
+    toolset.resolve(config).await?;
+
+    // Ensure we have current versions after resolving
+    ensure!(
+        !toolset.list_current_versions().is_empty(),
+        "No current versions found after resolving toolset"
+    );
 
     // Install the tool if it's missing
     let install_opts = InstallOptions {
