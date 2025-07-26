@@ -8,7 +8,7 @@ use crate::file;
 use crate::hash;
 use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersionOptions, ToolsetBuilder};
 use clap::Parser;
-use color_eyre::eyre::{Result, bail};
+use color_eyre::eyre::{Result, bail, eyre};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -42,7 +42,7 @@ impl TomlShimFile {
         let shim_name = path
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or_else(|| color_eyre::eyre::eyre!("Invalid shim file name"))?
+            .ok_or_else(|| eyre!("Invalid shim file name"))?
             .to_string();
 
         // Determine tool name from tool field or derive from shim name
@@ -78,13 +78,7 @@ impl TomlShimFile {
             opts,
         };
 
-        if options.is_empty() {
-            // Simple case: no options, just version
-            ToolRequest::new(backend_arg.into(), &self.version, source)
-        } else {
-            // Complex case: use ToolVersionOptions directly
-            ToolRequest::new_opts(backend_arg.into(), &self.version, options, source)
-        }
+        ToolRequest::new_opts(backend_arg.into(), &self.version, options, source)
     }
 }
 
