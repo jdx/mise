@@ -12,7 +12,7 @@ pub enum ToolSource {
     ToolVersions(PathBuf),
     MiseToml(PathBuf),
     IdiomaticVersionFile(PathBuf),
-    TomlShim(PathBuf),
+    ToolStub(PathBuf),
     Argument,
     Environment(String, String),
     #[default]
@@ -25,7 +25,7 @@ impl Display for ToolSource {
             ToolSource::ToolVersions(path) => write!(f, "{}", display_path(path)),
             ToolSource::MiseToml(path) => write!(f, "{}", display_path(path)),
             ToolSource::IdiomaticVersionFile(path) => write!(f, "{}", display_path(path)),
-            ToolSource::TomlShim(path) => write!(f, "{}", display_path(path)),
+            ToolSource::ToolStub(path) => write!(f, "{}", display_path(path)),
             ToolSource::Argument => write!(f, "--runtime"),
             ToolSource::Environment(k, v) => write!(f, "{k}={v}"),
             ToolSource::Unknown => write!(f, "unknown"),
@@ -39,7 +39,7 @@ impl ToolSource {
             ToolSource::ToolVersions(path) => Some(path),
             ToolSource::MiseToml(path) => Some(path),
             ToolSource::IdiomaticVersionFile(path) => Some(path),
-            ToolSource::TomlShim(path) => Some(path),
+            ToolSource::ToolStub(path) => Some(path),
             _ => None,
         }
     }
@@ -58,8 +58,8 @@ impl ToolSource {
                 "type".to_string() => "idiomatic-version-file".to_string(),
                 "path".to_string() => path.to_string_lossy().to_string(),
             },
-            ToolSource::TomlShim(path) => indexmap! {
-                "type".to_string() => "toml-shim".to_string(),
+            ToolSource::ToolStub(path) => indexmap! {
+                "type".to_string() => "tool-stub".to_string(),
                 "path".to_string() => path.to_string_lossy().to_string(),
             },
             ToolSource::Argument => indexmap! {
@@ -96,8 +96,8 @@ impl Serialize for ToolSource {
                 s.serialize_field("type", "idiomatic-version-file")?;
                 s.serialize_field("path", path)?;
             }
-            ToolSource::TomlShim(path) => {
-                s.serialize_field("type", "toml-shim")?;
+            ToolSource::ToolStub(path) => {
+                s.serialize_field("type", "tool-stub")?;
                 s.serialize_field("path", path)?;
             }
             ToolSource::Argument => {

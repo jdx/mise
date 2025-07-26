@@ -2723,11 +2723,11 @@ const completionSpec: Fig.Spec = {
       },
     },
     {
-      name: "toml-shim",
+      name: "tool-stub",
       args: [
         {
           name: "file",
-          description: "The TOML shim file to execute",
+          description: "The tool stub file to execute",
           template: "filepaths",
         },
         {

@@ -43,17 +43,17 @@ mkdir -p bin
 DIRECT_NODE_PATH="$(which node)"
 echo "🎯 Direct Node.js path: $DIRECT_NODE_PATH"
 
-# Create mise shim
+# Create mise tool stub
 cat >bin/node-mise <<'EOF'
-#!/usr/bin/env -S mise toml-shim
+#!/usr/bin/env -S mise tool-stub
 version = "20.0.0"
 tool = "node"
 bin = "node"
 EOF
 chmod +x bin/node-mise
 
-# Test mise shim works
-echo "📋 Testing mise shim..."
+# Test mise tool stub works
+echo "📋 Testing mise tool stub..."
 ./bin/node-mise --version
 
 # Create DotSlash shim

@@ -921,8 +921,8 @@ cmd tool help="Gets information about a tool" {
     flag --tool-options help="Only show tool options"
     arg <TOOL> help="Tool name to get information about"
 }
-cmd toml-shim {
-    arg <FILE> help="The TOML shim file to execute"
+cmd tool-stub {
+    arg <FILE> help="The tool stub file to execute"
     arg "[ARGS]…" help="Arguments to pass to the tool" required=#false double_dash=automatic var=#true
 }
 cmd trust help="Marks a config file as trusted" {

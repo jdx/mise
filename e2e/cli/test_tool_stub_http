@@ -3,39 +3,39 @@
 
 export MISE_EXPERIMENTAL=1
 
-# Test TOML shim with HTTP backend nested options
-# This test verifies that the TOML shim correctly passes backend options to the HTTP backend
+# Test tool stub with HTTP backend nested options
+# This test verifies that the tool stub correctly passes backend options to the HTTP backend
 
 # Create a test project directory
-mkdir -p toml_shim_http_test/bin
-cd toml_shim_http_test
+mkdir -p tool_stub_http_test/bin
+cd tool_stub_http_test
 
-# Test: TOML shim with HTTP backend (currently not supported due to nested options limitation)
+# Test: Tool stub with HTTP backend (currently not supported due to nested options limitation)
 cat >bin/hello-world <<'EOF'
-#!/usr/bin/env -S mise toml-shim
-# HTTP backend TOML shim test - demonstrates current limitation
+#!/usr/bin/env -S mise tool-stub
+# HTTP backend tool stub test - demonstrates current limitation
 
-tool = "http:hello-toml-shim"
+tool = "http:hello-tool-stub"
 version = "1.0.0"
 
-# These nested options are now properly handled by the TOML shim
+# These nested options are now properly handled by the tool stub
 url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 bin_path = "hello-world-1.0.0/bin"
 postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
 EOF
 chmod +x bin/hello-world
 
-# The TOML shim now correctly passes options to the HTTP backend
+# The tool stub now correctly passes options to the HTTP backend
 # No more "Http backend requires 'url' option" error
-assert_succeed "mise toml-shim bin/hello-world"
+assert_succeed "mise tool-stub bin/hello-world"
 mise uninstall --all && mise cache clear
 
-# Test: TOML shim with complex nested platform options (also currently not supported)
+# Test: Tool stub with complex nested platform options (also currently not supported)
 cat >bin/hello-platform <<'EOF'
-#!/usr/bin/env -S mise toml-shim
-# HTTP backend TOML shim with platform-specific config - demonstrates limitation
+#!/usr/bin/env -S mise tool-stub
+# HTTP backend tool stub with platform-specific config - demonstrates limitation
 
-tool = "http:hello-platform-shim"
+tool = "http:hello-platform-stub"
 version = "1.0.0"
 bin_path = "bin"
 postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/bin/hello-world"
@@ -50,4 +50,4 @@ EOF
 chmod +x bin/hello-platform
 
 # This also now works for TOML parsing - nested tables are handled correctly
-assert_succeed "mise toml-shim bin/hello-platform"
+assert_succeed "mise tool-stub bin/hello-platform"

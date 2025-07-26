@@ -58,8 +58,8 @@ mod shell;
 mod sync;
 mod tasks;
 mod test_tool;
-pub mod toml_shim;
 mod tool;
+pub mod tool_stub;
 mod trust;
 mod uninstall;
 mod unset;
@@ -234,7 +234,7 @@ pub enum Commands {
     Tasks(tasks::Tasks),
     TestTool(test_tool::TestTool),
     Tool(tool::Tool),
-    TomlShim(toml_shim::TomlShim),
+    ToolStub(tool_stub::ToolStub),
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
     Unset(unset::Unset),
@@ -302,7 +302,7 @@ impl Commands {
             Self::Tasks(cmd) => cmd.run().await,
             Self::TestTool(cmd) => cmd.run().await,
             Self::Tool(cmd) => cmd.run().await,
-            Self::TomlShim(cmd) => cmd.run().await,
+            Self::ToolStub(cmd) => cmd.run().await,
             Self::Trust(cmd) => cmd.run().await,
             Self::Uninstall(cmd) => cmd.run().await,
             Self::Unset(cmd) => cmd.run().await,
@@ -327,8 +327,8 @@ impl Commands {
 impl Cli {
     pub async fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
-        if *crate::env::MISE_TOML_SHIM && args.len() >= 2 {
-            toml_shim::short_circuit_shim(&args[2..]).await?;
+        if *crate::env::MISE_TOOL_STUB && args.len() >= 2 {
+            tool_stub::short_circuit_stub(&args[2..]).await?;
         }
         measure!("logger", { logger::init() });
         measure!("handle_shim", { shims::handle_shim().await })?;

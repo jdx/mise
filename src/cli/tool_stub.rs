@@ -12,7 +12,7 @@ use serde::{Deserialize, Deserializer};
 use toml::Value;
 
 #[derive(Debug, Deserialize)]
-pub struct TomlShimFile {
+pub struct ToolStubFile {
     #[serde(default = "default_version")]
     pub version: String,
     pub bin: Option<String>,  // defaults to filename if not specified
@@ -21,7 +21,7 @@ pub struct TomlShimFile {
     pub install_env: indexmap::IndexMap<String, String>,
     #[serde(default)]
     pub os: Option<Vec<String>>,
-    #[serde(flatten, deserialize_with = "deserialize_toml_options")]
+    #[serde(flatten, deserialize_with = "deserialize_tool_stub_options")]
     pub opts: indexmap::IndexMap<String, String>,
     #[serde(skip)]
     pub tool_name: String,
@@ -30,7 +30,7 @@ pub struct TomlShimFile {
 }
 
 // Custom deserializer that converts TOML values to strings for storage in opts
-fn deserialize_toml_options<'de, D>(
+fn deserialize_tool_stub_options<'de, D>(
     deserializer: D,
 ) -> Result<indexmap::IndexMap<String, String>, D::Error>
 where
@@ -75,40 +75,40 @@ fn default_version() -> String {
     "latest".to_string()
 }
 
-impl TomlShimFile {
+impl ToolStubFile {
     pub fn from_file(path: &Path) -> Result<Self> {
         let content = file::read_to_string(path)?;
-        let mut shim: TomlShimFile = toml::from_str(&content)?;
+        let mut stub: ToolStubFile = toml::from_str(&content)?;
 
-        // Extract shim name from file name
-        let shim_name = path
+        // Extract stub name from file name
+        let stub_name = path
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or_else(|| eyre!("Invalid shim file name"))?
+            .ok_or_else(|| eyre!("Invalid stub file name"))?
             .to_string();
 
-        // Determine tool name from tool field or derive from shim name
-        let tool_name = shim
+        // Determine tool name from tool field or derive from stub name
+        let tool_name = stub
             .tool
             .clone()
-            .or_else(|| shim.opts.get("tool").map(|s| s.to_string()))
-            .unwrap_or_else(|| shim_name.clone());
+            .or_else(|| stub.opts.get("tool").map(|s| s.to_string()))
+            .unwrap_or_else(|| stub_name.clone());
 
         // Determine bin name (what executable to run) - defaults to filename
-        let bin_name = shim.bin.clone().unwrap_or_else(|| shim_name.clone());
+        let bin_name = stub.bin.clone().unwrap_or_else(|| stub_name.clone());
 
-        shim.tool_name = tool_name;
-        shim.bin_name = bin_name;
+        stub.tool_name = tool_name;
+        stub.bin_name = bin_name;
 
-        Ok(shim)
+        Ok(stub)
     }
 
     // Create a ToolRequest directly using ToolVersionOptions
-    pub fn to_tool_request(&self, shim_path: &Path) -> Result<ToolRequest> {
+    pub fn to_tool_request(&self, stub_path: &Path) -> Result<ToolRequest> {
         use crate::cli::args::BackendArg;
 
         let backend_arg = BackendArg::from(&self.tool_name);
-        let source = ToolSource::TomlShim(shim_path.to_path_buf());
+        let source = ToolSource::ToolStub(stub_path.to_path_buf());
 
         // Create ToolVersionOptions from our fields
         let mut opts = self.opts.clone();
@@ -130,9 +130,9 @@ impl TomlShimFile {
 struct BinPathCache;
 
 impl BinPathCache {
-    fn cache_key(shim_path: &Path) -> Result<String> {
-        let path_str = shim_path.to_string_lossy();
-        let mtime = shim_path.metadata()?.modified()?;
+    fn cache_key(stub_path: &Path) -> Result<String> {
+        let path_str = stub_path.to_string_lossy();
+        let mtime = stub_path.metadata()?.modified()?;
         let mtime_str = format!(
             "{:?}",
             mtime
@@ -144,7 +144,7 @@ impl BinPathCache {
     }
 
     fn cache_file_path(cache_key: &str) -> PathBuf {
-        dirs::CACHE.join("toml-shims").join(cache_key)
+        dirs::CACHE.join("tool-stubs").join(cache_key)
     }
 
     fn load(cache_key: &str) -> Option<PathBuf> {
@@ -184,11 +184,11 @@ impl BinPathCache {
 async fn find_cached_or_resolve_bin_path(
     toolset: &crate::toolset::Toolset,
     config: &std::sync::Arc<Config>,
-    shim: &TomlShimFile,
-    shim_path: &Path,
+    stub: &ToolStubFile,
+    stub_path: &Path,
 ) -> Result<Option<PathBuf>> {
     // Generate cache key from file path and mtime
-    let cache_key = BinPathCache::cache_key(shim_path)?;
+    let cache_key = BinPathCache::cache_key(stub_path)?;
 
     // Try to load from cache first
     if let Some(bin_path) = BinPathCache::load(&cache_key) {
@@ -196,8 +196,8 @@ async fn find_cached_or_resolve_bin_path(
     }
 
     // Cache miss - resolve the binary path
-    if let Some((backend, tv)) = toolset.which(config, &shim.bin_name).await {
-        if let Some(bin_path) = backend.which(config, &tv, &shim.bin_name).await? {
+    if let Some((backend, tv)) = toolset.which(config, &stub.bin_name).await {
+        if let Some(bin_path) = backend.which(config, &tv, &stub.bin_name).await? {
             // Cache the result
             if let Err(e) = BinPathCache::save(&bin_path, &cache_key) {
                 // Don't fail if caching fails, just log it
@@ -212,16 +212,16 @@ async fn find_cached_or_resolve_bin_path(
 }
 
 async fn execute_with_tool_request(
-    shim: &TomlShimFile,
+    stub: &ToolStubFile,
     config: &mut std::sync::Arc<Config>,
     args: Vec<String>,
-    shim_path: &Path,
+    stub_path: &Path,
 ) -> Result<()> {
     // Use direct ToolRequest creation with ToolVersionOptions
-    let tool_request = shim.to_tool_request(shim_path)?;
+    let tool_request = stub.to_tool_request(stub_path)?;
 
     // Create a toolset directly and add the tool request with its options
-    let source = ToolSource::TomlShim(shim_path.to_path_buf());
+    let source = ToolSource::ToolStub(stub_path.to_path_buf());
     let mut toolset = crate::toolset::Toolset::new(source);
     toolset.add_version(tool_request);
 
@@ -242,7 +242,7 @@ async fn execute_with_tool_request(
 
     // Find the binary path using cache
     if let Some(bin_path) =
-        find_cached_or_resolve_bin_path(&toolset, &*config, shim, shim_path).await?
+        find_cached_or_resolve_bin_path(&toolset, &*config, stub, stub_path).await?
     {
         // Get the environment with proper PATH from toolset
         let env = toolset.env_with_path(config).await?;
@@ -252,15 +252,15 @@ async fn execute_with_tool_request(
 
     bail!(
         "Tool '{}' or bin '{}' not found",
-        shim.tool_name,
-        shim.bin_name
+        stub.tool_name,
+        stub.bin_name
     );
 }
 
-// [experimental] Execute a custom toml shim.
+// [experimental] Execute a custom tool stub.
 #[derive(Debug, Parser)]
-pub struct TomlShim {
-    /// The TOML shim file to execute
+pub struct ToolStub {
+    /// The tool stub file to execute
     #[clap(value_name = "FILE")]
     pub file: PathBuf,
 
@@ -269,30 +269,30 @@ pub struct TomlShim {
     pub args: Vec<String>,
 }
 
-impl TomlShim {
+impl ToolStub {
     pub async fn run(self) -> Result<()> {
-        let shim = TomlShimFile::from_file(&self.file)?;
+        let stub = ToolStubFile::from_file(&self.file)?;
         let mut config = Config::get().await?;
-        return execute_with_tool_request(&shim, &mut config, self.args, &self.file).await;
+        return execute_with_tool_request(&stub, &mut config, self.args, &self.file).await;
     }
 }
 
-pub(crate) async fn short_circuit_shim(args: &[String]) -> Result<()> {
-    // Early return if no args or not enough args for a shim
+pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
+    // Early return if no args or not enough args for a stub
     if args.is_empty() {
         return Ok(());
     }
 
-    // Check if the first argument looks like a TOML shim file path
-    let potential_shim_path = std::path::Path::new(&args[0]);
+    // Check if the first argument looks like a tool stub file path
+    let potential_stub_path = std::path::Path::new(&args[0]);
 
     // Only proceed if it's an existing file with a reasonable extension
-    if !potential_shim_path.exists() {
+    if !potential_stub_path.exists() {
         return Ok(());
     }
 
     // Generate cache key from file path and mtime
-    let cache_key = BinPathCache::cache_key(potential_shim_path)?;
+    let cache_key = BinPathCache::cache_key(potential_stub_path)?;
 
     // Check if we have a cached binary path
     if let Some(bin_path) = BinPathCache::load(&cache_key) {

@@ -75,10 +75,10 @@ pub static XDG_STATE_HOME: Lazy<PathBuf> =
 
 /// always display "friendly" errors even in debug mode
 pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| var_is_true("MISE_FRIENDLY_ERROR"));
-pub static MISE_TOML_SHIM: Lazy<bool> =
-    Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("toml-shim"));
+pub static MISE_TOOL_STUB: Lazy<bool> =
+    Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("tool-stub"));
 pub static MISE_NO_CONFIG: Lazy<bool> =
-    Lazy::new(|| var_is_true("MISE_NO_CONFIG") || *MISE_TOML_SHIM);
+    Lazy::new(|| var_is_true("MISE_NO_CONFIG") || *MISE_TOOL_STUB);
 /// true if RUST_BACKTRACE is set (enables detailed error tracebacks)
 pub static RUST_BACKTRACE: Lazy<bool> = Lazy::new(|| {
     match var("RUST_BACKTRACE") {
@@ -180,8 +180,8 @@ pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
         return false;
     }
 
-    // Check if running as TOML shim
-    if *MISE_TOML_SHIM {
+    // Check if running as tool stub
+    if *MISE_TOOL_STUB {
         return true;
     }
 
