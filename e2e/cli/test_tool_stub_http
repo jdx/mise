@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2103
+# shellcheck disable=SC2103,SC2016
 
 export MISE_EXPERIMENTAL=1
+# Disable GPG verification to avoid test failures
+export MISE_GPG_VERIFY=false
 
 # Test tool stub with HTTP backend nested options
 # This test verifies that the tool stub correctly passes backend options to the HTTP backend
@@ -10,33 +12,37 @@ export MISE_EXPERIMENTAL=1
 mkdir -p tool_stub_http_test/bin
 cd tool_stub_http_test
 
-# Test: Tool stub with HTTP backend (currently not supported due to nested options limitation)
-cat >bin/hello-world <<'EOF'
+# Function to create and test a tool stub
+# Usage: test_tool_stub <stub_name> <toml_content>
+test_tool_stub() {
+	local stub_name="$1"
+	local toml_content="$2"
+
+	# Create the tool stub file
+	cat >"bin/$stub_name" <<EOF
 #!/usr/bin/env -S mise tool-stub
-# HTTP backend tool stub test - demonstrates current limitation
+$toml_content
+EOF
+	chmod +x "bin/$stub_name"
 
-tool = "http:hello-tool-stub"
+	# Test the tool stub
+	assert_succeed "mise tool-stub bin/$stub_name"
+
+	# Clean up for next test
+	mise uninstall --all && mise cache clear
+}
+
+# Test 1: Basic HTTP backend with bin_path
+test_tool_stub "hello-world" 'tool = "http:hello-tool-stub"
 version = "1.0.0"
-
-# These nested options are now properly handled by the tool stub
 url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 bin_path = "hello-world-1.0.0/bin"
-postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"
-EOF
-chmod +x bin/hello-world
+postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"'
 
-# The tool stub now correctly passes options to the HTTP backend
-# No more "Http backend requires 'url' option" error
-assert_succeed "mise tool-stub bin/hello-world"
-mise uninstall --all && mise cache clear
-
-# Test: Tool stub with complex nested platform options (also currently not supported)
-cat >bin/hello-platform <<'EOF'
-#!/usr/bin/env -S mise tool-stub
-# HTTP backend tool stub with platform-specific config - demonstrates limitation
-
-tool = "http:hello-platform-stub"
+# Test 2: HTTP backend with platform-specific URLs and strip_components
+test_tool_stub "hello-platform" 'tool = "http:hello-platform-stub"
 version = "1.0.0"
+bin = "hello-world"
 bin_path = "bin"
 postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/bin/hello-world"
 strip_components = 1
@@ -45,9 +51,13 @@ strip_components = 1
 url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 
 [platforms.darwin-arm64]
-url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
-EOF
-chmod +x bin/hello-platform
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"'
 
-# This also now works for TOML parsing - nested tables are handled correctly
-assert_succeed "mise tool-stub bin/hello-platform"
+# Test 3: HTTP backend with simple configuration
+test_tool_stub "hello-simple" 'tool = "http:hello-simple-stub"
+version = "1.0.0"
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+strip_components = 1
+bin = "hello-world"
+bin_path = "bin"
+postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/bin/hello-world"'

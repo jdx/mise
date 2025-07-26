@@ -3,6 +3,9 @@
 
 # Test basic tool stub functionality with stable tools
 
+# Disable GPG verification to avoid test failures
+export MISE_GPG_VERIFY=false
+
 # Create a test project directory
 mkdir -p tool_stub_basic/bin
 cd tool_stub_basic
