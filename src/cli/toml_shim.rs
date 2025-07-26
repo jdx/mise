@@ -3,20 +3,12 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use crate::cli::args::ToolArg;
-#[cfg(any(test, windows))]
-use crate::cmd;
 use crate::config::Config;
 use crate::dirs;
-#[cfg(not(test))]
-use crate::env;
-#[cfg(all(windows, not(test)))]
-use crate::env::PATH_KEY;
 use crate::file;
 use crate::hash;
 use crate::toolset::{InstallOptions, ToolRequest, ToolSource, ToolVersionOptions, ToolsetBuilder};
 use clap::Parser;
-#[cfg(any(test, windows))]
-use color_eyre::eyre::eyre;
 use color_eyre::eyre::{Result, bail};
 use duct::IntoExecutablePath;
 use serde::Deserialize;
@@ -329,96 +321,21 @@ async fn execute_with_tool_arg(
     );
 }
 
-#[cfg(all(not(test), unix))]
 fn execute_tool<T, U>(program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
 where
     T: IntoExecutablePath,
     U: IntoIterator,
     U::Item: Into<OsString>,
 {
-    for (k, v) in env.iter() {
-        env::set_var(k, v);
-    }
-    let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
-    let program = program.to_executable();
-    let err = exec::Command::new(program.clone()).args(&args).exec();
-    bail!("{:?} {err}", program.to_string_lossy())
-}
-
-#[cfg(all(windows, not(test)))]
-fn execute_tool<T, U>(program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
-where
-    T: IntoExecutablePath,
-    U: IntoIterator,
-    U::Item: Into<OsString>,
-{
-    let cwd = crate::dirs::CWD.clone().unwrap_or_default();
-    let program = program.to_executable();
-    let path = env.get(&*PATH_KEY).map(OsString::from);
-    let program = which::which_in(program, path, cwd)?;
-    let mut cmd = cmd::cmd(program, args);
-    for (k, v) in env.iter() {
-        cmd = cmd.env(k, v);
-    }
-
-    // Windows does not support exec in the same way as Unix,
-    // so we emulate it instead by not handling Ctrl-C and letting
-    // the child process deal with it instead.
-    win_exec::set_ctrlc_handler()?;
-
-    let res = cmd.unchecked().run()?;
-    match res.status.code() {
-        Some(0) => Ok(()),
-        Some(code) => Err(eyre!("command failed: exit code {}", code)),
-        None => Err(eyre!("command failed: terminated by signal")),
-    }
-}
-
-#[cfg(test)]
-fn execute_tool<T, U>(program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
-where
-    T: IntoExecutablePath,
-    U: IntoIterator,
-    U::Item: Into<OsString>,
-{
-    let mut cmd = cmd::cmd(program, args);
-    for (k, v) in env.iter() {
-        cmd = cmd.env(k, v);
-    }
-    let res = cmd.unchecked().run()?;
-    match res.status.code() {
-        Some(0) => Ok(()),
-        Some(code) => Err(eyre!("command failed: exit code {}", code)),
-        None => Err(eyre!("command failed: terminated by signal")),
-    }
-}
-
-#[cfg(all(windows, not(test)))]
-mod win_exec {
-    use color_eyre::eyre::{Result, eyre};
-    use winapi::shared::minwindef::{BOOL, DWORD, FALSE, TRUE};
-    use winapi::um::consoleapi::SetConsoleCtrlHandler;
-    // Windows way of creating a process is to just go ahead and pop a new process
-    // with given program and args into existence. But in unix-land, it instead happens
-    // in a two-step process where you first fork the process and then exec the new program,
-    // essentially replacing the current process with the new one.
-    // We use Windows API to set a Ctrl-C handler that does nothing, essentially attempting
-    // to emulate the ctrl-c behavior by not handling it ourselves, and propagating it to
-    // the child process to handle it instead.
-    // This is the same way cargo does it in cargo run.
-    unsafe extern "system" fn ctrlc_handler(_: DWORD) -> BOOL {
-        // This is a no-op handler to prevent Ctrl-C from terminating the process.
-        // It allows the child process to handle Ctrl-C instead.
-        TRUE
-    }
-
-    pub(super) fn set_ctrlc_handler() -> Result<()> {
-        if unsafe { SetConsoleCtrlHandler(Some(ctrlc_handler), TRUE) } == FALSE {
-            Err(eyre!("Could not set Ctrl-C handler."))
-        } else {
-            Ok(())
-        }
-    }
+    // Use the shared exec logic from exec.rs
+    let exec = crate::cli::exec::Exec {
+        tool: vec![],
+        command: None,
+        c: None,
+        jobs: None,
+        raw: false,
+    };
+    exec.exec(program, args, env)
 }
 
 // [experimental ]

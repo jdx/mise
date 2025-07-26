@@ -112,7 +112,7 @@ impl Exec {
     }
 
     #[cfg(all(not(test), unix))]
-    fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
+    pub fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
     where
         T: IntoExecutablePath,
         U: IntoIterator,
@@ -128,7 +128,7 @@ impl Exec {
     }
 
     #[cfg(all(windows, not(test)))]
-    fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
+    pub fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
     where
         T: IntoExecutablePath,
         U: IntoIterator,
@@ -157,7 +157,7 @@ impl Exec {
     }
 
     #[cfg(test)]
-    fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
+    pub fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
     where
         T: IntoExecutablePath,
         U: IntoIterator,
