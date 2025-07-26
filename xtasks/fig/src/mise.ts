@@ -2723,6 +2723,22 @@ const completionSpec: Fig.Spec = {
       },
     },
     {
+      name: "tool-stub",
+      args: [
+        {
+          name: "file",
+          description: "The tool stub file to execute",
+          template: "filepaths",
+        },
+        {
+          name: "args",
+          description: "Arguments to pass to the tool",
+          isOptional: true,
+          isVariadic: true,
+        },
+      ],
+    },
+    {
       name: "trust",
       description: "Marks a config file as trusted",
       options: [

@@ -294,6 +294,9 @@ export const commands: { [key: string]: Command } = {
   tool: {
     hide: false,
   },
+  "tool-stub": {
+    hide: false,
+  },
   trust: {
     hide: false,
   },
