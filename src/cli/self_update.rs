@@ -110,6 +110,10 @@ impl SelfUpdate {
                         .join("mise")
                         .join(".disable-self-update")
                         .exists()
+                    || p.join("lib64")
+                        .join("mise")
+                        .join(".disable-self-update")
+                        .exists()
             })
             .unwrap_or_default()
     }
