@@ -110,7 +110,7 @@ impl ToolStubFile {
             .or_else(|| stub.opts.get("tool").map(|s| s.to_string()))
             .unwrap_or_else(|| {
                 if has_http_backend_config(&stub.opts) {
-                    format!("http:{}", stub_name)
+                    format!("http:{stub_name}")
                 } else {
                     stub_name.clone()
                 }
@@ -243,6 +243,21 @@ fn try_find_bin_in_path(base_path: &Path, bin: &str) -> Option<PathBuf> {
     }
 }
 
+fn list_executable_files(dir_path: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir_path) else {
+        return Vec::new();
+    };
+
+    entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
+                && crate::file::is_executable(&entry.path())
+        })
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .collect()
+}
+
 fn resolve_bin_with_path(
     toolset: &crate::toolset::Toolset,
     config: &std::sync::Arc<Config>,
@@ -279,18 +294,28 @@ fn is_bin_path(bin: &str) -> bool {
     bin.contains('/') || bin.contains('\\')
 }
 
+#[derive(Debug)]
+enum BinPathError {
+    ToolNotFound(String),
+    BinNotFound {
+        tool_name: String,
+        bin: String,
+        available_bins: Vec<String>,
+    },
+}
+
 async fn find_cached_or_resolve_bin_path(
     toolset: &crate::toolset::Toolset,
     config: &std::sync::Arc<Config>,
     stub: &ToolStubFile,
     stub_path: &Path,
-) -> Result<Option<PathBuf>> {
+) -> Result<Result<PathBuf, BinPathError>> {
     // Generate cache key from file path and mtime
     let cache_key = BinPathCache::cache_key(stub_path)?;
 
     // Try to load from cache first
     if let Some(bin_path) = BinPathCache::load(&cache_key) {
-        return Ok(Some(bin_path));
+        return Ok(Ok(bin_path));
     }
 
     // Cache miss - resolve the binary path
@@ -308,10 +333,45 @@ async fn find_cached_or_resolve_bin_path(
             crate::warn!("Failed to cache binary path: {e}");
         }
 
-        return Ok(Some(bin_path));
+        return Ok(Ok(bin_path));
     }
 
-    Ok(None)
+    // Determine the specific error
+    if is_bin_path(bin) {
+        // For path-based bins, check if the tool exists first
+        if let Some(tv) = find_tool_version(toolset, config, &stub.tool_name) {
+            let install_path = tv.install_path();
+            let mut available_bins = list_executable_files(&install_path);
+
+            // Also check in subdirectory if it exists
+            if let Some(subdir_path) = find_single_subdirectory(&install_path) {
+                let subdir_bins = list_executable_files(&subdir_path);
+                available_bins.extend(subdir_bins);
+            }
+
+            Ok(Err(BinPathError::BinNotFound {
+                tool_name: stub.tool_name.clone(),
+                bin: bin.to_string(),
+                available_bins,
+            }))
+        } else {
+            Ok(Err(BinPathError::ToolNotFound(stub.tool_name.clone())))
+        }
+    } else {
+        // For simple bin names, check if any tool provides this bin
+        if let Some((_backend, tv)) = toolset.which(config, bin).await {
+            // Tool exists but bin not found within it
+            let available_bins = list_executable_files(&tv.install_path());
+            Ok(Err(BinPathError::BinNotFound {
+                tool_name: tv.ba().full(),
+                bin: bin.to_string(),
+                available_bins,
+            }))
+        } else {
+            // No tool provides this bin
+            Ok(Err(BinPathError::ToolNotFound(bin.to_string())))
+        }
+    }
 }
 
 async fn execute_with_tool_request(
@@ -353,30 +413,80 @@ async fn execute_with_tool_request(
     toolset.notify_if_versions_missing(config).await;
 
     // Find the binary path using cache
-    if let Some(bin_path) =
-        find_cached_or_resolve_bin_path(&toolset, &*config, stub, stub_path).await?
-    {
-        // Get the environment with proper PATH from toolset
-        let env = toolset.env_with_path(config).await?;
+    match find_cached_or_resolve_bin_path(&toolset, &*config, stub, stub_path).await? {
+        Ok(bin_path) => {
+            // Get the environment with proper PATH from toolset
+            let env = toolset.env_with_path(config).await?;
 
-        return crate::cli::exec::exec_program(bin_path, args, env);
+            return crate::cli::exec::exec_program(bin_path, args, env);
+        }
+        Err(e) => match e {
+            BinPathError::ToolNotFound(tool_name) => {
+                bail!("Tool '{}' not found", tool_name);
+            }
+            BinPathError::BinNotFound {
+                tool_name,
+                bin,
+                available_bins,
+            } => {
+                if available_bins.is_empty() {
+                    bail!(
+                        "Tool '{}' does not have a binary named '{}'",
+                        tool_name,
+                        bin
+                    );
+                } else {
+                    bail!(
+                        "Tool '{}' does not have a binary named '{}'. Available binaries: {}",
+                        tool_name,
+                        bin,
+                        available_bins.join(", ")
+                    );
+                }
+            }
+        },
     }
-
-    bail!(
-        "Tool '{}' or bin '{}' not found",
-        stub.tool_name,
-        stub.bin.as_ref().unwrap()
-    );
 }
 
-// [experimental] Execute a custom tool stub.
+/// Execute a tool stub
+///
+/// Tool stubs are executable files containing TOML configuration that specify
+/// which tool to run and how to run it. They provide a convenient way to create
+/// portable, self-contained executables that automatically manage tool installation
+/// and execution.
+///
+/// A tool stub consists of:
+/// - A shebang line: #!/usr/bin/env -S mise tool-stub
+/// - TOML configuration specifying the tool, version, and options
+/// - Optional comments describing the tool's purpose
+///
+/// Example stub file:
+///   #!/usr/bin/env -S mise tool-stub
+///   # Node.js v20 development environment
+///   
+///   tool = "node"
+///   version = "20.0.0"
+///   bin = "node"
+///
+/// The stub will automatically install the specified tool version if missing
+/// and execute it with any arguments passed to the stub.
+///
+/// For more information, see: https://mise.jdx.dev/dev-tools/tool-stubs.html
 #[derive(Debug, Parser)]
 pub struct ToolStub {
-    /// The tool stub file to execute
+    /// Path to the TOML tool stub file to execute
+    ///
+    /// The stub file must contain TOML configuration specifying the tool
+    /// and version to run. At minimum, it should specify a 'version' field.
+    /// Other common fields include 'tool', 'bin', and backend-specific options.
     #[clap(value_name = "FILE")]
     pub file: PathBuf,
 
     /// Arguments to pass to the tool
+    ///
+    /// All arguments after the stub file path will be forwarded to the
+    /// underlying tool. Use '--' to separate mise arguments from tool arguments
+    /// if needed.
     #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
     pub args: Vec<String>,
 }
