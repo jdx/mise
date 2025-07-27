@@ -1,5 +1,41 @@
 # Changelog
 
+## [2025.7.28](https://github.com/jdx/mise/compare/v2025.7.27..v2025.7.28) - 2025-07-27
+
+### 🚀 Features
+
+- **(http)** show retry after for github rate limit by [@risu729](https://github.com/risu729) in [#5803](https://github.com/jdx/mise/pull/5803)
+- **(registry)** add carapace by [@jahands](https://github.com/jahands) in [#5804](https://github.com/jdx/mise/pull/5804)
+- **(registry)** add `hatch` by [@hasansezertasan](https://github.com/hasansezertasan) in [#5788](https://github.com/jdx/mise/pull/5788)
+- tool-stubs by [@jdx](https://github.com/jdx) in [#5795](https://github.com/jdx/mise/pull/5795)
+- used shared cache for http backend by [@jdx](https://github.com/jdx) in [#5808](https://github.com/jdx/mise/pull/5808)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** avoid unnecessary head requests in version resolution by [@risu729](https://github.com/risu729) in [#5800](https://github.com/jdx/mise/pull/5800)
+- **(toolset)** use join_paths for MISE_ADD_PATH by [@risu729](https://github.com/risu729) in [#5785](https://github.com/jdx/mise/pull/5785)
+- check lib64 directories for .disable-self-update file by [@jdx](https://github.com/jdx) in [#5809](https://github.com/jdx/mise/pull/5809)
+
+### 🚜 Refactor
+
+- **(aqua)** move alternative backend suggestions into validate by [@risu729](https://github.com/risu729) in [#5794](https://github.com/jdx/mise/pull/5794)
+
+### 📚 Documentation
+
+- **(tool-stubs)** added shebangs by [@jdx](https://github.com/jdx) in [2d37500](https://github.com/jdx/mise/commit/2d37500e309a61062fc0e821a38be98626176d5d)
+- **(tool-stubs)** corrected url syntax by [@jdx](https://github.com/jdx) in [32627be](https://github.com/jdx/mise/commit/32627bec8b3df5060ea9f93dc50003126585e572)
+- fix plugin-lua-modules docs to match the vfox lua_mod functions by [@syhol](https://github.com/syhol) in [#5792](https://github.com/jdx/mise/pull/5792)
+- fix http backend tool options example by [@roele](https://github.com/roele) in [#5802](https://github.com/jdx/mise/pull/5802)
+
+### 📦️ Dependency Updates
+
+- update taiki-e/install-action digest to 7fbb30f by [@renovate[bot]](https://github.com/renovate[bot]) in [#5786](https://github.com/jdx/mise/pull/5786)
+- pin actions/checkout action to 11bd719 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5783](https://github.com/jdx/mise/pull/5783)
+
+### New Contributors
+
+- @hasansezertasan made their first contribution in [#5788](https://github.com/jdx/mise/pull/5788)
+
 ## [2025.7.27](https://github.com/jdx/mise/compare/v2025.7.26..v2025.7.27) - 2025-07-24
 
 ### 🐛 Bug Fixes
