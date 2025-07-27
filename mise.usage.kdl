@@ -373,7 +373,7 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
     }
     cmd tool-stub help="[experimental] Generate a tool stub for HTTP-based tools" {
         long_help "[experimental] Generate a tool stub for HTTP-based tools\n\nThis command generates tool stubs that can automatically download and execute\ntools from HTTP URLs. It can detect checksums, file sizes, and binary paths\nautomatically by downloading and analyzing the tool."
-        after_long_help "Examples:\n\n    Generate a tool stub for a single URL:\n    $ mise generate tool-stub ./bin/gh --url \"https://github.com/cli/cli/releases/download/v2.336.0/gh_2.336.0_linux_amd64.tar.gz\"\n\n    Generate a tool stub with platform-specific URLs:\n    $ mise generate tool-stub ./bin/rg \\\n        --platform linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \\\n        --platform darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz\n\n    Generate without downloading (faster):\n    $ mise generate tool-stub ./bin/tool --url \"https://example.com/tool.tar.gz\" --skip-download\n"
+        after_long_help "Examples:\n\n    Generate a tool stub for a single URL:\n    $ mise generate tool-stub ./bin/gh --url \"https://github.com/cli/cli/releases/download/v2.336.0/gh_2.336.0_linux_amd64.tar.gz\"\n\n    Generate a tool stub with platform-specific URLs:\n    $ mise generate tool-stub ./bin/rg \\\n        --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \\\n        --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz\n\n    Generate with platform-specific binary paths:\n    $ mise generate tool-stub ./bin/tool \\\n        --platform-url linux-x64:https://example.com/tool-linux.tar.gz \\\n        --platform-url windows-x64:https://example.com/tool-windows.zip \\\n        --platform-bin windows-x64:tool.exe\n\n    Generate without downloading (faster):\n    $ mise generate tool-stub ./bin/tool --url \"https://example.com/tool.tar.gz\" --skip-download\n"
         flag --version help="Version of the tool" {
             arg <VERSION>
         }
@@ -381,9 +381,13 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
             long_help "URL for downloading the tool\n\nExample: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz"
             arg <URL>
         }
-        flag "-p --platform" help="Platform-specific URLs in the format platform:url" var=#true {
-            long_help "Platform-specific URLs in the format platform:url\n\nExamples: --platform linux-x64:https://... --platform darwin-arm64:https://..."
-            arg <PLATFORM>
+        flag --platform-url help="Platform-specific URLs in the format platform:url" var=#true {
+            long_help "Platform-specific URLs in the format platform:url\n\nExamples: --platform-url linux-x64:https://... --platform-url darwin-arm64:https://..."
+            arg <PLATFORM_URL>
+        }
+        flag --platform-bin help="Platform-specific binary paths in the format platform:path" var=#true {
+            long_help "Platform-specific binary paths in the format platform:path\n\nExamples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool"
+            arg <PLATFORM_BIN>
         }
         flag "-b --bin" help="Binary path within the extracted archive" {
             long_help "Binary path within the extracted archive\n\nIf not specified, will attempt to auto-detect the binary"
