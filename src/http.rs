@@ -281,7 +281,7 @@ fn display_github_rate_limit(resp: &Response) {
             .and_then(|r| r.to_str().ok());
         if remaining.is_some_and(|r| r == "0") {
             if let Some(reset) = resp.headers().get("x-ratelimit-reset") {
-                let reset = reset.to_str().map(|r| r.to_string()).unwrap_or_default();
+                let reset = reset.to_str().unwrap_or_default();
                 if let Some(reset) = chrono::DateTime::from_timestamp(reset.parse().unwrap(), 0) {
                     warn!(
                         "GitHub rate limit exceeded. Resets at {}",
