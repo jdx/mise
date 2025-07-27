@@ -157,7 +157,7 @@ impl Backend for AquaBackend {
         self.download(ctx, &tv, &url, &filename).await?;
 
         if existing_platform.is_none() {
-            // Store the asset URL in the tool version\
+            // Store the asset URL in the tool version
             tv.lock_platforms.entry(platform_key).or_default().url = Some(url.clone());
         }
 
