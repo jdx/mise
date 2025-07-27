@@ -66,7 +66,7 @@ impl HttpBackend {
 
     /// Get the path to the extracted contents within the cache
     fn get_cached_extracted_path(&self, cache_key: &str) -> PathBuf {
-        self.get_cached_tarball_path(cache_key).join("extracted")
+        self.get_cached_tarball_path(cache_key).join("content")
     }
 
     /// Get the path to the metadata file
@@ -186,21 +186,35 @@ impl HttpBackend {
     }
 
     /// Create symlink from install directory to cache
-    fn create_install_symlink(&self, tv: &ToolVersion, cache_path: &Path) -> Result<()> {
-        let install_path = tv.install_path();
+    fn create_install_symlink(
+        &self,
+        tv: &ToolVersion,
+        cache_path: &Path,
+        cache_key: &str,
+    ) -> Result<()> {
+        // Determine the appropriate version name for the symlink
+        let version_name = if tv.version == "latest" || tv.version.is_empty() {
+            // Use content-based versioning for implicit versions
+            &cache_key[..7.min(cache_key.len())]
+        } else {
+            // Use the original version name for explicit versions
+            &tv.version
+        };
+
+        let version_install_path = tv.ba().installs_path.join(version_name);
 
         // Remove existing install path if it exists
-        if install_path.exists() {
-            file::remove_all(&install_path)?;
+        if version_install_path.exists() {
+            file::remove_all(&version_install_path)?;
         }
 
         // Create parent directory for symlink
-        if let Some(parent) = install_path.parent() {
+        if let Some(parent) = version_install_path.parent() {
             file::create_dir_all(parent)?;
         }
 
         // Create symlink
-        file::make_symlink(cache_path, &install_path)?;
+        file::make_symlink(cache_path, &version_install_path)?;
 
         Ok(())
     }
@@ -317,7 +331,28 @@ impl Backend for HttpBackend {
         }
 
         // Create symlink from install directory to cache
-        self.create_install_symlink(&tv, &cached_extracted_path)?;
+        let content_version = &cache_key[..7.min(cache_key.len())]; // First 7 chars like git
+        self.create_install_symlink(&tv, &cached_extracted_path, &cache_key)?;
+
+        // For implicit versions, also create a symlink with the original version name
+        // pointing to our content-based version to maintain compatibility
+        if tv.version == "latest" || tv.version.is_empty() {
+            let original_install_path = tv.ba().installs_path.join(&tv.version);
+            let content_install_path = tv.ba().installs_path.join(content_version);
+
+            // Remove any existing directory at the original path
+            if original_install_path.exists() {
+                file::remove_all(&original_install_path)?;
+            }
+
+            // Create parent directory if needed
+            if let Some(parent) = original_install_path.parent() {
+                file::create_dir_all(parent)?;
+            }
+
+            // Create symlink from original version to content-based version
+            file::make_symlink(&content_install_path, &original_install_path)?;
+        }
 
         // Verify checksum if specified
         self.verify_checksum(ctx, &mut tv, &file_path)?;
@@ -344,9 +379,13 @@ impl Backend for HttpBackend {
                 let mut paths = Vec::new();
                 if let Ok(entries) = std::fs::read_dir(tv.install_path()) {
                     for entry in entries.flatten() {
-                        let sub_bin_path = entry.path().join("bin");
-                        if sub_bin_path.exists() {
-                            paths.push(sub_bin_path);
+                        let entry_path = entry.path();
+                        // Only check directories, not files
+                        if entry_path.is_dir() {
+                            let sub_bin_path = entry_path.join("bin");
+                            if sub_bin_path.exists() {
+                                paths.push(sub_bin_path);
+                            }
                         }
                     }
                 }
