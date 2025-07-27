@@ -294,7 +294,7 @@ fn display_github_rate_limit(resp: &Response) {
             }
             return;
         }
-        // retry-after header should be ignored if x-ratelimit-remaining is 0
+        // retry-after header is processed only if x-ratelimit-remaining is not 0 or is missing
         if let Some(retry_after) = resp.headers().get("retry-after") {
             let retry_after = retry_after.to_str().unwrap_or_default();
             warn!(
