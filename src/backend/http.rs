@@ -51,7 +51,7 @@ impl HttpBackend {
         let mut cache_key_parts = vec![checksum.clone()];
 
         if let Some(strip_components) = opts.get("strip_components") {
-            cache_key_parts.push(format!("strip_{}", strip_components));
+            cache_key_parts.push(format!("strip_{strip_components}"));
         }
 
         let cache_key = cache_key_parts.join("_");
