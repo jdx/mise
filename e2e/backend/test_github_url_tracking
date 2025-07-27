@@ -26,7 +26,9 @@ echo "=== Verifying URL is stored in lockfile ==="
 assert_contains "cat mise.lock" '[tools."github:jdx/mise-test-fixtures"]'
 assert_contains "cat mise.lock" 'version = "1.0.0"'
 assert_contains "cat mise.lock" 'backend = "github:jdx/mise-test-fixtures"'
-assert_contains "cat mise.lock" '[tools."github:jdx/mise-test-fixtures".platforms.linux-x64]'
+# Get the current platform key
+PLATFORM_KEY=$(mise x --cd . -- bash -c "echo \"\$(uname -s | tr '[:upper:]' '[:lower:]' | sed 's/darwin/macos/')-\$(uname -m | sed 's/x86_64/x64/' | sed 's/aarch64/arm64/')\"")
+assert_contains "cat mise.lock" "[tools.\"github:jdx/mise-test-fixtures\".platforms.$PLATFORM_KEY]"
 assert_contains "cat mise.lock" 'url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world-1.0.0.tar.gz"'
 
 echo "Lockfile after installation:"

@@ -41,7 +41,9 @@ mise install
 assert_contains "cat mise.lock" '[tools."gitlab:jdxcode/mise-test-fixtures"]'
 assert_contains "cat mise.lock" 'version = "1.0.0"'
 assert_contains "cat mise.lock" 'backend = "gitlab:jdxcode/mise-test-fixtures"'
-assert_contains "cat mise.lock" '[tools."gitlab:jdxcode/mise-test-fixtures".platforms.linux-x64]'
+# Get the current platform key
+PLATFORM_KEY=$(mise x --cd . -- bash -c "echo \"\$(uname -s | tr '[:upper:]' '[:lower:]' | sed 's/darwin/macos/')-\$(uname -m | sed 's/x86_64/x64/' | sed 's/aarch64/arm64/')\"")
+assert_contains "cat mise.lock" "[tools.\"gitlab:jdxcode/mise-test-fixtures\".platforms.$PLATFORM_KEY]"
 assert_contains "cat mise.lock" 'checksum = "blake3:71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f"'
 assert_contains "cat mise.lock" 'url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"'
 assert_contains "cat mise.lock" 'size = '
