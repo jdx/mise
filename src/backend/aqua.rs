@@ -126,7 +126,7 @@ impl Backend for AquaBackend {
                     // If the url is already checked, use it
                     Ok((url, true)) => (url, v_prefixed),
                     Ok((url_prefixed, false)) => {
-                        let (url, _) = self.get_url(&pkg, &v).await.unwrap_or_default();
+                        let (url, _) = self.get_url(&pkg, &v).await?;
                         // If the v-prefixed URL is the same as the non-prefixed URL, use it
                         if url == url_prefixed {
                             (url_prefixed, v_prefixed)
