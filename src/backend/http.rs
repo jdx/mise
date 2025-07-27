@@ -1,7 +1,7 @@
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::backend::static_helpers::{
-    get_filename_from_url, install_artifact, lookup_platform_key, template_string, verify_artifact,
+    get_filename_from_url, lookup_platform_key, template_string, verify_artifact,
 };
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -9,14 +9,236 @@ use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
+use crate::toolset::ToolVersionOptions;
+use crate::ui::progress_report::SingleReport;
+use crate::{dirs, file, hash};
 use async_trait::async_trait;
 use eyre::Result;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CacheMetadata {
+    url: String,
+    checksum: Option<String>,
+    size: u64,
+    extracted_at: u64,
+    platform: String,
+}
 
 #[derive(Debug)]
 pub struct HttpBackend {
     ba: Arc<BackendArg>,
+}
+
+impl HttpBackend {
+    pub fn from_arg(ba: BackendArg) -> Self {
+        Self { ba: Arc::new(ba) }
+    }
+
+    /// Generate a cache key based on the actual file content (checksum) and extraction options
+    fn get_file_based_cache_key(
+        &self,
+        file_path: &Path,
+        opts: &ToolVersionOptions,
+    ) -> Result<String> {
+        let checksum = hash::file_hash_blake3(file_path, None)?;
+
+        // Include extraction options in cache key to handle different extraction needs
+        let mut cache_key_parts = vec![checksum.clone()];
+
+        if let Some(strip_components) = opts.get("strip_components") {
+            cache_key_parts.push(format!("strip_{}", strip_components));
+        }
+
+        let cache_key = cache_key_parts.join("_");
+        debug!("Using file-based checksum as cache key: {}", cache_key);
+        Ok(cache_key)
+    }
+
+    /// Get the path to the cached tarball directory
+    fn get_cached_tarball_path(&self, cache_key: &str) -> PathBuf {
+        dirs::CACHE.join("http-tarballs").join(cache_key)
+    }
+
+    /// Get the path to the extracted contents within the cache
+    fn get_cached_extracted_path(&self, cache_key: &str) -> PathBuf {
+        self.get_cached_tarball_path(cache_key).join("extracted")
+    }
+
+    /// Get the path to the metadata file
+    fn get_cache_metadata_path(&self, cache_key: &str) -> PathBuf {
+        self.get_cached_tarball_path(cache_key)
+            .join("metadata.json")
+    }
+
+    /// Check if a tarball is already cached
+    fn is_tarball_cached(&self, cache_key: &str) -> bool {
+        let extracted_path = self.get_cached_extracted_path(cache_key);
+        let metadata_path = self.get_cache_metadata_path(cache_key);
+        extracted_path.exists() && metadata_path.exists()
+    }
+
+    /// Extract tarball to cache directory
+    fn extract_to_cache(
+        &self,
+        file_path: &Path,
+        cache_key: &str,
+        url: &str,
+        opts: &ToolVersionOptions,
+        pr: Option<&Box<dyn SingleReport>>,
+    ) -> Result<()> {
+        let cache_path = self.get_cached_tarball_path(cache_key);
+        let extracted_path = self.get_cached_extracted_path(cache_key);
+        let metadata_path = self.get_cache_metadata_path(cache_key);
+
+        // Create cache directory
+        file::create_dir_all(&cache_path)?;
+
+        // Remove existing extracted contents if they exist
+        if extracted_path.exists() {
+            file::remove_all(&extracted_path)?;
+        }
+
+        // Extract tarball to cache
+        self.extract_artifact_to_cache(file_path, &extracted_path, opts, pr)?;
+
+        // Create metadata
+        let metadata = CacheMetadata {
+            url: url.to_string(),
+            checksum: lookup_platform_key(opts, "checksum")
+                .or_else(|| opts.get("checksum").cloned()),
+            size: file_path.metadata()?.len(),
+            extracted_at: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+            platform: self.get_platform_key(),
+        };
+
+        // Write metadata
+        let metadata_json = serde_json::to_string_pretty(&metadata)?;
+        file::write(&metadata_path, metadata_json)?;
+
+        Ok(())
+    }
+
+    /// Extract artifact to cache directory (similar to install_artifact but for cache)
+    fn extract_artifact_to_cache(
+        &self,
+        file_path: &Path,
+        cache_path: &Path,
+        opts: &ToolVersionOptions,
+        pr: Option<&Box<dyn SingleReport>>,
+    ) -> Result<()> {
+        let mut strip_components = opts.get("strip_components").and_then(|s| s.parse().ok());
+
+        file::create_dir_all(cache_path)?;
+
+        // Use TarFormat for format detection
+        let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+        let format = file::TarFormat::from_ext(ext);
+
+        if format == file::TarFormat::Raw {
+            // Copy the file directly to the cache directory
+            let dest = cache_path.join(file_path.file_name().unwrap());
+            file::copy(file_path, &dest)?;
+            file::make_executable(&dest)?;
+        } else {
+            // Auto-detect if we need strip_components=1 before extracting
+            if strip_components.is_none() {
+                if let Ok(should_strip) = file::should_strip_components(file_path, format) {
+                    if should_strip {
+                        debug!(
+                            "Auto-detected single directory archive, extracting with strip_components=1"
+                        );
+                        strip_components = Some(1);
+                    }
+                }
+            }
+
+            let tar_opts = file::TarOptions {
+                format,
+                strip_components: strip_components.unwrap_or(0),
+                pr,
+            };
+
+            // Extract with determined strip_components
+            file::untar(file_path, cache_path, &tar_opts)?;
+        }
+
+        Ok(())
+    }
+
+    /// Create symlink from install directory to cache
+    fn create_install_symlink(&self, tv: &ToolVersion, cache_path: &Path) -> Result<()> {
+        let install_path = tv.install_path();
+
+        // Remove existing install path if it exists
+        if install_path.exists() {
+            file::remove_all(&install_path)?;
+        }
+
+        // Create parent directory for symlink
+        if let Some(parent) = install_path.parent() {
+            file::create_dir_all(parent)?;
+        }
+
+        // Create symlink
+        file::make_symlink(cache_path, &install_path)?;
+
+        Ok(())
+    }
+
+    /// Verify checksum if specified (moved from trait implementation)
+    fn verify_checksum(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        file_path: &Path,
+    ) -> Result<()> {
+        let settings = Settings::get();
+        let filename = file_path.file_name().unwrap().to_string_lossy().to_string();
+        let lockfile_enabled = settings.lockfile && settings.experimental;
+
+        // Get the platform key for this tool and platform
+        let platform_key = self.get_platform_key();
+
+        // Get or create asset info for this platform
+        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
+
+        if let Some(checksum) = &platform_info.checksum {
+            ctx.pr.set_message(format!("checksum {filename}"));
+            if let Some((algo, check)) = checksum.split_once(':') {
+                hash::ensure_checksum(file_path, check, Some(&ctx.pr), algo)?;
+            } else {
+                return Err(eyre::eyre!("Invalid checksum: {checksum}"));
+            }
+        } else if lockfile_enabled {
+            ctx.pr.set_message(format!("generate checksum {filename}"));
+            let hash = hash::file_hash_blake3(file_path, Some(&ctx.pr))?;
+            platform_info.checksum = Some(format!("blake3:{hash}"));
+        }
+
+        // Handle size verification and generation
+        if let Some(expected_size) = platform_info.size {
+            ctx.pr.set_message(format!("verify size {filename}"));
+            let actual_size = file_path.metadata()?.len();
+            if actual_size != expected_size {
+                return Err(eyre::eyre!(
+                    "Size mismatch for {}: expected {}, got {}",
+                    filename,
+                    expected_size,
+                    actual_size
+                ));
+            }
+        } else if lockfile_enabled {
+            ctx.pr.set_message(format!("record size {filename}"));
+            let size = file_path.metadata()?.len();
+            platform_info.size = Some(size);
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -65,8 +287,22 @@ impl Backend for HttpBackend {
         // Verify (shared)
         verify_artifact(&tv, &file_path, &opts, Some(&ctx.pr))?;
 
-        // Install (shared)
-        install_artifact(&tv, &file_path, &opts, Some(&ctx.pr))?;
+        // Generate cache key - always use Blake3 hash of the file for consistency
+        // This ensures that the same file content always gets the same cache key
+        // regardless of whether a checksum was provided or what algorithm was used
+        let cache_key = self.get_file_based_cache_key(&file_path, &opts)?;
+        let cached_extracted_path = self.get_cached_extracted_path(&cache_key);
+
+        // Check if tarball is already cached
+        if self.is_tarball_cached(&cache_key) {
+            ctx.pr.set_message("using cached tarball".into());
+        } else {
+            ctx.pr.set_message("extracting to cache".into());
+            self.extract_to_cache(&file_path, &cache_key, &url, &opts, Some(&ctx.pr))?;
+        }
+
+        // Create symlink from install directory to cache
+        self.create_install_symlink(&tv, &cached_extracted_path)?;
 
         // Verify checksum if specified
         self.verify_checksum(ctx, &mut tv, &file_path)?;
@@ -106,11 +342,5 @@ impl Backend for HttpBackend {
                 }
             }
         }
-    }
-}
-
-impl HttpBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
-        Self { ba: Arc::new(ba) }
     }
 }
