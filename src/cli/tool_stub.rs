@@ -315,8 +315,7 @@ fn resolve_platform_specific_bin(stub: &ToolStubFile) -> &str {
     }
 
     // Fall back to global bin field
-    stub.bin.as_deref()
-        .unwrap_or(&stub.tool_name)
+    stub.bin.as_deref().unwrap_or(&stub.tool_name)
 }
 
 fn get_current_platform_key() -> String {
