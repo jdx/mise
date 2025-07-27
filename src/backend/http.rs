@@ -66,7 +66,7 @@ impl HttpBackend {
 
     /// Get the path to the extracted contents within the cache
     fn get_cached_extracted_path(&self, cache_key: &str) -> PathBuf {
-        self.get_cached_tarball_path(cache_key).join("content")
+        self.get_cached_tarball_path(cache_key)
     }
 
     /// Get the path to the metadata file
