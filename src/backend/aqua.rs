@@ -103,11 +103,11 @@ impl Backend for AquaBackend {
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
-        let (url, v, filename) = if let Some(existing_platform) = tv
+        let existing_platform = tv
             .lock_platforms
             .get(&platform_key)
-            .and_then(|asset| asset.url.clone())
-        {
+            .and_then(|asset| asset.url.clone());
+        let (url, v, filename) = if let Some(existing_platform) = existing_platform.clone() {
             let url = existing_platform;
             let filename = url.split('/').next_back().unwrap_or("download").to_string();
             // Determine which version variant was used based on the URL or filename
@@ -120,30 +120,47 @@ impl Backend for AquaBackend {
             };
             (url, v, filename)
         } else {
-            // try v-prefixed version first because most aqua packages use v-prefixed versions
-            let (url, v) = match self
-                .fetch_url(&pkg, v_prefixed.as_ref().unwrap_or(&v))
-                .await
-            {
-                Ok(url) => (url, v_prefixed.as_ref().unwrap_or(&v)),
-                Err(err) if v_prefixed.is_some() => (
-                    self.fetch_url(&pkg, &v)
-                        .await
-                        .map_err(|e| err.wrap_err(e))?,
-                    &v,
-                ),
-                Err(err) => return Err(err),
+            let (url, v) = if let Some(v_prefixed) = v_prefixed {
+                // Try v-prefixed version first because most aqua packages use v-prefixed versions
+                match self.get_url(&pkg, v_prefixed.as_ref()).await {
+                    // If the url is already checked, use it
+                    Ok((url, true)) => (url, v_prefixed),
+                    Ok((url_prefixed, false)) => {
+                        let (url, _) = self.get_url(&pkg, &v).await?;
+                        // If the v-prefixed URL is the same as the non-prefixed URL, use it
+                        if url == url_prefixed {
+                            (url_prefixed, v_prefixed)
+                        } else {
+                            // If they are different, check existence
+                            match HTTP.head(&url_prefixed).await {
+                                Ok(_) => (url_prefixed, v_prefixed),
+                                Err(_) => (url, v),
+                            }
+                        }
+                    }
+                    Err(err) => (
+                        self.get_url(&pkg, &v)
+                            .await
+                            .map(|(url, _)| url)
+                            .map_err(|e| err.wrap_err(e))?,
+                        v,
+                    ),
+                }
+            } else {
+                (self.get_url(&pkg, &v).await.map(|(url, _)| url)?, v)
             };
             let filename = url.split('/').next_back().unwrap().to_string();
-
-            // Store the asset URL in the tool version
-            let platform_key = self.get_platform_key();
-            tv.lock_platforms.entry(platform_key).or_default().url = Some(url.clone());
 
             (url, v.to_string(), filename)
         };
 
         self.download(ctx, &tv, &url, &filename).await?;
+
+        if existing_platform.is_none() {
+            // Store the asset URL in the tool version
+            tv.lock_platforms.entry(platform_key).or_default().url = Some(url.clone());
+        }
+
         self.verify(ctx, &mut tv, &pkg, &v, &filename).await?;
         self.install(ctx, &tv, &pkg, &v, &filename)?;
 
@@ -277,17 +294,15 @@ impl AquaBackend {
             .await
     }
 
-    async fn fetch_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+    async fn get_url(&self, pkg: &AquaPackage, v: &str) -> Result<(String, bool)> {
         match pkg.r#type {
-            AquaPackageType::GithubRelease => self.github_release_url(pkg, v).await,
+            AquaPackageType::GithubRelease => {
+                self.github_release_url(pkg, v).await.map(|url| (url, true))
+            }
             AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
-                self.github_archive_url(pkg, v).await
+                Ok((self.github_archive_url(pkg, v), false))
             }
-            AquaPackageType::Http => {
-                let url = pkg.url(v)?;
-                HTTP.head(&url).await?;
-                Ok(url)
-            }
+            AquaPackageType::Http => pkg.url(v).map(|url| (url, false)),
             ref t => bail!("unsupported aqua package type: {t}"),
         }
     }
@@ -320,11 +335,9 @@ impl AquaBackend {
         Ok(asset.browser_download_url.to_string())
     }
 
-    async fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+    fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> String {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let url = format!("https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz");
-        HTTP.head(&url).await?;
-        Ok(url)
+        format!("https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz")
     }
 
     async fn download(
