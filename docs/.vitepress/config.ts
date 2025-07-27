@@ -60,6 +60,7 @@ export default withMermaid(
             },
             { text: "Shims", link: "/dev-tools/shims" },
             { text: "Aliases", link: "/dev-tools/aliases" },
+            { text: "Tool Stubs", link: "/dev-tools/tool-stubs" },
             { text: "Registry", link: "/registry" },
             { text: "mise.lock Lockfile", link: "/dev-tools/mise-lock" },
             {

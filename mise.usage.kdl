@@ -371,6 +371,30 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
             arg <DIR>
         }
     }
+    cmd tool-stub help="[experimental] Generate a tool stub for HTTP-based tools" {
+        long_help "[experimental] Generate a tool stub for HTTP-based tools\n\nThis command generates tool stubs that can automatically download and execute\ntools from HTTP URLs. It can detect checksums, file sizes, and binary paths\nautomatically by downloading and analyzing the tool."
+        after_long_help "Examples:\n\n    Generate a tool stub for a single URL:\n    $ mise generate tool-stub ./bin/gh --url \"https://github.com/cli/cli/releases/download/v2.336.0/gh_2.336.0_linux_amd64.tar.gz\"\n\n    Generate a tool stub with platform-specific URLs:\n    $ mise generate tool-stub ./bin/rg \\\n        --platform linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \\\n        --platform darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz\n\n    Generate without downloading (faster):\n    $ mise generate tool-stub ./bin/tool --url \"https://example.com/tool.tar.gz\" --skip-download\n"
+        flag --version help="Version of the tool" {
+            arg <VERSION>
+        }
+        flag "-u --url" help="URL for downloading the tool" {
+            long_help "URL for downloading the tool\n\nExample: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz"
+            arg <URL>
+        }
+        flag "-p --platform" help="Platform-specific URLs in the format platform:url" var=#true {
+            long_help "Platform-specific URLs in the format platform:url\n\nExamples: --platform linux-x64:https://... --platform darwin-arm64:https://..."
+            arg <PLATFORM>
+        }
+        flag "-b --bin" help="Binary path within the extracted archive" {
+            long_help "Binary path within the extracted archive\n\nIf not specified, will attempt to auto-detect the binary"
+            arg <BIN>
+        }
+        flag --skip-download help="Skip downloading for checksum and binary path detection (faster but less informative)"
+        flag --http help="HTTP backend type to use" {
+            arg <HTTP>
+        }
+        arg <OUTPUT> help="Output file path for the tool stub"
+    }
 }
 cmd global hide=#true help="Sets/gets the global tool version(s)" {
     long_help "Sets/gets the global tool version(s)\n\nDisplays the contents of global config after writing.\nThe file is `$HOME/.config/mise/config.toml` by default. It can be changed with `$MISE_GLOBAL_CONFIG_FILE`.\nIf `$MISE_GLOBAL_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `mise.toml`.\nOtherwise, it will be parsed as a `.tool-versions` file.\n\nUse MISE_ASDF_COMPAT=1 to default the global config to ~/.tool-versions\n\nUse `mise local` to set a tool version locally in the current directory."
@@ -920,6 +944,11 @@ cmd tool help="Gets information about a tool" {
     flag --config-source help="Only show config source"
     flag --tool-options help="Only show tool options"
     arg <TOOL> help="Tool name to get information about"
+}
+cmd tool-stub help="Execute a tool stub" {
+    long_help "Execute a tool stub\n\nTool stubs are executable files containing TOML configuration that specify which tool to run and how to run it. They provide a convenient way to create portable, self-contained executables that automatically manage tool installation and execution.\n\nA tool stub consists of: - A shebang line: #!/usr/bin/env -S mise tool-stub - TOML configuration specifying the tool, version, and options - Optional comments describing the tool's purpose\n\nExample stub file: #!/usr/bin/env -S mise tool-stub # Node.js v20 development environment\n\ntool = \"node\" version = \"20.0.0\" bin = \"node\"\n\nThe stub will automatically install the specified tool version if missing and execute it with any arguments passed to the stub.\n\nFor more information, see: https://mise.jdx.dev/dev-tools/tool-stubs.html"
+    arg <FILE> help="Path to the TOML tool stub file to execute" help_long="Path to the TOML tool stub file to execute\n\nThe stub file must contain TOML configuration specifying the tool and version to run. At minimum, it should specify a 'version' field. Other common fields include 'tool', 'bin', and backend-specific options."
+    arg "[ARGS]…" help="Arguments to pass to the tool" help_long="Arguments to pass to the tool\n\nAll arguments after the stub file path will be forwarded to the underlying tool. Use '--' to separate mise arguments from tool arguments if needed." required=#false double_dash=automatic var=#true
 }
 cmd trust help="Marks a config file as trusted" {
     long_help "Marks a config file as trusted\n\nThis means mise will parse the file with potentially dangerous\nfeatures enabled.\n\nThis includes:\n- environment variables\n- templates\n- `path:` plugin versions"

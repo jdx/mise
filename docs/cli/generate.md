@@ -15,3 +15,4 @@
 - [`mise generate github-action [FLAGS]`](/cli/generate/github-action.md)
 - [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.md)
 - [`mise generate task-stubs [-m --mise-bin <MISE_BIN>] [-d --dir <DIR>]`](/cli/generate/task-stubs.md)
+- [`mise generate tool-stub [FLAGS] <OUTPUT>`](/cli/generate/tool-stub.md)

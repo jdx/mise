@@ -9,7 +9,7 @@ The code for this is inside of the mise repository at [`./src/backend/http.rs`](
 The following installs a tool from a direct HTTP URL:
 
 ```sh
-mise use -g http:my-tool@1.0.0[url=https://example.com/releases/my-tool-v1.0.0.tar.gz]
+mise use -g http:my-tool[url=https://example.com/releases/my-tool-v1.0.0.tar.gz]@1.0.0
 ```
 
 The version will be set in `~/.config/mise/config.toml` with the following format:
@@ -21,7 +21,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ## Supported HTTP Syntax
 
-- **HTTP with URL parameter:** `http:my-tool@1.0.0[url=https://example.com/releases/my-tool-v1.0.0.tar.gz]`
+- **HTTP with URL parameter:** `http:my-tool[url=https://example.com/releases/my-tool-v1.0.0.tar.gz]@1.0.0`
 
 ## Tool Options
 
