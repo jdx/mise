@@ -280,23 +280,27 @@ fn display_github_rate_limit(resp: &Response) {
             .get("x-ratelimit-remaining")
             .and_then(|r| r.to_str().ok());
         if remaining.is_some_and(|r| r == "0") {
-            if let Some(reset) = resp.headers().get("x-ratelimit-reset") {
-                let reset = reset.to_str().unwrap_or_default();
-                if let Some(reset) = chrono::DateTime::from_timestamp(reset.parse().unwrap(), 0) {
-                    warn!(
-                        "GitHub rate limit exceeded. Resets at {}",
-                        reset
-                            .with_timezone(&chrono::Local)
-                            .naive_local()
-                            .to_string()
-                    );
-                }
+            if let Some(reset_time) = resp
+                .headers()
+                .get("x-ratelimit-reset")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|s| s.parse::<i64>().ok())
+                .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+            {
+                warn!(
+                    "GitHub rate limit exceeded. Resets at {}",
+                    reset_time.with_timezone(&chrono::Local)
+                );
             }
             return;
         }
         // retry-after header is processed only if x-ratelimit-remaining is not 0 or is missing
-        if let Some(retry_after) = resp.headers().get("retry-after") {
-            let retry_after = retry_after.to_str().unwrap_or_default();
+        if let Some(retry_after) = resp
+            .headers()
+            .get("retry-after")
+            .and_then(|h| h.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok())
+        {
             warn!(
                 "GitHub rate limit exceeded. Retry after {} seconds",
                 retry_after
