@@ -300,7 +300,7 @@ impl AquaBackend {
                 self.github_release_url(pkg, v).await.map(|url| (url, true))
             }
             AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
-                self.github_archive_url(pkg, v).map(|url| (url, false))
+                Ok((self.github_archive_url(pkg, v), false))
             }
             AquaPackageType::Http => pkg.url(v).map(|url| (url, false)),
             AquaPackageType::Cargo => {
@@ -355,11 +355,9 @@ impl AquaBackend {
         Ok(asset.browser_download_url.to_string())
     }
 
-    fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+    fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> String {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        Ok(format!(
-            "https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz"
-        ))
+        format!("https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz")
     }
 
     async fn download(
