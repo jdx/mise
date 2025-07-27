@@ -1,5 +1,19 @@
 # Changelog
 
+## [2025.7.28](https://github.com/jdx/mise/compare/v2025.7.27..v2025.7.28) - 2025-07-27
+
+### 🐛 Bug Fixes
+
+- **(toolset)** use join_paths for MISE_ADD_PATH by [@risu729](https://github.com/risu729) in [#5785](https://github.com/jdx/mise/pull/5785)
+
+### 📚 Documentation
+
+- fix plugin-lua-modules docs to match the vfox lua_mod functions by [@syhol](https://github.com/syhol) in [#5792](https://github.com/jdx/mise/pull/5792)
+
+### 📦️ Dependency Updates
+
+- update taiki-e/install-action digest to 7fbb30f by [@renovate[bot]](https://github.com/renovate[bot]) in [#5786](https://github.com/jdx/mise/pull/5786)
+
 ## [2025.7.27](https://github.com/jdx/mise/compare/v2025.7.26..v2025.7.27) - 2025-07-24
 
 ### 🐛 Bug Fixes
