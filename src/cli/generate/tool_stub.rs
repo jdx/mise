@@ -1,6 +1,10 @@
 use crate::Result;
+use crate::backend::static_helpers::get_filename_from_url;
 use crate::config::Settings;
 use crate::file::{self, TarFormat, TarOptions};
+use crate::http::HTTP;
+use crate::ui::multi_progress_report::MultiProgressReport;
+use crate::ui::progress_report::SingleReport;
 use clap::ValueHint;
 use color_eyre::eyre::bail;
 use serde::Serialize;
@@ -113,21 +117,21 @@ impl ToolStub {
         if let Some(url) = &self.url {
             stub.url = Some(url.clone());
 
-            // Auto-detect checksum and size if not skipped
+            // Auto-detect checksum, size, and binary path if not skipped
             if !self.skip_download {
-                if let Ok((checksum, size)) = self.detect_checksum_and_size(url).await {
+                let mpr = MultiProgressReport::get();
+                if let Ok((checksum, size, bin_path)) = self.analyze_url(url, &mpr).await {
                     stub.blake3 = Some(checksum);
                     stub.size = Some(size);
-                }
-            }
-
-            // Auto-detect binary path if not specified
-            if self.bin.is_none() && !self.skip_download {
-                if let Ok(bin_path) = self.detect_binary_path(url).await {
-                    stub.bin = Some(bin_path);
+                    if self.bin.is_none() {
+                        stub.bin = bin_path;
+                    }
                 }
             }
         } else if !self.platform.is_empty() {
+            let mpr = MultiProgressReport::get();
+            let mut detected_bin_path = None;
+
             for platform_spec in &self.platform {
                 let (platform, url) = self.parse_platform_spec(platform_spec)?;
                 let mut platform_config = PlatformConfig {
@@ -136,24 +140,25 @@ impl ToolStub {
                     size: None,
                 };
 
-                // Auto-detect checksum and size if not skipped
+                // Auto-detect checksum, size, and binary path if not skipped
                 if !self.skip_download {
-                    if let Ok((checksum, size)) = self.detect_checksum_and_size(&url).await {
+                    if let Ok((checksum, size, bin_path)) = self.analyze_url(&url, &mpr).await {
                         platform_config.blake3 = Some(checksum);
                         platform_config.size = Some(size);
+
+                        // Use binary path from first platform if not already detected
+                        if detected_bin_path.is_none() {
+                            detected_bin_path = bin_path;
+                        }
                     }
                 }
 
                 stub.platforms.insert(platform, platform_config);
             }
 
-            // Auto-detect binary path from first platform if not specified
-            if self.bin.is_none() && !self.skip_download {
-                if let Some((_, platform_config)) = stub.platforms.iter().next() {
-                    if let Ok(bin_path) = self.detect_binary_path(&platform_config.url).await {
-                        stub.bin = Some(bin_path);
-                    }
-                }
+            // Set binary path if not specified and we detected one
+            if self.bin.is_none() {
+                stub.bin = detected_bin_path;
             }
         } else {
             bail!("Either --url or --platform must be specified");
@@ -187,56 +192,82 @@ impl ToolStub {
         Ok((platform, url))
     }
 
-    async fn detect_checksum_and_size(&self, url: &str) -> Result<(String, u64)> {
-        miseprintln!("Downloading {} to detect checksum and size...", url);
+    async fn analyze_url(
+        &self,
+        url: &str,
+        mpr: &std::sync::Arc<crate::ui::multi_progress_report::MultiProgressReport>,
+    ) -> Result<(String, u64, Option<String>)> {
+        miseprintln!("Downloading {} to analyze...", url);
 
-        let response = reqwest::get(url).await?;
-        if !response.status().is_success() {
-            bail!("Failed to download {}: {}", url, response.status());
-        }
+        // Create a temporary directory for download and extraction
+        let temp_dir = tempfile::tempdir()?;
+        let filename = get_filename_from_url(url);
+        let archive_path = temp_dir.path().join(&filename);
 
-        let bytes = response.bytes().await?;
+        // Create one progress reporter for the entire operation
+        let pr = mpr.add(&format!("download {}", filename));
+
+        // Download using mise's HTTP client
+        HTTP.download_file(url, &archive_path, Some(&pr)).await?;
+
+        // Read the file to calculate checksum and size
+        let bytes = file::read(&archive_path)?;
         let size = bytes.len() as u64;
-
-        // Calculate BLAKE3 checksum
         let checksum = blake3::hash(&bytes).to_hex().to_string();
 
-        Ok((checksum, size))
+        // Detect binary path if this is an archive
+        let bin_path = if self.is_archive_format(url) {
+            // Update progress message for extraction and reuse the same progress reporter
+            pr.set_message(format!("extract {}", filename));
+            match self
+                .extract_and_find_binary(&archive_path, &temp_dir, &filename, &pr)
+                .await
+            {
+                Ok(path) => {
+                    pr.finish();
+                    Some(path)
+                }
+                Err(_) => {
+                    pr.finish();
+                    None
+                }
+            }
+        } else {
+            // For single binary files, just use the tool name
+            pr.finish();
+            Some(self.get_tool_name())
+        };
+
+        Ok((checksum, size, bin_path))
     }
 
-    async fn detect_binary_path(&self, url: &str) -> Result<String> {
-        miseprintln!("Downloading {} to detect binary path...", url);
-
-        let response = reqwest::get(url).await?;
-        if !response.status().is_success() {
-            bail!("Failed to download {}: {}", url, response.status());
-        }
-
-        let bytes = response.bytes().await?;
-
-        // Create a temporary directory for extraction
-        let temp_dir = tempfile::tempdir()?;
-        let archive_path = temp_dir.path().join("archive");
-
-        // Write the downloaded file
-        std::fs::write(&archive_path, &bytes)?;
-
+    async fn extract_and_find_binary(
+        &self,
+        archive_path: &std::path::Path,
+        temp_dir: &tempfile::TempDir,
+        _filename: &str,
+        pr: &Box<dyn SingleReport>,
+    ) -> Result<String> {
         // Try to extract and find executables
         let extracted_dir = temp_dir.path().join("extracted");
         std::fs::create_dir_all(&extracted_dir)?;
 
-        // Try extraction using mise's built-in extraction logic
-        if self.is_archive_format(url) {
-            let tar_opts = TarOptions {
-                format: TarFormat::Auto,
-                strip_components: 0,
-                pr: None,
-            };
-            file::untar(&archive_path, &extracted_dir, &tar_opts)?;
-        } else {
-            // Assume it's a single binary file
-            return Ok(self.get_tool_name());
-        }
+        // Try extraction using mise's built-in extraction logic (reuse the passed progress reporter)
+        let tar_opts = TarOptions {
+            format: TarFormat::Auto,
+            strip_components: 0,
+            pr: Some(pr),
+        };
+        file::untar(&archive_path, &extracted_dir, &tar_opts)?;
+
+        // Check if strip_components would be applied during actual installation
+        let format = TarFormat::from_ext(
+            &archive_path
+                .extension()
+                .unwrap_or_default()
+                .to_string_lossy(),
+        );
+        let will_strip = file::should_strip_components(archive_path, format)?;
 
         // Find executable files
         let executables = self.find_executables(&extracted_dir)?;
@@ -246,13 +277,24 @@ impl ToolStub {
 
         // Prefer files with the tool name, otherwise take the first one
         let tool_name = self.get_tool_name();
+        let mut selected_exe = None;
         for exe in &executables {
             if exe.contains(&tool_name) {
-                return Ok(exe.clone());
+                selected_exe = Some(exe.clone());
+                break;
+            }
+        }
+        let selected_exe = selected_exe.unwrap_or_else(|| executables[0].clone());
+
+        // If strip_components will be applied, remove the first path component
+        if will_strip {
+            let path = std::path::Path::new(&selected_exe);
+            if let Ok(stripped) = path.strip_prefix(path.components().next().unwrap()) {
+                return Ok(stripped.to_string_lossy().to_string());
             }
         }
 
-        Ok(executables[0].clone())
+        Ok(selected_exe)
     }
 
     fn is_archive_format(&self, url: &str) -> bool {

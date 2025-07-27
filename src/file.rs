@@ -675,7 +675,11 @@ pub struct TarOptions<'a> {
 pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     let format = match opts.format {
         TarFormat::Auto => {
-            TarFormat::from_ext(archive.extension().unwrap().to_string_lossy().as_ref())
+            // Handle missing extension gracefully, default to Raw (which will be treated as tar.gz)
+            match archive.extension() {
+                Some(ext) => TarFormat::from_ext(&ext.to_string_lossy()),
+                None => TarFormat::Raw,
+            }
         }
         _ => opts.format,
     };
