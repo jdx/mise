@@ -73,7 +73,7 @@ pub struct ToolStub {
 
     /// Binary path within the extracted archive
     ///
-    /// If not specified, will attempt to auto-detect the binary
+    /// If not specified and the archive is downloaded, will only auto-detect if an exact filename match is found
     #[clap(long, short)]
     pub bin: Option<String>,
 
@@ -130,7 +130,7 @@ impl ToolStub {
         if let Some(url) = &self.url {
             stub.url = Some(url.clone());
 
-            // Auto-detect checksum, size, and binary path if not skipped
+            // Auto-detect checksum and size if not skipped
             if !self.skip_download {
                 let mpr = MultiProgressReport::get();
                 if let Ok((checksum, size, bin_path)) = self.analyze_url(url, &mpr).await {
@@ -143,7 +143,6 @@ impl ToolStub {
             }
         } else if !self.platform_url.is_empty() {
             let mpr = MultiProgressReport::get();
-            let mut platform_bin_paths: Vec<Option<String>> = Vec::new();
 
             // Parse platform-specific bin paths
             let mut explicit_platform_bins = std::collections::HashMap::new();
@@ -164,50 +163,17 @@ impl ToolStub {
                 // Set platform-specific bin path if explicitly provided
                 if let Some(explicit_bin) = explicit_platform_bins.get(&platform) {
                     platform_config.bin = Some(explicit_bin.clone());
-                    platform_bin_paths.push(Some(explicit_bin.clone()));
                 }
 
-                // Auto-detect checksum, size, and binary path if not skipped
+                // Auto-detect checksum and size if not skipped
                 if !self.skip_download {
-                    if let Ok((checksum, size, detected_bin_path)) =
-                        self.analyze_url(&url, &mpr).await
-                    {
+                    if let Ok((checksum, size, _)) = self.analyze_url(&url, &mpr).await {
                         platform_config.blake3 = Some(checksum);
                         platform_config.size = Some(size);
-
-                        // Only use detected bin path if no explicit bin was provided
-                        if platform_config.bin.is_none() {
-                            platform_config.bin = detected_bin_path.clone();
-                            platform_bin_paths.push(detected_bin_path);
-                        }
-                    } else if platform_config.bin.is_none() {
-                        platform_bin_paths.push(None);
                     }
-                } else if platform_config.bin.is_none() {
-                    platform_bin_paths.push(None);
                 }
 
                 stub.platforms.insert(platform, platform_config);
-            }
-
-            // Determine if we should use global bin or platform-specific bins
-            if self.bin.is_none() && !platform_bin_paths.is_empty() {
-                // Check if all detected bin paths are the same
-                let unique_bins: std::collections::HashSet<_> =
-                    platform_bin_paths.iter().flatten().collect();
-
-                if unique_bins.len() <= 1 {
-                    // All platforms have the same bin path (or no bin paths detected)
-                    // Use global bin field and remove from platform configs
-                    if let Some(common_bin) = unique_bins.into_iter().next() {
-                        stub.bin = Some(common_bin.clone());
-                        // Remove bin from all platform configs since it's now global
-                        for (_, platform_config) in stub.platforms.iter_mut() {
-                            platform_config.bin = None;
-                        }
-                    }
-                }
-                // If unique_bins.len() > 1, keep platform-specific bin fields as they differ
             }
         } else {
             bail!("Either --url or --platform must be specified");
@@ -339,9 +305,9 @@ impl ToolStub {
             bail!("No executable files found in archive");
         }
 
-        // Smart binary selection with prioritization
+        // Look for exact filename match only
         let tool_name = self.get_tool_name();
-        let selected_exe = self.select_best_binary(&executables, &tool_name)?;
+        let selected_exe = self.find_exact_binary_match(&executables, &tool_name)?;
 
         // If strip_components will be applied, remove the first path component
         if will_strip {
@@ -386,87 +352,37 @@ impl ToolStub {
         Ok(executables)
     }
 
-    fn select_best_binary(&self, executables: &[String], tool_name: &str) -> Result<String> {
+    fn find_exact_binary_match(&self, executables: &[String], tool_name: &str) -> Result<String> {
         if executables.is_empty() {
             bail!("No executable files found in archive");
         }
 
-        // Extract just the base tool name (remove any suffixes like -test)
-        let base_tool_name = tool_name
-            .split('-')
-            .next()
-            .unwrap_or(tool_name)
-            .split('_')
-            .next()
-            .unwrap_or(tool_name);
-
-        // Score each executable based on priority criteria
-        let mut scored_executables: Vec<(String, i32)> = executables
-            .iter()
-            .map(|exe| {
-                let path = std::path::Path::new(exe);
-                let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or(exe);
-                let stem = path
-                    .file_stem()
-                    .and_then(|f| f.to_str())
-                    .unwrap_or(filename);
-
-                let mut score = 0;
-
-                // Priority 1: Exact filename match (highest priority)
-                if stem == base_tool_name || filename == base_tool_name {
-                    score += 1000;
-                } else if stem == tool_name || filename == tool_name {
-                    score += 900;
+        // Look for exact filename matches (with or without extensions)
+        for exe in executables {
+            let path = std::path::Path::new(exe);
+            if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
+                // Check exact filename match
+                if filename == tool_name {
+                    return Ok(exe.clone());
                 }
-
-                // Priority 2: Filename starts with tool name
-                if stem.starts_with(base_tool_name) {
-                    score += 500;
-                } else if stem.starts_with(tool_name) {
-                    score += 400;
+                // Check filename without extension
+                if let Some(stem) = path.file_stem().and_then(|f| f.to_str()) {
+                    if stem == tool_name {
+                        return Ok(exe.clone());
+                    }
                 }
+            }
+        }
 
-                // Priority 3: Prefer shorter paths (bin/tool vs lib/node_modules/tool/bin/tool)
-                let path_depth = exe.matches('/').count();
-                score += 100 - (path_depth as i32 * 10);
+        // No exact match found, provide helpful error message
+        let mut exe_list = executables.to_vec();
+        exe_list.sort();
 
-                // Priority 4: Prefer bin/ directory
-                if exe.starts_with("bin/") {
-                    score += 200;
-                }
-
-                // Priority 5: Avoid obvious non-main binaries
-                let lower_filename = filename.to_lowercase();
-                if lower_filename.contains("test")
-                    || lower_filename.contains("spec")
-                    || lower_filename.contains("example")
-                {
-                    score -= 100;
-                }
-
-                // Priority 6: Prefer executables without extensions or with common executable extensions
-                if !filename.contains('.')
-                    || filename.ends_with(".exe")
-                    || filename.ends_with(".sh")
-                {
-                    score += 50;
-                } else if filename.ends_with(".js")
-                    || filename.ends_with(".py")
-                    || filename.ends_with(".rb")
-                {
-                    score += 25;
-                }
-
-                (exe.clone(), score)
-            })
-            .collect();
-
-        // Sort by score (highest first)
-        scored_executables.sort_by(|a, b| b.1.cmp(&a.1));
-
-        // Return the highest-scored executable
-        Ok(scored_executables[0].0.clone())
+        bail!(
+            "No executable found with exact filename '{}'. Available executables:\n  {}",
+            tool_name,
+            exe_list.join("\n  ")
+        );
     }
 }
 
