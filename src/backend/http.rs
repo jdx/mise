@@ -88,6 +88,7 @@ impl HttpBackend {
         file_path: &Path,
         cache_key: &str,
         url: &str,
+        tv: &ToolVersion,
         opts: &ToolVersionOptions,
         pr: Option<&Box<dyn SingleReport>>,
     ) -> Result<()> {
@@ -104,7 +105,7 @@ impl HttpBackend {
         }
 
         // Extract tarball to cache
-        self.extract_artifact_to_cache(file_path, &extracted_path, opts, pr)?;
+        self.extract_artifact_to_cache(file_path, &extracted_path, tv, opts, pr)?;
 
         // Create metadata
         let metadata = CacheMetadata {
@@ -128,6 +129,7 @@ impl HttpBackend {
         &self,
         file_path: &Path,
         cache_path: &Path,
+        tv: &ToolVersion,
         opts: &ToolVersionOptions,
         pr: Option<&Box<dyn SingleReport>>,
     ) -> Result<()> {
@@ -140,8 +142,21 @@ impl HttpBackend {
         let format = file::TarFormat::from_ext(ext);
 
         if format == file::TarFormat::Raw {
-            // Copy the file directly to the cache directory
-            let dest = cache_path.join(file_path.file_name().unwrap());
+            // For raw files, always treat bin_path as a directory
+            let dest = if let Some(bin_path_template) = opts.get("bin_path") {
+                let bin_path = template_string(bin_path_template, tv);
+                let bin_dir = cache_path.join(&bin_path);
+
+                // Create the bin directory
+                file::create_dir_all(&bin_dir)?;
+
+                // Place the file directly in the bin directory with its original name
+                bin_dir.join(file_path.file_name().unwrap())
+            } else {
+                // Default behavior: place file directly in cache root
+                cache_path.join(file_path.file_name().unwrap())
+            };
+
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
         } else {
@@ -298,7 +313,7 @@ impl Backend for HttpBackend {
             ctx.pr.set_message("using cached tarball".into());
         } else {
             ctx.pr.set_message("extracting to cache".into());
-            self.extract_to_cache(&file_path, &cache_key, &url, &opts, Some(&ctx.pr))?;
+            self.extract_to_cache(&file_path, &cache_key, &url, &tv, &opts, Some(&ctx.pr))?;
         }
 
         // Create symlink from install directory to cache

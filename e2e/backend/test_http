@@ -90,6 +90,19 @@ mise install
 mise env
 assert_contains "mise x -- hello-world" "hello world"
 
+# Clear cache to avoid conflicts with different bin_path configurations
+mise cache clear
+
+# Test HTTP backend with a raw file asset and bin_path
+cat <<EOF >mise.toml
+[tools]
+"http:hello-raw-bin-path" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world", bin_path = "custom/path", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/custom/path/hello-world" }
+EOF
+
+mise install
+mise env
+assert_contains "mise x -- hello-world" "hello world"
+
 # Test HTTP backend with mise.lock checksum generation
 export MISE_LOCKFILE=1
 export MISE_EXPERIMENTAL=1
