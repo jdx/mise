@@ -1236,6 +1236,63 @@ const completionSpec: Fig.Spec = {
             },
           ],
         },
+        {
+          name: "tool-stub",
+          description:
+            "[experimental] Generate a tool stub for HTTP-based tools",
+          options: [
+            {
+              name: "--version",
+              description: "Version of the tool",
+              isRepeatable: false,
+              args: {
+                name: "version",
+              },
+            },
+            {
+              name: ["-u", "--url"],
+              description: "URL for downloading the tool",
+              isRepeatable: false,
+              args: {
+                name: "url",
+              },
+            },
+            {
+              name: ["-p", "--platform"],
+              description: "Platform-specific URLs in the format platform:url",
+              isRepeatable: true,
+              args: {
+                name: "platform",
+              },
+            },
+            {
+              name: ["-b", "--bin"],
+              description: "Binary path within the extracted archive",
+              isRepeatable: false,
+              args: {
+                name: "bin",
+              },
+            },
+            {
+              name: "--skip-download",
+              description:
+                "Skip downloading for checksum and binary path detection (faster but less informative)",
+              isRepeatable: false,
+            },
+            {
+              name: "--http",
+              description: "HTTP backend type to use",
+              isRepeatable: false,
+              args: {
+                name: "http",
+              },
+            },
+          ],
+          args: {
+            name: "output",
+            description: "Output file path for the tool stub",
+          },
+        },
       ],
     },
     {
@@ -2721,6 +2778,23 @@ const completionSpec: Fig.Spec = {
         generators: completionGeneratorTemplate(`mise registry --complete`),
         debounce: true,
       },
+    },
+    {
+      name: "tool-stub",
+      description: "Execute a tool stub",
+      args: [
+        {
+          name: "file",
+          description: "Path to the TOML tool stub file to execute",
+          template: "filepaths",
+        },
+        {
+          name: "args",
+          description: "Arguments to pass to the tool",
+          isOptional: true,
+          isVariadic: true,
+        },
+      ],
     },
     {
       name: "trust",

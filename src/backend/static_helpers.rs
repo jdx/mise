@@ -3,7 +3,7 @@ use crate::file;
 use crate::hash;
 use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
-use crate::{config::Settings, ui::progress_report::SingleReport};
+use crate::ui::progress_report::SingleReport;
 use eyre::{Result, bail};
 use std::path::Path;
 
@@ -60,19 +60,8 @@ pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<
 }
 
 pub fn template_string(template: &str, tv: &ToolVersion) -> String {
-    let name = tv.ba().tool_name();
     let version = &tv.version;
-    let settings = Settings::get();
-    let os = settings.os();
-    let arch = settings.arch();
-    let ext = if cfg!(windows) { "zip" } else { "tar.gz" };
-
-    template
-        .replace("{name}", &name)
-        .replace("{version}", version)
-        .replace("{os}", os)
-        .replace("{arch}", arch)
-        .replace("{ext}", ext)
+    template.replace("{version}", version)
 }
 
 pub fn get_filename_from_url(url: &str) -> String {

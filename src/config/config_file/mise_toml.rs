@@ -1122,6 +1122,8 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                                 );
                             }
                             toml::Value::String(s) => {
+                                // Convert {{version}} to {version} for backend templating
+                                let s = s.replace("{{version}}", "{version}");
                                 options.opts.insert(k, s);
                             }
                             _ => {
@@ -1159,6 +1161,8 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
                                     options.opts.insert(k, v.to_string());
                                 }
                                 toml::Value::String(s) => {
+                                    // Convert {{version}} to {version} for backend templating
+                                    let s = s.replace("{{version}}", "{version}");
                                     options.opts.insert(k, s);
                                 }
                                 toml::Value::Boolean(b) => {
@@ -1306,6 +1310,8 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                                 );
                             }
                             toml::Value::String(s) => {
+                                // Convert {{version}} to {version} for backend templating
+                                let s = s.replace("{{version}}", "{version}");
                                 options.opts.insert(k, s);
                             }
                             _ => {

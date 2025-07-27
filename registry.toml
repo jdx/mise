@@ -350,6 +350,9 @@ calicoctl.backends = [
     "aqua:projectcalico/calico/calicoctl",
     "asdf:TheCubicleJockey/asdf-calicoctl"
 ]
+carapace.description = "A multi-shell completion binary"
+carapace.backends = ["aqua:carapace-sh/carapace-bin"]
+carapace.test = ["carapace --version 2>&1", "carapace-bin {{version}}"]
 cargo-binstall.description = "Binary installation for rust projects"
 cargo-binstall.backends = [
     "aqua:cargo-bins/cargo-binstall",
@@ -1242,6 +1245,9 @@ hasura-cli.backends = [
     "aqua:hasura/graphql-engine",
     "asdf:gurukulkarni/asdf-hasura"
 ]
+hatch.description = "Modern, extensible Python project management."
+hatch.backends = ["pipx:hatch"]
+hatch.test = ["hatch --version", "{{version}}"]
 haxe.backends = ["ubi:HaxeFoundation/haxe", "asdf:mise-plugins/mise-haxe"]
 haxe.test = ["haxe --version", "{{version}}"]
 hcl2json.description = "Convert hcl2 to json"

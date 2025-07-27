@@ -7,6 +7,7 @@ mod git_pre_commit;
 mod github_action;
 mod task_docs;
 mod task_stubs;
+mod tool_stub;
 
 /// [experimental] Generate files for various tools/services
 #[derive(Debug, clap::Args)]
@@ -25,6 +26,7 @@ enum Commands {
     GithubAction(github_action::GithubAction),
     TaskDocs(task_docs::TaskDocs),
     TaskStubs(task_stubs::TaskStubs),
+    ToolStub(tool_stub::ToolStub),
 }
 
 impl Commands {
@@ -37,6 +39,7 @@ impl Commands {
             Self::GithubAction(cmd) => cmd.run().await,
             Self::TaskDocs(cmd) => cmd.run().await,
             Self::TaskStubs(cmd) => cmd.run().await,
+            Self::ToolStub(cmd) => cmd.run().await,
         }
     }
 }
