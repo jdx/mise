@@ -2685,6 +2685,8 @@ tridentctl.backends = [
 ]
 trivy.description = "Find vulnerabilities, misconfigurations, secrets, SBOM in containers, Kubernetes, code repositories, clouds and more"
 trivy.backends = ["aqua:aquasecurity/trivy", "asdf:zufardhiyaulhaq/asdf-trivy"]
+trunk.backends = ["aqua:trunk-io/launcher"]
+trunk.description = "The Trunk metalinter (https://trunk.io)"
 tsuru.backends = [
     "ubi:tsuru/tsuru-client[exe=tsuru]",
     "asdf:virtualstaticvoid/asdf-tsuru"
