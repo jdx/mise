@@ -275,16 +275,9 @@ impl ToolStub {
             bail!("No executable files found in archive");
         }
 
-        // Prefer files with the tool name, otherwise take the first one
+        // Smart binary selection with prioritization
         let tool_name = self.get_tool_name();
-        let mut selected_exe = None;
-        for exe in &executables {
-            if exe.contains(&tool_name) {
-                selected_exe = Some(exe.clone());
-                break;
-            }
-        }
-        let selected_exe = selected_exe.unwrap_or_else(|| executables[0].clone());
+        let selected_exe = self.select_best_binary(&executables, &tool_name)?;
 
         // If strip_components will be applied, remove the first path component
         if will_strip {
@@ -327,6 +320,89 @@ impl ToolStub {
         }
 
         Ok(executables)
+    }
+
+    fn select_best_binary(&self, executables: &[String], tool_name: &str) -> Result<String> {
+        if executables.is_empty() {
+            bail!("No executable files found in archive");
+        }
+
+        // Extract just the base tool name (remove any suffixes like -test)
+        let base_tool_name = tool_name
+            .split('-')
+            .next()
+            .unwrap_or(tool_name)
+            .split('_')
+            .next()
+            .unwrap_or(tool_name);
+
+        // Score each executable based on priority criteria
+        let mut scored_executables: Vec<(String, i32)> = executables
+            .iter()
+            .map(|exe| {
+                let path = std::path::Path::new(exe);
+                let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or(exe);
+                let stem = path
+                    .file_stem()
+                    .and_then(|f| f.to_str())
+                    .unwrap_or(filename);
+
+                let mut score = 0;
+
+                // Priority 1: Exact filename match (highest priority)
+                if stem == base_tool_name || filename == base_tool_name {
+                    score += 1000;
+                } else if stem == tool_name || filename == tool_name {
+                    score += 900;
+                }
+
+                // Priority 2: Filename starts with tool name
+                if stem.starts_with(base_tool_name) {
+                    score += 500;
+                } else if stem.starts_with(tool_name) {
+                    score += 400;
+                }
+
+                // Priority 3: Prefer shorter paths (bin/tool vs lib/node_modules/tool/bin/tool)
+                let path_depth = exe.matches('/').count();
+                score += 100 - (path_depth as i32 * 10);
+
+                // Priority 4: Prefer bin/ directory
+                if exe.starts_with("bin/") {
+                    score += 200;
+                }
+
+                // Priority 5: Avoid obvious non-main binaries
+                let lower_filename = filename.to_lowercase();
+                if lower_filename.contains("test")
+                    || lower_filename.contains("spec")
+                    || lower_filename.contains("example")
+                {
+                    score -= 100;
+                }
+
+                // Priority 6: Prefer executables without extensions or with common executable extensions
+                if !filename.contains('.')
+                    || filename.ends_with(".exe")
+                    || filename.ends_with(".sh")
+                {
+                    score += 50;
+                } else if filename.ends_with(".js")
+                    || filename.ends_with(".py")
+                    || filename.ends_with(".rb")
+                {
+                    score += 25;
+                }
+
+                (exe.clone(), score)
+            })
+            .collect();
+
+        // Sort by score (highest first)
+        scored_executables.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Return the highest-scored executable
+        Ok(scored_executables[0].0.clone())
     }
 }
 
