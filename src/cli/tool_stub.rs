@@ -26,8 +26,6 @@ pub struct ToolStubFile {
     pub opts: indexmap::IndexMap<String, String>,
     #[serde(skip)]
     pub tool_name: String,
-    #[serde(skip)]
-    pub bin_name: String,
 }
 
 // Custom deserializer that converts TOML values to strings for storage in opts
@@ -76,6 +74,22 @@ fn default_version() -> String {
     "latest".to_string()
 }
 
+fn has_http_backend_config(opts: &indexmap::IndexMap<String, String>) -> bool {
+    // Check for top-level url
+    if opts.contains_key("url") {
+        return true;
+    }
+
+    // Check for platform-specific configs with urls
+    for (key, value) in opts {
+        if key.starts_with("platforms") && value.contains("url") {
+            return true;
+        }
+    }
+
+    false
+}
+
 impl ToolStubFile {
     pub fn from_file(path: &Path) -> Result<Self> {
         let content = file::read_to_string(path)?;
@@ -89,17 +103,25 @@ impl ToolStubFile {
             .to_string();
 
         // Determine tool name from tool field or derive from stub name
+        // If no tool is specified, default to HTTP backend if HTTP config is present
         let tool_name = stub
             .tool
             .clone()
             .or_else(|| stub.opts.get("tool").map(|s| s.to_string()))
-            .unwrap_or_else(|| stub_name.clone());
+            .unwrap_or_else(|| {
+                if has_http_backend_config(&stub.opts) {
+                    format!("http:{}", stub_name)
+                } else {
+                    stub_name.clone()
+                }
+            });
 
-        // Determine bin name (what executable to run) - defaults to filename
-        let bin_name = stub.bin.clone().unwrap_or_else(|| stub_name.clone());
+        // Set bin to filename if not specified
+        if stub.bin.is_none() {
+            stub.bin = Some(stub_name.clone());
+        }
 
         stub.tool_name = tool_name;
-        stub.bin_name = bin_name;
 
         Ok(stub)
     }
@@ -182,6 +204,81 @@ impl BinPathCache {
     }
 }
 
+fn find_tool_version(
+    toolset: &crate::toolset::Toolset,
+    config: &std::sync::Arc<Config>,
+    tool_name: &str,
+) -> Option<crate::toolset::ToolVersion> {
+    for (_backend, tv) in toolset.list_current_installed_versions(config) {
+        if tv.ba().full() == tool_name {
+            return Some(tv);
+        }
+    }
+    None
+}
+
+fn find_single_subdirectory(install_path: &Path) -> Option<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(install_path) else {
+        return None;
+    };
+
+    let dirs: Vec<_> = entries
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+        .collect();
+
+    if dirs.len() == 1 {
+        Some(dirs[0].path())
+    } else {
+        None
+    }
+}
+
+fn try_find_bin_in_path(base_path: &Path, bin: &str) -> Option<PathBuf> {
+    let bin_path = base_path.join(bin);
+    if bin_path.exists() && crate::file::is_executable(&bin_path) {
+        Some(bin_path)
+    } else {
+        None
+    }
+}
+
+fn resolve_bin_with_path(
+    toolset: &crate::toolset::Toolset,
+    config: &std::sync::Arc<Config>,
+    bin: &str,
+    tool_name: &str,
+) -> Option<PathBuf> {
+    let tv = find_tool_version(toolset, config, tool_name)?;
+    let install_path = tv.install_path();
+
+    // Try direct path first
+    if let Some(bin_path) = try_find_bin_in_path(&install_path, bin) {
+        return Some(bin_path);
+    }
+
+    // If direct path doesn't work, try skipping a single top-level directory
+    // This handles cases where the tarball has a single top-level directory
+    let subdir_path = find_single_subdirectory(&install_path)?;
+    try_find_bin_in_path(&subdir_path, bin)
+}
+
+async fn resolve_bin_simple(
+    toolset: &crate::toolset::Toolset,
+    config: &std::sync::Arc<Config>,
+    bin: &str,
+) -> Result<Option<PathBuf>> {
+    if let Some((backend, tv)) = toolset.which(config, bin).await {
+        backend.which(config, &tv, bin).await
+    } else {
+        Ok(None)
+    }
+}
+
+fn is_bin_path(bin: &str) -> bool {
+    bin.contains('/') || bin.contains('\\')
+}
+
 async fn find_cached_or_resolve_bin_path(
     toolset: &crate::toolset::Toolset,
     config: &std::sync::Arc<Config>,
@@ -197,16 +294,21 @@ async fn find_cached_or_resolve_bin_path(
     }
 
     // Cache miss - resolve the binary path
-    if let Some((backend, tv)) = toolset.which(config, &stub.bin_name).await {
-        if let Some(bin_path) = backend.which(config, &tv, &stub.bin_name).await? {
-            // Cache the result
-            if let Err(e) = BinPathCache::save(&bin_path, &cache_key) {
-                // Don't fail if caching fails, just log it
-                warn!("Failed to cache binary path: {e}");
-            }
+    let bin = stub.bin.as_ref().unwrap();
+    let bin_path = if is_bin_path(bin) {
+        resolve_bin_with_path(toolset, config, bin, &stub.tool_name)
+    } else {
+        resolve_bin_simple(toolset, config, bin).await?
+    };
 
-            return Ok(Some(bin_path));
+    if let Some(bin_path) = bin_path {
+        // Cache the result
+        if let Err(e) = BinPathCache::save(&bin_path, &cache_key) {
+            // Don't fail if caching fails, just log it
+            crate::warn!("Failed to cache binary path: {e}");
         }
+
+        return Ok(Some(bin_path));
     }
 
     Ok(None)
@@ -263,7 +365,7 @@ async fn execute_with_tool_request(
     bail!(
         "Tool '{}' or bin '{}' not found",
         stub.tool_name,
-        stub.bin_name
+        stub.bin.as_ref().unwrap()
     );
 }
 
