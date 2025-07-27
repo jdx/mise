@@ -43,11 +43,13 @@ Additional fields can be specified for different backends using the `opts` syste
 
 For HTTP backends:
 ```toml
+#!/usr/bin/env -S mise tool-stub
 url = "https://example.com/releases/{{version}}/tool-{{os}}-{{arch}}.tar.gz"
 ```
 
 For platform-specific configurations:
 ```toml
+#!/usr/bin/env -S mise tool-stub
 [platforms.linux]
 url = "https://example.com/releases/{{version}}/tool-linux-{{arch}}.tar.gz"
 
