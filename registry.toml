@@ -1245,6 +1245,9 @@ hasura-cli.backends = [
     "aqua:hasura/graphql-engine",
     "asdf:gurukulkarni/asdf-hasura"
 ]
+hatch.description = "Modern, extensible Python project management."
+hatch.backends = ["pipx:hatch"]
+hatch.test = ["hatch --version", "{{version}}"]
 haxe.backends = ["ubi:HaxeFoundation/haxe", "asdf:mise-plugins/mise-haxe"]
 haxe.test = ["haxe --version", "{{version}}"]
 hcl2json.description = "Convert hcl2 to json"
