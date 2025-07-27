@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::config::Settings;
-use crate::file::{self, TarOptions, TarFormat};
+use crate::file::{self, TarFormat, TarOptions};
 use clap::ValueHint;
 use color_eyre::eyre::bail;
 use serde::Serialize;
@@ -160,22 +160,25 @@ impl ToolStub {
         }
 
         let toml_content = toml::to_string_pretty(&stub)?;
-        
+
         let mut content = vec![
             "#!/usr/bin/env -S mise tool-stub".to_string(),
             format!("# {} tool stub", self.get_tool_name()),
             "".to_string(),
         ];
-        
+
         content.push(toml_content);
-        
+
         Ok(content.join("\n"))
     }
 
     fn parse_platform_spec(&self, spec: &str) -> Result<(String, String)> {
         let parts: Vec<&str> = spec.splitn(2, ':').collect();
         if parts.len() != 2 {
-            bail!("Platform spec must be in format 'platform:url', got: {}", spec);
+            bail!(
+                "Platform spec must be in format 'platform:url', got: {}",
+                spec
+            );
         }
 
         let platform = parts[0].to_string();
@@ -254,12 +257,16 @@ impl ToolStub {
 
     fn is_archive_format(&self, url: &str) -> bool {
         // Check if the URL appears to be an archive format that mise can extract
-        url.ends_with(".tar.gz") || url.ends_with(".tgz") ||
-        url.ends_with(".tar.xz") || url.ends_with(".txz") ||
-        url.ends_with(".tar.bz2") || url.ends_with(".tbz2") ||
-        url.ends_with(".tar.zst") || url.ends_with(".tzst") ||
-        url.ends_with(".zip") ||
-        url.ends_with(".7z")
+        url.ends_with(".tar.gz")
+            || url.ends_with(".tgz")
+            || url.ends_with(".tar.xz")
+            || url.ends_with(".txz")
+            || url.ends_with(".tar.bz2")
+            || url.ends_with(".tbz2")
+            || url.ends_with(".tar.zst")
+            || url.ends_with(".tzst")
+            || url.ends_with(".zip")
+            || url.ends_with(".7z")
     }
 
     fn find_executables(&self, dir: &std::path::Path) -> Result<Vec<String>> {
@@ -270,7 +277,7 @@ impl ToolStub {
             if entry.file_type().is_file() {
                 let path = entry.path();
                 if file::is_executable(path) {
-                    if let Some(relative_path) = path.strip_prefix(dir).ok() {
+                    if let Ok(relative_path) = path.strip_prefix(dir) {
                         executables.push(relative_path.to_string_lossy().to_string());
                     }
                 }

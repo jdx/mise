@@ -53,7 +53,7 @@ assert_succeed "mise generate tool-stub custom-platform-tool --platform 'my-plat
 echo '#!/usr/bin/env -S mise tool-stub
 # simple test stub
 version = "1.0.0"
-url = "https://httpbin.org/status/404"' > simple-stub
+url = "https://httpbin.org/status/404"' >simple-stub
 chmod +x simple-stub
 
 # This should succeed since we're just asking for help, not executing the tool

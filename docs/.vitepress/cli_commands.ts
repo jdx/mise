@@ -137,6 +137,9 @@ export const commands: { [key: string]: Command } = {
       "task-stubs": {
         hide: false,
       },
+      "tool-stub": {
+        hide: false,
+      },
     },
   },
   global: {

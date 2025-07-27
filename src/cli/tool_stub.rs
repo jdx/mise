@@ -418,7 +418,7 @@ async fn execute_with_tool_request(
             // Get the environment with proper PATH from toolset
             let env = toolset.env_with_path(config).await?;
 
-            return crate::cli::exec::exec_program(bin_path, args, env);
+            crate::cli::exec::exec_program(bin_path, args, env)
         }
         Err(e) => match e {
             BinPathError::ToolNotFound(tool_name) => {
