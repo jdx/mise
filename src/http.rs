@@ -275,24 +275,32 @@ fn github_headers(url: &Url) -> HeaderMap {
 fn display_github_rate_limit(resp: &Response) {
     let status = resp.status().as_u16();
     if status == 403 || status == 429 {
-        if resp
+        let remaining = resp
             .headers()
             .get("x-ratelimit-remaining")
-            .is_none_or(|r| r != "0")
-        {
+            .and_then(|r| r.to_str().ok());
+        if remaining.is_some_and(|r| r == "0") {
+            if let Some(reset) = resp.headers().get("x-ratelimit-reset") {
+                let reset = reset.to_str().map(|r| r.to_string()).unwrap_or_default();
+                if let Some(reset) = chrono::DateTime::from_timestamp(reset.parse().unwrap(), 0) {
+                    warn!(
+                        "GitHub rate limit exceeded. Resets at {}",
+                        reset
+                            .with_timezone(&chrono::Local)
+                            .naive_local()
+                            .to_string()
+                    );
+                }
+            }
             return;
         }
-        if let Some(reset) = resp.headers().get("x-ratelimit-reset") {
-            let reset = reset.to_str().map(|r| r.to_string()).unwrap_or_default();
-            if let Some(reset) = chrono::DateTime::from_timestamp(reset.parse().unwrap(), 0) {
-                warn!(
-                    "GitHub rate limit exceeded. Resets at {}",
-                    reset
-                        .with_timezone(&chrono::Local)
-                        .naive_local()
-                        .to_string()
-                );
-            }
+        // retry-after header should be ignored if x-ratelimit-remaining is 0
+        if let Some(retry_after) = resp.headers().get("retry-after") {
+            let retry_after = retry_after.to_str().unwrap_or_default();
+            warn!(
+                "GitHub rate limit exceeded. Retry after {} seconds",
+                retry_after
+            );
         }
     }
 }
