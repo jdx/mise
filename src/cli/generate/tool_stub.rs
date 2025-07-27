@@ -33,6 +33,8 @@ struct PlatformConfig {
     blake3: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bin: Option<String>,
 }
 
 /// [experimental] Generate a tool stub for HTTP-based tools
@@ -130,7 +132,7 @@ impl ToolStub {
             }
         } else if !self.platform.is_empty() {
             let mpr = MultiProgressReport::get();
-            let mut detected_bin_path = None;
+            let mut platform_bin_paths: Vec<Option<String>> = Vec::new();
 
             for platform_spec in &self.platform {
                 let (platform, url) = self.parse_platform_spec(platform_spec)?;
@@ -138,6 +140,7 @@ impl ToolStub {
                     url: url.clone(),
                     blake3: None,
                     size: None,
+                    bin: None,
                 };
 
                 // Auto-detect checksum, size, and binary path if not skipped
@@ -145,20 +148,36 @@ impl ToolStub {
                     if let Ok((checksum, size, bin_path)) = self.analyze_url(&url, &mpr).await {
                         platform_config.blake3 = Some(checksum);
                         platform_config.size = Some(size);
-
-                        // Use binary path from first platform if not already detected
-                        if detected_bin_path.is_none() {
-                            detected_bin_path = bin_path;
-                        }
+                        platform_config.bin = bin_path.clone();
+                        platform_bin_paths.push(bin_path);
+                    } else {
+                        platform_bin_paths.push(None);
                     }
+                } else {
+                    platform_bin_paths.push(None);
                 }
 
                 stub.platforms.insert(platform, platform_config);
             }
 
-            // Set binary path if not specified and we detected one
-            if self.bin.is_none() {
-                stub.bin = detected_bin_path;
+            // Determine if we should use global bin or platform-specific bins
+            if self.bin.is_none() && !platform_bin_paths.is_empty() {
+                // Check if all detected bin paths are the same
+                let unique_bins: std::collections::HashSet<_> =
+                    platform_bin_paths.iter().flatten().collect();
+
+                if unique_bins.len() <= 1 {
+                    // All platforms have the same bin path (or no bin paths detected)
+                    // Use global bin field and remove from platform configs
+                    if let Some(common_bin) = unique_bins.into_iter().next() {
+                        stub.bin = Some(common_bin.clone());
+                        // Remove bin from all platform configs since it's now global
+                        for (_, platform_config) in stub.platforms.iter_mut() {
+                            platform_config.bin = None;
+                        }
+                    }
+                }
+                // If unique_bins.len() > 1, keep platform-specific bin fields as they differ
             }
         } else {
             bail!("Either --url or --platform must be specified");

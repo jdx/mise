@@ -304,6 +304,29 @@ enum BinPathError {
     },
 }
 
+fn resolve_platform_specific_bin(stub: &ToolStubFile) -> &str {
+    // Try to find platform-specific bin field first
+    let platform_key = get_current_platform_key();
+
+    // Check for platform-specific bin field: platforms.{platform}.bin
+    let platform_bin_key = format!("platforms.{}.bin", platform_key);
+    if let Some(platform_bin) = stub.opts.get(&platform_bin_key) {
+        return platform_bin;
+    }
+
+    // Fall back to global bin field
+    stub.bin
+        .as_ref()
+        .map(|s| s.as_str())
+        .unwrap_or(&stub.tool_name)
+}
+
+fn get_current_platform_key() -> String {
+    use crate::config::Settings;
+    let settings = Settings::get();
+    format!("{}-{}", settings.os(), settings.arch())
+}
+
 async fn find_cached_or_resolve_bin_path(
     toolset: &crate::toolset::Toolset,
     config: &std::sync::Arc<Config>,
@@ -319,7 +342,7 @@ async fn find_cached_or_resolve_bin_path(
     }
 
     // Cache miss - resolve the binary path
-    let bin = stub.bin.as_ref().unwrap();
+    let bin = resolve_platform_specific_bin(stub);
     let bin_path = if is_bin_path(bin) {
         resolve_bin_with_path(toolset, config, bin, &stub.tool_name)
     } else {

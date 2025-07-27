@@ -9,6 +9,11 @@ This command generates tool stubs that can automatically download and execute
 tools from HTTP URLs. It can detect checksums, file sizes, and binary paths
 automatically by downloading and analyzing the tool.
 
+When multiple platforms are specified, the generator will automatically detect
+if different platforms have different binary paths and generate platform-specific
+`bin` fields when needed, or use a global `bin` field when all platforms have
+the same binary structure.
+
 ## Arguments
 
 ### `<OUTPUT>`
