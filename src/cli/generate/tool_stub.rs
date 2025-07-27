@@ -224,7 +224,7 @@ impl ToolStub {
         let archive_path = temp_dir.path().join(&filename);
 
         // Create one progress reporter for the entire operation
-        let pr = mpr.add(&format!("download {}", filename));
+        let pr = mpr.add(&format!("download {filename}"));
 
         // Download using mise's HTTP client
         HTTP.download_file(url, &archive_path, Some(&pr)).await?;
@@ -237,7 +237,7 @@ impl ToolStub {
         // Detect binary path if this is an archive
         let bin_path = if self.is_archive_format(url) {
             // Update progress message for extraction and reuse the same progress reporter
-            pr.set_message(format!("extract {}", filename));
+            pr.set_message(format!("extract {filename}"));
             match self
                 .extract_and_find_binary(&archive_path, &temp_dir, &filename, &pr)
                 .await
@@ -277,7 +277,7 @@ impl ToolStub {
             strip_components: 0,
             pr: Some(pr),
         };
-        file::untar(&archive_path, &extracted_dir, &tar_opts)?;
+        file::untar(archive_path, &extracted_dir, &tar_opts)?;
 
         // Check if strip_components would be applied during actual installation
         let format = TarFormat::from_ext(

@@ -309,15 +309,13 @@ fn resolve_platform_specific_bin(stub: &ToolStubFile) -> &str {
     let platform_key = get_current_platform_key();
 
     // Check for platform-specific bin field: platforms.{platform}.bin
-    let platform_bin_key = format!("platforms.{}.bin", platform_key);
+    let platform_bin_key = format!("platforms.{platform_key}.bin");
     if let Some(platform_bin) = stub.opts.get(&platform_bin_key) {
         return platform_bin;
     }
 
     // Fall back to global bin field
-    stub.bin
-        .as_ref()
-        .map(|s| s.as_str())
+    stub.bin.as_deref()
         .unwrap_or(&stub.tool_name)
 }
 
