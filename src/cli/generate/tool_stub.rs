@@ -61,9 +61,15 @@ pub struct ToolStub {
 
     /// Platform-specific URLs in the format platform:url
     ///
-    /// Examples: --platform linux-x64:https://... --platform darwin-arm64:https://...
-    #[clap(long, short)]
-    pub platform: Vec<String>,
+    /// Examples: --platform-url linux-x64:https://... --platform-url darwin-arm64:https://...
+    #[clap(long)]
+    pub platform_url: Vec<String>,
+
+    /// Platform-specific binary paths in the format platform:path
+    ///
+    /// Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
+    #[clap(long)]
+    pub platform_bin: Vec<String>,
 
     /// Binary path within the extracted archive
     ///
@@ -106,6 +112,11 @@ impl ToolStub {
     }
 
     async fn generate_stub(&self) -> Result<String> {
+        // Validate that either URL or platform URLs are provided
+        if self.url.is_none() && self.platform_url.is_empty() {
+            bail!("Either --url or --platform-url must be specified");
+        }
+
         let mut stub = ToolStubConfig {
             version: self.version.clone(),
             bin: self.bin.clone(),
@@ -130,11 +141,18 @@ impl ToolStub {
                     }
                 }
             }
-        } else if !self.platform.is_empty() {
+        } else if !self.platform_url.is_empty() {
             let mpr = MultiProgressReport::get();
             let mut platform_bin_paths: Vec<Option<String>> = Vec::new();
 
-            for platform_spec in &self.platform {
+            // Parse platform-specific bin paths
+            let mut explicit_platform_bins = std::collections::HashMap::new();
+            for platform_bin_spec in &self.platform_bin {
+                let (platform, bin_path) = self.parse_platform_bin_spec(platform_bin_spec)?;
+                explicit_platform_bins.insert(platform, bin_path);
+            }
+
+            for platform_spec in &self.platform_url {
                 let (platform, url) = self.parse_platform_spec(platform_spec)?;
                 let mut platform_config = PlatformConfig {
                     url: url.clone(),
@@ -143,17 +161,29 @@ impl ToolStub {
                     bin: None,
                 };
 
+                // Set platform-specific bin path if explicitly provided
+                if let Some(explicit_bin) = explicit_platform_bins.get(&platform) {
+                    platform_config.bin = Some(explicit_bin.clone());
+                    platform_bin_paths.push(Some(explicit_bin.clone()));
+                }
+
                 // Auto-detect checksum, size, and binary path if not skipped
                 if !self.skip_download {
-                    if let Ok((checksum, size, bin_path)) = self.analyze_url(&url, &mpr).await {
+                    if let Ok((checksum, size, detected_bin_path)) =
+                        self.analyze_url(&url, &mpr).await
+                    {
                         platform_config.blake3 = Some(checksum);
                         platform_config.size = Some(size);
-                        platform_config.bin = bin_path.clone();
-                        platform_bin_paths.push(bin_path);
-                    } else {
+
+                        // Only use detected bin path if no explicit bin was provided
+                        if platform_config.bin.is_none() {
+                            platform_config.bin = detected_bin_path.clone();
+                            platform_bin_paths.push(detected_bin_path);
+                        }
+                    } else if platform_config.bin.is_none() {
                         platform_bin_paths.push(None);
                     }
-                } else {
+                } else if platform_config.bin.is_none() {
                     platform_bin_paths.push(None);
                 }
 
@@ -209,6 +239,21 @@ impl ToolStub {
         let url = parts[1].to_string();
 
         Ok((platform, url))
+    }
+
+    fn parse_platform_bin_spec(&self, spec: &str) -> Result<(String, String)> {
+        let parts: Vec<&str> = spec.splitn(2, ':').collect();
+        if parts.len() != 2 {
+            bail!(
+                "Platform bin spec must be in format 'platform:path', got: {}",
+                spec
+            );
+        }
+
+        let platform = parts[0].to_string();
+        let bin_path = parts[1].to_string();
+
+        Ok((platform, bin_path))
     }
 
     async fn analyze_url(
@@ -433,8 +478,14 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     Generate a tool stub with platform-specific URLs:
     $ <bold>mise generate tool-stub ./bin/rg \
-        --platform linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \
-        --platform darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz</bold>
+        --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \
+        --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz</bold>
+
+    Generate with platform-specific binary paths:
+    $ <bold>mise generate tool-stub ./bin/tool \
+        --platform-url linux-x64:https://example.com/tool-linux.tar.gz \
+        --platform-url windows-x64:https://example.com/tool-windows.zip \
+        --platform-bin windows-x64:tool.exe</bold>
 
     Generate without downloading (faster):
     $ <bold>mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --skip-download</bold>

@@ -28,7 +28,7 @@ assert_succeed "mise generate tool-stub versioned-tool --version '1.2.3' --url '
 assert_contains "cat versioned-tool" 'version = "1.2.3"'
 
 # Test 3: Tool stub generation with platform-specific URLs
-assert_succeed "mise generate tool-stub platform-tool --platform 'linux-x64:https://httpbin.org/status/200' --platform 'darwin-arm64:https://httpbin.org/status/201' --skip-download"
+assert_succeed "mise generate tool-stub platform-tool --platform-url 'linux-x64:https://httpbin.org/status/200' --platform-url 'darwin-arm64:https://httpbin.org/status/201' --skip-download"
 
 assert_contains "cat platform-tool" "[platforms.linux-x64]"
 assert_contains "cat platform-tool" 'url = "https://httpbin.org/status/200"'
@@ -44,10 +44,10 @@ assert_contains "cat custom-bin-tool" 'bin = "bin/custom-binary"'
 assert_fail "mise generate tool-stub missing-url --skip-download"
 
 # Test 6: Error handling - invalid platform format
-assert_fail "mise generate tool-stub invalid-platform --platform 'invalid-format' --skip-download"
+assert_fail "mise generate tool-stub invalid-platform --platform-url 'invalid-format' --skip-download"
 
 # Test 7: Valid platform names should work (no restriction)
-assert_succeed "mise generate tool-stub custom-platform-tool --platform 'my-platform:https://httpbin.org/status/200' --skip-download"
+assert_succeed "mise generate tool-stub custom-platform-tool --platform-url 'my-platform:https://httpbin.org/status/200' --skip-download"
 
 # Test 8: Verify generated stub can be parsed by mise tool-stub
 echo '#!/usr/bin/env -S mise tool-stub

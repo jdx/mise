@@ -8,7 +8,7 @@ export MISE_EXPERIMENTAL=true
 
 # Test 1: Tool stub generation with real Node.js tar.gz archive
 echo "Testing tool-stub generation with Node.js tar.gz archive..."
-assert_succeed "mise generate tool-stub ./bin/node-test --platform 'macos-arm64:https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz' --platform 'linux-x64:https://nodejs.org/dist/v22.17.1/node-v22.17.1-linux-x64.tar.gz'"
+assert_succeed "mise generate tool-stub ./bin/node-test --platform-url 'macos-arm64:https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz' --platform-url 'linux-x64:https://nodejs.org/dist/v22.17.1/node-v22.17.1-linux-x64.tar.gz'"
 
 # Verify the generated stub exists and is executable
 assert_succeed "test -x ./bin/node-test"
@@ -37,7 +37,7 @@ assert "./bin/node-test --version" "v22.17.1"
 
 # Test 2: Tool stub generation with different platforms (should produce common bin)
 echo "Testing tool-stub generation with cross-platform URLs..."
-assert_succeed "mise generate tool-stub ./bin/cross-platform-tool --platform 'macos-arm64:https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz' --platform 'linux-x64:https://nodejs.org/dist/v22.17.1/node-v22.17.1-linux-x64.tar.gz'"
+assert_succeed "mise generate tool-stub ./bin/cross-platform-tool --platform-url 'macos-arm64:https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz' --platform-url 'linux-x64:https://nodejs.org/dist/v22.17.1/node-v22.17.1-linux-x64.tar.gz'"
 
 # Since both platforms likely have the same bin structure, should have global bin field
 assert_contains "cat ./bin/cross-platform-tool" 'bin = "bin/node"'
