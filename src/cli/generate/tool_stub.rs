@@ -126,7 +126,7 @@ impl ToolStub {
             platforms: indexmap::IndexMap::new(),
         };
 
-        // Handle URL or platform-specific URLs
+        // Handle URL and platform-specific URLs (both can be specified)
         if let Some(url) = &self.url {
             stub.url = Some(url.clone());
 
@@ -141,7 +141,9 @@ impl ToolStub {
                     }
                 }
             }
-        } else if !self.platform_url.is_empty() {
+        }
+
+        if !self.platform_url.is_empty() {
             let mpr = MultiProgressReport::get();
 
             // Parse platform-specific bin paths
@@ -175,7 +177,10 @@ impl ToolStub {
 
                 stub.platforms.insert(platform, platform_config);
             }
-        } else {
+        }
+
+        // Validate that at least one URL type is provided
+        if self.url.is_none() && self.platform_url.is_empty() {
             bail!("Either --url or --platform-url must be specified");
         }
 

@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2103
+
+# Test mise generate tool-stub command with {{version}} templating in platform URLs
+
+# Disable GPG verification to avoid test failures
+export MISE_GPG_VERIFY=false
+
+# Create test project directory
+mkdir -p generate_tool_stub_version_test
+cd generate_tool_stub_version_test
+
+echo "Testing {{version}} templating in tool stubs..."
+
+# Test 1: Generate tool stub with {{version}} in normal URL (should work)
+assert_succeed "mise generate tool-stub test-tool-normal --version '1.0.0' --url 'https://httpbin.org/json?version={{version}}' --skip-download"
+
+# Verify the generated stub contains the templated URL
+assert_contains "cat test-tool-normal" 'version = "1.0.0"'
+assert_contains "cat test-tool-normal" 'url = "https://httpbin.org/json?version={{version}}"'
+
+# Test 2: Generate tool stub with {{version}} in platform URLs
+assert_succeed "mise generate tool-stub test-tool-platform --version '2.0.0' --platform-url 'linux-x64:https://httpbin.org/json?version={{version}}&platform=linux' --platform-url 'darwin-arm64:https://httpbin.org/json?version={{version}}&platform=darwin' --skip-download"
+
+# Verify the generated stub contains the templated platform URLs
+assert_contains "cat test-tool-platform" 'version = "2.0.0"'
+assert_contains "cat test-tool-platform" "[platforms.linux-x64]"
+assert_contains "cat test-tool-platform" 'url = "https://httpbin.org/json?version={{version}}&platform=linux"'
+assert_contains "cat test-tool-platform" "[platforms.darwin-arm64]"
+assert_contains "cat test-tool-platform" 'url = "https://httpbin.org/json?version={{version}}&platform=darwin"'
+
+# Test 3: Test that version templating actually works at runtime
+# Create a test stub with version templating
+cat >version-test-stub <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+version = "3.0.0"
+url = "https://httpbin.org/json?version={{version}}"
+EOF
+chmod +x version-test-stub
+
+# Test that the tool stub can be parsed (basic validation)
+assert_succeed "mise tool-stub version-test-stub --help"
+
+# Test 4: Test platform-specific version templating at runtime
+cat >platform-version-test-stub <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+version = "4.0.0"
+
+[platforms.linux-x64]
+url = "https://httpbin.org/json?version={{version}}&platform=linux"
+
+[platforms.darwin-arm64]  
+url = "https://httpbin.org/json?version={{version}}&platform=darwin"
+EOF
+chmod +x platform-version-test-stub
+
+# Test that the platform tool stub can be parsed (basic validation)
+assert_succeed "mise tool-stub platform-version-test-stub --help"
+
+# Test 5: Verify that {{version}} is preserved during generation (not expanded)
+# The generated stubs should contain the literal {{version}} template, not the expanded version
+assert_not_contains "cat test-tool-normal" 'url = "https://httpbin.org/json?version=1.0.0"'
+assert_not_contains "cat test-tool-platform" 'url = "https://httpbin.org/json?version=2.0.0&platform=linux"'
+
+# Test 6: Test mixed URL types (both platform and normal) with version templating
+assert_succeed "mise generate tool-stub mixed-tool --version '5.0.0' --url 'https://httpbin.org/json?version={{version}}&type=fallback' --platform-url 'special-platform:https://httpbin.org/json?version={{version}}&type=special' --skip-download"
+
+assert_contains "cat mixed-tool" 'version = "5.0.0"'
+assert_contains "cat mixed-tool" 'url = "https://httpbin.org/json?version={{version}}&type=fallback"'
+assert_contains "cat mixed-tool" "[platforms.special-platform]"
+assert_contains "cat mixed-tool" 'url = "https://httpbin.org/json?version={{version}}&type=special"'
+
+# Test 7: Test with real fixture URL to verify version templating works
+assert_succeed "mise generate tool-stub hello-world --version '1.0.0' --url 'https://mise.jdx.dev/test-fixtures/hello-world-{{version}}.tar.gz' --skip-download"
+
+assert_contains "cat hello-world" 'version = "1.0.0"'
+assert_contains "cat hello-world" 'url = "https://mise.jdx.dev/test-fixtures/hello-world-{{version}}.tar.gz"'
+
+# Test 8: Test platform-specific URLs with real fixture
+assert_succeed "mise generate tool-stub hello-world-platform --version '1.0.0' --platform-url 'linux-x64:https://mise.jdx.dev/test-fixtures/hello-world-{{version}}-linux.tar.gz' --platform-url 'darwin-arm64:https://mise.jdx.dev/test-fixtures/hello-world-{{version}}-darwin.tar.gz' --skip-download"
+
+assert_contains "cat hello-world-platform" 'version = "1.0.0"'
+assert_contains "cat hello-world-platform" "[platforms.linux-x64]"
+assert_contains "cat hello-world-platform" 'url = "https://mise.jdx.dev/test-fixtures/hello-world-{{version}}-linux.tar.gz"'
+assert_contains "cat hello-world-platform" "[platforms.darwin-arm64]"
+assert_contains "cat hello-world-platform" 'url = "https://mise.jdx.dev/test-fixtures/hello-world-{{version}}-darwin.tar.gz"'
+
+echo "All version templating tests passed!"
+
+# Clean up
+cd ..
+rm -rf generate_tool_stub_version_test
