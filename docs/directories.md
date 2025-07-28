@@ -77,6 +77,8 @@ lts -> ./20.15.0
 latest -> ./20.15.0
 ```
 
+You can set the `MISE_INSTALLS_DIR` environment variable to override this location.
+
 ### `~/.local/share/mise/shims`
 
 This is where mise places shims. Generally these are used for IDE integration or if `mise activate`

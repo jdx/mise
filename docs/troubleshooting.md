@@ -97,6 +97,30 @@ plugins, they must use core and vfox only—which means only a handful of tools 
 Windows.
 :::
 
+### Path limits
+
+If you have many tools defined in your `mise.toml` hierarchy, then it is possible that `mise x` will produce a `Path` environment variable that is too long for certain tools to handle, most notably, `cmd.exe`. This will affect `mise` tools that invoke `cmd.exe` (like `npm install`).
+
+You have a few options:
+
+1. Set the `MISE_INSTALLS_DIR` environment variable to a shorter location, e.g. `C:\.mise-installs`.
+1. Use `powershell.exe` or `pwsh.exe` instead of `cmd.exe`, since they can handle a longer `Path`.
+1. Re-organise the `mise.toml` files in your monorepo, to specify only the tools they need.
+
+You can run the following command to test whether you have hit the `cmd.exe` `Path` limitation:
+
+```powershell
+# Path is within limits
+❯ mise x -- cmd.exe /d /s /c "where.exe where"
+C:\Windows\System32\where.exe
+# Path exceeds cmd.exe limits
+❯ mise x -- cmd.exe /d /s /c "where.exe where"
+'where.exe' is not recognized as an internal or external command,
+operable program or batch file.
+mise ERROR command failed: exit code 1
+mise ERROR Run with --verbose or MISE_VERBOSE=1 for more information
+```
+
 ## mise isn't working when calling from tmux or another shell initialization script
 
 `mise activate` will not update PATH until the shell prompt is displayed. So if you need to access a
