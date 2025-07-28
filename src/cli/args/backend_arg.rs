@@ -205,7 +205,10 @@ impl BackendArg {
             full
         } else if let Some((plugin_name, _tool_name)) = short.split_once(':') {
             // Check if this is a plugin:tool format
-            if let Some(pt) = install_state::get_plugin_type(plugin_name) {
+            if BackendType::guess(short) != BackendType::Unknown {
+                // Handle built-in backends
+                short.to_string()
+            } else if let Some(pt) = install_state::get_plugin_type(plugin_name) {
                 match pt {
                     PluginType::Asdf => {
                         // For asdf plugins, plugin:tool format is invalid
