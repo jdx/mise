@@ -1,5 +1,21 @@
 # Changelog
 
+## [2025.7.29](https://github.com/jdx/mise/compare/v2025.7.28..v2025.7.29) - 2025-07-28
+
+### 🐛 Bug Fixes
+
+- **(cli)** stable path env for exec on windows by [@W1M0R](https://github.com/W1M0R) in [#5790](https://github.com/jdx/mise/pull/5790)
+- **(tool-stubs)** platform-specific bin fields by [@jdx](https://github.com/jdx) in [#5812](https://github.com/jdx/mise/pull/5812)
+- tool-stub generation with archive downloads by [@jdx](https://github.com/jdx) in [#5811](https://github.com/jdx/mise/pull/5811)
+
+### 📦️ Dependency Updates
+
+- update jdx/mise-action digest to c37c932 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5784](https://github.com/jdx/mise/pull/5784)
+
+### New Contributors
+
+- @W1M0R made their first contribution in [#5790](https://github.com/jdx/mise/pull/5790)
+
 ## [2025.7.28](https://github.com/jdx/mise/compare/v2025.7.27..v2025.7.28) - 2025-07-27
 
 ### 🚀 Features
