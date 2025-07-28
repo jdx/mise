@@ -176,7 +176,7 @@ impl ToolStub {
                 stub.platforms.insert(platform, platform_config);
             }
         } else {
-            bail!("Either --url or --platform must be specified");
+            bail!("Either --url or --platform-url must be specified");
         }
 
         let toml_content = toml::to_string_pretty(&stub)?;
