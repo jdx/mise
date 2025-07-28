@@ -74,6 +74,9 @@ alp.backends = ["aqua:tkuchiki/alp", "asdf:asdf-community/asdf-alp"]
 alp.test = ["alp --version", "{{version}}"]
 amass.backends = ["ubi:owasp-amass/amass", "asdf:dhoeric/asdf-amass"]
 amass.test = ["amass -version 2>&1", "v{{version}}"]
+amp.description = "An agentic coding tool built by Sourcegraph"
+amp.backends = ["npm:@sourcegraph/amp"]
+amp.test = ["amp --version | cut -d' ' -f1", "{{version}}"]
 amazon-ecr-credential-helper.description = "Automatically gets credentials for Amazon ECR on docker push/docker pull"
 amazon-ecr-credential-helper.backends = [
     "aqua:awslabs/amazon-ecr-credential-helper",
