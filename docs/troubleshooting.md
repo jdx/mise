@@ -103,6 +103,7 @@ If you have many tools defined in your `mise.toml` hierarchy, then it is possibl
 
 You have a few options:
 
+1. Set the `MISE_INSTALLS_DIR` environment variable to a shorter location, e.g. `C:\.mise-installs`.
 1. Use `powershell.exe` or `pwsh.exe` instead of `cmd.exe`, since they can handle a longer `Path`.
 1. Re-organise the `mise.toml` files in your monorepo, to specify only the tools they need.
 
