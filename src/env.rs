@@ -77,8 +77,7 @@ pub static XDG_STATE_HOME: Lazy<PathBuf> =
 pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| var_is_true("MISE_FRIENDLY_ERROR"));
 pub static MISE_TOOL_STUB: Lazy<bool> =
     Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("tool-stub"));
-pub static MISE_NO_CONFIG: Lazy<bool> =
-    Lazy::new(|| var_is_true("MISE_NO_CONFIG") || *MISE_TOOL_STUB);
+pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
 /// true if RUST_BACKTRACE is set (enables detailed error tracebacks)
 pub static RUST_BACKTRACE: Lazy<bool> = Lazy::new(|| {
     match var("RUST_BACKTRACE") {
