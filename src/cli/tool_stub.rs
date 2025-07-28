@@ -244,18 +244,39 @@ fn try_find_bin_in_path(base_path: &Path, bin: &str) -> Option<PathBuf> {
 }
 
 fn list_executable_files(dir_path: &Path) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(dir_path) else {
+    list_executable_files_recursive(dir_path, dir_path)
+}
+
+fn list_executable_files_recursive(base_path: &Path, current_path: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(current_path) else {
         return Vec::new();
     };
 
-    entries
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| {
-            entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
-                && crate::file::is_executable(&entry.path())
-        })
-        .map(|entry| entry.file_name().to_string_lossy().to_string())
-        .collect()
+    let mut result = Vec::new();
+
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        let filename = entry.file_name();
+        let filename_str = filename.to_string_lossy();
+
+        // Skip hidden files (starting with .)
+        if filename_str.starts_with('.') {
+            continue;
+        }
+
+        if path.is_dir() {
+            // Recursively search subdirectories
+            let subdir_files = list_executable_files_recursive(base_path, &path);
+            result.extend(subdir_files);
+        } else if path.is_file() && crate::file::is_executable(&path) {
+            // Get the relative path from the base directory
+            if let Ok(relative_path) = path.strip_prefix(base_path) {
+                result.push(relative_path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    result
 }
 
 fn resolve_bin_with_path(
@@ -361,13 +382,8 @@ async fn find_cached_or_resolve_bin_path(
         // For path-based bins, check if the tool exists first
         if let Some(tv) = find_tool_version(toolset, config, &stub.tool_name) {
             let install_path = tv.install_path();
-            let mut available_bins = list_executable_files(&install_path);
-
-            // Also check in subdirectory if it exists
-            if let Some(subdir_path) = find_single_subdirectory(&install_path) {
-                let subdir_bins = list_executable_files(&subdir_path);
-                available_bins.extend(subdir_bins);
-            }
+            // List all executable files recursively from the install path
+            let available_bins = list_executable_files(&install_path);
 
             Ok(Err(BinPathError::BinNotFound {
                 tool_name: stub.tool_name.clone(),
@@ -378,18 +394,18 @@ async fn find_cached_or_resolve_bin_path(
             Ok(Err(BinPathError::ToolNotFound(stub.tool_name.clone())))
         }
     } else {
-        // For simple bin names, check if any tool provides this bin
-        if let Some((_backend, tv)) = toolset.which(config, bin).await {
-            // Tool exists but bin not found within it
+        // For simple bin names, first check if the tool itself exists
+        if let Some(tv) = find_tool_version(toolset, config, &stub.tool_name) {
+            // Tool exists, list its available executables
             let available_bins = list_executable_files(&tv.install_path());
             Ok(Err(BinPathError::BinNotFound {
-                tool_name: tv.ba().full(),
+                tool_name: stub.tool_name.clone(),
                 bin: bin.to_string(),
                 available_bins,
             }))
         } else {
-            // No tool provides this bin
-            Ok(Err(BinPathError::ToolNotFound(bin.to_string())))
+            // Tool doesn't exist
+            Ok(Err(BinPathError::ToolNotFound(stub.tool_name.clone())))
         }
     }
 }
@@ -451,13 +467,13 @@ async fn execute_with_tool_request(
             } => {
                 if available_bins.is_empty() {
                     bail!(
-                        "Tool '{}' does not have a binary named '{}'",
+                        "Tool '{}' does not have an executable named '{}'",
                         tool_name,
                         bin
                     );
                 } else {
                     bail!(
-                        "Tool '{}' does not have a binary named '{}'. Available binaries: {}",
+                        "Tool '{}' does not have an executable named '{}'. Available executables: {}",
                         tool_name,
                         bin,
                         available_bins.join(", ")
