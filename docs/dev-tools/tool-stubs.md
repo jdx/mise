@@ -57,6 +57,26 @@ url = "https://example.com/releases/{{version}}/tool-linux-x64.tar.gz"
 url = "https://example.com/releases/{{version}}/tool-macos-arm64.tar.gz"
 ```
 
+### Platform-Specific Binary Paths
+
+Different platforms may have different binary structures or names. You can specify platform-specific `bin` fields when the binary path differs between platforms:
+
+```toml
+#!/usr/bin/env -S mise tool-stub
+# Global bin field used when platforms have the same structure
+bin = "bin/tool"
+
+[platforms.linux-x64]
+url = "https://example.com/tool-linux.tar.gz"
+# Uses global bin field: "bin/tool"
+
+[platforms.windows-x64]
+url = "https://example.com/tool-windows.zip"
+bin = "tool.exe"  # Platform-specific binary for Windows
+```
+
+The tool stub generator automatically detects when platforms have different binary paths and will generate platform-specific `bin` fields when needed, or use a global `bin` field when all platforms have the same binary structure.
+
 ::: tip
 tool stubs default to the HTTP backend if no `tool` field is specified and a `url` field is present.
 See the [HTTP backend documentation](/dev-tools/backends/http) for full details on configuring HTTP-based tools.

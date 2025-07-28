@@ -33,6 +33,8 @@ struct PlatformConfig {
     blake3: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bin: Option<String>,
 }
 
 /// [experimental] Generate a tool stub for HTTP-based tools
@@ -59,13 +61,19 @@ pub struct ToolStub {
 
     /// Platform-specific URLs in the format platform:url
     ///
-    /// Examples: --platform linux-x64:https://... --platform darwin-arm64:https://...
-    #[clap(long, short)]
-    pub platform: Vec<String>,
+    /// Examples: --platform-url linux-x64:https://... --platform-url darwin-arm64:https://...
+    #[clap(long)]
+    pub platform_url: Vec<String>,
+
+    /// Platform-specific binary paths in the format platform:path
+    ///
+    /// Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
+    #[clap(long)]
+    pub platform_bin: Vec<String>,
 
     /// Binary path within the extracted archive
     ///
-    /// If not specified, will attempt to auto-detect the binary
+    /// If not specified and the archive is downloaded, will only auto-detect if an exact filename match is found
     #[clap(long, short)]
     pub bin: Option<String>,
 
@@ -104,6 +112,11 @@ impl ToolStub {
     }
 
     async fn generate_stub(&self) -> Result<String> {
+        // Validate that either URL or platform URLs are provided
+        if self.url.is_none() && self.platform_url.is_empty() {
+            bail!("Either --url or --platform-url must be specified");
+        }
+
         let mut stub = ToolStubConfig {
             version: self.version.clone(),
             bin: self.bin.clone(),
@@ -117,7 +130,7 @@ impl ToolStub {
         if let Some(url) = &self.url {
             stub.url = Some(url.clone());
 
-            // Auto-detect checksum, size, and binary path if not skipped
+            // Auto-detect checksum and size if not skipped
             if !self.skip_download {
                 let mpr = MultiProgressReport::get();
                 if let Ok((checksum, size, bin_path)) = self.analyze_url(url, &mpr).await {
@@ -128,40 +141,42 @@ impl ToolStub {
                     }
                 }
             }
-        } else if !self.platform.is_empty() {
+        } else if !self.platform_url.is_empty() {
             let mpr = MultiProgressReport::get();
-            let mut detected_bin_path = None;
 
-            for platform_spec in &self.platform {
+            // Parse platform-specific bin paths
+            let mut explicit_platform_bins = std::collections::HashMap::new();
+            for platform_bin_spec in &self.platform_bin {
+                let (platform, bin_path) = self.parse_platform_bin_spec(platform_bin_spec)?;
+                explicit_platform_bins.insert(platform, bin_path);
+            }
+
+            for platform_spec in &self.platform_url {
                 let (platform, url) = self.parse_platform_spec(platform_spec)?;
                 let mut platform_config = PlatformConfig {
                     url: url.clone(),
                     blake3: None,
                     size: None,
+                    bin: None,
                 };
 
-                // Auto-detect checksum, size, and binary path if not skipped
+                // Set platform-specific bin path if explicitly provided
+                if let Some(explicit_bin) = explicit_platform_bins.get(&platform) {
+                    platform_config.bin = Some(explicit_bin.clone());
+                }
+
+                // Auto-detect checksum and size if not skipped
                 if !self.skip_download {
-                    if let Ok((checksum, size, bin_path)) = self.analyze_url(&url, &mpr).await {
+                    if let Ok((checksum, size, _)) = self.analyze_url(&url, &mpr).await {
                         platform_config.blake3 = Some(checksum);
                         platform_config.size = Some(size);
-
-                        // Use binary path from first platform if not already detected
-                        if detected_bin_path.is_none() {
-                            detected_bin_path = bin_path;
-                        }
                     }
                 }
 
                 stub.platforms.insert(platform, platform_config);
             }
-
-            // Set binary path if not specified and we detected one
-            if self.bin.is_none() {
-                stub.bin = detected_bin_path;
-            }
         } else {
-            bail!("Either --url or --platform must be specified");
+            bail!("Either --url or --platform-url must be specified");
         }
 
         let toml_content = toml::to_string_pretty(&stub)?;
@@ -190,6 +205,21 @@ impl ToolStub {
         let url = parts[1].to_string();
 
         Ok((platform, url))
+    }
+
+    fn parse_platform_bin_spec(&self, spec: &str) -> Result<(String, String)> {
+        let parts: Vec<&str> = spec.splitn(2, ':').collect();
+        if parts.len() != 2 {
+            bail!(
+                "Platform bin spec must be in format 'platform:path', got: {}",
+                spec
+            );
+        }
+
+        let platform = parts[0].to_string();
+        let bin_path = parts[1].to_string();
+
+        Ok((platform, bin_path))
     }
 
     async fn analyze_url(
@@ -275,9 +305,9 @@ impl ToolStub {
             bail!("No executable files found in archive");
         }
 
-        // Smart binary selection with prioritization
+        // Look for exact filename match only
         let tool_name = self.get_tool_name();
-        let selected_exe = self.select_best_binary(&executables, &tool_name)?;
+        let selected_exe = self.find_exact_binary_match(&executables, &tool_name)?;
 
         // If strip_components will be applied, remove the first path component
         if will_strip {
@@ -322,87 +352,37 @@ impl ToolStub {
         Ok(executables)
     }
 
-    fn select_best_binary(&self, executables: &[String], tool_name: &str) -> Result<String> {
+    fn find_exact_binary_match(&self, executables: &[String], tool_name: &str) -> Result<String> {
         if executables.is_empty() {
             bail!("No executable files found in archive");
         }
 
-        // Extract just the base tool name (remove any suffixes like -test)
-        let base_tool_name = tool_name
-            .split('-')
-            .next()
-            .unwrap_or(tool_name)
-            .split('_')
-            .next()
-            .unwrap_or(tool_name);
-
-        // Score each executable based on priority criteria
-        let mut scored_executables: Vec<(String, i32)> = executables
-            .iter()
-            .map(|exe| {
-                let path = std::path::Path::new(exe);
-                let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or(exe);
-                let stem = path
-                    .file_stem()
-                    .and_then(|f| f.to_str())
-                    .unwrap_or(filename);
-
-                let mut score = 0;
-
-                // Priority 1: Exact filename match (highest priority)
-                if stem == base_tool_name || filename == base_tool_name {
-                    score += 1000;
-                } else if stem == tool_name || filename == tool_name {
-                    score += 900;
+        // Look for exact filename matches (with or without extensions)
+        for exe in executables {
+            let path = std::path::Path::new(exe);
+            if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
+                // Check exact filename match
+                if filename == tool_name {
+                    return Ok(exe.clone());
                 }
-
-                // Priority 2: Filename starts with tool name
-                if stem.starts_with(base_tool_name) {
-                    score += 500;
-                } else if stem.starts_with(tool_name) {
-                    score += 400;
+                // Check filename without extension
+                if let Some(stem) = path.file_stem().and_then(|f| f.to_str()) {
+                    if stem == tool_name {
+                        return Ok(exe.clone());
+                    }
                 }
+            }
+        }
 
-                // Priority 3: Prefer shorter paths (bin/tool vs lib/node_modules/tool/bin/tool)
-                let path_depth = exe.matches('/').count();
-                score += 100 - (path_depth as i32 * 10);
+        // No exact match found, provide helpful error message
+        let mut exe_list = executables.to_vec();
+        exe_list.sort();
 
-                // Priority 4: Prefer bin/ directory
-                if exe.starts_with("bin/") {
-                    score += 200;
-                }
-
-                // Priority 5: Avoid obvious non-main binaries
-                let lower_filename = filename.to_lowercase();
-                if lower_filename.contains("test")
-                    || lower_filename.contains("spec")
-                    || lower_filename.contains("example")
-                {
-                    score -= 100;
-                }
-
-                // Priority 6: Prefer executables without extensions or with common executable extensions
-                if !filename.contains('.')
-                    || filename.ends_with(".exe")
-                    || filename.ends_with(".sh")
-                {
-                    score += 50;
-                } else if filename.ends_with(".js")
-                    || filename.ends_with(".py")
-                    || filename.ends_with(".rb")
-                {
-                    score += 25;
-                }
-
-                (exe.clone(), score)
-            })
-            .collect();
-
-        // Sort by score (highest first)
-        scored_executables.sort_by(|a, b| b.1.cmp(&a.1));
-
-        // Return the highest-scored executable
-        Ok(scored_executables[0].0.clone())
+        bail!(
+            "No executable found with exact filename '{}'. Available executables:\n  {}",
+            tool_name,
+            exe_list.join("\n  ")
+        );
     }
 }
 
@@ -414,8 +394,14 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     Generate a tool stub with platform-specific URLs:
     $ <bold>mise generate tool-stub ./bin/rg \
-        --platform linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \
-        --platform darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz</bold>
+        --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \
+        --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz</bold>
+
+    Generate with platform-specific binary paths:
+    $ <bold>mise generate tool-stub ./bin/tool \
+        --platform-url linux-x64:https://example.com/tool-linux.tar.gz \
+        --platform-url windows-x64:https://example.com/tool-windows.zip \
+        --platform-bin windows-x64:tool.exe</bold>
 
     Generate without downloading (faster):
     $ <bold>mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --skip-download</bold>

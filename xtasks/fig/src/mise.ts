@@ -1258,11 +1258,20 @@ const completionSpec: Fig.Spec = {
               },
             },
             {
-              name: ["-p", "--platform"],
+              name: "--platform-url",
               description: "Platform-specific URLs in the format platform:url",
               isRepeatable: true,
               args: {
-                name: "platform",
+                name: "platform_url",
+              },
+            },
+            {
+              name: "--platform-bin",
+              description:
+                "Platform-specific binary paths in the format platform:path",
+              isRepeatable: true,
+              args: {
+                name: "platform_bin",
               },
             },
             {
