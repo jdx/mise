@@ -36,5 +36,4 @@ mise cache clear
 export MISE_PIPX_REGISTRY_URL="https://invalid-registry.example/simple"
 
 # This should fail with an error about the registry URL format
-# TODO: this is showing a warning, should be an error but I can't figure out why right now
-assert_contains "mise install 2>&1" "Registry URL must be a valid URL and contain a {} placeholder"
+assert_fail "mise install" "Registry URL must be a valid URL and contain a {} placeholder"
