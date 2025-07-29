@@ -317,7 +317,11 @@ pub fn detect_platform_from_url(url_str: &str) -> Option<DetectedPlatform> {
             .unwrap_or_else(|| url_str.to_string())
     } else {
         // Fallback to simple parsing for non-URL strings or malformed URLs
-        url_str.split('/').next_back().unwrap_or(url_str).to_string()
+        url_str
+            .split('/')
+            .next_back()
+            .unwrap_or(url_str)
+            .to_string()
     };
 
     // Try to detect OS
