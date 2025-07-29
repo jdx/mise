@@ -65,6 +65,7 @@ impl AssetLibc {
 pub struct DetectedPlatform {
     pub os: AssetOs,
     pub arch: AssetArch,
+    #[allow(unused)]
     pub libc: Option<AssetLibc>,
 }
 
@@ -302,17 +303,26 @@ impl AssetPicker {
 }
 
 /// Detects platform information from a URL
-pub fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
+pub fn detect_platform_from_url(url_str: &str) -> Option<DetectedPlatform> {
     let mut detected_os = None;
     let mut detected_arch = None;
     let mut detected_libc = None;
 
-    // Extract filename from URL for analysis
-    let filename = url.split('/').last().unwrap_or(url);
+    // Extract filename from URL for analysis using proper URL parsing
+    let filename = if let Ok(url) = url::Url::parse(url_str) {
+        // Use proper URL parsing to get the path and extract filename
+        url.path_segments()
+            .and_then(|segments| segments.last())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| url_str.to_string())
+    } else {
+        // Fallback to simple parsing for non-URL strings or malformed URLs
+        url_str.split('/').last().unwrap_or(url_str).to_string()
+    };
 
     // Try to detect OS
     for (os, pattern) in PLATFORM_PATTERNS.os_patterns.iter() {
-        if pattern.is_match(filename) {
+        if pattern.is_match(&filename) {
             detected_os = Some(*os);
             break;
         }
@@ -320,7 +330,7 @@ pub fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
 
     // Try to detect architecture
     for (arch, pattern) in PLATFORM_PATTERNS.arch_patterns.iter() {
-        if pattern.is_match(filename) {
+        if pattern.is_match(&filename) {
             detected_arch = Some(*arch);
             break;
         }
@@ -329,7 +339,7 @@ pub fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
     // Try to detect libc (only relevant for Linux)
     if detected_os == Some(AssetOs::Linux) {
         for (libc, pattern) in PLATFORM_PATTERNS.libc_patterns.iter() {
-            if pattern.is_match(filename) {
+            if pattern.is_match(&filename) {
                 detected_libc = Some(*libc);
                 break;
             }
@@ -484,10 +494,31 @@ mod tests {
         assert_eq!(platform.arch, AssetArch::X64);
         assert_eq!(platform.to_platform_string(), "windows-x64");
 
+        // Test URL with query parameters
+        let url = "https://releases.example.com/tool-linux-x64.tar.gz?token=abc123&version=1.0";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Linux);
+        assert_eq!(platform.arch, AssetArch::X64);
+        assert_eq!(platform.to_platform_string(), "linux-x64");
+
+        // Test URL with fragment
+        let url = "https://cdn.example.com/releases/tool-darwin-arm64.zip#main";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Macos);
+        assert_eq!(platform.arch, AssetArch::Arm64);
+        assert_eq!(platform.to_platform_string(), "macos-arm64");
+
         // Test URL without platform info
         let url = "https://example.com/generic-tool.tar.gz";
         let platform = detect_platform_from_url(url);
         assert!(platform.is_none());
+
+        // Test malformed URL (should still work with fallback)
+        let filename = "tool-windows-x86_64.exe";
+        let platform = detect_platform_from_url(filename).unwrap();
+        assert_eq!(platform.os, AssetOs::Windows);
+        assert_eq!(platform.arch, AssetArch::X64);
+        assert_eq!(platform.to_platform_string(), "windows-x64");
     }
 
     #[test]
@@ -576,6 +607,20 @@ mod tests {
                 "linux-x64",
             ),
             ("tool-macos-aarch64.tar.gz", "macos-arm64"),
+            // Test URLs with query parameters and fragments
+            (
+                "https://releases.example.com/tool-linux-arm64.tar.gz?token=abc123&version=1.0",
+                "linux-arm64",
+            ),
+            (
+                "https://releases.example.com/tool-darwin-x64.zip?v=1.0&format=zip#download",
+                "macos-x64",
+            ),
+            // Test encoded URLs
+            (
+                "https://example.com/path%20with%20spaces/tool-windows-amd64.exe",
+                "windows-x64",
+            ),
         ];
 
         for (url, expected_platform) in test_cases {

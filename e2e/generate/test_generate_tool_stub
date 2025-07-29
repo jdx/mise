@@ -124,6 +124,14 @@ assert_contains "cat mixed-test" "[platforms.macos-arm64]"
 # Test 17: Test error when platform cannot be auto-detected
 assert_fail "mise generate tool-stub bad-auto-test --platform-url 'https://example.com/generic-tool.tar.gz' --skip-download"
 
+# Test 18: Test auto-detection with URL query parameters
+assert_succeed "mise generate tool-stub query-param-test --platform-url 'https://releases.example.com/tool-linux-x64.tar.gz?token=abc123&version=1.0' --skip-download"
+assert_contains "cat query-param-test" "[platforms.linux-x64]"
+
+# Test 19: Test auto-detection with URL fragments
+assert_succeed "mise generate tool-stub fragment-test --platform-url 'https://cdn.example.com/releases/tool-darwin-arm64.zip#main' --skip-download"
+assert_contains "cat fragment-test" "[platforms.macos-arm64]"
+
 echo "All tool-stub generation tests passed!"
 
 #!/usr/bin/env bash
