@@ -136,7 +136,7 @@ Running the generation command produces an executable stub like:
 version = "latest"
 bin = "bin/gh"
 url = "https://github.com/cli/cli/releases/download/v2.336.0/gh_2.336.0_linux_amd64.tar.gz"
-blake3 = "a1b2c3d4e5f6..."
+checksum = "blake3:a1b2c3d4e5f6..."
 size = 12345678
 ```
 

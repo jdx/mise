@@ -89,14 +89,14 @@ assert_succeed "mise generate tool-stub hello-stub --url 'https://httpbin.org/js
 assert_succeed "test -x hello-stub"
 
 # Verify the generated stub contains checksum and size
-assert_contains "cat hello-stub" "blake3 ="
+assert_contains "cat hello-stub" "checksum ="
 assert_contains "cat hello-stub" "size ="
 
 # Test 2: Test with a real GitHub release (small file)
 assert_succeed "mise generate tool-stub gh-test-stub --url 'https://github.com/cli/cli/releases/download/v2.21.2/gh_2.21.2_checksums.txt'"
 
 # Verify it has checksum and size
-assert_contains "cat gh-test-stub" "blake3 ="
+assert_contains "cat gh-test-stub" "checksum ="
 assert_contains "cat gh-test-stub" "size ="
 
 # Test 3: Test binary path detection with a simple archive
@@ -104,9 +104,9 @@ assert_contains "cat gh-test-stub" "size ="
 # as it's complex to set up in e2e tests
 
 # Test 4: Verify that generated stubs have valid TOML structure
-assert_contains "cat hello-stub" "blake3 ="
+assert_contains "cat hello-stub" "checksum ="
 assert_contains "cat hello-stub" "size ="
-assert_contains "cat gh-test-stub" "blake3 ="
+assert_contains "cat gh-test-stub" "checksum ="
 assert_contains "cat gh-test-stub" "size ="
 
 echo "All slow tool-stub generation tests passed!"
