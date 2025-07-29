@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use crate::backend::static_helpers::lookup_platform_key;
 use crate::config::Config;
 use crate::dirs;
 use crate::file;
@@ -140,10 +141,24 @@ impl ToolStubFile {
         let options = ToolVersionOptions {
             os: self.os.clone(),
             install_env: self.install_env.clone(),
-            opts,
+            opts: opts.clone(),
         };
 
-        ToolRequest::new_opts(backend_arg.into(), &self.version, options, source)
+        // For HTTP backend with "latest" version, use URL hash as version for stability
+        let version = if self.tool_name.starts_with("http:") && self.version == "latest" {
+            if let Some(url) =
+                lookup_platform_key(&options, "url").or_else(|| opts.get("url").cloned())
+            {
+                // Use first 8 chars of URL hash as version
+                format!("url-{}", &hash::hash_to_str(&url)[..8])
+            } else {
+                self.version.clone()
+            }
+        } else {
+            self.version.clone()
+        };
+
+        ToolRequest::new_opts(backend_arg.into(), &version, options, source)
     }
 }
 
