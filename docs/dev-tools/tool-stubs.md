@@ -34,14 +34,14 @@ Tool stub configuration is essentially a subset of what can be done in `mise.tom
 ### Optional Fields
 
 - `tool` - Explicit tool name or backend specification (e.g., "python", "github:cli/cli"). This is the only field unique to tool stubs - it specifies which tool entry from the configuration to use. If omitted and a `url` field is present, defaults to the HTTP backend.
-- `version` - The version of the tool to use (defaults to "latest" if not specified)
+- `version` - The version of the tool to use
 - `bin` - The binary name to execute within the tool (defaults to the stub filename)
 
 ### Backend-Specific Options
 
 Additional fields can be specified for different backends using the `opts` system. These are flattened into the configuration and passed to the appropriate backend.
 
-For HTTP backends:
+For [HTTP backends](/dev-tools/backends/http):
 ```toml
 #!/usr/bin/env -S mise tool-stub
 url = "https://example.com/releases/1.0.0/tool-linux-x64.tar.gz"
