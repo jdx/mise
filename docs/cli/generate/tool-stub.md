@@ -9,6 +9,10 @@ This command generates tool stubs that can automatically download and execute
 tools from HTTP URLs. It can detect checksums, file sizes, and binary paths
 automatically by downloading and analyzing the tool.
 
+When generating stubs with platform-specific URLs, the command will append new
+platforms to existing stub files rather than overwriting them. This allows you
+to incrementally build cross-platform tool stubs.
+
 ## Arguments
 
 ### `<OUTPUT>`
@@ -30,6 +34,8 @@ Example: <https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.
 ### `--platform-url… <PLATFORM_URL>`
 
 Platform-specific URLs in the format platform:url
+
+When the output file already exists, new platforms will be appended to the existing platforms table. Existing platform URLs will be updated if specified again.
 
 Examples: --platform-url linux-x64:https://... --platform-url darwin-arm64:https://...
 
@@ -63,6 +69,13 @@ Generate a tool stub with platform-specific URLs:
 $ mise generate tool-stub ./bin/rg \
     --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \
     --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz
+
+Append additional platforms to an existing stub:
+$ mise generate tool-stub ./bin/rg \
+    --platform-url linux-x64:https://example.com/rg-linux.tar.gz
+$ mise generate tool-stub ./bin/rg \
+    --platform-url darwin-arm64:https://example.com/rg-darwin.tar.gz
+# The stub now contains both platforms
 
 Generate with platform-specific binary paths:
 $ mise generate tool-stub ./bin/tool \

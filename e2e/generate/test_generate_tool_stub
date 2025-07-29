@@ -67,6 +67,38 @@ assert_contains "mise generate tool-stub --help" "Generate a tool stub for HTTP-
 # Test 10: Verify the command is available in mise generate
 assert_contains "mise generate --help" "tool-stub"
 
+# Test 11: Test appending platforms to existing stub
+# First create a stub with one platform
+assert_succeed "mise generate tool-stub append-test --platform-url 'linux-x64:https://httpbin.org/status/200' --skip-download"
+assert_contains "cat append-test" "[platforms.linux-x64]"
+assert_contains "cat append-test" 'url = "https://httpbin.org/status/200"'
+
+# Now append another platform to the same stub
+assert_succeed "mise generate tool-stub append-test --platform-url 'darwin-arm64:https://httpbin.org/status/201' --skip-download"
+
+# Verify both platforms exist
+assert_contains "cat append-test" "[platforms.linux-x64]"
+assert_contains "cat append-test" 'url = "https://httpbin.org/status/200"'
+assert_contains "cat append-test" "[platforms.darwin-arm64]"
+assert_contains "cat append-test" 'url = "https://httpbin.org/status/201"'
+
+# Test 12: Test updating existing platform URL
+assert_succeed "mise generate tool-stub update-test --platform-url 'linux-x64:https://httpbin.org/status/200' --skip-download"
+assert_contains "cat update-test" 'url = "https://httpbin.org/status/200"'
+
+# Update the same platform with a new URL
+assert_succeed "mise generate tool-stub update-test --platform-url 'linux-x64:https://httpbin.org/status/202' --skip-download"
+assert_contains "cat update-test" 'url = "https://httpbin.org/status/202"'
+# Ensure old URL is not present
+assert_not_contains "cat update-test" 'url = "https://httpbin.org/status/200"'
+
+# Test 13: Test error when trying to change version on existing stub
+assert_succeed "mise generate tool-stub version-test --version '1.0.0' --url 'https://httpbin.org/status/200' --skip-download"
+assert_contains "cat version-test" 'version = "1.0.0"'
+
+# Try to change version - should fail
+assert_fail "mise generate tool-stub version-test --version '2.0.0' --url 'https://httpbin.org/status/200' --skip-download"
+
 echo "All tool-stub generation tests passed!"
 
 #!/usr/bin/env bash

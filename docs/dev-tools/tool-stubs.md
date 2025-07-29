@@ -86,6 +86,10 @@ See the [HTTP backend documentation](/dev-tools/backends/http) for full details 
 
 While you can manually create tool stubs with TOML configuration, mise provides a [`mise generate tool-stub`](/cli/generate/tool-stub) command to automatically create stubs for HTTP-based tools.
 
+::: tip Incremental Building
+When using platform-specific URLs, the tool stub generator will append new platforms to existing stub files rather than overwriting them. This allows you to incrementally build cross-platform tool stubs by running the command multiple times with different platforms.
+:::
+
 ### Basic Generation
 
 Generate a tool stub for a tool distributed via HTTP:
@@ -101,19 +105,60 @@ This will:
 
 ### Platform-Specific Generation
 
-For tools with different URLs per platform:
+For tools with different URLs per platform, you can generate all platforms at once:
 
 ```bash
 mise generate tool-stub ./bin/rg \
-  --platform linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \
-  --platform darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz
+  --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \
+  --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz
 ```
+
+Or build them incrementally by adding platforms one at a time:
+
+```bash
+# Start with Linux support
+mise generate tool-stub ./bin/rg \
+  --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz
+
+# Later, add macOS support (appends to existing file)
+mise generate tool-stub ./bin/rg \
+  --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz
+
+# Add Windows support (appends to existing file)
+mise generate tool-stub ./bin/rg \
+  --platform-url windows-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-pc-windows-msvc.zip
+```
+
+The generator will preserve existing configuration and merge new platforms into the `[platforms]` table. If you specify a platform that already exists, its URL will be updated.
 
 ### Generation Options
 
-- `--version VERSION` - Specify tool version (defaults to "latest")
+- `--version VERSION` - Specify tool version (defaults to "latest"). Cannot be changed for existing stubs.
 - `--bin PATH` - Override auto-detected binary path
+- `--platform-url PLATFORM:URL` - Add platform-specific URL (can be used multiple times)
+- `--platform-bin PLATFORM:PATH` - Set platform-specific binary path
 - `--skip-download` - Skip downloading for faster generation (no checksums or binary detection)
+
+### Incremental Workflow
+
+The append behavior makes it easy to build comprehensive cross-platform tool stubs:
+
+1. **Start simple**: Create a stub with one platform you can test
+2. **Add platforms**: Incrementally add support for other platforms
+3. **Update URLs**: Re-run with the same platform to update URLs for new releases
+4. **Version consistency**: The generator prevents changing versions to avoid conflicts
+
+```bash
+# Day 1: Start with Linux
+mise generate tool-stub ./bin/mytool --platform-url linux-x64:https://example.com/v1.0.0/tool-linux.tar.gz
+
+# Day 2: Add macOS support
+mise generate tool-stub ./bin/mytool --platform-url darwin-arm64:https://example.com/v1.0.0/tool-macos-arm64.tar.gz
+
+# Day 3: Update to v1.1.0 (update existing platforms)
+mise generate tool-stub ./bin/mytool --version 1.1.0 --platform-url linux-x64:https://example.com/v1.1.0/tool-linux.tar.gz
+# Note: This would fail because version cannot be changed. Create a new stub or manually edit.
+```
 
 ### Supported Archive Formats
 
