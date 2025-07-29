@@ -1024,6 +1024,12 @@ type = "Bool"
 default = true
 description = "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops."
 
+[sops.strict]
+env = "MISE_SOPS_STRICT"
+type = "Bool"
+default = true
+description = "If true, fail when sops decryption fails (including when sops is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases."
+
 [status.missing_tools]
 env = "MISE_STATUS_MESSAGE_MISSING_TOOLS"
 type = "String"

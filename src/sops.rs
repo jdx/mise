@@ -4,7 +4,7 @@ use crate::config::{Config, Settings};
 use crate::env;
 use crate::file::replace_path;
 use crate::{dirs, file, result};
-use eyre::WrapErr;
+use eyre::{WrapErr, eyre};
 use rops::cryptography::cipher::AES256GCM;
 use rops::cryptography::hasher::SHA512;
 use rops::file::RopsFile;
@@ -57,6 +57,12 @@ where
             None
         })
         .await;
+
+    if age.is_none() && !Settings::get().sops.strict {
+        debug!("age key not found, skipping decryption in non-strict mode");
+        return Ok(String::new());
+    }
+
     let _lock = MUTEX.lock().await; // prevent multiple threads from using the same age key
     let age_env_key = if Settings::get().sops.rops {
         "ROPS_AGE"
@@ -68,12 +74,29 @@ where
         env::set_var(age_env_key, age.trim());
     }
     let output = if Settings::get().sops.rops {
-        input
+        match input
             .parse::<RopsFile<EncryptedFile<AES256GCM, SHA512>, F>>()
-            .wrap_err("failed to parse sops file")?
-            .decrypt::<F>()
-            .wrap_err("failed to decrypt sops file")?
-            .to_string()
+            .wrap_err("failed to parse sops file")
+            .and_then(|file| file.decrypt::<F>().wrap_err("failed to decrypt sops file"))
+        {
+            Ok(decrypted) => Some(decrypted.to_string()),
+            Err(e) => {
+                if Settings::get().sops.strict {
+                    if let Some(age) = prev_age {
+                        env::set_var(age_env_key, age);
+                    } else {
+                        env::remove_var(age_env_key);
+                    }
+                    return Err(e);
+                } else {
+                    debug!(
+                        "sops decryption failed but continuing in non-strict mode: {}",
+                        e
+                    );
+                    None
+                }
+            }
+        }
     } else {
         let mut ts = config
             .get_tool_request_set()
@@ -83,23 +106,57 @@ where
             .filter_by_tool(["sops".into()].into())
             .into_toolset();
         Box::pin(ts.resolve(config)).await?;
-        let sops = ts
-            .which_bin(config, "sops")
-            .await
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or("sops".into());
-        // TODO: this obviously won't work on windows
-        cmd!(
-            sops,
-            "--input-type",
-            format,
-            "--output-type",
-            format,
-            "-d",
-            "/dev/stdin"
-        )
-        .stdin_bytes(input.as_bytes())
-        .read()?
+        let sops_path = ts.which_bin(config, "sops").await;
+
+        match sops_path {
+            None => {
+                if Settings::get().sops.strict {
+                    if let Some(age) = prev_age {
+                        env::set_var(age_env_key, age);
+                    } else {
+                        env::remove_var(age_env_key);
+                    }
+                    return Err(eyre!("sops command not found"));
+                } else {
+                    debug!("sops command not found, skipping decryption in non-strict mode");
+                    None
+                }
+            }
+            Some(sops_path) => {
+                let sops = sops_path.to_string_lossy().to_string();
+                // TODO: this obviously won't work on windows
+                match cmd!(
+                    sops,
+                    "--input-type",
+                    format,
+                    "--output-type",
+                    format,
+                    "-d",
+                    "/dev/stdin"
+                )
+                .stdin_bytes(input.as_bytes())
+                .read()
+                {
+                    Ok(output) => Some(output),
+                    Err(e) => {
+                        if Settings::get().sops.strict {
+                            if let Some(age) = prev_age {
+                                env::set_var(age_env_key, age);
+                            } else {
+                                env::remove_var(age_env_key);
+                            }
+                            return Err(e.into());
+                        } else {
+                            debug!(
+                                "sops decryption failed but continuing in non-strict mode: {}",
+                                e
+                            );
+                            None
+                        }
+                    }
+                }
+            }
+        }
     };
 
     if let Some(age) = prev_age {
@@ -107,5 +164,5 @@ where
     } else {
         env::remove_var(age_env_key);
     }
-    Ok(output)
+    Ok(output.unwrap_or_default())
 }
