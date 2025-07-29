@@ -60,6 +60,35 @@ impl AssetLibc {
     }
 }
 
+/// Detected platform information from a URL
+#[derive(Debug, Clone)]
+pub struct DetectedPlatform {
+    pub os: AssetOs,
+    pub arch: AssetArch,
+    #[allow(unused)]
+    pub libc: Option<AssetLibc>,
+}
+
+impl DetectedPlatform {
+    /// Convert to mise's platform string format (e.g., "linux-x64", "macos-arm64")
+    pub fn to_platform_string(&self) -> String {
+        let os_str = match self.os {
+            AssetOs::Linux => "linux",
+            AssetOs::Macos => "macos",
+            AssetOs::Windows => "windows",
+        };
+
+        let arch_str = match self.arch {
+            AssetArch::X64 => "x64",
+            AssetArch::Arm64 => "arm64",
+            AssetArch::X86 => "x86",
+            AssetArch::Arm => "arm",
+        };
+
+        format!("{os_str}-{arch_str}")
+    }
+}
+
 static OS_PATTERNS: LazyLock<Vec<(AssetOs, Regex)>> = LazyLock::new(|| {
     vec![
         (
@@ -273,6 +302,66 @@ impl AssetPicker {
     }
 }
 
+/// Detects platform information from a URL
+pub fn detect_platform_from_url(url_str: &str) -> Option<DetectedPlatform> {
+    let mut detected_os = None;
+    let mut detected_arch = None;
+    let mut detected_libc = None;
+
+    // Extract filename from URL for analysis using proper URL parsing
+    let filename = if let Ok(url) = url::Url::parse(url_str) {
+        // Use proper URL parsing to get the path and extract filename
+        url.path_segments()
+            .and_then(|mut segments| segments.next_back())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| url_str.to_string())
+    } else {
+        // Fallback to simple parsing for non-URL strings or malformed URLs
+        url_str
+            .split('/')
+            .next_back()
+            .unwrap_or(url_str)
+            .to_string()
+    };
+
+    // Try to detect OS
+    for (os, pattern) in PLATFORM_PATTERNS.os_patterns.iter() {
+        if pattern.is_match(&filename) {
+            detected_os = Some(*os);
+            break;
+        }
+    }
+
+    // Try to detect architecture
+    for (arch, pattern) in PLATFORM_PATTERNS.arch_patterns.iter() {
+        if pattern.is_match(&filename) {
+            detected_arch = Some(*arch);
+            break;
+        }
+    }
+
+    // Try to detect libc (only relevant for Linux)
+    if detected_os == Some(AssetOs::Linux) {
+        for (libc, pattern) in PLATFORM_PATTERNS.libc_patterns.iter() {
+            if pattern.is_match(&filename) {
+                detected_libc = Some(*libc);
+                break;
+            }
+        }
+    }
+
+    // Return detected platform if we have at least OS and architecture
+    if let (Some(os), Some(arch)) = (detected_os, detected_arch) {
+        Some(DetectedPlatform {
+            os,
+            arch,
+            libc: detected_libc,
+        })
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -385,6 +474,82 @@ mod tests {
     }
 
     #[test]
+    fn test_platform_detection_from_url() {
+        // Test Node.js URL
+        let url = "https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Macos);
+        assert_eq!(platform.arch, AssetArch::Arm64);
+        assert_eq!(platform.to_platform_string(), "macos-arm64");
+
+        // Test Linux x64 URL
+        let url = "https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Linux);
+        assert_eq!(platform.arch, AssetArch::X64);
+        assert_eq!(platform.libc, Some(AssetLibc::Musl));
+        assert_eq!(platform.to_platform_string(), "linux-x64");
+
+        // Test Windows URL
+        let url =
+            "https://github.com/cli/cli/releases/download/v2.336.0/gh_2.336.0_windows_amd64.zip";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Windows);
+        assert_eq!(platform.arch, AssetArch::X64);
+        assert_eq!(platform.to_platform_string(), "windows-x64");
+
+        // Test URL with query parameters
+        let url = "https://releases.example.com/tool-linux-x64.tar.gz?token=abc123&version=1.0";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Linux);
+        assert_eq!(platform.arch, AssetArch::X64);
+        assert_eq!(platform.to_platform_string(), "linux-x64");
+
+        // Test URL with fragment
+        let url = "https://cdn.example.com/releases/tool-darwin-arm64.zip#main";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Macos);
+        assert_eq!(platform.arch, AssetArch::Arm64);
+        assert_eq!(platform.to_platform_string(), "macos-arm64");
+
+        // Test URL without platform info
+        let url = "https://example.com/generic-tool.tar.gz";
+        let platform = detect_platform_from_url(url);
+        assert!(platform.is_none());
+
+        // Test malformed URL (should still work with fallback)
+        let filename = "tool-windows-x86_64.exe";
+        let platform = detect_platform_from_url(filename).unwrap();
+        assert_eq!(platform.os, AssetOs::Windows);
+        assert_eq!(platform.arch, AssetArch::X64);
+        assert_eq!(platform.to_platform_string(), "windows-x64");
+    }
+
+    #[test]
+    fn test_platform_string_conversion() {
+        let platform = DetectedPlatform {
+            os: AssetOs::Linux,
+            arch: AssetArch::X64,
+            libc: Some(AssetLibc::Gnu),
+        };
+        assert_eq!(platform.to_platform_string(), "linux-x64");
+
+        let platform = DetectedPlatform {
+            os: AssetOs::Macos,
+            arch: AssetArch::Arm64,
+            libc: None,
+        };
+        assert_eq!(platform.to_platform_string(), "macos-arm64");
+
+        let platform = DetectedPlatform {
+            os: AssetOs::Windows,
+            arch: AssetArch::X86,
+            libc: None,
+        };
+        assert_eq!(platform.to_platform_string(), "windows-x86");
+    }
+
+    #[test]
     fn test_ripgrep_real_assets() {
         // Real ripgrep assets from the example
         let ripgrep_assets = vec![
@@ -423,5 +588,53 @@ mod tests {
         let picker = AssetPicker::new("macos".to_string(), "aarch64".to_string());
         let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
         assert_eq!(picked, "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz");
+    }
+
+    #[test]
+    fn test_various_url_formats() {
+        // Test different URL formats to ensure robustness
+        let test_cases = vec![
+            (
+                "https://releases.example.com/tool-v1.0.0-linux-amd64.tar.gz",
+                "linux-x64",
+            ),
+            (
+                "https://github.com/owner/repo/releases/download/v1.0.0/tool_darwin_arm64.zip",
+                "macos-arm64",
+            ),
+            (
+                "https://example.com/downloads/tool-windows-x86_64.exe",
+                "windows-x64",
+            ),
+            (
+                "https://cdn.example.com/tool.1.0.0.linux.x86_64.tar.xz",
+                "linux-x64",
+            ),
+            ("tool-macos-aarch64.tar.gz", "macos-arm64"),
+            // Test URLs with query parameters and fragments
+            (
+                "https://releases.example.com/tool-linux-arm64.tar.gz?token=abc123&version=1.0",
+                "linux-arm64",
+            ),
+            (
+                "https://releases.example.com/tool-darwin-x64.zip?v=1.0&format=zip#download",
+                "macos-x64",
+            ),
+            // Test encoded URLs
+            (
+                "https://example.com/path%20with%20spaces/tool-windows-amd64.exe",
+                "windows-x64",
+            ),
+        ];
+
+        for (url, expected_platform) in test_cases {
+            let platform = detect_platform_from_url(url)
+                .unwrap_or_else(|| panic!("Failed to detect platform from URL: {url}"));
+            assert_eq!(
+                platform.to_platform_string(),
+                expected_platform,
+                "URL: {url}"
+            );
+        }
     }
 }

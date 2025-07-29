@@ -113,20 +113,32 @@ mise generate tool-stub ./bin/rg \
   --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz
 ```
 
+**Auto-Platform Detection**: If the URL contains platform information, you can omit the platform prefix and let mise auto-detect it:
+
+```bash
+# Auto-detect platform from URL (detects as 'macos-arm64')
+mise generate tool-stub ./bin/node \
+  --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz
+
+# Auto-detect platform from URL (detects as 'linux-x64')
+mise generate tool-stub ./bin/node \
+  --platform-url https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz
+```
+
 Or build them incrementally by adding platforms one at a time:
 
 ```bash
-# Start with Linux support
+# Start with Linux support (explicit platform)
 mise generate tool-stub ./bin/rg \
   --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz
 
-# Later, add macOS support (appends to existing file)
+# Later, add macOS support using auto-detection (appends to existing file)
 mise generate tool-stub ./bin/rg \
-  --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz
+  --platform-url https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz
 
-# Add Windows support (appends to existing file)
+# Add Windows support using auto-detection (appends to existing file)
 mise generate tool-stub ./bin/rg \
-  --platform-url windows-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-pc-windows-msvc.zip
+  --platform-url https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-pc-windows-msvc.zip
 ```
 
 The generator will preserve existing configuration and merge new platforms into the `[platforms]` table. If you specify a platform that already exists, its URL will be updated.
@@ -136,6 +148,7 @@ The generator will preserve existing configuration and merge new platforms into 
 - `--version VERSION` - Specify tool version (defaults to "latest"). Cannot be changed for existing stubs.
 - `--bin PATH` - Override auto-detected binary path
 - `--platform-url PLATFORM:URL` - Add platform-specific URL (can be used multiple times)
+- `--platform-url URL` - Add platform-specific URL with auto-detected platform from URL filename
 - `--platform-bin PLATFORM:PATH` - Set platform-specific binary path
 - `--skip-download` - Skip downloading for faster generation (no checksums or binary detection)
 

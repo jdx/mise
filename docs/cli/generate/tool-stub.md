@@ -33,11 +33,13 @@ Example: <https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.
 
 ### `--platform-url… <PLATFORM_URL>`
 
-Platform-specific URLs in the format platform:url
+Platform-specific URLs in the format platform:url or just url (auto-detect platform)
 
 When the output file already exists, new platforms will be appended to the existing platforms table. Existing platform URLs will be updated if specified again.
 
-Examples: --platform-url linux-x64:https://... --platform-url darwin-arm64:https://...
+If only a URL is provided (without platform:), the platform will be automatically detected from the URL filename.
+
+Examples: --platform-url linux-x64:https://... --platform-url <https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz>
 
 ### `--platform-bin… <PLATFORM_BIN>`
 
@@ -76,6 +78,11 @@ $ mise generate tool-stub ./bin/rg \
 $ mise generate tool-stub ./bin/rg \
     --platform-url darwin-arm64:https://example.com/rg-darwin.tar.gz
 # The stub now contains both platforms
+
+Use auto-detection for platform from URL:
+$ mise generate tool-stub ./bin/node \
+    --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz
+# Platform 'macos-arm64' will be auto-detected from the URL
 
 Generate with platform-specific binary paths:
 $ mise generate tool-stub ./bin/tool \

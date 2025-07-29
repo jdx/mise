@@ -99,6 +99,39 @@ assert_contains "cat version-test" 'version = "1.0.0"'
 # Try to change version - should fail
 assert_fail "mise generate tool-stub version-test --version '2.0.0' --url 'https://httpbin.org/status/200' --skip-download"
 
+# Test 14: Test auto-platform detection from URL
+# Use a URL that contains platform information
+assert_succeed "mise generate tool-stub auto-platform-test --platform-url 'https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz' --skip-download"
+assert_contains "cat auto-platform-test" "[platforms.macos-arm64]"
+assert_contains "cat auto-platform-test" 'url = "https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz"'
+
+# Test 15: Test auto-platform detection with Linux URL
+assert_succeed "mise generate tool-stub linux-auto-test --platform-url 'https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz' --skip-download"
+assert_contains "cat linux-auto-test" "[platforms.linux-x64]"
+assert_contains "cat linux-auto-test" 'url = "https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz"'
+
+# Test 16: Test mixed explicit and auto-detected platforms
+# First add with explicit platform
+assert_succeed "mise generate tool-stub mixed-test --platform-url 'linux-x64:https://httpbin.org/status/200' --skip-download"
+assert_contains "cat mixed-test" "[platforms.linux-x64]"
+
+# Then add with auto-detected platform
+assert_succeed "mise generate tool-stub mixed-test --platform-url 'https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz' --skip-download"
+# Should have both platforms
+assert_contains "cat mixed-test" "[platforms.linux-x64]"
+assert_contains "cat mixed-test" "[platforms.macos-arm64]"
+
+# Test 17: Test error when platform cannot be auto-detected
+assert_fail "mise generate tool-stub bad-auto-test --platform-url 'https://example.com/generic-tool.tar.gz' --skip-download"
+
+# Test 18: Test auto-detection with URL query parameters
+assert_succeed "mise generate tool-stub query-param-test --platform-url 'https://releases.example.com/tool-linux-x64.tar.gz?token=abc123&version=1.0' --skip-download"
+assert_contains "cat query-param-test" "[platforms.linux-x64]"
+
+# Test 19: Test auto-detection with URL fragments
+assert_succeed "mise generate tool-stub fragment-test --platform-url 'https://cdn.example.com/releases/tool-darwin-arm64.zip#main' --skip-download"
+assert_contains "cat fragment-test" "[platforms.macos-arm64]"
+
 echo "All tool-stub generation tests passed!"
 
 #!/usr/bin/env bash
