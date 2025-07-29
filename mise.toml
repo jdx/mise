@@ -6,6 +6,7 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 
 [tools]
 "actionlint" = "latest"
+age = "latest"
 bun = "latest"
 cargo-binstall = "latest"
 "cargo:cargo-edit" = "latest"
@@ -30,6 +31,7 @@ pre-commit = "latest"
 slsa-verifier = "latest"
 taplo = "latest"
 wait-for-gh-rate-limit = "latest"
+sops = "latest"
 
 [task_config]
 includes = ["tasks.toml", "xtasks"]

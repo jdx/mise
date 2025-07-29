@@ -12,6 +12,10 @@ checksum = "sha256:2693315b9093aeacb4ebd91a993fea54fc215057bf0da2659056b4bc03387
 size = 1962532
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_darwin_arm64.tar.gz"
 
+[tools.age]
+version = "1.2.1"
+backend = "aqua:FiloSottile/age"
+
 [tools.bun]
 version = "1.2.19"
 backend = "core:bun"
@@ -199,6 +203,10 @@ checksum = "blake3:6b7c72ece3e3cbd9db12dd8e261e594bb24721db140692d4f5cbdf508df45
 
 [tools.slsa-verifier.platforms.macos-arm64-slsa-verifier]
 checksum = "blake3:af93f77462964b7eeb93b9f45ccedeefc641305f6618d9ffc2480d89b0cceed6"
+
+[tools.sops]
+version = "3.10.2"
+backend = "aqua:getsops/sops"
 
 [tools.taplo]
 version = "0.10.0"
