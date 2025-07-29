@@ -19,7 +19,7 @@ struct ToolStubConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    blake3: Option<String>,
+    checksum: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     size: Option<u64>,
     #[serde(skip_serializing_if = "indexmap::IndexMap::is_empty")]
@@ -30,7 +30,7 @@ struct ToolStubConfig {
 struct PlatformConfig {
     url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    blake3: Option<String>,
+    checksum: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     size: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -121,7 +121,7 @@ impl ToolStub {
             version: self.version.clone(),
             bin: self.bin.clone(),
             url: None,
-            blake3: None,
+            checksum: None,
             size: None,
             platforms: indexmap::IndexMap::new(),
         };
@@ -134,7 +134,7 @@ impl ToolStub {
             if !self.skip_download {
                 let mpr = MultiProgressReport::get();
                 if let Ok((checksum, size, bin_path)) = self.analyze_url(url, &mpr).await {
-                    stub.blake3 = Some(checksum);
+                    stub.checksum = Some(checksum);
                     stub.size = Some(size);
                     if self.bin.is_none() {
                         stub.bin = bin_path;
@@ -155,7 +155,7 @@ impl ToolStub {
                 let (platform, url) = self.parse_platform_spec(platform_spec)?;
                 let mut platform_config = PlatformConfig {
                     url: url.clone(),
-                    blake3: None,
+                    checksum: None,
                     size: None,
                     bin: None,
                 };
@@ -168,7 +168,7 @@ impl ToolStub {
                 // Auto-detect checksum and size if not skipped
                 if !self.skip_download {
                     if let Ok((checksum, size, _)) = self.analyze_url(&url, &mpr).await {
-                        platform_config.blake3 = Some(checksum);
+                        platform_config.checksum = Some(checksum);
                         platform_config.size = Some(size);
                     }
                 }
@@ -243,7 +243,7 @@ impl ToolStub {
         // Read the file to calculate checksum and size
         let bytes = file::read(&archive_path)?;
         let size = bytes.len() as u64;
-        let checksum = blake3::hash(&bytes).to_hex().to_string();
+        let checksum = format!("blake3:{}", blake3::hash(&bytes).to_hex());
 
         // Detect binary path if this is an archive
         let bin_path = if self.is_archive_format(url) {

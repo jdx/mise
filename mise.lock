@@ -21,6 +21,11 @@ checksum = "blake3:8441277927f75428a6d22897a5cc05e8cdc03562d7a203b2bb9a7c6cd1d0c
 size = 5194720
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz"
 
+[tools.age.platforms.macos-arm64]
+checksum = "blake3:5c7e92baa305e64738b31e6ed9725d6cecdb8915af6e1b6c59bb4d7890efaaca"
+size = 4758557
+url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"
+
 [tools.bun]
 version = "1.2.19"
 backend = "core:bun"
@@ -217,6 +222,11 @@ backend = "aqua:getsops/sops"
 checksum = "sha256:79b0f844237bd4b0446e4dc884dbc1765fc7dedc3968f743d5949c6f2e701739"
 size = 45011128
 url = "https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.linux.amd64"
+
+[tools.sops.platforms.macos-arm64]
+checksum = "sha256:99702df79737162b986641afb8d98251acb16a52e6cab556a6b6f57c608c059a"
+size = 44246082
+url = "https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.darwin.arm64"
 
 [tools.taplo]
 version = "0.10.0"

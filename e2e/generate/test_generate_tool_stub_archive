@@ -22,7 +22,7 @@ assert_contains "cat ./bin/node-test" '[platforms.linux-x64]'
 assert_contains "cat ./bin/node-test" 'url = "https://nodejs.org/dist/v22.17.1/node-v22.17.1-linux-x64.tar.gz"'
 
 # Check that it detected checksums and sizes
-assert_contains "cat ./bin/node-test" 'blake3 = "'
+assert_contains "cat ./bin/node-test" 'checksum = "'
 assert_contains "cat ./bin/node-test" 'size = '
 
 # Check that it includes the explicitly specified binary path
