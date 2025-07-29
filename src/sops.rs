@@ -73,16 +73,22 @@ where
             .wrap_err("failed to parse sops file")
             .and_then(|file| file.decrypt::<F>().wrap_err("failed to decrypt sops file"))
         {
-            Ok(decrypted) => decrypted.to_string(),
+            Ok(decrypted) => Some(decrypted.to_string()),
             Err(e) => {
                 if Settings::get().sops.strict {
+                    // Restore environment before returning error
+                    if let Some(age) = prev_age {
+                        env::set_var(age_env_key, age);
+                    } else {
+                        env::remove_var(age_env_key);
+                    }
                     return Err(e);
                 } else {
-                    warn!(
+                    debug!(
                         "sops decryption failed but continuing in non-strict mode: {}",
                         e
                     );
-                    return Ok(input.to_string()); // Return original content without decryption
+                    None // Return None to indicate decryption failed
                 }
             }
         }
@@ -95,34 +101,45 @@ where
             .filter_by_tool(["sops".into()].into())
             .into_toolset();
         Box::pin(ts.resolve(config)).await?;
-        let sops = ts
-            .which_bin(config, "sops")
-            .await
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or("sops".into());
-        // TODO: this obviously won't work on windows
-        match cmd!(
-            sops,
-            "--input-type",
-            format,
-            "--output-type",
-            format,
-            "-d",
-            "/dev/stdin"
-        )
-        .stdin_bytes(input.as_bytes())
-        .read()
-        {
-            Ok(output) => output,
-            Err(e) => {
-                if Settings::get().sops.strict {
-                    return Err(e.into());
-                } else {
-                    warn!(
-                        "sops decryption failed but continuing in non-strict mode: {}",
-                        e
-                    );
-                    input.to_string() // Return original content without decryption
+        let sops_path = ts.which_bin(config, "sops").await;
+        
+        if sops_path.is_none() && !Settings::get().sops.strict {
+            debug!("sops command not found, skipping decryption in non-strict mode");
+            None
+        } else {
+            let sops = sops_path
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or("sops".into());
+            // TODO: this obviously won't work on windows
+            match cmd!(
+                sops,
+                "--input-type",
+                format,
+                "--output-type",
+                format,
+                "-d",
+                "/dev/stdin"
+            )
+            .stdin_bytes(input.as_bytes())
+            .read()
+            {
+                Ok(output) => Some(output),
+                Err(e) => {
+                    if Settings::get().sops.strict {
+                        // Restore environment before returning error
+                        if let Some(age) = prev_age {
+                            env::set_var(age_env_key, age);
+                        } else {
+                            env::remove_var(age_env_key);
+                        }
+                        return Err(e.into());
+                    } else {
+                        debug!(
+                            "sops decryption failed but continuing in non-strict mode: {}",
+                            e
+                        );
+                        None // Return None to indicate decryption failed
+                    }
                 }
             }
         }
@@ -133,5 +150,5 @@ where
     } else {
         env::remove_var(age_env_key);
     }
-    Ok(output)
+    Ok(output.unwrap_or_default())
 }
