@@ -102,7 +102,7 @@ where
             .into_toolset();
         Box::pin(ts.resolve(config)).await?;
         let sops_path = ts.which_bin(config, "sops").await;
-        
+
         if sops_path.is_none() && !Settings::get().sops.strict {
             debug!("sops command not found, skipping decryption in non-strict mode");
             None
