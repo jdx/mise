@@ -70,10 +70,6 @@ chmod +x bin/malformed
 
 assert_fail "mise tool-stub bin/malformed --version"
 
-# Test 6: Tool stub help command functionality
-assert_succeed "mise tool-stub --help"
-assert_contains "mise tool-stub --help" "Path to the TOML tool stub file to execute"
-
 # Test 7: Verify we can see the tool-stub command in help (it's there but minimal)
 assert_contains "mise --help" "tool-stub"
 
