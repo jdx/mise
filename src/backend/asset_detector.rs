@@ -85,7 +85,7 @@ impl DetectedPlatform {
             AssetArch::Arm => "arm",
         };
 
-        format!("{}-{}", os_str, arch_str)
+        format!("{os_str}-{arch_str}")
     }
 }
 
@@ -312,12 +312,12 @@ pub fn detect_platform_from_url(url_str: &str) -> Option<DetectedPlatform> {
     let filename = if let Ok(url) = url::Url::parse(url_str) {
         // Use proper URL parsing to get the path and extract filename
         url.path_segments()
-            .and_then(|segments| segments.last())
+            .and_then(|mut segments| segments.next_back())
             .map(|s| s.to_string())
             .unwrap_or_else(|| url_str.to_string())
     } else {
         // Fallback to simple parsing for non-URL strings or malformed URLs
-        url_str.split('/').last().unwrap_or(url_str).to_string()
+        url_str.split('/').next_back().unwrap_or(url_str).to_string()
     };
 
     // Try to detect OS
@@ -625,12 +625,11 @@ mod tests {
 
         for (url, expected_platform) in test_cases {
             let platform = detect_platform_from_url(url)
-                .unwrap_or_else(|| panic!("Failed to detect platform from URL: {}", url));
+                .unwrap_or_else(|| panic!("Failed to detect platform from URL: {url}"));
             assert_eq!(
                 platform.to_platform_string(),
                 expected_platform,
-                "URL: {}",
-                url
+                "URL: {url}"
             );
         }
     }

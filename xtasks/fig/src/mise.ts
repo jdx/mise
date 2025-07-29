@@ -1259,7 +1259,8 @@ const completionSpec: Fig.Spec = {
             },
             {
               name: "--platform-url",
-              description: "Platform-specific URLs in the format platform:url",
+              description:
+                "Platform-specific URLs in the format platform:url or just url (auto-detect platform)",
               isRepeatable: true,
               args: {
                 name: "platform_url",
