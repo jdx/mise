@@ -1,5 +1,29 @@
 # Changelog
 
+## [2025.7.31](https://github.com/jdx/mise/compare/v2025.7.30..v2025.7.31) - 2025-07-29
+
+### 🚀 Features
+
+- **(tool-stubs)** append to existing tool-stub files instead of overwriting by [@jdx](https://github.com/jdx) in [#5835](https://github.com/jdx/mise/pull/5835)
+- **(tool-stubs)** add auto-platform detection from URLs by [@jdx](https://github.com/jdx) in [#5836](https://github.com/jdx/mise/pull/5836)
+- Add sops.strict setting for non-strict decryption mode by [@pepicrft](https://github.com/pepicrft) in [#5378](https://github.com/jdx/mise/pull/5378)
+
+### 🐛 Bug Fixes
+
+- **(tool-stub)** use URL hash as version for HTTP backend with "latest" by [@jdx](https://github.com/jdx) in [#5828](https://github.com/jdx/mise/pull/5828)
+- **(tool-stubs)** fix -v and --help flags by [@jdx](https://github.com/jdx) in [#5829](https://github.com/jdx/mise/pull/5829)
+- **(tool-stubs)** use 'checksum' field instead of 'blake3' in generated stubs by [@jdx](https://github.com/jdx) in [#5834](https://github.com/jdx/mise/pull/5834)
+- dotnet SearchQueryService fallback by [@acesyde](https://github.com/acesyde) in [#5824](https://github.com/jdx/mise/pull/5824)
+- registry.toml - Specify sbt dependency on java by [@jatcwang](https://github.com/jatcwang) in [#5827](https://github.com/jdx/mise/pull/5827)
+
+### 🧪 Testing
+
+- remove has test which is failing by [@jdx](https://github.com/jdx) in [4aa9cc9](https://github.com/jdx/mise/commit/4aa9cc973acb1bc34df51f27333a226df3256b69)
+
+### New Contributors
+
+- @jatcwang made their first contribution in [#5827](https://github.com/jdx/mise/pull/5827)
+
 ## [2025.7.30](https://github.com/jdx/mise/compare/v2025.7.29..v2025.7.30) - 2025-07-29
 
 ### 🚀 Features

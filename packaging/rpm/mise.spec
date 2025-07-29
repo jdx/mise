@@ -1,6 +1,6 @@
 Summary: The front-end to your dev env
 Name: mise
-Version: 2025.7.30
+Version: 2025.7.31
 Release: 1
 URL: https://github.com/jdx/mise/
 Group: System
