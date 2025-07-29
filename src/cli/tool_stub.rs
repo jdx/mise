@@ -144,13 +144,18 @@ impl ToolStubFile {
             opts: opts.clone(),
         };
 
-        // For HTTP backend with "latest" version, use URL hash as version for stability
+        // For HTTP backend with "latest" version, use URL+checksum hash as version for stability
         let version = if self.tool_name.starts_with("http:") && self.version == "latest" {
             if let Some(url) =
                 lookup_platform_key(&options, "url").or_else(|| opts.get("url").cloned())
             {
-                // Use first 8 chars of URL hash as version
-                format!("url-{}", &hash::hash_to_str(&url)[..8])
+                // Include checksum in hash calculation for better version stability
+                let checksum = lookup_platform_key(&options, "checksum")
+                    .or_else(|| opts.get("checksum").cloned())
+                    .unwrap_or_default();
+                let hash_input = format!("{}:{}", url, checksum);
+                // Use first 8 chars of URL+checksum hash as version
+                format!("url-{}", &hash::hash_to_str(&hash_input)[..8])
             } else {
                 self.version.clone()
             }
@@ -524,6 +529,7 @@ async fn execute_with_tool_request(
 ///
 /// For more information, see: https://mise.jdx.dev/dev-tools/tool-stubs.html
 #[derive(Debug, Parser)]
+#[clap(disable_help_flag = true, disable_version_flag = true)]
 pub struct ToolStub {
     /// Path to the TOML tool stub file to execute
     ///
