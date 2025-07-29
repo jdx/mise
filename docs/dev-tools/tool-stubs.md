@@ -44,17 +44,17 @@ Additional fields can be specified for different backends using the `opts` syste
 For HTTP backends:
 ```toml
 #!/usr/bin/env -S mise tool-stub
-url = "https://example.com/releases/{{version}}/tool-linux-x64.tar.gz"
+url = "https://example.com/releases/1.0.0/tool-linux-x64.tar.gz"
 ```
 
 For platform-specific configurations:
 ```toml
 #!/usr/bin/env -S mise tool-stub
 [platforms.linux-x64]
-url = "https://example.com/releases/{{version}}/tool-linux-x64.tar.gz"
+url = "https://example.com/releases/1.0.0/tool-linux-x64.tar.gz"
 
 [platforms.darwin-arm64]
-url = "https://example.com/releases/{{version}}/tool-macos-arm64.tar.gz"
+url = "https://example.com/releases/1.0.0/tool-macos-arm64.tar.gz"
 ```
 
 ### Platform-Specific Binary Paths
