@@ -7,35 +7,10 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use clap::ValueHint;
 use color_eyre::eyre::bail;
-use serde::Serialize;
+use indexmap::IndexMap;
 use std::path::PathBuf;
+use toml_edit::DocumentMut;
 use xx::file::display_path;
-
-#[derive(Debug, Serialize)]
-struct ToolStubConfig {
-    version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bin: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    checksum: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    size: Option<u64>,
-    #[serde(skip_serializing_if = "indexmap::IndexMap::is_empty")]
-    platforms: indexmap::IndexMap<String, PlatformConfig>,
-}
-
-#[derive(Debug, Serialize)]
-struct PlatformConfig {
-    url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    checksum: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    size: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    bin: Option<String>,
-}
 
 /// [experimental] Generate a tool stub for HTTP-based tools
 ///
@@ -117,35 +92,72 @@ impl ToolStub {
             bail!("Either --url or --platform-url must be specified");
         }
 
-        let mut stub = ToolStubConfig {
-            version: self.version.clone(),
-            bin: self.bin.clone(),
-            url: None,
-            checksum: None,
-            size: None,
-            platforms: indexmap::IndexMap::new(),
+        // Read existing file if it exists
+        let (existing_content, mut doc) = if self.output.exists() {
+            let content = file::read_to_string(&self.output)?;
+            // Extract TOML content from the stub file (skip shebang and comments)
+            let toml_content = content
+                .lines()
+                .skip_while(|line| line.starts_with('#') || line.trim().is_empty())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            let document = toml_content.parse::<DocumentMut>()?;
+            (Some(content), document)
+        } else {
+            (None, DocumentMut::new())
         };
+
+        // If file exists but we're trying to set a different version, bail
+        if existing_content.is_some() && doc.get("version").is_some() {
+            let existing_version = doc.get("version").and_then(|v| v.as_str()).unwrap_or("");
+            if existing_version != self.version {
+                bail!(
+                    "Cannot change version of existing tool stub from {} to {}",
+                    existing_version,
+                    self.version
+                );
+            }
+        }
+
+        // Set or update version
+        doc["version"] = toml_edit::value(&self.version);
+
+        // Update bin if provided
+        if let Some(bin) = &self.bin {
+            doc["bin"] = toml_edit::value(bin);
+        }
+
+        // We use toml_edit directly to preserve existing content
 
         // Handle URL or platform-specific URLs
         if let Some(url) = &self.url {
-            stub.url = Some(url.clone());
+            doc["url"] = toml_edit::value(url);
 
             // Auto-detect checksum and size if not skipped
             if !self.skip_download {
                 let mpr = MultiProgressReport::get();
                 if let Ok((checksum, size, bin_path)) = self.analyze_url(url, &mpr).await {
-                    stub.checksum = Some(checksum);
-                    stub.size = Some(size);
-                    if self.bin.is_none() {
-                        stub.bin = bin_path;
+                    doc["checksum"] = toml_edit::value(&checksum);
+                    doc["size"] = toml_edit::value(size as i64);
+                    if self.bin.is_none() && bin_path.is_some() {
+                        doc["bin"] = toml_edit::value(bin_path.as_ref().unwrap());
                     }
                 }
             }
-        } else if !self.platform_url.is_empty() {
+        }
+
+        if !self.platform_url.is_empty() {
             let mpr = MultiProgressReport::get();
 
+            // Ensure platforms table exists
+            if doc.get("platforms").is_none() {
+                doc["platforms"] = toml_edit::table();
+            }
+            let platforms = doc["platforms"].as_table_mut().unwrap();
+
             // Parse platform-specific bin paths
-            let mut explicit_platform_bins = std::collections::HashMap::new();
+            let mut explicit_platform_bins = IndexMap::new();
             for platform_bin_spec in &self.platform_bin {
                 let (platform, bin_path) = self.parse_platform_bin_spec(platform_bin_spec)?;
                 explicit_platform_bins.insert(platform, bin_path);
@@ -153,33 +165,32 @@ impl ToolStub {
 
             for platform_spec in &self.platform_url {
                 let (platform, url) = self.parse_platform_spec(platform_spec)?;
-                let mut platform_config = PlatformConfig {
-                    url: url.clone(),
-                    checksum: None,
-                    size: None,
-                    bin: None,
-                };
+
+                // Create or get platform table
+                if platforms.get(&platform).is_none() {
+                    platforms[&platform] = toml_edit::table();
+                }
+                let platform_table = platforms[&platform].as_table_mut().unwrap();
+
+                // Set URL
+                platform_table["url"] = toml_edit::value(&url);
 
                 // Set platform-specific bin path if explicitly provided
                 if let Some(explicit_bin) = explicit_platform_bins.get(&platform) {
-                    platform_config.bin = Some(explicit_bin.clone());
+                    platform_table["bin"] = toml_edit::value(explicit_bin);
                 }
 
                 // Auto-detect checksum and size if not skipped
                 if !self.skip_download {
                     if let Ok((checksum, size, _)) = self.analyze_url(&url, &mpr).await {
-                        platform_config.checksum = Some(checksum);
-                        platform_config.size = Some(size);
+                        platform_table["checksum"] = toml_edit::value(&checksum);
+                        platform_table["size"] = toml_edit::value(size as i64);
                     }
                 }
-
-                stub.platforms.insert(platform, platform_config);
             }
-        } else {
-            bail!("Either --url or --platform-url must be specified");
         }
 
-        let toml_content = toml::to_string_pretty(&stub)?;
+        let toml_content = doc.to_string();
 
         let mut content = vec![
             "#!/usr/bin/env -S mise tool-stub".to_string(),
