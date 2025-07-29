@@ -1,6 +1,6 @@
 # Tool Stubs
 
-Tool stubs are a powerful feature in mise that allows you to create executable files with embedded TOML configuration for tool execution. They provide a convenient way to define tool versions, backends, and execution parameters directly within executable scripts.
+Tool stubs allow you to create executable files with embedded TOML configuration for tool execution. They provide a convenient way to define tool versions, backends, and execution parameters directly within executable scripts. They are also a good way to have some tools in mise lazy-load since the tools are only fetched when called and not when calling something like `mise install`.
 
 This feature is inspired by [dotslash](https://github.com/facebook/dotslash), which pioneered the concept of executable files with embedded configuration for portable tool execution.
 
