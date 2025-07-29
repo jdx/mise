@@ -1,4 +1,5 @@
 use crate::Result;
+use crate::backend::asset_detector::detect_platform_from_url;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::config::Settings;
 use crate::file::{self, TarFormat, TarOptions};
@@ -38,12 +39,17 @@ pub struct ToolStub {
     #[clap(long, short)]
     pub url: Option<String>,
 
-    /// Platform-specific URLs in the format platform:url
+    /// Platform-specific URLs in the format platform:url or just url (auto-detect platform)
     ///
     /// When the output file already exists, new platforms will be appended to the existing
     /// platforms table. Existing platform URLs will be updated if specified again.
     ///
-    /// Examples: --platform-url linux-x64:https://... --platform-url darwin-arm64:https://...
+    /// If only a URL is provided (without platform:), the platform will be automatically
+    /// detected from the URL filename.
+    ///
+    /// Examples:
+    /// --platform-url linux-x64:https://...
+    /// --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz
     #[clap(long)]
     pub platform_url: Vec<String>,
 
@@ -211,18 +217,35 @@ impl ToolStub {
     }
 
     fn parse_platform_spec(&self, spec: &str) -> Result<(String, String)> {
-        let parts: Vec<&str> = spec.splitn(2, ':').collect();
-        if parts.len() != 2 {
-            bail!(
-                "Platform spec must be in format 'platform:url', got: {}",
-                spec
-            );
+        // Check if this is a URL first (auto-detect case)
+        if spec.starts_with("http://") || spec.starts_with("https://") {
+            // Format: url (auto-detect platform)
+            let url = spec.to_string();
+
+            if let Some(detected_platform) = detect_platform_from_url(&url) {
+                let platform = detected_platform.to_platform_string();
+                miseprintln!("Auto-detected platform '{}' from URL: {}", platform, url);
+                Ok((platform, url))
+            } else {
+                bail!(
+                    "Could not auto-detect platform from URL: {}. Please specify explicitly using 'platform:url' format.",
+                    url
+                );
+            }
+        } else {
+            // Format: platform:url
+            let parts: Vec<&str> = spec.splitn(2, ':').collect();
+            if parts.len() != 2 {
+                bail!(
+                    "Platform spec must be in format 'platform:url' or just 'url' (for auto-detection). Got: {}",
+                    spec
+                );
+            }
+
+            let platform = parts[0].to_string();
+            let url = parts[1].to_string();
+            Ok((platform, url))
         }
-
-        let platform = parts[0].to_string();
-        let url = parts[1].to_string();
-
-        Ok((platform, url))
     }
 
     fn parse_platform_bin_spec(&self, spec: &str) -> Result<(String, String)> {
@@ -421,6 +444,11 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise generate tool-stub ./bin/rg \
         --platform-url darwin-arm64:https://example.com/rg-darwin.tar.gz</bold>
     # The stub now contains both platforms
+
+    Use auto-detection for platform from URL:
+    $ <bold>mise generate tool-stub ./bin/node \
+        --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz</bold>
+    # Platform 'macos-arm64' will be auto-detected from the URL
 
     Generate with platform-specific binary paths:
     $ <bold>mise generate tool-stub ./bin/tool \
