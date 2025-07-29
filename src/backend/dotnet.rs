@@ -98,7 +98,13 @@ impl DotnetBackend {
             .resources
             .iter()
             .find(|x| x.service_type == "SearchQueryService/3.5.0")
-            .ok_or_else(|| eyre!("No SearchQueryService/3.5.0 found"))?;
+            .or_else(|| {
+                services
+                    .resources
+                    .iter()
+                    .find(|x| x.service_type == "SearchQueryService")
+            })
+            .ok_or_else(|| eyre!("No SearchQueryService found"))?;
 
         Ok(feed.id.clone())
     }
