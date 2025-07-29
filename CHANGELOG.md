@@ -1,5 +1,20 @@
 # Changelog
 
+## [2025.7.30](https://github.com/jdx/mise/compare/v2025.7.29..v2025.7.30) - 2025-07-29
+
+### 🚀 Features
+
+- **(registry)** add amp by [@jahands](https://github.com/jahands) in [#5814](https://github.com/jdx/mise/pull/5814)
+
+### 🐛 Bug Fixes
+
+- **(tool-stubs)** fix error messages when it can't find the bin by [@jdx](https://github.com/jdx) in [#5817](https://github.com/jdx/mise/pull/5817)
+- misidentifying built-in backend as a plugin backend by [@syhol](https://github.com/syhol) in [#5822](https://github.com/jdx/mise/pull/5822)
+
+### 📚 Documentation
+
+- **(troubleshooting)** path limits on Windows by [@W1M0R](https://github.com/W1M0R) in [#5815](https://github.com/jdx/mise/pull/5815)
+
 ## [2025.7.29](https://github.com/jdx/mise/compare/v2025.7.28..v2025.7.29) - 2025-07-28
 
 ### 🐛 Bug Fixes
