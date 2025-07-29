@@ -866,7 +866,7 @@
             },
             "strict": {
               "default": true,
-              "description": "If true, fail when sops decryption fails. If false, skip encrypted secrets and continue when key is not available.",
+              "description": "If true, fail when sops decryption fails. If false, skip decryption and continue when sops or the decryption key are not available.",
               "type": "boolean"
             }
           }
