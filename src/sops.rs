@@ -58,7 +58,6 @@ where
         })
         .await;
     
-    // Early return if age key is not available in non-strict mode
     if age.is_none() && !Settings::get().sops.strict {
         debug!("age key not found, skipping decryption in non-strict mode");
         return Ok(String::new());
@@ -83,7 +82,6 @@ where
             Ok(decrypted) => Some(decrypted.to_string()),
             Err(e) => {
                 if Settings::get().sops.strict {
-                    // Restore environment before returning error
                     if let Some(age) = prev_age {
                         env::set_var(age_env_key, age);
                     } else {
@@ -95,7 +93,7 @@ where
                         "sops decryption failed but continuing in non-strict mode: {}",
                         e
                     );
-                    None // Return None to indicate decryption failed
+                    None
                 }
             }
         }
@@ -133,7 +131,6 @@ where
                 Ok(output) => Some(output),
                 Err(e) => {
                     if Settings::get().sops.strict {
-                        // Restore environment before returning error
                         if let Some(age) = prev_age {
                             env::set_var(age_env_key, age);
                         } else {
@@ -145,7 +142,7 @@ where
                             "sops decryption failed but continuing in non-strict mode: {}",
                             e
                         );
-                        None // Return None to indicate decryption failed
+                        None
                     }
                 }
             }

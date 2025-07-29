@@ -64,7 +64,6 @@ impl EnvResults {
                 if !decrypted.is_empty() {
                     f = serde_json::from_str(&decrypted).wrap_err_with(errfn)?;
                 } else {
-                    // Decryption failed in non-strict mode, return empty env
                     return Ok(EnvMap::new());
                 }
             }
@@ -100,7 +99,6 @@ impl EnvResults {
                 if !decrypted.is_empty() {
                     f = serde_yaml::from_str(&decrypted).wrap_err_with(errfn)?;
                 } else {
-                    // Decryption failed in non-strict mode, return empty env
                     return Ok(EnvMap::new());
                 }
             }
