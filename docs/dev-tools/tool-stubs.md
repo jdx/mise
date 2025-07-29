@@ -8,6 +8,8 @@ This feature is inspired by [dotslash](https://github.com/facebook/dotslash), wh
 
 A tool stub is an executable file that begins with a shebang line pointing to `mise tool-stub` and contains TOML configuration specifying which tool to execute and how to execute it. When the stub is run, mise automatically installs the specified tool version (if needed) and executes it with the provided arguments.
 
+Tool stubs can use any mise backend but because they default to http—and http backend tools have things like urls and don't require a version—the http stubs look a bit different than non-http stubs. 
+
 ::: tip
 Tool stubs are particularly useful for adding less-commonly used tools to your mise setup. Since tools are only installed when their stub is first executed, you can define many tools without the overhead of installing them all upfront. This is perfect for specialized tools, testing utilities, or project-specific binaries that you might not use every day.
 :::
@@ -152,27 +154,6 @@ The generator will preserve existing configuration and merge new platforms into 
 - `--platform-bin PLATFORM:PATH` - Set platform-specific binary path
 - `--skip-download` - Skip downloading for faster generation (no checksums or binary detection)
 
-### Incremental Workflow
-
-The append behavior makes it easy to build comprehensive cross-platform tool stubs:
-
-1. **Start simple**: Create a stub with one platform you can test
-2. **Add platforms**: Incrementally add support for other platforms
-3. **Update URLs**: Re-run with the same platform to update URLs for new releases
-4. **Version consistency**: The generator prevents changing versions to avoid conflicts
-
-```bash
-# Day 1: Start with Linux
-mise generate tool-stub ./bin/mytool --platform-url linux-x64:https://example.com/v1.0.0/tool-linux.tar.gz
-
-# Day 2: Add macOS support
-mise generate tool-stub ./bin/mytool --platform-url darwin-arm64:https://example.com/v1.0.0/tool-macos-arm64.tar.gz
-
-# Day 3: Update to v1.1.0 (update existing platforms)
-mise generate tool-stub ./bin/mytool --version 1.1.0 --platform-url linux-x64:https://example.com/v1.1.0/tool-linux.tar.gz
-# Note: This would fail because version cannot be changed. Create a new stub or manually edit.
-```
-
 ### Supported Archive Formats
 
 The generator automatically detects and extracts various archive formats:
@@ -266,7 +247,7 @@ chmod +x ./bin/my-tool
 
 ### Via mise Command
 
-Execute using the [`mise tool-stub`](/cli/tool-stub) command:
+Execute using the [`mise tool-stub`](/cli/tool-stub) command—useful for testing if something isn't working right:
 
 ```bash
 mise tool-stub ./bin/my-tool --version
@@ -274,11 +255,13 @@ mise tool-stub ./bin/my-tool --version
 
 ## Caching
 
-Tool stubs implement intelligent caching:
+Tool stubs implement intelligent caching which reduces the overhead mise has when running stubs:
 
 - Binary paths are cached based on stub file path and modification time
 - Cache is automatically invalidated when the stub file changes
 - Missing binaries trigger cache cleanup automatically
+
+Cached stubs have ~4ms of overhead.
 
 ## Alternative: Creating Simple Stubs with `mise x`
 
