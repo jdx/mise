@@ -57,12 +57,12 @@ where
             None
         })
         .await;
-    
+
     if age.is_none() && !Settings::get().sops.strict {
         debug!("age key not found, skipping decryption in non-strict mode");
         return Ok(String::new());
     }
-    
+
     let _lock = MUTEX.lock().await; // prevent multiple threads from using the same age key
     let age_env_key = if Settings::get().sops.rops {
         "ROPS_AGE"
