@@ -153,7 +153,7 @@ impl ToolStubFile {
                 let checksum = lookup_platform_key(&options, "checksum")
                     .or_else(|| opts.get("checksum").cloned())
                     .unwrap_or_default();
-                let hash_input = format!("{}:{}", url, checksum);
+                let hash_input = format!("{url}:{checksum}");
                 // Use first 8 chars of URL+checksum hash as version
                 format!("url-{}", &hash::hash_to_str(&hash_input)[..8])
             } else {
