@@ -14,7 +14,7 @@ Tool stubs can use any mise backend but because they default to http—and http 
 Tool stubs are particularly useful for adding less-commonly used tools to your mise setup. Since tools are only installed when their stub is first executed, you can define many tools without the overhead of installing them all upfront. This is perfect for specialized tools, testing utilities, or project-specific binaries that you might not use every day.
 :::
 
-## Basic Structure
+## Tool (non-http) Stubs
 
 ```bash
 #!/usr/bin/env -S mise tool-stub
@@ -39,17 +39,17 @@ Tool stub configuration is essentially a subset of what can be done in `mise.tom
 - `version` - The version of the tool to use
 - `bin` - The binary name to execute within the tool (defaults to the stub filename)
 
-### Backend-Specific Options
+## HTTP Stubs
 
-Additional fields can be specified for different backends using the `opts` system. These are flattened into the configuration and passed to the appropriate backend.
+For multi-platform tarballs:
 
-For [HTTP backends](/dev-tools/backends/http):
 ```toml
 #!/usr/bin/env -S mise tool-stub
 url = "https://example.com/releases/1.0.0/tool-linux-x64.tar.gz"
 ```
 
-For platform-specific configurations:
+For platform-specific tarballs:
+
 ```toml
 #!/usr/bin/env -S mise tool-stub
 [platforms.linux-x64]
@@ -84,7 +84,7 @@ tool stubs default to the HTTP backend if no `tool` field is specified and a `ur
 See the [HTTP backend documentation](/dev-tools/backends/http) for full details on configuring HTTP-based tools.
 :::
 
-## Generating Tool Stubs
+## Generating Tool Stubs (http)
 
 While you can manually create tool stubs with TOML configuration, mise provides a [`mise generate tool-stub`](/cli/generate/tool-stub) command to automatically create stubs for HTTP-based tools.
 
@@ -147,7 +147,7 @@ The generator will preserve existing configuration and merge new platforms into 
 
 ### Generation Options
 
-- `--version VERSION` - Specify tool version (defaults to "latest"). Cannot be changed for existing stubs.
+- `--version VERSION` - Specify tool version (defaults to "latest").
 - `--bin PATH` - Override auto-detected binary path
 - `--platform-url PLATFORM:URL` - Add platform-specific URL (can be used multiple times)
 - `--platform-url URL` - Add platform-specific URL with auto-detected platform from URL filename
