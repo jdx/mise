@@ -4,7 +4,7 @@ use crate::config::{Config, Settings};
 use crate::env;
 use crate::file::replace_path;
 use crate::{dirs, file, result};
-use eyre::{eyre, WrapErr};
+use eyre::{WrapErr, eyre};
 use rops::cryptography::cipher::AES256GCM;
 use rops::cryptography::hasher::SHA512;
 use rops::file::RopsFile;
