@@ -8,8 +8,8 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use clap::ValueHint;
 use color_eyre::eyre::bail;
-use indexmap::IndexMap;
 use humansize::{BINARY, format_size};
+use indexmap::IndexMap;
 use std::path::PathBuf;
 use toml_edit::DocumentMut;
 use xx::file::display_path;
@@ -153,7 +153,7 @@ impl ToolStub {
                 let mpr = MultiProgressReport::get();
                 if let Ok((checksum, size, bin_path)) = self.analyze_url(url, &mpr).await {
                     doc["checksum"] = toml_edit::value(&checksum);
-                    
+
                     // Create size entry with human-readable comment
                     let mut size_item = toml_edit::value(size as i64);
                     if let Some(value) = size_item.as_value_mut() {
@@ -161,7 +161,7 @@ impl ToolStub {
                         value.decor_mut().set_suffix(formatted_comment);
                     }
                     doc["size"] = size_item;
-                    
+
                     if self.bin.is_none() && bin_path.is_some() {
                         doc["bin"] = toml_edit::value(bin_path.as_ref().unwrap());
                     }
@@ -206,7 +206,7 @@ impl ToolStub {
                 if !self.skip_download {
                     if let Ok((checksum, size, _)) = self.analyze_url(&url, &mpr).await {
                         platform_table["checksum"] = toml_edit::value(&checksum);
-                        
+
                         // Create size entry with human-readable comment
                         let mut size_item = toml_edit::value(size as i64);
                         if let Some(value) = size_item.as_value_mut() {
