@@ -10,7 +10,6 @@ export MISE_QUIET=1
 # Test 1: Default bin name (stub filename) not found shows available executables
 cat >test_http_default_bin <<'EOF'
 #!/usr/bin/env -S mise tool-stub
-version = "latest"
 url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 blake3 = "71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f"
 size = 518
@@ -36,7 +35,6 @@ rm test_http_default_bin
 # Test 2: Binary not found should not show hidden files
 cat >test_hidden_files <<'EOF'
 #!/usr/bin/env -S mise tool-stub
-version = "latest"
 url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 blake3 = "71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f"
 size = 518
@@ -60,7 +58,6 @@ rm test_hidden_files
 # Test 3: Binary with path not found shows correct error
 cat >test_bin_path <<'EOF'
 #!/usr/bin/env -S mise tool-stub
-version = "latest"
 url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 blake3 = "71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f"
 size = 518
@@ -85,7 +82,6 @@ rm test_bin_path
 cat >test_tool_notfound <<'EOF'
 #!/usr/bin/env -S mise tool-stub
 tool = "nonexistent-tool-that-doesnt-exist"
-version = "latest"
 EOF
 chmod +x test_tool_notfound
 

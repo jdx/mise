@@ -18,7 +18,6 @@ assert_succeed "test -x test-tool-basic"
 
 # Verify the generated stub contains expected content
 assert_contains "cat test-tool-basic" "#!/usr/bin/env -S mise tool-stub"
-assert_contains "cat test-tool-basic" 'version = "latest"'
 assert_contains "cat test-tool-basic" 'url = "https://httpbin.org/status/200"'
 
 # Test 2: Tool stub generation with specific version
