@@ -501,25 +501,6 @@ impl ToolStub {
             return Ok(executables[0].clone());
         }
 
-        // Strategy 4: Look for name matches specifically in bin directories
-        if !bin_executables.is_empty() {
-            let bin_name_matches: Vec<_> = bin_executables
-                .iter()
-                .filter(|exe| {
-                    let path = std::path::Path::new(exe);
-                    path.file_name()
-                        .and_then(|f| f.to_str())
-                        .map(|f| f.to_lowercase().contains(&tool_name.to_lowercase()))
-                        .unwrap_or(false)
-                })
-                .collect();
-
-            // If there's exactly one name match in bin directories, use it
-            if bin_name_matches.len() == 1 {
-                return Ok(bin_name_matches[0].to_string());
-            }
-        }
-
         // No good match found, provide helpful error message
         let mut exe_list = executables.to_vec();
         exe_list.sort();
