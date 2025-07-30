@@ -67,7 +67,7 @@ rm -f ~/.config/mise/config.toml
 
 mise use -g "ubi:cli/cli[exe=gh]"
 assert "cat ~/.config/mise/config.toml" '[tools]
-"ubi:cli/cli" = { version = "latest", exe = "gh" }'
+"ubi:cli/cli" = { exe = "gh" }'
 rm -f ~/.config/mise/config.toml
 
 mise use -g gh@2

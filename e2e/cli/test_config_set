@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 
-echo '[tools.node]
-version = "latest"' >mise.toml
+echo '[tools.node]' >mise.toml
 
-assert "cat mise.toml" '[tools.node]
-version = "latest"'
+assert "cat mise.toml" '[tools.node]'
 
 mise config set tools.node.postinstall 'corepack enable'
 assert "mise config get tools.node.postinstall" "corepack enable"

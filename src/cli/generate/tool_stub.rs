@@ -133,8 +133,10 @@ impl ToolStub {
             }
         }
 
-        // Set or update version
-        doc["version"] = toml_edit::value(&self.version);
+        // Set or update version only if it's not "latest" (which should be the default)
+        if self.version != "latest" {
+            doc["version"] = toml_edit::value(&self.version);
+        }
 
         // Update bin if provided
         if let Some(bin) = &self.bin {
