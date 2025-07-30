@@ -328,8 +328,6 @@ impl ToolStub {
         url: &str,
         mpr: &std::sync::Arc<crate::ui::multi_progress_report::MultiProgressReport>,
     ) -> Result<(String, u64, Option<String>)> {
-        miseprintln!("Downloading {} to analyze...", url);
-
         // Create a temporary directory for download and extraction
         let temp_dir = tempfile::tempdir()?;
         let filename = get_filename_from_url(url);
