@@ -13,12 +13,12 @@ fi
 
 cat <<EOF >mise.toml
 [tools]
-"ubi:cilium/cilium-cli" = { exe = "cilium" }
+"ubi:cilium/cilium-cli" = { version = "latest", exe = "cilium" }
 EOF
 # re-uses tool options
 mise use ubi:cilium/cilium-cli
 assert "cat mise.toml" '[tools]
-"ubi:cilium/cilium-cli" = { exe = "cilium" }'
+"ubi:cilium/cilium-cli" = { version = "latest", exe = "cilium" }'
 
 assert "mise x ubi:gitlab-org/cli[exe=glab,provider=gitlab]@1.54.0 -- glab --version | grep -o 1.54.0" "1.54.0"
 
