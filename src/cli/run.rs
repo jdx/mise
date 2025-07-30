@@ -690,6 +690,12 @@ impl Run {
                         self.eprint(task, prefix, &line);
                     }
                 });
+                if raw || redactions.is_empty() {
+                    cmd = cmd
+                        .stdin(Stdio::inherit())
+                        .stdout(Stdio::inherit())
+                        .stderr(Stdio::inherit())
+                }
             }
             TaskOutput::KeepOrder => {
                 cmd = cmd.with_on_stdout(|line| {
