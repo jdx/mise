@@ -14,7 +14,7 @@ cargo-binstall = "latest"
 "cargo:cargo-release" = "latest"
 "cargo:git-cliff" = "latest"
 "cargo:toml-cli" = "latest"
-"cargo:usage-cli" = { os = ["linux", "macos"] }
+"cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
 cosign = "latest"
 gh = "2.62.0"
 hk = "latest"
