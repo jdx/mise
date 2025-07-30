@@ -155,7 +155,7 @@ impl ToolStub {
                     doc["checksum"] = toml_edit::value(&checksum);
                     
                     // Create size entry with human-readable comment
-                    let mut size_item = toml_edit::Item::Value(toml_edit::value(size as i64));
+                    let mut size_item = toml_edit::value(size as i64);
                     if let Some(value) = size_item.as_value_mut() {
                         let formatted_comment = format_size_comment(size);
                         value.decor_mut().set_suffix(formatted_comment);
@@ -208,7 +208,7 @@ impl ToolStub {
                         platform_table["checksum"] = toml_edit::value(&checksum);
                         
                         // Create size entry with human-readable comment
-                        let mut size_item = toml_edit::Item::Value(toml_edit::value(size as i64));
+                        let mut size_item = toml_edit::value(size as i64);
                         if let Some(value) = size_item.as_value_mut() {
                             let formatted_comment = format_size_comment(size);
                             value.decor_mut().set_suffix(formatted_comment);
