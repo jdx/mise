@@ -31,10 +31,10 @@ echo "node-test stub content:"
 cat ./bin/node-test
 
 # Test that the stub actually works by executing it
-echo "Testing that the generated node-test stub actually works..."
-assert "./bin/node-test --version" "v22.17.1"
 echo "Testing that the generated node-test stub works with -v flag..."
 assert "./bin/node-test -v" "v22.17.1"
+echo "Testing that the generated node-test stub also works with --version..."
+assert "./bin/node-test --version" "v22.17.1"
 
 # Test 2: Tool stub generation with different platforms (should produce common bin)
 echo "Testing tool-stub generation with cross-platform URLs..."
@@ -49,7 +49,7 @@ echo "cross-platform-tool stub content:"
 cat ./bin/cross-platform-tool
 
 # Test execution of the cross-platform stub (should work on current platform)
-echo "Testing that the generated cross-platform-tool stub actually works..."
-assert "./bin/cross-platform-tool --version" "v22.17.1"
 echo "Testing that the generated cross-platform-tool stub works with -v flag..."
 assert "./bin/cross-platform-tool -v" "v22.17.1"
+echo "Testing that the generated cross-platform-tool stub also works with --version..."
+assert "./bin/cross-platform-tool --version" "v22.17.1"

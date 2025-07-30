@@ -83,7 +83,7 @@ pub enum LevelFilter {
 }
 
 #[derive(clap::Parser)]
-#[clap(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true, disable_version_flag = true)]
+#[clap(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true)]
 pub struct Cli {
     #[clap(subcommand)]
     pub command: Option<Commands>,
