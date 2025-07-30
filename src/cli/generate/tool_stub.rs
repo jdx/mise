@@ -9,7 +9,7 @@ use crate::ui::progress_report::SingleReport;
 use clap::ValueHint;
 use color_eyre::eyre::bail;
 use indexmap::IndexMap;
-use number_prefix::NumberPrefix;
+use humansize::{BINARY, format_size};
 use std::path::PathBuf;
 use toml_edit::DocumentMut;
 use xx::file::display_path;
@@ -443,10 +443,7 @@ impl ToolStub {
 }
 
 fn format_size_comment(bytes: u64) -> String {
-    match NumberPrefix::binary(bytes as f64) {
-        NumberPrefix::Standalone(bytes) => format!(" # {} bytes", bytes),
-        NumberPrefix::Prefixed(prefix, n) => format!(" # {:.1} {}B", n, prefix),
-    }
+    format!(" # {}", format_size(bytes, BINARY))
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
