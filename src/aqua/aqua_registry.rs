@@ -474,13 +474,16 @@ impl AquaPackage {
                 .unwrap()
                 .replace(' ', "")
                 .split(',')
-                .flat_map(versions::Requirement::new)
+                .map(versions::Requirement::new)
                 .collect::<Vec<_>>();
-            if requirements.is_empty() {
-                return Err("invalid semver".to_string().into());
+            if requirements.iter().any(|r| r.is_none()) {
+                return Err("invalid semver requirement".to_string().into());
             }
             if let Some(ver) = &ver {
-                Ok(requirements.iter().all(|r| r.matches(ver)).into())
+                Ok(requirements
+                    .iter()
+                    .all(|r| r.clone().is_some_and(|r| r.matches(ver)))
+                    .into())
             } else {
                 Err("invalid version".to_string().into())
             }
