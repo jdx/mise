@@ -469,15 +469,20 @@ impl AquaPackage {
             if c.args.len() != 1 {
                 return Err("semver() takes exactly one argument".to_string().into());
             }
-            let semver = c.args[0].as_string().unwrap().replace(' ', "");
-            if let Some(check_version) = versions::Requirement::new(&semver) {
-                if let Some(ver) = &ver {
-                    Ok(check_version.matches(ver).into())
-                } else {
-                    Err("invalid version".to_string().into())
-                }
+            let requirements = c.args[0]
+                .as_string()
+                .unwrap()
+                .replace(' ', "")
+                .split(',')
+                .flat_map(|s| versions::Requirement::new(s))
+                .collect::<Vec<_>>();
+            if requirements.is_empty() {
+                return Err("invalid semver".to_string().into());
+            }
+            if let Some(ver) = &ver {
+                Ok(requirements.iter().all(|r| r.matches(ver)).into())
             } else {
-                Err("invalid semver".to_string().into())
+                Err("invalid version".to_string().into())
             }
         });
         env
