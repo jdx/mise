@@ -474,7 +474,7 @@ impl AquaPackage {
                 .unwrap()
                 .replace(' ', "")
                 .split(',')
-                .flat_map(|s| versions::Requirement::new(s))
+                .flat_map(versions::Requirement::new)
                 .collect::<Vec<_>>();
             if requirements.is_empty() {
                 return Err("invalid semver".to_string().into());
