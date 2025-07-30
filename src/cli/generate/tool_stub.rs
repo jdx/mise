@@ -165,7 +165,9 @@ impl ToolStub {
 
             // Ensure platforms table exists
             if doc.get("platforms").is_none() {
-                doc["platforms"] = toml_edit::table();
+                let mut platforms_table = toml_edit::Table::new();
+                platforms_table.set_implicit(true);
+                doc["platforms"] = toml_edit::Item::Table(platforms_table);
             }
             let platforms = doc["platforms"].as_table_mut().unwrap();
 
