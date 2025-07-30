@@ -51,7 +51,7 @@ Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
 
 Binary path within the extracted archive
 
-If not specified and the archive is downloaded, will only auto-detect if an exact filename match is found
+If not specified and the archive is downloaded, will auto-detect the most likely binary
 
 ### `--skip-download`
 
