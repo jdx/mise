@@ -62,7 +62,7 @@ pub struct ToolStub {
 
     /// Binary path within the extracted archive
     ///
-    /// If not specified and the archive is downloaded, will only auto-detect if an exact filename match is found
+    /// If not specified and the archive is downloaded, will auto-detect the most likely binary
     #[clap(long, short)]
     pub bin: Option<String>,
 
@@ -189,6 +189,9 @@ impl ToolStub {
                 explicit_platform_bins.insert(platform, bin_path);
             }
 
+            // Track detected bin paths to see if they're all the same
+            let mut detected_bin_paths = Vec::new();
+
             for platform_spec in &self.platform_url {
                 let (platform, url) = self.parse_platform_spec(platform_spec)?;
 
@@ -206,9 +209,9 @@ impl ToolStub {
                     platform_table["bin"] = toml_edit::value(explicit_bin);
                 }
 
-                // Auto-detect checksum and size if not skipped
+                // Auto-detect checksum, size, and bin path if not skipped
                 if !self.skip_download {
-                    if let Ok((checksum, size, _)) = self.analyze_url(&url, &mpr).await {
+                    if let Ok((checksum, size, bin_path)) = self.analyze_url(&url, &mpr).await {
                         platform_table["checksum"] = toml_edit::value(&checksum);
 
                         // Create size entry with human-readable comment
@@ -218,8 +221,46 @@ impl ToolStub {
                             value.decor_mut().set_suffix(formatted_comment);
                         }
                         platform_table["size"] = size_item;
+
+                        // Track detected bin paths
+                        if let Some(ref bp) = bin_path {
+                            detected_bin_paths.push(bp.clone());
+                        }
+
+                        // Set bin path if not explicitly provided and we detected one
+                        if !explicit_platform_bins.contains_key(&platform)
+                            && self.bin.is_none()
+                            && bin_path.is_some()
+                        {
+                            platform_table["bin"] = toml_edit::value(bin_path.as_ref().unwrap());
+                        }
                     }
                 }
+            }
+
+            // Check if we should set a global bin
+            let should_set_global_bin = if self.bin.is_none() && !detected_bin_paths.is_empty() {
+                let first_bin = &detected_bin_paths[0];
+                detected_bin_paths.iter().all(|b| b == first_bin)
+            } else {
+                false
+            };
+
+            if should_set_global_bin {
+                let global_bin = detected_bin_paths[0].clone();
+                // Remove platform-specific bin entries since we'll have a global one
+                for platform_spec in &self.platform_url {
+                    let (platform, _) = self.parse_platform_spec(platform_spec)?;
+                    if let Some(platform_table) = platforms.get_mut(&platform) {
+                        if let Some(table) = platform_table.as_table_mut() {
+                            if !explicit_platform_bins.contains_key(&platform) {
+                                table.remove("bin");
+                            }
+                        }
+                    }
+                }
+                // Now set the global bin
+                doc["bin"] = toml_edit::value(&global_bin);
             }
         }
 
@@ -434,12 +475,58 @@ impl ToolStub {
             }
         }
 
-        // No exact match found, provide helpful error message
+        // No exact match found, try to find the most likely binary
+        let selected_exe = self.find_best_binary_match(executables, tool_name)?;
+        Ok(selected_exe)
+    }
+
+    fn find_best_binary_match(&self, executables: &[String], tool_name: &str) -> Result<String> {
+        // Strategy 1: Look for executables in common bin directories
+        let bin_executables: Vec<_> = executables
+            .iter()
+            .filter(|exe| {
+                let path = std::path::Path::new(exe);
+                path.parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str())
+                    .map(|n| n == "bin" || n == "sbin")
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        // If there's exactly one executable in a bin directory, use it
+        if bin_executables.len() == 1 {
+            return Ok(bin_executables[0].clone());
+        }
+
+        // Strategy 2: Look for executables that contain the tool name
+        let name_matches: Vec<_> = executables
+            .iter()
+            .filter(|exe| {
+                let path = std::path::Path::new(exe);
+                path.file_name()
+                    .and_then(|f| f.to_str())
+                    .map(|f| f.to_lowercase().contains(&tool_name.to_lowercase()))
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        // If there's exactly one match containing the tool name, use it
+        if name_matches.len() == 1 {
+            return Ok(name_matches[0].clone());
+        }
+
+        // Strategy 3: If there's only one executable total, use it
+        if executables.len() == 1 {
+            return Ok(executables[0].clone());
+        }
+
+        // No good match found, provide helpful error message
         let mut exe_list = executables.to_vec();
         exe_list.sort();
 
         bail!(
-            "No executable found with exact filename '{}'. Available executables:\n  {}",
+            "Could not determine which executable to use for '{}'. Available executables:\n  {}\n\nUse --bin to specify the correct binary path.",
             tool_name,
             exe_list.join("\n  ")
         );
