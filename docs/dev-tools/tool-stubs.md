@@ -170,7 +170,6 @@ Running the generation command produces an executable stub like:
 
 ```bash
 #!/usr/bin/env -S mise tool-stub
-# gh tool stub
 
 version = "latest"
 bin = "bin/gh"

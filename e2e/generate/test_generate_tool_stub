@@ -18,7 +18,6 @@ assert_succeed "test -x test-tool-basic"
 
 # Verify the generated stub contains expected content
 assert_contains "cat test-tool-basic" "#!/usr/bin/env -S mise tool-stub"
-assert_contains "cat test-tool-basic" "# test-tool-basic tool stub"
 assert_contains "cat test-tool-basic" 'version = "latest"'
 assert_contains "cat test-tool-basic" 'url = "https://httpbin.org/status/200"'
 
@@ -51,7 +50,7 @@ assert_succeed "mise generate tool-stub custom-platform-tool --platform-url 'my-
 
 # Test 8: Verify generated stub content is well-formed TOML
 echo '#!/usr/bin/env -S mise tool-stub
-# simple test stub
+
 version = "1.0.0"
 url = "https://httpbin.org/status/200"' >simple-stub
 chmod +x simple-stub
