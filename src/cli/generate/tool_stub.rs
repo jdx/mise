@@ -207,7 +207,6 @@ impl ToolStub {
 
         let mut content = vec![
             "#!/usr/bin/env -S mise tool-stub".to_string(),
-            format!("# {} tool stub", self.get_tool_name()),
             "".to_string(),
         ];
 
