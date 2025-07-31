@@ -1,5 +1,20 @@
 # Changelog
 
+## [2025.7.32](https://github.com/jdx/mise/compare/v2025.7.31..v2025.7.32) - 2025-07-31
+
+### 🚀 Features
+
+- **(tool-stubs)** Add human readable comments to stub sizes by [@jdx](https://github.com/jdx) in [#5845](https://github.com/jdx/mise/pull/5845)
+- **(tool-stubs)** improve binary path detection in tool stub generator by [@jdx](https://github.com/jdx) in [#5847](https://github.com/jdx/mise/pull/5847)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** support `AND` operator in semver by [@risu729](https://github.com/risu729) in [#5838](https://github.com/jdx/mise/pull/5838)
+- **(cli)** remove empty [platforms] section from generated tool stubs by [@jdx](https://github.com/jdx) in [#5844](https://github.com/jdx/mise/pull/5844)
+- **(tool-stubs)** remove comment line from tool stub generator by [@jdx](https://github.com/jdx) in [#5843](https://github.com/jdx/mise/pull/5843)
+- **(tool-stubs)** Remove latest version from tool stubs by [@jdx](https://github.com/jdx) in [#5846](https://github.com/jdx/mise/pull/5846)
+- **(tool-stubs)** allow -v flag to be passed through to tool stubs by [@jdx](https://github.com/jdx) in [#5848](https://github.com/jdx/mise/pull/5848)
+
 ## [2025.7.31](https://github.com/jdx/mise/compare/v2025.7.30..v2025.7.31) - 2025-07-29
 
 ### 🚀 Features
