@@ -61,7 +61,7 @@ The venv will need to be created manually with `python -m venv /path/to/venv` un
 
 If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` will use it to create virtual environments. Otherwise, it will use the built-in `python -m venv` command.
 
-Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_venv_create_args = ['--seed']` option.
+Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
 
 See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for more examples.
 
