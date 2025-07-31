@@ -198,7 +198,7 @@ _.path = 'scripts'
 
 ```toml
 [env]
-# Source this file after tools have defined environment variables
+# Define this path directory after tools have defined environment variables
 _.path = { path = ["{{env.GEM_HOME}}/bin"], tools = true }
 ```
 
