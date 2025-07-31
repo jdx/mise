@@ -139,7 +139,7 @@ the way `env._.file` works, you will likely need to post an issue there,
 not to mise since there is not much mise can do about the way that crate works.
 :::
 
-It supports:
+The `env._.file` directive supports:
 
 - A single file as a string or an object
 - Multiple files as an array of strings and objects
@@ -184,7 +184,7 @@ See [secrets](/environments/secrets) for ways to read encrypted files with `env.
 _.path = './bin'
 ```
 
-It supports:
+The `env._.path` directive supports:
 
 - A single path as a string or an object
 - Multiple paths as an array of strings and objects
@@ -236,7 +236,7 @@ The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/issues/
 for a potential alternative that would work with binaries or other script languages.
 :::
 
-It supports:
+The `env._.source` directive supports:
 
 - A single source as a string or an object
 - Multiple sources as an array of strings and objects
