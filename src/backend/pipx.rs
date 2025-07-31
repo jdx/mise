@@ -242,7 +242,7 @@ impl PIPXBackend {
                 url = url.replace("/json", "/simple");
             } else if !url.ends_with("/simple") {
                 // If it doesn't end with /simple, append it
-                url = format!("{}/simple", url);
+                url = format!("{url}/simple");
             }
         }
 
