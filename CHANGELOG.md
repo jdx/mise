@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.8.1](https://github.com/jdx/mise/compare/v2025.8.0..v2025.8.1) - 2025-08-01
+
+### 🐛 Bug Fixes
+
+- node gpg keys by [@jdx](https://github.com/jdx) in [#5866](https://github.com/jdx/mise/pull/5866)
+
 ## [2025.8.0](https://github.com/jdx/mise/compare/v2025.7.32..v2025.8.0) - 2025-08-01
 
 ### 🚀 Features
