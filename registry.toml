@@ -2745,6 +2745,9 @@ tridentctl.backends = [
 ]
 trivy.description = "Find vulnerabilities, misconfigurations, secrets, SBOM in containers, Kubernetes, code repositories, clouds and more"
 trivy.backends = ["aqua:aquasecurity/trivy", "asdf:zufardhiyaulhaq/asdf-trivy"]
+trunk.backends = ["aqua:trunk-io/launcher"]
+trunk.description = "Trunk is a comprehensive code quality tool that runs linters, formatters, and security scanners to help maintain high-quality codebases (https://trunk.io)"
+trunk.test = ["trunk --version", "trunk 1.3.4 --version"]
 tsuru.backends = [
     "ubi:tsuru/tsuru-client[exe=tsuru]",
     "asdf:virtualstaticvoid/asdf-tsuru"
