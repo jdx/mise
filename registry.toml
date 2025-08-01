@@ -213,10 +213,10 @@ babashka.backends = [
 babashka.test = ["bb --version", "babashka v{{version}}"]
 balena.aliases = ["balena-cli"]
 balena.backends = [
-    "ubi:balena-io/balena-cli[exe=balena]",
-    "asdf:boatkit-io/asdf-balena-cli"
+    "ubi:balena-io/balena-cli[extract_all=true,bin_path=bin]",
+    "asdf:jaredallard/asdf-balena-cli"
 ]
-# balena.test = ["balena -v", "{{version}}"] # times out on windows in CI
+balena.test = ["balena --version", "{{version}}"]
 bashbot.description = "A slack-bot written in golang for infrastructure/devops teams"
 bashbot.backends = [
     "aqua:mathew-fleisch/bashbot",
