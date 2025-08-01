@@ -20,11 +20,11 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset, install_state, is_outdated_version};
 use crate::ui::progress_report::SingleReport;
+use crate::{backend, dirs, env, file, hash, lock_file, plugins, versions_host};
 use crate::{
     cache::{CacheManager, CacheManagerBuilder},
     plugins::PluginEnum,
 };
-use crate::{dirs, env, file, hash, lock_file, plugins, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
 use console::style;
@@ -407,7 +407,7 @@ pub trait Backend: Debug + Send + Sync {
         }
     }
 
-    async fn warn_if_dependencies_missing(&self, config: &Arc<Config>) -> eyre::Result<()> {
+    async fn warn_if_dependencies_missing(&self) -> eyre::Result<()> {
         let deps = self
             .get_all_dependencies(false)?
             .into_iter()
@@ -416,8 +416,16 @@ pub trait Backend: Debug + Send + Sync {
             .collect::<HashSet<_>>();
         if !deps.is_empty() {
             trace!("Ensuring dependencies installed for {}", self.id());
-            let ts = config.get_tool_request_set().await?.filter_by_tool(deps);
-            let missing = ts.missing_tools(config).await;
+            let mut missing = Vec::new();
+            for dep in &deps {
+                if let Some(backend) = backend::get(&BackendArg::from(dep.clone())) {
+                    if backend.list_installed_versions().is_empty() {
+                        missing.push(dep.clone());
+                    }
+                } else {
+                    missing.push(dep.clone());
+                }
+            }
             if !missing.is_empty() {
                 warn_once!(
                     "missing dependency: {}",
@@ -466,6 +474,9 @@ pub trait Backend: Debug + Send + Sync {
                 return Ok(tv);
             }
         }
+
+        self.warn_if_dependencies_missing().await?;
+
         ctx.pr.set_message("install".into());
         let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
         self.create_install_dirs(&tv)?;
