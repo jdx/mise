@@ -108,71 +108,71 @@ impl Exec {
         }
 
         time!("exec");
-        self.exec(program, args, env)
+        exec_program(program, args, env)
     }
+}
 
-    #[cfg(all(not(test), unix))]
-    fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
-    where
-        T: IntoExecutablePath,
-        U: IntoIterator,
-        U::Item: Into<OsString>,
-    {
-        for (k, v) in env.iter() {
-            env::set_var(k, v);
-        }
-        let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
-        let program = program.to_executable();
-        let err = exec::Command::new(program.clone()).args(&args).exec();
-        bail!("{:?} {err}", program.to_string_lossy())
+#[cfg(all(not(test), unix))]
+pub fn exec_program<T, U>(program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
+where
+    T: IntoExecutablePath,
+    U: IntoIterator,
+    U::Item: Into<OsString>,
+{
+    for (k, v) in env.iter() {
+        env::set_var(k, v);
     }
+    let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    let program = program.to_executable();
+    let err = exec::Command::new(program.clone()).args(&args).exec();
+    bail!("{:?} {err}", program.to_string_lossy())
+}
 
-    #[cfg(all(windows, not(test)))]
-    fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
-    where
-        T: IntoExecutablePath,
-        U: IntoIterator,
-        U::Item: Into<OsString>,
-    {
-        let cwd = crate::dirs::CWD.clone().unwrap_or_default();
-        let program = program.to_executable();
-        let path = env.get(&*env::PATH_KEY).map(OsString::from);
-        let program = which::which_in(program, path, cwd)?;
-        let mut cmd = cmd::cmd(program, args);
-        for (k, v) in env.iter() {
-            cmd = cmd.env(k, v);
-        }
-
-        // Windows does not support exec in the same way as Unix,
-        // so we emulate it instead by not handling Ctrl-C and letting
-        // the child process deal with it instead.
-        win_exec::set_ctrlc_handler()?;
-
-        let res = cmd.unchecked().run()?;
-        match res.status.code() {
-            Some(0) => Ok(()),
-            Some(code) => Err(eyre!("command failed: exit code {}", code)),
-            None => Err(eyre!("command failed: terminated by signal")),
-        }
+#[cfg(all(windows, not(test)))]
+pub fn exec_program<T, U>(program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
+where
+    T: IntoExecutablePath,
+    U: IntoIterator,
+    U::Item: Into<OsString>,
+{
+    for (k, v) in env.iter() {
+        env::set_var(k, v);
     }
+    let cwd = crate::dirs::CWD.clone().unwrap_or_default();
+    let program = program.to_executable();
+    let path = env.get(&*env::PATH_KEY).map(OsString::from);
+    let program = which::which_in(program, path, cwd)?;
+    let cmd = cmd::cmd(program, args);
 
-    #[cfg(test)]
-    fn exec<T, U>(&self, program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
-    where
-        T: IntoExecutablePath,
-        U: IntoIterator,
-        U::Item: Into<OsString>,
-    {
-        let mut cmd = cmd::cmd(program, args);
-        for (k, v) in env.iter() {
-            cmd = cmd.env(k, v);
-        }
-        let res = cmd.unchecked().run()?;
-        match res.status.code() {
-            Some(0) => Ok(()),
-            Some(code) => Err(eyre!("command failed: exit code {}", code)),
-            None => Err(eyre!("command failed: terminated by signal")),
-        }
+    // Windows does not support exec in the same way as Unix,
+    // so we emulate it instead by not handling Ctrl-C and letting
+    // the child process deal with it instead.
+    win_exec::set_ctrlc_handler()?;
+
+    let res = cmd.unchecked().run()?;
+    match res.status.code() {
+        Some(0) => Ok(()),
+        Some(code) => Err(eyre!("command failed: exit code {}", code)),
+        None => Err(eyre!("command failed: terminated by signal")),
+    }
+}
+
+#[cfg(test)]
+pub fn exec_program<T, U>(program: T, args: U, env: BTreeMap<String, String>) -> Result<()>
+where
+    T: IntoExecutablePath,
+    U: IntoIterator,
+    U::Item: Into<OsString>,
+{
+    let mut cmd = cmd::cmd(program, args);
+    for (k, v) in env.iter() {
+        cmd = cmd.env(k, v);
+    }
+    let res = cmd.unchecked().run()?;
+    match res.status.code() {
+        Some(0) => Ok(()),
+        Some(code) => Err(eyre!("command failed: exit code {}", code)),
+        None => Err(eyre!("command failed: terminated by signal")),
     }
 }
 

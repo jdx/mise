@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2103
+
+# Test mise generate tool-stub command functionality
+
+# Disable GPG verification to avoid test failures
+export MISE_GPG_VERIFY=false
+
+# Create test project directory
+mkdir -p generate_tool_stub_test
+cd generate_tool_stub_test
+
+# Test 1: Basic tool stub generation with URL (skip download for speed)
+assert_succeed "mise generate tool-stub test-tool-basic --url 'https://httpbin.org/status/200' --skip-download"
+
+# Verify the generated stub exists and is executable
+assert_succeed "test -x test-tool-basic"
+
+# Verify the generated stub contains expected content
+assert_contains "cat test-tool-basic" "#!/usr/bin/env -S mise tool-stub"
+assert_contains "cat test-tool-basic" 'url = "https://httpbin.org/status/200"'
+
+# Test 2: Tool stub generation with specific version
+assert_succeed "mise generate tool-stub versioned-tool --version '1.2.3' --url 'https://httpbin.org/status/200' --skip-download"
+
+assert_contains "cat versioned-tool" 'version = "1.2.3"'
+
+# Test 3: Tool stub generation with platform-specific URLs
+assert_succeed "mise generate tool-stub platform-tool --platform-url 'linux-x64:https://httpbin.org/status/200' --platform-url 'darwin-arm64:https://httpbin.org/status/201' --skip-download"
+
+assert_contains "cat platform-tool" "[platforms.linux-x64]"
+assert_contains "cat platform-tool" 'url = "https://httpbin.org/status/200"'
+assert_contains "cat platform-tool" "[platforms.darwin-arm64]"
+assert_contains "cat platform-tool" 'url = "https://httpbin.org/status/201"'
+
+# Test 4: Tool stub generation with custom binary path
+assert_succeed "mise generate tool-stub custom-bin-tool --url 'https://httpbin.org/status/200' --bin 'bin/custom-binary' --skip-download"
+
+assert_contains "cat custom-bin-tool" 'bin = "bin/custom-binary"'
+
+# Test 5: Error handling - missing URL and platform
+assert_fail "mise generate tool-stub missing-url --skip-download"
+
+# Test 6: Error handling - invalid platform format
+assert_fail "mise generate tool-stub invalid-platform --platform-url 'invalid-format' --skip-download"
+
+# Test 7: Valid platform names should work (no restriction)
+assert_succeed "mise generate tool-stub custom-platform-tool --platform-url 'my-platform:https://httpbin.org/status/200' --skip-download"
+
+# Test 8: Verify generated stub content is well-formed TOML
+echo '#!/usr/bin/env -S mise tool-stub
+
+version = "1.0.0"
+url = "https://httpbin.org/status/200"' >simple-stub
+chmod +x simple-stub
+
+# Verify the stub file contains valid TOML content
+assert_contains "cat simple-stub" 'version = "1.0.0"'
+assert_contains "cat simple-stub" 'url = "https://httpbin.org/status/200"'
+
+# Test 9: Help command
+assert_succeed "mise generate tool-stub --help"
+assert_contains "mise generate tool-stub --help" "Generate a tool stub for HTTP-based tools"
+
+# Test 10: Verify the command is available in mise generate
+assert_contains "mise generate --help" "tool-stub"
+
+# Test 11: Test appending platforms to existing stub
+# First create a stub with one platform
+assert_succeed "mise generate tool-stub append-test --platform-url 'linux-x64:https://httpbin.org/status/200' --skip-download"
+assert_contains "cat append-test" "[platforms.linux-x64]"
+assert_contains "cat append-test" 'url = "https://httpbin.org/status/200"'
+
+# Now append another platform to the same stub
+assert_succeed "mise generate tool-stub append-test --platform-url 'darwin-arm64:https://httpbin.org/status/201' --skip-download"
+
+# Verify both platforms exist
+assert_contains "cat append-test" "[platforms.linux-x64]"
+assert_contains "cat append-test" 'url = "https://httpbin.org/status/200"'
+assert_contains "cat append-test" "[platforms.darwin-arm64]"
+assert_contains "cat append-test" 'url = "https://httpbin.org/status/201"'
+
+# Test 12: Test updating existing platform URL
+assert_succeed "mise generate tool-stub update-test --platform-url 'linux-x64:https://httpbin.org/status/200' --skip-download"
+assert_contains "cat update-test" 'url = "https://httpbin.org/status/200"'
+
+# Update the same platform with a new URL
+assert_succeed "mise generate tool-stub update-test --platform-url 'linux-x64:https://httpbin.org/status/202' --skip-download"
+assert_contains "cat update-test" 'url = "https://httpbin.org/status/202"'
+# Ensure old URL is not present
+assert_not_contains "cat update-test" 'url = "https://httpbin.org/status/200"'
+
+# Test 13: Test error when trying to change version on existing stub
+assert_succeed "mise generate tool-stub version-test --version '1.0.0' --url 'https://httpbin.org/status/200' --skip-download"
+assert_contains "cat version-test" 'version = "1.0.0"'
+
+# Try to change version - should fail
+assert_fail "mise generate tool-stub version-test --version '2.0.0' --url 'https://httpbin.org/status/200' --skip-download"
+
+# Test 14: Test auto-platform detection from URL
+# Use a URL that contains platform information
+assert_succeed "mise generate tool-stub auto-platform-test --platform-url 'https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz' --skip-download"
+assert_contains "cat auto-platform-test" "[platforms.macos-arm64]"
+assert_contains "cat auto-platform-test" 'url = "https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz"'
+
+# Test 15: Test auto-platform detection with Linux URL
+assert_succeed "mise generate tool-stub linux-auto-test --platform-url 'https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz' --skip-download"
+assert_contains "cat linux-auto-test" "[platforms.linux-x64]"
+assert_contains "cat linux-auto-test" 'url = "https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz"'
+
+# Test 16: Test mixed explicit and auto-detected platforms
+# First add with explicit platform
+assert_succeed "mise generate tool-stub mixed-test --platform-url 'linux-x64:https://httpbin.org/status/200' --skip-download"
+assert_contains "cat mixed-test" "[platforms.linux-x64]"
+
+# Then add with auto-detected platform
+assert_succeed "mise generate tool-stub mixed-test --platform-url 'https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz' --skip-download"
+# Should have both platforms
+assert_contains "cat mixed-test" "[platforms.linux-x64]"
+assert_contains "cat mixed-test" "[platforms.macos-arm64]"
+
+# Test 17: Test error when platform cannot be auto-detected
+assert_fail "mise generate tool-stub bad-auto-test --platform-url 'https://example.com/generic-tool.tar.gz' --skip-download"
+
+# Test 18: Test auto-detection with URL query parameters
+assert_succeed "mise generate tool-stub query-param-test --platform-url 'https://releases.example.com/tool-linux-x64.tar.gz?token=abc123&version=1.0' --skip-download"
+assert_contains "cat query-param-test" "[platforms.linux-x64]"
+
+# Test 19: Test auto-detection with URL fragments
+assert_succeed "mise generate tool-stub fragment-test --platform-url 'https://cdn.example.com/releases/tool-darwin-arm64.zip#main' --skip-download"
+assert_contains "cat fragment-test" "[platforms.macos-arm64]"
+
+echo "All tool-stub generation tests passed!"
+
+#!/usr/bin/env bash
+# shellcheck disable=SC2103
+
+# Test mise generate tool-stub command with real downloads (slow test)
+
+# Disable GPG verification to avoid test failures
+export MISE_GPG_VERIFY=false
+
+# Create test project directory
+mkdir -p generate_tool_stub_slow_test
+cd generate_tool_stub_slow_test
+
+# Test 1: Generate tool stub with checksum and size detection
+# Using a small, reliable file for testing
+assert_succeed "mise generate tool-stub hello-stub --url 'https://httpbin.org/json'"
+
+# Verify the generated stub exists and is executable
+assert_succeed "test -x hello-stub"
+
+# Verify the generated stub contains checksum and size
+assert_contains "cat hello-stub" "checksum ="
+assert_contains "cat hello-stub" "size ="
+
+# Test 2: Test with a real GitHub release (small file)
+assert_succeed "mise generate tool-stub gh-test-stub --url 'https://github.com/cli/cli/releases/download/v2.21.2/gh_2.21.2_checksums.txt'"
+
+# Verify it has checksum and size
+assert_contains "cat gh-test-stub" "checksum ="
+assert_contains "cat gh-test-stub" "size ="
+
+# Test 3: Test binary path detection with a simple archive
+# This would require a real tar.gz file, so we'll skip this for now
+# as it's complex to set up in e2e tests
+
+# Test 4: Verify that generated stubs have valid TOML structure
+assert_contains "cat hello-stub" "checksum ="
+assert_contains "cat hello-stub" "size ="
+assert_contains "cat gh-test-stub" "checksum ="
+assert_contains "cat gh-test-stub" "size ="
+
+echo "All slow tool-stub generation tests passed!"

@@ -36,7 +36,7 @@ use std::sync::LazyLock as Lazy;
 
 pub mod aqua;
 pub mod asdf;
-mod asset_detector;
+pub mod asset_detector;
 pub mod backend_type;
 pub mod cargo;
 pub mod dotnet;

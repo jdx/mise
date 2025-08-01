@@ -51,10 +51,10 @@ impl Backend for PIPXBackend {
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => {
-                let registry_url = self.get_registry_url()?;
+                let registry_url = Self::get_registry_url()?;
                 if registry_url.contains("/json") {
                     debug!("Fetching JSON for {}", package);
-                    let url = format!("https://pypi.org/pypi/{package}/json");
+                    let url = registry_url.replace("{}", &package);
                     let data: PypiPackage = HTTP_FETCH.json(url).await?;
                     let versions = data
                         .releases
@@ -66,16 +66,22 @@ impl Backend for PIPXBackend {
                     Ok(versions)
                 } else {
                     debug!("Fetching HTML for {}", package);
-                    let url = format!("https://pypi.org/simple/{package}/");
+                    let url = registry_url.replace("{}", &package);
                     let html = HTTP_FETCH.get_html(url).await?;
 
-                    let version_re = regex!(r#"href=["'].*?/([^/]+)\.tar\.gz["']"#);
+                    // PEP-0503
+                    let version_re = regex!(
+                        r#"href=["'][^"']*/([^/]+)\.tar\.gz(?:#(md5|sha1|sha224|sha256|sha384|sha512)=[0-9A-Fa-f]+)?["']"#
+                    );
+
                     let versions: Vec<String> = version_re
                         .captures_iter(&html)
                         .filter_map(|cap| {
                             let filename = cap.get(1)?.as_str();
                             let escaped_package = regex::escape(&package);
-                            let re_str = format!("^{escaped_package}-(.+)$");
+                            // PEP-503: normalize package names by replacing hyphens with character class that allows -, _, .
+                            let re_str = escaped_package.replace(r"\-", r"[\-_.]");
+                            let re_str = format!("^{re_str}-(.+)$");
                             let pkg_re = regex::Regex::new(&re_str).ok()?;
                             let pkg_version = pkg_re.captures(filename)?.get(1)?.as_str();
                             Some(pkg_version.to_string())
@@ -102,24 +108,28 @@ impl Backend for PIPXBackend {
                 this.latest_version_cache
                     .get_or_try_init_async(async || match this.tool_name().parse()? {
                         PipxRequest::Pypi(package) => {
-                            let registry_url = this.get_registry_url()?;
+                            let registry_url = Self::get_registry_url()?;
                             if registry_url.contains("/json") {
                                 debug!("Fetching JSON for {}", package);
-                                let url = format!("https://pypi.org/pypi/{package}/json");
+                                let url = registry_url.replace("{}", &package);
                                 let pkg: PypiPackage = HTTP_FETCH.json(url).await?;
                                 Ok(Some(pkg.info.version))
                             } else {
                                 debug!("Fetching HTML for {}", package);
-                                let url = format!("https://pypi.org/simple/{package}/");
+                                let url = registry_url.replace("{}", &package);
                                 let html = HTTP_FETCH.get_html(url).await?;
 
-                                let version_re = regex!(r#"href=["'].*?/([^/]+)\.tar\.gz["']"#);
+                                 // PEP-0503
+                                let version_re = regex!(r#"href=["'][^"']*/([^/]+)\.tar\.gz(?:#(md5|sha1|sha224|sha256|sha384|sha512)=[0-9A-Fa-f]+)?["']"#);
+
                                 let version = version_re
                                     .captures_iter(&html)
                                     .filter_map(|cap| {
                                         let filename = cap.get(1)?.as_str();
                                         let escaped_package = regex::escape(&package);
-                                        let re_str = format!("^{escaped_package}-(.+)$");
+                                        // PEP-503: normalize package names by replacing hyphens with character class that allows -, _, .
+                                        let re_str = escaped_package.replace(r"\-", r"[\-_.]");
+                                        let re_str = format!("^{re_str}-(.+)$");
                                         let pkg_re = regex::Regex::new(&re_str).ok()?;
                                         let pkg_version =
                                             pkg_re.captures(filename)?.get(1)?.as_str();
@@ -204,7 +214,43 @@ impl PIPXBackend {
         }
     }
 
-    fn get_registry_url(&self) -> eyre::Result<String> {
+    fn get_index_url() -> eyre::Result<String> {
+        let registry_url = Settings::get().pipx.registry_url.clone();
+
+        // Remove {} placeholders and trailing slashes
+        let mut url = registry_url
+            .replace("{}", "")
+            .trim_end_matches('/')
+            .to_string();
+
+        // Handle different URL formats and convert to simple format
+        if url.contains("pypi.org") {
+            // For pypi.org, convert any format to simple format
+            if url.contains("/pypi/") {
+                // Replace /pypi/*/json or /pypi/*/simple with /simple
+                let re = Regex::new(r"/pypi/[^/]*/(?:json|simple)$").unwrap();
+                url = re.replace(&url, "/simple").to_string();
+            } else if !url.ends_with("/simple") {
+                // If it's pypi.org but doesn't already end with /simple, make it /simple
+                let base_url = url.split("/simple").next().unwrap_or(&url);
+                url = format!("{}/simple", base_url.trim_end_matches('/'));
+            }
+        } else {
+            // For custom registries, ensure they end with /simple
+            if url.ends_with("/json") {
+                // Replace /json with /simple
+                url = url.replace("/json", "/simple");
+            } else if !url.ends_with("/simple") {
+                // If it doesn't end with /simple, append it
+                url = format!("{url}/simple");
+            }
+        }
+
+        debug!("Converted registry URL to index URL: {}", url);
+        Ok(url)
+    }
+
+    fn get_registry_url() -> eyre::Result<String> {
         let registry_url = Settings::get().pipx.registry_url.clone();
 
         debug!("Pipx registry URL: {}", registry_url);
@@ -268,6 +314,7 @@ impl PIPXBackend {
         cmd.with_pr(pr)
             .env("UV_TOOL_DIR", tv.install_path())
             .env("UV_TOOL_BIN_DIR", tv.install_path().join("bin"))
+            .env("UV_INDEX", Self::get_index_url()?)
             .envs(ts.env_with_path(config).await?)
             .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
@@ -289,6 +336,7 @@ impl PIPXBackend {
         cmd.with_pr(pr)
             .env("PIPX_HOME", tv.install_path())
             .env("PIPX_BIN_DIR", tv.install_path().join("bin"))
+            .env("PIP_INDEX_URL", Self::get_index_url()?)
             .envs(ts.env_with_path(config).await?)
             .prepend_path(ts.list_paths(config).await)?
             .prepend_path(vec![tv.install_path().join("bin")])?
