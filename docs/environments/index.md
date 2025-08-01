@@ -127,7 +127,6 @@ TOML table for the configuration of these directives.
 ### `env._.file`
 
 In `mise.toml`: `env._.file` can be used to specify a [dotenv](https://dotenv.org) file to load.
-It can be a string or array and uses relative or absolute paths:
 
 ```toml
 [env]
@@ -140,21 +139,68 @@ the way `env._.file` works, you will likely need to post an issue there,
 not to mise since there is not much mise can do about the way that crate works.
 :::
 
-Or set [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files in any
-directory.
+The `env._.file` directive supports:
 
-You can also use json or yaml files:
+- A single file as a string or an object
+- Multiple files as an array of strings and objects
+- Using relative or absolute paths
+- Using `dotenv`, `json`, or `yaml` file formats
+- The `redact` and `tools` options
 
 ```toml
 [env]
-_.file = '.env.json'
+_.file = '.env.yaml'
 ```
+
+```toml
+[env]
+# Load env from the dotenv file after tools have defined environment variables
+_.file = { path = ".env", tools = true }
+```
+
+```toml
+[env]
+_.file = [
+    # Load env from the json file relative to this config file
+    '.env.json',
+    # Load env from the dotenv file at an absolute path
+    '/User/bob/.env',
+    # Load env from the yaml file relative to this config file and redacts the values
+    { path = ".secrets.yaml", redact = true }
+]
+```
+
+You can set [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files in any
+directory.
 
 See [secrets](/environments/secrets) for ways to read encrypted files with `env._.file`.
 
 ### `env._.path`
 
-`PATH` is treated specially. It needs to be defined as a string/array in `mise.path`:
+`PATH` is treated specially. Use `env._.path` to add extra directories to the `PATH`, making any executables in those directories available in the shell without needing to type the full path:
+
+```toml
+[env]
+_.path = './bin'
+```
+
+The `env._.path` directive supports:
+
+- A single path as a string or an object
+- Multiple paths as an array of strings and objects
+- Using relative or absolute paths
+- The `tools` option
+
+```toml
+[env]
+_.path = 'scripts'
+```
+
+```toml
+[env]
+# Define this path directory after tools have defined environment variables
+_.path = { path = ["{{env.GEM_HOME}}/bin"], tools = true }
+```
 
 ```toml
 [env]
@@ -189,6 +235,36 @@ source ./script.sh
 The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/issues/1448)
 for a potential alternative that would work with binaries or other script languages.
 :::
+
+The `env._.source` directive supports:
+
+- A single source as a string or an object
+- Multiple sources as an array of strings and objects
+- Using relative or absolute paths
+- The `redact` and `tools` options
+
+```toml
+[env]
+_.source = 'source.sh'
+```
+
+```toml
+[env]
+# Source this file after tools have defined environment variables
+_.source = { path = "my/env.sh", tools = true }
+```
+
+```toml
+[env]
+_.source = [
+    # Sources the file relative to this config file
+    './scripts/base.sh',
+    # Sources a file at an absolute path
+    '/User/bob/env.sh',
+    # Sources the file relative to this config file and redacts the values
+    { path = ".secrets.sh", redact = true }
+]
+```
 
 ## Plugin-provided `env._` Directives
 

@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2103,SC2016
+
+export MISE_EXPERIMENTAL=1
+# Disable GPG verification to avoid test failures
+export MISE_GPG_VERIFY=false
+
+# Test tool stub with HTTP backend nested options
+# This test verifies that the tool stub correctly passes backend options to the HTTP backend
+
+# Create a test project directory
+mkdir -p tool_stub_http_test/bin
+cd tool_stub_http_test
+
+# Function to create and test a tool stub
+# Usage: test_tool_stub <stub_name> <toml_content>
+test_tool_stub() {
+	local stub_name="$1"
+	local toml_content="$2"
+
+	# Create the tool stub file
+	cat >"bin/$stub_name" <<EOF
+#!/usr/bin/env -S mise tool-stub
+$toml_content
+EOF
+	chmod +x "bin/$stub_name"
+
+	# Test the tool stub
+	assert_succeed "mise tool-stub bin/$stub_name"
+
+	# Clean up for next test
+	mise uninstall --all && mise cache clear
+}
+
+# Test 1: Basic HTTP backend with bin_path
+test_tool_stub "hello-world" '
+tool = "http:hello-tool-stub"
+version = "1.0.0"
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+bin_path = "hello-world-1.0.0/bin"
+postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world"'
+
+# Test 2: HTTP backend with platform-specific URLs and strip_components
+test_tool_stub "hello-platform" '
+tool = "http:hello-platform-stub"
+version = "1.0.0"
+bin = "hello-world"
+bin_path = "bin"
+postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/bin/hello-world"
+strip_components = 1
+
+[platforms.linux-amd64]
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+
+[platforms.darwin-arm64]
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"'
+
+# Test 3: HTTP backend with simple configuration
+test_tool_stub "hello-simple" '
+tool = "http:hello-simple-stub"
+version = "1.0.0"
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+strip_components = 1
+bin = "hello-world"
+bin_path = "bin"
+postinstall = "chmod +x $MISE_TOOL_INSTALL_PATH/bin/hello-world"'
+
+# Test 4: HTTP backend with simple configuration
+test_tool_stub "hello-world" '
+tool = "http:hello-world"
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+bin = "hello-world"'
+
+# Test 5: HTTP backend with simple configuration
+test_tool_stub "hello-world" '
+tool = "http:hello-world"
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+bin = "hello-world-1.0.0/bin/hello-world"'
+
+# Test 6: HTTP backend with simple configuration
+test_tool_stub "hello-world" '
+tool = "http:hello-world"
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+bin = "bin/hello-world"'
+
+# Test 7: HTTP backend with simple configuration
+test_tool_stub "hello-world" '
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+bin = "bin/hello-world"'
+
+# Test 8: HTTP backend with simple configuration
+test_tool_stub "hello-world" '
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"'
+
+test_tool_stub "hello-world" '
+[platforms.linux-amd64]
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+[platforms.darwin-arm64]
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"'

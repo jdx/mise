@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0 # for lastUpdated
-      - uses: jdx/mise-action@bfb9fa0b029db830a8c570757cee683df207a6c5 # v2
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
           install_args: bun
           cache: true

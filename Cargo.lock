@@ -3792,7 +3792,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.7.27"
+version = "2025.8.1"
 dependencies = [
  "async-backtrace",
  "async-trait",
@@ -3831,6 +3831,7 @@ dependencies = [
  "globset",
  "heck",
  "homedir",
+ "humansize",
  "indenter",
  "indexmap 2.10.0",
  "indicatif 0.18.0",

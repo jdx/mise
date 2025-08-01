@@ -1,5 +1,147 @@
 # Changelog
 
+## [2025.8.1](https://github.com/jdx/mise/compare/v2025.8.0..v2025.8.1) - 2025-08-01
+
+### 🐛 Bug Fixes
+
+- node gpg keys by [@jdx](https://github.com/jdx) in [#5866](https://github.com/jdx/mise/pull/5866)
+
+## [2025.8.0](https://github.com/jdx/mise/compare/v2025.7.32..v2025.8.0) - 2025-08-01
+
+### 🚀 Features
+
+- **(registry)** use npm backend for yarn by [@mrazauskas](https://github.com/mrazauskas) in [#5745](https://github.com/jdx/mise/pull/5745)
+- **(registry)** add codebuff tool by [@zacheryph](https://github.com/zacheryph) in [#5856](https://github.com/jdx/mise/pull/5856)
+
+### 🐛 Bug Fixes
+
+- **(go)** implement heuristic-based go module find logic by [@risu729](https://github.com/risu729) in [#5851](https://github.com/jdx/mise/pull/5851)
+- **(node)** Add NodeJS maintainer Antoine du Hamel's new GPG key by [@chadlwilson](https://github.com/chadlwilson) in [#5862](https://github.com/jdx/mise/pull/5862)
+- **(pipx)** align HTML backend with PEP 503 registry URL assignment by [@acesyde](https://github.com/acesyde) in [#5853](https://github.com/jdx/mise/pull/5853)
+- **(registry)** fix balena ubi backend options by [@risu729](https://github.com/risu729) in [#5861](https://github.com/jdx/mise/pull/5861)
+- **(registry)** add aqua backends to tools by [@risu729](https://github.com/risu729) in [#5863](https://github.com/jdx/mise/pull/5863)
+
+### 📚 Documentation
+
+- fix uv_venv_create_args reference for python by [@jasonraimondi](https://github.com/jasonraimondi) in [#5854](https://github.com/jdx/mise/pull/5854)
+- expand on env directive examples and formats by [@syhol](https://github.com/syhol) in [#5857](https://github.com/jdx/mise/pull/5857)
+
+### ◀️ Revert
+
+- Revert "docs: fix uv_venv_create_args reference for python" by [@jdx](https://github.com/jdx) in [#5859](https://github.com/jdx/mise/pull/5859)
+
+### New Contributors
+
+- @zacheryph made their first contribution in [#5856](https://github.com/jdx/mise/pull/5856)
+- @chadlwilson made their first contribution in [#5862](https://github.com/jdx/mise/pull/5862)
+- @jasonraimondi made their first contribution in [#5854](https://github.com/jdx/mise/pull/5854)
+
+## [2025.7.32](https://github.com/jdx/mise/compare/v2025.7.31..v2025.7.32) - 2025-07-31
+
+### 🚀 Features
+
+- **(tool-stubs)** Add human readable comments to stub sizes by [@jdx](https://github.com/jdx) in [#5845](https://github.com/jdx/mise/pull/5845)
+- **(tool-stubs)** improve binary path detection in tool stub generator by [@jdx](https://github.com/jdx) in [#5847](https://github.com/jdx/mise/pull/5847)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** support `AND` operator in semver by [@risu729](https://github.com/risu729) in [#5838](https://github.com/jdx/mise/pull/5838)
+- **(cli)** remove empty [platforms] section from generated tool stubs by [@jdx](https://github.com/jdx) in [#5844](https://github.com/jdx/mise/pull/5844)
+- **(tool-stubs)** remove comment line from tool stub generator by [@jdx](https://github.com/jdx) in [#5843](https://github.com/jdx/mise/pull/5843)
+- **(tool-stubs)** Remove latest version from tool stubs by [@jdx](https://github.com/jdx) in [#5846](https://github.com/jdx/mise/pull/5846)
+- **(tool-stubs)** allow -v flag to be passed through to tool stubs by [@jdx](https://github.com/jdx) in [#5848](https://github.com/jdx/mise/pull/5848)
+
+## [2025.7.31](https://github.com/jdx/mise/compare/v2025.7.30..v2025.7.31) - 2025-07-29
+
+### 🚀 Features
+
+- **(tool-stubs)** append to existing tool-stub files instead of overwriting by [@jdx](https://github.com/jdx) in [#5835](https://github.com/jdx/mise/pull/5835)
+- **(tool-stubs)** add auto-platform detection from URLs by [@jdx](https://github.com/jdx) in [#5836](https://github.com/jdx/mise/pull/5836)
+- Add sops.strict setting for non-strict decryption mode by [@pepicrft](https://github.com/pepicrft) in [#5378](https://github.com/jdx/mise/pull/5378)
+
+### 🐛 Bug Fixes
+
+- **(tool-stub)** use URL hash as version for HTTP backend with "latest" by [@jdx](https://github.com/jdx) in [#5828](https://github.com/jdx/mise/pull/5828)
+- **(tool-stubs)** fix -v and --help flags by [@jdx](https://github.com/jdx) in [#5829](https://github.com/jdx/mise/pull/5829)
+- **(tool-stubs)** use 'checksum' field instead of 'blake3' in generated stubs by [@jdx](https://github.com/jdx) in [#5834](https://github.com/jdx/mise/pull/5834)
+- dotnet SearchQueryService fallback by [@acesyde](https://github.com/acesyde) in [#5824](https://github.com/jdx/mise/pull/5824)
+- registry.toml - Specify sbt dependency on java by [@jatcwang](https://github.com/jatcwang) in [#5827](https://github.com/jdx/mise/pull/5827)
+
+### 🧪 Testing
+
+- remove has test which is failing by [@jdx](https://github.com/jdx) in [4aa9cc9](https://github.com/jdx/mise/commit/4aa9cc973acb1bc34df51f27333a226df3256b69)
+
+### New Contributors
+
+- @jatcwang made their first contribution in [#5827](https://github.com/jdx/mise/pull/5827)
+
+## [2025.7.30](https://github.com/jdx/mise/compare/v2025.7.29..v2025.7.30) - 2025-07-29
+
+### 🚀 Features
+
+- **(registry)** add amp by [@jahands](https://github.com/jahands) in [#5814](https://github.com/jdx/mise/pull/5814)
+
+### 🐛 Bug Fixes
+
+- **(tool-stubs)** fix error messages when it can't find the bin by [@jdx](https://github.com/jdx) in [#5817](https://github.com/jdx/mise/pull/5817)
+- misidentifying built-in backend as a plugin backend by [@syhol](https://github.com/syhol) in [#5822](https://github.com/jdx/mise/pull/5822)
+
+### 📚 Documentation
+
+- **(troubleshooting)** path limits on Windows by [@W1M0R](https://github.com/W1M0R) in [#5815](https://github.com/jdx/mise/pull/5815)
+
+## [2025.7.29](https://github.com/jdx/mise/compare/v2025.7.28..v2025.7.29) - 2025-07-28
+
+### 🐛 Bug Fixes
+
+- **(cli)** stable path env for exec on windows by [@W1M0R](https://github.com/W1M0R) in [#5790](https://github.com/jdx/mise/pull/5790)
+- **(tool-stubs)** platform-specific bin fields by [@jdx](https://github.com/jdx) in [#5812](https://github.com/jdx/mise/pull/5812)
+- tool-stub generation with archive downloads by [@jdx](https://github.com/jdx) in [#5811](https://github.com/jdx/mise/pull/5811)
+
+### 📦️ Dependency Updates
+
+- update jdx/mise-action digest to c37c932 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5784](https://github.com/jdx/mise/pull/5784)
+
+### New Contributors
+
+- @W1M0R made their first contribution in [#5790](https://github.com/jdx/mise/pull/5790)
+
+## [2025.7.28](https://github.com/jdx/mise/compare/v2025.7.27..v2025.7.28) - 2025-07-27
+
+### 🚀 Features
+
+- **(http)** show retry after for github rate limit by [@risu729](https://github.com/risu729) in [#5803](https://github.com/jdx/mise/pull/5803)
+- **(registry)** add carapace by [@jahands](https://github.com/jahands) in [#5804](https://github.com/jdx/mise/pull/5804)
+- **(registry)** add `hatch` by [@hasansezertasan](https://github.com/hasansezertasan) in [#5788](https://github.com/jdx/mise/pull/5788)
+- tool-stubs by [@jdx](https://github.com/jdx) in [#5795](https://github.com/jdx/mise/pull/5795)
+- used shared cache for http backend by [@jdx](https://github.com/jdx) in [#5808](https://github.com/jdx/mise/pull/5808)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** avoid unnecessary head requests in version resolution by [@risu729](https://github.com/risu729) in [#5800](https://github.com/jdx/mise/pull/5800)
+- **(toolset)** use join_paths for MISE_ADD_PATH by [@risu729](https://github.com/risu729) in [#5785](https://github.com/jdx/mise/pull/5785)
+- check lib64 directories for .disable-self-update file by [@jdx](https://github.com/jdx) in [#5809](https://github.com/jdx/mise/pull/5809)
+
+### 🚜 Refactor
+
+- **(aqua)** move alternative backend suggestions into validate by [@risu729](https://github.com/risu729) in [#5794](https://github.com/jdx/mise/pull/5794)
+
+### 📚 Documentation
+
+- **(tool-stubs)** added shebangs by [@jdx](https://github.com/jdx) in [2d37500](https://github.com/jdx/mise/commit/2d37500e309a61062fc0e821a38be98626176d5d)
+- **(tool-stubs)** corrected url syntax by [@jdx](https://github.com/jdx) in [32627be](https://github.com/jdx/mise/commit/32627bec8b3df5060ea9f93dc50003126585e572)
+- fix plugin-lua-modules docs to match the vfox lua_mod functions by [@syhol](https://github.com/syhol) in [#5792](https://github.com/jdx/mise/pull/5792)
+- fix http backend tool options example by [@roele](https://github.com/roele) in [#5802](https://github.com/jdx/mise/pull/5802)
+
+### 📦️ Dependency Updates
+
+- update taiki-e/install-action digest to 7fbb30f by [@renovate[bot]](https://github.com/renovate[bot]) in [#5786](https://github.com/jdx/mise/pull/5786)
+- pin actions/checkout action to 11bd719 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5783](https://github.com/jdx/mise/pull/5783)
+
+### New Contributors
+
+- @hasansezertasan made their first contribution in [#5788](https://github.com/jdx/mise/pull/5788)
+
 ## [2025.7.27](https://github.com/jdx/mise/compare/v2025.7.26..v2025.7.27) - 2025-07-24
 
 ### 🐛 Bug Fixes
