@@ -2747,7 +2747,7 @@ trivy.description = "Find vulnerabilities, misconfigurations, secrets, SBOM in c
 trivy.backends = ["aqua:aquasecurity/trivy", "asdf:zufardhiyaulhaq/asdf-trivy"]
 trunk.backends = ["npm:@trunkio/launcher"]
 trunk.description = "Trunk is a comprehensive code quality tool that runs linters, formatters, and security scanners to help maintain high-quality codebases (https://trunk.io)"
-trunk.test = ["trunk --version", "{{version}}"]
+trunk.test = ["trunk --help", "trunk [flags] [subcommand]"] # --version can't be used because we know the launcher version, but we get the binary version
 tsuru.backends = [
     "ubi:tsuru/tsuru-client[exe=tsuru]",
     "asdf:virtualstaticvoid/asdf-tsuru"
