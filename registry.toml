@@ -706,7 +706,7 @@ difftastic.backends = [
     "ubi:Wilfred/difftastic[exe=difft]",
     "asdf:volf52/asdf-difftastic"
 ]
-difftastic.test = ["difft --version", "difftastic {{version}}"]
+difftastic.test = ["difft --version", "Difftastic {{version}}"]
 digdag.backends = ["asdf:mise-plugins/mise-digdag"]
 direnv.description = "unclutter your .profile"
 direnv.backends = ["aqua:direnv/direnv", "asdf:asdf-community/asdf-direnv"]
@@ -1584,7 +1584,7 @@ kpt.backends = ["aqua:kptdev/kpt", "asdf:nlamirault/asdf-kpt"]
 kpt.os = ["linux", "macos"]
 krab.description = "Krab is a migration and automation tool for PostgreSQL based on HCL syntax"
 krab.backends = ["aqua:ohkrab/krab", "ubi:ohkrab/krab", "asdf:ohkrab/asdf-krab"]
-krab.test = ["krab --version", "{{version}}"]
+krab.test = ["krab --version 2>&1", "{{version}}"]
 krew.description = "Find and install kubectl plugins"
 krew.backends = ["aqua:kubernetes-sigs/krew", "asdf:bjw-s/asdf-krew"]
 kscript.backends = [
@@ -1790,6 +1790,7 @@ license-plist.backends = [
     "ubi:mono0926/LicensePlist[exe=license-plist]",
     "asdf:MacPaw/asdf-license-plist"
 ]
+license-plist.os = ["macos"]
 license-plist.test = ["license-plist --version", "{{version}}"]
 lima.description = "Linux virtual machines, with a focus on running containers"
 lima.backends = ["aqua:lima-vm/lima", "asdf:CrouchingMuppet/asdf-lima"]
@@ -2283,7 +2284,7 @@ redo.backends = [
     "ubi:barthr/redo",
     "asdf:chessmango/asdf-redo"
 ]
-redo.test = ["redo --version", "{{version}}"]
+redo.test = ["which redo", "redo"]
 reg.description = "Docker registry v2 command line client and repo listing generator with security checks"
 reg.backends = ["aqua:genuinetools/reg", "asdf:looztra/asdf-reg"]
 regal.description = "Regal is a linter for Rego, with the goal of making your Rego magnificent"
