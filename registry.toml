@@ -528,6 +528,7 @@ cocoapods.backends = ["asdf:mise-plugins/mise-cocoapods"]
 cocogitto.test = ["cog --version", "cog {{version}}"]
 cocogitto.description = "The Conventional Commits toolbox"
 cocogitto.backends = ["aqua:cocogitto/cocogitto"]
+codebuff.backends = ["npm:codebuff"]
 codefresh.backends = [
     "ubi:codefresh-io/cli[exe=codefresh]",
     "asdf:gurukulkarni/asdf-codefresh"
