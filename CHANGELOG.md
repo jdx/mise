@@ -1,5 +1,35 @@
 # Changelog
 
+## [2025.8.0](https://github.com/jdx/mise/compare/v2025.7.32..v2025.8.0) - 2025-08-01
+
+### 🚀 Features
+
+- **(registry)** use npm backend for yarn by [@mrazauskas](https://github.com/mrazauskas) in [#5745](https://github.com/jdx/mise/pull/5745)
+- **(registry)** add codebuff tool by [@zacheryph](https://github.com/zacheryph) in [#5856](https://github.com/jdx/mise/pull/5856)
+
+### 🐛 Bug Fixes
+
+- **(go)** implement heuristic-based go module find logic by [@risu729](https://github.com/risu729) in [#5851](https://github.com/jdx/mise/pull/5851)
+- **(node)** Add NodeJS maintainer Antoine du Hamel's new GPG key by [@chadlwilson](https://github.com/chadlwilson) in [#5862](https://github.com/jdx/mise/pull/5862)
+- **(pipx)** align HTML backend with PEP 503 registry URL assignment by [@acesyde](https://github.com/acesyde) in [#5853](https://github.com/jdx/mise/pull/5853)
+- **(registry)** fix balena ubi backend options by [@risu729](https://github.com/risu729) in [#5861](https://github.com/jdx/mise/pull/5861)
+- **(registry)** add aqua backends to tools by [@risu729](https://github.com/risu729) in [#5863](https://github.com/jdx/mise/pull/5863)
+
+### 📚 Documentation
+
+- fix uv_venv_create_args reference for python by [@jasonraimondi](https://github.com/jasonraimondi) in [#5854](https://github.com/jdx/mise/pull/5854)
+- expand on env directive examples and formats by [@syhol](https://github.com/syhol) in [#5857](https://github.com/jdx/mise/pull/5857)
+
+### ◀️ Revert
+
+- Revert "docs: fix uv_venv_create_args reference for python" by [@jdx](https://github.com/jdx) in [#5859](https://github.com/jdx/mise/pull/5859)
+
+### New Contributors
+
+- @zacheryph made their first contribution in [#5856](https://github.com/jdx/mise/pull/5856)
+- @chadlwilson made their first contribution in [#5862](https://github.com/jdx/mise/pull/5862)
+- @jasonraimondi made their first contribution in [#5854](https://github.com/jdx/mise/pull/5854)
+
 ## [2025.7.32](https://github.com/jdx/mise/compare/v2025.7.31..v2025.7.32) - 2025-07-31
 
 ### 🚀 Features
