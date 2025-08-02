@@ -1,0 +1,42 @@
+name: release-alpine
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run in dry-run mode (no actual changes)"
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: release-alpine-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
+
+env:
+  DRY_RUN: ${{ github.event_name == 'release' && '0' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.dry_run && '1' || '0')) || '1' }}
+  GITHUB_API_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  GH_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  bump-alpine:
+    runs-on: ubuntu-latest
+    container: ghcr.io/jdx/mise:alpine
+    timeout-minutes: 30
+    if: |
+      (github.event_name == 'release' && 
+       startsWith(github.event.release.tag_name, 'v') && 
+       endsWith(github.event.release.tag_name, '0')) ||
+      (github.event_name == 'workflow_dispatch')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - name: Bump APKBUILD
+        run: sudo -Eu packager ./scripts/release-alpine.sh
+        env:
+          ALPINE_GITLAB_TOKEN: ${{ secrets.ALPINE_GITLAB_TOKEN }}
+          ALPINE_KEY_ID: ${{ secrets.ALPINE_KEY_ID }}
+          ALPINE_PRIV_KEY: ${{ secrets.ALPINE_PRIV_KEY }}
+          ALPINE_PUB_KEY: ${{ secrets.ALPINE_PUB_KEY }}
