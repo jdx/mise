@@ -5,6 +5,7 @@ use std::fmt::Display;
 
 use indoc::formatdoc;
 
+use crate::path::{PathEscape, to_path_list};
 use crate::shell::{ActivateOptions, Shell};
 
 #[derive(Default)]
@@ -42,7 +43,7 @@ impl Shell for Xonsh {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.display();
+        let exe = to_path_list(&[PathEscape::Unix], &exe.to_string_lossy());
 
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude(&opts.prelude));
@@ -107,24 +108,26 @@ impl Shell for Xonsh {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
+        let (k, v) = self.escape_env_pair(k, v);
         formatdoc!(
             r#"
             from xonsh.built_ins import XSH
             XSH.env['{k}'] = '{v}'
         "#,
-            k = shell_escape::unix::escape(k.into()), // todo: drop illegal chars, not escape?
-            v = xonsh_escape_sq(v)
+            k = k,
+            v = v
         )
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
+        let (k, v) = self.escape_env_pair(k, v);
         formatdoc!(
             r#"
             from xonsh.built_ins import XSH
             XSH.env['{k}'].add('{v}', front=True)
         "#,
-            k = shell_escape::unix::escape(k.into()),
-            v = xonsh_escape_sq(v)
+            k = k,
+            v = v
         )
     }
 
@@ -136,6 +139,18 @@ impl Shell for Xonsh {
         "#,
             k = shell_escape::unix::escape(k.into()) // todo: drop illegal chars, not escape?
         )
+    }
+
+    fn escape_env_pair(&self, k: &str, v: &str) -> (String, String) {
+        let v = match k {
+            "PATH" => to_path_list(&[PathEscape::Unix], v),
+            _ => v.to_string(),
+        };
+
+        let k = shell_escape::unix::escape(k.into()); // todo: drop illegal chars, not escape?
+        let v = xonsh_escape_sq(&v);
+
+        (k.to_string(), v.to_string())
     }
 }
 

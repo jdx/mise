@@ -76,6 +76,7 @@ pub trait Shell: Display {
     fn set_env(&self, k: &str, v: &str) -> String;
     fn prepend_env(&self, k: &str, v: &str) -> String;
     fn unset_env(&self, k: &str) -> String;
+    fn escape_env_pair(&self, k: &str, v: &str) -> (String, String);
 
     fn format_activate_prelude(&self, prelude: &[ActivatePrelude]) -> String {
         prelude
