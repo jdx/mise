@@ -279,13 +279,11 @@ impl TaskScriptParser {
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing();
         let tera_ctx = task.tera_ctx(config).await?;
         // Don't insert env for spec-only parsing to avoid expensive environment rendering
-        let _scripts = scripts
-            .iter()
-            .map(|s| {
-                tera.render_str(s.trim(), &tera_ctx)
-                    .wrap_err_with(|| s.to_string())
-            })
-            .collect::<Result<Vec<String>>>()?;
+        // Render scripts to trigger spec collection, but discard the results
+        for script in scripts {
+            tera.render_str(script.trim(), &tera_ctx)
+                .wrap_err_with(|| script.to_string())?;
+        }
         let mut cmd = usage::SpecCommand::default();
         // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
         let arg_order = arg_order.lock().unwrap();
