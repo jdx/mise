@@ -322,13 +322,8 @@ impl UnifiedGitBackend {
 
         // Fall back to auto-detection
         let asset_name = self.auto_detect_asset(&available_assets)?;
-        let asset = release
-            .assets
-            .iter()
-            .find(|a| {
-                // First try exact match, then case-insensitive
-                a.name == asset_name || a.name.to_lowercase() == asset_name.to_lowercase()
-            })
+        let asset = self
+            .find_asset_case_insensitive(&release.assets, &asset_name, |a| &a.name)
             .ok_or_else(|| {
                 eyre::eyre!(
                     "Auto-detected asset not found: {}\nAvailable assets: {}",
@@ -383,14 +378,8 @@ impl UnifiedGitBackend {
 
         // Fall back to auto-detection
         let asset_name = self.auto_detect_asset(&available_assets)?;
-        let asset = release
-            .assets
-            .links
-            .iter()
-            .find(|a| {
-                // First try exact match, then case-insensitive
-                a.name == asset_name || a.name.to_lowercase() == asset_name.to_lowercase()
-            })
+        let asset = self
+            .find_asset_case_insensitive(&release.assets.links, &asset_name, |a| &a.name)
             .ok_or_else(|| {
                 eyre::eyre!(
                     "Auto-detected asset not found: {}\nAvailable assets: {}",
@@ -417,6 +406,24 @@ impl UnifiedGitBackend {
                 available_assets.join(", ")
             )
         })
+    }
+
+    fn find_asset_case_insensitive<'a, T>(
+        &self,
+        assets: &'a [T],
+        target_name: &str,
+        get_name: impl Fn(&T) -> &str,
+    ) -> Option<&'a T> {
+        // First try exact match, then case-insensitive
+        assets
+            .iter()
+            .find(|a| get_name(a) == target_name)
+            .or_else(|| {
+                let target_lower = target_name.to_lowercase();
+                assets
+                    .iter()
+                    .find(|a| get_name(a).to_lowercase() == target_lower)
+            })
     }
 
     fn matches_pattern(&self, asset_name: &str, pattern: &str) -> bool {
