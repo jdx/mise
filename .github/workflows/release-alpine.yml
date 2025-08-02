@@ -20,6 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     container: ghcr.io/jdx/mise:alpine
     timeout-minutes: 30
+    if: |
+      (github.event_name == 'workflow_run' && 
+       github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v') && 
+       endsWith(github.event.workflow_run.head_branch, '0')) ||
+      (github.event_name == 'workflow_dispatch')
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
