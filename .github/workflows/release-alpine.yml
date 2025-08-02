@@ -4,12 +4,18 @@ on:
   release:
     types: [released]
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run in dry-run mode (no actual changes)"
+        required: false
+        default: true
+        type: boolean
 
 concurrency:
   group: release-alpine-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
 
 env:
-  DRY_RUN: ${{ github.event_name == 'release' && '0' || '1' }}
+  DRY_RUN: ${{ github.event_name == 'release' && '0' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.dry_run == 'true' && '1' || '0') || '1') }}
   GITHUB_API_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
   GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
   GH_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
