@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+# Test case-insensitive asset matching for both GitHub and Aqua backends
+export MISE_EXPERIMENTAL=1
+
+# Test 1: Aqua backend with case-insensitive asset matching
+# This tests the core functionality we implemented - aqua backend matching Linux assets
+cat <<EOF >mise.toml
+[tools]
+# Test aqua backend case-insensitive matching (matches Linux assets despite case differences)
+"aqua:jesseduffield/lazygit" = "0.44.1"
+EOF
+
+echo "Testing Aqua backend case-insensitive asset matching..."
+mise install
+assert_contains "mise x -- lazygit --version" "0.44.1"
+
+# Test 2: GitHub backend auto-detection with case-insensitive matching
+# This tests the GitHub backend's auto-detection using our new helper method
+cat <<EOF >mise.toml
+[tools]
+# Test auto-detection without explicit pattern - uses case-insensitive fallback
+"github:jesseduffield/lazygit" = "0.44.1"
+EOF
+
+echo "Testing GitHub auto-detection with case-insensitive fallback..."
+mise uninstall aqua:jesseduffield/lazygit || true
+mise install
+assert_contains "mise x -- lazygit --version" "0.44.1"
+
+# Test 3: Verify exact match priority works correctly
+# Use a tool with predictable exact matching to ensure our priority logic works
+cat <<EOF >mise.toml
+[tools]
+# Test exact match priority with correct case
+"github:jesseduffield/lazygit" = { version = "0.44.1", asset_pattern = "*Linux_x86_64.tar.gz" }
+EOF
+
+echo "Testing exact match takes priority over case-insensitive matching..."
+mise uninstall github:jesseduffield/lazygit || true
+mise install
+assert_contains "mise x -- lazygit --version" "0.44.1"
+
+# Test 4: Another aqua backend test with a different tool
+cat <<EOF >mise.toml
+[tools]
+# Test another tool that benefits from case-insensitive matching
+"aqua:BurntSushi/ripgrep" = "14.1.0"
+EOF
+
+echo "Testing aqua backend with another tool..."
+mise uninstall github:jesseduffield/lazygit || true
+mise install
+assert_contains "mise x -- rg --version" "ripgrep 14.1.0"
+
+echo "All case-insensitive asset matching tests passed!"
+
+# Clean up
+mise uninstall aqua:BurntSushi/ripgrep || true

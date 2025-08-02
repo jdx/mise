@@ -22,13 +22,13 @@ mod path;
 mod source;
 mod venv;
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct EnvDirectiveOptions {
     pub(crate) tools: bool,
     pub(crate) redact: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum EnvDirective {
     /// simple key/value pair
     Val(String, String, EnvDirectiveOptions),
