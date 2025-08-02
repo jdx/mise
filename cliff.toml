@@ -68,7 +68,8 @@ footer = """
 trim = true
 postprocessors = [
   { pattern = '\$REPO', replace = "https://github.com/jdx/mise" },
-  { pattern = "'(aqua|github|gitlab|ubi):([^/]+/[^']+)'", replace = "'[$1:$2](https://github.com/$2)'" },
+  { pattern = '\(gitlab:([^/\)]+/[^\)]+)\)', replace = "([gitlab:$1](https://gitlab.com/$1))" },
+  { pattern = '\((aqua|github|ubi):([^/\)]+/[^\)]+)\)', replace = "([$1:$2](https://github.com/$2))" },
 ]
 
 [git]
