@@ -103,13 +103,15 @@ All commit messages and PR titles MUST follow conventional commit format:
 - `test:` - Testing changes
 - `chore:` - Maintenance tasks
 - `chore(deps):` - Dependency updates
+- `registry:` - New tool additions to the registry (no scope needed)
 
-**Common Scopes:** `registry`, `aqua`, `cli`, `config`, `backend`, `tool`, `env`, `task`, `api`, `ui`, `core`, `deps`, `schema`, `doctor`, `shim`, `security`
+**Common Scopes:** `aqua`, `cli`, `config`, `backend`, `tool`, `env`, `task`, `api`, `ui`, `core`, `deps`, `schema`, `doctor`, `shim`, `security`
 
 **Examples:**
 - `feat(cli): add new command for tool management`
 - `fix(config): resolve parsing issue with nested tables`
 - `test(e2e): add tests for tool installation`
+- `registry: add trunk metalinter (#5875)` - Adding new tool to registry
 
 ### Pre-commit Process
 1. Run `mise run lint-fix` and `git add` any lint fixes before committing
