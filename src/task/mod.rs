@@ -167,10 +167,12 @@ impl Task {
                     .or_else(|| regex!(r"^(#|//|::)MISE ([a-z_]+=.+)$").captures(line))
             })
             .map(|captures| captures.extract().1)
-            .flat_map(|[_, toml]| {
+            .map(|[_, toml]| {
                 toml.parse::<toml::Value>()
-                    .map_err(|e| debug!("failed to parse toml: {e}"))
+                    .map_err(|e| eyre::eyre!("failed to parse task header TOML '{}': {}", toml, e))
             })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
             .flatten()
             .fold(toml::Table::new(), |mut map, (key, value)| {
@@ -192,7 +194,7 @@ impl Task {
         task.depends = p.parse_array("depends").unwrap_or_default();
         task.depends_post = p.parse_array("depends_post").unwrap_or_default();
         task.wait_for = p.parse_array("wait_for").unwrap_or_default();
-        task.env = p.parse_env("env").unwrap_or_default();
+        task.env = p.parse_env("env")?.unwrap_or_default();
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
         task.raw = p.parse_bool("raw").unwrap_or_default();
@@ -783,5 +785,36 @@ mod tests {
         for (root, path) in test_cases {
             assert!(name_from_path(root, path).is_err())
         }
+    }
+
+    #[tokio::test]
+    async fn test_from_path_invalid_toml() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("test_task");
+
+        // Create a task file with invalid TOML in the header
+        fs::write(
+            &task_path,
+            r#"#!/bin/bash
+# mise description="test task"
+# mise env={invalid=toml=here}
+echo "hello world"
+"#,
+        )
+        .unwrap();
+
+        let result = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path()).await;
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("failed to parse task header TOML")
+        );
     }
 }

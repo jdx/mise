@@ -4,6 +4,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, de};
 
+use crate::Result;
 use crate::config::config_file::mise_toml::EnvList;
 
 pub struct TomlParser<'a> {
@@ -53,11 +54,15 @@ impl<'a> TomlParser<'a> {
             })
     }
 
-    pub fn parse_env(&self, key: &str) -> Option<EnvList> {
-        self.table.get(key).and_then(|value| {
-            let env_str = toml::to_string(value).ok()?;
-            toml::from_str::<EnvList>(&env_str).ok()
-        })
+    pub fn parse_env(&self, key: &str) -> Result<Option<EnvList>> {
+        self.table
+            .get(key)
+            .map(|value| {
+                let env_str = toml::to_string(value)?;
+                toml::from_str::<EnvList>(&env_str)
+                    .map_err(|e| eyre::eyre!("failed to parse env: {}", e))
+            })
+            .transpose()
     }
 }
 
@@ -163,6 +168,7 @@ mod tests {
     #[test]
     fn test_deserialize_arr_invalid_mixed_types() {
         #[derive(Debug, Deserialize)]
+        #[allow(dead_code)]
         struct TestStruct {
             #[serde(deserialize_with = "deserialize_arr")]
             files: Vec<String>,
@@ -183,6 +189,7 @@ mod tests {
     #[test]
     fn test_deserialize_arr_invalid_boolean() {
         #[derive(Debug, Deserialize)]
+        #[allow(dead_code)]
         struct TestStruct {
             #[serde(deserialize_with = "deserialize_arr")]
             paths: Vec<String>,
@@ -203,8 +210,8 @@ mod tests {
     #[test]
     fn test_deserialize_arr_invalid_float() {
         #[derive(Debug, Deserialize)]
+        #[allow(dead_code)]
         struct TestStruct {
-            #[allow(dead_code)]
             #[serde(deserialize_with = "deserialize_arr")]
             sources: Vec<String>,
         }
@@ -219,5 +226,27 @@ mod tests {
                 .contains("array element at index 1 is not a string")
         );
         assert!(error.to_string().contains("45.6"));
+    }
+
+    #[test]
+    fn test_parse_env_invalid_toml() {
+        let toml = r#"env = { invalid = [1, 2, 3] }"#;
+        let table = toml::from_str(toml).unwrap();
+        let parser = TomlParser::new(&table);
+        let result = parser.parse_env("env");
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("failed to parse env"));
+    }
+
+    #[test]
+    fn test_parse_env_valid_toml() {
+        let toml = r#"env = { TEST_VAR = "test_value" }"#;
+        let table = toml::from_str(toml).unwrap();
+        let parser = TomlParser::new(&table);
+        let result = parser.parse_env("env");
+        assert!(result.is_ok());
+        let env_list = result.unwrap().unwrap();
+        assert!(!env_list.is_empty());
     }
 }
