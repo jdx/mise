@@ -480,6 +480,10 @@ clarinet.test = ["clarinet --version", "clarinet {{version}}"]
 claude.aliases = ["claude-code"]
 claude.backends = ["npm:@anthropic-ai/claude-code"]
 claude.test = ["claude --version", "{{version}} (Claude Code)"]
+claude-squad.description = "Manage multiple AI agents like Claude Code, Aider, Codex, and Amp. 10x your productivity"
+claude-squad.backends = ["aqua:smtg-ai/claude-squad", "ubi:/smtg-ai/claude-squad"]
+claude-squad.test = ["claude-squad version", """claude-squad version {{version}}
+https://github.com/smtg-ai/claude-squad/releases/tag/v{{version}}"""]
 cli53.description = "Command line tool for Amazon Route 53"
 cli53.backends = ["aqua:barnybug/cli53"]
 cli53.test = ["cli53 --version", "cli53 version {{version}}"]
