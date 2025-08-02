@@ -676,9 +676,7 @@ impl<'de> serde::Deserialize<'de> for TaskEnvList {
                                 }
                             }
                             _ => {
-                                return Err(de::Error::custom(format!(
-                                    "Unknown directive: {key}"
-                                )));
+                                return Err(de::Error::custom(format!("Unknown directive: {key}")));
                             }
                         }
                     } else {
