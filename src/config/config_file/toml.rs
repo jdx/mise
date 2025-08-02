@@ -130,8 +130,7 @@ where
                     }
                     None => {
                         return Err(de::Error::custom(format!(
-                            "array element at index {} is not a string: {:?}",
-                            index, element
+                            "array element at index {index} is not a string: {element:?}"
                         )));
                     }
                 }
