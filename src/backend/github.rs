@@ -322,11 +322,13 @@ impl UnifiedGitBackend {
 
         // Fall back to auto-detection
         let asset_name = self.auto_detect_asset(&available_assets)?;
-        let asset_name_lower = asset_name.to_lowercase();
         let asset = release
             .assets
-            .into_iter()
-            .find(|a| a.name.to_lowercase() == asset_name_lower)
+            .iter()
+            .find(|a| {
+                // First try exact match, then case-insensitive
+                a.name == asset_name || a.name.to_lowercase() == asset_name.to_lowercase()
+            })
             .ok_or_else(|| {
                 eyre::eyre!(
                     "Auto-detected asset not found: {}\nAvailable assets: {}",
@@ -335,7 +337,7 @@ impl UnifiedGitBackend {
                 )
             })?;
 
-        Ok(asset.browser_download_url)
+        Ok(asset.browser_download_url.clone())
     }
 
     async fn resolve_gitlab_asset_url(
@@ -381,12 +383,14 @@ impl UnifiedGitBackend {
 
         // Fall back to auto-detection
         let asset_name = self.auto_detect_asset(&available_assets)?;
-        let asset_name_lower = asset_name.to_lowercase();
         let asset = release
             .assets
             .links
-            .into_iter()
-            .find(|a| a.name.to_lowercase() == asset_name_lower)
+            .iter()
+            .find(|a| {
+                // First try exact match, then case-insensitive
+                a.name == asset_name || a.name.to_lowercase() == asset_name.to_lowercase()
+            })
             .ok_or_else(|| {
                 eyre::eyre!(
                     "Auto-detected asset not found: {}\nAvailable assets: {}",
@@ -395,7 +399,7 @@ impl UnifiedGitBackend {
                 )
             })?;
 
-        Ok(asset.direct_asset_url)
+        Ok(asset.direct_asset_url.clone())
     }
 
     fn auto_detect_asset(&self, available_assets: &[String]) -> Result<String> {

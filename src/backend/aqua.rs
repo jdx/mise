@@ -328,7 +328,10 @@ impl AquaBackend {
         let asset = gh_release
             .assets
             .iter()
-            .find(|a| asset_strs_lower.contains(&a.name.to_lowercase()))
+            .find(|a| {
+                // First try exact match, then case-insensitive
+                asset_strs.contains(&a.name) || asset_strs_lower.contains(&a.name.to_lowercase())
+            })
             .wrap_err_with(|| {
                 format!(
                     "no asset found: {}\nAvailable assets:\n{}",
