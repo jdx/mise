@@ -1,14 +1,12 @@
 name: release-alpine
 
 on:
-  workflow_run:
-    workflows: ["release"]
-    types:
-      - completed
+  release:
+    types: [released]
   workflow_dispatch:
 
 concurrency:
-  group: release-alpine-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
+  group: release-alpine-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
 
 env:
   GITHUB_API_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
@@ -21,10 +19,9 @@ jobs:
     container: ghcr.io/jdx/mise:alpine
     timeout-minutes: 30
     if: |
-      (github.event_name == 'workflow_run' && 
-       github.event.workflow_run.conclusion == 'success' &&
-       startsWith(github.event.workflow_run.head_branch, 'v') && 
-       endsWith(github.event.workflow_run.head_branch, '0')) ||
+      (github.event_name == 'release' && 
+       startsWith(github.event.release.tag_name, 'v') && 
+       endsWith(github.event.release.tag_name, '0')) ||
       (github.event_name == 'workflow_dispatch')
     steps:
       - name: Checkout repository
