@@ -244,6 +244,8 @@ impl EnvResults {
                     let env_path = env.get(&*env::PATH_KEY).cloned().unwrap_or_default().0;
                     let mut env_path: PathEnv = env_path.parse()?;
                     env_path.add(path);
+                    // Use None as source for computed PATH values since they're derived from
+                    // path directives rather than directly set from config files
                     env.insert(env::PATH_KEY.to_string(), (env_path.to_string(), None));
                 }
                 EnvDirective::File(input, _opts) => {
