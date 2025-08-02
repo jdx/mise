@@ -140,13 +140,12 @@ impl TasksLs {
     async fn display_usage(
         &self,
         config: &Arc<Config>,
-        ts: &Toolset,
+        _ts: &Toolset,
         tasks: Vec<Task>,
     ) -> Result<()> {
         let mut usage = usage::Spec::default();
         for task in tasks {
-            let env = task.render_env(config, ts).await?;
-            let (mut task_spec, _) = task.parse_usage_spec(config, None, &env).await?;
+            let mut task_spec = task.parse_usage_spec_for_display(config).await?;
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
             }

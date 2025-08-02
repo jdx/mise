@@ -43,19 +43,18 @@ enum TaskDocsStyle {
 impl TaskDocs {
     pub async fn run(self) -> eyre::Result<()> {
         let config = Config::get().await?;
-        let ts = config.get_toolset().await?;
         let dir = dirs::CWD.as_ref().unwrap();
         let tasks = config::load_tasks_in_dir(&config, dir, &config.config_files).await?;
         let mut out = vec![];
         for task in tasks.iter().filter(|t| !t.hide) {
-            out.push(task.render_markdown(&config, ts, dir).await?);
+            out.push(task.render_markdown(&config).await?);
         }
         if let Some(output) = &self.output {
             if self.multi {
                 if output.is_dir() {
                     for (i, task) in tasks.iter().filter(|t| !t.hide).enumerate() {
                         let path = output.join(format!("{i}.md"));
-                        file::write(&path, &task.render_markdown(&config, ts, dir).await?)?;
+                        file::write(&path, &task.render_markdown(&config).await?)?;
                     }
                 } else {
                     return Err(eyre::eyre!(
