@@ -354,6 +354,24 @@ impl Task {
         Ok((depends, depends_post))
     }
 
+    fn populate_spec_metadata(&self, spec: &mut usage::Spec) {
+        spec.name = self.display_name.clone();
+        spec.bin = self.display_name.clone();
+        if spec.cmd.help.is_none() {
+            spec.cmd.help = Some(self.description.clone());
+        }
+        spec.cmd.name = self.display_name.clone();
+        spec.cmd.aliases = self.aliases.clone();
+        if spec.cmd.before_help.is_none()
+            && spec.cmd.before_help_long.is_none()
+            && !self.depends.is_empty()
+        {
+            spec.cmd.before_help_long =
+                Some(format!("- Depends: {}", self.depends.iter().join(", ")));
+        }
+        spec.cmd.usage = spec.cmd.usage();
+    }
+
     pub async fn parse_usage_spec(
         &self,
         config: &Arc<Config>,
@@ -376,22 +394,29 @@ impl Task {
                 .await?;
             (spec, scripts)
         };
-        spec.name = self.display_name.clone();
-        spec.bin = self.display_name.clone();
-        if spec.cmd.help.is_none() {
-            spec.cmd.help = Some(self.description.clone());
-        }
-        spec.cmd.name = self.display_name.clone();
-        spec.cmd.aliases = self.aliases.clone();
-        if spec.cmd.before_help.is_none()
-            && spec.cmd.before_help_long.is_none()
-            && !self.depends.is_empty()
-        {
-            spec.cmd.before_help_long =
-                Some(format!("- Depends: {}", self.depends.iter().join(", ")));
-        }
-        spec.cmd.usage = spec.cmd.usage();
+        self.populate_spec_metadata(&mut spec);
         Ok((spec, scripts))
+    }
+
+    /// Parse usage spec for display purposes without expensive environment rendering
+    pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
+        let dir = self.dir(config).await?;
+        let mut spec = if let Some(file) = &self.file {
+            usage::Spec::parse_script(file)
+                .inspect_err(|e| {
+                    warn!(
+                        "failed to parse task file {} with usage: {e:?}",
+                        file::display_path(file)
+                    )
+                })
+                .unwrap_or_default()
+        } else {
+            TaskScriptParser::new(dir)
+                .parse_run_scripts_for_spec_only(config, self, self.run())
+                .await?
+        };
+        self.populate_spec_metadata(&mut spec);
+        Ok(spec)
     }
 
     pub async fn render_run_scripts_with_args(
@@ -422,16 +447,8 @@ impl Task {
         }
     }
 
-    pub async fn render_markdown(
-        &self,
-        config: &Arc<Config>,
-        ts: &Toolset,
-        dir: &Path,
-    ) -> Result<String> {
-        let env = self.render_env(config, ts).await?;
-        let (spec, _) = self
-            .parse_usage_spec(config, Some(dir.to_path_buf()), &env)
-            .await?;
+    pub async fn render_markdown(&self, config: &Arc<Config>) -> Result<String> {
+        let spec = self.parse_usage_spec_for_display(config).await?;
         let ctx = usage::docs::markdown::MarkdownRenderer::new(spec)
             .with_replace_pre_with_code_fences(true)
             .with_header_level(2);
