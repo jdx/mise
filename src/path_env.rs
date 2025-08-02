@@ -25,15 +25,8 @@ impl PathEnv {
     }
 
     pub fn add(&mut self, path: PathBuf) {
-        let path_str = path.to_string_lossy();
-        if path_str.contains(':') {
-            // This is a PATH string, split it
-            for part in split_paths(&path_str.as_ref()) {
-                self.mise.push(part);
-            }
-        } else {
-            // This is an individual path
-            self.mise.push(path);
+        for part in split_paths(&path) {
+            self.mise.push(part);
         }
     }
 
