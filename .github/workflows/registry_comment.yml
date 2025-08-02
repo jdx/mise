@@ -28,3 +28,4 @@ jobs:
             - New asdf plugins are not accepted
             - Tools may be rejected if they are not notable
             - A test is required in `registry.toml`
+            - Commit message should look like: `registry: add [TOOL] ([FULL])`, e.g. `registry: add rg (aqua:BurntSushi/ripgrep)`
