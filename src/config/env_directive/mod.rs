@@ -244,7 +244,10 @@ impl EnvResults {
                     let env_path = env.get(&*env::PATH_KEY).cloned().unwrap_or_default().0;
                     let mut env_path: PathEnv = env_path.parse()?;
                     env_path.add(path);
-                    env.insert(env::PATH_KEY.to_string(), (env_path.to_string(), None));
+                    env.insert(
+                        env::PATH_KEY.to_string(),
+                        (env_path.to_string(), Some(source.clone())),
+                    );
                 }
                 EnvDirective::File(input, _opts) => {
                     let files = Self::file(
