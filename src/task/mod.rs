@@ -540,25 +540,36 @@ impl Task {
         }
 
         // Convert task env directives to (EnvDirective, PathBuf) pairs
+        // Use config_root if available, otherwise use config_source
+        let source_path = self.config_root.as_ref().unwrap_or(&self.config_source);
         let env_directives = self
             .env
             .0
             .iter()
-            .map(|directive| (directive.clone(), self.config_source.clone()))
+            .map(|directive| (directive.clone(), source_path.clone()))
             .collect();
 
         // Resolve environment directives using the same system as global env
+        // Enable tools to ensure directives with tools:true are processed
         let env_results = EnvResults::resolve(
             config,
             tera_ctx.clone(),
             &env,
             env_directives,
-            EnvResolveOptions::default(),
+            EnvResolveOptions {
+                vars: false,
+                tools: true,
+            },
         )
         .await?;
 
         // Apply the resolved environment variables
         env.extend(env_results.env.into_iter().map(|(k, (v, _))| (k, v)));
+
+        // Remove environment variables that were explicitly unset
+        for key in &env_results.env_remove {
+            env.remove(key);
+        }
 
         Ok(env)
     }
