@@ -541,7 +541,6 @@ impl Task {
     }
 
     pub async fn render_env(&self, config: &Arc<Config>, ts: &Toolset) -> Result<EnvMap> {
-        let _tera = get_tera(self.config_root.as_deref());
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         let mut env = ts.full_env(config).await?;
         if let Some(root) = &config.project_root {
