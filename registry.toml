@@ -144,6 +144,9 @@ atlas.description = "A modern tool for managing database schemas"
 atlas.backends = ["aqua:ariga/atlas", "asdf:komi1230/asdf-atlas"]
 atmos.description = "Workflow automation tool for DevOps. Keep configuration DRY with hierarchical imports of configurations, inheritance, and WAY more. Native support for Terraform and Helmfile"
 atmos.backends = ["aqua:cloudposse/atmos", "asdf:cloudposse/asdf-atmos"]
+atuin.description = "✨ Magical shell history"
+atuin.backends = ["aqua:atuinsh/atuin", "ubi:atuinsh/atuin"]
+atuin.test = ["atuin --version", "atuin {{version}}"]
 auto-doc.backends = [
     "ubi:tj-actions/auto-doc",
     "asdf:mise-plugins/mise-auto-doc"
