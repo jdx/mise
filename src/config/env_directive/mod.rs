@@ -82,9 +82,9 @@ impl Display for EnvDirective {
         match self {
             EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
             EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
-            EnvDirective::File(path, _) => write!(f, "dotenv {}", display_path(path)),
-            EnvDirective::Path(path, _) => write!(f, "path_add {}", display_path(path)),
-            EnvDirective::Source(path, _) => write!(f, "source {}", display_path(path)),
+            EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
+            EnvDirective::Path(path, _) => write!(f, "_.path = \"{}\"", display_path(path)),
+            EnvDirective::Source(path, _) => write!(f, "_.source = \"{}\"", display_path(path)),
             EnvDirective::Module(name, _, _) => write!(f, "module {name}"),
             EnvDirective::PythonVenv {
                 path,

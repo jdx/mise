@@ -91,6 +91,28 @@ assert_contains "mise run test-env-types" "STRING_VAR=test_string"
 # false values should unset the variable, so BOOL_FALSE_VAR should not be present
 assert_not_contains "mise run test-env-types" "BOOL_FALSE_VAR"
 
+# Test 7: Verify task info shows correct directive syntax
+cat <<EOF >mise.toml
+[tasks.test-info-display]
+run = 'echo "testing info display"'
+[tasks.test-info-display.env]
+TEST_VAR = "test_value"
+_.file = ".env"
+_.path = "./custom_bin"
+_.source = "env_source.sh"
+EOF
+echo "Testing task info directive display..."
+assert_contains "mise tasks info test-info-display" '_.file = ".env"'
+assert_contains "mise tasks info test-info-display" '_.path = "./custom_bin"'
+assert_contains "mise tasks info test-info-display" '_.source = "env_source.sh"'
+assert_contains "mise tasks info test-info-display" 'TEST_VAR=test_value'
+
+# Test 8: Verify task info JSON output shows correct directive syntax
+assert_contains "mise tasks info test-info-display --json" '"_.file = \".env\""'
+assert_contains "mise tasks info test-info-display --json" '"_.path = \"./custom_bin\""'
+assert_contains "mise tasks info test-info-display --json" '"_.source = \"env_source.sh\""'
+assert_contains "mise tasks info test-info-display --json" '"TEST_VAR=test_value"'
+
 echo "All task environment directive tests passed!"
 
 # Clean up
