@@ -5,6 +5,7 @@ use std::fmt::Display;
 use indoc::formatdoc;
 
 use crate::config::Settings;
+use crate::path::{PathEscape, to_path_list};
 use crate::shell::bash::Bash;
 use crate::shell::{ActivateOptions, Shell};
 
@@ -15,7 +16,8 @@ impl Shell for Zsh {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.to_string_lossy();
+        let exe = to_path_list(&[PathEscape::Unix], &exe.to_string_lossy());
+
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude(&opts.prelude));
 
@@ -106,11 +108,15 @@ impl Shell for Zsh {
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
-        format!("export {k}=\"{v}:${k}\"\n")
+        Bash::default().prepend_env(k, v)
     }
 
     fn unset_env(&self, k: &str) -> String {
         Bash::default().unset_env(k)
+    }
+
+    fn escape_env_pair(&self, k: &str, v: &str) -> (String, String) {
+        Bash::default().escape_env_pair(k, v)
     }
 }
 

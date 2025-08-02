@@ -156,20 +156,24 @@ impl Shell for Pwsh {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
-        let k = powershell_escape(k.into());
-        let v = powershell_escape(v.into());
+        let (k, v) = self.escape_env_pair(k, v);
         format!("$Env:{k}='{v}'\n")
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
-        let k = powershell_escape(k.into());
-        let v = powershell_escape(v.into());
+        let (k, v) = self.escape_env_pair(k, v);
         format!("$Env:{k}='{v}'+[IO.Path]::PathSeparator+$env:{k}\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
         let k = powershell_escape(k.into());
         format!("Remove-Item -ErrorAction SilentlyContinue -Path Env:/{k}\n")
+    }
+
+    fn escape_env_pair(&self, k: &str, v: &str) -> (String, String) {
+        let k = powershell_escape(k.into());
+        let v = powershell_escape(v.into());
+        (k.to_string(), v.to_string())
     }
 }
 

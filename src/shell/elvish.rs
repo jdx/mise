@@ -2,6 +2,7 @@
 #![allow(clippy::literal_string_with_formatting_args)]
 use std::fmt::Display;
 
+use crate::path::{PathEscape, to_path_list};
 use crate::shell::{ActivateOptions, Shell};
 use indoc::formatdoc;
 
@@ -12,7 +13,7 @@ impl Shell for Elvish {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.to_string_lossy();
+        let exe = to_path_list(&[PathEscape::Unix], &exe.to_string_lossy());
 
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude(&opts.prelude));
@@ -73,20 +74,30 @@ impl Shell for Elvish {
     }
 
     fn set_env(&self, k: &str, v: &str) -> String {
-        let k = shell_escape::unix::escape(k.into());
-        let v = shell_escape::unix::escape(v.into());
+        let (k, v) = self.escape_env_pair(k, v);
         let v = v.replace("\\n", "\n");
         format!("set-env {k} {v}\n")
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
-        let k = shell_escape::unix::escape(k.into());
-        let v = shell_escape::unix::escape(v.into());
+        let (k, v) = self.escape_env_pair(k, v);
         format!("set-env {k} {v}(get-env {k})\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
         format!("unset-env {k}\n", k = shell_escape::unix::escape(k.into()))
+    }
+
+    fn escape_env_pair(&self, k: &str, v: &str) -> (String, String) {
+        let v = match k {
+            "PATH" => to_path_list(&[PathEscape::Unix], v),
+            _ => v.to_string(),
+        };
+
+        let k = shell_escape::unix::escape(k.into());
+        let v = shell_escape::unix::escape(v.into());
+
+        (k.to_string(), v.to_string())
     }
 }
 
