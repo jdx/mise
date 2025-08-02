@@ -92,8 +92,14 @@ pub struct MiseTomlEnvDirective {
 #[derive(Debug, Default, Clone)]
 pub struct Tasks(pub BTreeMap<String, Task>);
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, serde::Serialize)]
 pub struct EnvList(pub(crate) Vec<EnvDirective>);
+
+impl EnvList {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
 
 impl MiseToml {
     pub fn init(path: &Path) -> Self {

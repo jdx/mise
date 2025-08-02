@@ -89,7 +89,14 @@ impl TasksInfo {
             info::section("Run", task.run().join("\n"))?;
         }
         if !task.env.is_empty() {
-            info::section("Environment Variables", toml::to_string_pretty(&task.env)?)?;
+            let env_display = task
+                .env
+                .0
+                .iter()
+                .map(|directive| directive.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            info::section("Environment Variables", env_display)?;
         }
         let (spec, _) = task.parse_usage_spec(config, None, env).await?;
         if !spec.is_empty() {
@@ -108,7 +115,7 @@ impl TasksInfo {
             "depends": task.depends,
             "depends_post": task.depends_post,
             "wait_for": task.wait_for,
-            "env": task.env,
+            "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
             "dir": task.dir,
             "hide": task.hide,
             "raw": task.raw,

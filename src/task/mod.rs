@@ -1,5 +1,6 @@
+use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
-use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults}; // Add this import
+use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults};
 use crate::config::{self, Config};
 use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
@@ -65,7 +66,7 @@ pub struct Task {
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub wait_for: Vec<TaskDep>,
     #[serde(default)]
-    pub env: TaskEnvList,
+    pub env: EnvList,
     #[serde(default)]
     pub dir: Option<String>,
     #[serde(default)]
@@ -116,15 +117,6 @@ pub struct EitherStringOrIntOrBool(
 
 #[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct EitherIntOrBool(#[serde(with = "either::serde_untagged")] pub Either<i64, bool>);
-
-#[derive(Debug, Clone, Default, Serialize)]
-pub struct TaskEnvList(pub Vec<EnvDirective>);
-
-impl TaskEnvList {
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
 
 impl Display for EitherIntOrBool {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -200,26 +192,40 @@ impl Task {
         task.depends = p.parse_array("depends").unwrap_or_default();
         task.depends_post = p.parse_array("depends_post").unwrap_or_default();
         task.wait_for = p.parse_array("wait_for").unwrap_or_default();
-        // Parse env using existing env directive parsing logic
-        if let Some(env_map) = p.parse_env("env")? {
-            task.env = TaskEnvList(
-                env_map
-                    .into_iter()
-                    .map(|(key, value)| {
-                        let val_str = match &value.0 {
-                            Either::Left(s) => s.clone(),
-                            Either::Right(EitherIntOrBool(Either::Left(i))) => i.to_string(),
-                            Either::Right(EitherIntOrBool(Either::Right(false))) => {
-                                return EnvDirective::Rm(key, Default::default());
-                            }
-                            Either::Right(EitherIntOrBool(Either::Right(true))) => {
-                                "true".to_string()
-                            }
-                        };
-                        EnvDirective::Val(key, val_str, Default::default())
-                    })
-                    .collect(),
-            );
+        // Parse env using the existing mise_toml EnvList parsing logic
+        if let Some(env_value) = info.get("env") {
+            // Use the same deserialization logic as mise_toml.rs
+            match serde::Deserialize::deserialize(env_value.clone()) {
+                Ok(env_list) => {
+                    task.env = env_list;
+                }
+                Err(e) => {
+                    warn!("Failed to parse task env: {e}");
+                    // Fallback to simple parsing for basic cases
+                    if let Some(env_map) = p.parse_env("env")? {
+                        task.env = EnvList(
+                            env_map
+                                .into_iter()
+                                .map(|(key, value)| {
+                                    let val_str = match &value.0 {
+                                        Either::Left(s) => s.clone(),
+                                        Either::Right(EitherIntOrBool(Either::Left(i))) => {
+                                            i.to_string()
+                                        }
+                                        Either::Right(EitherIntOrBool(Either::Right(false))) => {
+                                            return EnvDirective::Rm(key, Default::default());
+                                        }
+                                        Either::Right(EitherIntOrBool(Either::Right(true))) => {
+                                            "true".to_string()
+                                        }
+                                    };
+                                    EnvDirective::Val(key, val_str, Default::default())
+                                })
+                                .collect(),
+                        );
+                    }
+                }
+            }
         }
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
@@ -562,10 +568,7 @@ impl Task {
             tera_ctx.clone(),
             &env,
             env_directives,
-            EnvResolveOptions {
-                vars: true,
-                tools: false,
-            },
+            EnvResolveOptions::default(),
         )
         .await?;
 
@@ -573,136 +576,6 @@ impl Task {
         env.extend(env_results.env.into_iter().map(|(k, (v, _))| (k, v)));
 
         Ok(env)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for TaskEnvList {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use serde::de::{self, MapAccess, Visitor};
-        use std::fmt::Formatter;
-
-        struct TaskEnvListVisitor;
-
-        impl<'de> Visitor<'de> for TaskEnvListVisitor {
-            type Value = TaskEnvList;
-
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("a map of environment variables or directives")
-            }
-
-            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
-            where
-                M: MapAccess<'de>,
-            {
-                let mut env_directives = Vec::new();
-
-                while let Some(key) = map.next_key::<String>()? {
-                    if key.starts_with("_.") {
-                        // Handle environment directives
-                        match key.as_str() {
-                            "_.file" => {
-                                let value: toml::Value = map.next_value()?;
-                                match value {
-                                    toml::Value::String(path) => {
-                                        env_directives
-                                            .push(EnvDirective::File(path, Default::default()));
-                                    }
-                                    toml::Value::Array(paths) => {
-                                        for path in paths {
-                                            if let toml::Value::String(path_str) = path {
-                                                env_directives.push(EnvDirective::File(
-                                                    path_str,
-                                                    Default::default(),
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    _ => {
-                                        return Err(de::Error::custom(
-                                            "_.file must be a string or array of strings",
-                                        ));
-                                    }
-                                }
-                            }
-                            "_.path" => {
-                                let value: toml::Value = map.next_value()?;
-                                match value {
-                                    toml::Value::String(path) => {
-                                        env_directives
-                                            .push(EnvDirective::Path(path, Default::default()));
-                                    }
-                                    toml::Value::Array(paths) => {
-                                        for path in paths {
-                                            if let toml::Value::String(path_str) = path {
-                                                env_directives.push(EnvDirective::Path(
-                                                    path_str,
-                                                    Default::default(),
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    _ => {
-                                        return Err(de::Error::custom(
-                                            "_.path must be a string or array of strings",
-                                        ));
-                                    }
-                                }
-                            }
-                            "_.source" => {
-                                let value: toml::Value = map.next_value()?;
-                                match value {
-                                    toml::Value::String(path) => {
-                                        env_directives
-                                            .push(EnvDirective::Source(path, Default::default()));
-                                    }
-                                    toml::Value::Array(paths) => {
-                                        for path in paths {
-                                            if let toml::Value::String(path_str) = path {
-                                                env_directives.push(EnvDirective::Source(
-                                                    path_str,
-                                                    Default::default(),
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    _ => {
-                                        return Err(de::Error::custom(
-                                            "_.source must be a string or array of strings",
-                                        ));
-                                    }
-                                }
-                            }
-                            _ => {
-                                return Err(de::Error::custom(format!("Unknown directive: {key}")));
-                            }
-                        }
-                    } else {
-                        // Regular environment variable
-                        let value: EitherStringOrIntOrBool = map.next_value()?;
-                        let val_str = match &value.0 {
-                            Either::Left(s) => s.clone(),
-                            Either::Right(EitherIntOrBool(Either::Left(i))) => i.to_string(),
-                            Either::Right(EitherIntOrBool(Either::Right(false))) => {
-                                // false means remove the env var
-                                env_directives.push(EnvDirective::Rm(key, Default::default()));
-                                continue;
-                            }
-                            Either::Right(EitherIntOrBool(Either::Right(true))) => {
-                                "true".to_string()
-                            }
-                        };
-                        env_directives.push(EnvDirective::Val(key, val_str, Default::default()));
-                    }
-                }
-
-                Ok(TaskEnvList(env_directives))
-            }
-        }
-
-        deserializer.deserialize_map(TaskEnvListVisitor)
     }
 }
 
