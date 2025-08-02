@@ -535,7 +535,7 @@ fn python_os(settings: &Settings) -> String {
         return os.clone();
     }
     if cfg!(windows) {
-        "pc-windows-msvc-shared".into()
+        "pc-windows-msvc".into()
     } else if cfg!(target_os = "macos") {
         "apple-darwin".into()
     } else {
