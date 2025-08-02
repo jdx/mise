@@ -322,10 +322,11 @@ impl UnifiedGitBackend {
 
         // Fall back to auto-detection
         let asset_name = self.auto_detect_asset(&available_assets)?;
+        let asset_name_lower = asset_name.to_lowercase();
         let asset = release
             .assets
             .into_iter()
-            .find(|a| a.name == asset_name)
+            .find(|a| a.name.to_lowercase() == asset_name_lower)
             .ok_or_else(|| {
                 eyre::eyre!(
                     "Auto-detected asset not found: {}\nAvailable assets: {}",
@@ -380,11 +381,12 @@ impl UnifiedGitBackend {
 
         // Fall back to auto-detection
         let asset_name = self.auto_detect_asset(&available_assets)?;
+        let asset_name_lower = asset_name.to_lowercase();
         let asset = release
             .assets
             .links
             .into_iter()
-            .find(|a| a.name == asset_name)
+            .find(|a| a.name.to_lowercase() == asset_name_lower)
             .ok_or_else(|| {
                 eyre::eyre!(
                     "Auto-detected asset not found: {}\nAvailable assets: {}",
