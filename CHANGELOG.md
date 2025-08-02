@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.8.2](https://github.com/jdx/mise/compare/v2025.8.1..v2025.8.2) - 2025-08-02
+
+### 🐛 Bug Fixes
+
+- **(python)** Windows OS no longer suffixed with `-shared` by [@malept](https://github.com/malept) in [#5879](https://github.com/jdx/mise/pull/5879)
+
 ## [2025.8.1](https://github.com/jdx/mise/compare/v2025.8.0..v2025.8.1) - 2025-08-01
 
 ### 🐛 Bug Fixes
