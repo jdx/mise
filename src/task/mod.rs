@@ -194,8 +194,10 @@ impl Task {
         task.wait_for = p.parse_array("wait_for").unwrap_or_default();
         // Parse env using the existing mise_toml EnvList parsing logic
         if let Some(env_value) = info.get("env") {
-            // Use the same deserialization logic as mise_toml.rs
-            match serde::Deserialize::deserialize(env_value.clone()) {
+            // Convert the toml::Value back to a string and deserialize properly
+            let env_str = toml::to_string(env_value)
+                .map_err(|e| eyre!("Failed to serialize env value: {e}"))?;
+            match toml::from_str::<EnvList>(&env_str) {
                 Ok(env_list) => {
                     task.env = env_list;
                 }
