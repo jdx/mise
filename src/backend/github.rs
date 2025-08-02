@@ -501,4 +501,57 @@ mod tests {
         assert_eq!(backend.strip_version_prefix("release-1.0.0"), "1.0.0");
         assert_eq!(backend.strip_version_prefix("1.0.0"), "1.0.0");
     }
+
+    #[test]
+    fn test_find_asset_case_insensitive() {
+        let backend = create_test_backend();
+
+        // Mock asset structs for testing
+        struct TestAsset {
+            name: String,
+        }
+
+        let assets = vec![
+            TestAsset {
+                name: "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
+            },
+            TestAsset {
+                name: "tool-1.0.0-Darwin-x86_64.tar.gz".to_string(),
+            },
+            TestAsset {
+                name: "tool-1.0.0-Windows-x86_64.zip".to_string(),
+            },
+        ];
+
+        // Test exact match (should find immediately)
+        let result =
+            backend.find_asset_case_insensitive(&assets, "tool-1.0.0-linux-x86_64.tar.gz", |a| {
+                &a.name
+            });
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().name, "tool-1.0.0-linux-x86_64.tar.gz");
+
+        // Test case-insensitive match for Darwin (capital D)
+        let result = backend.find_asset_case_insensitive(
+            &assets,
+            "tool-1.0.0-darwin-x86_64.tar.gz", // lowercase 'd'
+            |a| &a.name,
+        );
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().name, "tool-1.0.0-Darwin-x86_64.tar.gz");
+
+        // Test case-insensitive match for Windows (capital W)
+        let result = backend.find_asset_case_insensitive(
+            &assets,
+            "tool-1.0.0-windows-x86_64.zip", // lowercase 'w'
+            |a| &a.name,
+        );
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().name, "tool-1.0.0-Windows-x86_64.zip");
+
+        // Test no match
+        let result =
+            backend.find_asset_case_insensitive(&assets, "nonexistent-asset.tar.gz", |a| &a.name);
+        assert!(result.is_none());
+    }
 }
