@@ -1628,31 +1628,31 @@ mod tests {
             foo="bar"
             "#});
 
-        assert_snapshot!(env, @r"
-        path_add /foo
-        path_add ./bar
+        assert_snapshot!(env, @r#"
+        _.path = "/foo"
+        _.path = "./bar"
         foo=bar
-        ");
+        "#);
 
         let env = parse_env(formatdoc! {r#"
             env_path="./bar"
             "#});
-        assert_snapshot!(env, @"path_add ./bar");
+        assert_snapshot!(env, @r#"_.path = "./bar""#);
 
         let env = parse_env(formatdoc! {r#"
             [env]
             _.path = "./bar"
             "#});
-        assert_debug_snapshot!(env, @r#""path_add ./bar""#);
+        assert_debug_snapshot!(env, @r#""_.path = \"./bar\"""#);
 
         let env = parse_env(formatdoc! {r#"
             [env]
             _.path = ["/foo", "./bar"]
             "#});
-        assert_snapshot!(env, @r"
-        path_add /foo
-        path_add ./bar
-        ");
+        assert_snapshot!(env, @r#"
+        _.path = "/foo"
+        _.path = "./bar"
+        "#);
 
         let env = parse_env(formatdoc! {r#"
             [[env]]
@@ -1660,20 +1660,20 @@ mod tests {
             [[env]]
             _.path = "./bar"
             "#});
-        assert_snapshot!(env, @r"
-        path_add /foo
-        path_add ./bar
-        ");
+        assert_snapshot!(env, @r#"
+        _.path = "/foo"
+        _.path = "./bar"
+        "#);
 
         let env = parse_env(formatdoc! {r#"
             env_path = "/foo"
             [env]
             _.path = "./bar"
             "#});
-        assert_snapshot!(env, @r"
-        path_add /foo
-        path_add ./bar
-        ");
+        assert_snapshot!(env, @r#"
+        _.path = "/foo"
+        _.path = "./bar"
+        "#);
     }
 
     #[tokio::test]
@@ -1683,31 +1683,31 @@ mod tests {
             env_file = ".env"
             "#});
 
-        assert_debug_snapshot!(env, @r#""dotenv .env""#);
+        assert_debug_snapshot!(env, @r#""_.file = \".env\"""#);
 
         let env = parse_env(formatdoc! {r#"
             env_file=[".env", ".env2"]
             "#});
-        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
+        assert_debug_snapshot!(env, @r#""_.file = \".env\"\n_.file = \".env2\"""#);
 
         let env = parse_env(formatdoc! {r#"
             [env]
             _.file = ".env"
             "#});
-        assert_debug_snapshot!(env, @r#""dotenv .env""#);
+        assert_debug_snapshot!(env, @r#""_.file = \".env\"""#);
 
         let env = parse_env(formatdoc! {r#"
             [env]
             _.file = [".env", ".env2"]
             "#});
-        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
+        assert_debug_snapshot!(env, @r#""_.file = \".env\"\n_.file = \".env2\"""#);
 
         let env = parse_env(formatdoc! {r#"
             dotenv = ".env"
             [env]
             _.file = ".env2"
             "#});
-        assert_debug_snapshot!(env, @r#""dotenv .env\ndotenv .env2""#);
+        assert_debug_snapshot!(env, @r#""_.file = \".env\"\n_.file = \".env2\"""#);
     }
 
     #[tokio::test]
@@ -1830,14 +1830,14 @@ mod tests {
         _.file=".env"
         foo3="3"
         "#};
-        assert_snapshot!(parse_env(toml), @r"
+        assert_snapshot!(parse_env(toml), @r#"
         foo1=1
         unset rm
-        path_add /foo
-        dotenv .env
+        _.path = "/foo"
+        _.file = ".env"
         foo2=2
         foo3=3
-        ");
+        "#);
     }
 
     #[test]
@@ -1861,22 +1861,22 @@ mod tests {
         foo6="6"
         _.source="/baz2"
         "#};
-        assert_snapshot!(parse_env(toml), @r"
+        assert_snapshot!(parse_env(toml), @r#"
         foo1=1
         unset rm
-        path_add /foo
-        dotenv .env
-        source /baz1
+        _.path = "/foo"
+        _.file = ".env"
+        _.source = "/baz1"
         foo2=2
         foo3=3
         foo4=4
         unset rm
-        path_add /bar
-        dotenv .env2
-        source /baz2
+        _.path = "/bar"
+        _.file = ".env2"
+        _.source = "/baz2"
         foo5=5
         foo6=6
-        ");
+        "#);
     }
 
     fn parse(s: String) -> MiseToml {

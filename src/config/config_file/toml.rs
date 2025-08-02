@@ -195,6 +195,7 @@ mod tests {
     fn test_deserialize_arr_invalid_float() {
         #[derive(Debug, Deserialize)]
         struct TestStruct {
+            #[allow(dead_code)]
             #[serde(deserialize_with = "deserialize_arr")]
             sources: Vec<String>,
         }
