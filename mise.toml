@@ -1,37 +1,9 @@
-#:schema ./schema/mise.json
-min_version = "2024.1.1"
+[tasks.complex-env]
+run = 'echo "arg={{arg(name="test_arg")}}"'
+description = "Task with complex environment"
 
-[env]
-_.path = ["./target/debug", "./node_modules/.bin"]
+[tasks.complex-env.env]
+TEST_VAR = "test_value"
 
-[tools]
-"actionlint" = "latest"
-age = "latest"
-bun = "latest"
-cargo-binstall = "latest"
-"cargo:cargo-edit" = "latest"
-"cargo:cargo-insta" = "latest"
-"cargo:cargo-release" = "latest"
-"cargo:git-cliff" = "latest"
-"cargo:toml-cli" = "latest"
-"cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
-cosign = "latest"
-gh = "2.62.0"
-hk = "latest"
-"jq" = "latest"
-"npm:markdownlint-cli" = "latest"
-"npm:prettier" = "3"
-"pipx:toml-sort" = "latest"
-pkl = "latest"
-pre-commit = "latest"
-#"python" = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
-"ripgrep" = "latest"
-"shellcheck" = "latest"
-"shfmt" = "latest"
-slsa-verifier = "latest"
-taplo = "latest"
-wait-for-gh-rate-limit = "latest"
-sops = "latest"
-
-[task_config]
-includes = ["tasks.toml", "xtasks"]
+[tasks.complex-env.tools]
+node = "latest"

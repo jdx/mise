@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+#MISE description="A file-based task"
+echo "file task"
