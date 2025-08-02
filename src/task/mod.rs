@@ -192,20 +192,7 @@ impl Task {
         task.depends = p.parse_array("depends").unwrap_or_default();
         task.depends_post = p.parse_array("depends_post").unwrap_or_default();
         task.wait_for = p.parse_array("wait_for").unwrap_or_default();
-        // Parse env using the existing mise_toml EnvList parsing logic
-        if let Some(env_value) = info.get("env") {
-            // Convert the toml::Value back to a string and deserialize properly
-            let env_str = toml::to_string(env_value)
-                .map_err(|e| eyre!("Failed to serialize env value: {e}"))?;
-            match toml::from_str::<EnvList>(&env_str) {
-                Ok(env_list) => {
-                    task.env = env_list;
-                }
-                Err(e) => {
-                    warn!("Failed to parse task env: {e}");
-                }
-            }
-        }
+        task.env = p.parse_env("env").unwrap_or_default();
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
         task.raw = p.parse_bool("raw").unwrap_or_default();

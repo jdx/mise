@@ -4,6 +4,8 @@ use std::str::FromStr;
 
 use serde::{Deserialize, de};
 
+use crate::config::config_file::mise_toml::EnvList;
+
 pub struct TomlParser<'a> {
     table: &'a toml::Value,
 }
@@ -49,6 +51,13 @@ impl<'a> TomlParser<'a> {
                     .map(|(key, value)| (key.clone(), value.clone()))
                     .collect::<BTreeMap<String, toml::Value>>()
             })
+    }
+
+    pub fn parse_env(&self, key: &str) -> Option<EnvList> {
+        self.table.get(key).and_then(|value| {
+            let env_str = toml::to_string(value).ok()?;
+            toml::from_str::<EnvList>(&env_str).ok()
+        })
     }
 }
 
