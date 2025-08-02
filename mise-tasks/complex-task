@@ -1,8 +1,0 @@
-#!/usr/bin/env node
-//MISE description="Complex task with usage spec"
-//USAGE flag "-v --verbose" help="Enable verbose output"
-//USAGE flag "-f --force" help="Force operation"
-//USAGE arg "input" help="Input file"
-//USAGE arg "output" help="Output file" default="stdout"
-
-console.log("complex task");
