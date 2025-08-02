@@ -356,7 +356,7 @@ impl EnvResults {
             let paths = paths
                 .iter()
                 .rev()
-                .flat_map(|path| env::split_paths(path))
+                .flat_map(|path| env::split_paths(path.as_os_str()))
                 .map(|s| normalize_path(&config_root, s))
                 .collect::<Vec<_>>();
             r.env_paths.extend(paths);
