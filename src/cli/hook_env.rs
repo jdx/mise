@@ -161,14 +161,9 @@ impl HookEnv {
             None => (vec![], split_paths(&full).collect_vec()),
         };
 
-        // Filter out any paths that contain colons (malformed path entries)
-        let all_paths: Vec<&PathBuf> = pre
-            .iter()
-            .chain(installs.iter())
-            .chain(post.iter())
-            .filter(|path| !path.to_string_lossy().contains(':'))
-            .collect();
-        let new_path = join_paths(all_paths)?.to_string_lossy().into_owned();
+        let new_path = join_paths(pre.iter().chain(installs.iter()).chain(post.iter()))?
+            .to_string_lossy()
+            .into_owned();
         let mut ops = vec![EnvDiffOperation::Add(PATH_KEY.to_string(), new_path)];
 
         if let Some(input) = env::DIRENV_DIFF.deref() {
