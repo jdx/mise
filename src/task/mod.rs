@@ -360,6 +360,7 @@ impl Task {
 
     /// Parse usage spec for display purposes without expensive environment rendering
     pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
+        let dir = self.dir(config).await?;
         let mut spec = if let Some(file) = &self.file {
             usage::Spec::parse_script(file)
                 .inspect_err(|e| {
@@ -370,7 +371,7 @@ impl Task {
                 })
                 .unwrap_or_default()
         } else {
-            TaskScriptParser::new(None)
+            TaskScriptParser::new(dir)
                 .parse_run_scripts_for_spec_only(config, self, self.run())
                 .await?
         };

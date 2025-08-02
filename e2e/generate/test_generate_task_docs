@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 
 # Test the `mise generate task-docs` functionality (render_markdown)
 
