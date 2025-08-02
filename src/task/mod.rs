@@ -1,6 +1,6 @@
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
-use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults};
+use crate::config::env_directive::{EnvResolveOptions, EnvResults};
 use crate::config::{self, Config};
 use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
@@ -201,29 +201,6 @@ impl Task {
                 }
                 Err(e) => {
                     warn!("Failed to parse task env: {e}");
-                    // Fallback to simple parsing for basic cases
-                    if let Some(env_map) = p.parse_env("env")? {
-                        task.env = EnvList(
-                            env_map
-                                .into_iter()
-                                .map(|(key, value)| {
-                                    let val_str = match &value.0 {
-                                        Either::Left(s) => s.clone(),
-                                        Either::Right(EitherIntOrBool(Either::Left(i))) => {
-                                            i.to_string()
-                                        }
-                                        Either::Right(EitherIntOrBool(Either::Right(false))) => {
-                                            return EnvDirective::Rm(key, Default::default());
-                                        }
-                                        Either::Right(EitherIntOrBool(Either::Right(true))) => {
-                                            "true".to_string()
-                                        }
-                                    };
-                                    EnvDirective::Val(key, val_str, Default::default())
-                                })
-                                .collect(),
-                        );
-                    }
                 }
             }
         }

@@ -1,12 +1,8 @@
-use crate::Result;
 use std::collections::BTreeMap;
 use std::fmt::Formatter;
 use std::str::FromStr;
 
-use either::Either;
 use serde::{Deserialize, de};
-
-use crate::task::{EitherIntOrBool, EitherStringOrIntOrBool};
 
 pub struct TomlParser<'a> {
     table: &'a toml::Value,
@@ -53,41 +49,6 @@ impl<'a> TomlParser<'a> {
                     .map(|(key, value)| (key.clone(), value.clone()))
                     .collect::<BTreeMap<String, toml::Value>>()
             })
-    }
-    pub fn parse_env(
-        &self,
-        key: &str,
-    ) -> Result<Option<BTreeMap<String, EitherStringOrIntOrBool>>> {
-        self.table
-            .get(key)
-            .and_then(|value| value.as_table())
-            .map(|table| {
-                table
-                    .iter()
-                    .map(|(key, value)| {
-                        let v = value
-                            .as_str()
-                            .map(|v| Ok(EitherStringOrIntOrBool(Either::Left(v.to_string()))))
-                            .or_else(|| {
-                                value.as_integer().map(|v| {
-                                    Ok(EitherStringOrIntOrBool(Either::Left(v.to_string())))
-                                })
-                            })
-                            .or_else(|| {
-                                value.as_bool().map(|v| {
-                                    Ok(EitherStringOrIntOrBool(Either::Right(EitherIntOrBool(
-                                        Either::Right(v),
-                                    ))))
-                                })
-                            })
-                            .unwrap_or_else(|| {
-                                Err(eyre::eyre!("invalid env value: {:?}", value))
-                            })?;
-                        Ok((key.clone(), v))
-                    })
-                    .collect::<Result<_>>()
-            })
-            .transpose()
     }
 }
 
