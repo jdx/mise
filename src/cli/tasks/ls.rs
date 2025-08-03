@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::config::Config;
 use crate::file::display_rel_path;
 use crate::task::Task;
-use crate::toolset::Toolset;
 use crate::ui::table::MiseTable;
 use comfy_table::{Attribute, Cell, Row};
 use eyre::Result;
@@ -89,7 +88,6 @@ pub enum SortOrder {
 impl TasksLs {
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let ts = config.get_toolset().await?;
         let tasks = config
             .tasks()
             .await?
@@ -104,7 +102,7 @@ impl TasksLs {
         if self.complete {
             return self.complete(tasks);
         } else if self.usage {
-            self.display_usage(&config, ts, tasks).await?;
+            self.display_usage(&config, tasks).await?;
         } else if self.json {
             self.display_json(tasks)?;
         } else {
@@ -137,16 +135,10 @@ impl TasksLs {
         table.print()
     }
 
-    async fn display_usage(
-        &self,
-        config: &Arc<Config>,
-        ts: &Toolset,
-        tasks: Vec<Task>,
-    ) -> Result<()> {
+    async fn display_usage(&self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         let mut usage = usage::Spec::default();
         for task in tasks {
-            let env = task.render_env(config, ts).await?;
-            let (mut task_spec, _) = task.parse_usage_spec(config, None, &env).await?;
+            let mut task_spec = task.parse_usage_spec_for_display(config).await?;
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
             }
@@ -171,7 +163,7 @@ impl TasksLs {
                   "depends": task.depends,
                   "depends_post": task.depends_post,
                   "wait_for": task.wait_for,
-                  "env": task.env,
+                  "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
                   "dir": task.dir,
                   "hide": task.hide,
                   "raw": task.raw,

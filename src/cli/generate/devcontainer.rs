@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     config::Settings,
+    dirs,
     file::{self, display_path},
     git::Git,
 };
@@ -58,7 +59,13 @@ impl Devcontainer {
         let output = self.generate()?;
 
         if self.write {
-            let path = Git::get_root()?.join(".devcontainer/devcontainer.json");
+            let path = match Git::get_root() {
+                Ok(root) => root.join(".devcontainer/devcontainer.json"),
+                Err(_) => dirs::CWD
+                    .as_ref()
+                    .unwrap()
+                    .join(".devcontainer/devcontainer.json"),
+            };
             file::create(&path)?;
             file::write(&path, &output)?;
             miseprintln!("Wrote to {}", display_path(&path));

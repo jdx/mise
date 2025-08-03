@@ -1,10 +1,53 @@
 # Changelog
 
+## [2025.8.4](https://github.com/jdx/mise/compare/v2025.8.3..v2025.8.4) - 2025-08-03
+
+### 🚀 Features
+
+- **(tasks)** **breaking** Add environment variable directives for mise tasks by [@jdx](https://github.com/jdx) in [#5638](https://github.com/jdx/mise/pull/5638)
+
+## [2025.8.3](https://github.com/jdx/mise/compare/v2025.8.2..v2025.8.3) - 2025-08-03
+
+### 📦 Registry
+
+- add git-lfs ([aqua:git-lfs/git-lfs](https://github.com/git-lfs/git-lfs)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5885](https://github.com/jdx/mise/pull/5885)
+
+### 🚀 Features
+
+- **(registry)** add atuin package to registry by [@TyceHerrman](https://github.com/TyceHerrman) in [#5883](https://github.com/jdx/mise/pull/5883)
+- introduce registry commit type for new tool additions by [@jdx](https://github.com/jdx) in [#5884](https://github.com/jdx/mise/pull/5884)
+
+### 🐛 Bug Fixes
+
+- **(aqua,github)** make asset name matching case-insensitive by [@jdx](https://github.com/jdx) in [#5886](https://github.com/jdx/mise/pull/5886)
+
+### 🚜 Refactor
+
+- **(ci)** separate Alpine release into its own workflow by [@jdx](https://github.com/jdx) in [#5868](https://github.com/jdx/mise/pull/5868)
+
+### 📚 Documentation
+
+- **(changelog)** automate backend links in changelog by [@jdx](https://github.com/jdx) in [#5889](https://github.com/jdx/mise/pull/5889)
+
+### ⚡ Performance
+
+- reduce render env task calls by [@jdx](https://github.com/jdx) in [#5888](https://github.com/jdx/mise/pull/5888)
+
 ## [2025.8.2](https://github.com/jdx/mise/compare/v2025.8.1..v2025.8.2) - 2025-08-02
+
+### 🚀 Features
+
+- **(registry)** add jjui by [@TyceHerrman](https://github.com/TyceHerrman) in [#5877](https://github.com/jdx/mise/pull/5877)
+- **(registry)** add trunk metalinter by [@daveio](https://github.com/daveio) in [#5875](https://github.com/jdx/mise/pull/5875)
 
 ### 🐛 Bug Fixes
 
 - **(python)** Windows OS no longer suffixed with `-shared` by [@malept](https://github.com/malept) in [#5879](https://github.com/jdx/mise/pull/5879)
+
+### New Contributors
+
+- @daveio made their first contribution in [#5875](https://github.com/jdx/mise/pull/5875)
+- @TyceHerrman made their first contribution in [#5877](https://github.com/jdx/mise/pull/5877)
 
 ## [2025.8.1](https://github.com/jdx/mise/compare/v2025.8.0..v2025.8.1) - 2025-08-01
 

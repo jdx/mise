@@ -5,7 +5,6 @@ use itertools::Itertools;
 use serde_json::json;
 
 use crate::config::Config;
-use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::task::Task;
 use crate::ui::info;
@@ -32,12 +31,10 @@ impl TasksInfo {
             .or_else(|| tasks.values().find(|task| task.display_name == self.task));
 
         if let Some(task) = task {
-            let ts = config.get_toolset().await?;
-            let env = task.render_env(&config, ts).await?;
             if self.json {
-                self.display_json(&config, task, &env).await?;
+                self.display_json(&config, task).await?;
             } else {
-                self.display(&config, task, &env).await?;
+                self.display(&config, task).await?;
             }
         } else {
             bail!(
@@ -49,7 +46,7 @@ impl TasksInfo {
         Ok(())
     }
 
-    async fn display(&self, config: &Arc<Config>, task: &Task, env: &EnvMap) -> Result<()> {
+    async fn display(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
         info::inline_section("Task", &task.display_name)?;
         if !task.aliases.is_empty() {
             info::inline_section("Aliases", task.aliases.join(", "))?;
@@ -89,17 +86,24 @@ impl TasksInfo {
             info::section("Run", task.run().join("\n"))?;
         }
         if !task.env.is_empty() {
-            info::section("Environment Variables", toml::to_string_pretty(&task.env)?)?;
+            let env_display = task
+                .env
+                .0
+                .iter()
+                .map(|directive| directive.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            info::section("Environment Variables", env_display)?;
         }
-        let (spec, _) = task.parse_usage_spec(config, None, env).await?;
+        let spec = task.parse_usage_spec_for_display(config).await?;
         if !spec.is_empty() {
             info::section("Usage Spec", &spec)?;
         }
         Ok(())
     }
 
-    async fn display_json(&self, config: &Arc<Config>, task: &Task, env: &EnvMap) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(config, None, env).await?;
+    async fn display_json(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
+        let spec = task.parse_usage_spec_for_display(config).await?;
         let o = json!({
             "name": task.display_name,
             "aliases": task.aliases,
@@ -108,7 +112,7 @@ impl TasksInfo {
             "depends": task.depends,
             "depends_post": task.depends_post,
             "wait_for": task.wait_for,
-            "env": task.env,
+            "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
             "dir": task.dir,
             "hide": task.hide,
             "raw": task.raw,

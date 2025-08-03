@@ -17,7 +17,7 @@ use walkdir::WalkDir;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
 use crate::config::config_file::{ConfigFile, config_trust_root};
-use crate::config::env_directive::{EnvResolveOptions, EnvResults};
+use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
@@ -485,7 +485,10 @@ impl Config {
             self.tera_ctx.clone(),
             &env::PRISTINE_ENV,
             entries,
-            EnvResolveOptions::default(),
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::NonToolsOnly,
+            },
         )
         .await?;
         let redact_keys = self
@@ -1106,7 +1109,7 @@ async fn load_vars(config: &Arc<Config>) -> Result<EnvResults> {
         entries,
         EnvResolveOptions {
             vars: true,
-            ..Default::default()
+            tools: ToolsFilter::NonToolsOnly,
         },
     )
     .await?;
