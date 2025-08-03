@@ -142,15 +142,6 @@ pub struct EnvResolveOptions {
     pub tools: ToolsFilter,
 }
 
-impl Default for EnvResolveOptions {
-    fn default() -> Self {
-        Self {
-            vars: false,
-            tools: ToolsFilter::NonToolsOnly,
-        }
-    }
-}
-
 impl EnvResults {
     pub async fn resolve(
         config: &Arc<Config>,
