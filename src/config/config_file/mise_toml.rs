@@ -781,8 +781,6 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 source: Vec<MiseTomlEnvDirective>,
                                 #[serde(default)]
                                 python: EnvDirectivePython,
-                                #[serde(flatten)]
-                                other: BTreeMap<String, toml::Value>,
                             }
 
                             impl<'de> de::Deserialize<'de> for EnvDirectivePythonVenv {
@@ -885,59 +883,6 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             for d in directives.source {
                                 env.push(EnvDirective::Source(d.value, d.options));
                             }
-                            for (key, value) in directives.other {
-                                if let Some(directive_type) = key.strip_prefix("_.") {
-                                    // Handle flat directive syntax like _.file, _.path, _.source within [env]
-                                    // Remove "_." prefix
-                                    match directive_type {
-                                        "file" => {
-                                            if let Some(value_str) = value.as_str() {
-                                                env.push(EnvDirective::File(
-                                                    value_str.to_string(),
-                                                    Default::default(),
-                                                ));
-                                            }
-                                        }
-                                        "path" => {
-                                            let path_str = match &value {
-                                                toml::Value::String(s) => s.clone(),
-                                                toml::Value::Array(arr) => {
-                                                    let mut paths = Vec::new();
-                                                    for item in arr {
-                                                        if let toml::Value::String(s) = item {
-                                                            paths.push(s.clone());
-                                                        }
-                                                    }
-                                                    paths.join(":")
-                                                }
-                                                _ => continue, // Skip invalid values
-                                            };
-                                            env.push(EnvDirective::Path(
-                                                path_str,
-                                                Default::default(),
-                                            ));
-                                        }
-                                        "source" => {
-                                            if let Some(value_str) = value.as_str() {
-                                                env.push(EnvDirective::Source(
-                                                    value_str.to_string(),
-                                                    Default::default(),
-                                                ));
-                                            }
-                                        }
-                                        _ => {
-                                            // Unknown directive, process as module
-                                            env.push(EnvDirective::Module(
-                                                key,
-                                                value,
-                                                Default::default(),
-                                            ));
-                                        }
-                                    }
-                                } else {
-                                    env.push(EnvDirective::Module(key, value, Default::default()));
-                                }
-                            }
                             if let Some(venv) = directives.python.venv {
                                 env.push(EnvDirective::PythonVenv {
                                     path: venv.path,
@@ -950,52 +895,6 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         redact: false,
                                     },
                                 });
-                            }
-                        }
-                        k if k.starts_with("_.") => {
-                            // Handle flat directive syntax like _.file, _.path, _.source
-                            let directive_type = &k[2..]; // Remove "_." prefix
-                            match directive_type {
-                                "file" => {
-                                    let value = map.next_value::<String>()?;
-                                    env.push(EnvDirective::File(value, Default::default()));
-                                }
-                                "path" => {
-                                    // Handle both string and array values for path
-                                    let raw_value = map.next_value::<toml::Value>()?;
-                                    let path_str = match raw_value {
-                                        toml::Value::String(s) => s,
-                                        toml::Value::Array(arr) => {
-                                            let mut paths = Vec::new();
-                                            for item in arr {
-                                                if let toml::Value::String(s) = item {
-                                                    paths.push(s);
-                                                } else {
-                                                    return Err(de::Error::custom(
-                                                        "path array must contain only strings",
-                                                    ));
-                                                }
-                                            }
-                                            paths.join(":")
-                                        }
-                                        _ => {
-                                            return Err(de::Error::custom(
-                                                "path must be a string or array of strings",
-                                            ));
-                                        }
-                                    };
-                                    env.push(EnvDirective::Path(path_str, Default::default()));
-                                }
-                                "source" => {
-                                    let value = map.next_value::<String>()?;
-                                    env.push(EnvDirective::Source(value, Default::default()));
-                                }
-                                _ => {
-                                    return Err(de::Error::unknown_field(
-                                        directive_type,
-                                        &["file", "path", "source"],
-                                    ));
-                                }
                             }
                         }
                         _ => {
