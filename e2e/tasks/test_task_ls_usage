@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+
+# Test the `mise task ls --usage` functionality (display_usage)
+
+# Test 1: Basic usage output with simple tasks
+cat <<EOF >mise.toml
+[tasks.simple]
+run = 'echo "simple task"'
+description = "A simple task with no arguments"
+
+[tasks.with-args]
+run = 'echo "arg={{arg(name="myarg")}}"'
+description = "Task with arguments"
+
+[tasks.with-flags]
+run = 'echo "verbose={{flag(name="verbose")}}"'
+description = "Task with flags"
+EOF
+
+# Test basic usage output format contains expected tasks
+assert_contains "mise task ls --usage" 'cmd simple help="A simple task with no arguments"'
+assert_contains "mise task ls --usage" 'cmd with-args help="Task with arguments"'
+assert_contains "mise task ls --usage" 'cmd with-flags help="Task with flags"'
+
+# Test 2: Tasks with aliases and dependencies
+cat <<EOF >mise.toml
+[tasks.parent]
+run = 'echo "parent"'
+description = "Parent task"
+
+[tasks.child]
+run = 'echo "child"'
+description = "Child task"
+alias = "c"
+depends = ["parent"]
+EOF
+
+assert_contains "mise task ls --usage" 'cmd parent help="Parent task"'
+assert_contains "mise task ls --usage" 'cmd child help="Child task"'
+assert_contains "mise task ls --usage" 'alias c'
+
+# Test 3: File-based tasks
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/file-task
+#!/usr/bin/env bash
+#MISE description="A file-based task"
+echo "file task"
+EOF
+chmod +x mise-tasks/file-task
+
+assert_contains "mise task ls --usage" 'cmd file-task help="A file-based task"'
+
+# Test 4: Hidden tasks should not appear
+cat <<EOF >mise.toml
+[tasks.visible]
+run = 'echo "visible"'
+description = "Visible task"
+
+[tasks.hidden]
+run = 'echo "hidden"'
+description = "Hidden task"
+hide = true
+EOF
+
+assert_contains "mise task ls --usage" 'cmd visible help="Visible task"'
+assert_not_contains "mise task ls --usage" 'cmd hidden help="Hidden task"'
+
+# Test 5: Task with no description
+cat <<EOF >mise.toml
+[tasks.no-desc]
+run = 'echo "no description"'
+EOF
+
+assert_contains "mise task ls --usage" 'cmd no-desc'
+
+# Test 6: Performance test - should be fast even with complex environment
+cat <<EOF >mise.toml
+[tasks.complex-env]
+run = 'echo "arg={{arg(name="test_arg")}}"'
+description = "Task with complex environment"
+
+[tasks.complex-env.env]
+TEST_VAR = "test_value"
+
+[tasks.complex-env.tools]
+node = "latest"
+EOF
+
+# This should complete quickly (within 5 seconds)
+timeout 5 mise task ls --usage >/dev/null || fail "Usage generation took too long"
+
+echo "All usage display tests passed!"
