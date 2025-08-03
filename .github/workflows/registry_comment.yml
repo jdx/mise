@@ -6,6 +6,7 @@ on:
       - opened
       - edited
       - reopened
+      - synchronize
     paths:
       - registry.toml
       - .github/workflows/registry.yml
@@ -28,9 +29,24 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           fetch-depth: 0
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
       - name: Check if only registry.toml is modified
         id: check-files
         run: |
+          # Check if we can access the commits
+          if ! git rev-parse ${{ github.event.pull_request.base.sha }} >/dev/null 2>&1; then
+            echo "❌ Error: Cannot access base commit"
+            echo "only-registry-toml=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          if ! git rev-parse ${{ github.event.pull_request.head.sha }} >/dev/null 2>&1; then
+            echo "❌ Error: Cannot access head commit"
+            echo "only-registry-toml=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
           # Get the list of modified files
           MODIFIED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
           
