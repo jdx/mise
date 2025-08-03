@@ -6,6 +6,7 @@ on:
       - opened
       - edited
       - reopened
+      - synchronize
     paths:
       - registry.toml
       - .github/workflows/registry.yml
