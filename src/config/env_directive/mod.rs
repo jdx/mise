@@ -124,10 +124,16 @@ pub struct EnvResults {
     pub redactions: Vec<String>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Clone)]
+pub enum ToolsFilter {
+    ToolsOnly,
+    NonToolsOnly,
+    Both,
+}
+
 pub struct EnvResolveOptions {
     pub vars: bool,
-    pub tools: bool,
+    pub tools: ToolsFilter,
 }
 
 impl EnvResults {
@@ -168,10 +174,17 @@ impl EnvResults {
         let input = input
             .iter()
             .fold(Vec::new(), |mut acc, (directive, source)| {
-                // remove directives that need tools if we're not processing tool directives, or vice versa
-                if directive.options().tools != resolve_opts.tools {
+                // Filter directives based on tools setting
+                let should_include = match &resolve_opts.tools {
+                    ToolsFilter::ToolsOnly => directive.options().tools,
+                    ToolsFilter::NonToolsOnly => !directive.options().tools,
+                    ToolsFilter::Both => true,
+                };
+
+                if !should_include {
                     return acc;
                 }
+
                 if let Some(d) = &last_python_venv {
                     if matches!(directive, EnvDirective::PythonVenv { .. }) && **d != *directive {
                         // skip venv directives if it's not the last one
@@ -269,7 +282,6 @@ impl EnvResults {
                                 if redact {
                                     r.redactions.push(k.clone());
                                 }
-                                r.env_remove.insert(k.clone());
                                 env.insert(k, (v, Some(f.clone())));
                             }
                         }
@@ -296,7 +308,6 @@ impl EnvResults {
                                 if redact {
                                     r.redactions.push(k.clone());
                                 }
-                                r.env_remove.insert(k.clone());
                                 env.insert(k, (v, Some(f.clone())));
                             }
                         }

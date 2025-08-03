@@ -1,6 +1,6 @@
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
-use crate::config::env_directive::{EnvResolveOptions, EnvResults};
+use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
 use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
@@ -540,17 +540,15 @@ impl Task {
         }
 
         // Convert task env directives to (EnvDirective, PathBuf) pairs
-        // Use config_root if available, otherwise use config_source
-        let source_path = self.config_root.as_ref().unwrap_or(&self.config_source);
+        // Use the config file path as source for proper path resolution
         let env_directives = self
             .env
             .0
             .iter()
-            .map(|directive| (directive.clone(), source_path.clone()))
+            .map(|directive| (directive.clone(), self.config_source.clone()))
             .collect();
 
         // Resolve environment directives using the same system as global env
-        // Enable tools to ensure directives with tools:true are processed
         let env_results = EnvResults::resolve(
             config,
             tera_ctx.clone(),
@@ -558,7 +556,7 @@ impl Task {
             env_directives,
             EnvResolveOptions {
                 vars: false,
-                tools: true,
+                tools: ToolsFilter::Both,
             },
         )
         .await?;
