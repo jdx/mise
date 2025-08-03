@@ -738,9 +738,6 @@ impl Toolset {
         }
         // Remove the original PATH processing from here since it's handled by PathEnv::from_iter()
         // in env_with_path(). This prevents duplication of the original PATH.
-        //
-        // The PATH environment variable may contain incorrectly serialized TOML arrays
-        // like "bin2:bin" which should not be included anyway.
         for p in self.list_paths(config).await {
             paths.insert(p);
         }
@@ -748,11 +745,8 @@ impl Toolset {
         for p in paths.clone().into_iter() {
             path_env.add(p);
         }
-        // Combine paths in correct order: config paths first, then tool paths, then original PATH
-        let mut final_paths = Vec::new();
-        final_paths.extend(env_results.env_paths);
-        final_paths.extend(paths);
-        let paths = final_paths;
+        // these are returned in order, but we need to run the post_env stuff last and then put the results in the front
+        let paths = env_results.env_paths.into_iter().chain(paths).collect();
         Ok(paths)
     }
     pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<&tera::Context> {
