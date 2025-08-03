@@ -737,7 +737,10 @@ impl Toolset {
             paths.insert(venv.venv_path.clone());
         }
         if let Some(path) = self.env(config).await?.get(&*PATH_KEY) {
-            paths.insert(PathBuf::from(path));
+            // Split PATH string into individual paths instead of treating it as a single path
+            for p in env::split_paths(path) {
+                paths.insert(p);
+            }
         }
         for p in self.list_paths(config).await {
             paths.insert(p);
