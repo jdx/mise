@@ -886,9 +886,9 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 env.push(EnvDirective::Source(d.value, d.options));
                             }
                             for (key, value) in directives.other {
-                                if key.starts_with("_.") {
+                                if let Some(directive_type) = key.strip_prefix("_.") {
                                     // Handle flat directive syntax like _.file, _.path, _.source within [env]
-                                    let directive_type = &key[2..]; // Remove "_." prefix
+                                    // Remove "_." prefix
                                     match directive_type {
                                         "file" => {
                                             if let Some(value_str) = value.as_str() {
