@@ -781,6 +781,8 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 source: Vec<MiseTomlEnvDirective>,
                                 #[serde(default)]
                                 python: EnvDirectivePython,
+                                #[serde(flatten)]
+                                other: BTreeMap<String, toml::Value>,
                             }
 
                             impl<'de> de::Deserialize<'de> for EnvDirectivePythonVenv {
@@ -882,6 +884,9 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             }
                             for d in directives.source {
                                 env.push(EnvDirective::Source(d.value, d.options));
+                            }
+                            for (key, value) in directives.other {
+                                env.push(EnvDirective::Module(key, value, Default::default()));
                             }
                             if let Some(venv) = directives.python.venv {
                                 env.push(EnvDirective::PythonVenv {
