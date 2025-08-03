@@ -1818,7 +1818,7 @@ litestream.backends = [
 llvm-objcopy.backends = ["asdf:mise-plugins/mise-llvm"]
 llvm-objdump.backends = ["asdf:mise-plugins/mise-llvm"]
 lnav.description = "Log file navigator"
-lnav.backends = ["aqua:tsack/lnav", "ubi:tsack/lnav"]
+lnav.backends = ["aqua:tstack/lnav", "ubi:tstack/lnav"]
 lnav.test = ["lnav --version", "lnav {{version}}"]
 localstack.backends = ["ubi:localstack/localstack-cli[exe=localstack]"]
 localstack.test = ["localstack --version", "LocalStack CLI {{version}}"]
