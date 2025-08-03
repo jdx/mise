@@ -131,9 +131,24 @@ pub enum ToolsFilter {
     Both,
 }
 
+impl Default for ToolsFilter {
+    fn default() -> Self {
+        Self::NonToolsOnly
+    }
+}
+
 pub struct EnvResolveOptions {
     pub vars: bool,
     pub tools: ToolsFilter,
+}
+
+impl Default for EnvResolveOptions {
+    fn default() -> Self {
+        Self {
+            vars: false,
+            tools: ToolsFilter::NonToolsOnly,
+        }
+    }
 }
 
 impl EnvResults {

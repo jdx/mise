@@ -486,7 +486,7 @@ impl Config {
             &env::PRISTINE_ENV,
             entries,
             EnvResolveOptions {
-                vars: true,
+                vars: false,
                 tools: ToolsFilter::NonToolsOnly,
             },
         )
