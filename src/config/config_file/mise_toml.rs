@@ -902,6 +902,28 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 });
                             }
                         }
+                        k if k.starts_with("_.") => {
+                            // Handle flat directive syntax like _.file, _.path, _.source
+                            let directive_type = &k[2..]; // Remove "_." prefix
+                            let value = map.next_value::<String>()?;
+                            match directive_type {
+                                "file" => {
+                                    env.push(EnvDirective::File(value, Default::default()));
+                                }
+                                "path" => {
+                                    env.push(EnvDirective::Path(value, Default::default()));
+                                }
+                                "source" => {
+                                    env.push(EnvDirective::Source(value, Default::default()));
+                                }
+                                _ => {
+                                    return Err(de::Error::unknown_field(
+                                        directive_type,
+                                        &["file", "path", "source"],
+                                    ));
+                                }
+                            }
+                        }
                         _ => {
                             enum Val {
                                 Int(i64),
