@@ -54,12 +54,11 @@ impl<'a> TomlParser<'a> {
             })
     }
 
-    pub fn parse_env_list(&self, key: &str) -> Result<Option<EnvList>> {
+    pub fn parse_env(&self, key: &str) -> Result<Option<EnvList>> {
         self.table
             .get(key)
             .map(|value| {
-                let env_str = toml::to_string(value)?;
-                toml::from_str::<EnvList>(&env_str)
+                EnvList::deserialize(value.clone())
                     .map_err(|e| eyre::eyre!("failed to parse env: {}", e))
             })
             .transpose()

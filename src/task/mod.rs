@@ -195,7 +195,7 @@ impl Task {
         task.depends = p.parse_array("depends").unwrap_or_default();
         task.depends_post = p.parse_array("depends_post").unwrap_or_default();
         task.wait_for = p.parse_array("wait_for").unwrap_or_default();
-        task.env = p.parse_env_list("env")?.unwrap_or_default();
+        task.env = p.parse_env("env")?.unwrap_or_default();
         task.dir = p.parse_str("dir");
         task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
         task.raw = p.parse_bool("raw").unwrap_or_default();
