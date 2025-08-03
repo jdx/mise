@@ -82,9 +82,9 @@ impl Display for EnvDirective {
         match self {
             EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
             EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
-            EnvDirective::File(path, _) => write!(f, "dotenv {}", display_path(path)),
-            EnvDirective::Path(path, _) => write!(f, "path_add {}", display_path(path)),
-            EnvDirective::Source(path, _) => write!(f, "source {}", display_path(path)),
+            EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
+            EnvDirective::Path(path, _) => write!(f, "_.path = \"{}\"", display_path(path)),
+            EnvDirective::Source(path, _) => write!(f, "_.source = \"{}\"", display_path(path)),
             EnvDirective::Module(name, _, _) => write!(f, "module {name}"),
             EnvDirective::PythonVenv {
                 path,
@@ -257,9 +257,11 @@ impl EnvResults {
                     let env_path = env.get(&*env::PATH_KEY).cloned().unwrap_or_default().0;
                     let mut env_path: PathEnv = env_path.parse()?;
                     env_path.add(path);
-                    // Use None as source for computed PATH values since they're derived from
-                    // path directives rather than directly set from config files
-                    env.insert(env::PATH_KEY.to_string(), (env_path.to_string(), None));
+                    // Use the directive source for PATH values so they get included in env_results
+                    env.insert(
+                        env::PATH_KEY.to_string(),
+                        (env_path.to_string(), Some(source.clone())),
+                    );
                 }
                 EnvDirective::File(input, _opts) => {
                     let files = Self::file(
