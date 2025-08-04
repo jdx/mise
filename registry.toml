@@ -784,6 +784,9 @@ dotenv-linter.backends = [
     "asdf:wesleimp/asdf-dotenv-linter"
 ]
 dotenv-linter.test = ["dotenv-linter --version", "dotenv-linter {{version}}"]
+dotenvx.description = "a secure dotenv–from the creator of `dotenv`"
+dotenvx.backends = ["aqua:dotenvx/dotenvx", "ubi:dotenvx/dotenvx"]
+dotenvx.test = ["dotenvx --version", "{{version}}"]
 dotnet.backends = [
     "asdf:mise-plugins/mise-dotnet",
     "vfox:mise-plugins/vfox-dotnet"
@@ -2987,7 +2990,12 @@ yamlscript.backends = [
     "asdf:mise-plugins/mise-yamlscript"
 ]
 yamlscript.test = ["ys --version", "{{version}}"]
-yarn.backends = ["npm:@yarnpkg/cli-dist", "asdf:mise-plugins/mise-yarn"]
+yarn.backends = [
+    "aqua:yarnpkg/berry",
+    "npm:@yarnpkg/cli-dist",
+    "asdf:mise-plugins/mise-yarn"
+]
+yarn.idiomatic_files = [".yvmrc"]
 yarn.test = ["yarn --version", "{{version}}"]
 yay.backends = ["asdf:mise-plugins/mise-yay"]
 yazi.description = "Blazing fast terminal file manager written in Rust, based on async I/O"
