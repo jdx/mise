@@ -195,11 +195,18 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         if let Some(existing_tvl) = source_tools.get_mut(&backend.short) {
             // Merge new versions with existing ones, avoiding duplicates
             for new_tv in tvs {
-                if !existing_tvl
+                // Find if we already have this version
+                if let Some(existing_tv) = existing_tvl
                     .versions
-                    .iter()
-                    .any(|tv| tv.version == new_tv.version)
+                    .iter_mut()
+                    .find(|tv| tv.version == new_tv.version)
                 {
+                    // Update existing version with new platform info if available
+                    if !new_tv.lock_platforms.is_empty() {
+                        existing_tv.lock_platforms = new_tv.lock_platforms.clone();
+                    }
+                } else {
+                    // Add new version
                     existing_tvl.versions.push(new_tv);
                 }
             }
@@ -254,15 +261,6 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 
         for (short, tvl) in tools {
             let new_lockfile_tools: Vec<LockfileTool> = tvl.clone().into();
-            trace!(
-                "converting {} tools for {}, first tool has {} platforms",
-                new_lockfile_tools.len(),
-                short,
-                new_lockfile_tools
-                    .first()
-                    .map(|t| t.platforms.len())
-                    .unwrap_or(0)
-            );
 
             // Merge with existing lockfile tools to preserve platform information
             if let Some(existing_tools) = existing_lockfile.tools.get(short) {
