@@ -784,6 +784,9 @@ dotenv-linter.backends = [
     "asdf:wesleimp/asdf-dotenv-linter"
 ]
 dotenv-linter.test = ["dotenv-linter --version", "dotenv-linter {{version}}"]
+dotenvx.description = "a secure dotenv–from the creator of `dotenv`"
+dotenvx.backends = ["aqua:dotenvx/dotenvx", "ubi:dotenvx/dotenvx"]
+dotenvx.test = ["dotenvx --version", "{{version}}"]
 dotnet.backends = [
     "asdf:mise-plugins/mise-dotnet",
     "vfox:mise-plugins/vfox-dotnet"
