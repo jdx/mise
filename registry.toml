@@ -289,7 +289,11 @@ black.description = "The uncompromising Python code formatter"
 black.backends = ["aqua:psf/black"]
 black.test = ["black --version", "black, {{version}}"]
 bob.description = "A version manager for neovim"
-bob.backends = ["aqua:MordechaiHadad/bob", "ubi:MordechaiHadad/bob", "cargo:bob-nvim"]
+bob.backends = [
+    "aqua:MordechaiHadad/bob",
+    "ubi:MordechaiHadad/bob",
+    "cargo:bob-nvim"
+]
 bob.test = ["bob --version", "bob-nvim {{version}}"]
 boilerplate.description = "A tool for generating files and folders (\"boilerplate\") from a set of templates"
 boilerplate.backends = ["aqua:gruntwork-io/boilerplate"]
