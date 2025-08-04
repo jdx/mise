@@ -223,7 +223,7 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
     let empty = HashMap::new();
     for config_path in lockfiles {
         let lockfile_path = config_path.with_extension("lock");
-        // Only update existing lockfiles - creation is done elsewhere (e.g., by `mise use`)
+        // Only update existing lockfiles - creation is done elsewhere (e.g., by `mise lock`)
         if !lockfile_path.exists() {
             continue;
         }
