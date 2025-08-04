@@ -115,7 +115,7 @@ apollo-router.backends = [
 ]
 apollo-router.test = ["router --version", "{{version}}"]
 apollo-rover.backends = ["ubi:apollographql/rover"]
-apollo-rover.test = ["rover version", "Rover {{version}}"]
+apollo-rover.test = ["rover --version", "Rover {{version}}"]
 aqua.backends = ["ubi:aquaproj/aqua"]
 aqua.test = ["aqua version", "{{version}}"]
 arduino.aliases = ["arduino-cli"]
