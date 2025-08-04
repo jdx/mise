@@ -290,7 +290,7 @@ black.backends = ["aqua:psf/black"]
 black.test = ["black --version", "black, {{version}}"]
 bob.description = "A version manager for neovim"
 bob.backends = [
-    "aqua:MordechaiHadad/bob",
+    # "aqua:MordechaiHadad/bob",  # +x permission not set
     "ubi:MordechaiHadad/bob",
     "cargo:bob-nvim"
 ]
