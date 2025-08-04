@@ -181,15 +181,34 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
     }
 
     // add versions added within this session such as from `mise use` or `mise up`
+    // Note: we merge with existing versions rather than replacing to preserve
+    // all versions from the toolset in the lockfile
     for (backend, group) in &new_versions.iter().chunk_by(|tv| tv.ba()) {
         let tvs = group.cloned().collect_vec();
         let source = tvs[0].request.source().clone();
-        let mut tvl = ToolVersionList::new(Arc::new(backend.clone()), source.clone());
-        tvl.versions.extend(tvs);
-        tools_by_source
-            .entry(source)
-            .or_insert_with(HashMap::new)
-            .insert(backend.short.to_string(), tvl);
+
+        // Get or create the entry for this source and backend
+        let source_tools = tools_by_source
+            .entry(source.clone())
+            .or_insert_with(HashMap::new);
+
+        if let Some(existing_tvl) = source_tools.get_mut(&backend.short) {
+            // Merge new versions with existing ones, avoiding duplicates
+            for new_tv in tvs {
+                if !existing_tvl
+                    .versions
+                    .iter()
+                    .any(|tv| tv.version == new_tv.version)
+                {
+                    existing_tvl.versions.push(new_tv);
+                }
+            }
+        } else {
+            // Create new entry if it doesn't exist
+            let mut tvl = ToolVersionList::new(Arc::new(backend.clone()), source.clone());
+            tvl.versions.extend(tvs);
+            source_tools.insert(backend.short.to_string(), tvl);
+        }
     }
 
     let lockfiles = config
@@ -234,19 +253,9 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 
         for (short, tvl) in tools {
             let lockfile_tools: Vec<LockfileTool> = tvl.clone().into();
-
-            // Get existing tools if any
-            let existing_tools = existing_lockfile.tools.get(short);
-
-            let updated_tools = if should_merge_versions(existing_tools, &lockfile_tools) {
-                merge_tool_versions(existing_tools.unwrap(), &lockfile_tools)
-            } else {
-                lockfile_tools
-            };
-
             existing_lockfile
                 .tools
-                .insert(short.to_string(), updated_tools);
+                .insert(short.to_string(), lockfile_tools);
         }
 
         existing_lockfile.save(&lockfile_path)?;
@@ -450,36 +459,4 @@ fn format(mut doc: DocumentMut) -> String {
     }
 
     doc.to_string()
-}
-
-/// Determines if we should merge versions instead of replacing them
-fn should_merge_versions(
-    existing_tools: Option<&Vec<LockfileTool>>,
-    new_tools: &[LockfileTool],
-) -> bool {
-    match existing_tools {
-        Some(existing) => existing.len() > 1 || new_tools.len() > 1,
-        None => false,
-    }
-}
-
-/// Merges existing tool versions with new ones, using version string as the key
-fn merge_tool_versions(
-    existing_tools: &[LockfileTool],
-    new_tools: &[LockfileTool],
-) -> Vec<LockfileTool> {
-    let mut version_map: BTreeMap<String, LockfileTool> = BTreeMap::new();
-
-    // Add existing versions
-    for tool in existing_tools {
-        version_map.insert(tool.version.clone(), tool.clone());
-    }
-
-    // Update with new versions (overwrites existing if same version)
-    for tool in new_tools {
-        version_map.insert(tool.version.clone(), tool.clone());
-    }
-
-    // BTreeMap maintains sorted order, so we just collect the values
-    version_map.into_values().collect()
 }
