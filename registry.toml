@@ -784,6 +784,9 @@ dotenv-linter.backends = [
     "asdf:wesleimp/asdf-dotenv-linter"
 ]
 dotenv-linter.test = ["dotenv-linter --version", "dotenv-linter {{version}}"]
+dotenvx.description = "a secure dotenv–from the creator of `dotenv`"
+dotenvx.backends = ["aqua:dotenvx/dotenvx", "ubi:dotenvx/dotenvx"]
+dotenvx.test = ["dotenvx --version", "{{version}}"]
 dotnet.backends = [
     "asdf:mise-plugins/mise-dotnet",
     "vfox:mise-plugins/vfox-dotnet"
@@ -1819,6 +1822,9 @@ litestream.backends = [
 ]
 llvm-objcopy.backends = ["asdf:mise-plugins/mise-llvm"]
 llvm-objdump.backends = ["asdf:mise-plugins/mise-llvm"]
+lnav.description = "Log file navigator"
+lnav.backends = ["aqua:tstack/lnav", "ubi:tstack/lnav"]
+lnav.test = ["lnav --version", "lnav {{version}}"]
 localstack.backends = ["ubi:localstack/localstack-cli[exe=localstack]"]
 localstack.test = ["localstack --version", "LocalStack CLI {{version}}"]
 logtalk.backends = ["asdf:mise-plugins/mise-logtalk"]
@@ -2680,6 +2686,7 @@ terragrunt.backends = [
     "aqua:gruntwork-io/terragrunt",
     "asdf:gruntwork-io/asdf-terragrunt"
 ]
+terragrunt.idiomatic_files = [".terragrunt-version"]
 terragrunt.test = ["terragrunt --version", "terragrunt version v{{version}}"]
 terramate.description = "Open-source Infrastructure as Code (IaC) orchestration platform: GitOps workflows, orchestration, code generation, observability, drift detection, asset management, policies, Slack notifications, and more. Integrates with Terraform, OpenTofu, Terragrunt, Kubernetes, GitHub Actions, GitLab CI/CD, BitBucket Pipelines, and any other CI/CD platform"
 terramate.backends = [
@@ -2729,6 +2736,9 @@ timoni.backends = ["aqua:stefanprodan/timoni", "asdf:Smana/asdf-timoni"]
 tiny.backends = ["asdf:mise-plugins/mise-tiny"]
 tinytex.backends = ["asdf:mise-plugins/mise-tinytex"]
 titan.backends = ["ubi:titan-data/titan", "asdf:gabitchov/asdf-titan"]
+tlrc.description = "A tldr client written in Rust"
+tlrc.backends = ["aqua:tldr-pages/tlrc", "ubi:tldr-pages/tlrc", "cargo:tlrc"]
+tlrc.test = ["tldr --version", "tlrc v{{version}}"]
 tmux.backends = ["asdf:mise-plugins/mise-tmux"]
 tokei.description = "Count your code, quickly"
 tokei.backends = [
@@ -2980,7 +2990,12 @@ yamlscript.backends = [
     "asdf:mise-plugins/mise-yamlscript"
 ]
 yamlscript.test = ["ys --version", "{{version}}"]
-yarn.backends = ["npm:@yarnpkg/cli-dist", "asdf:mise-plugins/mise-yarn"]
+yarn.backends = [
+    "aqua:yarnpkg/berry",
+    "npm:@yarnpkg/cli-dist",
+    "asdf:mise-plugins/mise-yarn"
+]
+yarn.idiomatic_files = [".yvmrc"]
 yarn.test = ["yarn --version", "{{version}}"]
 yay.backends = ["asdf:mise-plugins/mise-yay"]
 yazi.description = "Blazing fast terminal file manager written in Rust, based on async I/O"

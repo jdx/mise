@@ -21,7 +21,7 @@ mod tests {
     use super::*;
     use crate::config::{
         Config,
-        env_directive::{EnvDirective, EnvResolveOptions},
+        env_directive::{EnvDirective, EnvResolveOptions, ToolsFilter},
     };
     use crate::env_diff::EnvMap;
     use crate::tera::BASE_CONTEXT;
@@ -59,7 +59,10 @@ mod tests {
                     Default::default(),
                 ),
             ],
-            EnvResolveOptions::default(),
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::NonToolsOnly,
+            },
         )
         .await
         .unwrap();

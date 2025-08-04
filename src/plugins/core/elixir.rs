@@ -110,6 +110,10 @@ impl Backend for ElixirPlugin {
         Ok(versions)
     }
 
+    fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
+        Ok(vec![".exenv-version".into()])
+    }
+
     fn get_dependencies(&self) -> Result<Vec<&str>> {
         Ok(vec!["erlang"])
     }

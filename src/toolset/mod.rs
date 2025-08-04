@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::cli::args::BackendArg;
 use crate::config::Config;
-use crate::config::env_directive::{EnvResolveOptions, EnvResults};
+use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::env::{PATH_KEY, TERM_WIDTH};
 use crate::env_diff::EnvMap;
@@ -736,9 +736,8 @@ impl Toolset {
         if let Some(venv) = uv::uv_venv(config, self).await {
             paths.insert(venv.venv_path.clone());
         }
-        if let Some(path) = self.env(config).await?.get(&*PATH_KEY) {
-            paths.insert(PathBuf::from(path));
-        }
+        // Remove the original PATH processing from here since it's handled by PathEnv::from_iter()
+        // in env_with_path(). This prevents duplication of the original PATH.
         for p in self.list_paths(config).await {
             paths.insert(p);
         }
@@ -907,8 +906,8 @@ impl Toolset {
             env,
             entries,
             EnvResolveOptions {
-                tools: true,
-                ..Default::default()
+                vars: false,
+                tools: ToolsFilter::ToolsOnly,
             },
         )
         .await?;

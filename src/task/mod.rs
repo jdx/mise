@@ -1,4 +1,6 @@
+use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
+use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
 use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
@@ -14,7 +16,8 @@ use petgraph::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -64,7 +67,7 @@ pub struct Task {
     #[serde(default, deserialize_with = "deserialize_arr")]
     pub wait_for: Vec<TaskDep>,
     #[serde(default)]
-    pub env: BTreeMap<String, EitherStringOrIntOrBool>,
+    pub env: EnvList,
     #[serde(default)]
     pub dir: Option<String>,
     #[serde(default)]
@@ -165,10 +168,12 @@ impl Task {
                     .or_else(|| regex!(r"^(#|//|::)MISE ([a-z_]+=.+)$").captures(line))
             })
             .map(|captures| captures.extract().1)
-            .flat_map(|[_, toml]| {
+            .map(|[_, toml]| {
                 toml.parse::<toml::Value>()
-                    .map_err(|e| debug!("failed to parse toml: {e}"))
+                    .map_err(|e| eyre::eyre!("failed to parse task header TOML '{}': {}", toml, e))
             })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
             .flatten()
             .fold(toml::Table::new(), |mut map, (key, value)| {
@@ -528,38 +533,43 @@ impl Task {
     }
 
     pub async fn render_env(&self, config: &Arc<Config>, ts: &Toolset) -> Result<EnvMap> {
-        let mut tera = get_tera(self.config_root.as_deref());
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         let mut env = ts.full_env(config).await?;
         if let Some(root) = &config.project_root {
             tera_ctx.insert("config_root", &root);
         }
-        let task_env: Vec<(String, String)> = self
-            .env
-            .iter()
-            .filter_map(|(k, v)| match &v.0 {
-                Either::Left(v) => Some((k.to_string(), v.to_string())),
-                Either::Right(EitherIntOrBool(Either::Left(v))) => {
-                    Some((k.to_string(), v.to_string()))
-                }
-                _ => None,
-            })
-            .collect_vec();
-        for (k, v) in task_env {
-            tera_ctx.insert("env", &env);
-            env.insert(k, tera.render_str(&v, &tera_ctx)?);
-        }
-        let rm_env = self
-            .env
-            .iter()
-            .filter(|(_, v)| v.0 == Either::Right(EitherIntOrBool(Either::Right(false))))
-            .map(|(k, _)| k)
-            .collect::<HashSet<_>>();
 
-        Ok(env
-            .into_iter()
-            .filter(|(k, _)| !rm_env.contains(k))
-            .collect())
+        // Convert task env directives to (EnvDirective, PathBuf) pairs
+        // Use the config file path as source for proper path resolution
+        let env_directives = self
+            .env
+            .0
+            .iter()
+            .map(|directive| (directive.clone(), self.config_source.clone()))
+            .collect();
+
+        // Resolve environment directives using the same system as global env
+        let env_results = EnvResults::resolve(
+            config,
+            tera_ctx.clone(),
+            &env,
+            env_directives,
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+            },
+        )
+        .await?;
+
+        // Apply the resolved environment variables
+        env.extend(env_results.env.into_iter().map(|(k, (v, _))| (k, v)));
+
+        // Remove environment variables that were explicitly unset
+        for key in &env_results.env_remove {
+            env.remove(key);
+        }
+
+        Ok(env)
     }
 }
 
@@ -618,7 +628,7 @@ impl Default for Task {
             depends: vec![],
             depends_post: vec![],
             wait_for: vec![],
-            env: BTreeMap::new(),
+            env: Default::default(),
             dir: None,
             hide: false,
             global: false,
@@ -785,5 +795,36 @@ mod tests {
         for (root, path) in test_cases {
             assert!(name_from_path(root, path).is_err())
         }
+    }
+
+    #[tokio::test]
+    async fn test_from_path_invalid_toml() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("test_task");
+
+        // Create a task file with invalid TOML in the header
+        fs::write(
+            &task_path,
+            r#"#!/bin/bash
+# mise description="test task"
+# mise env={invalid=toml=here}
+echo "hello world"
+"#,
+        )
+        .unwrap();
+
+        let result = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path()).await;
+
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("failed to parse task header TOML")
+        );
     }
 }

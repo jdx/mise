@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.8.4](https://github.com/jdx/mise/compare/v2025.8.3..v2025.8.4) - 2025-08-03
+
+### 🚀 Features
+
+- **(tasks)** **breaking** Add environment variable directives for mise tasks by [@jdx](https://github.com/jdx) in [#5638](https://github.com/jdx/mise/pull/5638)
+
 ## [2025.8.3](https://github.com/jdx/mise/compare/v2025.8.2..v2025.8.3) - 2025-08-03
 
 ### 📦 Registry
