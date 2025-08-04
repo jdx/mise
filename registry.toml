@@ -2100,6 +2100,9 @@ overmind.backends = [
     "go:github.com/DarthSim/overmind/v2"
 ]
 oxipng.backends = ["aqua:shssoichiro/oxipng"]
+oxlint.description = "This is the linter for oxc."
+oxlint.backends = ["aqua:oxc-project/oxc/oxlint", "ubi:oxc-project/oxc", "npm:oxlint"]
+oxlint.test = ["oxlint --version", "Version: {{version}}"]
 pachctl.description = "Data-Centric Pipelines and Data Versioning"
 pachctl.backends = ["aqua:pachyderm/pachyderm", "asdf:abatilo/asdf-pachctl"]
 # pachctl.test = ["pachctl version", "{{version}}"] # test fails on ci but seems to work locally
