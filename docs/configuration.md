@@ -318,9 +318,10 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | go        | `.go-version`                                      |
 | java      | `.java-version`, `.sdkmanrc`                       |
 | node      | `.nvmrc`, `.node-version`                          |
+| packer    | `.packer-version`                                  |
 | python    | `.python-version`, `.python-versions`              |
 | ruby      | `.ruby-version`, `Gemfile`                         |
-| terraform | `.terraform-version`, `.packer-version`, `main.tf` |
+| terraform | `.terraform-version`, `main.tf`                    |
 | yarn      | `.yarnrc`                                          |
 
 In mise, these are enabled by default. However, in 2025.10.0 they will default to disabled (see <https://github.com/jdx/mise/discussions/4345>).
