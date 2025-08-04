@@ -322,7 +322,7 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | ruby       | `.ruby-version`, `Gemfile`                         |
 | terragrunt | `.terragrunt-version`                              |
 | terraform  | `.terraform-version`, `.packer-version`, `main.tf` |
-| yarn       | `.yarnrc`                                          |
+| yarn       | `.yvmrc`                                           |
 
 In mise, these are enabled by default. However, in 2025.10.0 they will default to disabled (see <https://github.com/jdx/mise/discussions/4345>).
 
