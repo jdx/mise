@@ -1817,6 +1817,9 @@ litestream.backends = [
 ]
 llvm-objcopy.backends = ["asdf:mise-plugins/mise-llvm"]
 llvm-objdump.backends = ["asdf:mise-plugins/mise-llvm"]
+lnav.description = "Log file navigator"
+lnav.backends = ["aqua:tstack/lnav", "ubi:tstack/lnav"]
+lnav.test = ["lnav --version", "lnav {{version}}"]
 localstack.backends = ["ubi:localstack/localstack-cli[exe=localstack]"]
 localstack.test = ["localstack --version", "LocalStack CLI {{version}}"]
 logtalk.backends = ["asdf:mise-plugins/mise-logtalk"]
@@ -2678,6 +2681,7 @@ terragrunt.backends = [
     "aqua:gruntwork-io/terragrunt",
     "asdf:gruntwork-io/asdf-terragrunt"
 ]
+terragrunt.idiomatic_files = [".terragrunt-version"]
 terragrunt.test = ["terragrunt --version", "terragrunt version v{{version}}"]
 terramate.description = "Open-source Infrastructure as Code (IaC) orchestration platform: GitOps workflows, orchestration, code generation, observability, drift detection, asset management, policies, Slack notifications, and more. Integrates with Terraform, OpenTofu, Terragrunt, Kubernetes, GitHub Actions, GitLab CI/CD, BitBucket Pipelines, and any other CI/CD platform"
 terramate.backends = [
