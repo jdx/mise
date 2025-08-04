@@ -223,6 +223,7 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
     let empty = HashMap::new();
     for config_path in lockfiles {
         let lockfile_path = config_path.with_extension("lock");
+        // Only update existing lockfiles - creation is done elsewhere (e.g., by `mise use`)
         if !lockfile_path.exists() {
             continue;
         }
@@ -253,6 +254,15 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 
         for (short, tvl) in tools {
             let new_lockfile_tools: Vec<LockfileTool> = tvl.clone().into();
+            trace!(
+                "converting {} tools for {}, first tool has {} platforms",
+                new_lockfile_tools.len(),
+                short,
+                new_lockfile_tools
+                    .first()
+                    .map(|t| t.platforms.len())
+                    .unwrap_or(0)
+            );
 
             // Merge with existing lockfile tools to preserve platform information
             if let Some(existing_tools) = existing_lockfile.tools.get(short) {
@@ -265,21 +275,18 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
                         .iter()
                         .find(|et| et.version == new_tool.version)
                     {
-                        // Prefer existing tool's platform info if it has more data
-                        if !existing_tool.platforms.is_empty() && new_tool.platforms.is_empty() {
-                            merged_tools.push(existing_tool.clone());
-                        } else {
-                            // Use new tool but merge platform info
-                            let mut merged_tool = new_tool;
-                            for (platform, platform_info) in &existing_tool.platforms {
-                                if !merged_tool.platforms.contains_key(platform) {
-                                    merged_tool
-                                        .platforms
-                                        .insert(platform.clone(), platform_info.clone());
-                                }
+                        // Start with the new tool as base (it may have fresh platform info)
+                        let mut merged_tool = new_tool;
+
+                        // Merge in any existing platform info that's not in the new tool
+                        for (platform, platform_info) in &existing_tool.platforms {
+                            if !merged_tool.platforms.contains_key(platform) {
+                                merged_tool
+                                    .platforms
+                                    .insert(platform.clone(), platform_info.clone());
                             }
-                            merged_tools.push(merged_tool);
                         }
+                        merged_tools.push(merged_tool);
                     } else {
                         // No existing version match, use new tool as-is
                         merged_tools.push(new_tool);
