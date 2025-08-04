@@ -234,9 +234,46 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 
         for (short, tvl) in tools {
             let lockfile_tools: Vec<LockfileTool> = tvl.clone().into();
-            existing_lockfile
-                .tools
-                .insert(short.to_string(), lockfile_tools);
+
+            // If the tool already exists in the lockfile and we're only updating some versions,
+            // merge the versions instead of replacing them
+            if let Some(existing_tools) = existing_lockfile.tools.get(short) {
+                // Check if we have multiple versions in the config (array format)
+                if existing_tools.len() > 1 || lockfile_tools.len() > 1 {
+                    // Create a map to merge versions by version string
+                    let mut version_map: HashMap<String, LockfileTool> = HashMap::new();
+
+                    // Add existing versions
+                    for tool in existing_tools {
+                        version_map.insert(tool.version.clone(), tool.clone());
+                    }
+
+                    // Update with new versions
+                    for tool in lockfile_tools {
+                        version_map.insert(tool.version.clone(), tool);
+                    }
+
+                    // Convert back to sorted vec
+                    let merged_tools: Vec<LockfileTool> = version_map
+                        .into_values()
+                        .sorted_by(|a, b| a.version.cmp(&b.version))
+                        .collect();
+
+                    existing_lockfile
+                        .tools
+                        .insert(short.to_string(), merged_tools);
+                } else {
+                    // Single version, just replace
+                    existing_lockfile
+                        .tools
+                        .insert(short.to_string(), lockfile_tools);
+                }
+            } else {
+                // New tool, just insert
+                existing_lockfile
+                    .tools
+                    .insert(short.to_string(), lockfile_tools);
+            }
         }
 
         existing_lockfile.save(&lockfile_path)?;
