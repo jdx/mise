@@ -85,7 +85,10 @@ amazon-ecr-credential-helper.backends = [
     "aqua:awslabs/amazon-ecr-credential-helper",
     "asdf:dex4er/asdf-amazon-ecr-credential-helper"
 ]
-amazon-ecr-credential-helper.test = ["docker-credential-ecr-login version", "docker-credential-ecr-login (github.com/awslabs/amazon-ecr-credential-helper/ecr-login) {{version}}"]
+amazon-ecr-credential-helper.test = [
+    "docker-credential-ecr-login version",
+    "docker-credential-ecr-login (github.com/awslabs/amazon-ecr-credential-helper/ecr-login) {{version}}"
+]
 amp.description = "An agentic coding tool built by Sourcegraph"
 amp.backends = ["npm:@sourcegraph/amp"]
 amp.test = ["amp --version | cut -d' ' -f1", "{{version}}"]
