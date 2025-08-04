@@ -77,14 +77,12 @@ mise install
 echo "=== Checking what was installed from incomplete lockfile ==="
 mise ls tiny
 
-# This may not install all versions due to the lockfile bug
+# This should install all 3 versions from the lockfile
 installed_count=$(mise ls tiny --json | jq -r 'length')
 echo "Number of versions installed from lockfile: $installed_count"
 
-if [ "$installed_count" -lt 3 ]; then
-	echo "BUG CONFIRMED: Incomplete lockfile resulted in missing version installations"
-	echo "Expected 3 versions installed, but only $installed_count were installed"
-fi
+# The test should fail if not all versions are installed
+assert "echo $installed_count" "3"
 
 # Clean up
 rm -f mise.toml mise.lock
