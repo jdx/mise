@@ -579,6 +579,7 @@ consul.description = "Consul is a distributed, highly available, and data center
 consul.backends = ["aqua:hashicorp/consul", "asdf:mise-plugins/mise-hashicorp"]
 container.description = "A tool for creating and running Linux containers using lightweight virtual machines on a Mac."
 container.backends = ["aqua:apple/container", "ubi:apple/container"]
+container.os = ["macos"]
 container.test = ["container --version", "container CLI version {{version}}"]
 container-structure-test.description = "validate the structure of your container images"
 container-structure-test.backends = [
