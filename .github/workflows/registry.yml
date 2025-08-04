@@ -58,7 +58,7 @@ jobs:
           install_args: jd yj
       - id: diff
         run: |
-          changed_tools=$(jd -f merge <(git show ${{ github.event.pull_request.base.sha }}:registry.toml | yj -t) <(cat registry.toml | yj -t) \
+          changed_tools=$(jd -f merge <(git show ${{ github.event.pull_request.base.sha }}:registry.toml | yj -t) <(yj -t < registry.toml) \
             | jq -r '[.tools // {} | keys[]] | join(" ")')
           echo "tools=$changed_tools" >> $GITHUB_OUTPUT
 
