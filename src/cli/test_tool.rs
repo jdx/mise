@@ -53,7 +53,7 @@ impl TestTool {
 
         let target_tools = self.get_target_tools(&config).await?;
         for (i, (tool, rt)) in target_tools.into_iter().enumerate() {
-            if *env::TEST_TRANCHE_COUNT > 1 && (i % *env::TEST_TRANCHE_COUNT) != *env::TEST_TRANCHE
+            if *env::TEST_TRANCHE_COUNT > 0 && (i % *env::TEST_TRANCHE_COUNT) != *env::TEST_TRANCHE
             {
                 continue;
             }
