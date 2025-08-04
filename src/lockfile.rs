@@ -252,10 +252,59 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
         });
 
         for (short, tvl) in tools {
-            let lockfile_tools: Vec<LockfileTool> = tvl.clone().into();
-            existing_lockfile
-                .tools
-                .insert(short.to_string(), lockfile_tools);
+            let new_lockfile_tools: Vec<LockfileTool> = tvl.clone().into();
+
+            // Merge with existing lockfile tools to preserve platform information
+            if let Some(existing_tools) = existing_lockfile.tools.get(short) {
+                let mut merged_tools = Vec::new();
+
+                // For each new tool, check if we have an existing entry with platform info
+                for new_tool in new_lockfile_tools {
+                    // Look for existing tool with same version to preserve platform info
+                    if let Some(existing_tool) = existing_tools
+                        .iter()
+                        .find(|et| et.version == new_tool.version)
+                    {
+                        // Prefer existing tool's platform info if it has more data
+                        if !existing_tool.platforms.is_empty() && new_tool.platforms.is_empty() {
+                            merged_tools.push(existing_tool.clone());
+                        } else {
+                            // Use new tool but merge platform info
+                            let mut merged_tool = new_tool;
+                            for (platform, platform_info) in &existing_tool.platforms {
+                                if !merged_tool.platforms.contains_key(platform) {
+                                    merged_tool
+                                        .platforms
+                                        .insert(platform.clone(), platform_info.clone());
+                                }
+                            }
+                            merged_tools.push(merged_tool);
+                        }
+                    } else {
+                        // No existing version match, use new tool as-is
+                        merged_tools.push(new_tool);
+                    }
+                }
+
+                // Add any existing tools that weren't in the new toolset
+                for existing_tool in existing_tools {
+                    if !merged_tools
+                        .iter()
+                        .any(|mt| mt.version == existing_tool.version)
+                    {
+                        merged_tools.push(existing_tool.clone());
+                    }
+                }
+
+                existing_lockfile
+                    .tools
+                    .insert(short.to_string(), merged_tools);
+            } else {
+                // No existing tools, just use the new ones
+                existing_lockfile
+                    .tools
+                    .insert(short.to_string(), new_lockfile_tools);
+            }
         }
 
         existing_lockfile.save(&lockfile_path)?;
