@@ -2342,6 +2342,9 @@ restish.backends = [
     "ubi:danielgtaylor/restish",
     "go:github.com/danielgtaylor/restish"
 ]
+resvg.description = "An SVG rendering library."
+resvg.backends = ["aqua:linebender/resvg"]
+resvg.test = ["resvg --version", "{{version}}"]
 revive.description = "~6x faster, stricter, configurable, extensible, and beautiful drop-in replacement for golint"
 revive.backends = ["aqua:mgechev/revive", "asdf:bjw-s/asdf-revive"]
 richgo.description = "Enrich `go test` outputs with text decorations"
