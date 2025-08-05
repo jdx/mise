@@ -71,14 +71,60 @@ impl ServerHandler for MiseServer {
     ) -> std::result::Result<ReadResourceResult, ErrorData> {
         match params.uri.as_str() {
             "mise://tools" => {
-                let _config = Config::get().await.map_err(|e| ErrorData {
+                let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode(500),
                     message: Cow::Owned(format!("Failed to load config: {e}")),
                     data: None,
                 })?;
 
-                let tool_list: Vec<Value> = vec![];
-                let text = serde_json::to_string_pretty(&tool_list).unwrap();
+                // Get tool request set and resolve toolset
+                let trs = config
+                    .get_tool_request_set()
+                    .await
+                    .map_err(|e| ErrorData {
+                        code: ErrorCode(500),
+                        message: Cow::Owned(format!("Failed to get tool request set: {e}")),
+                        data: None,
+                    })?
+                    .clone();
+
+                let mut ts = crate::toolset::Toolset::from(trs);
+                ts.resolve(&config).await.map_err(|e| ErrorData {
+                    code: ErrorCode(500),
+                    message: Cow::Owned(format!("Failed to resolve toolset: {e}")),
+                    data: None,
+                })?;
+
+                // Get all tool versions
+                let versions = ts.list_all_versions(&config).await.map_err(|e| ErrorData {
+                    code: ErrorCode(500),
+                    message: Cow::Owned(format!("Failed to list tool versions: {e}")),
+                    data: None,
+                })?;
+
+                // Group by tool and create JSON output
+                let mut tools_map: std::collections::HashMap<String, Vec<Value>> =
+                    std::collections::HashMap::new();
+
+                for (backend, tv) in versions {
+                    let tool_name = backend.id().to_string();
+                    let install_path = tv.install_path();
+                    let installed = install_path.exists();
+                    let version_info = json!({
+                        "version": tv.version.clone(),
+                        "requested_version": tv.request.version(),
+                        "install_path": install_path.to_string_lossy(),
+                        "installed": installed,
+                        "active": !tv.request.source().is_unknown(),
+                        "source": tv.request.source().as_json(),
+                    });
+                    tools_map
+                        .entry(tool_name)
+                        .or_insert_with(Vec::new)
+                        .push(version_info);
+                }
+
+                let text = serde_json::to_string_pretty(&tools_map).unwrap();
                 let contents = vec![ResourceContents::TextResourceContents {
                     uri: params.uri.clone(),
                     mime_type: Some("application/json".to_string()),
