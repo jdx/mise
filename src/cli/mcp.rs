@@ -118,10 +118,7 @@ impl ServerHandler for MiseServer {
                         "active": !tv.request.source().is_unknown(),
                         "source": tv.request.source().as_json(),
                     });
-                    tools_map
-                        .entry(tool_name)
-                        .or_default()
-                        .push(version_info);
+                    tools_map.entry(tool_name).or_default().push(version_info);
                 }
 
                 let text = serde_json::to_string_pretty(&tools_map).unwrap();
