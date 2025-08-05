@@ -2,6 +2,7 @@ use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
+use crate::path_env::PathEnv;
 use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
@@ -567,6 +568,17 @@ impl Task {
         // Remove environment variables that were explicitly unset
         for key in &env_results.env_remove {
             env.remove(key);
+        }
+
+        // Apply path additions from _.path directives
+        if !env_results.env_paths.is_empty() {
+            let mut path_env = PathEnv::from_iter(env::split_paths(
+                &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
+            ));
+            for path in env_results.env_paths {
+                path_env.add(path);
+            }
+            env.insert(env::PATH_KEY.to_string(), path_env.to_string());
         }
 
         Ok(env)

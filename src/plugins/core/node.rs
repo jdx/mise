@@ -342,10 +342,10 @@ impl NodePlugin {
     ) -> Result<()> {
         pr.set_message("npm -v".into());
         CmdLineRunner::new(self.npm_path(tv))
-            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .with_pr(pr)
             .arg("-v")
             .envs(config.env().await?)
+            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()
     }
 
