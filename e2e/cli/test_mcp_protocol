@@ -44,7 +44,7 @@ output=$(printf '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protoc
 # The server should at least start and process the initialize request
 # even if it times out waiting for more input
 if echo "$output" | grep -q "Failed to create service"; then
-  echo "MCP server responded to protocol messages"
+	echo "MCP server responded to protocol messages"
 fi
 
 # Verify that our mise.toml configuration would be loaded
@@ -57,7 +57,7 @@ mise tasks ls | grep -q "lint" || exit 1
 # Check that env vars would be available
 eval "$(mise env 2>/dev/null)"
 if [[ -n $TEST_MCP_VAR ]]; then
-  echo "Environment variables are properly configured"
+	echo "Environment variables are properly configured"
 fi
 
 echo "All MCP protocol tests passed!"
