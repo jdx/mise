@@ -120,7 +120,7 @@ impl ServerHandler for MiseServer {
                     });
                     tools_map
                         .entry(tool_name)
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(version_info);
                 }
 
