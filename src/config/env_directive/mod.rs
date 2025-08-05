@@ -3,7 +3,6 @@ use crate::dirs;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::path_env::PathEnv;
 use crate::tera::{get_tera, tera_exec};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
@@ -260,14 +259,8 @@ impl EnvResults {
                 EnvDirective::Path(input_str, _opts) => {
                     let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str).await?;
                     paths.push((path.clone(), source.clone()));
-                    let env_path = env.get(&*env::PATH_KEY).cloned().unwrap_or_default().0;
-                    let mut env_path: PathEnv = env_path.parse()?;
-                    env_path.add(path);
-                    // Use the directive source for PATH values so they get included in env_results
-                    env.insert(
-                        env::PATH_KEY.to_string(),
-                        (env_path.to_string(), Some(source.clone())),
-                    );
+                    // Don't modify PATH in env - just add to env_paths
+                    // This allows consumers to control PATH ordering
                 }
                 EnvDirective::File(input, _opts) => {
                     let files = Self::file(
