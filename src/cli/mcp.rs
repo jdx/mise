@@ -6,8 +6,9 @@ use rmcp::{
     handler::server::ServerHandler,
     model::{
         AnnotateAble, CallToolRequestParam, CallToolResult, Content, ErrorCode, ErrorData,
-        ListResourcesResult, ListToolsResult, PaginatedRequestParam, RawResource,
-        ReadResourceRequestParam, ReadResourceResult, ResourceContents,
+        Implementation, ListResourcesResult, ListToolsResult, PaginatedRequestParam,
+        ProtocolVersion, RawResource, ReadResourceRequestParam, ReadResourceResult,
+        ResourceContents, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
 };
@@ -33,6 +34,18 @@ impl MiseServer {
 }
 
 impl ServerHandler for MiseServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            protocol_version: ProtocolVersion::V_2024_11_05,
+            capabilities: ServerCapabilities::builder()
+                .enable_resources()
+                .enable_tools()
+                .build(),
+            server_info: Implementation::from_build_env(),
+            instructions: Some("Mise MCP server provides access to tools, tasks, environment variables, and configuration".to_string()),
+        }
+    }
+
     async fn list_resources(
         &self,
         _pagination: Option<PaginatedRequestParam>,
