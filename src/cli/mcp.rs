@@ -69,8 +69,20 @@ impl ServerHandler for MiseServer {
         params: ReadResourceRequestParam,
         _context: RequestContext<RoleServer>,
     ) -> std::result::Result<ReadResourceResult, ErrorData> {
-        match params.uri.as_str() {
-            "mise://tools" => {
+        // Parse URI to extract query parameters
+        let url = url::Url::parse(&params.uri).map_err(|e| ErrorData {
+            code: ErrorCode(400),
+            message: Cow::Owned(format!("Invalid URI: {e}")),
+            data: None,
+        })?;
+
+        // Parse query parameters
+        let include_inactive = url
+            .query_pairs()
+            .any(|(key, value)| key == "include_inactive" && value == "true");
+
+        match (url.scheme(), url.host_str()) {
+            ("mise", Some("tools")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode(500),
                     message: Cow::Owned(format!("Failed to load config: {e}")),
@@ -95,12 +107,25 @@ impl ServerHandler for MiseServer {
                     data: None,
                 })?;
 
-                // Get all tool versions
-                let versions = ts.list_all_versions(&config).await.map_err(|e| ErrorData {
-                    code: ErrorCode(500),
-                    message: Cow::Owned(format!("Failed to list tool versions: {e}")),
-                    data: None,
-                })?;
+                // Get current versions to determine which are active
+                let current_versions = ts.list_current_versions();
+                let active_versions: std::collections::HashSet<String> = current_versions
+                    .iter()
+                    .map(|(backend, tv)| format!("{}@{}", backend.id(), tv.version))
+                    .collect();
+
+                // Determine which versions to include
+                let versions = if include_inactive {
+                    // Include all versions (active + installed)
+                    ts.list_all_versions(&config).await.map_err(|e| ErrorData {
+                        code: ErrorCode(500),
+                        message: Cow::Owned(format!("Failed to list tool versions: {e}")),
+                        data: None,
+                    })?
+                } else {
+                    // Only include active versions (current)
+                    current_versions
+                };
 
                 // Group by tool and create JSON output
                 let mut tools_map: std::collections::HashMap<String, Vec<Value>> =
@@ -110,12 +135,13 @@ impl ServerHandler for MiseServer {
                     let tool_name = backend.id().to_string();
                     let install_path = tv.install_path();
                     let installed = install_path.exists();
+                    let version_key = format!("{}@{}", backend.id(), tv.version);
                     let version_info = json!({
                         "version": tv.version.clone(),
                         "requested_version": tv.request.version(),
                         "install_path": install_path.to_string_lossy(),
                         "installed": installed,
-                        "active": !tv.request.source().is_unknown(),
+                        "active": active_versions.contains(&version_key),
                         "source": tv.request.source().as_json(),
                     });
                     tools_map.entry(tool_name).or_default().push(version_info);
@@ -130,7 +156,7 @@ impl ServerHandler for MiseServer {
 
                 Ok(ReadResourceResult { contents })
             }
-            "mise://tasks" => {
+            ("mise", Some("tasks")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode(500),
                     message: Cow::Owned(format!("Failed to load config: {e}")),
@@ -176,7 +202,7 @@ impl ServerHandler for MiseServer {
 
                 Ok(ReadResourceResult { contents })
             }
-            "mise://env" => {
+            ("mise", Some("env")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode(500),
                     message: Cow::Owned(format!("Failed to load config: {e}")),
@@ -203,7 +229,7 @@ impl ServerHandler for MiseServer {
 
                 Ok(ReadResourceResult { contents })
             }
-            "mise://config" => {
+            ("mise", Some("config")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode(500),
                     message: Cow::Owned(format!("Failed to load config: {e}")),
