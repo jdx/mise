@@ -2730,11 +2730,10 @@ const completionSpec: Fig.Spec = {
         },
       ],
       args: {
-        name: "tool",
-        description: "Tool name to test",
+        name: "tools",
+        description: "Tool(s) to test",
         isOptional: true,
-        generators: completionGeneratorTemplate(`mise registry --complete`),
-        debounce: true,
+        isVariadic: true,
       },
     },
     {

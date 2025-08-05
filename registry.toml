@@ -74,6 +74,7 @@ aks-engine.test = ["aks-engine version", "Version: v{{version}}"]
 allure.backends = ["asdf:mise-plugins/mise-allure"]
 allure.test = ["allure --version", "{{version}}"]
 allurectl.backends = ["ubi:allure-framework/allurectl"]
+allurectl.test = ["allurectl --version", "allurectl version {{version}}"]
 alp.description = "Access Log Profiler"
 alp.backends = ["aqua:tkuchiki/alp", "asdf:asdf-community/asdf-alp"]
 alp.test = ["alp --version", "{{version}}"]
@@ -83,6 +84,10 @@ amazon-ecr-credential-helper.description = "Automatically gets credentials for A
 amazon-ecr-credential-helper.backends = [
     "aqua:awslabs/amazon-ecr-credential-helper",
     "asdf:dex4er/asdf-amazon-ecr-credential-helper"
+]
+amazon-ecr-credential-helper.test = [
+    "docker-credential-ecr-login version",
+    "docker-credential-ecr-login (github.com/awslabs/amazon-ecr-credential-helper/ecr-login) {{version}}"
 ]
 amp.description = "An agentic coding tool built by Sourcegraph"
 amp.backends = ["npm:@sourcegraph/amp"]
@@ -101,18 +106,22 @@ apko.backends = [
     "ubi:chainguard-dev/apko",
     "asdf:omissis/asdf-apko"
 ]
+apko.test = ["apko version", "GitVersion:    v{{version}}"]
 apollo-ios.aliases = ["apollo-ios-cli"]
 apollo-ios.backends = ["asdf:mise-plugins/mise-apollo-ios-cli"]
 apollo-router.backends = [
     "ubi:apollographql/router",
     "asdf:safx/asdf-apollo-router"
 ]
+apollo-router.test = ["router --version", "{{version}}"]
 apollo-rover.backends = ["ubi:apollographql/rover"]
+apollo-rover.test = ["rover --version", "Rover {{version}}"]
 aqua.backends = ["ubi:aquaproj/aqua"]
 aqua.test = ["aqua version", "{{version}}"]
 arduino.aliases = ["arduino-cli"]
 arduino.description = "Arduino command line tool"
 arduino.backends = ["aqua:arduino/arduino-cli", "asdf:egnor/asdf-arduino-cli"]
+arduino.test = ["arduino-cli version", "arduino-cli  Version: {{version}}"]
 argc.backends = ["ubi:sigoden/argc"]
 argo.description = "Argo Worfkflows CLI. Workflow engine for Kubernetes"
 argo.backends = ["aqua:argoproj/argo-workflows", "asdf:sudermanjr/asdf-argo"]
