@@ -79,7 +79,11 @@ impl ServerHandler for MiseServer {
 
                 let tool_list: Vec<Value> = vec![];
                 let text = serde_json::to_string_pretty(&tool_list).unwrap();
-                let contents = vec![ResourceContents::text(text, params.uri.clone())];
+                let contents = vec![ResourceContents::TextResourceContents {
+                    uri: params.uri.clone(),
+                    mime_type: Some("application/json".to_string()),
+                    text,
+                }];
 
                 Ok(ReadResourceResult { contents })
             }
@@ -106,7 +110,11 @@ impl ServerHandler for MiseServer {
                 }).collect();
 
                 let text = serde_json::to_string_pretty(&task_list).unwrap();
-                let contents = vec![ResourceContents::text(text, params.uri.clone())];
+                let contents = vec![ResourceContents::TextResourceContents {
+                    uri: params.uri.clone(),
+                    mime_type: Some("application/json".to_string()),
+                    text,
+                }];
 
                 Ok(ReadResourceResult { contents })
             }
@@ -129,7 +137,11 @@ impl ServerHandler for MiseServer {
                 }
 
                 let text = serde_json::to_string_pretty(&env_map).unwrap();
-                let contents = vec![ResourceContents::text(text, params.uri.clone())];
+                let contents = vec![ResourceContents::TextResourceContents {
+                    uri: params.uri.clone(),
+                    mime_type: Some("application/json".to_string()),
+                    text,
+                }];
 
                 Ok(ReadResourceResult { contents })
             }
@@ -146,7 +158,11 @@ impl ServerHandler for MiseServer {
                 });
 
                 let text = serde_json::to_string_pretty(&config_info).unwrap();
-                let contents = vec![ResourceContents::text(text, params.uri.clone())];
+                let contents = vec![ResourceContents::TextResourceContents {
+                    uri: params.uri.clone(),
+                    mime_type: Some("application/json".to_string()),
+                    text,
+                }];
 
                 Ok(ReadResourceResult { contents })
             }
