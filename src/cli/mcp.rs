@@ -60,7 +60,7 @@ impl ServerHandler for MiseServer {
             "mise://tools" => {
                 let _config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode(500),
-                    message: Cow::Owned(format!("Failed to load config: {}", e)),
+                    message: Cow::Owned(format!("Failed to load config: {e}")),
                     data: None,
                 })?;
 
@@ -73,13 +73,13 @@ impl ServerHandler for MiseServer {
             "mise://tasks" => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode(500),
-                    message: Cow::Owned(format!("Failed to load config: {}", e)),
+                    message: Cow::Owned(format!("Failed to load config: {e}")),
                     data: None,
                 })?;
 
                 let tasks = config.tasks().await.map_err(|e| ErrorData {
                     code: ErrorCode(500),
-                    message: Cow::Owned(format!("Failed to load tasks: {}", e)),
+                    message: Cow::Owned(format!("Failed to load tasks: {e}")),
                     data: None,
                 })?;
 
@@ -100,13 +100,13 @@ impl ServerHandler for MiseServer {
             "mise://env" => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode(500),
-                    message: Cow::Owned(format!("Failed to load config: {}", e)),
+                    message: Cow::Owned(format!("Failed to load config: {e}")),
                     data: None,
                 })?;
 
                 let env_template = config.env().await.map_err(|e| ErrorData {
                     code: ErrorCode(500),
-                    message: Cow::Owned(format!("Failed to load env: {}", e)),
+                    message: Cow::Owned(format!("Failed to load env: {e}")),
                     data: None,
                 })?;
 
@@ -123,7 +123,7 @@ impl ServerHandler for MiseServer {
             "mise://config" => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode(500),
-                    message: Cow::Owned(format!("Failed to load config: {}", e)),
+                    message: Cow::Owned(format!("Failed to load config: {e}")),
                     data: None,
                 })?;
 

@@ -100,6 +100,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise lock [FLAGS] [TOOL]…`](/cli/lock.md)
 - [`mise ls [FLAGS] [INSTALLED_TOOL]…`](/cli/ls.md)
 - [`mise ls-remote [--all] [TOOL@VERSION] [PREFIX]`](/cli/ls-remote.md)
+- [`mise mcp`](/cli/mcp.md)
 - [`mise outdated [FLAGS] [TOOL@VERSION]…`](/cli/outdated.md)
 - [`mise plugins [FLAGS] <SUBCOMMAND>`](/cli/plugins.md)
 - [`mise plugins install [FLAGS] [NEW_PLUGIN] [GIT_URL]`](/cli/plugins/install.md)

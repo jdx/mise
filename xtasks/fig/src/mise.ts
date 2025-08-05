@@ -1570,6 +1570,10 @@ const completionSpec: Fig.Spec = {
       ],
     },
     {
+      name: "mcp",
+      description: "[experimental] Run Model Context Protocol (MCP) server",
+    },
+    {
       name: "outdated",
       description: "Shows outdated tool versions",
       options: [
