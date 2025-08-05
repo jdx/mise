@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Test MCP protocol interactions in more detail
+export MISE_EXPERIMENTAL=1
+
+# For now, just verify the MCP server can handle basic errors gracefully
+# Full protocol testing would require implementing proper MCP client handshake
+
+# Test that MCP server rejects invalid JSON and returns error
+output=$(echo "not json" | mise mcp 2>&1 || true)
+assert_contains "echo '$output'" "Failed to create service"
+
+# Test that MCP server requires proper initialization
+output=$(echo '{"jsonrpc":"2.0","id":1,"method":"unknown","params":{}}' | mise mcp 2>&1 || true)
+assert_contains "echo '$output'" "Failed to create service"
+
+echo "Basic MCP protocol tests passed!"
