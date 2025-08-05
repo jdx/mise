@@ -20,8 +20,23 @@ use std::collections::HashMap;
 ///
 /// This command starts an MCP server that exposes mise functionality
 /// to AI assistants over stdin/stdout using JSON-RPC protocol.
+///
+/// The MCP server provides access to:
+/// - Installed and available tools
+/// - Task definitions and execution
+/// - Environment variables
+/// - Configuration information
+///
+/// Resources available:
+/// - mise://tools - List all tools (use ?include_inactive=true to include inactive tools)
+/// - mise://tasks - List all tasks with their configurations
+/// - mise://env - List all environment variables
+/// - mise://config - Show configuration files and project root
+///
+/// Note: This is primarily intended for integration with AI assistants like Claude,
+/// Cursor, or other tools that support the Model Context Protocol.
 #[derive(Debug, Parser)]
-#[clap(verbatim_doc_comment)]
+#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Mcp {}
 
 #[derive(Clone)]
@@ -70,6 +85,7 @@ impl ServerHandler for MiseServer {
         _context: RequestContext<RoleServer>,
     ) -> std::result::Result<ReadResourceResult, ErrorData> {
         // Parse URI to extract query parameters
+        // Example: mise://tools?include_inactive=true
         let url = url::Url::parse(&params.uri).map_err(|e| ErrorData {
             code: ErrorCode(400),
             message: Cow::Owned(format!("Invalid URI: {e}")),
@@ -77,12 +93,16 @@ impl ServerHandler for MiseServer {
         })?;
 
         // Parse query parameters
+        // include_inactive=true will show all installed tools, not just active ones
         let include_inactive = url
             .query_pairs()
             .any(|(key, value)| key == "include_inactive" && value == "true");
 
         match (url.scheme(), url.host_str()) {
             ("mise", Some("tools")) => {
+                // Return tool information
+                // By default only shows active tools (those in current .mise.toml)
+                // With ?include_inactive=true, shows all installed tools
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode(500),
                     message: Cow::Owned(format!("Failed to load config: {e}")),
@@ -128,6 +148,7 @@ impl ServerHandler for MiseServer {
                 };
 
                 // Group by tool and create JSON output
+                // Output format: { "node": [{"version": "20.11.0", "active": true, ...}], ... }
                 let mut tools_map: std::collections::HashMap<String, Vec<Value>> =
                     std::collections::HashMap::new();
 
@@ -315,3 +336,31 @@ impl Mcp {
         Ok(())
     }
 }
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
+
+    # Start the MCP server (typically used by AI assistant tools)
+    $ <bold>mise mcp</bold>
+
+    # Example integration with Claude Desktop (add to claude_desktop_config.json):
+    {
+      "mcpServers": {
+        "mise": {
+          "command": "mise",
+          "args": ["mcp"]
+        }
+      }
+    }
+
+    # Interactive testing with JSON-RPC commands:
+    $ <bold>echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | mise mcp</bold>
+
+    # Resources you can query:
+    - <bold>mise://tools</bold> - List active tools
+    - <bold>mise://tools?include_inactive=true</bold> - List all installed tools
+    - <bold>mise://tasks</bold> - List all tasks
+    - <bold>mise://env</bold> - List environment variables
+    - <bold>mise://config</bold> - Show configuration info
+"#
+);
