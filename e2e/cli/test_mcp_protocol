@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+
+# Test MCP protocol interactions in more detail
+export MISE_EXPERIMENTAL=1
+
+# Create a test environment with tools, tasks and env vars
+cat >mise.toml <<EOF
+[tools]
+node = "20.11.0"
+python = "3.12"
+
+[env]
+TEST_MCP_VAR = "test_value"
+PROJECT_ENV = "development"
+API_KEY = "secret123"
+
+[tasks.test-task]
+run = "echo 'Running test task'"
+description = "A test task for MCP"
+
+[tasks.build]
+run = "echo 'Building...'"
+description = "Build the project"
+depends = ["test-task"]
+alias = ["b"]
+dir = "."
+quiet = true
+
+[tasks.lint]
+run = "echo 'Linting code'"
+description = "Run linters"
+usage = "lint [files...]"
+EOF
+
+# Helper function to send JSON-RPC request to MCP server
+send_mcp_request() {
+	local method=$1
+	local params=$2
+	local id=${3:-1}
+
+	local request="{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"$method\",\"params\":$params}"
+	echo "$request"
+}
+
+# Helper to extract result from JSON-RPC response
+extract_result() {
+	local response=$1
+	echo "$response" | grep -o '"result":[^}]*' | sed 's/"result"://'
+}
+
+echo "Testing MCP server startup and error handling..."
+
+# Test that MCP server rejects invalid JSON
+output=$(echo "not json" | mise mcp 2>&1 || true)
+if [[ $output == *"Failed to create service"* ]]; then
+	echo "SUCCESS: MCP server correctly rejected invalid JSON"
+else
+	echo "ERROR: Expected 'Failed to create service' in output, got: $output"
+	exit 1
+fi
+
+echo -e "\nTesting MCP protocol with actual requests..."
+
+# Create a simplified test that works around the rmcp 0.3 connection issue
+cat >test_mcp.py <<'EOF'
+#!/usr/bin/env python3
+import json
+import subprocess
+import sys
+from typing import Dict, Any
+
+def test_initialize_only():
+    """Test only the initialize handshake since that's what we can reliably test"""
+    import os
+    # Try multiple paths to find mise binary
+    mise_paths = [
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "target", "debug", "mise"),
+        "/Users/jdx/src/mise/alt/target/debug/mise",
+        "mise"  # fallback to PATH
+    ]
+    
+    mise_path = None
+    for path in mise_paths:
+        if os.path.exists(path) or path == "mise":
+            mise_path = path
+            break
+    if not mise_path:
+        print("ERROR: Could not find mise binary")
+        return 1
+    
+    print(f"Using mise binary: {mise_path}")
+    
+    # Test initialize request only
+    proc = subprocess.Popen(
+        [mise_path, "mcp"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env={**dict(os.environ), "MISE_EXPERIMENTAL": "1"}
+    )
+    
+    try:
+        # Send initialize request
+        init_request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "test-client", "version": "1.0.0"}
+            }
+        }
+        
+        request_str = json.dumps(init_request) + "\n"
+        proc.stdin.write(request_str.encode())
+        proc.stdin.flush()
+        
+        # Read response with timeout
+        import select
+        ready, _, _ = select.select([proc.stdout], [], [], 3.0)
+        if not ready:
+            print("ERROR: No response to initialize request")
+            return 1
+            
+        response_line = proc.stdout.readline().decode().strip()
+        if not response_line:
+            print("ERROR: Empty response to initialize request")
+            return 1
+            
+        try:
+            response = json.loads(response_line)
+        except json.JSONDecodeError as e:
+            print(f"ERROR: Invalid JSON response: {e}")
+            print(f"Response was: {response_line}")
+            return 1
+        
+        print(f"✓ Initialize response received: {json.dumps(response, indent=2)}")
+        
+        # Validate response structure
+        if "result" not in response:
+            print(f"ERROR: No result in initialize response: {response}")
+            return 1
+            
+        result = response["result"]
+        
+        # Check protocol version
+        if result.get("protocolVersion") != "2025-03-26":
+            print(f"ERROR: Wrong protocol version: {result.get('protocolVersion')}")
+            return 1
+        print("✓ Protocol version correct")
+        
+        # Check capabilities
+        if "capabilities" not in result:
+            print("ERROR: No capabilities in response")
+            return 1
+        capabilities = result["capabilities"]
+        
+        if "resources" not in capabilities:
+            print("ERROR: Resources capability not advertised")
+            return 1
+        print("✓ Resources capability present")
+        
+        if "tools" not in capabilities:
+            print("ERROR: Tools capability not advertised")
+            return 1
+        print("✓ Tools capability present")
+        
+        # Check server info
+        if "serverInfo" not in result:
+            print("ERROR: No serverInfo in response")
+            return 1
+        server_info = result["serverInfo"]
+        
+        if server_info.get("name") != "rmcp":
+            print(f"ERROR: Wrong server name: {server_info.get('name')}")
+            return 1
+        print("✓ Server info correct")
+        
+        print("✓ All initialize validation passed!")
+        return 0
+        
+    except Exception as e:
+        print(f"ERROR: Exception during test: {e}")
+        return 1
+    finally:
+        proc.terminate()
+        proc.wait()
+
+def main():
+    return test_initialize_only()
+
+if __name__ == "__main__":
+    from os import environ
+    sys.exit(main())
+EOF
+
+# Run the Python test script
+chmod +x test_mcp.py
+python3 test_mcp.py || exit 1
+
+# Clean up
+rm -f test_mcp.py
+
+echo "All tests completed successfully!"

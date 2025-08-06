@@ -1290,6 +1290,12 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: "--fetch",
+              description:
+                "Fetch checksums and sizes for an existing tool stub file",
+              isRepeatable: false,
+            },
+            {
               name: "--http",
               description: "HTTP backend type to use",
               isRepeatable: false,
@@ -1568,6 +1574,10 @@ const completionSpec: Fig.Spec = {
           debounce: true,
         },
       ],
+    },
+    {
+      name: "mcp",
+      description: "[experimental] Run Model Context Protocol (MCP) server",
     },
     {
       name: "outdated",
@@ -2730,11 +2740,10 @@ const completionSpec: Fig.Spec = {
         },
       ],
       args: {
-        name: "tool",
-        description: "Tool name to test",
+        name: "tools",
+        description: "Tool(s) to test",
         isOptional: true,
-        generators: completionGeneratorTemplate(`mise registry --complete`),
-        debounce: true,
+        isVariadic: true,
       },
     },
     {
