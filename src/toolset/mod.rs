@@ -693,10 +693,10 @@ impl Toolset {
         for p in &add_paths {
             path_env.add(p.clone());
         }
-        for p in self.list_paths(config).await {
+        for p in config.path_dirs().await?.clone() {
             path_env.add(p);
         }
-        for p in config.path_dirs().await?.clone() {
+        for p in self.list_paths(config).await {
             path_env.add(p);
         }
         tera_env.insert(PATH_KEY.to_string(), path_env.to_string());
@@ -743,11 +743,11 @@ impl Toolset {
         // 2. tool_add_paths (MISE_ADD_PATH/RTX_ADD_PATH from tools)
         paths.extend(env_results.tool_add_paths);
 
-        // 3. Tool paths
-        paths.extend(self.list_paths(config).await);
-
-        // 4. Config path dirs
+        // 3. Config path dirs
         paths.extend(config.path_dirs().await?.clone());
+
+        // 4. Tool paths
+        paths.extend(self.list_paths(config).await);
 
         // 5. UV venv path (if any) - not in tera_env but added to final paths
         if let Some(venv) = uv::uv_venv(config, self).await {
