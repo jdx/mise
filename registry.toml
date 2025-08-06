@@ -1011,6 +1011,7 @@ gator.test = ["gator --version", "gator version v{{version}}"]
 gauche.backends = ["asdf:mise-plugins/mise-gauche"]
 gcc-arm-none-eabi.backends = ["asdf:mise-plugins/mise-gcc-arm-none-eabi"]
 gcloud.backends = ["asdf:mise-plugins/mise-gcloud"]
+gcloud.depends = ["python"]
 gdu.description = "Fast disk usage analyzer with console interface written in Go"
 gdu.backends = ["aqua:dundee/gdu"]
 gemini-cli.aliases = ["gemini"]
