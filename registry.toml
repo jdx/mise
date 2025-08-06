@@ -2812,6 +2812,14 @@ trunk.test = [
     "trunk --help",
     "trunk [flags] [subcommand]"
 ] # --version can't be used because we know the launcher version, but we get the binary version
+trzsz-ssh.aliases = ["tssh"]
+trzsz-ssh.description = "trzsz-ssh ( tssh ) is an ssh client designed as a drop-in replacement for the openssh client. It aims to provide complete compatibility with openssh, mirroring all its features, while also offering additional useful features. Such as login prompt, batch login, remember password, automated interaction, trzsz, zmodem(rz/sz), udp mode like mosh, etc."
+trzsz-ssh.backends = [
+    "aqua:trzsz/trzsz-ssh",
+    "ubi:trzsz/trzsz-ssh",
+    "go:github.com/trzsz/trzsz-ssh/cmd/tssh"
+]
+trzsz-ssh.test = ["tssh --version 2>&1", "trzsz ssh {{version}}"]
 tsuru.backends = [
     "ubi:tsuru/tsuru-client[exe=tsuru]",
     "asdf:virtualstaticvoid/asdf-tsuru"
