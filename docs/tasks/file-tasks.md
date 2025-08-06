@@ -197,7 +197,7 @@ Run it with:
 
 ```shell
 mise run greet greeting.txt --user Alice
-# Greeting written to file.txt
+# Greeting written to greeting.txt
 ```
 
 If you pass an invalid argument, you will get an error message:
@@ -211,7 +211,7 @@ mise run greet invalid.txt --user Alice
 Autocomplete will show the available choices for the `output_file` argument if `usage` is installed.
 
 ```shell
-mise run <TAB>
+mise run greet <TAB>
 # > greeting.txt
 #   file.txt
 ```

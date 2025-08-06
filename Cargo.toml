@@ -3,7 +3,7 @@ members = ["crates/vfox"]
 
 [package]
 name = "mise"
-version = "2025.8.4"
+version = "2025.8.6"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -117,6 +117,8 @@ reqwest = { version = "0.12", default-features = false, features = [
   "http2",
   "macos-system-configuration",
 ] }
+rmcp = { version = "0.3", features = ["server", "transport-io", "schemars"] }
+rmcp-macros = "0.3"
 rmp-serde = "1"
 rops = { version = "0.1", default-features = false, features = [
   "aes-gcm",
@@ -230,7 +232,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ ar
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
 
 [package.metadata.cargo-machete]
-ignored = ["built", "openssl", "cfg_aliases"]
+ignored = ["built", "openssl", "cfg_aliases", "rmcp-macros"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = [

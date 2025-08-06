@@ -74,6 +74,7 @@ aks-engine.test = ["aks-engine version", "Version: v{{version}}"]
 allure.backends = ["asdf:mise-plugins/mise-allure"]
 allure.test = ["allure --version", "{{version}}"]
 allurectl.backends = ["ubi:allure-framework/allurectl"]
+allurectl.test = ["allurectl --version", "allurectl version {{version}}"]
 alp.description = "Access Log Profiler"
 alp.backends = ["aqua:tkuchiki/alp", "asdf:asdf-community/asdf-alp"]
 alp.test = ["alp --version", "{{version}}"]
@@ -83,6 +84,10 @@ amazon-ecr-credential-helper.description = "Automatically gets credentials for A
 amazon-ecr-credential-helper.backends = [
     "aqua:awslabs/amazon-ecr-credential-helper",
     "asdf:dex4er/asdf-amazon-ecr-credential-helper"
+]
+amazon-ecr-credential-helper.test = [
+    "docker-credential-ecr-login version",
+    "docker-credential-ecr-login (github.com/awslabs/amazon-ecr-credential-helper/ecr-login) {{version}}"
 ]
 amp.description = "An agentic coding tool built by Sourcegraph"
 amp.backends = ["npm:@sourcegraph/amp"]
@@ -101,18 +106,22 @@ apko.backends = [
     "ubi:chainguard-dev/apko",
     "asdf:omissis/asdf-apko"
 ]
+apko.test = ["apko version", "GitVersion:    v{{version}}"]
 apollo-ios.aliases = ["apollo-ios-cli"]
 apollo-ios.backends = ["asdf:mise-plugins/mise-apollo-ios-cli"]
 apollo-router.backends = [
     "ubi:apollographql/router",
     "asdf:safx/asdf-apollo-router"
 ]
+apollo-router.test = ["router --version", "{{version}}"]
 apollo-rover.backends = ["ubi:apollographql/rover"]
+apollo-rover.test = ["rover --version", "Rover {{version}}"]
 aqua.backends = ["ubi:aquaproj/aqua"]
 aqua.test = ["aqua version", "{{version}}"]
 arduino.aliases = ["arduino-cli"]
 arduino.description = "Arduino command line tool"
 arduino.backends = ["aqua:arduino/arduino-cli", "asdf:egnor/asdf-arduino-cli"]
+arduino.test = ["arduino-cli version", "arduino-cli  Version: {{version}}"]
 argc.backends = ["ubi:sigoden/argc"]
 argo.description = "Argo Worfkflows CLI. Workflow engine for Kubernetes"
 argo.backends = ["aqua:argoproj/argo-workflows", "asdf:sudermanjr/asdf-argo"]
@@ -577,6 +586,10 @@ conftest.backends = [
 ]
 consul.description = "Consul is a distributed, highly available, and data center aware solution to connect and configure applications across dynamic, distributed infrastructure"
 consul.backends = ["aqua:hashicorp/consul", "asdf:mise-plugins/mise-hashicorp"]
+container.description = "A tool for creating and running Linux containers using lightweight virtual machines on a Mac."
+container.backends = ["aqua:apple/container", "ubi:apple/container"]
+container.os = ["macos"]
+container.test = ["container --version", "container CLI version {{version}}"]
 container-structure-test.description = "validate the structure of your container images"
 container-structure-test.backends = [
     "aqua:GoogleContainerTools/container-structure-test",
@@ -784,6 +797,9 @@ dotenv-linter.backends = [
     "asdf:wesleimp/asdf-dotenv-linter"
 ]
 dotenv-linter.test = ["dotenv-linter --version", "dotenv-linter {{version}}"]
+dotenvx.description = "a secure dotenv–from the creator of `dotenv`"
+dotenvx.backends = ["aqua:dotenvx/dotenvx", "ubi:dotenvx/dotenvx"]
+dotenvx.test = ["dotenvx --version", "{{version}}"]
 dotnet.backends = [
     "asdf:mise-plugins/mise-dotnet",
     "vfox:mise-plugins/vfox-dotnet"
@@ -995,6 +1011,7 @@ gator.test = ["gator --version", "gator version v{{version}}"]
 gauche.backends = ["asdf:mise-plugins/mise-gauche"]
 gcc-arm-none-eabi.backends = ["asdf:mise-plugins/mise-gcc-arm-none-eabi"]
 gcloud.backends = ["asdf:mise-plugins/mise-gcloud"]
+gcloud.depends = ["python"]
 gdu.description = "Fast disk usage analyzer with console interface written in Go"
 gdu.backends = ["aqua:dundee/gdu"]
 gemini-cli.aliases = ["gemini"]
@@ -1641,8 +1658,10 @@ kubebuilder.backends = [
 ]
 kubecm.description = "Manage your kubeconfig more easily"
 kubecm.backends = ["aqua:sunny0826/kubecm", "asdf:samhvw8/asdf-kubecm"]
-kubecolor.description = "colorizes kubectl output"
-kubecolor.backends = ["aqua:hidetatz/kubecolor", "asdf:dex4er/asdf-kubecolor"]
+kubecolor.description = "Colorize your kubectl output"
+kubecolor.backends = ["aqua:kubecolor/kubecolor", "asdf:dex4er/asdf-kubecolor"]
+kubecolor.depends = ["kubectl"]
+# kubecolor.test = ["kubecolor --kubecolor-version", "v{{version}}"] # disable until mise-versions will be updated
 kubeconform.description = "A FAST Kubernetes manifests validator, with support for Custom Resources"
 kubeconform.backends = [
     "aqua:yannh/kubeconform",
@@ -2095,11 +2114,27 @@ overmind.backends = [
     "go:github.com/DarthSim/overmind/v2"
 ]
 oxipng.backends = ["aqua:shssoichiro/oxipng"]
+oxker.description = "A simple tui to view & control docker containers"
+oxker.backends = [
+    "aqua:mrjackwills/oxker",
+    "ubi:mrjackwills/oxker",
+    "cargo:oxker"
+]
+oxker.test = ["oxker --version", "oxker {{version}}"]
+oxlint.description = "This is the linter for oxc."
+oxlint.backends = [
+    "aqua:oxc-project/oxc/oxlint",
+    "ubi:oxc-project/oxc",
+    "npm:oxlint"
+]
+oxlint.test = ["oxlint --version", "Version: {{version}}"]
 pachctl.description = "Data-Centric Pipelines and Data Versioning"
 pachctl.backends = ["aqua:pachyderm/pachyderm", "asdf:abatilo/asdf-pachctl"]
 # pachctl.test = ["pachctl version", "{{version}}"] # test fails on ci but seems to work locally
 packer.description = "Packer is a tool for creating identical machine images for multiple platforms from a single source configuration"
 packer.backends = ["aqua:hashicorp/packer", "asdf:mise-plugins/mise-hashicorp"]
+packer.idiomatic_files = [".packer-version"]
+packer.test = ["packer --version", "Packer v{{version}}"]
 pandoc.backends = ["ubi:jgm/pandoc", "asdf:Fbrisset/asdf-pandoc"]
 patat.backends = ["ubi:jaspervdj/patat", "asdf:airtonix/asdf-patat"]
 pdm.backends = ["pipx:pdm", "asdf:1oglop1/asdf-pdm"]
@@ -2315,6 +2350,9 @@ restish.backends = [
     "ubi:danielgtaylor/restish",
     "go:github.com/danielgtaylor/restish"
 ]
+resvg.description = "An SVG rendering library."
+resvg.backends = ["aqua:linebender/resvg"]
+resvg.test = ["resvg --version", "{{version}}"]
 revive.description = "~6x faster, stricter, configurable, extensible, and beautiful drop-in replacement for golint"
 revive.backends = ["aqua:mgechev/revive", "asdf:bjw-s/asdf-revive"]
 richgo.description = "Enrich `go test` outputs with text decorations"
@@ -2510,6 +2548,13 @@ spark.description = "Apache Spark - A unified analytics engine for large-scale d
 spark.backends = ["aqua:apache/spark", "asdf:mise-plugins/mise-spark"]
 spark.depends = ["java"]
 spark.test = ["spark-shell --version 2>&1", "version {{version}}"]
+specstory.description = "You don’t write prompts. You author intent. Enhance your AI development workflow with SpecStory"
+specstory.backends = [
+    "aqua:specstoryai/getspecstory",
+    "ubi:specstoryai/getspecstory"
+]
+specstory.os = ["linux", "macos"]
+specstory.test = ["specstory --version", "{{version}} (SpecStory)"]
 spectral.description = "A flexible JSON/YAML linter for creating automated style guides, with baked in support for OpenAPI (v3.1, v3.0, and v2.0), Arazzo v1.0, as well as AsyncAPI v2.x"
 spectral.backends = ["aqua:stoplightio/spectral", "asdf:vbyrd/asdf-spectral"]
 spin.description = "Spinnaker CLI"
@@ -2768,6 +2813,14 @@ trunk.test = [
     "trunk --help",
     "trunk [flags] [subcommand]"
 ] # --version can't be used because we know the launcher version, but we get the binary version
+trzsz-ssh.aliases = ["tssh"]
+trzsz-ssh.description = "trzsz-ssh ( tssh ) is an ssh client designed as a drop-in replacement for the openssh client. It aims to provide complete compatibility with openssh, mirroring all its features, while also offering additional useful features. Such as login prompt, batch login, remember password, automated interaction, trzsz, zmodem(rz/sz), udp mode like mosh, etc."
+trzsz-ssh.backends = [
+    "aqua:trzsz/trzsz-ssh",
+    "ubi:trzsz/trzsz-ssh",
+    "go:github.com/trzsz/trzsz-ssh/cmd/tssh"
+]
+trzsz-ssh.test = ["tssh --version 2>&1", "trzsz ssh {{version}}"]
 tsuru.backends = [
     "ubi:tsuru/tsuru-client[exe=tsuru]",
     "asdf:virtualstaticvoid/asdf-tsuru"
@@ -2985,7 +3038,12 @@ yamlscript.backends = [
     "asdf:mise-plugins/mise-yamlscript"
 ]
 yamlscript.test = ["ys --version", "{{version}}"]
-yarn.backends = ["npm:@yarnpkg/cli-dist", "asdf:mise-plugins/mise-yarn"]
+yarn.backends = [
+    "aqua:yarnpkg/berry",
+    "npm:@yarnpkg/cli-dist",
+    "asdf:mise-plugins/mise-yarn"
+]
+yarn.idiomatic_files = [".yvmrc"]
 yarn.test = ["yarn --version", "{{version}}"]
 yay.backends = ["asdf:mise-plugins/mise-yay"]
 yazi.description = "Blazing fast terminal file manager written in Rust, based on async I/O"
