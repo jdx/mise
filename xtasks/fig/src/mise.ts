@@ -1290,6 +1290,12 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: "--fetch",
+              description:
+                "Fetch checksums and sizes for an existing tool stub file",
+              isRepeatable: false,
+            },
+            {
               name: "--http",
               description: "HTTP backend type to use",
               isRepeatable: false,

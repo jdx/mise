@@ -623,8 +623,7 @@ impl ToolStub {
                                 Err(e) => {
                                     // Log error but continue with other platforms
                                     eprintln!(
-                                        "Warning: Failed to fetch checksum for platform '{}': {}",
-                                        platform_name, e
+                                        "Warning: Failed to fetch checksum for platform '{platform_name}': {e}"
                                     );
                                 }
                             }
