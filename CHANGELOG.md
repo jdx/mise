@@ -1,5 +1,28 @@
 # Changelog
 
+## [2025.8.7](https://github.com/jdx/mise/compare/v2025.8.6..v2025.8.7) - 2025-08-06
+
+### 📦 Registry
+
+- add python to gcloud dependencies by [@risu729](https://github.com/risu729) in [#5936](https://github.com/jdx/mise/pull/5936)
+
+### 🐛 Bug Fixes
+
+- **(toolset)** properly handle MISE_ADD_PATH from plugins by [@jdx](https://github.com/jdx) in [#5937](https://github.com/jdx/mise/pull/5937)
+
+## [2025.8.6](https://github.com/jdx/mise/compare/v2025.8.5..v2025.8.6) - 2025-08-06
+
+### 📦 Registry
+
+- add resvg ([aqua:linebender/resvg](https://github.com/linebender/resvg)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5926](https://github.com/jdx/mise/pull/5926)
+- add specstory ([aqua:specstoryai/getspecstory](https://github.com/specstoryai/getspecstory)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5927](https://github.com/jdx/mise/pull/5927)
+- add oxker ([aqua:mrjackwills/oxker](https://github.com/mrjackwills/oxker)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5929](https://github.com/jdx/mise/pull/5929)
+- add tssh ([aqua:trzsz/trzsz-ssh](https://github.com/trzsz/trzsz-ssh)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5928](https://github.com/jdx/mise/pull/5928)
+
+### 🚀 Features
+
+- **(tool-stub)** improve stub generation with bin inference, error handling, and fetch mode by [@jdx](https://github.com/jdx) in [#5932](https://github.com/jdx/mise/pull/5932)
+
 ## [2025.8.5](https://github.com/jdx/mise/compare/v2025.8.4..v2025.8.5) - 2025-08-05
 
 ### 📦 Registry
