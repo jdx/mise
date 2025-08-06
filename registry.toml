@@ -483,7 +483,7 @@ claude.test = ["claude --version", "{{version}} (Claude Code)"]
 claude-squad.description = "Manage multiple AI agents like Claude Code, Aider, Codex, and Amp. 10x your productivity"
 claude-squad.backends = [
     "aqua:smtg-ai/claude-squad",
-    "ubi:/smtg-ai/claude-squad"
+    "ubi:smtg-ai/claude-squad"
 ]
 claude-squad.test = [
     "claude-squad version",
