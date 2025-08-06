@@ -300,7 +300,7 @@ black.test = ["black --version", "black, {{version}}"]
 bob.description = "A version manager for neovim"
 bob.backends = [
     # "aqua:MordechaiHadad/bob",  # +x permission not set
-    "ubi:MordechaiHadad/bob",
+    "ubi:MordechaiHadad/bob[matching_regex=bob-(linux|macos|windows)-(arm|x86_64)\\.zip$]",
     "cargo:bob-nvim"
 ]
 bob.test = ["bob --version", "bob-nvim {{version}}"]
