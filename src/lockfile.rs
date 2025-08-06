@@ -291,16 +291,6 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
                     }
                 }
 
-                // Add any existing tools that weren't in the new toolset
-                for existing_tool in existing_tools {
-                    if !merged_tools
-                        .iter()
-                        .any(|mt| mt.version == existing_tool.version)
-                    {
-                        merged_tools.push(existing_tool.clone());
-                    }
-                }
-
                 existing_lockfile
                     .tools
                     .insert(short.to_string(), merged_tools);
