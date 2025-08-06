@@ -181,8 +181,8 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
     }
 
     // add versions added within this session such as from `mise use` or `mise up`
-    // Note: we merge with existing versions rather than replacing to preserve
-    // all versions from the toolset in the lockfile
+    // When `mise up` runs, new_versions contains the upgraded version
+    // We need to replace the old version, not add to it
     for (backend, group) in &new_versions.iter().chunk_by(|tv| tv.ba()) {
         let tvs = group.cloned().collect_vec();
         let source = tvs[0].request.source().clone();
@@ -193,22 +193,17 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
             .or_insert_with(HashMap::new);
 
         if let Some(existing_tvl) = source_tools.get_mut(&backend.short) {
-            // Merge new versions with existing ones, avoiding duplicates
+            // Check if new versions are upgrades (same request, different version)
+            // If so, replace the old versions with matching requests
             for new_tv in tvs {
-                // Find if we already have this version
-                if let Some(existing_tv) = existing_tvl
-                    .versions
-                    .iter_mut()
-                    .find(|tv| tv.version == new_tv.version)
-                {
-                    // Update existing version with new platform info if available
-                    if !new_tv.lock_platforms.is_empty() {
-                        existing_tv.lock_platforms = new_tv.lock_platforms.clone();
-                    }
-                } else {
-                    // Add new version
-                    existing_tvl.versions.push(new_tv);
-                }
+                // Remove any existing versions with the same request
+                existing_tvl.versions.retain(|tv| {
+                    // Keep versions that have different requests
+                    tv.request.version() != new_tv.request.version()
+                });
+
+                // Add the new version
+                existing_tvl.versions.push(new_tv);
             }
         } else {
             // Create new entry if it doesn't exist
@@ -288,6 +283,27 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
                     } else {
                         // No existing version match, use new tool as-is
                         merged_tools.push(new_tool);
+                    }
+                }
+
+                // Add any existing tools that weren't in the new toolset
+                // BUT only if they still match a request in the current configuration
+                for existing_tool in existing_tools {
+                    if !merged_tools
+                        .iter()
+                        .any(|mt| mt.version == existing_tool.version)
+                    {
+                        // Check if this version still matches any request in the current toolset
+                        // This prevents stale versions from persisting after upgrades
+                        if let Some(tvl) = tools.get(short) {
+                            let version_matches_request = tvl
+                                .versions
+                                .iter()
+                                .any(|tv| tv.version == existing_tool.version);
+                            if version_matches_request {
+                                merged_tools.push(existing_tool.clone());
+                            }
+                        }
                     }
                 }
 
