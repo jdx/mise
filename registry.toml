@@ -2113,6 +2113,13 @@ overmind.backends = [
     "go:github.com/DarthSim/overmind/v2"
 ]
 oxipng.backends = ["aqua:shssoichiro/oxipng"]
+oxker.description = "A simple tui to view & control docker containers"
+oxker.backends = [
+    "aqua:mrjackwills/oxker",
+    "ubi:mrjackwills/oxker",
+    "cargo:oxker"
+]
+oxker.test = ["oxker --version", "oxker {{version}}"]
 oxlint.description = "This is the linter for oxc."
 oxlint.backends = [
     "aqua:oxc-project/oxc/oxlint",
