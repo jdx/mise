@@ -690,11 +690,11 @@ impl Toolset {
         tera_env.extend(env.clone());
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
 
-        for p in &add_paths {
-            path_env.add(p.clone());
-        }
         for p in config.path_dirs().await?.clone() {
             path_env.add(p);
+        }
+        for p in &add_paths {
+            path_env.add(p.clone());
         }
         for p in self.list_paths(config).await {
             path_env.add(p);
@@ -740,11 +740,11 @@ impl Toolset {
         // Match the tera_env PATH ordering from final_env():
         // 1. Original system PATH is handled by PathEnv::from_iter() in env_with_path()
 
-        // 2. tool_add_paths (MISE_ADD_PATH/RTX_ADD_PATH from tools)
-        paths.extend(env_results.tool_add_paths);
-
-        // 3. Config path dirs
+        // 2. Config path dirs
         paths.extend(config.path_dirs().await?.clone());
+
+        // 3. tool_add_paths (MISE_ADD_PATH/RTX_ADD_PATH from tools)
+        paths.extend(env_results.tool_add_paths);
 
         // 4. Tool paths
         paths.extend(self.list_paths(config).await);
