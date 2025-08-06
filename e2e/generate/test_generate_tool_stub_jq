@@ -25,3 +25,8 @@ platforms.macos-arm64.url = "https://github.com/jqlang/jq/releases/download/jq-1
 platforms.linux-x64.url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64"
 EOF
 assert "./bin/jq -V" "jq-1.8.1"
+
+# Test 404 error handling
+assert_fail "mise g tool-stub ./bin/jq-404 \
+	--platform-url macos-arm64:https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64 \
+	--platform-url linux-x64:https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-x64-does-not-exist"

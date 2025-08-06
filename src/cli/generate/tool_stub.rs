@@ -162,23 +162,22 @@ impl ToolStub {
             // Auto-detect checksum and size if not skipped
             if !self.skip_download {
                 let mpr = MultiProgressReport::get();
-                if let Ok((checksum, size, bin_path)) = self.analyze_url(url, &mpr).await {
-                    doc["checksum"] = toml_edit::value(&checksum);
+                let (checksum, size, bin_path) = self.analyze_url(url, &mpr).await?;
+                doc["checksum"] = toml_edit::value(&checksum);
 
-                    // Create size entry with human-readable comment
-                    let mut size_item = toml_edit::value(size as i64);
-                    if let Some(value) = size_item.as_value_mut() {
-                        let formatted_comment = format_size_comment(size);
-                        value.decor_mut().set_suffix(formatted_comment);
-                    }
-                    doc["size"] = size_item;
+                // Create size entry with human-readable comment
+                let mut size_item = toml_edit::value(size as i64);
+                if let Some(value) = size_item.as_value_mut() {
+                    let formatted_comment = format_size_comment(size);
+                    value.decor_mut().set_suffix(formatted_comment);
+                }
+                doc["size"] = size_item;
 
-                    if self.bin.is_none() && bin_path.is_some() {
-                        let detected_bin = bin_path.as_ref().unwrap();
-                        // Only set bin if it's different from the stub filename
-                        if detected_bin != stub_filename {
-                            doc["bin"] = toml_edit::value(detected_bin);
-                        }
+                if self.bin.is_none() && bin_path.is_some() {
+                    let detected_bin = bin_path.as_ref().unwrap();
+                    // Only set bin if it's different from the stub filename
+                    if detected_bin != stub_filename {
+                        doc["bin"] = toml_edit::value(detected_bin);
                     }
                 }
             }
@@ -226,31 +225,30 @@ impl ToolStub {
 
                 // Auto-detect checksum, size, and bin path if not skipped
                 if !self.skip_download {
-                    if let Ok((checksum, size, bin_path)) = self.analyze_url(&url, &mpr).await {
-                        platform_table["checksum"] = toml_edit::value(&checksum);
+                    let (checksum, size, bin_path) = self.analyze_url(&url, &mpr).await?;
+                    platform_table["checksum"] = toml_edit::value(&checksum);
 
-                        // Create size entry with human-readable comment
-                        let mut size_item = toml_edit::value(size as i64);
-                        if let Some(value) = size_item.as_value_mut() {
-                            let formatted_comment = format_size_comment(size);
-                            value.decor_mut().set_suffix(formatted_comment);
-                        }
-                        platform_table["size"] = size_item;
+                    // Create size entry with human-readable comment
+                    let mut size_item = toml_edit::value(size as i64);
+                    if let Some(value) = size_item.as_value_mut() {
+                        let formatted_comment = format_size_comment(size);
+                        value.decor_mut().set_suffix(formatted_comment);
+                    }
+                    platform_table["size"] = size_item;
 
-                        // Track detected bin paths
-                        if let Some(ref bp) = bin_path {
-                            detected_bin_paths.push(bp.clone());
-                        }
+                    // Track detected bin paths
+                    if let Some(ref bp) = bin_path {
+                        detected_bin_paths.push(bp.clone());
+                    }
 
-                        // Set bin path if not explicitly provided and we detected one different from stub filename
-                        if !explicit_platform_bins.contains_key(&platform)
-                            && self.bin.is_none()
-                            && bin_path.is_some()
-                        {
-                            let detected_bin = bin_path.as_ref().unwrap();
-                            if detected_bin != stub_filename {
-                                platform_table["bin"] = toml_edit::value(detected_bin);
-                            }
+                    // Set bin path if not explicitly provided and we detected one different from stub filename
+                    if !explicit_platform_bins.contains_key(&platform)
+                        && self.bin.is_none()
+                        && bin_path.is_some()
+                    {
+                        let detected_bin = bin_path.as_ref().unwrap();
+                        if detected_bin != stub_filename {
+                            platform_table["bin"] = toml_edit::value(detected_bin);
                         }
                     }
                 }
