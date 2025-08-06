@@ -297,6 +297,13 @@ bitwarden-secrets-manager.backends = [
 black.description = "The uncompromising Python code formatter"
 black.backends = ["aqua:psf/black"]
 black.test = ["black --version", "black, {{version}}"]
+bob.description = "A version manager for neovim"
+bob.backends = [
+    # "aqua:MordechaiHadad/bob",  # +x permission not set
+    "ubi:MordechaiHadad/bob[matching_regex=bob-(linux|macos|windows)-(arm|x86_64)\\.zip$]",
+    "cargo:bob-nvim"
+]
+bob.test = ["bob --version", "bob-nvim {{version}}"]
 boilerplate.description = "A tool for generating files and folders (\"boilerplate\") from a set of templates"
 boilerplate.backends = ["aqua:gruntwork-io/boilerplate"]
 boilerplate.test = ["boilerplate --version", "boilerplate version v{{version}}"]
