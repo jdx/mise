@@ -70,6 +70,13 @@ pub struct ToolStub {
     #[clap(long)]
     pub skip_download: bool,
 
+    /// Fetch checksums and sizes for an existing tool stub file
+    ///
+    /// This reads an existing stub file and fills in any missing checksum/size fields
+    /// by downloading the files. URLs must already be present in the stub.
+    #[clap(long, conflicts_with_all = &["url", "platform_url", "version", "bin", "platform_bin", "skip_download"])]
+    pub fetch: bool,
+
     /// HTTP backend type to use
     #[clap(long, default_value = "http")]
     pub http: String,
@@ -79,7 +86,11 @@ impl ToolStub {
     pub async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("generate tool-stub")?;
 
-        let stub_content = self.generate_stub().await?;
+        let stub_content = if self.fetch {
+            self.fetch_checksums().await?
+        } else {
+            self.generate_stub().await?
+        };
 
         if let Some(parent) = self.output.parent() {
             file::create_dir_all(parent)?;
@@ -88,7 +99,11 @@ impl ToolStub {
         file::write(&self.output, &stub_content)?;
         file::make_executable(&self.output)?;
 
-        miseprintln!("Generated tool stub: {}", display_path(&self.output));
+        if self.fetch {
+            miseprintln!("Updated tool stub: {}", display_path(&self.output));
+        } else {
+            miseprintln!("Generated tool stub: {}", display_path(&self.output));
+        }
         Ok(())
     }
 
@@ -547,6 +562,89 @@ impl ToolStub {
             exe_list.join("\n  ")
         );
     }
+
+    async fn fetch_checksums(&self) -> Result<String> {
+        // Read the existing stub file
+        if !self.output.exists() {
+            bail!(
+                "Tool stub file does not exist: {}",
+                display_path(&self.output)
+            );
+        }
+
+        let content = file::read_to_string(&self.output)?;
+
+        // Extract TOML content from the stub file (skip shebang)
+        let toml_content = content
+            .lines()
+            .skip_while(|line| line.starts_with('#') || line.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let mut doc = toml_content.parse::<DocumentMut>()?;
+        let mpr = MultiProgressReport::get();
+
+        // Process top-level URL if present
+        if let Some(url) = doc.get("url").and_then(|v| v.as_str()) {
+            // Only fetch if checksum is missing
+            if doc.get("checksum").is_none() {
+                let (checksum, size, _) = self.analyze_url(url, &mpr).await?;
+                doc["checksum"] = toml_edit::value(&checksum);
+
+                // Create size entry with human-readable comment
+                let mut size_item = toml_edit::value(size as i64);
+                if let Some(value) = size_item.as_value_mut() {
+                    let formatted_comment = format_size_comment(size);
+                    value.decor_mut().set_suffix(formatted_comment);
+                }
+                doc["size"] = size_item;
+            }
+        }
+
+        // Process platform-specific URLs
+        if let Some(platforms) = doc.get_mut("platforms").and_then(|p| p.as_table_mut()) {
+            for (platform_name, platform_value) in platforms.iter_mut() {
+                if let Some(platform_table) = platform_value.as_table_mut() {
+                    if let Some(url) = platform_table.get("url").and_then(|v| v.as_str()) {
+                        // Only fetch if checksum is missing for this platform
+                        if platform_table.get("checksum").is_none() {
+                            match self.analyze_url(url, &mpr).await {
+                                Ok((checksum, size, _)) => {
+                                    platform_table["checksum"] = toml_edit::value(&checksum);
+
+                                    // Create size entry with human-readable comment
+                                    let mut size_item = toml_edit::value(size as i64);
+                                    if let Some(value) = size_item.as_value_mut() {
+                                        let formatted_comment = format_size_comment(size);
+                                        value.decor_mut().set_suffix(formatted_comment);
+                                    }
+                                    platform_table["size"] = size_item;
+                                }
+                                Err(e) => {
+                                    // Log error but continue with other platforms
+                                    eprintln!(
+                                        "Warning: Failed to fetch checksum for platform '{}': {}",
+                                        platform_name, e
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let toml_content = doc.to_string();
+
+        let mut content = vec![
+            "#!/usr/bin/env -S mise tool-stub".to_string(),
+            "".to_string(),
+        ];
+
+        content.push(toml_content);
+
+        Ok(content.join("\n"))
+    }
 }
 
 fn format_size_comment(bytes: u64) -> String {
@@ -584,5 +682,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     Generate without downloading (faster):
     $ <bold>mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --skip-download</bold>
+
+    Fetch checksums for an existing stub:
+    $ <bold>mise generate tool-stub ./bin/jq --fetch</bold>
+    # This will read the existing stub and download files to fill in any missing checksums/sizes
 "#
 );
