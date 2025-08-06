@@ -121,6 +121,7 @@ pub struct EnvResults {
     pub env_paths: Vec<PathBuf>,
     pub env_scripts: Vec<PathBuf>,
     pub redactions: Vec<String>,
+    pub tool_add_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -162,6 +163,7 @@ impl EnvResults {
             env_paths: Vec::new(),
             env_scripts: Vec::new(),
             redactions: Vec::new(),
+            tool_add_paths: Vec::new(),
         };
         let normalize_path = |config_root: &Path, p: PathBuf| {
             let p = p.strip_prefix("./").unwrap_or(&p);
@@ -402,6 +404,7 @@ impl EnvResults {
             && self.env_files.is_empty()
             && self.env_paths.is_empty()
             && self.env_scripts.is_empty()
+            && self.tool_add_paths.is_empty()
     }
 }
 
@@ -425,6 +428,9 @@ impl Debug for EnvResults {
         }
         if !self.env_scripts.is_empty() {
             ds.field("env_scripts", &self.env_scripts);
+        }
+        if !self.tool_add_paths.is_empty() {
+            ds.field("tool_add_paths", &self.tool_add_paths);
         }
         ds.finish()
     }

@@ -704,8 +704,8 @@ impl Toolset {
         ctx.insert("env", &tera_env);
         let mut env_results = self.load_post_env(config, ctx, &tera_env).await?;
 
-        // Also add the paths to env_results so they're available in list_final_paths
-        env_results.env_paths.extend(add_paths);
+        // Store add_paths separately to maintain consistent PATH ordering
+        env_results.tool_add_paths = add_paths;
 
         env.extend(
             env_results
@@ -735,23 +735,26 @@ impl Toolset {
         config: &Arc<Config>,
         env_results: EnvResults,
     ) -> Result<Vec<PathBuf>> {
-        let mut paths = IndexSet::new();
-        for p in config.path_dirs().await?.clone() {
-            paths.insert(p);
-        }
+        let mut paths = Vec::new();
+
+        // Match the tera_env PATH ordering from final_env():
+        // 1. Original system PATH is handled by PathEnv::from_iter() in env_with_path()
+
+        // 2. tool_add_paths (MISE_ADD_PATH/RTX_ADD_PATH from tools)
+        paths.extend(env_results.tool_add_paths);
+
+        // 3. Tool paths
+        paths.extend(self.list_paths(config).await);
+
+        // 4. Config path dirs
+        paths.extend(config.path_dirs().await?.clone());
+
+        // 5. UV venv path (if any) - not in tera_env but added to final paths
         if let Some(venv) = uv::uv_venv(config, self).await {
-            paths.insert(venv.venv_path.clone());
+            paths.push(venv.venv_path.clone());
         }
-        // Remove the original PATH processing from here since it's handled by PathEnv::from_iter()
-        // in env_with_path(). This prevents duplication of the original PATH.
-        for p in self.list_paths(config).await {
-            paths.insert(p);
-        }
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in paths.clone().into_iter() {
-            path_env.add(p);
-        }
-        // these are returned in order, but we need to run the post_env stuff last and then put the results in the front
+
+        // 6. env_results.env_paths (from load_post_env like _.path directives) - these go at the front
         let paths = env_results.env_paths.into_iter().chain(paths).collect();
         Ok(paths)
     }
