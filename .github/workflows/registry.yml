@@ -55,11 +55,12 @@ jobs:
           fetch-depth: 0
           sparse-checkout: registry.toml
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          log_level: debug
       - id: diff
         shell: bash # -eo pipefail
         run: |
           set -x
-          mise x yj -- yj -t < registry.toml
           changed_tools=$( \
             mise x jd -- jd -f merge \
               <(git show ${{ github.event.pull_request.base.sha }}:registry.toml | mise x yj -- yj -t) \
