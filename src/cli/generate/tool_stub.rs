@@ -304,7 +304,7 @@ impl ToolStub {
 
             if let Some(detected_platform) = detect_platform_from_url(&url) {
                 let platform = detected_platform.to_platform_string();
-                miseprintln!("Auto-detected platform '{}' from URL: {}", platform, url);
+                debug!("Auto-detected platform '{}' from URL: {}", platform, url);
                 Ok((platform, url))
             } else {
                 bail!(

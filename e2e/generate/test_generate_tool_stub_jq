@@ -2,7 +2,7 @@
 
 mise g tool-stub ./bin/jq \
 	--platform-url https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64 \
-	--platform-url https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-x64
+	--platform-url linux-x64:https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64
 
 assert "./bin/jq -V" "jq-1.8.1"
 assert "cat ./bin/jq" '#!/usr/bin/env -S mise tool-stub
@@ -13,13 +13,15 @@ checksum = "blake3:d7f94364d8375d9004ac8169fdbb665f61360c2bcc7cceed1d7306dc6f895
 size = 841408 # 821.69 KiB
 
 [platforms.linux-x64]
-url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-x64"'
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64"
+checksum = "blake3:b0419e57743765a9682d7924816269862890716d7bd3c1b78b2a3dd1f311a7f9"
+size = 2255816 # 2.15 MiB'
 
 mise cache clear
 
 cat >./bin/jq <<EOF
 #! /usr/bin/env -S mise tool-stub
 platforms.macos-arm64.url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
-platforms.linux-x64.url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-x64"
+platforms.linux-x64.url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64"
 EOF
 assert "./bin/jq -V" "jq-1.8.1"
