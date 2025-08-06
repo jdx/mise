@@ -650,7 +650,7 @@ impl Toolset {
             .filter(|(k, _, _)| k.to_uppercase() != "PATH")
             .collect()
     }
-    async fn env(&self, config: &Arc<Config>) -> Result<EnvMap> {
+    async fn env(&self, config: &Arc<Config>) -> Result<(EnvMap, Vec<PathBuf>)> {
         time!("env start");
         let entries = self
             .env_from_tools(config)
@@ -658,11 +658,14 @@ impl Toolset {
             .into_iter()
             .map(|(k, v, _)| (k, v))
             .collect::<Vec<(String, String)>>();
-        let add_paths = entries
+
+        // Collect and process MISE_ADD_PATH values into paths
+        let paths_to_add: Vec<PathBuf> = entries
             .iter()
             .filter(|(k, _)| k == "MISE_ADD_PATH" || k == "RTX_ADD_PATH")
-            .map(|(_, v)| v.clone())
-            .collect::<Vec<_>>();
+            .flat_map(|(_, v)| env::split_paths(v))
+            .collect();
+
         let mut env: EnvMap = entries
             .into_iter()
             .filter(|(k, _)| k != "RTX_ADD_PATH")
@@ -671,12 +674,7 @@ impl Toolset {
             .filter(|(k, _)| !k.starts_with("MISE_TOOL_OPTS__"))
             .rev()
             .collect();
-        if !add_paths.is_empty() {
-            let add_paths = std::env::join_paths(&add_paths)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            env.insert(PATH_KEY.to_string(), add_paths);
-        }
+
         env.extend(config.env().await?.clone());
         if let Some(venv) = uv::uv_venv(config, self).await {
             for (k, v) in venv.env.clone() {
@@ -684,13 +682,17 @@ impl Toolset {
             }
         }
         time!("env end");
-        Ok(env)
+        Ok((env, paths_to_add))
     }
     pub async fn final_env(&self, config: &Arc<Config>) -> Result<(EnvMap, EnvResults)> {
-        let mut env = self.env(config).await?;
+        let (mut env, add_paths) = self.env(config).await?;
         let mut tera_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         tera_env.extend(env.clone());
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
+
+        for p in &add_paths {
+            path_env.add(p.clone());
+        }
         for p in self.list_paths(config).await {
             path_env.add(p);
         }
@@ -700,7 +702,11 @@ impl Toolset {
         tera_env.insert(PATH_KEY.to_string(), path_env.to_string());
         let mut ctx = config.tera_ctx.clone();
         ctx.insert("env", &tera_env);
-        let env_results = self.load_post_env(config, ctx, &tera_env).await?;
+        let mut env_results = self.load_post_env(config, ctx, &tera_env).await?;
+
+        // Also add the paths to env_results so they're available in list_final_paths
+        env_results.env_paths.extend(add_paths);
+
         env.extend(
             env_results
                 .env
