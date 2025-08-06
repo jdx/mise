@@ -195,6 +195,11 @@ checksum = "blake3:729ad9734a3d9ecaf613b25714d6c70812e8808270c13cbe19eca2412f0ff
 size = 2404716
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz"
 
+[tools.shellcheck.platforms.macos-arm64]
+checksum = "blake3:a03f7e89a3ae96103d5a425053566ff0643ce8aa1a0bee7fd0f09da50c18b41c"
+size = 7205756
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.darwin.aarch64.tar.xz"
+
 [tools.shfmt]
 version = "3.12.0"
 backend = "aqua:mvdan/sh"

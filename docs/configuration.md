@@ -311,17 +311,19 @@ other developers to use a specific tool like mise or asdf.
 They support aliases, which means you can have an `.nvmrc` file with `lts/hydrogen` and it will work
 in mise and nvm. Here are some of the supported idiomatic version files:
 
-| Plugin    | Idiomatic Files                                    |
-| --------- | -------------------------------------------------- |
-| crystal   | `.crystal-version`                                 |
-| elixir    | `.exenv-version`                                   |
-| go        | `.go-version`                                      |
-| java      | `.java-version`, `.sdkmanrc`                       |
-| node      | `.nvmrc`, `.node-version`                          |
-| python    | `.python-version`, `.python-versions`              |
-| ruby      | `.ruby-version`, `Gemfile`                         |
-| terraform | `.terraform-version`, `.packer-version`, `main.tf` |
-| yarn      | `.yarnrc`                                          |
+| Plugin     | Idiomatic Files                       |
+| ---------- | ------------------------------------- |
+| crystal    | `.crystal-version`                    |
+| elixir     | `.exenv-version`                      |
+| go         | `.go-version`                         |
+| java       | `.java-version`, `.sdkmanrc`          |
+| node       | `.nvmrc`, `.node-version`             |
+| packer     | `.packer-version`                     |
+| python     | `.python-version`, `.python-versions` |
+| ruby       | `.ruby-version`, `Gemfile`            |
+| terragrunt | `.terragrunt-version`                 |
+| terraform  | `.terraform-version`, `main.tf`       |
+| yarn       | `.yvmrc`                              |
 
 In mise, these are enabled by default. However, in 2025.10.0 they will default to disabled (see <https://github.com/jdx/mise/discussions/4345>).
 

@@ -1,5 +1,64 @@
 # Changelog
 
+## [2025.8.7](https://github.com/jdx/mise/compare/v2025.8.6..v2025.8.7) - 2025-08-06
+
+### 📦 Registry
+
+- add python to gcloud dependencies by [@risu729](https://github.com/risu729) in [#5936](https://github.com/jdx/mise/pull/5936)
+
+### 🐛 Bug Fixes
+
+- **(toolset)** properly handle MISE_ADD_PATH from plugins by [@jdx](https://github.com/jdx) in [#5937](https://github.com/jdx/mise/pull/5937)
+
+## [2025.8.6](https://github.com/jdx/mise/compare/v2025.8.5..v2025.8.6) - 2025-08-06
+
+### 📦 Registry
+
+- add resvg ([aqua:linebender/resvg](https://github.com/linebender/resvg)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5926](https://github.com/jdx/mise/pull/5926)
+- add specstory ([aqua:specstoryai/getspecstory](https://github.com/specstoryai/getspecstory)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5927](https://github.com/jdx/mise/pull/5927)
+- add oxker ([aqua:mrjackwills/oxker](https://github.com/mrjackwills/oxker)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5929](https://github.com/jdx/mise/pull/5929)
+- add tssh ([aqua:trzsz/trzsz-ssh](https://github.com/trzsz/trzsz-ssh)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5928](https://github.com/jdx/mise/pull/5928)
+
+### 🚀 Features
+
+- **(tool-stub)** improve stub generation with bin inference, error handling, and fetch mode by [@jdx](https://github.com/jdx) in [#5932](https://github.com/jdx/mise/pull/5932)
+
+## [2025.8.5](https://github.com/jdx/mise/compare/v2025.8.4..v2025.8.5) - 2025-08-05
+
+### 📦 Registry
+
+- add tlrc ([aqua:tldr-pages/tlrc](https://github.com/tldr-pages/tlrc)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5895](https://github.com/jdx/mise/pull/5895)
+- support `.terragrunt-version` by [@risu729](https://github.com/risu729) in [#5903](https://github.com/jdx/mise/pull/5903)
+- add lnav ([aqua:tstack/lnav](https://github.com/tstack/lnav)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5896](https://github.com/jdx/mise/pull/5896)
+- use aqua backend for yarn by [@risu729](https://github.com/risu729) in [#5902](https://github.com/jdx/mise/pull/5902)
+- add dotenvx ([aqua:dotenvx/dotenvx](https://github.com/dotenvx/dotenvx)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5915](https://github.com/jdx/mise/pull/5915)
+- update kubecolor ([aqua:kubecolor/kubecolor](https://github.com/kubecolor/kubecolor)) by [@Darwiner](https://github.com/Darwiner) in [#5887](https://github.com/jdx/mise/pull/5887)
+- add oxlint ([aqua:oxc-project/oxc/oxlint](https://github.com/oxc-project/oxc/oxlint)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5919](https://github.com/jdx/mise/pull/5919)
+- add container ([aqua:apple/container](https://github.com/apple/container)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5917](https://github.com/jdx/mise/pull/5917)
+- support `.packer-version` by [@risu729](https://github.com/risu729) in [#5900](https://github.com/jdx/mise/pull/5900)
+
+### 🚀 Features
+
+- **(ci)** enhance registry PR validation with strict format checking by [@jdx](https://github.com/jdx) in [#5897](https://github.com/jdx/mise/pull/5897)
+- add Model Context Protocol (MCP) server command by [@jdx](https://github.com/jdx) in [#5920](https://github.com/jdx/mise/pull/5920)
+
+### 🐛 Bug Fixes
+
+- **(elixir)** support `.exenv-version` by [@risu729](https://github.com/risu729) in [#5901](https://github.com/jdx/mise/pull/5901)
+- **(env)** improve PATH handling for env._.path directives by [@jdx](https://github.com/jdx) in [#5922](https://github.com/jdx/mise/pull/5922)
+- allow devcontainer creation without a git repository by [@acesyde](https://github.com/acesyde) in [#5891](https://github.com/jdx/mise/pull/5891)
+
+### Chore
+
+- add synchronize to registry_comment gha by [@jdx](https://github.com/jdx) in [cbb1429](https://github.com/jdx/mise/commit/cbb14294072e9cbd3b0b9f21b2cb0a993a71d5ff)
+- fix registry_comment gha by [@jdx](https://github.com/jdx) in [7ce513b](https://github.com/jdx/mise/commit/7ce513be3efe60372f667f76570e16ce0d4a013f)
+- run registry test only for changed tools by [@risu729](https://github.com/risu729) in [#5905](https://github.com/jdx/mise/pull/5905)
+
+### New Contributors
+
+- @Darwiner made their first contribution in [#5887](https://github.com/jdx/mise/pull/5887)
+- @zekefast made their first contribution in [#5912](https://github.com/jdx/mise/pull/5912)
+
 ## [2025.8.4](https://github.com/jdx/mise/compare/v2025.8.3..v2025.8.4) - 2025-08-03
 
 ### 🚀 Features

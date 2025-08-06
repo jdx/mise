@@ -142,20 +142,28 @@ impl HttpBackend {
         let format = file::TarFormat::from_ext(ext);
 
         if format == file::TarFormat::Raw {
-            // For raw files, always treat bin_path as a directory
-            let dest = if let Some(bin_path_template) = opts.get("bin_path") {
+            // For raw files, determine the destination
+            let (dest_dir, dest_filename) = if let Some(bin_path_template) = opts.get("bin_path") {
+                // If bin_path is specified, use it as directory
                 let bin_path = template_string(bin_path_template, tv);
                 let bin_dir = cache_path.join(&bin_path);
-
-                // Create the bin directory
-                file::create_dir_all(&bin_dir)?;
-
-                // Place the file directly in the bin directory with its original name
-                bin_dir.join(file_path.file_name().unwrap())
+                (bin_dir, file_path.file_name().unwrap().to_os_string())
+            } else if let Some(bin_name) = opts.get("bin") {
+                // If bin is specified, rename the file to this name
+                (cache_path.to_path_buf(), std::ffi::OsString::from(bin_name))
             } else {
-                // Default behavior: place file directly in cache root
-                cache_path.join(file_path.file_name().unwrap())
+                // Default behavior: place file directly in cache root with original name
+                (
+                    cache_path.to_path_buf(),
+                    file_path.file_name().unwrap().to_os_string(),
+                )
             };
+
+            // Create the destination directory
+            file::create_dir_all(&dest_dir)?;
+
+            // Construct full destination path
+            let dest = dest_dir.join(&dest_filename);
 
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
