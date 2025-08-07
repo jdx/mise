@@ -3937,6 +3937,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mise-windows-stub"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "mlua"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

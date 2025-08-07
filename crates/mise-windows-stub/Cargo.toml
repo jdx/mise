@@ -1,0 +1,23 @@
+[package]
+name = "mise-windows-stub"
+version = "0.1.0"
+edition = "2024"
+authors = ["Jeff Dickey (@jdx)"]
+license = "MIT"
+description = "Windows stub launcher for mise tool stubs"
+
+[[bin]]
+name = "mise-stub"
+path = "src/main.rs"
+
+[dependencies]
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true          # Enable Link Time Optimization
+codegen-units = 1   # Single codegen unit for better optimization
+strip = true        # Strip symbols for smaller binary
+panic = "abort"     # Smaller panic handler
