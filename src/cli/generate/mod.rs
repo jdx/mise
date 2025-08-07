@@ -8,6 +8,7 @@ mod github_action;
 mod task_docs;
 mod task_stubs;
 mod tool_stub;
+mod windows_shim;
 
 /// [experimental] Generate files for various tools/services
 #[derive(Debug, clap::Args)]

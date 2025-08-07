@@ -80,6 +80,10 @@ pub struct ToolStub {
     /// HTTP backend type to use
     #[clap(long, default_value = "http")]
     pub http: String,
+
+    /// Create Windows companion .exe file for cross-platform stub generation
+    #[clap(long)]
+    pub windows_shim: bool,
 }
 
 impl ToolStub {
@@ -99,9 +103,10 @@ impl ToolStub {
         file::write(&self.output, &stub_content)?;
         file::make_executable(&self.output)?;
 
-        // On Windows, create a companion .exe file
-        #[cfg(windows)]
-        self.create_windows_companion_exe()?;
+        // Create Windows companion .exe file if on Windows or if explicitly requested
+        if cfg!(windows) || self.windows_shim {
+            self.create_windows_companion_exe().await?;
+        }
 
         if self.fetch {
             miseprintln!("Updated tool stub: {}", display_path(&self.output));
@@ -111,12 +116,11 @@ impl ToolStub {
         Ok(())
     }
 
-    #[cfg(windows)]
-    fn create_windows_companion_exe(&self) -> Result<()> {
+    async fn create_windows_companion_exe(&self) -> Result<()> {
         use std::fs;
 
         // Get the path to the Windows stub launcher
-        let stub_launcher_path = self.get_windows_stub_launcher_path()?;
+        let stub_launcher_path = self.get_windows_stub_launcher_path().await?;
 
         // Create the companion .exe path
         let exe_path = self.output.with_extension("exe");
@@ -128,32 +132,30 @@ impl ToolStub {
         Ok(())
     }
 
-    #[cfg(windows)]
-    fn get_windows_stub_launcher_path(&self) -> Result<PathBuf> {
-        // First, check if we have a bundled mise-stub.exe in the same directory as mise.exe
-        if let Ok(current_exe) = std::env::current_exe() {
-            if let Some(parent) = current_exe.parent() {
-                let bundled_stub = parent.join("mise-stub.exe");
-                if bundled_stub.exists() {
-                    return Ok(bundled_stub);
-                }
+    async fn get_windows_stub_launcher_path(&self) -> Result<PathBuf> {
+        // On Windows, check for local stub first
+        #[cfg(windows)]
+        {
+            if let Some(local_shim) = super::windows_shim::get_local_windows_shim() {
+                return Ok(local_shim);
             }
         }
 
-        // Check for development build location
-        let dev_stub = PathBuf::from("target/release/mise-stub.exe");
-        if dev_stub.exists() {
-            return Ok(dev_stub);
-        }
-
-        // Check debug build location
-        let debug_stub = PathBuf::from("target/debug/mise-stub.exe");
-        if debug_stub.exists() {
-            return Ok(debug_stub);
+        // For cross-platform generation or if local stub not found, download from mise.jdx.dev
+        if self.windows_shim || !cfg!(windows) {
+            // Detect architecture if needed
+            let arch = if cfg!(windows) {
+                None // Use current architecture
+            } else {
+                // Default to x64 for cross-platform generation
+                Some("x64")
+            };
+            
+            return super::windows_shim::get_windows_shim(arch).await;
         }
 
         bail!(
-            "Windows stub launcher (mise-stub.exe) not found. Please ensure it is built and available."
+            "Windows stub launcher not found. Use --windows-shim to download from mise.jdx.dev"
         );
     }
 
