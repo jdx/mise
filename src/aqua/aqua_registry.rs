@@ -2,6 +2,7 @@ use crate::backend::aqua;
 use crate::backend::aqua::{arch, os};
 use crate::duration::{DAILY, WEEKLY};
 use crate::git::{CloneOptions, Git};
+use crate::semver::split_version_prefix;
 use crate::{aqua::aqua_template, config::Settings};
 use crate::{dirs, file, hashmap, http};
 use expr::{Context, Program, Value};
@@ -462,8 +463,8 @@ impl AquaPackage {
     }
 
     fn expr_parser(&self, v: &str) -> expr::Environment<'_> {
-        let prefix = Regex::new(r"^[^0-9.]+").unwrap();
-        let ver = versions::Versioning::new(prefix.replace(v, ""));
+        let (_, v) = split_version_prefix(v);
+        let ver = versions::Versioning::new(v);
         let mut env = expr::Environment::new();
         env.add_function("semver", move |c| {
             if c.args.len() != 1 {
