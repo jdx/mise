@@ -7,8 +7,14 @@ $BaseName = "mise-v$Version-$Env:OS-$Env:ARCH"
 
 # TODO: use "serious" feature
 cargo build --release --features rustls-native-roots,openssl/vendored --target "$Target"
+
+# Build the Windows stub launcher for the same target
+cargo build --release -p mise-windows-stub --target "$Target"
+
 mkdir -p dist/mise/bin
 cp "target/$Target/release/mise.exe" dist/mise/bin/mise.exe
+# Include the Windows stub launcher
+cp "target/$Target/release/mise-stub.exe" dist/mise/bin/mise-stub.exe
 cp README.md dist/mise/README.md
 cp LICENSE dist/mise/LICENSE
 cd dist
