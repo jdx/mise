@@ -1,4 +1,4 @@
-use regex::Regex;
+use versions::{Mess, Versioning};
 
 /// splits a version number into an optional prefix and the remaining version string
 pub fn split_version_prefix(version: &str) -> (String, String) {
