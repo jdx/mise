@@ -114,20 +114,20 @@ impl ToolStub {
     #[cfg(windows)]
     fn create_windows_companion_exe(&self) -> Result<()> {
         use std::fs;
-        
+
         // Get the path to the Windows stub launcher
         let stub_launcher_path = self.get_windows_stub_launcher_path()?;
-        
+
         // Create the companion .exe path
         let exe_path = self.output.with_extension("exe");
-        
+
         // Copy the stub launcher to the companion .exe location
         fs::copy(&stub_launcher_path, &exe_path)?;
-        
+
         debug!("Created Windows companion exe: {}", display_path(&exe_path));
         Ok(())
     }
-    
+
     #[cfg(windows)]
     fn get_windows_stub_launcher_path(&self) -> Result<PathBuf> {
         // First, check if we have a bundled mise-stub.exe in the same directory as mise.exe
@@ -139,20 +139,22 @@ impl ToolStub {
                 }
             }
         }
-        
+
         // Check for development build location
         let dev_stub = PathBuf::from("target/release/mise-stub.exe");
         if dev_stub.exists() {
             return Ok(dev_stub);
         }
-        
+
         // Check debug build location
         let debug_stub = PathBuf::from("target/debug/mise-stub.exe");
         if debug_stub.exists() {
             return Ok(debug_stub);
         }
-        
-        bail!("Windows stub launcher (mise-stub.exe) not found. Please ensure it is built and available.");
+
+        bail!(
+            "Windows stub launcher (mise-stub.exe) not found. Please ensure it is built and available."
+        );
     }
 
     fn get_tool_name(&self) -> String {

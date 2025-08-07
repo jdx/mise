@@ -15,7 +15,7 @@ fn main() {
     codegen_settings();
     codegen_registry();
     codegen_aqua();
-    
+
     // Build Windows stub if on Windows
     #[cfg(target_os = "windows")]
     build_windows_stub();
@@ -373,35 +373,39 @@ fn registry_dir() -> PathBuf {
 #[cfg(target_os = "windows")]
 fn build_windows_stub() {
     use std::process::Command;
-    
+
     println!("cargo:rerun-if-changed=crates/mise-windows-stub/src/main.rs");
     println!("cargo:rerun-if-changed=crates/mise-windows-stub/Cargo.toml");
-    
+
     // Build the Windows stub launcher in release mode
     let output = Command::new("cargo")
         .args(&["build", "--release", "-p", "mise-windows-stub"])
         .output()
         .expect("Failed to build Windows stub launcher");
-    
+
     if !output.status.success() {
         panic!(
             "Failed to build Windows stub launcher:\n{}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    
+
     // Copy the built stub to a location where it can be bundled with mise
     let profile = env::var("PROFILE").unwrap();
-    let target_dir = PathBuf::from(env::var_os("CARGO_TARGET_DIR")
-        .unwrap_or_else(|| env::var_os("OUT_DIR").unwrap()))
-        .parent().unwrap()
-        .parent().unwrap()
-        .parent().unwrap()
-        .to_path_buf();
-    
+    let target_dir = PathBuf::from(
+        env::var_os("CARGO_TARGET_DIR").unwrap_or_else(|| env::var_os("OUT_DIR").unwrap()),
+    )
+    .parent()
+    .unwrap()
+    .parent()
+    .unwrap()
+    .parent()
+    .unwrap()
+    .to_path_buf();
+
     let stub_exe = target_dir.join("release").join("mise-stub.exe");
     let dest = target_dir.join(&profile).join("mise-stub.exe");
-    
+
     if stub_exe.exists() {
         fs::copy(&stub_exe, &dest).expect("Failed to copy Windows stub launcher");
         println!("cargo:rustc-env=MISE_STUB_PATH={}", dest.display());
