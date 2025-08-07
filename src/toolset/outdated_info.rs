@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
 };
 use tabled::Tabled;
-use versions::{Mess, Version, Versioning};
+use versions::Version;
 
 #[derive(Debug, Serialize, Clone, Tabled)]
 pub struct OutdatedInfo {

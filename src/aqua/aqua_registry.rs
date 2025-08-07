@@ -9,7 +9,6 @@ use expr::{Context, Program, Value};
 use eyre::{ContextCompat, Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use regex::Regex;
 use serde_derive::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
