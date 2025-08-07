@@ -1303,6 +1303,12 @@ const completionSpec: Fig.Spec = {
                 name: "http",
               },
             },
+            {
+              name: "--windows-shim",
+              description:
+                "Create Windows companion .exe file for cross-platform stub generation",
+              isRepeatable: false,
+            },
           ],
           args: {
             name: "output",

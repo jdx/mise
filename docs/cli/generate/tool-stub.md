@@ -67,6 +67,10 @@ This reads an existing stub file and fills in any missing checksum/size fields b
 
 HTTP backend type to use
 
+### `--windows-shim`
+
+Create Windows companion .exe file for cross-platform stub generation
+
 Examples:
 
 ```

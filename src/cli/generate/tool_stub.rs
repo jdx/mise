@@ -150,13 +150,11 @@ impl ToolStub {
                 // Default to x64 for cross-platform generation
                 Some("x64")
             };
-            
+
             return super::windows_shim::get_windows_shim(arch).await;
         }
 
-        bail!(
-            "Windows stub launcher not found. Use --windows-shim to download from mise.jdx.dev"
-        );
+        bail!("Windows stub launcher not found. Use --windows-shim to download from mise.jdx.dev");
     }
 
     fn get_tool_name(&self) -> String {
