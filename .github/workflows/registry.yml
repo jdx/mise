@@ -66,7 +66,7 @@ jobs:
               <(mise x yj -- yj -t < registry.toml) \
             | jq -r '[.tools // {} | keys[]] | join(" ")' \
           )
-          echo $changed_tools
+          echo "$changed_tools"
           echo "tools=$changed_tools" >> $GITHUB_OUTPUT
 
   test-tool:
