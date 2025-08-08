@@ -80,6 +80,10 @@ pub struct ToolStub {
     /// HTTP backend type to use
     #[clap(long, default_value = "http")]
     pub http: String,
+
+    /// Create Windows companion .exe file for cross-platform stub generation
+    #[clap(long)]
+    pub windows_shim: bool,
 }
 
 impl ToolStub {
@@ -99,12 +103,58 @@ impl ToolStub {
         file::write(&self.output, &stub_content)?;
         file::make_executable(&self.output)?;
 
+        // Create Windows companion .exe file if on Windows or if explicitly requested
+        if cfg!(windows) || self.windows_shim {
+            self.create_windows_companion_exe().await?;
+        }
+
         if self.fetch {
             miseprintln!("Updated tool stub: {}", display_path(&self.output));
         } else {
             miseprintln!("Generated tool stub: {}", display_path(&self.output));
         }
         Ok(())
+    }
+
+    async fn create_windows_companion_exe(&self) -> Result<()> {
+        use std::fs;
+
+        // Get the path to the Windows stub launcher
+        let stub_launcher_path = self.get_windows_stub_launcher_path().await?;
+
+        // Create the companion .exe path
+        let exe_path = self.output.with_extension("exe");
+
+        // Copy the stub launcher to the companion .exe location
+        fs::copy(&stub_launcher_path, &exe_path)?;
+
+        debug!("Created Windows companion exe: {}", display_path(&exe_path));
+        Ok(())
+    }
+
+    async fn get_windows_stub_launcher_path(&self) -> Result<PathBuf> {
+        // On Windows, check for local stub first
+        #[cfg(windows)]
+        {
+            if let Some(local_shim) = super::windows_shim::get_local_windows_shim() {
+                return Ok(local_shim);
+            }
+        }
+
+        // For cross-platform generation or if local stub not found, download from mise.jdx.dev
+        if self.windows_shim || !cfg!(windows) {
+            // Detect architecture if needed
+            let arch = if cfg!(windows) {
+                None // Use current architecture
+            } else {
+                // Default to x64 for cross-platform generation
+                Some("x64")
+            };
+
+            return super::windows_shim::get_windows_shim(arch).await;
+        }
+
+        bail!("Windows stub launcher not found. Use --windows-shim to download from mise.jdx.dev");
     }
 
     fn get_tool_name(&self) -> String {
