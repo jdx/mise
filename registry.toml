@@ -123,8 +123,10 @@ arduino.description = "Arduino command line tool"
 arduino.backends = ["aqua:arduino/arduino-cli", "asdf:egnor/asdf-arduino-cli"]
 arduino.test = ["arduino-cli version", "arduino-cli  Version: {{version}}"]
 argc.backends = ["ubi:sigoden/argc"]
-argo.description = "Argo Worfkflows CLI. Workflow engine for Kubernetes"
+argc.test = ["argc --argc-version", "argc {{version}}"]
+argo.description = "Argo Workflows CLI. Workflow engine for Kubernetes"
 argo.backends = ["aqua:argoproj/argo-workflows", "asdf:sudermanjr/asdf-argo"]
+argo.test = ["argo version", "argo: v{{version}}"]
 argo-rollouts.description = "Progressive Delivery for Kubernetes"
 argo-rollouts.backends = [
     "aqua:argoproj/argo-rollouts",
