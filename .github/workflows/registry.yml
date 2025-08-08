@@ -59,6 +59,7 @@ jobs:
       - id: diff
         shell: bash # -eo pipefail
         run: |
+          set -x
           changed_tools=$( \
             mise x jd -- jd -f merge \
               <(git show ${{ github.event.pull_request.base.sha }}:registry.toml | mise x yj -- yj -t) \
