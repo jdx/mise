@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+assert_fail "mise use elixir@1.18.4-otp-28" "missing dependency: erlang"
+assert_contains "mise use erlang@28.0.2" "erlang@28.0.2"
+assert_contains "mise use elixir@1.18.4-otp-28" "elixir@1.18.4-otp-28"
+
+assert_fail "mise use dotnet:csharpier@1.0.3" "missing dependency: dotnet"
+assert_contains "mise use dotnet@9.0.303" "dotnet@9.0.303"
+assert_contains "mise use dotnet:csharpier@1.0.3" "dotnet:csharpier@1.0.3"
