@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tools]
+node.version = "{{ exec(command='echo 20') }}"
+bun = "{{ exec(command='echo 1.2:dummy | grep -oP \"^\\d+\"') }}"
+EOF
+assert "mise ls node --json | jq -r 'any(.requested_version == \"20\")'" "true"
+assert "mise ls bun --json | jq -r 'any(.requested_version == \"1.2\")'" "true"
