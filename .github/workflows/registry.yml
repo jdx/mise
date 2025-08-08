@@ -63,7 +63,7 @@ jobs:
             mise x jd -- jd -f merge \
               <(git show ${{ github.event.pull_request.base.sha }}:registry.toml | mise x yj -- yj -t) \
               <(mise x yj -- yj -t < registry.toml) \
-            | jq -r '[.tools // {} | keys[]] | join(" ")' \
+            || true | jq -r '[.tools // {} | keys[]] | join(" ")' \
           )
           echo "$changed_tools"
           echo "tools=$changed_tools" >> $GITHUB_OUTPUT
