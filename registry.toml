@@ -1399,7 +1399,7 @@ grain.backends = [
     "asdf:mise-plugins/mise-grain"
 ]
 # grain.test = ["grain --version", "{{version}}"] # TODO: use aqua to canonicalize version
-granted.description = "The easiest way to access AWS" 
+granted.description = "The easiest way to access AWS"
 granted.backends = ["aqua:common-fate/granted", "asdf:dex4er/asdf-granted"]
 graphite.description = "Code review for the age of AI"
 graphite.backends = ["npm:@withgraphite/graphite-cli"]
@@ -2922,7 +2922,7 @@ sqlite3def.backends = ["aqua:sqldef/sqldef/sqlite3def"]
 sshi.description = "SSH CA Client/Server"
 sshi.backends = ["aqua:aakso/ssh-inscribe/sshi"]
 sshi.test = ["sshi version", "local: {{version}}"]
-sshuttle.description = "sshuttle: where transparent proxy meets VPN meets ssh" 
+sshuttle.description = "sshuttle: where transparent proxy meets VPN meets ssh"
 sshuttle.backends = ["asdf:mise-plugins/mise-sshuttle"]
 sst.description = "Build full-stack apps on your own infrastructure"
 sst.backends = ["ubi:sst/sst"]
@@ -2951,7 +2951,7 @@ starship.backends = [
     "asdf:gr1m0h/asdf-starship"
 ]
 starship.test = ["starship --version", "starship {{version}}"]
-staticcheck.description = "Staticcheck - The advanced Go linter" 
+staticcheck.description = "Staticcheck - The advanced Go linter"
 staticcheck.backends = [
     "aqua:dominikh/go-tools/staticcheck",
     "asdf:pbr0ck3r/asdf-staticcheck"
@@ -3351,7 +3351,7 @@ wash.backends = ["aqua:wasmCloud/wasmCloud/wash"]
 wash.test = ["wash --version | head -n1 | awk '{print $2}'", "v{{version}}"]
 wasi-sdk.description = "WASI-enabled WebAssembly C/C++ toolchain"
 wasi-sdk.backends = ["asdf:mise-plugins/mise-wasi-sdk"]
-wasm3.description ="A fast WebAssembly interpreter and the most universal WASM runtime"
+wasm3.description = "A fast WebAssembly interpreter and the most universal WASM runtime"
 wasm3.backends = ["asdf:mise-plugins/mise-wasm3"]
 wasm4.description = "Build retro games using WebAssembly for a fantasy console"
 wasm4.backends = [
