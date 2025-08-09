@@ -43,7 +43,7 @@ adr-tools.backends = [
     "asdf:https://gitlab.com/td7x/asdf/adr-tools"
 ]
 adr-tools.test = ["which adr", "adr"]
-ag.description ="The Silver Searcher: A code searching tool similar to ack, with a focus on speed"
+ag.description = "The Silver Searcher: A code searching tool similar to ack, with a focus on speed"
 ag.backends = ["asdf:mise-plugins/mise-ag"]
 age.description = "A simple, modern and secure encryption tool (and Go library) with small explicit keys, no config options, and UNIX-style composability"
 age.backends = ["aqua:FiloSottile/age", "asdf:threkk/asdf-age"]
@@ -696,7 +696,7 @@ copper.backends = [
 ]
 copper.os = ["linux", "macos"]
 copper.test = ["copper version", ""]
-## What to do with this one ?
+# What to do with this one ?
 coq.description = "Rocq: A trustworthy, industrial-strength interactive theorem prover and dependently-typed programming language for mechanised reasoning in mathematics, computer science and more"
 coq.backends = ["asdf:mise-plugins/mise-coq"]
 coredns.description = "CoreDNS: DNS and Service Discovery"
@@ -744,7 +744,7 @@ crossplane.backends = [
     "aqua:crossplane/crossplane",
     "asdf:joke/asdf-crossplane-cli"
 ]
-crystal.description = " Crystal: A language for humans and computers"
+crystal.description = "Crystal: A language for humans and computers"
 crystal.backends = [
     "asdf:mise-plugins/mise-crystal",
     "vfox:mise-plugins/vfox-crystal"
@@ -966,7 +966,7 @@ dynatrace-monaco.backends = [
     "ubi:Dynatrace/dynatrace-configuration-as-code[exe=monaco]",
     "asdf:nsaputro/asdf-monaco"
 ]
-els.description = "E1S - Easily Manage AWS ECS Resources in Terminal(~k9s for ECS)"
+e1s.description = "E1S - Easily Manage AWS ECS Resources in Terminal(~k9s for ECS)"
 e1s.backends = ["asdf:tbobm/asdf-e1s"]
 earthly.description = "Repeatable builds"
 earthly.backends = ["aqua:earthly/earthly", "asdf:YR-ZR0/asdf-earthly"]
@@ -3189,8 +3189,8 @@ tridentctl.backends = [
 ]
 trivy.description = "Find vulnerabilities, misconfigurations, secrets, SBOM in containers, Kubernetes, code repositories, clouds and more"
 trivy.backends = ["aqua:aquasecurity/trivy", "asdf:zufardhiyaulhaq/asdf-trivy"]
-trunk.backends = ["npm:@trunkio/launcher"]
 trunk.description = "Trunk is a comprehensive code quality tool that runs linters, formatters, and security scanners to help maintain high-quality codebases (https://trunk.io)"
+trunk.backends = ["npm:@trunkio/launcher"]
 trunk.test = [
     "trunk --help",
     "trunk [flags] [subcommand]"
