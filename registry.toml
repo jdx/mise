@@ -241,7 +241,7 @@ awsweeper.backends = [
 ]
 awsweeper.test = ["awsweeper --version", "version: {{version}}"]
 azure.aliases = ["azure-cli"]
-azure.description = "azure-cli (az)" 
+azure.description = "azure-cli (az)"
 azure.backends = ["asdf:mise-plugins/mise-azure-cli"]
 azure-functions-core-tools.description = "Command line tools for Azure Functions"
 azure-functions-core-tools.backends = [
