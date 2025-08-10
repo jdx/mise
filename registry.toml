@@ -908,6 +908,9 @@ etcd.backends = [
 etcd.test = ["etcd --version", "etcd Version: {{version}}"]
 evans.description = "Evans: more expressive universal gRPC client"
 evans.backends = ["aqua:ktr0731/evans", "asdf:goki90210/asdf-evans"]
+expo-cli.description = "The Expo CLI is a command-line tool that is the primary interface between a developer and other Expo tools."
+expo-cli.backends = ["npm:@expo/cli"]
+expo-cli.test = ["expo --version", "{{version}}"]
 eza.description = "A modern, maintained replacement for ls"
 eza.backends = [
     {full = "aqua:eza-community/eza", platforms = ["linux"]},
