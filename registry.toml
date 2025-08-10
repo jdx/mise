@@ -2171,6 +2171,7 @@ pipenv.backends = ["asdf:mise-plugins/mise-pipenv"]
 pipenv.depends = ["python"]
 pipx.backends = ["aqua:pypa/pipx", "asdf:mise-plugins/mise-pipx"]
 pipx.depends = ["python"]
+pipx.test = ["pipx --version", "{{version}}"]
 pitchfork.description = "Daemons with DX"
 pitchfork.backends = ["aqua:jdx/pitchfork", "ubi:jdx/pitchfork"]
 pitchfork.test = ["pitchfork --version", "pitchfork {{version}}"]
