@@ -2786,6 +2786,7 @@ tilt.description = "Define your dev environment as code. For microservice apps o
 tilt.backends = ["aqua:tilt-dev/tilt", "asdf:eaceaser/asdf-tilt"]
 timoni.description = "Timoni is a package manager for Kubernetes, powered by CUE and inspired by Helm"
 timoni.backends = ["aqua:stefanprodan/timoni", "asdf:Smana/asdf-timoni"]
+tiny.description = "rtx-tiny is mostly a fake plugin to check mise in CI"
 tiny.backends = ["asdf:mise-plugins/mise-tiny"]
 tinytex.backends = ["asdf:mise-plugins/mise-tinytex"]
 titan.backends = ["ubi:titan-data/titan", "asdf:gabitchov/asdf-titan"]
