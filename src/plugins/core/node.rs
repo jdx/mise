@@ -57,7 +57,8 @@ impl NodePlugin {
                 &opts.binary_tarball_path,
                 &opts.version,
             )
-            .await{
+            .await
+        {
             Ok(()) => {
                 debug!("We successfully downloaded precompiled node archive");
             }
