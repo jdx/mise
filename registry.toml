@@ -2894,7 +2894,7 @@ usage.backends = [
     # prebuilt binaries are not available for FreeBSD
     {full = "aqua:jdx/usage", os = ["linux", "macos"]},
     {full = "ubi:jdx/usage", os = ["linux", "macos"]},
-    {full = "asdf:jdx/mise-usage", os = ["linux", "macos"]},
+    {full = "asdf:mise-plugins/mise-usage", os = ["linux", "macos"]},
     "cargo:usage-cli"
 ]
 usage.os = ["linux", "macos", "freebsd"]
