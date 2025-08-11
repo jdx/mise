@@ -312,7 +312,6 @@ bbr-s3-config-validator.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
 # bbr-s3-config-validator.test = ["bbr-s3-config-validator --help", "{{version}}"]
 benthos.description = "Fancy stream processing made operationally mundane"
 benthos.backends = ["aqua:benthosdev/benthos", "asdf:benthosdev/benthos-asdf"]
-# benthosdev/benthos seems to redirect to https://github.com/redpanda-data/connect, so don't know what to do on this one
 bfs.description = "Breadth-first search for your files"
 bfs.backends = ["asdf:mise-plugins/mise-bfs"]
 binnacle.description = "An opinionated tool to interact with Kubernetes' Helm"
@@ -696,7 +695,6 @@ copper.backends = [
 ]
 copper.os = ["linux", "macos"]
 copper.test = ["copper version", ""]
-# What to do with this one ?
 coq.description = "Rocq: A trustworthy, industrial-strength interactive theorem prover and dependently-typed programming language for mechanised reasoning in mathematics, computer science and more"
 coq.backends = ["asdf:mise-plugins/mise-coq"]
 coredns.description = "CoreDNS: DNS and Service Discovery"
@@ -803,7 +801,7 @@ delta.backends = [
     "cargo:git-delta"
 ]
 delta.test = ["delta --version", "delta {{version}}"]
-deno.description = "A modern runtime for JavaScript and TypeScript"
+deno.description = "A modern runtime for JavaScript and TypeScript (Builtin plugin)"
 deno.backends = ["core:deno"]
 depot.description = "Depot CLI, build your Docker images in the cloud"
 depot.backends = ["ubi:depot/cli[exe=depot]", "asdf:depot/asdf-depot"]
@@ -1267,7 +1265,7 @@ glooctl.description = "The Cloud-Native API Gateway and AI Gateway"
 glooctl.backends = ["ubi:solo-io/gloo", "asdf:halilkaya/asdf-glooctl"]
 glow.description = "Render markdown on the CLI, with pizzazz"
 glow.backends = ["aqua:charmbracelet/glow", "asdf:mise-plugins/asdf-glow"]
-go.description = "go lang (core backend)"
+go.description = "go lang (Builtin plugin)"
 go.backends = ["core:go"]
 go-containerregistry.description = "Go library and CLIs for working with container registries"
 go-containerregistry.backends = [
@@ -2278,7 +2276,7 @@ nim.description = "Nim is a statically typed compiled systems programming langua
 nim.backends = ["asdf:mise-plugins/mise-nim"]
 ninja.description = "a small build system with a focus on speed"
 ninja.backends = ["aqua:ninja-build/ninja", "asdf:asdf-community/asdf-ninja"]
-node.description = "Node.js® is a free, open-source, cross-platform JavaScript runtime environment that lets developers create servers, web apps, command line tools and scripts"
+node.description = "Node.js® is a free, open-source, cross-platform JavaScript runtime environment that lets developers create servers, web apps, command line tools and scripts (Builtin plugin)"
 node.backends = ["core:node"]
 nomad.description = "Nomad is an easy-to-use, flexible, and performant workload orchestrator that can deploy a mix of microservice, batch, containerized, and non-containerized applications. Nomad is easy to operate and scale and has native Consul and Vault integrations"
 nomad.backends = ["aqua:hashicorp/nomad", "asdf:mise-plugins/mise-hashicorp"]
@@ -2443,7 +2441,6 @@ pipelight.backends = ["asdf:mise-plugins/mise-pipelight"]
 pipenv.description = "Python Development Workflow for Humans"
 pipenv.backends = ["asdf:mise-plugins/mise-pipenv"]
 pipenv.depends = ["python"]
-# This one should removed !
 pipx.backends = ["aqua:pypa/pipx", "asdf:mise-plugins/mise-pipx"]
 pipx.depends = ["python"]
 pipx.test = ["pipx --version", "{{version}}"]
@@ -2667,7 +2664,6 @@ regsync.backends = [
 restic.description = "Fast, secure, efficient backup program"
 restic.backends = ["aqua:restic/restic", "asdf:xataz/asdf-restic"]
 # restic.test = ["restic version", "restic {{version}}"] fails on windows
-# Moved https://github.com/rest-sh/restish
 restish.description = "Restish is a CLI for interacting with REST-ish HTTP APIs with some nice features built-in"
 restish.backends = [
     "ubi:danielgtaylor/restish",
@@ -3329,7 +3325,6 @@ viddy.description = "A modern watch command. Time machine and pager etc"
 viddy.backends = ["aqua:sachaos/viddy", "asdf:ryodocx/asdf-viddy"]
 vim.description = "Vim is an advanced text editor that seeks to provide the power of the de-facto Unix editor 'Vi', with a more complete feature set. It's useful whether you're already using vi or using a different editor"
 vim.backends = ["asdf:mise-plugins/mise-vim"]
-# github repo archived !!!
 virtualos.description = "A CLI to virtualize macOS environments"
 virtualos.backends = ["asdf:mise-plugins/mise-virtualos"]
 vivid.description = "A themeable LS_COLORS generator with a rich filetype datebase"
