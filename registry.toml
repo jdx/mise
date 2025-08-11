@@ -3053,10 +3053,8 @@ yamlscript.backends = [
 ]
 yamlscript.test = ["ys --version", "{{version}}"]
 yarn.backends = [
-    {full = "aqua:yarnpkg/berry", platforms = [
-        "windows"
-    ]},
     "asdf:mise-plugins/mise-yarn",
+    "aqua:yarnpkg/berry",
     "npm:@yarnpkg/cli-dist"
 ]
 yarn.idiomatic_files = [".yvmrc"]
