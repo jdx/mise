@@ -2205,7 +2205,10 @@ pnpm.backends = [
     "asdf:jonathanmorley/asdf-pnpm"
 ]
 pnpm.test = ["pnpm --version", "{{version}}"]
-podman.backends = ["ubi:containers/podman", "asdf:tvon/asdf-podman"]
+podman.backends = [
+    "ubi:containers/podman[matching=podman-remote]",
+    "asdf:tvon/asdf-podman"
+]
 poetry.backends = ["asdf:mise-plugins/mise-poetry"]
 poetry.depends = ["python"]
 polaris.description = "Validation of best practices in your Kubernetes clusters"
