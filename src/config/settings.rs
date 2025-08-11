@@ -78,13 +78,8 @@ static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     let mut s = SettingsPartial::empty();
     s.python.default_packages_file = Some(env::HOME.join(".default-python-packages"));
-    let distro = env::LINUX_DISTRO.as_ref().map(|s| s.as_str());
-    if let Some("alpine" | "nixos") = distro {
+    if let Some("alpine" | "nixos") = env::LINUX_DISTRO.as_ref().map(|s| s.as_str()) {
         if !cfg!(test) {
-            info!(
-                "activating settings.all_compile as the {:?} distro default",
-                distro
-            );
             s.all_compile = Some(true);
         }
     }

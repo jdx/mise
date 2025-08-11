@@ -89,7 +89,6 @@ impl NodePlugin {
         ctx: &InstallContext,
         strip_components: usize,
     ) -> Result<()> {
-        debug!("Removing destination before extraction: {:?}", dest_path);
         file::remove_all(dest_path).map_err(|e| {
             debug!("Failed to remove {:?}: {e}", dest_path);
             e
@@ -501,7 +500,6 @@ impl Backend for NodePlugin {
         if cfg!(windows) {
             self.install_windows(ctx, &mut tv, &opts).await?;
         } else if settings.node.compile == Some(true) {
-            info!("node.compile true so we won't fetch a precompiled version");
             self.install_compiling(ctx, &mut tv, &opts).await?;
         } else {
             self.install_precompiled(ctx, &mut tv, &opts).await?;
