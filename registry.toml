@@ -3053,11 +3053,10 @@ yamlscript.backends = [
 ]
 yamlscript.test = ["ys --version", "{{version}}"]
 yarn.backends = [
+    "asdf:mise-plugins/mise-yarn",
     "aqua:yarnpkg/berry",
-    "npm:@yarnpkg/cli-dist",
-    "asdf:mise-plugins/mise-yarn"
+    "npm:@yarnpkg/cli-dist"
 ]
-yarn.idiomatic_files = [".yvmrc"]
 yarn.test = ["yarn --version", "{{version}}"]
 yay.backends = ["asdf:mise-plugins/mise-yay"]
 yazi.description = "Blazing fast terminal file manager written in Rust, based on async I/O"
