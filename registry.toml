@@ -2445,7 +2445,6 @@ pipenv.backends = ["asdf:mise-plugins/mise-pipenv"]
 pipenv.depends = ["python"]
 # This one should removed !
 pipx.backends = ["aqua:pypa/pipx", "asdf:mise-plugins/mise-pipx"]
-pipx.backends = ["asdf:mise-plugins/mise-pipx"]
 pipx.depends = ["python"]
 pipx.test = ["pipx --version", "{{version}}"]
 pitchfork.description = "Daemons with DX"
