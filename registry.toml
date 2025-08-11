@@ -3053,6 +3053,7 @@ yamlscript.backends = [
 ]
 yamlscript.test = ["ys --version", "{{version}}"]
 yarn.backends = [
+    "vfox:mise-plugins/vfox-yarn",
     "asdf:mise-plugins/mise-yarn",
     "aqua:yarnpkg/berry",
     "npm:@yarnpkg/cli-dist"
