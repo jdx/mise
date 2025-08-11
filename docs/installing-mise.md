@@ -295,14 +295,10 @@ echo 'mise activate pwsh | Out-String | Invoke-Expression' >> $HOME\Documents\Po
 
 Nu
 does [not support `eval`](https://www.nushell.sh/book/how_nushell_code_gets_run.html#eval-function)
-Install Mise by appending `env.nu` and `config.nu`:
+Install Mise by activating it into the autoload dir:
 
 ```nushell
-'
-let mise_path = $nu.default-config-dir | path join mise.nu
-^mise activate nu | save $mise_path --force
-' | save $nu.env-path --append
-"\nuse ($nu.default-config-dir | path join mise.nu)" | save $nu.config-path --append
+'^mise activate nu | save --force ($nu.data-dir | path join vendor autoload mise.nu)' | save $nu.config-path --append
 ```
 
 If you prefer to keep your dotfiles clean you can save it to a different directory then
