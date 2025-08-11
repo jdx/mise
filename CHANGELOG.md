@@ -1,5 +1,29 @@
 # Changelog
 
+## [2025.8.8](https://github.com/jdx/mise/compare/v2025.8.7..v2025.8.8) - 2025-08-11
+
+### 📦 Registry
+
+- add bob ([aqua:MordechaiHadad/bob](https://github.com/MordechaiHadad/bob)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5914](https://github.com/jdx/mise/pull/5914)
+- support usage on FreeBSD by [@risu729](https://github.com/risu729) in [#5973](https://github.com/jdx/mise/pull/5973)
+- filter out installer for podman by [@risu729](https://github.com/risu729) in [#5974](https://github.com/jdx/mise/pull/5974)
+- use pipx aqua backend by [@itochan](https://github.com/itochan) in [#5971](https://github.com/jdx/mise/pull/5971)
+
+### 📚 Documentation
+
+- add documentation for os field in tool configuration by [@jdx](https://github.com/jdx) in [#5947](https://github.com/jdx/mise/pull/5947)
+
+### Chore
+
+- **(ci)** accept @ in regular expressions for new registry PR titles by [@mst-mkt](https://github.com/mst-mkt) in [#5969](https://github.com/jdx/mise/pull/5969)
+- fix registry test filter by [@risu729](https://github.com/risu729) in [#5942](https://github.com/jdx/mise/pull/5942)
+- fix registry test by [@risu729](https://github.com/risu729) in [#5953](https://github.com/jdx/mise/pull/5953)
+
+### New Contributors
+
+- @itochan made their first contribution in [#5971](https://github.com/jdx/mise/pull/5971)
+- @mst-mkt made their first contribution in [#5969](https://github.com/jdx/mise/pull/5969)
+
 ## [2025.8.7](https://github.com/jdx/mise/compare/v2025.8.6..v2025.8.7) - 2025-08-06
 
 ### 📦 Registry
@@ -8,6 +32,7 @@
 
 ### 🐛 Bug Fixes
 
+- **(lockfile)** fix multiple lockfile issues with version management by [@jdx](https://github.com/jdx) in [#5907](https://github.com/jdx/mise/pull/5907)
 - **(toolset)** properly handle MISE_ADD_PATH from plugins by [@jdx](https://github.com/jdx) in [#5937](https://github.com/jdx/mise/pull/5937)
 
 ## [2025.8.6](https://github.com/jdx/mise/compare/v2025.8.5..v2025.8.6) - 2025-08-06
