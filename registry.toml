@@ -2891,12 +2891,13 @@ upx.description = "UPX - the Ultimate Packer for eXecutables"
 upx.backends = ["aqua:upx/upx", "asdf:jimmidyson/asdf-upx"]
 usage.description = "A specification for CLIs"
 usage.backends = [
-    "aqua:jdx/usage",
-    "ubi:jdx/usage",
-    "asdf:jdx/mise-usage",
+    # prebuilt binaries are not available for FreeBSD
+    {full = "aqua:jdx/usage", os = ["linux", "macos"]},
+    {full = "ubi:jdx/usage", os = ["linux", "macos"]},
+    {full = "asdf:jdx/mise-usage", os = ["linux", "macos"]},
     "cargo:usage-cli"
 ]
-usage.os = ["linux", "macos"]
+usage.os = ["linux", "macos", "freebsd"]
 usage.test = ["usage --version", "usage-cli {{version}}"]
 usql.description = "Universal command-line interface for SQL databases"
 usql.backends = ["aqua:xo/usql", "asdf:itspngu/asdf-usql"]
