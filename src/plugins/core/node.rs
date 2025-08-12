@@ -89,10 +89,6 @@ impl NodePlugin {
         ctx: &InstallContext,
         strip_components: usize,
     ) -> Result<()> {
-        file::remove_all(dest_path).map_err(|e| {
-            debug!("{:?}: Failed to remove {:?}: {e}", self, dest_path);
-            e
-        })?;
         file::untar(
             tarball_path,
             dest_path,
@@ -128,6 +124,10 @@ impl NodePlugin {
     ) -> Result<()> {
         match self
             .fetch_binary(ctx, tv, opts, || {
+                file::remove_all(&opts.install_path).map_err(|e| {
+                    debug!("{:?}: Failed to remove {:?}: {e}", self, &opts.install_path);
+                    e
+                })?;
                 self.extract_tarball(
                     &opts.binary_tarball_path,
                     &opts.install_path,
@@ -181,6 +181,10 @@ impl NodePlugin {
         )
         .await?;
         ctx.pr.set_message(format!("extract {tarball_name}"));
+        file::remove_all(&opts.build_dir).map_err(|e| {
+            debug!("{:?}: Failed to remove {:?}: {e}", self, &opts.build_dir);
+            e
+        })?;
         self.extract_tarball(
             &opts.source_tarball_path,
             opts.build_dir.parent().unwrap(),
