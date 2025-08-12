@@ -310,13 +310,13 @@ bbr-s3-config-validator.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
 # bbr-s3-config-validator.backends = ["ubi:cloudfoundry-incubator/bosh-backup-and-restore[matching=bbr-s3-config-validator,exe=bbr-s3-config-validator]", "asdf:mise-plugins/tanzu-plug-in-for-asdf"]
 # bbr-s3-config-validator.os = ["linux"]
 # bbr-s3-config-validator.test = ["bbr-s3-config-validator --help", "{{version}}"]
-benthos.description = "Fancy stream processing made operationally mundane"
-benthos.backends = [
+redpanda-connect.description = "Fancy stream processing made operationally mundane"
+redpanda-connect.backends = [
     "aqua:redpanda-data/connect",
     "asdf:benthosdev/benthos-asdf"
 ]
-benthos.test = ["redpanda-connect --version", "Version: {{version}}"]
-benthos.aliases = ["redpanda-connect"]
+redpanda-connect.test = ["redpanda-connect --version", "Version: {{version}}"]
+redpanda-connect.aliases = ["benthos"]
 bfs.description = "Breadth-first search for your files"
 bfs.backends = ["asdf:mise-plugins/mise-bfs"]
 binnacle.description = "An opinionated tool to interact with Kubernetes' Helm"
