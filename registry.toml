@@ -695,8 +695,10 @@ copper.backends = [
 ]
 copper.os = ["linux", "macos"]
 copper.test = ["copper version", ""]
-coq.description = "Rocq: A trustworthy, industrial-strength interactive theorem prover and dependently-typed programming language for mechanised reasoning in mathematics, computer science and more"
-coq.backends = ["asdf:mise-plugins/mise-coq"]
+rocq.description = "Rocq: A trustworthy, industrial-strength interactive theorem prover and dependently-typed programming language for mechanised reasoning in mathematics, computer science and more"
+rocq.backends = ["asdf:mise-plugins/mise-coq"]
+rocq.depends = ["ocaml", "opam"]
+rocq.aliases = ["coq"]
 coredns.description = "CoreDNS: DNS and Service Discovery"
 coredns.backends = ["ubi:coredns/coredns", "asdf:s3than/asdf-coredns"]
 coredns.test = ["coredns --version", "CoreDNS-{{version}}"]
