@@ -1,6 +1,7 @@
 use eyre::Result;
 use itertools::Itertools;
 use serde_derive::Serialize;
+use std::collections::HashSet;
 
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -61,7 +62,19 @@ impl Tool {
         let tvl = ts.versions.get(&self.tool);
         let tv = tvl.map(|tvl| tvl.versions.first().unwrap());
         let ba = tv.map(|tv| tv.ba()).unwrap_or_else(|| &self.tool);
-        let backend = ba.backend().ok();
+
+        // Check if the backend exists and fail if it doesn't
+        let backend = match ba.backend() {
+            Ok(b) => Some(b),
+            Err(e) => {
+                // If no versions are configured for this tool, it's likely invalid
+                if tvl.is_none() {
+                    return Err(e);
+                }
+                None
+            }
+        };
+
         let description = if let Some(backend) = backend {
             backend.description().await
         } else {
@@ -76,6 +89,8 @@ impl Tool {
                 .into_iter()
                 .filter(|(b, _)| b.ba().as_ref() == ba)
                 .map(|(_, tv)| tv.version)
+                .collect::<HashSet<_>>()
+                .into_iter()
                 .collect::<Vec<_>>(),
             active_versions: tvl.map(|tvl| {
                 tvl.versions
