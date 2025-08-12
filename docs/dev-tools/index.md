@@ -142,6 +142,21 @@ port = 6379
 
 Internally, nested options are flattened to dot notation (e.g., `platforms.macos-x64.url`, `database.host`, `cache.redis.port`) for backend access.
 
+### Tool postinstall commands
+
+Run a command immediately after a tool finishes installing by adding a `postinstall` field to that tool's configuration. This is separate from `[hooks].postinstall` and applies only to when a specific tool is installed.
+
+```toml
+[tools]
+node = { version = "22", postinstall = "corepack enable" }
+```
+
+Behavior:
+- The command runs once the install completes successfully for that tool/version.
+- The tool's bin path is on PATH during the command, so you can invoke the installed tool directly.
+- Environment variables include `MISE_TOOL_INSTALL_PATH` pointing to the tool's install directory.
+- If the install fails, the `postinstall` command is not run.
+
 ## OS-Specific Tools
 
 You can restrict tools to specific operating systems using the `os` field:
