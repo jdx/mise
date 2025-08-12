@@ -311,7 +311,10 @@ bbr-s3-config-validator.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
 # bbr-s3-config-validator.os = ["linux"]
 # bbr-s3-config-validator.test = ["bbr-s3-config-validator --help", "{{version}}"]
 benthos.description = "Fancy stream processing made operationally mundane"
-benthos.backends = ["aqua:redpanda-data/connect", "asdf:benthosdev/benthos-asdf"]
+benthos.backends = [
+    "aqua:redpanda-data/connect",
+    "asdf:benthosdev/benthos-asdf"
+]
 benthos.test = ["redpanda-connect --version", "Version: {{version}}"]
 benthos.aliases = ["redpanda-connect"]
 bfs.description = "Breadth-first search for your files"
