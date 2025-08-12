@@ -1,3 +1,4 @@
+use color_eyre::eyre::Context;
 use eyre::Result;
 use std::ffi::OsString;
 use std::sync::Arc;
@@ -57,7 +58,11 @@ where
     F: FnOnce() -> Result<T> + Send,
     T: Send,
 {
-    run_with_timeout(f, Settings::get().fetch_remote_versions_timeout())
+    let timeout = Settings::get().fetch_remote_versions_timeout();
+    run_with_timeout(f, timeout).context(format!(
+        "timed out after {} (change with `fetch_remote_versions_timeout` or env `MISE_FETCH_REMOTE_VERSIONS_TIMEOUT`)",
+        crate::ui::time::format_duration(timeout)
+    ))
 }
 
 pub fn new_backend_arg(tool_name: &str) -> BackendArg {

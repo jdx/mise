@@ -12,29 +12,47 @@ use crate::cli::version;
 use crate::config::Settings;
 use crate::file::display_path;
 use crate::ui::progress_report::SingleReport;
+use crate::ui::time::format_duration;
 use crate::{env, file};
 
 #[cfg(not(test))]
 pub static HTTP_VERSION_CHECK: Lazy<Client> =
-    Lazy::new(|| Client::new(Duration::from_secs(3)).unwrap());
+    Lazy::new(|| Client::new(Duration::from_secs(3), ClientKind::VersionCheck).unwrap());
 
-pub static HTTP: Lazy<Client> = Lazy::new(|| Client::new(Settings::get().http_timeout()).unwrap());
+pub static HTTP: Lazy<Client> =
+    Lazy::new(|| Client::new(Settings::get().http_timeout(), ClientKind::Http).unwrap());
 
-pub static HTTP_FETCH: Lazy<Client> =
-    Lazy::new(|| Client::new(Settings::get().fetch_remote_versions_timeout()).unwrap());
+pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
+    Client::new(
+        Settings::get().fetch_remote_versions_timeout(),
+        ClientKind::Fetch,
+    )
+    .unwrap()
+});
 
 #[derive(Debug)]
 pub struct Client {
     reqwest: reqwest::Client,
+    timeout: Duration,
+    kind: ClientKind,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ClientKind {
+    Http,
+    Fetch,
+    VersionCheck,
 }
 
 impl Client {
-    fn new(timeout: Duration) -> Result<Self> {
+    fn new(timeout: Duration, kind: ClientKind) -> Result<Self> {
         Ok(Self {
             reqwest: Self::_new()
                 .read_timeout(timeout)
                 .connect_timeout(timeout)
                 .build()?,
+            timeout,
+            kind,
         })
     }
 
@@ -65,11 +83,47 @@ impl Client {
         headers: &HeaderMap,
     ) -> Result<Response> {
         ensure!(!*env::OFFLINE, "offline mode is enabled");
-        let get = |url: Url| async move {
+        let mut url = url.into_url().unwrap();
+        let do_get = |url: Url,
+                      client: reqwest::Client,
+                      headers: HeaderMap,
+                      timeout: Duration,
+                      kind: ClientKind| async move {
             debug!("GET {}", &url);
-            let mut req = self.reqwest.get(url.clone());
+            let mut req = client.get(url.clone());
             req = req.headers(headers.clone());
-            let resp = req.send().await?;
+            let resp = match req.send().await {
+                Ok(resp) => resp,
+                Err(err) => {
+                    if err.is_timeout() {
+                        let (setting, env_var) = match kind {
+                            ClientKind::Http => ("http_timeout", "MISE_HTTP_TIMEOUT"),
+                            ClientKind::Fetch => (
+                                "fetch_remote_versions_timeout",
+                                "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT",
+                            ),
+                            ClientKind::VersionCheck => ("version_check_timeout", ""),
+                        };
+                        let hint = if env_var.is_empty() {
+                            format!(
+                                "HTTP timed out after {} for {}.",
+                                format_duration(timeout),
+                                url
+                            )
+                        } else {
+                            format!(
+                                "HTTP timed out after {} for {} (change with `{}` or env `{}`).",
+                                format_duration(timeout),
+                                url,
+                                setting,
+                                env_var
+                            )
+                        };
+                        bail!(hint);
+                    }
+                    return Err(err.into());
+                }
+            };
             if *env::MISE_LOG_HTTP {
                 eprintln!("GET {url} {}", resp.status());
             }
@@ -78,13 +132,27 @@ impl Client {
             resp.error_for_status_ref()?;
             Ok(resp)
         };
-        let mut url = url.into_url().unwrap();
-        let resp = match get(url.clone()).await {
+
+        let resp = match do_get(
+            url.clone(),
+            self.reqwest.clone(),
+            headers.clone(),
+            self.timeout,
+            self.kind,
+        )
+        .await
+        {
             Ok(resp) => resp,
             Err(_) if url.scheme() == "http" => {
-                // try with https since http may be blocked
                 url.set_scheme("https").unwrap();
-                get(url).await?
+                do_get(
+                    url,
+                    self.reqwest.clone(),
+                    headers.clone(),
+                    self.timeout,
+                    self.kind,
+                )
+                .await?
             }
             Err(err) => return Err(err),
         };
@@ -105,11 +173,47 @@ impl Client {
         headers: &HeaderMap,
     ) -> Result<Response> {
         ensure!(!*env::OFFLINE, "offline mode is enabled");
-        let head = |url: Url| async move {
+        let mut url = url.into_url().unwrap();
+        let do_head = |url: Url,
+                       client: reqwest::Client,
+                       headers: HeaderMap,
+                       timeout: Duration,
+                       kind: ClientKind| async move {
             debug!("HEAD {}", &url);
-            let mut req = self.reqwest.head(url.clone());
+            let mut req = client.head(url.clone());
             req = req.headers(headers.clone());
-            let resp = req.send().await?;
+            let resp = match req.send().await {
+                Ok(resp) => resp,
+                Err(err) => {
+                    if err.is_timeout() {
+                        let (setting, env_var) = match kind {
+                            ClientKind::Http => ("http_timeout", "MISE_HTTP_TIMEOUT"),
+                            ClientKind::Fetch => (
+                                "fetch_remote_versions_timeout",
+                                "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT",
+                            ),
+                            ClientKind::VersionCheck => ("version_check_timeout", ""),
+                        };
+                        let hint = if env_var.is_empty() {
+                            format!(
+                                "HTTP timed out after {} for {}.",
+                                format_duration(timeout),
+                                url
+                            )
+                        } else {
+                            format!(
+                                "HTTP timed out after {} for {} (change with `{}` or env `{}`).",
+                                format_duration(timeout),
+                                url,
+                                setting,
+                                env_var
+                            )
+                        };
+                        bail!(hint);
+                    }
+                    return Err(err.into());
+                }
+            };
             if *env::MISE_LOG_HTTP {
                 eprintln!("HEAD {url} {}", resp.status());
             }
@@ -118,13 +222,26 @@ impl Client {
             resp.error_for_status_ref()?;
             Ok(resp)
         };
-        let mut url = url.into_url().unwrap();
-        let resp = match head(url.clone()).await {
+        let resp = match do_head(
+            url.clone(),
+            self.reqwest.clone(),
+            headers.clone(),
+            self.timeout,
+            self.kind,
+        )
+        .await
+        {
             Ok(resp) => resp,
             Err(_) if url.scheme() == "http" => {
-                // try with https since http may be blocked
                 url.set_scheme("https").unwrap();
-                head(url).await?
+                do_head(
+                    url,
+                    self.reqwest.clone(),
+                    headers.clone(),
+                    self.timeout,
+                    self.kind,
+                )
+                .await?
             }
             Err(err) => return Err(err),
         };
