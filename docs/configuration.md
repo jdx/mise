@@ -148,10 +148,6 @@ Examples:
 ```toml
 [tools]
 node = { version = "22", postinstall = "corepack enable" }
-
-[tools.python]
-version = "3.12"
-postinstall = "python -m pip install --upgrade pip"
 ```
 
 ### `[env]` - Arbitrary Environment Variables
