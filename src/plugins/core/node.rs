@@ -46,7 +46,7 @@ impl NodePlugin {
         opts: &BuildOpts,
         extract: impl FnOnce() -> Result<()>,
     ) -> Result<FetchOutcome> {
-        debug!("We will fetch a precompiled version");
+        debug!("{:?}: we will fetch a precompiled version", self);
 
         match self
             .fetch_tarball(
@@ -60,10 +60,10 @@ impl NodePlugin {
             .await
         {
             Ok(()) => {
-                debug!("We successfully downloaded precompiled node archive");
+                debug!("{:?}: successfully downloaded node archive", self);
             }
             Err(e) if matches!(http::error_code(&e), Some(404)) => {
-                debug!("precompiled node archive not found {e}");
+                debug!("{:?}: precompiled node archive not found {e}", self);
                 return Ok(FetchOutcome::NotFound);
             }
             Err(e) => return Err(e),
@@ -71,14 +71,14 @@ impl NodePlugin {
 
         let tarball_name = &opts.binary_tarball_name;
         ctx.pr.set_message(format!("extract {tarball_name}"));
-        debug!("extracting precompiled node");
+        debug!("{:?}: extracting precompiled node", self);
 
         if let Err(e) = extract() {
-            debug!("extraction failed: {e}");
+            debug!("{:?}: extraction failed: {e}", self);
             return Err(e);
         }
 
-        debug!("precompiled node extraction was successful");
+        debug!("{:?}: precompiled node extraction was successful", self);
         Ok(FetchOutcome::Downloaded)
     }
 
@@ -90,7 +90,7 @@ impl NodePlugin {
         strip_components: usize,
     ) -> Result<()> {
         file::remove_all(dest_path).map_err(|e| {
-            debug!("Failed to remove {:?}: {e}", dest_path);
+            debug!("{:?}: Failed to remove {:?}: {e}", self, dest_path);
             e
         })?;
         file::untar(
@@ -169,7 +169,7 @@ impl NodePlugin {
         tv: &mut ToolVersion,
         opts: &BuildOpts,
     ) -> Result<()> {
-        debug!("We will fetch the source and compile");
+        debug!("{:?}: we will fetch the source and compile", self);
         let tarball_name = &opts.source_tarball_name;
         self.fetch_tarball(
             ctx,
@@ -504,7 +504,7 @@ impl Backend for NodePlugin {
         } else {
             self.install_precompiled(ctx, &mut tv, &opts).await?;
         }
-        debug!("Checking if the installation is working as expected");
+        debug!("{:?}: checking installation is working as expected", self);
         self.test_node(&ctx.config, &tv, &ctx.pr).await?;
         if !cfg!(windows) {
             self.install_npm_shim(&tv)?;
