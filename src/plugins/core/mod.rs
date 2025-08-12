@@ -9,7 +9,7 @@ use crate::cli::args::BackendArg;
 use crate::config::Settings;
 use crate::env;
 use crate::env::PATH_KEY;
-use crate::timeout::run_with_timeout;
+use crate::timeout::{TimeoutError, run_with_timeout};
 use crate::toolset::ToolVersion;
 
 mod bun;
@@ -59,10 +59,19 @@ where
     T: Send,
 {
     let timeout = Settings::get().fetch_remote_versions_timeout();
-    run_with_timeout(f, timeout).context(format!(
-        "timed out after {} (change with `fetch_remote_versions_timeout` or env `MISE_FETCH_REMOTE_VERSIONS_TIMEOUT`)",
-        crate::ui::time::format_duration(timeout)
-    ))
+    match run_with_timeout(f, timeout) {
+        Ok(v) => Ok(v),
+        Err(err) => {
+            // Only add a hint when the error was actually caused by a timeout
+            if err.downcast_ref::<TimeoutError>().is_some() {
+                Err(err).context(
+                    "change with `fetch_remote_versions_timeout` or env `MISE_FETCH_REMOTE_VERSIONS_TIMEOUT`",
+                )
+            } else {
+                Err(err)
+            }
+        }
+    }
 }
 
 pub fn new_backend_arg(tool_name: &str) -> BackendArg {
