@@ -391,7 +391,7 @@ cached. For "slow" commands like `mise ls-remote` or `mise install`:
 [fetch_remote_versions_timeout]
 env = "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT"
 type = "Duration"
-default = "5s"
+default = "10s"
 description = "Timeout in seconds for HTTP requests to fetch new tool versions in mise."
 aliases = ["fetch_remote_version_timeout"]
 
