@@ -137,7 +137,18 @@ You can also have environment specific config files like `.mise.production.toml`
 
 ### `[tools]` - Dev tools
 
-See [Tools](/dev-tools/).
+See [Tools](/dev-tools/). In addition to specifying versions, each tool entry can include options such as:
+
+- `os`: Restrict installation to certain operating systems
+- `install_env`: Environment vars used during install
+- `postinstall`: Command to run after installation completes for that specific tool
+
+Examples:
+
+```toml
+[tools]
+node = { version = "22", postinstall = "corepack enable" }
+```
 
 ### `[env]` - Arbitrary Environment Variables
 

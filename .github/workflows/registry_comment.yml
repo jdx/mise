@@ -99,7 +99,7 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           # Check if PR title follows the exact format: registry: add [TOOL] ([FULL])
-          if [[ ! "$PR_TITLE" =~ ^registry:\ add\ [a-zA-Z0-9_-]+\ \([a-zA-Z0-9:/-]+\)$ ]]; then
+          if [[ ! "$PR_TITLE" =~ ^registry:\ add\ [a-zA-Z0-9_-]+\ \([a-zA-Z0-9@:/-]+\)$ ]]; then
             echo "❌ Error: PR title must follow the exact format when adding new tools"
             echo "Current title: $PR_TITLE"
             echo "Expected format: registry: add [TOOL] ([FULL])"

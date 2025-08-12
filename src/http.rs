@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use eyre::{Report, Result, bail, ensure};
 use reqwest::header::{HeaderMap, HeaderValue};
-use reqwest::{ClientBuilder, IntoUrl, Response};
+use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use std::sync::LazyLock as Lazy;
 use url::Url;
 
@@ -12,29 +12,47 @@ use crate::cli::version;
 use crate::config::Settings;
 use crate::file::display_path;
 use crate::ui::progress_report::SingleReport;
+use crate::ui::time::format_duration;
 use crate::{env, file};
 
 #[cfg(not(test))]
 pub static HTTP_VERSION_CHECK: Lazy<Client> =
-    Lazy::new(|| Client::new(Duration::from_secs(3)).unwrap());
+    Lazy::new(|| Client::new(Duration::from_secs(3), ClientKind::VersionCheck).unwrap());
 
-pub static HTTP: Lazy<Client> = Lazy::new(|| Client::new(Settings::get().http_timeout()).unwrap());
+pub static HTTP: Lazy<Client> =
+    Lazy::new(|| Client::new(Settings::get().http_timeout(), ClientKind::Http).unwrap());
 
-pub static HTTP_FETCH: Lazy<Client> =
-    Lazy::new(|| Client::new(Settings::get().fetch_remote_versions_timeout()).unwrap());
+pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
+    Client::new(
+        Settings::get().fetch_remote_versions_timeout(),
+        ClientKind::Fetch,
+    )
+    .unwrap()
+});
 
 #[derive(Debug)]
 pub struct Client {
     reqwest: reqwest::Client,
+    timeout: Duration,
+    kind: ClientKind,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ClientKind {
+    Http,
+    Fetch,
+    VersionCheck,
 }
 
 impl Client {
-    fn new(timeout: Duration) -> Result<Self> {
+    fn new(timeout: Duration, kind: ClientKind) -> Result<Self> {
         Ok(Self {
             reqwest: Self::_new()
                 .read_timeout(timeout)
                 .connect_timeout(timeout)
                 .build()?,
+            timeout,
+            kind,
         })
     }
 
@@ -65,30 +83,10 @@ impl Client {
         headers: &HeaderMap,
     ) -> Result<Response> {
         ensure!(!*env::OFFLINE, "offline mode is enabled");
-        let get = |url: Url| async move {
-            debug!("GET {}", &url);
-            let mut req = self.reqwest.get(url.clone());
-            req = req.headers(headers.clone());
-            let resp = req.send().await?;
-            if *env::MISE_LOG_HTTP {
-                eprintln!("GET {url} {}", resp.status());
-            }
-            debug!("GET {url} {}", resp.status());
-            display_github_rate_limit(&resp);
-            resp.error_for_status_ref()?;
-            Ok(resp)
-        };
-        let mut url = url.into_url().unwrap();
-        let resp = match get(url.clone()).await {
-            Ok(resp) => resp,
-            Err(_) if url.scheme() == "http" => {
-                // try with https since http may be blocked
-                url.set_scheme("https").unwrap();
-                get(url).await?
-            }
-            Err(err) => return Err(err),
-        };
-
+        let url = url.into_url().unwrap();
+        let resp = self
+            .send_with_https_fallback(Method::GET, url, headers, "GET")
+            .await?;
         resp.error_for_status_ref()?;
         Ok(resp)
     }
@@ -105,30 +103,10 @@ impl Client {
         headers: &HeaderMap,
     ) -> Result<Response> {
         ensure!(!*env::OFFLINE, "offline mode is enabled");
-        let head = |url: Url| async move {
-            debug!("HEAD {}", &url);
-            let mut req = self.reqwest.head(url.clone());
-            req = req.headers(headers.clone());
-            let resp = req.send().await?;
-            if *env::MISE_LOG_HTTP {
-                eprintln!("HEAD {url} {}", resp.status());
-            }
-            debug!("HEAD {url} {}", resp.status());
-            display_github_rate_limit(&resp);
-            resp.error_for_status_ref()?;
-            Ok(resp)
-        };
-        let mut url = url.into_url().unwrap();
-        let resp = match head(url.clone()).await {
-            Ok(resp) => resp,
-            Err(_) if url.scheme() == "http" => {
-                // try with https since http may be blocked
-                url.set_scheme("https").unwrap();
-                head(url).await?
-            }
-            Err(err) => return Err(err),
-        };
-
+        let url = url.into_url().unwrap();
+        let resp = self
+            .send_with_https_fallback(Method::HEAD, url, headers, "HEAD")
+            .await?;
         resp.error_for_status_ref()?;
         Ok(resp)
     }
@@ -240,6 +218,77 @@ impl Client {
         }
         file.persist(path)?;
         Ok(())
+    }
+
+    async fn send_with_https_fallback(
+        &self,
+        method: Method,
+        mut url: Url,
+        headers: &HeaderMap,
+        verb_label: &str,
+    ) -> Result<Response> {
+        match self
+            .send_once(method.clone(), url.clone(), headers, verb_label)
+            .await
+        {
+            Ok(resp) => Ok(resp),
+            Err(_) if url.scheme() == "http" => {
+                url.set_scheme("https").unwrap();
+                self.send_once(method, url, headers, verb_label).await
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    async fn send_once(
+        &self,
+        method: Method,
+        url: Url,
+        headers: &HeaderMap,
+        verb_label: &str,
+    ) -> Result<Response> {
+        debug!("{} {}", verb_label, &url);
+        let mut req = self.reqwest.request(method, url.clone());
+        req = req.headers(headers.clone());
+        let resp = match req.send().await {
+            Ok(resp) => resp,
+            Err(err) => {
+                if err.is_timeout() {
+                    let (setting, env_var) = match self.kind {
+                        ClientKind::Http => ("http_timeout", "MISE_HTTP_TIMEOUT"),
+                        ClientKind::Fetch => (
+                            "fetch_remote_versions_timeout",
+                            "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT",
+                        ),
+                        ClientKind::VersionCheck => ("version_check_timeout", ""),
+                    };
+                    let hint = if env_var.is_empty() {
+                        format!(
+                            "HTTP timed out after {} for {}.",
+                            format_duration(self.timeout),
+                            url
+                        )
+                    } else {
+                        format!(
+                            "HTTP timed out after {} for {} (change with `{}` or env `{}`).",
+                            format_duration(self.timeout),
+                            url,
+                            setting,
+                            env_var
+                        )
+                    };
+                    bail!(hint);
+                }
+                return Err(err.into());
+            }
+        };
+        if *env::MISE_LOG_HTTP {
+            eprintln!("{} {url} {}", verb_label, resp.status());
+        }
+        debug!("{} {url} {}", verb_label, resp.status());
+        display_github_rate_limit(&resp);
+        resp.error_for_status_ref()?;
+        Ok(resp)
     }
 }
 
