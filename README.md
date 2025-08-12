@@ -157,7 +157,7 @@ See [mise.jdx.dev](https://mise.jdx.dev)
 
 ## Special Thanks
 
-We're grateful for Cloudflare's support us through [Project Alexandria](https://www.cloudflare.com/lp/project-alexandria/).
+We're grateful for Cloudflare's support through [Project Alexandria](https://www.cloudflare.com/lp/project-alexandria/).
 
 ## Contributors
 
