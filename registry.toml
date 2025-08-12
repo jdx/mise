@@ -2666,9 +2666,11 @@ restic.backends = ["aqua:restic/restic", "asdf:xataz/asdf-restic"]
 # restic.test = ["restic version", "restic {{version}}"] fails on windows
 restish.description = "Restish is a CLI for interacting with REST-ish HTTP APIs with some nice features built-in"
 restish.backends = [
-    "ubi:danielgtaylor/restish",
+    "aqua:rest-sh/restish",
+    "ubi:rest-sh/restish",
     "go:github.com/danielgtaylor/restish"
 ]
+restish.test = ["restish --version", "restish version {{version}}"]
 resvg.description = "An SVG rendering library."
 resvg.backends = ["aqua:linebender/resvg"]
 resvg.test = ["resvg --version", "{{version}}"]
