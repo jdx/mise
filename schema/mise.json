@@ -449,7 +449,7 @@
           "type": "string"
         },
         "fetch_remote_versions_timeout": {
-          "default": "5s",
+          "default": "10s",
           "description": "Timeout in seconds for HTTP requests to fetch new tool versions in mise.",
           "type": "string"
         },
