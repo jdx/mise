@@ -713,6 +713,7 @@ impl AquaBackend {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
         } else if format == "zip" {
             file::unzip(&tarball_path, &install_path, &Default::default())?;
+            file::make_executable(&bin_path)?;
         } else if format == "gz" {
             file::create_dir_all(&install_path)?;
             file::un_gz(&tarball_path, &bin_path)?;
