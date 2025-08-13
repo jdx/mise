@@ -1858,7 +1858,7 @@ kubecm.backends = ["aqua:sunny0826/kubecm", "asdf:samhvw8/asdf-kubecm"]
 kubecolor.description = "Colorize your kubectl output"
 kubecolor.backends = ["aqua:kubecolor/kubecolor", "asdf:dex4er/asdf-kubecolor"]
 kubecolor.depends = ["kubectl"]
-# kubecolor.test = ["kubecolor --kubecolor-version", "v{{version}}"] # disable until mise-versions will be updated
+kubecolor.test = ["kubecolor --kubecolor-version", "v{{version}}"]
 kubeconform.description = "A FAST Kubernetes manifests validator, with support for Custom Resources"
 kubeconform.backends = [
     "aqua:yannh/kubeconform",
