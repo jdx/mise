@@ -724,6 +724,7 @@ impl AquaBackend {
             pr: Some(&ctx.pr),
             strip_components: 0,
         };
+        let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
@@ -732,39 +733,44 @@ impl AquaBackend {
         } else if format == "raw" {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
-            file::make_executable(first_bin_path)?;
+            make_executable = true;
         } else if format.starts_with("tar") {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
-            for bin_path in &bin_paths {
-                file::make_executable(bin_path)?;
-            }
+            make_executable = true;
         } else if format == "zip" {
             file::unzip(&tarball_path, &install_path, &Default::default())?;
-            for bin_path in &bin_paths {
-                file::make_executable(bin_path)?;
-            }
+            make_executable = true;
         } else if format == "gz" {
             file::create_dir_all(&install_path)?;
             file::un_gz(&tarball_path, first_bin_path)?;
-            file::make_executable(first_bin_path)?;
+            make_executable = true;
         } else if format == "xz" {
             file::create_dir_all(&install_path)?;
             file::un_xz(&tarball_path, first_bin_path)?;
-            file::make_executable(first_bin_path)?;
+            make_executable = true;
         } else if format == "zst" {
             file::create_dir_all(&install_path)?;
             file::un_zst(&tarball_path, first_bin_path)?;
-            file::make_executable(first_bin_path)?;
+            make_executable = true;
         } else if format == "bz2" {
             file::create_dir_all(&install_path)?;
             file::un_bz2(&tarball_path, first_bin_path)?;
-            file::make_executable(first_bin_path)?;
+            make_executable = true;
         } else if format == "dmg" {
             file::un_dmg(&tarball_path, &install_path)?;
         } else if format == "pkg" {
             file::un_pkg(&tarball_path, &install_path)?;
         } else {
             bail!("unsupported format: {}", format);
+        }
+
+        if make_executable {
+            for bin_path in &bin_paths {
+                // bin_path should exist, but doesn't when the registry is outdated
+                if bin_path.exists() {
+                    file::make_executable(bin_path)?;
+                }
+            }
         }
 
         for (src, dst) in self.srcs(pkg, tv)? {
