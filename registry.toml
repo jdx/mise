@@ -714,6 +714,12 @@ cosign.backends = [
     "asdf:https://gitlab.com/wt0f/asdf-cosign"
 ]
 cosign.test = ["cosign version", "v{{version}}"]
+codespell.description = "check code for common misspellings"
+codespell.backends = [
+    "pipx:codespell",
+    "ubi:codespell-project/codespell"
+]
+codespell.test = ["codespell --version", "{{version}}"]
 coursier.description = "Pure Scala Artifact Fetching"
 coursier.backends = [
     "ubi:coursier/coursier[exe=cs]",
