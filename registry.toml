@@ -3272,9 +3272,9 @@ upx.backends = ["aqua:upx/upx", "asdf:jimmidyson/asdf-upx"]
 usage.description = "A specification for CLIs"
 usage.backends = [
     # prebuilt binaries are not available for FreeBSD
-    {full = "aqua:jdx/usage", os = ["linux", "macos"]},
-    {full = "ubi:jdx/usage", os = ["linux", "macos"]},
-    {full = "asdf:mise-plugins/mise-usage", os = ["linux", "macos"]},
+    {full = "aqua:jdx/usage", platforms = ["linux", "macos"]},
+    {full = "ubi:jdx/usage", platforms = ["linux", "macos"]},
+    {full = "asdf:mise-plugins/mise-usage", platforms = ["linux", "macos"]},
     "cargo:usage-cli"
 ]
 usage.os = ["linux", "macos", "freebsd"]
