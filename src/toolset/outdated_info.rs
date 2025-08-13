@@ -1,4 +1,4 @@
-use crate::semver::chunkify_version;
+use crate::semver::{chunkify_version, split_version_prefix};
 use crate::toolset;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
 use crate::{Result, config::Config};
@@ -56,11 +56,10 @@ impl OutdatedInfo {
     ) -> eyre::Result<Option<Self>> {
         let t = tv.backend()?;
         // prefix is something like "temurin-" or "corretto-"
-        let prefix = xx::regex!(r"^[a-zA-Z-]+-")
-            .find(&tv.request.version())
-            .map(|m| m.as_str().to_string());
+        let (prefix, _) = split_version_prefix(&tv.request.version());
         let latest_result = if bump {
-            t.latest_version(config, prefix.clone()).await
+            t.latest_version(config, Some(prefix.clone()).filter(|s| !s.is_empty()))
+                .await
         } else {
             tv.latest_version(config).await.map(Option::from)
         };
@@ -85,7 +84,6 @@ impl OutdatedInfo {
             return Ok(None);
         }
         if bump {
-            let prefix = prefix.unwrap_or_default();
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or_default();
             let new = oi.latest.strip_prefix(&prefix).unwrap_or_default();
