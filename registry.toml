@@ -460,6 +460,7 @@ cfssl.backends = [
 ]
 cfssljson.description = "cfssljson: Takes the JSON output from Cloudflare's cfssl and multirootca programs and writes certificates, keys, CSRs, and bundles to disk."
 cfssljson.backends = ["aqua:cloudflare/cfssl/cfssljson"]
+cfssljson.test = ["cfssljson -version", "Version: {{version}}"]
 chamber.description = "CLI for managing secrets"
 chamber.backends = [
     "aqua:segmentio/chamber",
