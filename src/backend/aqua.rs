@@ -709,7 +709,7 @@ impl AquaBackend {
             pkg.files
                 .iter()
                 .filter_map(|file| file.src(pkg, v).ok().flatten())
-                .map(|s| Cow::Owned(s))
+                .map(Cow::Owned)
                 .collect()
         };
         let bin_paths: Vec<_> = bin_names
