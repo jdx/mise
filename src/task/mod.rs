@@ -164,7 +164,7 @@ impl Task {
         let info = file::read_to_string(path)?
             .lines()
             .filter_map(|line| {
-                regex!(r"^(?:#|//|::) (?:MISE|mise) ([a-z_]+=.+)$")
+                regex!(r"^(?:#|//|::) ?(?:MISE|mise) ([a-z_]+=.+)$")
                     .captures(line)
             })
             .map(|captures| captures.extract().1)
