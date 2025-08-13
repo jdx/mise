@@ -306,12 +306,6 @@ bazelisk.backends = [
 ]
 bbr-s3-config-validator.description = "The BOSH Backup and Restore (BBR) S3 bucket configuration validator is a tool to validate and troubleshoot your Cloud Foundry and BBR external blobstore configuration"
 bbr-s3-config-validator.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
-# not working right with ubi
-# bbr-s3-config-validator.backends = ["ubi:cloudfoundry-incubator/bosh-backup-and-restore[matching=bbr-s3-config-validator,exe=bbr-s3-config-validator]", "asdf:mise-plugins/tanzu-plug-in-for-asdf"]
-# bbr-s3-config-validator.os = ["linux"]
-# bbr-s3-config-validator.test = ["bbr-s3-config-validator --help", "{{version}}"]
-benthos.description = "Fancy stream processing made operationally mundane"
-benthos.backends = ["aqua:benthosdev/benthos", "asdf:benthosdev/benthos-asdf"]
 bfs.description = "Breadth-first search for your files"
 bfs.backends = ["asdf:mise-plugins/mise-bfs"]
 binnacle.description = "An opinionated tool to interact with Kubernetes' Helm"
@@ -695,8 +689,6 @@ copper.backends = [
 ]
 copper.os = ["linux", "macos"]
 copper.test = ["copper version", ""]
-coq.description = "Rocq: A trustworthy, industrial-strength interactive theorem prover and dependently-typed programming language for mechanised reasoning in mathematics, computer science and more"
-coq.backends = ["asdf:mise-plugins/mise-coq"]
 coredns.description = "CoreDNS: DNS and Service Discovery"
 coredns.backends = ["ubi:coredns/coredns", "asdf:s3than/asdf-coredns"]
 coredns.test = ["coredns --version", "CoreDNS-{{version}}"]
@@ -2650,6 +2642,17 @@ redo.backends = [
     "asdf:chessmango/asdf-redo"
 ]
 redo.test = ["which redo", "redo"]
+# not working right with ubi
+# bbr-s3-config-validator.backends = ["ubi:cloudfoundry-incubator/bosh-backup-and-restore[matching=bbr-s3-config-validator,exe=bbr-s3-config-validator]", "asdf:mise-plugins/tanzu-plug-in-for-asdf"]
+# bbr-s3-config-validator.os = ["linux"]
+# bbr-s3-config-validator.test = ["bbr-s3-config-validator --help", "{{version}}"]
+redpanda-connect.description = "Fancy stream processing made operationally mundane"
+redpanda-connect.backends = [
+    "aqua:redpanda-data/connect",
+    "asdf:benthosdev/benthos-asdf"
+]
+redpanda-connect.test = ["redpanda-connect --version", "Version: {{version}}"]
+redpanda-connect.aliases = ["benthos"]
 reg.description = "Docker registry v2 command line client and repo listing generator with security checks"
 reg.backends = ["aqua:genuinetools/reg", "asdf:looztra/asdf-reg"]
 regal.description = "Regal is a linter for Rego, with the goal of making your Rego magnificent"
@@ -2702,6 +2705,10 @@ rke.description = "Rancher Kubernetes Engine (RKE), an extremely simple, lightni
 rke.backends = ["aqua:rancher/rke", "asdf:particledecay/asdf-rke"]
 rlwrap.description = "rlwrap is a 'readline wrapper', a small utility that uses the GNU Readline library to allow the editing of keyboard input for any command"
 rlwrap.backends = ["asdf:mise-plugins/mise-rlwrap"]
+rocq.description = "Rocq: A trustworthy, industrial-strength interactive theorem prover and dependently-typed programming language for mechanised reasoning in mathematics, computer science and more"
+rocq.backends = ["asdf:mise-plugins/mise-coq"]
+rocq.depends = ["ocaml", "opam"]
+rocq.aliases = ["coq"]
 ruby.description = "Ruby language"
 ruby.backends = ["core:ruby"]
 ruff.description = "An extremely fast Python linter and code formatter, written in Rust"
