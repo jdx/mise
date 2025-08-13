@@ -698,7 +698,7 @@ impl AquaBackend {
         let install_path = tv.install_path();
         file::remove_all(&install_path)?;
         let format = pkg.format(v)?;
-        let bin_names: Vec<Cow<str>> = if pkg.files.is_empty() {
+        let bin_names = if pkg.files.is_empty() {
             let fallback_name = pkg
                 .name
                 .as_deref()
