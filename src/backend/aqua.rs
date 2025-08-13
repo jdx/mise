@@ -777,6 +777,8 @@ impl AquaBackend {
                 // bin_path should exist, but doesn't when the registry is outdated
                 if bin_path.exists() {
                     file::make_executable(bin_path)?;
+                } else {
+                    warn!("bin path does not exist: {}", bin_path.display());
                 }
             }
         }
