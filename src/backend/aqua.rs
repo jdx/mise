@@ -701,14 +701,11 @@ impl AquaBackend {
             let fallback_name = pkg
                 .name
                 .as_deref()
-                .and_then(|n| n.split('/').last())
+                .and_then(|n| n.split('/').next_back())
                 .unwrap_or(&pkg.repo_name);
             vec![fallback_name]
         } else {
-            pkg.files
-                .iter()
-                .map(|file| file.name.as_str())
-                .collect()
+            pkg.files.iter().map(|file| file.name.as_str()).collect()
         };
         let bin_paths: Vec<_> = bin_names
             .iter()
@@ -733,7 +730,7 @@ impl AquaBackend {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
         } else if format == "raw" {
             file::create_dir_all(&install_path)?;
-            file::copy(&tarball_path, &bin_paths.first().unwrap())?;
+            file::copy(&tarball_path, bin_paths.first().unwrap())?;
         } else if format.starts_with("tar") {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
             for bin_path in &bin_paths {
@@ -746,20 +743,20 @@ impl AquaBackend {
             }
         } else if format == "gz" {
             file::create_dir_all(&install_path)?;
-            file::un_gz(&tarball_path, &bin_paths.first().unwrap())?;
-            file::make_executable(&bin_paths.first().unwrap())?;
+            file::un_gz(&tarball_path, bin_paths.first().unwrap())?;
+            file::make_executable(bin_paths.first().unwrap())?;
         } else if format == "xz" {
             file::create_dir_all(&install_path)?;
-            file::un_xz(&tarball_path, &bin_paths.first().unwrap())?;
-            file::make_executable(&bin_paths.first().unwrap())?;
+            file::un_xz(&tarball_path, bin_paths.first().unwrap())?;
+            file::make_executable(bin_paths.first().unwrap())?;
         } else if format == "zst" {
             file::create_dir_all(&install_path)?;
-            file::un_zst(&tarball_path, &bin_paths.first().unwrap())?;
-            file::make_executable(&bin_paths.first().unwrap())?;
+            file::un_zst(&tarball_path, bin_paths.first().unwrap())?;
+            file::make_executable(bin_paths.first().unwrap())?;
         } else if format == "bz2" {
             file::create_dir_all(&install_path)?;
-            file::un_bz2(&tarball_path, &bin_paths.first().unwrap())?;
-            file::make_executable(&bin_paths.first().unwrap())?;
+            file::un_bz2(&tarball_path, bin_paths.first().unwrap())?;
+            file::make_executable(bin_paths.first().unwrap())?;
         } else if format == "dmg" {
             file::un_dmg(&tarball_path, &install_path)?;
         } else if format == "pkg" {

@@ -1225,11 +1225,7 @@ gitsign.backends = ["aqua:sigstore/gitsign", "asdf:spencergilbert/asdf-gitsign"]
 gitsign.os = ["linux", "macos"]
 gitsign.test = ["gitsign --version", "gitsign version v{{version}}"]
 gitu.description = "A TUI Git client inspired by Magit"
-gitu.backends = [
-    "aqua:altsem/gitu",
-    "ubi:altsem/gitu",
-    "cargo:gitu"
-]
+gitu.backends = ["aqua:altsem/gitu", "ubi:altsem/gitu", "cargo:gitu"]
 gitu.test = ["gitu --version", "gitu v{{version}}"]
 gitui.description = "Blazing 💥 fast terminal-ui for git written in rust"
 gitui.backends = ["aqua:extrawurst/gitui", "asdf:looztra/asdf-gitui"]
