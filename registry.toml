@@ -331,7 +331,7 @@ black.backends = ["aqua:psf/black"]
 black.test = ["black --version", "black, {{version}}"]
 bob.description = "A version manager for neovim"
 bob.backends = [
-    # "aqua:MordechaiHadad/bob",  # +x permission not set
+    "aqua:MordechaiHadad/bob",
     "ubi:MordechaiHadad/bob[matching_regex=bob-(linux|macos|windows)-(arm|x86_64)\\.zip$]",
     "cargo:bob-nvim"
 ]
@@ -1226,7 +1226,7 @@ gitsign.os = ["linux", "macos"]
 gitsign.test = ["gitsign --version", "gitsign version v{{version}}"]
 gitu.description = "A TUI Git client inspired by Magit"
 gitu.backends = [
-    # "aqua:altsem/gitu", # +x permission not set
+    "aqua:altsem/gitu",
     "ubi:altsem/gitu",
     "cargo:gitu"
 ]
@@ -2181,7 +2181,7 @@ mint.description = "🍃 A refreshing programming language for the front-end web
 mint.backends = ["ubi:mint-lang/mint", "asdf:mint-lang/asdf-mint"]
 mirrord.description = "Connect your local process and your cloud environment, and run local code in cloud conditions"
 mirrord.backends = [
-    # "aqua:metalbear-co/mirrord", # +x permission not set
+    "aqua:metalbear-co/mirrord",
     "ubi:metalbear-co/mirrord",
     "asdf:metalbear-co/asdf-mirrord"
 ]
