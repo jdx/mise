@@ -708,8 +708,13 @@ impl AquaBackend {
         } else {
             pkg.files
                 .iter()
-                .filter_map(|file| file.src(pkg, v).ok().flatten())
-                .map(Cow::Owned)
+                .filter_map(|file| {
+                    match file.src(pkg, v) {
+                        Ok(Some(s)) => Some(Cow::Owned(s)),
+                        Ok(None) => Some(Cow::Borrowed(file.name.as_str())),
+                        Err(_) => None,
+                    }
+                })
                 .collect()
         };
         let bin_paths: Vec<_> = bin_names
