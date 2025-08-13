@@ -24,6 +24,7 @@ use eyre::{ContextCompat, Result, bail};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::Regex;
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::{collections::HashSet, sync::Arc};
 
@@ -697,21 +698,43 @@ impl AquaBackend {
         let install_path = tv.install_path();
         file::remove_all(&install_path)?;
         let format = pkg.format(v)?;
-        let mut bin_path = install_path.join(
-            pkg.files
-                .first()
-                .map(|f| f.name.as_str())
-                .or_else(|| pkg.name.as_ref().and_then(|n| n.split('/').next_back()))
-                .unwrap_or(&pkg.repo_name),
-        );
-        if cfg!(windows) && pkg.complete_windows_ext {
-            bin_path = bin_path.with_extension("exe");
+        let mut bin_names: Vec<Cow<'_, str>> = pkg
+            .files
+            .iter()
+            .filter_map(|file| match file.src(pkg, v) {
+                Ok(Some(s)) => Some(Cow::Owned(s)),
+                Ok(None) => Some(Cow::Borrowed(file.name.as_str())),
+                Err(_) => None,
+            })
+            .collect();
+        if bin_names.is_empty() {
+            let fallback_name = pkg
+                .name
+                .as_deref()
+                .and_then(|n| n.split('/').next_back())
+                .unwrap_or(&pkg.repo_name);
+            bin_names = vec![Cow::Borrowed(fallback_name)];
         }
+        let bin_paths: Vec<_> = bin_names
+            .iter()
+            .map(|name| install_path.join(name.as_ref()))
+            .map(|path| {
+                if cfg!(windows) && pkg.complete_windows_ext {
+                    path.with_extension("exe")
+                } else {
+                    path
+                }
+            })
+            .collect();
+        let first_bin_path = bin_paths
+            .first()
+            .expect("at least one bin path should exist");
         let mut tar_opts = TarOptions {
             format: format.parse().unwrap_or_default(),
             pr: Some(&ctx.pr),
             strip_components: 0,
         };
+        let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
         } else if let AquaPackageType::GithubContent = pkg.r#type {
@@ -719,34 +742,47 @@ impl AquaBackend {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
         } else if format == "raw" {
             file::create_dir_all(&install_path)?;
-            file::copy(&tarball_path, &bin_path)?;
-            file::make_executable(&bin_path)?;
+            file::copy(&tarball_path, first_bin_path)?;
+            make_executable = true;
         } else if format.starts_with("tar") {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
+            make_executable = true;
         } else if format == "zip" {
             file::unzip(&tarball_path, &install_path, &Default::default())?;
+            make_executable = true;
         } else if format == "gz" {
             file::create_dir_all(&install_path)?;
-            file::un_gz(&tarball_path, &bin_path)?;
-            file::make_executable(&bin_path)?;
+            file::un_gz(&tarball_path, first_bin_path)?;
+            make_executable = true;
         } else if format == "xz" {
             file::create_dir_all(&install_path)?;
-            file::un_xz(&tarball_path, &bin_path)?;
-            file::make_executable(&bin_path)?;
+            file::un_xz(&tarball_path, first_bin_path)?;
+            make_executable = true;
         } else if format == "zst" {
             file::create_dir_all(&install_path)?;
-            file::un_zst(&tarball_path, &bin_path)?;
-            file::make_executable(&bin_path)?;
+            file::un_zst(&tarball_path, first_bin_path)?;
+            make_executable = true;
         } else if format == "bz2" {
             file::create_dir_all(&install_path)?;
-            file::un_bz2(&tarball_path, &bin_path)?;
-            file::make_executable(&bin_path)?;
+            file::un_bz2(&tarball_path, first_bin_path)?;
+            make_executable = true;
         } else if format == "dmg" {
             file::un_dmg(&tarball_path, &install_path)?;
         } else if format == "pkg" {
             file::un_pkg(&tarball_path, &install_path)?;
         } else {
             bail!("unsupported format: {}", format);
+        }
+
+        if make_executable {
+            for bin_path in &bin_paths {
+                // bin_path should exist, but doesn't when the registry is outdated
+                if bin_path.exists() {
+                    file::make_executable(bin_path)?;
+                } else {
+                    warn!("bin path does not exist: {}", bin_path.display());
+                }
+            }
         }
 
         for (src, dst) in self.srcs(pkg, tv)? {

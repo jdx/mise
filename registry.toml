@@ -331,7 +331,7 @@ black.backends = ["aqua:psf/black"]
 black.test = ["black --version", "black, {{version}}"]
 bob.description = "A version manager for neovim"
 bob.backends = [
-    # "aqua:MordechaiHadad/bob",  # +x permission not set
+    "aqua:MordechaiHadad/bob",
     "ubi:MordechaiHadad/bob[matching_regex=bob-(linux|macos|windows)-(arm|x86_64)\\.zip$]",
     "cargo:bob-nvim"
 ]
@@ -1225,11 +1225,7 @@ gitsign.backends = ["aqua:sigstore/gitsign", "asdf:spencergilbert/asdf-gitsign"]
 gitsign.os = ["linux", "macos"]
 gitsign.test = ["gitsign --version", "gitsign version v{{version}}"]
 gitu.description = "A TUI Git client inspired by Magit"
-gitu.backends = [
-    # "aqua:altsem/gitu", # +x permission not set
-    "ubi:altsem/gitu",
-    "cargo:gitu"
-]
+gitu.backends = ["aqua:altsem/gitu", "ubi:altsem/gitu", "cargo:gitu"]
 gitu.test = ["gitu --version", "gitu v{{version}}"]
 gitui.description = "Blazing 💥 fast terminal-ui for git written in rust"
 gitui.backends = ["aqua:extrawurst/gitui", "asdf:looztra/asdf-gitui"]
@@ -2181,7 +2177,7 @@ mint.description = "🍃 A refreshing programming language for the front-end web
 mint.backends = ["ubi:mint-lang/mint", "asdf:mint-lang/asdf-mint"]
 mirrord.description = "Connect your local process and your cloud environment, and run local code in cloud conditions"
 mirrord.backends = [
-    # "aqua:metalbear-co/mirrord", # +x permission not set
+    "aqua:metalbear-co/mirrord",
     "ubi:metalbear-co/mirrord",
     "asdf:metalbear-co/asdf-mirrord"
 ]
@@ -2504,6 +2500,7 @@ powershell-core.backends = [
     "aqua:PowerShell/PowerShell",
     "asdf:daveneeley/asdf-powershell-core"
 ]
+powershell-core.test = ["pwsh --version", "PowerShell {{version}}"]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
 pre-commit.backends = [
     "aqua:pre-commit/pre-commit",
