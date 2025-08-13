@@ -138,6 +138,11 @@ impl ToolStubFile {
         let mut opts = self.opts.clone();
         opts.shift_remove("tool"); // Remove tool field since it's handled separately
 
+        // Add bin field if present
+        if let Some(bin) = &self.bin {
+            opts.insert("bin".to_string(), bin.clone());
+        }
+
         let options = ToolVersionOptions {
             os: self.os.clone(),
             install_env: self.install_env.clone(),
@@ -345,18 +350,27 @@ enum BinPathError {
     },
 }
 
-fn resolve_platform_specific_bin(stub: &ToolStubFile) -> &str {
+fn resolve_platform_specific_bin(stub: &ToolStubFile, stub_path: &Path) -> String {
     // Try to find platform-specific bin field first
     let platform_key = get_current_platform_key();
 
     // Check for platform-specific bin field: platforms.{platform}.bin
     let platform_bin_key = format!("platforms.{platform_key}.bin");
     if let Some(platform_bin) = stub.opts.get(&platform_bin_key) {
-        return platform_bin;
+        return platform_bin.to_string();
     }
 
     // Fall back to global bin field
-    stub.bin.as_deref().unwrap_or(&stub.tool_name)
+    if let Some(bin) = &stub.bin {
+        return bin.to_string();
+    }
+
+    // Finally, fall back to stub filename (without extension)
+    stub_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&stub.tool_name)
+        .to_string()
 }
 
 fn get_current_platform_key() -> String {
@@ -380,11 +394,11 @@ async fn find_cached_or_resolve_bin_path(
     }
 
     // Cache miss - resolve the binary path
-    let bin = resolve_platform_specific_bin(stub);
-    let bin_path = if is_bin_path(bin) {
-        resolve_bin_with_path(toolset, config, bin, &stub.tool_name)
+    let bin = resolve_platform_specific_bin(stub, stub_path);
+    let bin_path = if is_bin_path(&bin) {
+        resolve_bin_with_path(toolset, config, &bin, &stub.tool_name)
     } else {
-        resolve_bin_simple(toolset, config, bin).await?
+        resolve_bin_simple(toolset, config, &bin).await?
     };
 
     if let Some(bin_path) = bin_path {
@@ -398,7 +412,7 @@ async fn find_cached_or_resolve_bin_path(
     }
 
     // Determine the specific error
-    if is_bin_path(bin) {
+    if is_bin_path(&bin) {
         // For path-based bins, check if the tool exists first
         if let Some(tv) = find_tool_version(toolset, config, &stub.tool_name) {
             let install_path = tv.install_path();

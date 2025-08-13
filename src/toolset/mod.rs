@@ -502,11 +502,12 @@ impl Toolset {
             for v in b.list_installed_versions() {
                 if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
                     versions.push((p.clone(), tv.clone()));
+                } else {
+                    let tv = ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown)?
+                        .resolve(config, &Default::default())
+                        .await?;
+                    versions.push((b.clone(), tv));
                 }
-                let tv = ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown)?
-                    .resolve(config, &Default::default())
-                    .await?;
-                versions.push((b.clone(), tv));
             }
         }
         Ok(versions)
@@ -650,7 +651,7 @@ impl Toolset {
             .filter(|(k, _, _)| k.to_uppercase() != "PATH")
             .collect()
     }
-    async fn env(&self, config: &Arc<Config>) -> Result<EnvMap> {
+    async fn env(&self, config: &Arc<Config>) -> Result<(EnvMap, Vec<PathBuf>)> {
         time!("env start");
         let entries = self
             .env_from_tools(config)
@@ -658,11 +659,14 @@ impl Toolset {
             .into_iter()
             .map(|(k, v, _)| (k, v))
             .collect::<Vec<(String, String)>>();
-        let add_paths = entries
+
+        // Collect and process MISE_ADD_PATH values into paths
+        let paths_to_add: Vec<PathBuf> = entries
             .iter()
             .filter(|(k, _)| k == "MISE_ADD_PATH" || k == "RTX_ADD_PATH")
-            .map(|(_, v)| v.clone())
-            .collect::<Vec<_>>();
+            .flat_map(|(_, v)| env::split_paths(v))
+            .collect();
+
         let mut env: EnvMap = entries
             .into_iter()
             .filter(|(k, _)| k != "RTX_ADD_PATH")
@@ -671,12 +675,7 @@ impl Toolset {
             .filter(|(k, _)| !k.starts_with("MISE_TOOL_OPTS__"))
             .rev()
             .collect();
-        if !add_paths.is_empty() {
-            let add_paths = std::env::join_paths(&add_paths)
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            env.insert(PATH_KEY.to_string(), add_paths);
-        }
+
         env.extend(config.env().await?.clone());
         if let Some(venv) = uv::uv_venv(config, self).await {
             for (k, v) in venv.env.clone() {
@@ -684,23 +683,31 @@ impl Toolset {
             }
         }
         time!("env end");
-        Ok(env)
+        Ok((env, paths_to_add))
     }
     pub async fn final_env(&self, config: &Arc<Config>) -> Result<(EnvMap, EnvResults)> {
-        let mut env = self.env(config).await?;
+        let (mut env, add_paths) = self.env(config).await?;
         let mut tera_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         tera_env.extend(env.clone());
         let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in self.list_paths(config).await {
+
+        for p in config.path_dirs().await?.clone() {
             path_env.add(p);
         }
-        for p in config.path_dirs().await?.clone() {
+        for p in &add_paths {
+            path_env.add(p.clone());
+        }
+        for p in self.list_paths(config).await {
             path_env.add(p);
         }
         tera_env.insert(PATH_KEY.to_string(), path_env.to_string());
         let mut ctx = config.tera_ctx.clone();
         ctx.insert("env", &tera_env);
-        let env_results = self.load_post_env(config, ctx, &tera_env).await?;
+        let mut env_results = self.load_post_env(config, ctx, &tera_env).await?;
+
+        // Store add_paths separately to maintain consistent PATH ordering
+        env_results.tool_add_paths = add_paths;
+
         env.extend(
             env_results
                 .env
@@ -729,23 +736,26 @@ impl Toolset {
         config: &Arc<Config>,
         env_results: EnvResults,
     ) -> Result<Vec<PathBuf>> {
-        let mut paths = IndexSet::new();
-        for p in config.path_dirs().await?.clone() {
-            paths.insert(p);
-        }
+        let mut paths = Vec::new();
+
+        // Match the tera_env PATH ordering from final_env():
+        // 1. Original system PATH is handled by PathEnv::from_iter() in env_with_path()
+
+        // 2. Config path dirs
+        paths.extend(config.path_dirs().await?.clone());
+
+        // 3. UV venv path (if any) - ensure project venv takes precedence over tool and tool_add_paths
         if let Some(venv) = uv::uv_venv(config, self).await {
-            paths.insert(venv.venv_path.clone());
+            paths.push(venv.venv_path.clone());
         }
-        // Remove the original PATH processing from here since it's handled by PathEnv::from_iter()
-        // in env_with_path(). This prevents duplication of the original PATH.
-        for p in self.list_paths(config).await {
-            paths.insert(p);
-        }
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
-        for p in paths.clone().into_iter() {
-            path_env.add(p);
-        }
-        // these are returned in order, but we need to run the post_env stuff last and then put the results in the front
+
+        // 4. tool_add_paths (MISE_ADD_PATH/RTX_ADD_PATH from tools)
+        paths.extend(env_results.tool_add_paths);
+
+        // 5. Tool paths
+        paths.extend(self.list_paths(config).await);
+
+        // 6. env_results.env_paths (from load_post_env like _.path directives) - these go at the front
         let paths = env_results.env_paths.into_iter().chain(paths).collect();
         Ok(paths)
     }

@@ -39,6 +39,7 @@ mod local;
 mod lock;
 mod ls;
 mod ls_remote;
+mod mcp;
 mod outdated;
 mod plugins;
 mod prune;
@@ -218,6 +219,7 @@ pub enum Commands {
     Lock(lock::Lock),
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
+    Mcp(mcp::Mcp),
     Outdated(outdated::Outdated),
     Plugins(plugins::Plugins),
     Prune(prune::Prune),
@@ -286,6 +288,7 @@ impl Commands {
             Self::Lock(cmd) => cmd.run().await,
             Self::Ls(cmd) => cmd.run().await,
             Self::LsRemote(cmd) => cmd.run().await,
+            Self::Mcp(cmd) => cmd.run().await,
             Self::Outdated(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,
             Self::Prune(cmd) => cmd.run().await,
