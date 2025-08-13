@@ -14,5 +14,7 @@ test aqua:biomejs/biome@2.0.0 "biome --version" "Version: 2.0.0"
 test aqua:biomejs/biome@@biomejs/biome@2.0.0 "biome --version" "Version: 2.0.0"
 test aqua:gruntwork-io/terragrunt@0.77.22 "terragrunt --version" "terragrunt version v0.77.22"
 
-assert_contains "MISE_USE_VERSIONS_HOST=0 mise ls-remote aqua:sharkdp/hyperfine" "1.9.0
-1.10.0"
+assert_contains "MISE_USE_VERSIONS_HOST=0 mise ls-remote aqua:sharkdp/hyperfine" "1.8.0
+1.9.0
+1.10.0
+1.11.0"
