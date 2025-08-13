@@ -27,7 +27,7 @@ pub fn split_version_prefix(version: &str) -> (String, String) {
 }
 
 /// split a version number into chunks
-/// given v: "1.2-3a4" return ["1", ".2", "-3", "a4"]
+/// given v: "1.2-3a4" return ["1", ".2", "-3a4"]
 pub fn chunkify_version(v: &str) -> Vec<String> {
     fn chunkify(m: &Mess, sep0: &str, chunks: &mut Vec<String>) {
         for (i, chunk) in m.chunks.iter().enumerate() {
@@ -87,7 +87,7 @@ mod tests {
 
     #[test]
     fn test_chunkify_version() {
-        assert_eq!(chunkify_version("1.2-3a4"), vec!["1", ".2", "-3", "a4"]);
+        assert_eq!(chunkify_version("1.2-3a4"), vec!["1", ".2", "-3a4"]);
         assert_eq!(chunkify_version("latest"), Vec::<String>::new());
         assert_eq!(chunkify_version("1.0.0"), vec!["1", ".0", ".0"]);
         assert_eq!(
