@@ -2504,6 +2504,7 @@ powershell-core.backends = [
     "aqua:PowerShell/PowerShell",
     "asdf:daveneeley/asdf-powershell-core"
 ]
+powershell-core.test = ["pwsh --version", "PowerShell {{version}}"]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
 pre-commit.backends = [
     "aqua:pre-commit/pre-commit",
