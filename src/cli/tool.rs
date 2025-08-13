@@ -1,7 +1,7 @@
+use crate::ui::style;
 use eyre::Result;
 use itertools::Itertools;
 use serde_derive::Serialize;
-use std::collections::HashSet;
 
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -89,8 +89,7 @@ impl Tool {
                 .into_iter()
                 .filter(|(b, _)| b.ba().as_ref() == ba)
                 .map(|(_, tv)| tv.version)
-                .collect::<HashSet<_>>()
-                .into_iter()
+                .unique()
                 .collect::<Vec<_>>(),
             active_versions: tvl.map(|tvl| {
                 tvl.versions
@@ -152,7 +151,23 @@ impl Tool {
                 miseprintln!("[none]");
             }
         } else if self.filter.installed {
-            miseprintln!("{}", info.installed_versions.join(" "));
+            let active_set = info
+                .active_versions
+                .as_ref()
+                .map(|v| v.iter().collect::<std::collections::HashSet<_>>())
+                .unwrap_or_default();
+            let installed_with_bold = info
+                .installed_versions
+                .iter()
+                .map(|v| {
+                    if active_set.contains(v) {
+                        style::nbold(v).to_string()
+                    } else {
+                        v.to_string()
+                    }
+                })
+                .join(" ");
+            miseprintln!("{}", installed_with_bold);
         } else if self.filter.active {
             if let Some(active_versions) = info.active_versions {
                 miseprintln!("{}", active_versions.join(" "));
@@ -185,9 +200,29 @@ impl Tool {
             if let Some(description) = info.description {
                 table.push(("Description:", description));
             }
-            table.push(("Installed Versions:", info.installed_versions.join(" ")));
+            // Bold currently active versions within the installed list for clarity
+            let active_set = info
+                .active_versions
+                .as_ref()
+                .map(|v| v.iter().collect::<std::collections::HashSet<_>>())
+                .unwrap_or_default();
+            let installed_with_bold = info
+                .installed_versions
+                .iter()
+                .map(|v| {
+                    if active_set.contains(v) {
+                        style::nbold(v).to_string()
+                    } else {
+                        v.to_string()
+                    }
+                })
+                .join(" ");
+            table.push(("Installed Versions:", installed_with_bold));
             if let Some(active_versions) = info.active_versions {
-                table.push(("Active Version:", active_versions.join(" ")));
+                table.push((
+                    "Active Version:",
+                    style::nbold(active_versions.join(" ")).to_string(),
+                ));
             }
             if let Some(requested_versions) = info.requested_versions {
                 table.push(("Requested Version:", requested_versions.join(" ")));

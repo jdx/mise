@@ -17,17 +17,4 @@ assert_fail "mise tool INVALID_TOOL_NAME"
 # Test duplicate version bug - install multiple versions of a tool
 mise use tiny@1.0.0
 mise use tiny@1.1.0
-output=$(mise tool tiny --installed)
-# Count occurrences of each version - should be 1 each
-count_1_0=$(echo "$output" | grep -o "1.0.0" | wc -l)
-count_1_1=$(echo "$output" | grep -o "1.1.0" | wc -l)
-[[ $count_1_0 -eq 1 ]] || fail "Version 1.0.0 appears $count_1_0 times, expected 1"
-[[ $count_1_1 -eq 1 ]] || fail "Version 1.1.0 appears $count_1_1 times, expected 1"
-
-# Test that installed versions don't show duplicates
-installed_versions=$(mise tool tiny --installed)
-# Convert to array and check for uniqueness - sort both to compare
-IFS=' ' read -ra versions_array <<<"$installed_versions"
-sorted_installed=$(printf '%s\n' "${versions_array[@]}" | sort | tr '\n' ' ' | sed 's/ $//')
-unique_versions=$(printf '%s\n' "${versions_array[@]}" | sort -u | tr '\n' ' ' | sed 's/ $//')
-[[ $sorted_installed == "$unique_versions" ]] || fail "Installed versions contain duplicates: $installed_versions"
+assert "mise tool tiny --installed" "1.0.0 1.1.0"
