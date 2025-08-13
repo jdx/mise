@@ -5,12 +5,12 @@ use crate::backend::Backend;
 use crate::config::{Alias, Config};
 use crate::file::make_symlink_or_file;
 use crate::plugins::VERSION_REGEX;
+use crate::semver::split_version_prefix;
 use crate::{backend, file};
 use eyre::Result;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use versions::Versioning;
-use xx::regex;
 
 pub async fn rebuild(config: &Config) -> Result<()> {
     for backend in backend::list() {
@@ -39,14 +39,9 @@ fn list_symlinks(config: &Config, backend: Arc<dyn Backend>) -> IndexMap<String,
     // TODO: make this a pure function and add test cases
     let mut symlinks = IndexMap::new();
     let rel_path = |x: &String| PathBuf::from(".").join(x.clone());
-    let re = regex!(r"^[a-zA-Z0-9]+-");
     for v in installed_versions(&backend) {
-        let prefix = re
-            .find(&v)
-            .map(|s| s.as_str().to_string())
-            .unwrap_or_default();
-        let sans_prefix = v.trim_start_matches(&prefix);
-        let versions = Versioning::new(sans_prefix).unwrap_or_default();
+        let (prefix, version) = split_version_prefix(&v);
+        let versions = Versioning::new(version).unwrap_or_default();
         let mut partial = vec![];
         while versions.nth(partial.len()).is_some() && versions.nth(partial.len() + 1).is_some() {
             let version = versions.nth(partial.len()).unwrap();

@@ -1,5 +1,75 @@
 # Changelog
 
+## [2025.8.9](https://github.com/jdx/mise/compare/v2025.8.8..v2025.8.9) - 2025-08-13
+
+### 📦 Registry
+
+- add vfox-yarn as primary yarn backend by [@jdx](https://github.com/jdx) in [#5982](https://github.com/jdx/mise/pull/5982)
+- add missing description field for a lot of tools by [@jylenhof](https://github.com/jylenhof) in [#5966](https://github.com/jdx/mise/pull/5966)
+- rename benthos to redpanda-connect by [@risu729](https://github.com/risu729) in [#5984](https://github.com/jdx/mise/pull/5984)
+- rename coq to rocq by [@risu729](https://github.com/risu729) in [#5985](https://github.com/jdx/mise/pull/5985)
+
+### 🚀 Features
+
+- **(timeout)** show duration, URL, and config hint on timeouts; increase fetch timeout default to 10s by [@jdx](https://github.com/jdx) in [#5991](https://github.com/jdx/mise/pull/5991)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** add executable permissions for zip-extracted binaries by [@itochan](https://github.com/itochan) in [#5998](https://github.com/jdx/mise/pull/5998)
+- **(core)** auto-repair corrupted pyenv cache by recloning on update failure by [@jdx](https://github.com/jdx) in [#6003](https://github.com/jdx/mise/pull/6003)
+- duplicate versions and validation in `mise tool` by [@jdx](https://github.com/jdx) in [#6001](https://github.com/jdx/mise/pull/6001)
+
+### 📚 Documentation
+
+- **(tools)** document per-tool postinstall option in [tools] by [@jdx](https://github.com/jdx) in [#5993](https://github.com/jdx/mise/pull/5993)
+- Update install instructions for nushell by [@Joniator](https://github.com/Joniator) in [#5981](https://github.com/jdx/mise/pull/5981)
+- README.md typo by [@jdx](https://github.com/jdx) in [#5990](https://github.com/jdx/mise/pull/5990)
+
+### ◀️ Revert
+
+- Revert "docs: Update install instructions for nushell" by [@jdx](https://github.com/jdx) in [#5983](https://github.com/jdx/mise/pull/5983)
+- Revert "fix(aqua): add executable permissions for zip-extracted binaries" by [@jdx](https://github.com/jdx) in [#6004](https://github.com/jdx/mise/pull/6004)
+
+### 📦️ Dependency Updates
+
+- update taiki-e/install-action digest to 2c73a74 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5962](https://github.com/jdx/mise/pull/5962)
+- update docker/metadata-action digest to c1e5197 by [@renovate[bot]](https://github.com/renovate[bot]) in [#5961](https://github.com/jdx/mise/pull/5961)
+- update docker/login-action digest to 184bdaa by [@renovate[bot]](https://github.com/renovate[bot]) in [#5958](https://github.com/jdx/mise/pull/5958)
+
+### Chore
+
+- cargo up by [@jdx](https://github.com/jdx) in [#5992](https://github.com/jdx/mise/pull/5992)
+
+### New Contributors
+
+- @Joniator made their first contribution in [#5981](https://github.com/jdx/mise/pull/5981)
+- @jylenhof made their first contribution in [#5966](https://github.com/jdx/mise/pull/5966)
+
+## [2025.8.8](https://github.com/jdx/mise/compare/v2025.8.7..v2025.8.8) - 2025-08-11
+
+### 📦 Registry
+
+- add bob ([aqua:MordechaiHadad/bob](https://github.com/MordechaiHadad/bob)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5914](https://github.com/jdx/mise/pull/5914)
+- support usage on FreeBSD by [@risu729](https://github.com/risu729) in [#5973](https://github.com/jdx/mise/pull/5973)
+- filter out installer for podman by [@risu729](https://github.com/risu729) in [#5974](https://github.com/jdx/mise/pull/5974)
+- use pipx aqua backend by [@itochan](https://github.com/itochan) in [#5971](https://github.com/jdx/mise/pull/5971)
+- only use aqua backend for yarn on windows by [@jdx](https://github.com/jdx) in [#5978](https://github.com/jdx/mise/pull/5978)
+
+### 📚 Documentation
+
+- add documentation for os field in tool configuration by [@jdx](https://github.com/jdx) in [#5947](https://github.com/jdx/mise/pull/5947)
+
+### Chore
+
+- **(ci)** accept @ in regular expressions for new registry PR titles by [@mst-mkt](https://github.com/mst-mkt) in [#5969](https://github.com/jdx/mise/pull/5969)
+- fix registry test filter by [@risu729](https://github.com/risu729) in [#5942](https://github.com/jdx/mise/pull/5942)
+- fix registry test by [@risu729](https://github.com/risu729) in [#5953](https://github.com/jdx/mise/pull/5953)
+
+### New Contributors
+
+- @itochan made their first contribution in [#5971](https://github.com/jdx/mise/pull/5971)
+- @mst-mkt made their first contribution in [#5969](https://github.com/jdx/mise/pull/5969)
+
 ## [2025.8.7](https://github.com/jdx/mise/compare/v2025.8.6..v2025.8.7) - 2025-08-06
 
 ### 📦 Registry
@@ -8,6 +78,7 @@
 
 ### 🐛 Bug Fixes
 
+- **(lockfile)** fix multiple lockfile issues with version management by [@jdx](https://github.com/jdx) in [#5907](https://github.com/jdx/mise/pull/5907)
 - **(toolset)** properly handle MISE_ADD_PATH from plugins by [@jdx](https://github.com/jdx) in [#5937](https://github.com/jdx/mise/pull/5937)
 
 ## [2025.8.6](https://github.com/jdx/mise/compare/v2025.8.5..v2025.8.6) - 2025-08-06

@@ -231,7 +231,7 @@ fn init(path: &Path) -> Arc<dyn ConfigFile> {
 
 pub fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
     let path = if path.is_dir() {
-        path.join("mise.toml")
+        path.join(&*env::MISE_DEFAULT_CONFIG_FILENAME)
     } else {
         path.into()
     };
