@@ -646,6 +646,9 @@ codeql.description = "CodeQL CLI"
 codeql.backends = ["asdf:mise-plugins/mise-codeql"]
 coder.description = "Provision remote development environments via Terraform"
 coder.backends = ["aqua:coder/coder", "asdf:mise-plugins/asdf-coder"]
+codespell.description = "check code for common misspellings"
+codespell.backends = ["pipx:codespell", "ubi:codespell-project/codespell"]
+codespell.test = ["codespell --version", "{{version}}"]
 colima.description = "Container runtimes on macOS (and Linux) with minimal setup"
 colima.backends = [
     "aqua:abiosoft/colima",
@@ -714,12 +717,6 @@ cosign.backends = [
     "asdf:https://gitlab.com/wt0f/asdf-cosign"
 ]
 cosign.test = ["cosign version", "v{{version}}"]
-codespell.description = "check code for common misspellings"
-codespell.backends = [
-    "pipx:codespell",
-    "ubi:codespell-project/codespell"
-]
-codespell.test = ["codespell --version", "{{version}}"]
 coursier.description = "Pure Scala Artifact Fetching"
 coursier.backends = [
     "ubi:coursier/coursier[exe=cs]",
