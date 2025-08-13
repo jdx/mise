@@ -732,6 +732,7 @@ impl AquaBackend {
         } else if format == "raw" {
             file::create_dir_all(&install_path)?;
             file::copy(&tarball_path, first_bin_path)?;
+            file::make_executable(first_bin_path)?;
         } else if format.starts_with("tar") {
             file::untar(&tarball_path, &install_path, &tar_opts)?;
             for bin_path in &bin_paths {
