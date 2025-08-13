@@ -870,6 +870,9 @@ docker-slim.backends = [
 ]
 docker-slim.os = ["linux", "macos"]
 # docker-slim.test = ["slim --version", ""] # prints out weird version of mint or something
+dockerfmt.description = "Dockerfile formatter. a modern dockfmt."
+dockerfmt.backends = ["ubi:reteps/dockerfmt"]
+dockerfmt.test = ["dockerfmt version", "dockerfmt {{version}}"]
 dockle.description = "Container Image Linter for Security, Helping build the Best-Practice Docker Image, Easy to start"
 dockle.backends = [
     "aqua:goodwithtech/dockle",
