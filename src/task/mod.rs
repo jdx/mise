@@ -164,12 +164,11 @@ impl Task {
         let info = file::read_to_string(path)?
             .lines()
             .filter_map(|line| {
-                regex!(r"^(#|//) mise ([a-z_]+=.+)$")
+                regex!(r"^(?:#|//|::) (?:MISE|mise) ([a-z_]+=.+)$")
                     .captures(line)
-                    .or_else(|| regex!(r"^(#|//|::)MISE ([a-z_]+=.+)$").captures(line))
             })
             .map(|captures| captures.extract().1)
-            .map(|[_, toml]| {
+            .map(|[toml]| {
                 toml.parse::<toml::Value>()
                     .map_err(|e| eyre::eyre!("failed to parse task header TOML '{}': {}", toml, e))
             })
