@@ -2673,7 +2673,7 @@ restish.backends = [
     "ubi:rest-sh/restish",
     "go:github.com/danielgtaylor/restish"
 ]
-restish.test = ["restish --version", "restish version {{version}}"]
+# restish.test = ["restish --version", "restish version {{version}}"] # disable until the versions host will be updated
 resvg.description = "An SVG rendering library."
 resvg.backends = ["aqua:linebender/resvg"]
 resvg.test = ["resvg --version", "{{version}}"]
