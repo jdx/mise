@@ -24,6 +24,7 @@ use eyre::{ContextCompat, Result, bail};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::Regex;
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::{collections::HashSet, sync::Arc};
 
@@ -697,19 +698,23 @@ impl AquaBackend {
         let install_path = tv.install_path();
         file::remove_all(&install_path)?;
         let format = pkg.format(v)?;
-        let bin_names = if pkg.files.is_empty() {
+        let bin_names: Vec<Cow<str>> = if pkg.files.is_empty() {
             let fallback_name = pkg
                 .name
                 .as_deref()
                 .and_then(|n| n.split('/').next_back())
                 .unwrap_or(&pkg.repo_name);
-            vec![fallback_name]
+            vec![Cow::Borrowed(fallback_name)]
         } else {
-            pkg.files.iter().map(|file| file.name.as_str()).collect()
+            pkg.files
+                .iter()
+                .filter_map(|file| file.src(pkg, v).ok().flatten())
+                .map(|s| Cow::Owned(s))
+                .collect()
         };
         let bin_paths: Vec<_> = bin_names
             .iter()
-            .map(|&name| install_path.join(name))
+            .map(|name| install_path.join(name.as_ref()))
             .map(|path| {
                 if cfg!(windows) && pkg.complete_windows_ext {
                     path.with_extension("exe")
