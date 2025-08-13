@@ -163,10 +163,7 @@ impl Task {
         let mut task = Task::new(path, prefix, config_root)?;
         let info = file::read_to_string(path)?
             .lines()
-            .filter_map(|line| {
-                regex!(r"^(?:#|//|::) ?(?:MISE|mise) ([a-z_]+=.+)$")
-                    .captures(line)
-            })
+            .filter_map(|line| regex!(r"^(?:#|//|::) ?(?:MISE|mise) ([a-z_]+=.+)$").captures(line))
             .map(|captures| captures.extract().1)
             .map(|[toml]| {
                 toml.parse::<toml::Value>()
