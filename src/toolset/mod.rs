@@ -502,11 +502,12 @@ impl Toolset {
             for v in b.list_installed_versions() {
                 if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
                     versions.push((p.clone(), tv.clone()));
+                } else {
+                    let tv = ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown)?
+                        .resolve(config, &Default::default())
+                        .await?;
+                    versions.push((b.clone(), tv));
                 }
-                let tv = ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown)?
-                    .resolve(config, &Default::default())
-                    .await?;
-                versions.push((b.clone(), tv));
             }
         }
         Ok(versions)
@@ -743,16 +744,16 @@ impl Toolset {
         // 2. Config path dirs
         paths.extend(config.path_dirs().await?.clone());
 
-        // 3. tool_add_paths (MISE_ADD_PATH/RTX_ADD_PATH from tools)
-        paths.extend(env_results.tool_add_paths);
-
-        // 4. Tool paths
-        paths.extend(self.list_paths(config).await);
-
-        // 5. UV venv path (if any) - not in tera_env but added to final paths
+        // 3. UV venv path (if any) - ensure project venv takes precedence over tool and tool_add_paths
         if let Some(venv) = uv::uv_venv(config, self).await {
             paths.push(venv.venv_path.clone());
         }
+
+        // 4. tool_add_paths (MISE_ADD_PATH/RTX_ADD_PATH from tools)
+        paths.extend(env_results.tool_add_paths);
+
+        // 5. Tool paths
+        paths.extend(self.list_paths(config).await);
 
         // 6. env_results.env_paths (from load_post_env like _.path directives) - these go at the front
         let paths = env_results.env_paths.into_iter().chain(paths).collect();

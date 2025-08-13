@@ -54,14 +54,19 @@ jobs:
         with:
           fetch-depth: 0
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          install_args: jd yj
       - id: diff
+        shell: bash # -eo pipefail
         run: |
           changed_tools=$( \
             mise x jd -- jd -f merge \
               <(git show ${{ github.event.pull_request.base.sha }}:registry.toml | mise x yj -- yj -t) \
               <(mise x yj -- yj -t < registry.toml) \
             | jq -r '[.tools // {} | keys[]] | join(" ")' \
+            || true \
           )
+          echo "$changed_tools"
           echo "tools=$changed_tools" >> $GITHUB_OUTPUT
 
   test-tool:

@@ -142,7 +142,49 @@ port = 6379
 
 Internally, nested options are flattened to dot notation (e.g., `platforms.macos-x64.url`, `database.host`, `cache.redis.port`) for backend access.
 
-### Caching and Performance
+### Tool postinstall commands
+
+Run a command immediately after a tool finishes installing by adding a `postinstall` field to that tool's configuration. This is separate from `[hooks].postinstall` and applies only to when a specific tool is installed.
+
+```toml
+[tools]
+node = { version = "22", postinstall = "corepack enable" }
+```
+
+Behavior:
+- The command runs once the install completes successfully for that tool/version.
+- The tool's bin path is on PATH during the command, so you can invoke the installed tool directly.
+- Environment variables include `MISE_TOOL_INSTALL_PATH` pointing to the tool's install directory.
+- If the install fails, the `postinstall` command is not run.
+
+## OS-Specific Tools
+
+You can restrict tools to specific operating systems using the `os` field:
+
+```toml
+[tools]
+# Only install on Linux and macOS
+ripgrep = { version = "latest", os = ["linux", "macos"] }
+
+# Only install on Windows
+"npm:windows-terminal" = { version = "latest", os = ["windows"] }
+
+# Works with other options
+"cargo:usage-cli" = { 
+    version = "latest", 
+    os = ["linux", "macos"],
+    install_env = { RUST_BACKTRACE = "1" }
+}
+```
+
+The `os` field accepts an array of operating system identifiers:
+- `"linux"` - All Linux distributions
+- `"macos"` - macOS (Darwin)
+- `"windows"` - Windows
+
+If a tool specifies an `os` restriction and the current operating system is not in the list, mise will skip installing and using that tool.
+
+## Caching and Performance
 
 mise uses intelligent caching to minimize overhead:
 
