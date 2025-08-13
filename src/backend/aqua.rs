@@ -698,23 +698,23 @@ impl AquaBackend {
         let install_path = tv.install_path();
         file::remove_all(&install_path)?;
         let format = pkg.format(v)?;
-        let bin_names = if pkg.files.is_empty() {
+        let mut bin_names: Vec<Cow<'_, str>> = pkg
+            .files
+            .iter()
+            .filter_map(|file| match file.src(pkg, v) {
+                Ok(Some(s)) => Some(Cow::Owned(s)),
+                Ok(None) => Some(Cow::Borrowed(file.name.as_str())),
+                Err(_) => None,
+            })
+            .collect();
+        if bin_names.is_empty() {
             let fallback_name = pkg
                 .name
                 .as_deref()
                 .and_then(|n| n.split('/').next_back())
                 .unwrap_or(&pkg.repo_name);
-            vec![Cow::Borrowed(fallback_name)]
-        } else {
-            pkg.files
-                .iter()
-                .filter_map(|file| match file.src(pkg, v) {
-                    Ok(Some(s)) => Some(Cow::Owned(s)),
-                    Ok(None) => Some(Cow::Borrowed(file.name.as_str())),
-                    Err(_) => None,
-                })
-                .collect()
-        };
+            bin_names = vec![Cow::Borrowed(fallback_name)];
+        }
         let bin_paths: Vec<_> = bin_names
             .iter()
             .map(|name| install_path.join(name.as_ref()))
