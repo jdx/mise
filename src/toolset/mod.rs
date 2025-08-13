@@ -502,11 +502,12 @@ impl Toolset {
             for v in b.list_installed_versions() {
                 if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
                     versions.push((p.clone(), tv.clone()));
+                } else {
+                    let tv = ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown)?
+                        .resolve(config, &Default::default())
+                        .await?;
+                    versions.push((b.clone(), tv));
                 }
-                let tv = ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown)?
-                    .resolve(config, &Default::default())
-                    .await?;
-                versions.push((b.clone(), tv));
             }
         }
         Ok(versions)
