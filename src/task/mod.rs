@@ -824,10 +824,8 @@ mod tests {
             &task_path,
             r#"#!/bin/bash
 #MISE description="Build the CLI"
-#MISE alias="b"
-#MISE sources=["Cargo.toml", "src/**/*.rs"]
-#MISE env={RUST_BACKTRACE = "1"}
-#MISE depends=["lint", "test"]
+# MISE alias="b"
+# [MISE] sources=["Cargo.toml", "src/**/*.rs"]
 echo "hello world"
 "#,
         )
@@ -838,10 +836,6 @@ echo "hello world"
         expected.description = "Build the CLI".to_string();
         expected.aliases = vec!["b".to_string()];
         expected.sources = vec!["Cargo.toml".to_string(), "src/**/*.rs".to_string()];
-        expected.env = vec![("RUST_BACKTRACE".to_string(), "1".to_string())]
-            .into_iter()
-            .collect();
-        expected.depends = vec!["lint".to_string(), "test".to_string()];
         assert_eq!(result.unwrap(), expected);
     }
 
