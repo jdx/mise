@@ -686,6 +686,9 @@ container-structure-test.backends = [
     "aqua:GoogleContainerTools/container-structure-test",
     "asdf:FeryET/asdf-container-structure-test"
 ]
+container-use.description "Development environments for coding agents. Enable multiple agents to work safely and independently with your preferred stack."
+container-use.backends = ["aqua:dagger/container-use", "ubi:dagger/container-use"]
+container-use.test = ["container-use --version", "container-use version {{version}}"]
 cookiecutter.description = "Create projects swiftly from cookiecutters (project templates) with this command-line utility. Ideal for generating Python package projects and more"
 cookiecutter.backends = [
     "pipx:cookiecutter",
