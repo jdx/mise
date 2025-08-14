@@ -163,7 +163,13 @@ impl Task {
         let mut task = Task::new(path, prefix, config_root)?;
         let info = file::read_to_string(path)?
             .lines()
-            .filter_map(|line| regex!(r"^(?:#|//|::) ?(?:MISE|mise) ([a-z_]+=.+)$").captures(line))
+            .filter_map(|line| {
+                regex!(r"^(?:#|//) mise ([a-z_]+=.+)$") // old deprecated syntax
+                    .captures(line)
+                    .or_else(|| {
+                        regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z_]+=.+)$").captures(line)
+                    })
+            })
             .map(|captures| captures.extract().1)
             .map(|[toml]| {
                 toml.parse::<toml::Value>()
@@ -803,6 +809,40 @@ mod tests {
         for (root, path) in test_cases {
             assert!(name_from_path(root, path).is_err())
         }
+    }
+
+    #[tokio::test]
+    async fn test_from_path_toml_headers() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("test_task");
+
+        fs::write(
+            &task_path,
+            r#"#!/bin/bash
+#MISE description="Build the CLI"
+#MISE alias="b"
+#MISE sources=["Cargo.toml", "src/**/*.rs"]
+#MISE env={RUST_BACKTRACE = "1"}
+#MISE depends=["lint", "test"]
+echo "hello world"
+"#,
+        )
+        .unwrap();
+
+        let result = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path()).await;
+        let mut expected = Task::new(&task_path, temp_dir.path(), temp_dir.path()).unwrap();
+        expected.description = "Build the CLI".to_string();
+        expected.aliases = vec!["b".to_string()];
+        expected.sources = vec!["Cargo.toml".to_string(), "src/**/*.rs".to_string()];
+        expected.env = vec![("RUST_BACKTRACE".to_string(), "1".to_string())]
+            .into_iter()
+            .collect();
+        expected.depends = vec!["lint".to_string(), "test".to_string()];
+        assert_eq!(result.unwrap(), expected);
     }
 
     #[tokio::test]
