@@ -168,7 +168,7 @@ impl Task {
                     regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z_]+=.+)$").captures(line)
                 {
                     Some(captures)
-                } else if let Some(captures) = regex!(r"^(?:#|//) mise ([a-z_]+=.+)$") // old deprecated syntax
+                } else if let Some(captures) = regex!(r"^(?:#|//) mise ([a-z_]+=.+)$")
                     .captures(line)
                 {
                     deprecated!(
