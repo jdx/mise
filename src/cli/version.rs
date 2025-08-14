@@ -60,12 +60,17 @@ pub static ARCH: Lazy<String> = Lazy::new(|| {
     .to_string()
 });
 
-pub static VERSION: Lazy<String> = Lazy::new(|| {
+pub static VERSION_PLAIN: Lazy<String> = Lazy::new(|| {
     let mut v = V.to_string();
     if cfg!(debug_assertions) {
         v.push_str("-DEBUG");
     };
+    v
+});
+
+pub static VERSION: Lazy<String> = Lazy::new(|| {
     let build_time = BUILD_TIME.format("%Y-%m-%d");
+    let v = &*VERSION_PLAIN;
     format!("{v} {os}-{arch} ({build_time})", os = *OS, arch = *ARCH)
 });
 

@@ -209,6 +209,10 @@ impl Toolset {
             return Ok(vec![]);
         }
 
+        // Initialize a header for the entire install session once (before batching)
+        let mpr = MultiProgressReport::get();
+        mpr.init_header("install", versions.len());
+
         // Run pre-install hook
         hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
 
@@ -230,6 +234,8 @@ impl Toolset {
                     successful_installations,
                     failed_installations,
                 }) => {
+                    // Count both successes and failures toward header progress
+                    mpr.header_inc(successful_installations.len() + failed_installations.len());
                     installed.extend(successful_installations);
                     return Err(Error::InstallFailed {
                         successful_installations: installed,
@@ -279,6 +285,8 @@ impl Toolset {
         // Run post-install hook (ignoring errors)
         let _ = hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
 
+        // Finish the global header
+        mpr.header_finish();
         Ok(installed)
     }
 
@@ -314,6 +322,10 @@ impl Toolset {
                 });
             }
         };
+
+        // Initialize global header progress (overall tools)
+        let mpr = MultiProgressReport::get();
+        mpr.init_header("install", versions_clone.len());
 
         // Track plugin installation errors to avoid early returns
         let mut plugin_errors = Vec::new();
@@ -427,6 +439,8 @@ impl Toolset {
                     .await;
 
                     results.push((tr, result));
+                    // Bump header for each completed tool
+                    MultiProgressReport::get().header_inc(1);
                 }
                 results
             });
@@ -466,6 +480,9 @@ impl Toolset {
                 Err(e) => failed_installations.push((tr, e)),
             }
         }
+
+        // Finish header bar
+        MultiProgressReport::get().header_finish();
 
         // Return appropriate result
         if failed_installations.is_empty() {

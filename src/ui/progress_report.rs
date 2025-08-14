@@ -43,6 +43,16 @@ static SUCCESS_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     ProgressStyle::with_template(tmpl.as_str()).unwrap()
 });
 
+static HEADER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
+    let width = match *env::TERM_WIDTH {
+        0..=79 => 10,
+        80..=99 => 15,
+        _ => 20,
+    };
+    let tmpl = format!(r#"{{prefix}} {{bar:{width}.cyan/blue}} {{pos}}/{{len:2}}"#);
+    ProgressStyle::with_template(&tmpl).unwrap()
+});
+
 #[derive(Debug)]
 pub struct ProgressReport {
     pub pb: ProgressBar,
@@ -118,16 +128,10 @@ impl SingleReport for ProgressReport {
         self.pb.abandon();
     }
     fn finish(&self) {
-        self.pb.set_style(SUCCESS_TEMPLATE.clone());
-        self.pb
-            .set_prefix(success_prefix(self.pad - 2, &self.prefix));
-        self.pb.finish()
+        self.pb.finish_and_clear();
     }
-    fn finish_with_message(&self, message: String) {
-        self.pb.set_style(SUCCESS_TEMPLATE.clone());
-        self.pb
-            .set_prefix(success_prefix(self.pad - 2, &self.prefix));
-        self.pb.finish_with_message(message);
+    fn finish_with_message(&self, _message: String) {
+        self.pb.finish_and_clear();
     }
 }
 
@@ -177,6 +181,58 @@ impl SingleReport for VerboseReport {
         let prefix = pad_prefix(self.pad - 2, &self.prefix);
         let ico = style::egreen("✓").bright();
         log::info!("{prefix} {ico} {message}");
+    }
+}
+
+#[derive(Debug)]
+pub struct HeaderReport {
+    pub pb: ProgressBar,
+}
+
+impl HeaderReport {
+    pub fn new(prefix: String) -> HeaderReport {
+        ui::ctrlc::show_cursor_after_ctrl_c();
+        let pb = ProgressBar::new(100)
+            .with_style(HEADER_TEMPLATE.clone())
+            .with_prefix(prefix);
+        HeaderReport { pb }
+    }
+}
+
+impl SingleReport for HeaderReport {
+    fn println(&self, message: String) {
+        self.pb.suspend(|| {
+            eprintln!("{message}");
+        });
+    }
+    fn set_message(&self, message: String) {
+        self.pb.set_message(message.replace('\r', ""));
+    }
+    fn inc(&self, delta: u64) {
+        self.pb.inc(delta);
+    }
+    fn set_position(&self, pos: u64) {
+        self.pb.set_position(pos);
+        if Some(self.pb.position()) == self.pb.length() {
+            self.pb.set_style(SPIN_TEMPLATE.clone());
+            self.pb.enable_steady_tick(Duration::from_millis(250));
+        }
+    }
+    fn set_length(&self, length: u64) {
+        self.pb.set_position(0);
+        self.pb.set_style(HEADER_TEMPLATE.clone());
+        self.pb.set_length(length);
+    }
+    fn abandon(&self) {
+        self.pb.abandon();
+    }
+    fn finish(&self) {
+        self.pb.set_style(SUCCESS_TEMPLATE.clone());
+        self.pb.finish()
+    }
+    fn finish_with_message(&self, message: String) {
+        self.pb.set_style(SUCCESS_TEMPLATE.clone());
+        self.pb.finish_with_message(message);
     }
 }
 
