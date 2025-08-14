@@ -49,6 +49,12 @@ You can provide additional configuration for file tasks by adding `#MISE` commen
 
 Assuming that file was located in `mise-tasks/build`, it can then be run with `mise run build` (or with its alias: `mise run b`).
 
+:::tip
+Beware of formatters changing `#MISE` to `# MISE`.
+It's intentionally ignored by mise to avoid unintentional configuration.
+To workaround this, use the alternative: `# [MISE]`.
+:::
+
 ## Shebang
 
 The shebang line is optional, but if it is present, it will be used to determine the shell to run the script with.
