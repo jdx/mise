@@ -165,6 +165,10 @@ impl Task {
         let info = file::read_to_string(path)?
             .lines()
             .filter_map(|line| {
+                debug_assert!(
+                    !VERSION.starts_with("2026.3"),
+                    "remove old syntax `# mise`"
+                );
                 if let Some(captures) =
                     regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z_]+=.+)$").captures(line)
                 {
@@ -172,10 +176,6 @@ impl Task {
                 } else if let Some(captures) = regex!(r"^(?:#|//) mise ([a-z_]+=.+)$")
                     .captures(line)
                 {
-                     debug_assert!(
-                        !VERSION.starts_with("2026.3"),
-                        "remove old syntax `# mise`"
-                    );
                     deprecated!(
                         "file_task_headers_old_syntax",
                         "The `# mise ...` syntax for task headers is deprecated and will be removed in mise 2026.3.0. Use the new `#MISE ...` syntax instead."
