@@ -51,9 +51,10 @@ impl Shell for Nushell {
         let exe = exe.to_string_lossy().replace('\\', r#"\\"#);
 
         let mut out = String::new();
-        out.push_str(&self.format_activate_prelude_inline(&opts.prelude));
+        let inline_prelude = self.format_activate_prelude_inline(&opts.prelude);
         out.push_str(&formatdoc! {r#"
           export-env {{
+            {inline_prelude}
             $env.MISE_SHELL = "nu"
             let mise_hook = {{
               condition: {{ "MISE_SHELL" in $env }}
@@ -131,7 +132,7 @@ impl Shell for Nushell {
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
-        format!("$env.{k} = ($env.{k} | prepend '{v}')\n")
+        format!("$env.{k} = ($env.{k} | prepend r#'{v}'#)\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
