@@ -3,6 +3,7 @@
 use std::fmt::{Display, Formatter};
 
 use crate::config::Settings;
+use crate::path::{PathEscape, to_path_list};
 use crate::shell::{ActivateOptions, Shell};
 use indoc::formatdoc;
 use shell_escape::unix::escape;
@@ -14,7 +15,8 @@ impl Shell for Fish {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
-        let exe = exe.to_string_lossy();
+        let exe = to_path_list(&[PathEscape::Unix], &exe.to_string_lossy());
+
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude(&opts.prelude));
@@ -121,19 +123,29 @@ impl Shell for Fish {
     }
 
     fn set_env(&self, key: &str, v: &str) -> String {
-        let k = escape(key.into());
-        let v = escape(v.into());
+        let (k, v) = self.escape_env_pair(key, v);
         format!("set -gx {k} {v}\n")
     }
 
     fn prepend_env(&self, key: &str, v: &str) -> String {
-        let k = escape(key.into());
-        let v = escape(v.into());
+        let (k, v) = self.escape_env_pair(key, v);
         format!("set -gx {k} {v} ${k}\n")
     }
 
     fn unset_env(&self, k: &str) -> String {
         format!("set -e {k}\n", k = escape(k.into()))
+    }
+
+    fn escape_env_pair(&self, k: &str, v: &str) -> (String, String) {
+        let v = match k {
+            "PATH" => to_path_list(&[PathEscape::Unix], v),
+            _ => v.to_string(),
+        };
+
+        let k = shell_escape::unix::escape(k.into());
+        let v = shell_escape::unix::escape(v.into());
+
+        (k.to_string(), v.to_string())
     }
 }
 
