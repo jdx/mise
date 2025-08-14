@@ -251,7 +251,7 @@ description = "Backends to disable such as `asdf` or `pipx`"
 [disable_default_registry]
 env = "MISE_DISABLE_DEFAULT_REGISTRY"
 type = "Bool"
-description = "Disable the default mapping of short tool names like `go` -> `vfox:version-fox/vfox-golang`. This parameter disables only for the backends `vfox` and `asdf`."
+description = "Disable the default mapping of short tool names like `php` -> `asdf:mise-plugins/asdf-php`. This parameter disables only for the backends `vfox` and `asdf`."
 
 [disable_default_shorthands]
 env = "MISE_DISABLE_DEFAULT_SHORTHANDS"

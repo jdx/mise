@@ -363,7 +363,7 @@
           }
         },
         "disable_default_registry": {
-          "description": "Disable the default mapping of short tool names like `go` -> `vfox:version-fox/vfox-golang`. This parameter disables only for the backends `vfox` and `asdf`.",
+          "description": "Disable the default mapping of short tool names like `php` -> `asdf:mise-plugins/asdf-php`. This parameter disables only for the backends `vfox` and `asdf`.",
           "type": "boolean"
         },
         "disable_default_shorthands": {
