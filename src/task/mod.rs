@@ -1,3 +1,4 @@
+use crate::cli::version::VERSION;
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
@@ -171,6 +172,10 @@ impl Task {
                 } else if let Some(captures) = regex!(r"^(?:#|//) mise ([a-z_]+=.+)$")
                     .captures(line)
                 {
+                     debug_assert!(
+                        !VERSION.starts_with("2026.3"),
+                        "remove old syntax `# mise`"
+                    );
                     deprecated!(
                         "file_task_headers_old_syntax",
                         "The `# mise ...` syntax for task headers is deprecated and will be removed in mise 2026.3.0. Use the new `#MISE ...` syntax instead."
