@@ -4,8 +4,8 @@ use clap::ValueHint;
 use eyre::Result;
 
 use crate::config::{Settings, config_file};
-use crate::file;
 use crate::file::display_path;
+use crate::{env, file};
 
 /// [experimental] Generate a mise.toml file
 #[derive(Debug, clap::Args)]
@@ -38,7 +38,7 @@ impl ConfigGenerate {
     }
 
     fn tool_versions(&self, tool_versions: &Path) -> Result<String> {
-        let to = config_file::parse_or_init(&PathBuf::from("mise.toml"))?;
+        let to = config_file::parse_or_init(&PathBuf::from(&*env::MISE_DEFAULT_CONFIG_FILENAME))?;
         let from = config_file::parse(tool_versions)?;
         let tools = from.to_tool_request_set()?.tools;
         for (ba, tools) in tools {

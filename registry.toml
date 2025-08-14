@@ -331,7 +331,7 @@ black.backends = ["aqua:psf/black"]
 black.test = ["black --version", "black, {{version}}"]
 bob.description = "A version manager for neovim"
 bob.backends = [
-    # "aqua:MordechaiHadad/bob",  # +x permission not set
+    "aqua:MordechaiHadad/bob",
     "ubi:MordechaiHadad/bob[matching_regex=bob-(linux|macos|windows)-(arm|x86_64)\\.zip$]",
     "cargo:bob-nvim"
 ]
@@ -458,6 +458,9 @@ cfssl.backends = [
     "aqua:cloudflare/cfssl/cfssl",
     "asdf:mathew-fleisch/asdf-cfssl"
 ]
+cfssljson.description = "cfssljson: Takes the JSON output from Cloudflare's cfssl and multirootca programs and writes certificates, keys, CSRs, and bundles to disk."
+cfssljson.backends = ["aqua:cloudflare/cfssl/cfssljson"]
+cfssljson.test = ["cfssljson -version", "Version: {{version}}"]
 chamber.description = "CLI for managing secrets"
 chamber.backends = [
     "aqua:segmentio/chamber",
@@ -554,6 +557,16 @@ claude.aliases = ["claude-code"]
 claude.description = "Claude Code is an agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster by executing routine tasks, explaining complex code, and handling git workflows -- all through natural language commands"
 claude.backends = ["npm:@anthropic-ai/claude-code"]
 claude.test = ["claude --version", "{{version}} (Claude Code)"]
+claude-squad.description = "Manage multiple AI agents like Claude Code, Aider, Codex, and Amp. 10x your productivity"
+claude-squad.backends = [
+    "aqua:smtg-ai/claude-squad",
+    "ubi:smtg-ai/claude-squad"
+]
+claude-squad.test = [
+    "claude-squad version",
+    """claude-squad version {{version}}
+https://github.com/smtg-ai/claude-squad/releases/tag/v{{version}}"""
+]
 cli53.description = "Command line tool for Amazon Route 53"
 cli53.backends = ["aqua:barnybug/cli53"]
 cli53.test = ["cli53 --version", "cli53 version {{version}}"]
@@ -1225,11 +1238,7 @@ gitsign.backends = ["aqua:sigstore/gitsign", "asdf:spencergilbert/asdf-gitsign"]
 gitsign.os = ["linux", "macos"]
 gitsign.test = ["gitsign --version", "gitsign version v{{version}}"]
 gitu.description = "A TUI Git client inspired by Magit"
-gitu.backends = [
-    # "aqua:altsem/gitu", # +x permission not set
-    "ubi:altsem/gitu",
-    "cargo:gitu"
-]
+gitu.backends = ["aqua:altsem/gitu", "ubi:altsem/gitu", "cargo:gitu"]
 gitu.test = ["gitu --version", "gitu v{{version}}"]
 gitui.description = "Blazing 💥 fast terminal-ui for git written in rust"
 gitui.backends = ["aqua:extrawurst/gitui", "asdf:looztra/asdf-gitui"]
@@ -1858,7 +1867,7 @@ kubecm.backends = ["aqua:sunny0826/kubecm", "asdf:samhvw8/asdf-kubecm"]
 kubecolor.description = "Colorize your kubectl output"
 kubecolor.backends = ["aqua:kubecolor/kubecolor", "asdf:dex4er/asdf-kubecolor"]
 kubecolor.depends = ["kubectl"]
-# kubecolor.test = ["kubecolor --kubecolor-version", "v{{version}}"] # disable until mise-versions will be updated
+kubecolor.test = ["kubecolor --kubecolor-version", "{{version}}"]
 kubeconform.description = "A FAST Kubernetes manifests validator, with support for Custom Resources"
 kubeconform.backends = [
     "aqua:yannh/kubeconform",
@@ -2181,7 +2190,7 @@ mint.description = "🍃 A refreshing programming language for the front-end web
 mint.backends = ["ubi:mint-lang/mint", "asdf:mint-lang/asdf-mint"]
 mirrord.description = "Connect your local process and your cloud environment, and run local code in cloud conditions"
 mirrord.backends = [
-    # "aqua:metalbear-co/mirrord", # +x permission not set
+    "aqua:metalbear-co/mirrord",
     "ubi:metalbear-co/mirrord",
     "asdf:metalbear-co/asdf-mirrord"
 ]
@@ -2504,6 +2513,7 @@ powershell-core.backends = [
     "aqua:PowerShell/PowerShell",
     "asdf:daveneeley/asdf-powershell-core"
 ]
+powershell-core.test = ["pwsh --version", "PowerShell {{version}}"]
 pre-commit.description = "A framework for managing and maintaining multi-language pre-commit hooks"
 pre-commit.backends = [
     "aqua:pre-commit/pre-commit",
@@ -2669,9 +2679,11 @@ restic.backends = ["aqua:restic/restic", "asdf:xataz/asdf-restic"]
 # restic.test = ["restic version", "restic {{version}}"] fails on windows
 restish.description = "Restish is a CLI for interacting with REST-ish HTTP APIs with some nice features built-in"
 restish.backends = [
-    "ubi:danielgtaylor/restish",
+    "aqua:rest-sh/restish",
+    "ubi:rest-sh/restish",
     "go:github.com/danielgtaylor/restish"
 ]
+# restish.test = ["restish --version", "restish version {{version}}"] # disable until the versions host will be updated
 resvg.description = "An SVG rendering library."
 resvg.backends = ["aqua:linebender/resvg"]
 resvg.test = ["resvg --version", "{{version}}"]
@@ -3272,9 +3284,9 @@ upx.backends = ["aqua:upx/upx", "asdf:jimmidyson/asdf-upx"]
 usage.description = "A specification for CLIs"
 usage.backends = [
     # prebuilt binaries are not available for FreeBSD
-    {full = "aqua:jdx/usage", os = ["linux", "macos"]},
-    {full = "ubi:jdx/usage", os = ["linux", "macos"]},
-    {full = "asdf:mise-plugins/mise-usage", os = ["linux", "macos"]},
+    {full = "aqua:jdx/usage", platforms = ["linux", "macos"]},
+    {full = "ubi:jdx/usage", platforms = ["linux", "macos"]},
+    {full = "asdf:mise-plugins/mise-usage", platforms = ["linux", "macos"]},
     "cargo:usage-cli"
 ]
 usage.os = ["linux", "macos", "freebsd"]

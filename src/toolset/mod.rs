@@ -209,6 +209,10 @@ impl Toolset {
             return Ok(vec![]);
         }
 
+        // Initialize a header for the entire install session once (before batching)
+        let mpr = MultiProgressReport::get();
+        mpr.init_header("install", versions.len());
+
         // Run pre-install hook
         hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
 
@@ -230,6 +234,8 @@ impl Toolset {
                     successful_installations,
                     failed_installations,
                 }) => {
+                    // Count both successes and failures toward header progress
+                    mpr.header_inc(successful_installations.len() + failed_installations.len());
                     installed.extend(successful_installations);
                     return Err(Error::InstallFailed {
                         successful_installations: installed,
@@ -279,6 +285,8 @@ impl Toolset {
         // Run post-install hook (ignoring errors)
         let _ = hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
 
+        // Finish the global header
+        mpr.header_finish();
         Ok(installed)
     }
 
@@ -314,6 +322,10 @@ impl Toolset {
                 });
             }
         };
+
+        // Initialize global header progress (overall tools)
+        let mpr = MultiProgressReport::get();
+        mpr.init_header("install", versions_clone.len());
 
         // Track plugin installation errors to avoid early returns
         let mut plugin_errors = Vec::new();
@@ -427,6 +439,8 @@ impl Toolset {
                     .await;
 
                     results.push((tr, result));
+                    // Bump header for each completed tool
+                    MultiProgressReport::get().header_inc(1);
                 }
                 results
             });
@@ -467,6 +481,9 @@ impl Toolset {
             }
         }
 
+        // Finish header bar
+        MultiProgressReport::get().header_finish();
+
         // Return appropriate result
         if failed_installations.is_empty() {
             Ok(successful_installations)
@@ -502,11 +519,12 @@ impl Toolset {
             for v in b.list_installed_versions() {
                 if let Some((p, tv)) = current_versions.get(&(b.id().into(), v.clone())) {
                     versions.push((p.clone(), tv.clone()));
+                } else {
+                    let tv = ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown)?
+                        .resolve(config, &Default::default())
+                        .await?;
+                    versions.push((b.clone(), tv));
                 }
-                let tv = ToolRequest::new(b.ba().clone(), &v, ToolSource::Unknown)?
-                    .resolve(config, &Default::default())
-                    .await?;
-                versions.push((b.clone(), tv));
             }
         }
         Ok(versions)
@@ -743,16 +761,16 @@ impl Toolset {
         // 2. Config path dirs
         paths.extend(config.path_dirs().await?.clone());
 
-        // 3. tool_add_paths (MISE_ADD_PATH/RTX_ADD_PATH from tools)
-        paths.extend(env_results.tool_add_paths);
-
-        // 4. Tool paths
-        paths.extend(self.list_paths(config).await);
-
-        // 5. UV venv path (if any) - not in tera_env but added to final paths
+        // 3. UV venv path (if any) - ensure project venv takes precedence over tool and tool_add_paths
         if let Some(venv) = uv::uv_venv(config, self).await {
             paths.push(venv.venv_path.clone());
         }
+
+        // 4. tool_add_paths (MISE_ADD_PATH/RTX_ADD_PATH from tools)
+        paths.extend(env_results.tool_add_paths);
+
+        // 5. Tool paths
+        paths.extend(self.list_paths(config).await);
 
         // 6. env_results.env_paths (from load_post_env like _.path directives) - these go at the front
         let paths = env_results.env_paths.into_iter().chain(paths).collect();

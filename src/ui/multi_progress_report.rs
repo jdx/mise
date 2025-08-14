@@ -1,35 +1,33 @@
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 
 use indicatif::MultiProgress;
 
-use crate::config::Settings;
-use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
+use crate::ui::progress_report::{
+    HeaderReport, ProgressReport, QuietReport, SingleReport, VerboseReport,
+};
+use crate::ui::style;
+use crate::{cli::version::VERSION_PLAIN, config::Settings};
 
 #[derive(Debug)]
 pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
     quiet: bool,
+    header: Mutex<Option<HeaderReport>>,
 }
 
-static INSTANCE: Mutex<Option<Weak<MultiProgressReport>>> = Mutex::new(None);
+static INSTANCE: Mutex<Option<Arc<MultiProgressReport>>> = Mutex::new(None);
 
 impl MultiProgressReport {
     pub fn try_get() -> Option<Arc<Self>> {
-        match &*INSTANCE.lock().unwrap() {
-            Some(w) => w.upgrade(),
-            None => None,
-        }
+        INSTANCE.lock().unwrap().as_ref().cloned()
     }
     pub fn get() -> Arc<Self> {
-        let mut mutex = INSTANCE.lock().unwrap();
-        if let Some(w) = &*mutex {
-            if let Some(mpr) = w.upgrade() {
-                return mpr;
-            }
+        let mut guard = INSTANCE.lock().unwrap();
+        if let Some(existing) = guard.as_ref() {
+            return existing.clone();
         }
-
         let mpr = Arc::new(Self::new());
-        *mutex = Some(Arc::downgrade(&mpr));
+        *guard = Some(mpr.clone());
         mpr
     }
     fn new() -> Self {
@@ -45,6 +43,7 @@ impl MultiProgressReport {
         MultiProgressReport {
             mp,
             quiet: settings.quiet,
+            header: Mutex::new(None),
         }
     }
     pub fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
@@ -56,6 +55,44 @@ impl MultiProgressReport {
                 Box::new(pr)
             }
             None => Box::new(VerboseReport::new(prefix.to_string())),
+        }
+    }
+    pub fn init_header(&self, label: &str, total_tools: usize) {
+        if self.mp.is_none() || self.quiet {
+            return;
+        }
+        let mut hdr = self.header.lock().unwrap();
+        match (&self.mp, hdr.as_ref()) {
+            (Some(mp), None) => {
+                let version = &*VERSION_PLAIN;
+                let prefix = format!(
+                    "{} {} {}",
+                    style::emagenta("mise").bold(),
+                    style::edim(format!("{version} by @jdx –")),
+                    style::eblue(label),
+                );
+                let mut header = HeaderReport::new(prefix);
+                header.pb = mp.add(header.pb);
+                header.set_length(total_tools as u64);
+                *hdr = Some(header);
+            }
+            (_, Some(_h)) => {
+                // header already initialized; do not change total
+            }
+            _ => {}
+        }
+    }
+    pub fn header_inc(&self, n: usize) {
+        if n == 0 {
+            return;
+        }
+        if let Some(h) = &*self.header.lock().unwrap() {
+            h.inc(n as u64);
+        }
+    }
+    pub fn header_finish(&self) {
+        if let Some(h) = &*self.header.lock().unwrap() {
+            h.finish_with_message("installed".to_string());
         }
     }
     pub fn suspend_if_active<F: FnOnce() -> R, R>(f: F) -> R {
