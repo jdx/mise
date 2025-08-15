@@ -3,7 +3,7 @@ use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 pub use settings::Settings;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
 use std::ops::Deref;
@@ -834,8 +834,7 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
 }
 
 fn all_dirs() -> Result<Vec<PathBuf>> {
-    let ceiling_dirs = HashSet::new();
-    return file::all_dirs(env::current_dir().ok().unwrap(), &ceiling_dirs);
+    return file::all_dirs(env::current_dir().ok().unwrap(), &env::MISE_CEILING_PATHS);
 }
 
 pub fn config_file_from_dir(p: &Path) -> PathBuf {
