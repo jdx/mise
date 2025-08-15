@@ -222,6 +222,14 @@ yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 yum install -y mise
 ```
 
+### zypper
+
+```sh
+sudo wget https://mise.jdx.dev/rpm/mise.repo -O /etc/zypp/repos.d/mise.repo
+sudo zypper refresh
+sudo zypper install mise
+```
+
 ### Windows - Scoop
 
 This is the recommended way to install mise on Windows. It will automatically add your shims to PATH.
