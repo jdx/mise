@@ -59,6 +59,11 @@ end
 
 :::
 
+::: warning
+Do not use /bin/bash or /usr/bin/bash on macOS. bash is complicated, decades old, and mise isn't able to use as many features.
+Unless you consider yourself an expert on bash and know why I (and Apple for that matter) admonish using bash, just use zsh on macOS.
+:::
+
 On Linux this is read when logging into the machine, so changing it requires logging out and back in for it to work. See #vscode below
 for how to get VSCode to read the login file.
 
