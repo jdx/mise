@@ -76,7 +76,7 @@ impl BunPlugin {
             fallback_root
         } else {
             // As a last resort, search recursively for a file named bun/bun.exe
-            
+
             file::recursive_ls(&tv.download_path())?
                 .into_iter()
                 .find(|p| p.file_name().map(|f| f == bun_bin_name()).unwrap_or(false))
