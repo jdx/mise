@@ -56,8 +56,6 @@ static HEADER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
 #[derive(Debug)]
 pub struct ProgressReport {
     pub pb: ProgressBar,
-    prefix: String,
-    pad: usize,
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
@@ -78,11 +76,6 @@ fn normal_prefix(pad: usize, prefix: &str) -> String {
     pad_prefix(pad, &prefix)
 }
 
-fn success_prefix(pad: usize, prefix: &str) -> String {
-    let prefix = format!("{} {prefix}", style::egreen("mise"));
-    pad_prefix(pad, &prefix)
-}
-
 impl ProgressReport {
     pub fn new(prefix: String) -> ProgressReport {
         ui::ctrlc::show_cursor_after_ctrl_c();
@@ -91,7 +84,7 @@ impl ProgressReport {
             .with_style(SPIN_TEMPLATE.clone())
             .with_prefix(normal_prefix(pad, &prefix));
         pb.enable_steady_tick(Duration::from_millis(250));
-        ProgressReport { prefix, pb, pad }
+        ProgressReport { pb }
     }
 }
 
