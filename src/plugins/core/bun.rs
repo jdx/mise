@@ -64,12 +64,29 @@ impl BunPlugin {
         file::remove_all(tv.install_path())?;
         file::create_dir_all(tv.install_path().join("bin"))?;
         file::unzip(tarball_path, &tv.download_path(), &Default::default())?;
-        file::rename(
-            tv.download_path()
-                .join(format!("bun-{}-{}", os(), arch()))
-                .join(bun_bin_name()),
-            self.bun_bin(tv),
-        )?;
+        // Locate the extracted bun binary. Handle possible variations in zip structure.
+        let expected = tv
+            .download_path()
+            .join(format!("bun-{}-{}", os(), arch()))
+            .join(bun_bin_name());
+        let fallback_root = tv.download_path().join(bun_bin_name());
+        let src_bun = if expected.exists() {
+            expected
+        } else if fallback_root.exists() {
+            fallback_root
+        } else {
+            // As a last resort, search recursively for a file named bun/bun.exe
+            let found = file::recursive_ls(&tv.download_path())?
+                .into_iter()
+                .find(|p| p.file_name().map(|f| f == bun_bin_name()).unwrap_or(false))
+                .ok_or_else(|| eyre::eyre!(
+                    "bun binary not found after extracting {} to {}",
+                    filename,
+                    file::display_path(&tv.download_path())
+                ))?;
+            found
+        };
+        file::rename(&src_bun, self.bun_bin(tv))?;
         if cfg!(unix) {
             file::make_executable(self.bun_bin(tv))?;
             file::make_symlink(Path::new("./bun"), &tv.install_path().join("bin/bunx"))?;
