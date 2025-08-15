@@ -41,6 +41,7 @@ pub struct Client {
 enum ClientKind {
     Http,
     Fetch,
+    #[allow(dead_code)]
     VersionCheck,
 }
 
