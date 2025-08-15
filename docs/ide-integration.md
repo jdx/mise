@@ -172,9 +172,13 @@ want to add this setting to VSCode config in order to have it load your shims:
 ```json
     "terminal.integrated.automationProfile.osx": {
         "path": "/usr/bin/zsh",
-        "args": ["-l"]
+        "args": ["--login"]
     }
 ```
+
+:::tip
+You can also use `["--login", "--interactive"]` if you want to include `~/.zshrc`.
+:::
 
 ### VSCode Plugin
 
