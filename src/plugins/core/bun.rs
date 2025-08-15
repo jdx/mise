@@ -76,15 +76,17 @@ impl BunPlugin {
             fallback_root
         } else {
             // As a last resort, search recursively for a file named bun/bun.exe
-            let found = file::recursive_ls(&tv.download_path())?
+            
+            file::recursive_ls(&tv.download_path())?
                 .into_iter()
                 .find(|p| p.file_name().map(|f| f == bun_bin_name()).unwrap_or(false))
-                .ok_or_else(|| eyre::eyre!(
-                    "bun binary not found after extracting {} to {}",
-                    filename,
-                    file::display_path(&tv.download_path())
-                ))?;
-            found
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "bun binary not found after extracting {} to {}",
+                        filename,
+                        file::display_path(tv.download_path())
+                    )
+                })?
         };
         file::rename(&src_bun, self.bun_bin(tv))?;
         if cfg!(unix) {
