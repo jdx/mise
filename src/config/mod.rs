@@ -833,11 +833,15 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
         .collect()
 }
 
+fn all_dirs() -> Result<Vec<PathBuf>> {
+    return file::all_dirs(env::current_dir().ok().unwrap(), &env::MISE_CEILING_PATHS);
+}
+
 pub fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
     }
-    for dir in file::all_dirs().unwrap_or_default() {
+    for dir in all_dirs().unwrap_or_default() {
         if let Some(cf) = self::config_files_in_dir(&dir).last() {
             if !is_global_config(cf) {
                 return cf.clone();
@@ -854,7 +858,7 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
     if Settings::no_config() {
         return vec![];
     }
-    let dirs = file::all_dirs().unwrap_or_default();
+    let dirs = all_dirs().unwrap_or_default();
 
     let mut config_files = dirs
         .iter()
@@ -1238,7 +1242,7 @@ See https://github.com/jdx/mise/discussions/4345 for more information."#,
 
 async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
     let mut tasks = vec![];
-    for d in file::all_dirs()? {
+    for d in all_dirs()? {
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
             continue;
         }
