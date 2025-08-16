@@ -1,5 +1,33 @@
 # Changelog
 
+## [2025.8.11](https://github.com/jdx/mise/compare/v2025.8.10..v2025.8.11) - 2025-08-16
+
+### 📦 Registry
+
+- add container-use ([aqua:dagger/container-use](https://github.com/dagger/container-use)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#6029](https://github.com/jdx/mise/pull/6029)
+- add prek ([aqua:j178/prek](https://github.com/j178/prek)) by [@HenryZhang-ZHY](https://github.com/HenryZhang-ZHY) in [#6023](https://github.com/jdx/mise/pull/6023)
+
+### 🚀 Features
+
+- **(task)** allow more #MISE comments patterns by [@risu729](https://github.com/risu729) in [#6011](https://github.com/jdx/mise/pull/6011)
+
+### 📚 Documentation
+
+- **(settings)** use php as an example for `disable_default_registry` by [@risu729](https://github.com/risu729) in [#6025](https://github.com/jdx/mise/pull/6025)
+- Update ide-integration.md by [@jdx](https://github.com/jdx) in [#6035](https://github.com/jdx/mise/pull/6035)
+- Update ide-integration.md by [@jdx](https://github.com/jdx) in [#6040](https://github.com/jdx/mise/pull/6040)
+- added openSUSE zypper install instructions by [@lfromanini](https://github.com/lfromanini) in [#6037](https://github.com/jdx/mise/pull/6037)
+
+### Chore
+
+- fix warnings by [@jdx](https://github.com/jdx) in [#6043](https://github.com/jdx/mise/pull/6043)
+- remove unused permissions in registry test by [@risu729](https://github.com/risu729) in [#6044](https://github.com/jdx/mise/pull/6044)
+
+### New Contributors
+
+- @HenryZhang-ZHY made their first contribution in [#6023](https://github.com/jdx/mise/pull/6023)
+- @lfromanini made their first contribution in [#6037](https://github.com/jdx/mise/pull/6037)
+
 ## [2025.8.10](https://github.com/jdx/mise/compare/v2025.8.9..v2025.8.10) - 2025-08-14
 
 ### 📦 Registry

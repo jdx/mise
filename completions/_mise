@@ -27,11 +27,11 @@ _mise() {
     zstyle ":completion:${curcontext}:" cache-policy _usage_mise_cache_policy
   fi
 
-  if ( [[ -z "${_usage_spec_mise_2025_8_10:-}" ]] || _cache_invalid _usage_spec_mise_2025_8_10 ) \
-      && ! _retrieve_cache _usage_spec_mise_2025_8_10;
+  if ( [[ -z "${_usage_spec_mise_2025_8_11:-}" ]] || _cache_invalid _usage_spec_mise_2025_8_11 ) \
+      && ! _retrieve_cache _usage_spec_mise_2025_8_11;
   then
     spec="$(mise usage)"
-    _store_cache _usage_spec_mise_2025_8_10 spec
+    _store_cache _usage_spec_mise_2025_8_11 spec
   fi
 
   _arguments "*: :(($(usage complete-word --shell zsh -s "$spec" -- "${words[@]}" )))"
