@@ -344,12 +344,17 @@ impl Run {
                             // only show this if it's the first failure, or we haven't killed all the remaining tasks
                             // otherwise we'll get unhelpful error messages about being killed by mise which we expect
                             let prefix = task.estyled_prefix();
-                            let err_body = if Settings::get().verbose {
-                                format!("{} {err:?}", style::ered("ERROR"))
+                            if Settings::get().verbose {
+                                this_.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
                             } else {
-                                format!("{} {err}", style::ered("ERROR"))
+                                // Show the full error chain
+                                this_.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
+                                let mut current_err = err.source();
+                                while let Some(e) = current_err {
+                                    this_.eprint(&task, &prefix, &format!("{} {e}", style::ered("ERROR")));
+                                    current_err = e.source();
+                                }
                             };
-                            this_.eprint(&task, &prefix, &err_body);
                         }
                         this_.add_failed_task(task.clone(), status);
                     }
@@ -836,14 +841,14 @@ impl Run {
         let (spec, _) = task.parse_usage_spec(config, self.cd.clone(), env).await?;
         if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
             let args: Vec<String> = get_args();
-            debug!("Parsing usage spec for {:?}", args);
+            trace!("Parsing usage spec for {:?}", args);
             let po = usage::parse(&spec, &args).map_err(|err| eyre!(err))?;
             for (k, v) in po.as_env() {
-                debug!("Adding key {} value {} in env", k, v);
+                trace!("Adding key {} value {} in env", k, v);
                 env.insert(k, v);
             }
         } else {
-            debug!("Usage spec has no args or flags");
+            trace!("Usage spec has no args or flags");
         }
 
         Ok(())
