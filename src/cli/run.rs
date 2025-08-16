@@ -345,13 +345,25 @@ impl Run {
                             // otherwise we'll get unhelpful error messages about being killed by mise which we expect
                             let prefix = task.estyled_prefix();
                             if Settings::get().verbose {
-                                this_.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
+                                this_.eprint(
+                                    &task,
+                                    &prefix,
+                                    &format!("{} {err:?}", style::ered("ERROR")),
+                                );
                             } else {
                                 // Show the full error chain
-                                this_.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
+                                this_.eprint(
+                                    &task,
+                                    &prefix,
+                                    &format!("{} {err}", style::ered("ERROR")),
+                                );
                                 let mut current_err = err.source();
                                 while let Some(e) = current_err {
-                                    this_.eprint(&task, &prefix, &format!("{} {e}", style::ered("ERROR")));
+                                    this_.eprint(
+                                        &task,
+                                        &prefix,
+                                        &format!("{} {e}", style::ered("ERROR")),
+                                    );
                                     current_err = e.source();
                                 }
                             };

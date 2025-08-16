@@ -195,10 +195,7 @@ impl TaskScriptParser {
                 };
                 arg.usage = arg.usage();
 
-                input_args
-                    .lock()
-                    .map_err(Self::lock_error)?
-                    .push(arg);
+                input_args.lock().map_err(Self::lock_error)?.push(arg);
 
                 Ok(tera::Value::Null)
             }
@@ -296,10 +293,7 @@ impl TaskScriptParser {
                 };
                 flag.usage = flag.usage();
 
-                input_flags
-                    .lock()
-                    .map_err(Self::lock_error)?
-                    .push(flag);
+                input_flags.lock().map_err(Self::lock_error)?.push(flag);
 
                 Ok(tera::Value::Null)
             }
@@ -420,10 +414,7 @@ impl TaskScriptParser {
                 };
                 flag.usage = flag.usage();
 
-                input_flags
-                    .lock()
-                    .map_err(Self::lock_error)?
-                    .push(flag);
+                input_flags.lock().map_err(Self::lock_error)?.push(flag);
 
                 Ok(tera::Value::Null)
             }
