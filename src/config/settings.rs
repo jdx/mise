@@ -176,7 +176,9 @@ impl Settings {
             settings.yes = true;
         }
         if settings.all_compile {
-            settings.node.compile = Some(true);
+            if settings.node.compile.is_none() {
+                settings.node.compile = Some(true);
+            }
             if settings.python.compile.is_none() {
                 settings.python.compile = Some(true);
             }
