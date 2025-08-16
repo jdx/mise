@@ -337,60 +337,17 @@ impl TaskScriptParser {
                 let help_long = Self::expect_opt_string(args.get("help_long"), "help_long")?;
                 let help_md = Self::expect_opt_string(args.get("help_md"), "help_md")?;
 
-                let hide = match args.get("hide") {
-                    Some(r) => match r.as_bool() {
-                        Some(b) => b,
-                        None => {
-                            return Err(tera::Error::msg(format!(
-                                "expected boolean for 'hide', got {:?}",
-                                r
-                            )));
-                        }
-                    },
-                    None => false,
-                };
+                let hide = Self::expect_opt_bool(args.get("hide"), "hide")?.unwrap_or(false);
 
-                let global = match args.get("global") {
-                    Some(r) => match r.as_bool() {
-                        Some(b) => b,
-                        None => {
-                            return Err(tera::Error::msg(format!(
-                                "expected boolean for 'global', got {:?}",
-                                r
-                            )));
-                        }
-                    },
-                    None => false,
-                };
+                let global = Self::expect_opt_bool(args.get("global"), "global")?.unwrap_or(false);
 
-                let count = match args.get("count") {
-                    Some(r) => match r.as_bool() {
-                        Some(b) => b,
-                        None => {
-                            return Err(tera::Error::msg(format!(
-                                "expected boolean for 'count', got {:?}",
-                                r
-                            )));
-                        }
-                    },
-                    None => false,
-                };
+                let count = Self::expect_opt_bool(args.get("count"), "count")?.unwrap_or(false);
 
                 let usage =
                     Self::expect_opt_string(args.get("usage"), "usage")?.unwrap_or_default();
 
-                let required = match args.get("required") {
-                    Some(r) => match r.as_bool() {
-                        Some(b) => b,
-                        None => {
-                            return Err(tera::Error::msg(format!(
-                                "expected boolean for 'required', got {:?}",
-                                r
-                            )));
-                        }
-                    },
-                    None => false,
-                };
+                let required =
+                    Self::expect_opt_bool(args.get("required"), "required")?.unwrap_or(false);
 
                 let negate = Self::expect_opt_string(args.get("negate"), "negate")?;
 
