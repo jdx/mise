@@ -400,6 +400,7 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
         flag --http help="HTTP backend type to use" {
             arg <HTTP>
         }
+        flag --windows-shim help="Create Windows companion .exe file for cross-platform stub generation"
         arg <OUTPUT> help="Output file path for the tool stub"
     }
 }

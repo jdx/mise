@@ -1,0 +1,72 @@
+name: Build Windows Shims
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/mise-windows-stub/**'
+      - '.github/workflows/build-windows-shims.yml'
+  workflow_dispatch:
+
+jobs:
+  build-shims:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            target: x86_64-pc-windows-msvc
+          - arch: arm64
+            target: aarch64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      
+      - name: Build Windows shim
+        run: |
+          cargo build --release -p mise-windows-stub --target ${{ matrix.target }}
+          
+      - name: Upload shim artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mise-windows-shim-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/mise-stub.exe
+          
+  deploy-shims:
+    needs: build-shims
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Download x64 shim
+        uses: actions/download-artifact@v4
+        with:
+          name: mise-windows-shim-x64
+          path: ./x64
+          
+      - name: Download arm64 shim
+        uses: actions/download-artifact@v4
+        with:
+          name: mise-windows-shim-arm64
+          path: ./arm64
+          
+      - name: Rename shims
+        run: |
+          mv ./x64/mise-stub.exe ./mise-windows-shim-x64.exe
+          mv ./arm64/mise-stub.exe ./mise-windows-shim-arm64.exe
+          
+      - name: Upload to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-west-2
+        run: |
+          aws s3 cp ./mise-windows-shim-x64.exe s3://mise/mise-windows-shim-x64.exe \
+            --acl public-read \
+            --cache-control "public, max-age=86400"
+          aws s3 cp ./mise-windows-shim-arm64.exe s3://mise/mise-windows-shim-arm64.exe \
+            --acl public-read \
+            --cache-control "public, max-age=86400"
