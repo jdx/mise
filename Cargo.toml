@@ -149,7 +149,7 @@ tera = "1"
 terminal_size = "0.4"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-toml = { version = "0.8", features = ["parse"] }
+toml = { version = "0.9", features = ["parse"] }
 toml_edit = { version = "0.22", features = ["parse"] }
 ubi = { version = "0.7.1", default-features = false }
 url = "2"
@@ -186,7 +186,7 @@ winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
 built = { version = "0.8", features = ["chrono"] }
 cfg_aliases = "0.2"
 heck = "0.5"
-toml = "0.8"
+toml = "0.9"
 indexmap = "2"
 
 [dev-dependencies]
