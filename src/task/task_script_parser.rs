@@ -144,10 +144,11 @@ impl TaskScriptParser {
                 }
                 arg_order.insert(name.clone(), i);
 
-                let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
-                let help = args.get("help").map(|r| r.to_string());
-                let help_long = args.get("help_long").map(|r| r.to_string());
-                let help_md = args.get("help_md").map(|r| r.to_string());
+                let usage =
+                    Self::expect_opt_string(args.get("usage"), "usage")?.unwrap_or_default();
+                let help = Self::expect_opt_string(args.get("help"), "help")?;
+                let help_long = Self::expect_opt_string(args.get("help_long"), "help_long")?;
+                let help_md = Self::expect_opt_string(args.get("help_md"), "help_md")?;
 
                 let var_min =
                     Self::expect_opt_i64(args.get("var_min"), "var_min")?.map(|v| v as usize);
@@ -170,10 +171,13 @@ impl TaskScriptParser {
                     .transpose()?;
 
                 let help_first_line = match &help {
-                    Some(h) => match h.lines().next() {
-                        Some(line) => Some(line.to_string()),
-                        None => return Err(tera::Error::msg("help text has no lines")),
-                    },
+                    Some(h) => {
+                        if h.is_empty() {
+                            None
+                        } else {
+                            h.lines().next().map(|line| line.to_string())
+                        }
+                    }
                     None => None,
                 };
 
@@ -226,10 +230,10 @@ impl TaskScriptParser {
 
                 let var = Self::expect_opt_bool(args.get("var"), "var")?.unwrap_or(false);
 
-                let deprecated = args.get("deprecated").map(|r| r.to_string());
-                let help = args.get("help").map(|r| r.to_string());
-                let help_long = args.get("help_long").map(|r| r.to_string());
-                let help_md = args.get("help_md").map(|r| r.to_string());
+                let deprecated = Self::expect_opt_string(args.get("deprecated"), "deprecated")?;
+                let help = Self::expect_opt_string(args.get("help"), "help")?;
+                let help_long = Self::expect_opt_string(args.get("help_long"), "help_long")?;
+                let help_md = Self::expect_opt_string(args.get("help_md"), "help_md")?;
 
                 let hide = Self::expect_opt_bool(args.get("hide"), "hide")?.unwrap_or(false);
 
@@ -237,12 +241,13 @@ impl TaskScriptParser {
 
                 let count = Self::expect_opt_bool(args.get("count"), "count")?.unwrap_or(false);
 
-                let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
+                let usage =
+                    Self::expect_opt_string(args.get("usage"), "usage")?.unwrap_or_default();
 
                 let required =
                     Self::expect_opt_bool(args.get("required"), "required")?.unwrap_or(false);
 
-                let negate = args.get("negate").map(|r| r.to_string());
+                let negate = Self::expect_opt_string(args.get("negate"), "negate")?;
 
                 let choices = match args.get("choices") {
                     Some(c) => {
@@ -260,10 +265,13 @@ impl TaskScriptParser {
                 };
 
                 let help_first_line = match &help {
-                    Some(h) => match h.lines().next() {
-                        Some(line) => Some(line.to_string()),
-                        None => return Err(tera::Error::msg("help text has no lines")),
-                    },
+                    Some(h) => {
+                        if h.is_empty() {
+                            None
+                        } else {
+                            h.lines().next().map(|line| line.to_string())
+                        }
+                    }
                     None => None,
                 };
 
@@ -324,10 +332,10 @@ impl TaskScriptParser {
 
                 let var = Self::expect_opt_bool(args.get("var"), "var")?.unwrap_or(false);
 
-                let deprecated = args.get("deprecated").map(|r| r.to_string());
-                let help = args.get("help").map(|r| r.to_string());
-                let help_long = args.get("help_long").map(|r| r.to_string());
-                let help_md = args.get("help_md").map(|r| r.to_string());
+                let deprecated = Self::expect_opt_string(args.get("deprecated"), "deprecated")?;
+                let help = Self::expect_opt_string(args.get("help"), "help")?;
+                let help_long = Self::expect_opt_string(args.get("help_long"), "help_long")?;
+                let help_md = Self::expect_opt_string(args.get("help_md"), "help_md")?;
 
                 let hide = match args.get("hide") {
                     Some(r) => match r.as_bool() {
@@ -368,7 +376,8 @@ impl TaskScriptParser {
                     None => false,
                 };
 
-                let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
+                let usage =
+                    Self::expect_opt_string(args.get("usage"), "usage")?.unwrap_or_default();
 
                 let required = match args.get("required") {
                     Some(r) => match r.as_bool() {
@@ -383,13 +392,16 @@ impl TaskScriptParser {
                     None => false,
                 };
 
-                let negate = args.get("negate").map(|r| r.to_string());
+                let negate = Self::expect_opt_string(args.get("negate"), "negate")?;
 
                 let help_first_line = match &help {
-                    Some(h) => match h.lines().next() {
-                        Some(line) => Some(line.to_string()),
-                        None => return Err(tera::Error::msg("help text has no lines")),
-                    },
+                    Some(h) => {
+                        if h.is_empty() {
+                            None
+                        } else {
+                            h.lines().next().map(|line| line.to_string())
+                        }
+                    }
                     None => None,
                 };
 
@@ -810,5 +822,48 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo TRUE"]);
+    }
+
+    #[tokio::test]
+    async fn test_task_parse_empty_help() {
+        let config = Config::get().await.unwrap();
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+
+        // Test with empty help string for arg
+        let scripts = vec!["echo {{ arg(name='foo', help='') }}".to_string()];
+        let (parsed_scripts, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo "]);
+        let arg = spec.cmd.args.first().unwrap();
+        assert_eq!(arg.name, "foo");
+        assert_eq!(arg.help, Some("".to_string()));
+        assert_eq!(arg.help_first_line, None);
+
+        // Test with empty help string for option
+        let scripts = vec!["echo {{ option(name='bar', help='') }}".to_string()];
+        let (parsed_scripts, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo "]);
+        let option = spec.cmd.flags.iter().find(|f| &f.name == "bar").unwrap();
+        assert_eq!(&option.name, "bar");
+        assert_eq!(option.help, Some("".to_string()));
+        assert_eq!(option.help_first_line, None);
+
+        // Test with empty help string for flag
+        let scripts = vec!["echo {{ flag(name='baz', help='') }}".to_string()];
+        let (parsed_scripts, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo "]);
+        let flag = spec.cmd.flags.iter().find(|f| &f.name == "baz").unwrap();
+        assert_eq!(&flag.name, "baz");
+        assert_eq!(flag.help, Some("".to_string()));
+        assert_eq!(flag.help_first_line, None);
     }
 }
