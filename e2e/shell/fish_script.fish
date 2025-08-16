@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env fish
 # shellcheck disable=SC1072,SC1065,SC1064,SC1073,SC2103
 
 set -l fish_trace 1
