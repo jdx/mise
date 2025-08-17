@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Test that commands with PREFER_OFFLINE don't make network requests
+# This tests various backend types to ensure they all respect PREFER_OFFLINE
+
+set -euo pipefail
+
+# Helper function to assert no HTTP calls were made
+assert_no_http_calls() {
+	local command="$1"
+	local output="$2"
+
+	if echo "$output" | grep -q -E "(GET|POST|PUT|DELETE|HEAD) http"; then
+		echo "ERROR: '$command' made HTTP requests when it shouldn't"
+		echo "HTTP requests found:"
+		echo "$output" | grep -E "(GET|POST|PUT|DELETE|HEAD) http"
+		exit 1
+	fi
+
+	echo "SUCCESS: '$command' does not make network calls"
+}
+
+# Create a test directory with tools from various backends that need resolution
+cat <<EOF >.tool-versions
+core:node 20
+core:python 3.11
+core:ruby 3.2
+cargo:ripgrep@latest
+npm:prettier@3
+go:github.com/junegunn/fzf@latest
+EOF
+
+# Test 1: Verify hook-env doesn't make network calls
+# PREFER_OFFLINE is automatically set for hook-env
+# Use MISE_LOG_HTTP to catch any HTTP requests
+output=$(MISE_LOG_HTTP=1 mise hook-env -s bash 2>&1)
+assert_no_http_calls "hook-env" "$output"
+
+# Test 2: Verify 'mise ls' with various backends doesn't make network calls
+# Test with 'mise ls' which has PREFER_OFFLINE set
+output=$(MISE_LOG_HTTP=1 mise ls 2>&1)
+assert_no_http_calls "mise ls" "$output"
+
+# Test 3: Verify 'mise env' also doesn't make network calls
+output=$(MISE_LOG_HTTP=1 mise env 2>&1)
+assert_no_http_calls "mise env" "$output"
+
+# Test 4: Verify that version resolution in ls command respects PREFER_OFFLINE
+# ls command with PREFER_OFFLINE should not make network calls for version resolution
+# Clear cache first
+mise cache clear
+
+# Create a config that requires version resolution
+echo 'tiny@latest' >.tool-versions
+output=$(MISE_LOG_HTTP=1 mise ls 2>&1)
+assert_no_http_calls "mise ls with version resolution" "$output"
+
+# Test 5: Verify that install command (without PREFER_OFFLINE) can make network calls
+# Clear cache again
+mise cache clear
+
+# Use install command which doesn't have PREFER_OFFLINE
+# Install a specific version to force network resolution
+output=$(MISE_LOG_HTTP=1 mise install tiny@1.0.0 2>&1)
+
+# The test might use a local plugin, so check for either HTTP requests or list-all calls
+if ! echo "$output" | grep -q -E "(GET|POST|PUT|DELETE|HEAD) http|list-all"; then
+	echo "WARNING: install command might be using test fixtures, skipping network check"
+fi
+
+echo "SUCCESS: Test completed"

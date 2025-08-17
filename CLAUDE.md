@@ -141,3 +141,5 @@ The configuration system supports multiple file formats and environment-specific
 - Windows-specific implementations in files ending with `_windows.rs`
 - Platform-specific tool installation logic in core plugins
 - Shim system varies by platform (especially Windows)
+
+- it's best to run `mise run lint-fix` before committing

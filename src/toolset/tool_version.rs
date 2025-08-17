@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::backend::ABackend;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
+use crate::env;
 #[cfg(windows)]
 use crate::file;
 use crate::hash::hash_to_str;
@@ -26,6 +27,19 @@ pub struct ToolVersion {
     pub version: String,
     pub lock_platforms: BTreeMap<String, PlatformInfo>,
     pub install_path: Option<PathBuf>,
+}
+
+/// Check if we should skip network calls for version resolution
+/// Returns true for all commands except exec/x which need to fetch and install tools
+fn should_skip_network_calls() -> bool {
+    // Only exec/x commands should make network calls when PREFER_OFFLINE is set
+    // All other commands should work with locally available versions only
+    if !env::PREFER_OFFLINE.load(std::sync::atomic::Ordering::Relaxed) {
+        return false;
+    }
+    let args = env::ARGS.read().unwrap();
+    // Check if this is NOT an exec/x command
+    args.len() < 2 || (args[1] != "exec" && args[1] != "x")
 }
 
 impl ToolVersion {
@@ -215,8 +229,11 @@ impl ToolVersion {
                     return build(v);
                 }
             }
-            if let Some(v) = backend.latest_version(config, None).await? {
-                return build(v);
+            // Skip network call for latest version when appropriate (not exec/x)
+            if !should_skip_network_calls() {
+                if let Some(v) = backend.latest_version(config, None).await? {
+                    return build(v);
+                }
             }
         }
         if !opts.latest_versions {
@@ -227,6 +244,12 @@ impl ToolVersion {
             if let Some(v) = matches.last() {
                 return build(v.clone());
             }
+        }
+        // Skip network calls when appropriate to avoid delays
+        if should_skip_network_calls() {
+            // If we can't find the version locally and we're offline, just use what was requested
+            // This won't be installed, but that's fine for commands that don't need it
+            return build(v);
         }
         let matches = backend.list_versions_matching(config, &v).await?;
         if matches.contains(&v) {
@@ -245,7 +268,21 @@ impl ToolVersion {
     ) -> Result<Self> {
         let backend = request.backend()?;
         let v = match v {
-            "latest" => backend.latest_version(config, None).await?.unwrap(),
+            "latest" => {
+                // Try to use installed version first when we should avoid network calls
+                if should_skip_network_calls() {
+                    if let Some(v) = backend.latest_installed_version(None)? {
+                        v
+                    } else {
+                        // Can't resolve "latest" offline with no installed versions
+                        // We can't perform version arithmetic without a base version
+                        // Just return an unresolved version (won't be installed)
+                        return Ok(Self::new(request, "latest".to_string()));
+                    }
+                } else {
+                    backend.latest_version(config, None).await?.unwrap()
+                }
+            }
             _ => config.resolve_alias(&backend, v).await?,
         };
         let v = tool_request::version_sub(&v, sub);
@@ -263,6 +300,12 @@ impl ToolVersion {
             if let Some(v) = backend.list_installed_versions_matching(prefix).last() {
                 return Ok(Self::new(request, v.to_string()));
             }
+        }
+        // Skip network calls when appropriate to avoid delays
+        if should_skip_network_calls() {
+            // If we can't find a matching version locally and we're offline, just use the prefix as-is
+            // This won't be installed, but that's fine for commands that don't need it
+            return Ok(Self::new(request, prefix.to_string()));
         }
         let matches = backend.list_versions_matching(config, prefix).await?;
         let v = match matches.last() {
