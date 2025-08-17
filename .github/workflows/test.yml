@@ -152,6 +152,7 @@ jobs:
       - run: cargo machete --with-metadata
       - run: ./scripts/test-standalone.sh
       - run: mise run lint
+      - run: cargo clippy --all-features --all-targets -- -D warnings
 
   nightly:
     runs-on: ubuntu-latest
@@ -177,7 +178,6 @@ jobs:
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
       - run: mise run test
-      - run: cargo clippy --all-features --all-targets -- -D warnings
 
   coverage:
     name: coverage-${{matrix.tranche}}
