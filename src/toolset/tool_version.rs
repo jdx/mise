@@ -33,7 +33,8 @@ pub struct ToolVersion {
 /// Takes into account the current network mode
 fn is_network_allowed_for_version_resolution() -> bool {
     let mode = env::NETWORK_MODE.lock().unwrap();
-    let allowed = mode.allows_network();
+    // Only allow network in Online mode, not in PreferOffline or Offline
+    let allowed = matches!(*mode, env::NetworkMode::Online);
 
     trace!(
         "is_network_allowed_for_version_resolution: mode={:?}, allowed={}",
