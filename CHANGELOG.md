@@ -1,5 +1,29 @@
 # Changelog
 
+## [2025.8.12](https://github.com/jdx/mise/compare/v2025.8.11..v2025.8.12) - 2025-08-17
+
+### 📦 Registry
+
+- support tenv idiomatic files by [@risu729](https://github.com/risu729) in [#6050](https://github.com/jdx/mise/pull/6050)
+
+### 🚀 Features
+
+- respect PREFER_OFFLINE for aqua package metadata fetching by [@jdx](https://github.com/jdx) in [#6058](https://github.com/jdx/mise/pull/6058)
+
+### 📚 Documentation
+
+- fix backend_architecture docs by [@risu729](https://github.com/risu729) in [#6027](https://github.com/jdx/mise/pull/6027)
+
+### 📦️ Dependency Updates
+
+- update amannn/action-semantic-pull-request digest to e32d7e6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#6031](https://github.com/jdx/mise/pull/6031)
+- update actions/checkout digest to 08eba0b by [@renovate[bot]](https://github.com/renovate[bot]) in [#6030](https://github.com/jdx/mise/pull/6030)
+- update actions/cache digest to 0400d5f by [@renovate[bot]](https://github.com/renovate[bot]) in [#5957](https://github.com/jdx/mise/pull/5957)
+
+### Chore
+
+- check for warnings in gha with rust stable by [@jdx](https://github.com/jdx) in [#6055](https://github.com/jdx/mise/pull/6055)
+
 ## [2025.8.11](https://github.com/jdx/mise/compare/v2025.8.10..v2025.8.11) - 2025-08-17
 
 ### 📦 Registry
