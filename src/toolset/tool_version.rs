@@ -16,7 +16,7 @@ use crate::lockfile::PlatformInfo;
 use crate::toolset::{ToolRequest, ToolVersionOptions, tool_request};
 use console::style;
 use dashmap::DashMap;
-use eyre::Result;
+use eyre::{Result, bail};
 #[cfg(windows)]
 use path_absolutize::Absolutize;
 
@@ -269,17 +269,53 @@ impl ToolVersion {
         let backend = request.backend()?;
         let v = match v {
             "latest" => {
-                // Try to use installed version first when network is not allowed
-                if !is_network_allowed_for_version_resolution() {
+                let mode = env::NETWORK_MODE.lock().unwrap().clone();
+
+                // First try to get an installed version if we're not fully online
+                if !matches!(mode, env::NetworkMode::Online) {
+                    // Try to get the latest installed version first
                     if let Some(v) = backend.latest_installed_version(None)? {
                         v
                     } else {
-                        // Can't resolve "latest" offline with no installed versions
-                        // We can't perform version arithmetic without a base version
-                        // Just return an unresolved version (won't be installed)
-                        return Ok(Self::new(request, "latest".to_string()));
+                        // No exact "latest" installed, try to get ANY installed version
+                        let installed = backend.list_installed_versions();
+                        if let Some(v) = installed.last() {
+                            warn!(
+                                "Using highest installed version {} for {} to avoid network call",
+                                v,
+                                backend.id()
+                            );
+                            v.clone()
+                        } else {
+                            // No versions installed at all
+                            match mode {
+                                env::NetworkMode::Offline => {
+                                    // In offline mode, we must error out
+                                    bail!(
+                                        "Cannot resolve 'latest' version for {} in offline mode: \
+                                        no installed versions found. Please either: \n\
+                                        1. Disable offline mode to fetch the latest version\n\
+                                        2. Install a specific version first\n\
+                                        3. Use an exact version instead of 'latest'",
+                                        backend.id()
+                                    );
+                                }
+                                env::NetworkMode::PreferOffline => {
+                                    // In prefer-offline mode, we make an exception for version arithmetic
+                                    // since we NEED a real version to perform the calculation
+                                    trace!(
+                                        "Making network call for {} despite prefer-offline mode \
+                                        because version arithmetic requires a resolved version",
+                                        backend.id()
+                                    );
+                                    backend.latest_version(config, None).await?.unwrap()
+                                }
+                                _ => unreachable!("Already checked for Online mode above"),
+                            }
+                        }
                     }
                 } else {
+                    // Online mode - just fetch the latest
                     backend.latest_version(config, None).await?.unwrap()
                 }
             }
