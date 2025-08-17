@@ -309,7 +309,12 @@ impl ToolVersion {
                                         because version arithmetic requires a resolved version",
                                         backend.id()
                                     );
-                                    backend.latest_version(config, None).await?.unwrap()
+                                    backend.latest_version(config, None).await?.ok_or_else(|| {
+                                        eyre::eyre!(
+                                            "No latest version available for {} - the tool may not have any published versions",
+                                            backend.id()
+                                        )
+                                    })?
                                 }
                                 _ => unreachable!("Already checked for Online mode above"),
                             }
@@ -317,7 +322,12 @@ impl ToolVersion {
                     }
                 } else {
                     // Online mode - just fetch the latest
-                    backend.latest_version(config, None).await?.unwrap()
+                    backend.latest_version(config, None).await?.ok_or_else(|| {
+                        eyre::eyre!(
+                            "No latest version available for {} - the tool may not have any published versions",
+                            backend.id()
+                        )
+                    })?
                 }
             }
             _ => config.resolve_alias(&backend, v).await?,
