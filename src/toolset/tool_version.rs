@@ -269,7 +269,7 @@ impl ToolVersion {
         let backend = request.backend()?;
         let v = match v {
             "latest" => {
-                let mode = env::NETWORK_MODE.lock().unwrap().clone();
+                let mode = *env::NETWORK_MODE.lock().unwrap();
 
                 // First try to get an installed version if we're not fully online
                 if !matches!(mode, env::NetworkMode::Online) {
