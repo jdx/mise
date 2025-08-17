@@ -324,16 +324,19 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 
 | Plugin     | Idiomatic Files                       |
 | ---------- | ------------------------------------- |
+| atmos      | `.atmos-version`                      |
 | crystal    | `.crystal-version`                    |
 | elixir     | `.exenv-version`                      |
 | go         | `.go-version`                         |
 | java       | `.java-version`, `.sdkmanrc`          |
 | node       | `.nvmrc`, `.node-version`             |
+| opentofu   | `.opentofu-version`                   |
 | packer     | `.packer-version`                     |
 | python     | `.python-version`, `.python-versions` |
 | ruby       | `.ruby-version`, `Gemfile`            |
-| terragrunt | `.terragrunt-version`                 |
 | terraform  | `.terraform-version`, `main.tf`       |
+| terragrunt | `.terragrunt-version`                 |
+| terramate  | `.terramate-version`                  |
 | yarn       | `.yvmrc`                              |
 
 In mise, these are enabled by default. However, in 2025.10.0 they will default to disabled (see <https://github.com/jdx/mise/discussions/4345>).
