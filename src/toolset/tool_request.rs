@@ -300,19 +300,35 @@ impl ToolRequest {
     }
 }
 
-/// subtracts sub from orig and removes suffix
+/// subtracts sub from orig
+/// When subtracting a whole number (e.g., "2"), returns just the major version
+/// When subtracting a decimal (e.g., "0.1"), preserves the full version
 /// e.g. version_sub("18.2.3", "2") -> "16"
-/// e.g. version_sub("18.2.3", "0.1") -> "18.1"
+/// e.g. version_sub("18.2.3", "0.1") -> "18.1.3"
+/// e.g. version_sub("20.5.1", "0.1") -> "20.4.1"
 pub fn version_sub(orig: &str, sub: &str) -> String {
     let mut orig = Version::new(orig).unwrap();
     let sub = Version::new(sub).unwrap();
-    while orig.chunks.0.len() > sub.chunks.0.len() {
-        orig.chunks.0.pop();
+
+    // Determine if we're subtracting a whole number or a decimal
+    let is_whole_number = sub.chunks.0.len() == 1;
+
+    // Perform the subtraction
+    for (i, sub_chunk) in sub.chunks.0.iter().enumerate() {
+        if i < orig.chunks.0.len() {
+            let orig_val = orig.chunks.0[i].single_digit().unwrap();
+            let sub_val = sub_chunk.single_digit().unwrap();
+            orig.chunks.0[i] = Chunk::Numeric(orig_val - sub_val);
+        }
     }
-    for (i, orig_chunk) in orig.clone().chunks.0.iter().enumerate() {
-        let m = sub.nth(i).unwrap();
-        orig.chunks.0[i] = Chunk::Numeric(orig_chunk.single_digit().unwrap() - m);
+
+    // If subtracting a whole number, return just the major version (or major.minor if sub has 2 parts)
+    // This allows for better version resolution (e.g., "16" can resolve to "16.9.100")
+    if is_whole_number {
+        // Keep only the first chunk (major version)
+        orig.chunks.0.truncate(1);
     }
+
     orig.to_string()
 }
 
@@ -330,7 +346,14 @@ mod tests {
 
     #[test]
     fn test_version_sub() {
+        // Whole number subtraction returns just major version
         assert_str_eq!(version_sub("18.2.3", "2"), "16");
-        assert_str_eq!(version_sub("18.2.3", "0.1"), "18.1");
+        assert_str_eq!(version_sub("20.5.1", "1"), "19");
+        assert_str_eq!(version_sub("20.5.0", "2"), "18");
+
+        // Decimal subtraction preserves full version
+        assert_str_eq!(version_sub("18.2.3", "0.1"), "18.1.3");
+        assert_str_eq!(version_sub("20.5.1", "0.1"), "20.4.1");
+        assert_str_eq!(version_sub("18.2.3", "0.2"), "18.0.3");
     }
 }

@@ -321,8 +321,44 @@ impl ToolVersion {
             }
             _ => config.resolve_alias(&backend, v).await?,
         };
-        let v = tool_request::version_sub(&v, sub);
-        Box::pin(Self::resolve_version(config, request, &v, opts)).await
+        let computed_version = tool_request::version_sub(&v, sub);
+
+        // Try to resolve the computed version to the latest matching version
+        // First, check if we have an exact match or can find a better version
+        let backend = request.backend()?;
+
+        // If we're offline or prefer-offline, check installed versions first
+        if !opts.latest_versions {
+            let installed = backend.list_installed_versions_matching(&computed_version);
+            if let Some(best_match) = installed.last() {
+                trace!(
+                    "Using installed version {} for sub arithmetic result {}",
+                    best_match, computed_version
+                );
+                return Ok(Self::new(request, best_match.clone()));
+            }
+        }
+
+        // If network is allowed and we didn't find an installed match, try to get the best online match
+        if is_network_allowed_for_version_resolution() {
+            let matches = backend
+                .list_versions_matching(config, &computed_version)
+                .await?;
+            if let Some(best_match) = matches.last() {
+                trace!(
+                    "Using online version {} for sub arithmetic result {}",
+                    best_match, computed_version
+                );
+                return Ok(Self::new(request, best_match.clone()));
+            }
+        }
+
+        // Fall back to using the computed version as-is
+        trace!(
+            "Using computed version {} directly (no better match found)",
+            computed_version
+        );
+        Ok(Self::new(request, computed_version))
     }
 
     async fn resolve_prefix(
