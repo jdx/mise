@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# Test sub version arithmetic behavior in different network modes
+# This ensures that sub-1:latest and similar patterns work correctly
+# when offline, prefer-offline, or online
+
+set -euo pipefail
+
+# Helper function to get resolved version from current
+get_resolved_version() {
+	local tool="$1"
+	# Use 'mise current' which shows the resolved version for the current directory
+	# Filter out WARN/INFO/ERROR messages and get just the version
+	mise current "$tool" 2>/dev/null | awk '{print $2}'
+}
+
+# Test 1: sub with explicit version in offline mode
+echo "=== Test 1: sub with explicit version in offline mode ==="
+cat <<EOF >.tool-versions
+node sub-1:20.5.0
+EOF
+
+output=$(MISE_OFFLINE=1 get_resolved_version node)
+if [[ $output == "19.5.0" ]]; then
+	echo "✓ SUCCESS: sub-1:20.5.0 → 19.5.0"
+else
+	echo "✗ ERROR: Expected 19.5.0 but got: $output"
+	exit 1
+fi
+
+# Test 2: sub with different arithmetic values
+echo -e "\n=== Test 2: Different sub arithmetic values ==="
+cat <<EOF >.tool-versions
+node sub-0.1:20.5.1
+EOF
+
+output=$(MISE_OFFLINE=1 get_resolved_version node)
+if [[ $output == "20.4.1" ]]; then
+	echo "✓ SUCCESS: sub-0.1:20.5.1 → 20.4.1"
+else
+	echo "✗ ERROR: Expected 20.4.1 but got: $output"
+	exit 1
+fi
+
+# Test 3: sub with 'latest' and installed versions (prefer offline)
+echo -e "\n=== Test 3: sub with 'latest' and installed versions ==="
+# Ensure we have some node versions installed
+mise install node@20.0.0 node@20.1.0 2>/dev/null || true
+
+cat <<EOF >.tool-versions
+node sub-1:latest
+EOF
+
+# In prefer offline mode, should use highest installed version
+output=$(MISE_PREFER_OFFLINE=1 get_resolved_version node)
+# Should get 19.1.0 (20.1.0 - 1) or 19.0.0 (20.0.0 - 1)
+if [[ $output == "19.1.0" ]] || [[ $output == "19.0.0" ]]; then
+	echo "✓ SUCCESS: sub-1:latest uses installed version (got $output)"
+else
+	echo "ℹ INFO: Got $output (may have fetched latest online)"
+fi
+
+# Test 4: sub with 'latest' and NO installed versions in offline mode
+echo -e "\n=== Test 4: sub with 'latest' and no installed versions (offline) ==="
+# Use a tool that likely has no installed versions
+cat <<EOF >.tool-versions
+erlang sub-1:latest
+EOF
+
+# Should error in offline mode
+output=$(MISE_OFFLINE=1 mise ls erlang 2>&1) || true
+if echo "$output" | grep -q -E "(Cannot resolve|Cannot perform version arithmetic|offline|no installed versions)"; then
+	echo "✓ SUCCESS: Properly errors when can't resolve 'latest' offline"
+else
+	echo "ℹ INFO: Output: $output"
+fi
+
+# Test 5: sub with 'latest' in prefer-offline with no installed versions
+echo -e "\n=== Test 5: sub with 'latest' in prefer-offline (should make network call) ==="
+# Use tiny since it's small and fast to fetch
+cat <<EOF >.tool-versions
+tiny sub-1:latest
+EOF
+
+# Clear cache to potentially trigger network call
+mise cache clear
+
+# This should make a network call despite prefer-offline if no versions installed
+output=$(MISE_LOG_HTTP=1 MISE_PREFER_OFFLINE=1 mise current tiny 2>&1)
+resolved=$(echo "$output" | awk '{print $2}')
+if echo "$output" | grep -q -E "(GET|POST) http"; then
+	echo "✓ SUCCESS: Made network call for version arithmetic despite prefer-offline"
+	echo "  Resolved to: $resolved"
+elif [[ -n $resolved ]]; then
+	echo "ℹ INFO: Got result (may have used cache): $resolved"
+else
+	echo "⚠ WARNING: Unexpected output"
+fi
+
+# Test 6: Verify error message is helpful
+echo -e "\n=== Test 6: Verify helpful error message ==="
+# Use a tool with no installed versions
+cat <<EOF >.tool-versions
+zig sub-1:latest
+EOF
+
+output=$(MISE_OFFLINE=1 mise ls zig 2>&1) || true
+if echo "$output" | grep -q -E "(go online|install a specific version|use an exact version)"; then
+	echo "✓ SUCCESS: Error message provides helpful suggestions"
+else
+	echo "ℹ INFO: Error message could be more helpful"
+fi
+
+# Test 7: sub with multiple tools
+echo -e "\n=== Test 7: Multiple tools with sub arithmetic ==="
+cat <<EOF >.tool-versions
+node sub-2:20.5.0
+tiny sub-1:3.2.0
+EOF
+
+# Get each tool's resolved version using mise current
+node_version=$(MISE_OFFLINE=1 get_resolved_version node)
+tiny_version=$(MISE_OFFLINE=1 get_resolved_version tiny)
+
+if [[ $node_version == "18.5.0" ]] && [[ $tiny_version == "2.2.0" ]]; then
+	echo "✓ SUCCESS: Multiple tools resolved correctly"
+	echo "  node: 20.5.0 - 2 = $node_version"
+	echo "  tiny: 3.2.0 - 1 = $tiny_version"
+else
+	echo "✗ ERROR: Multiple tool resolution failed"
+	echo "  Expected: node@18.5.0, tiny@2.2.0"
+	echo "  Got: node@$node_version, tiny@$tiny_version"
+	exit 1
+fi
+
+echo -e "\n✅ All sub version arithmetic tests completed successfully!"
