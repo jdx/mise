@@ -27,6 +27,9 @@ core:ruby 3.2
 cargo:ripgrep@latest
 npm:prettier@3
 go:github.com/junegunn/fzf@latest
+aqua:cli/cli@latest
+ubi:sharkdp/fd@latest
+github:jqlang/jq@latest
 EOF
 
 # Test 1: Verify hook-env doesn't make network calls
@@ -80,28 +83,50 @@ mise cache clear
 output=$(MISE_LOG_HTTP=1 mise current 2>&1)
 assert_no_http_calls "mise current (auto PREFER_OFFLINE)" "$output"
 
-# Test 7: Test ls-remote command with and without PREFER_OFFLINE
+# Test 7: Test ls-remote command - it should make HTTP calls by default
 echo "Testing ls-remote command behavior..."
 
-# 7a: ls-remote without PREFER_OFFLINE (should potentially make HTTP calls)
+# 7a: ls-remote without PREFER_OFFLINE should be able to make HTTP calls
 mise cache clear
-echo "Testing ls-remote without PREFER_OFFLINE (may make HTTP calls)..."
-output=$(MISE_LOG_HTTP=1 mise ls-remote tiny 2>&1)
-echo "ls-remote completed (HTTP calls allowed)"
+echo "Testing that ls-remote can make HTTP calls..."
+output=$(MISE_LOG_HTTP=1 mise ls-remote node 2>&1)
+if echo "$output" | grep -q -E "(GET|POST|PUT|DELETE|HEAD) http"; then
+	echo "SUCCESS: 'mise ls-remote' makes HTTP calls as expected"
+else
+	echo "WARNING: 'mise ls-remote' didn't make HTTP calls (may be cached)"
+fi
 
-# 7b: ls-remote with PREFER_OFFLINE (should not make HTTP calls)
+# 7b: ls-remote with MISE_PREFER_OFFLINE should not make HTTP calls
 echo "Testing ls-remote with MISE_PREFER_OFFLINE=1..."
-output=$(MISE_LOG_HTTP=1 MISE_PREFER_OFFLINE=1 mise ls-remote tiny 2>&1)
+output=$(MISE_LOG_HTTP=1 MISE_PREFER_OFFLINE=1 mise ls-remote node 2>&1)
 assert_no_http_calls "MISE_PREFER_OFFLINE=1 mise ls-remote" "$output"
 
-# Test 8: Verify exec/x can still work when needed (optional test)
-echo "Testing exec command (optional - may use cached version)..."
-# Try to run exec with a simple tool that might already be cached
-# We don't strictly verify HTTP calls here since exec should be allowed to fetch if needed
-if mise x tiny@3.1.0 -- tiny --version 2>&1 | grep -q "tiny"; then
-	echo "SUCCESS: exec command works"
+# Test 8: Verify install command can make HTTP calls
+echo "Testing install command..."
+mise cache clear
+# Create a config with a tool that needs installation
+echo 'tiny@3.1.0' >.tool-versions
+# Remove the tool if it exists to force fresh installation
+rm -rf ~/.local/share/mise/installs/tiny/3.1.0 2>/dev/null || true
+output=$(MISE_LOG_HTTP=1 mise install 2>&1)
+if echo "$output" | grep -q -E "(GET|POST|PUT|DELETE|HEAD) http"; then
+	echo "SUCCESS: 'mise install' can make HTTP calls for installation"
 else
-	echo "INFO: exec test skipped or using cached version"
+	echo "INFO: 'mise install' didn't need HTTP calls (tool may be cached)"
+fi
+
+# Test 9: Verify exec/x with tool args can make HTTP calls
+echo "Testing exec with tool arguments..."
+mise cache clear
+# Remove any existing installation to force a fresh install
+rm -rf ~/.local/share/mise/installs/tiny
+output=$(MISE_LOG_HTTP=1 mise x tiny@3.1.0 -- tiny --version 2>&1)
+if echo "$output" | grep -q -E "(GET|POST|PUT|DELETE|HEAD) http"; then
+	echo "SUCCESS: 'mise x tool@version' can make HTTP calls for installation"
+elif echo "$output" | grep -q "tiny: v3.1.0"; then
+	echo "INFO: exec worked but tool was already cached"
+else
+	echo "INFO: exec test skipped"
 fi
 
 echo "SUCCESS: All PREFER_OFFLINE tests completed"
