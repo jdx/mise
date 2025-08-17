@@ -11,6 +11,13 @@ use std::iter::once;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+type TeraSpecParsingResult = (
+    tera::Tera,
+    Arc<Mutex<HashMap<String, usize>>>,
+    Arc<Mutex<Vec<usage::SpecArg>>>,
+    Arc<Mutex<Vec<usage::SpecFlag>>>,
+);
+
 pub struct TaskScriptParser {
     dir: Option<PathBuf>,
 }
@@ -104,14 +111,7 @@ impl TaskScriptParser {
         tera::Error::msg(format!("failed to lock: {}", e))
     }
 
-    fn setup_tera_for_spec_parsing(
-        &self,
-    ) -> (
-        tera::Tera,
-        Arc<Mutex<HashMap<String, usize>>>,
-        Arc<Mutex<Vec<usage::SpecArg>>>,
-        Arc<Mutex<Vec<usage::SpecFlag>>>,
-    ) {
+    fn setup_tera_for_spec_parsing(&self) -> TeraSpecParsingResult {
         let mut tera = self.get_tera();
         let arg_order = Arc::new(Mutex::new(HashMap::new()));
         let input_args = Arc::new(Mutex::new(vec![]));
