@@ -13,6 +13,9 @@ get_resolved_version() {
 	mise current "$tool" 2>/dev/null | awk '{print $NF}'
 }
 
+# Install tiny plugin for testing
+mise plugin install tiny >/dev/null 2>&1 || true
+
 # Test 1: sub with explicit version in offline mode (whole number)
 echo "=== Test 1: sub with explicit version in offline mode (whole number) ==="
 cat <<EOF >.tool-versions
