@@ -173,6 +173,8 @@ atlas.description = "A modern tool for managing database schemas"
 atlas.backends = ["aqua:ariga/atlas", "asdf:komi1230/asdf-atlas"]
 atmos.description = "Workflow automation tool for DevOps. Keep configuration DRY with hierarchical imports of configurations, inheritance, and WAY more. Native support for Terraform and Helmfile"
 atmos.backends = ["aqua:cloudposse/atmos", "asdf:cloudposse/asdf-atmos"]
+atmos.idiomatic_files = [".atmos-version"]
+atmos.test = ["atmos version", "Atmos {{version}}"]
 atuin.description = "✨ Magical shell history"
 atuin.backends = ["aqua:atuinsh/atuin", "ubi:atuinsh/atuin"]
 atuin.test = ["atuin --version", "atuin {{version}}"]
@@ -2369,6 +2371,7 @@ opentofu.backends = [
     "ubi:opentofu/opentofu[exe=tofu]",
     "asdf:virtualroot/asdf-opentofu"
 ]
+opentofu.idiomatic_files = [".opentofu-version"]
 opentofu.test = ["tofu --version", "OpenTofu v{{version}}"]
 operator-sdk.description = "SDK for building Kubernetes applications. Provides high level APIs, useful abstractions, and project scaffolding"
 operator-sdk.backends = [
@@ -3127,6 +3130,7 @@ terramate.backends = [
     "aqua:terramate-io/terramate",
     "asdf:martinlindner/asdf-terramate"
 ]
+terramate.idiomatic_files = [".terramate-version"]
 terrascan.description = "Detect compliance and security violations across Infrastructure as Code to mitigate risk before provisioning cloud native infrastructure"
 terrascan.backends = ["aqua:tenable/terrascan", "asdf:hpdobrica/asdf-terrascan"]
 tf-summarize.description = "A command-line utility to print the summary of the terraform plan"
