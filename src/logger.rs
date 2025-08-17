@@ -28,7 +28,8 @@ impl log::Log for Logger {
                 let mut log_file = log_file.lock().unwrap();
                 let out = self.render(record, self.file_level);
                 if !out.is_empty() {
-                    let _ = writeln!(log_file, "{}", console::strip_ansi_codes(&out));
+                    let out = console::strip_ansi_codes(&out);
+                    let _ = writeln!(log_file, "{out}");
                 }
             }
         }
@@ -37,7 +38,7 @@ impl log::Log for Logger {
             ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
                 let out = self.render(record, term_level);
                 if !out.is_empty() {
-                    eprintln!("{}", self.render(record, term_level));
+                    eprintln!("{out}");
                 }
             });
         }
