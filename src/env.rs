@@ -229,10 +229,6 @@ pub enum NetworkMode {
 }
 
 impl NetworkMode {
-    pub fn allows_network(&self) -> bool {
-        matches!(self, NetworkMode::Online | NetworkMode::PreferOffline)
-    }
-
     pub fn is_offline(&self) -> bool {
         matches!(self, NetworkMode::Offline)
     }
