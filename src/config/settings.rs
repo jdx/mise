@@ -12,6 +12,7 @@ use itertools::Itertools;
 use serde::ser::Error;
 use serde::{Deserialize, Deserializer};
 use serde_derive::Serialize;
+use std::collections::{BTreeSet, HashSet};
 use std::env::consts::{ARCH, OS};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -19,10 +20,6 @@ use std::str::FromStr;
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
-use std::{
-    collections::{BTreeSet, HashSet},
-    sync::atomic::Ordering,
-};
 use url::Url;
 
 // settings are generated from settings.toml in the project root
@@ -392,12 +389,12 @@ impl Settings {
     }
 
     /// duration that remote version cache is kept for
-    /// for "fast" commands (represented by PREFER_OFFLINE), these are always
+    /// for "fast" commands (represented by PreferOffline mode), these are always
     /// cached. For "slow" commands like `mise ls-remote` or `mise install`:
     /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
     /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
     pub fn fetch_remote_versions_cache(&self) -> Option<Duration> {
-        if env::PREFER_OFFLINE.load(Ordering::Relaxed) {
+        if env::NETWORK_MODE.lock().unwrap().is_prefer_offline() {
             None
         } else {
             Some(duration::parse_duration(&self.fetch_remote_versions_cache).unwrap())

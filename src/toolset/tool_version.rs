@@ -29,17 +29,17 @@ pub struct ToolVersion {
     pub install_path: Option<PathBuf>,
 }
 
-/// Check if we should skip network calls for version resolution
-/// Returns true for all commands except exec/x which need to fetch and install tools
-fn should_skip_network_calls() -> bool {
-    // Only exec/x commands should make network calls when PREFER_OFFLINE is set
-    // All other commands should work with locally available versions only
-    if !env::PREFER_OFFLINE.load(std::sync::atomic::Ordering::Relaxed) {
-        return false;
-    }
-    let args = env::ARGS.read().unwrap();
-    // Check if this is NOT an exec/x command
-    args.len() < 2 || (args[1] != "exec" && args[1] != "x")
+/// Check if network calls are allowed for version resolution
+/// Takes into account the current network mode
+fn is_network_allowed_for_version_resolution() -> bool {
+    let mode = env::NETWORK_MODE.lock().unwrap();
+    let allowed = mode.allows_network();
+
+    trace!(
+        "is_network_allowed_for_version_resolution: mode={:?}, allowed={}",
+        *mode, allowed
+    );
+    allowed
 }
 
 impl ToolVersion {
@@ -229,8 +229,8 @@ impl ToolVersion {
                     return build(v);
                 }
             }
-            // Skip network call for latest version when appropriate (not exec/x)
-            if !should_skip_network_calls() {
+            // Only fetch latest version from network if allowed
+            if is_network_allowed_for_version_resolution() {
                 if let Some(v) = backend.latest_version(config, None).await? {
                     return build(v);
                 }
@@ -245,9 +245,9 @@ impl ToolVersion {
                 return build(v.clone());
             }
         }
-        // Skip network calls when appropriate to avoid delays
-        if should_skip_network_calls() {
-            // If we can't find the version locally and we're offline, just use what was requested
+        // Only make network calls if allowed
+        if !is_network_allowed_for_version_resolution() {
+            // If we can't find the version locally and network is not allowed, just use what was requested
             // This won't be installed, but that's fine for commands that don't need it
             return build(v);
         }
@@ -269,8 +269,8 @@ impl ToolVersion {
         let backend = request.backend()?;
         let v = match v {
             "latest" => {
-                // Try to use installed version first when we should avoid network calls
-                if should_skip_network_calls() {
+                // Try to use installed version first when network is not allowed
+                if !is_network_allowed_for_version_resolution() {
                     if let Some(v) = backend.latest_installed_version(None)? {
                         v
                     } else {
@@ -301,9 +301,9 @@ impl ToolVersion {
                 return Ok(Self::new(request, v.to_string()));
             }
         }
-        // Skip network calls when appropriate to avoid delays
-        if should_skip_network_calls() {
-            // If we can't find a matching version locally and we're offline, just use the prefix as-is
+        // Only make network calls if allowed
+        if !is_network_allowed_for_version_resolution() {
+            // If we can't find a matching version locally and network is not allowed, just use the prefix as-is
             // This won't be installed, but that's fine for commands that don't need it
             return Ok(Self::new(request, prefix.to_string()));
         }

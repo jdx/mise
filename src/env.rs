@@ -1,13 +1,15 @@
 use crate::Result;
+use crate::cli::args::ToolArg;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
+use crate::file::display_path;
 use crate::file::replace_path;
 use crate::shell::ShellType;
-use crate::{cli::args::ToolArg, file::display_path};
 use eyre::Context;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
 pub use std::env::*;
+use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
 use std::sync::RwLock;
 use std::{
@@ -17,7 +19,6 @@ use std::{
 };
 use std::{path, process};
 use std::{path::Path, string::ToString};
-use std::{path::PathBuf, sync::atomic::AtomicBool};
 
 pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 pub static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
@@ -216,9 +217,45 @@ pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT")
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
-pub static PREFER_OFFLINE: Lazy<AtomicBool> =
-    Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
-pub static OFFLINE: Lazy<bool> = Lazy::new(|| offline(&ARGS.read().unwrap()));
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkMode {
+    /// Always make network requests when needed
+    Online,
+    /// Prefer offline, only make network calls when necessary
+    PreferOffline,
+    /// Never make network requests
+    Offline,
+}
+
+impl NetworkMode {
+    pub fn allows_network(&self) -> bool {
+        matches!(self, NetworkMode::Online | NetworkMode::PreferOffline)
+    }
+
+    pub fn is_offline(&self) -> bool {
+        matches!(self, NetworkMode::Offline)
+    }
+
+    pub fn is_prefer_offline(&self) -> bool {
+        matches!(self, NetworkMode::PreferOffline | NetworkMode::Offline)
+    }
+}
+
+pub static NETWORK_MODE: Lazy<Mutex<NetworkMode>> = Lazy::new(|| {
+    let args = ARGS.read().unwrap();
+
+    let mode = if var_is_true("MISE_OFFLINE") || has_offline_flag(&args) {
+        NetworkMode::Offline
+    } else if var_is_true("MISE_PREFER_OFFLINE") || should_prefer_offline(&args) {
+        NetworkMode::PreferOffline
+    } else {
+        NetworkMode::Online
+    };
+
+    Mutex::new(mode)
+});
+
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<EnvMap> =
     Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
@@ -435,40 +472,31 @@ fn apply_patches(env: &EnvMap, patches: &EnvDiffPatches) -> EnvMap {
     new_env
 }
 
-fn offline(args: &[String]) -> bool {
-    if var_is_true("MISE_OFFLINE") {
-        return true;
-    }
-
+fn has_offline_flag(args: &[String]) -> bool {
     args.iter()
         .take_while(|a| *a != "--")
         .any(|a| a == "--offline")
 }
 
-/// returns true if new runtime versions should not be fetched
-fn prefer_offline(args: &[String]) -> bool {
-    // First check if MISE_PREFER_OFFLINE is set
-    if var_is_true("MISE_PREFER_OFFLINE") {
+fn should_prefer_offline(args: &[String]) -> bool {
+    // Check for --prefer-offline flag
+    if args
+        .iter()
+        .take_while(|a| *a != "--")
+        .any(|a| a == "--prefer-offline")
+    {
         return true;
     }
 
-    // Otherwise fall back to the original command-based logic
+    // Check if it's a command that should prefer offline by default
+    // Note: exec/x are NOT in this list - they default to online
     args.iter()
         .take_while(|a| *a != "--")
-        .filter(|a| !a.starts_with('-') || *a == "--prefer-offline")
+        .filter(|a| !a.starts_with('-'))
         .nth(1)
         .map(|a| {
             [
-                "--prefer-offline",
-                "activate",
-                "current",
-                "direnv",
-                "env",
-                "exec",
-                "hook-env",
-                "ls",
-                "where",
-                "x",
+                "activate", "current", "direnv", "env", "hook-env", "ls", "where",
             ]
             .contains(&a.as_str())
         })

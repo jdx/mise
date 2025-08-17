@@ -54,17 +54,54 @@ echo 'tiny@latest' >.tool-versions
 output=$(MISE_LOG_HTTP=1 mise ls 2>&1)
 assert_no_http_calls "mise ls with version resolution" "$output"
 
-# Test 5: Verify that install command (without PREFER_OFFLINE) can make network calls
-# Clear cache again
+# Test 5: Test MISE_PREFER_OFFLINE environment variable with different scenarios
+# Use commands that don't have PREFER_OFFLINE by default but need version resolution
+
+# 5a: Test with cache - should not make HTTP calls
+echo "Testing MISE_PREFER_OFFLINE=1 with cache..."
+# First populate cache with a normal command
 mise cache clear
+echo 'tiny@latest' >.tool-versions
+output=$(MISE_LOG_HTTP=1 mise ls 2>&1) # This will populate cache
+# Now test a command that normally doesn't have PREFER_OFFLINE
+output=$(MISE_LOG_HTTP=1 MISE_PREFER_OFFLINE=1 mise bin-paths 2>&1)
+assert_no_http_calls "MISE_PREFER_OFFLINE=1 mise bin-paths (with cache)" "$output"
 
-# Use install command which doesn't have PREFER_OFFLINE
-# Install a specific version to force network resolution
-output=$(MISE_LOG_HTTP=1 mise install tiny@1.0.0 2>&1)
+# 5b: Test without cache - should still not make HTTP calls
+echo "Testing MISE_PREFER_OFFLINE=1 without cache..."
+mise cache clear
+echo 'core:node@20' >.tool-versions
+output=$(MISE_LOG_HTTP=1 MISE_PREFER_OFFLINE=1 mise bin-paths 2>&1)
+assert_no_http_calls "MISE_PREFER_OFFLINE=1 mise bin-paths (no cache)" "$output"
 
-# The test might use a local plugin, so check for either HTTP requests or list-all calls
-if ! echo "$output" | grep -q -E "(GET|POST|PUT|DELETE|HEAD) http|list-all"; then
-	echo "WARNING: install command might be using test fixtures, skipping network check"
+# Test 6: Verify commands automatically get PREFER_OFFLINE
+echo "Testing automatic PREFER_OFFLINE for 'mise current'..."
+mise cache clear
+output=$(MISE_LOG_HTTP=1 mise current 2>&1)
+assert_no_http_calls "mise current (auto PREFER_OFFLINE)" "$output"
+
+# Test 7: Test ls-remote command with and without PREFER_OFFLINE
+echo "Testing ls-remote command behavior..."
+
+# 7a: ls-remote without PREFER_OFFLINE (should potentially make HTTP calls)
+mise cache clear
+echo "Testing ls-remote without PREFER_OFFLINE (may make HTTP calls)..."
+output=$(MISE_LOG_HTTP=1 mise ls-remote tiny 2>&1)
+echo "ls-remote completed (HTTP calls allowed)"
+
+# 7b: ls-remote with PREFER_OFFLINE (should not make HTTP calls)
+echo "Testing ls-remote with MISE_PREFER_OFFLINE=1..."
+output=$(MISE_LOG_HTTP=1 MISE_PREFER_OFFLINE=1 mise ls-remote tiny 2>&1)
+assert_no_http_calls "MISE_PREFER_OFFLINE=1 mise ls-remote" "$output"
+
+# Test 8: Verify exec/x can still work when needed (optional test)
+echo "Testing exec command (optional - may use cached version)..."
+# Try to run exec with a simple tool that might already be cached
+# We don't strictly verify HTTP calls here since exec should be allowed to fetch if needed
+if mise x tiny@3.1.0 -- tiny --version 2>&1 | grep -q "tiny"; then
+	echo "SUCCESS: exec command works"
+else
+	echo "INFO: exec test skipped or using cached version"
 fi
 
-echo "SUCCESS: Test completed"
+echo "SUCCESS: All PREFER_OFFLINE tests completed"

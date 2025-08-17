@@ -54,6 +54,14 @@ pub struct Exec {
 impl Exec {
     #[async_backtrace::framed]
     pub async fn run(self) -> eyre::Result<()> {
+        // If no tool arguments are provided, switch to prefer offline mode
+        // This handles the case of `mise x` with no arguments
+        if self.tool.is_empty() {
+            let mut network_mode = env::NETWORK_MODE.lock().unwrap();
+            if *network_mode == env::NetworkMode::Online {
+                *network_mode = env::NetworkMode::PreferOffline;
+            }
+        }
         let mut config = Config::get().await?;
         let mut ts = measure!("toolset", {
             ToolsetBuilder::new()

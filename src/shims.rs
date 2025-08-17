@@ -1,11 +1,8 @@
 use crate::exit;
+use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{
-    collections::{BTreeSet, HashSet},
-    sync::atomic::Ordering,
-};
 
 use crate::backend::Backend;
 use crate::cli::exec::Exec;
@@ -30,7 +27,8 @@ pub async fn handle_shim() -> Result<()> {
     }
     let mut config = Config::get().await?;
     let mut args = env::ARGS.read().unwrap().clone();
-    env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
+    // Set network mode to prefer offline for shims
+    *env::NETWORK_MODE.lock().unwrap() = env::NetworkMode::PreferOffline;
     trace!("shim[{bin_name}] args: {}", args.join(" "));
     args[0] = which_shim(&mut config, &env::MISE_BIN_NAME)
         .await?
