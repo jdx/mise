@@ -218,7 +218,7 @@ pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIs)]
 pub enum NetworkMode {
     /// Always make network requests when needed
     Online,
@@ -229,11 +229,8 @@ pub enum NetworkMode {
 }
 
 impl NetworkMode {
-    pub fn is_offline(&self) -> bool {
-        matches!(self, NetworkMode::Offline)
-    }
-
-    pub fn is_prefer_offline(&self) -> bool {
+    /// Returns true if we should avoid network calls when possible (includes both PreferOffline and Offline)
+    pub fn should_prefer_offline(&self) -> bool {
         matches!(self, NetworkMode::PreferOffline | NetworkMode::Offline)
     }
 }

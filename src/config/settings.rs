@@ -394,7 +394,7 @@ impl Settings {
     /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
     /// - if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
     pub fn fetch_remote_versions_cache(&self) -> Option<Duration> {
-        if env::NETWORK_MODE.lock().unwrap().is_prefer_offline() {
+        if env::NETWORK_MODE.lock().unwrap().should_prefer_offline() {
             None
         } else {
             Some(duration::parse_duration(&self.fetch_remote_versions_cache).unwrap())
