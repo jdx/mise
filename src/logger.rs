@@ -37,7 +37,7 @@ impl log::Log for Logger {
             ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
                 let out = self.render(record, term_level);
                 if !out.is_empty() {
-                    eprintln!("{}", self.render(record, term_level));
+                    eprintln!("{out}");
                 }
             });
         }

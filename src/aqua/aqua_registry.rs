@@ -1,6 +1,7 @@
 use crate::backend::aqua;
 use crate::backend::aqua::{arch, os};
 use crate::duration::{DAILY, WEEKLY};
+use crate::env;
 use crate::git::{CloneOptions, Git};
 use crate::semver::split_version_prefix;
 use crate::{aqua::aqua_template, config::Settings};
@@ -246,6 +247,13 @@ impl AquaRegistry {
             trace!("reading baked-in aqua-registry for {id}");
             serde_yaml::from_str(AQUA_STANDARD_REGISTRY_FILES.get(id).unwrap())?
         } else if !path.exists() || file::modified_duration(path)? > DAILY {
+            // Don't download if PREFER_OFFLINE is set
+            if path.exists() && env::PREFER_OFFLINE.load(std::sync::atomic::Ordering::Relaxed) {
+                // Use cached version even if it's old
+                trace!("using cached aqua-registry for {id} from {path:?} (PREFER_OFFLINE)");
+                return Ok(serde_yaml::from_reader(file::open(path)?)?);
+            }
+
             static RATE_LIMITED: AtomicBool = AtomicBool::new(false);
             if RATE_LIMITED.load(Ordering::Relaxed) {
                 warn!("aqua-registry rate limited, skipping {id}");
@@ -277,6 +285,13 @@ fn fetch_latest_repo(repo: &Git) -> Result<()> {
     if file::modified_duration(&repo.dir)? < WEEKLY {
         return Ok(());
     }
+
+    // Don't update if PREFER_OFFLINE is set
+    if env::PREFER_OFFLINE.load(std::sync::atomic::Ordering::Relaxed) {
+        trace!("skipping aqua registry update due to PREFER_OFFLINE");
+        return Ok(());
+    }
+
     info!("updating aqua registry repo");
     repo.update(None)?;
     Ok(())
