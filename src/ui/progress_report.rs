@@ -192,7 +192,7 @@ impl HeaderReport {
             .with_prefix(prefix)
             .with_message(message)
             .with_position(0);
-        pb.enable_steady_tick(Duration::from_millis(250));
+        pb.enable_steady_tick(TICK_INTERVAL);
         HeaderReport { pb }
     }
 }
