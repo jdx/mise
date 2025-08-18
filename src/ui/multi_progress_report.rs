@@ -92,7 +92,7 @@ impl MultiProgressReport {
     }
     pub fn header_finish(&self) {
         if let Some(h) = &*self.header.lock().unwrap() {
-            h.finish_with_message("installed".to_string());
+            h.finish();
         }
     }
     pub fn suspend_if_active<F: FnOnce() -> R, R>(f: F) -> R {

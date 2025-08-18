@@ -46,13 +46,13 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
         return "Installation failed".to_string();
     }
 
-    let mut output = String::new();
+    let mut output = vec![];
     let failed_tools: Vec<String> = failed_installations
         .iter()
         .map(|(tr, _)| format!("{}@{}", tr.ba().short, tr.version()))
         .collect();
 
-    output.push_str(&format!(
+    output.push(format!(
         "Failed to install {}: {}",
         if failed_tools.len() == 1 {
             "tool"
@@ -63,33 +63,20 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
     ));
 
     // Show detailed errors for each failure
-    output.push_str("\n\nIndividual error details:");
-    for (i, (tr, error)) in failed_installations.iter().enumerate() {
-        output.push_str(&format!(
-            "\n  {}. {}@{}:",
-            i + 1,
+    for (tr, error) in failed_installations.iter() {
+        let error_str = if *RUST_BACKTRACE {
+            format!("{error}")
+        } else {
+            format!("{error:?}")
+        };
+        output.push(format!(
+            "\n{}@{}: {error_str}",
             tr.ba().short,
             tr.version()
         ));
-
-        // Use {:#} to show the full error chain with tracebacks if RUST_BACKTRACE is set
-        // Otherwise use {:#?} for debug format without tracebacks
-        let error_str = if *RUST_BACKTRACE {
-            format!("{error:#}")
-        } else {
-            format!("{error:#?}")
-        };
-
-        for line in error_str.lines() {
-            output.push_str(&format!("\n     {line}"));
-        }
-
-        if i < failed_installations.len() - 1 {
-            output.push('\n');
-        }
     }
 
-    output
+    output.join("\n")
 }
 
 impl Error {

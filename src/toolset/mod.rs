@@ -47,6 +47,7 @@ pub use tool_version_options::{ToolVersionOptions, parse_tool_options};
 
 #[derive(Debug, Clone)]
 pub struct InstallOptions {
+    pub reason: String,
     pub force: bool,
     pub jobs: Option<usize>,
     pub raw: bool,
@@ -61,6 +62,7 @@ impl Default for InstallOptions {
         InstallOptions {
             jobs: Some(Settings::get().jobs),
             raw: Settings::get().raw,
+            reason: "install".to_string(),
             force: false,
             missing_args_only: true,
             auto_install_disable_tools: Settings::get().auto_install_disable_tools.clone(),
@@ -211,7 +213,7 @@ impl Toolset {
 
         // Initialize a header for the entire install session once (before batching)
         let mpr = MultiProgressReport::get();
-        mpr.init_header("install", versions.len());
+        mpr.init_header(&opts.reason, versions.len());
 
         // Run pre-install hook
         hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
@@ -480,9 +482,6 @@ impl Toolset {
                 Err(e) => failed_installations.push((tr, e)),
             }
         }
-
-        // Finish header bar
-        MultiProgressReport::get().header_finish();
 
         // Return appropriate result
         if failed_installations.is_empty() {
