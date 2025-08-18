@@ -288,7 +288,6 @@ impl PythonPlugin {
     }
 
     async fn install_compiled(&self, ctx: &InstallContext, tv: &ToolVersion) -> eyre::Result<()> {
-        self.install_or_update_python_build(Some(ctx))?;
         if matches!(&tv.request, ToolRequest::Ref { .. }) {
             return Err(eyre!("Ref versions not supported for python"));
         }

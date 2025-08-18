@@ -139,6 +139,7 @@ impl Use {
                 &mut config,
                 versions.clone(),
                 &InstallOptions {
+                    reason: "use".to_string(),
                     force: self.force,
                     jobs: self.jobs,
                     raw: self.raw,
