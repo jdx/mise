@@ -69,11 +69,7 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
         } else {
             format!("{error:?}")
         };
-        output.push(format!(
-            "\n{}@{}: {error_str}",
-            tr.ba().short,
-            tr.version()
-        ));
+        output.push(format!("\n{}@{}: {error_str}", tr.ba().short, tr.version()));
     }
 
     output.join("\n")
