@@ -26,6 +26,8 @@ static SPIN_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     ProgressStyle::with_template(tmpl).unwrap()
 });
 
+const TICK_INTERVAL: Duration = Duration::from_millis(250);
+
 static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     let tmpl = match *env::TERM_WIDTH {
         0..=89 => "{prefix} {wide_msg} {bar:10.cyan/blue} {percent:>2}%",
@@ -83,7 +85,7 @@ impl ProgressReport {
         let pb = ProgressBar::new(100)
             .with_style(SPIN_TEMPLATE.clone())
             .with_prefix(normal_prefix(pad, &prefix));
-        pb.enable_steady_tick(Duration::from_millis(250));
+        pb.enable_steady_tick(TICK_INTERVAL);
         ProgressReport { pb }
     }
 }
@@ -101,7 +103,7 @@ impl SingleReport for ProgressReport {
         self.pb.inc(delta);
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
-            self.pb.enable_steady_tick(Duration::from_millis(250));
+            self.pb.enable_steady_tick(TICK_INTERVAL);
         }
     }
     fn set_position(&self, pos: u64) {
@@ -183,11 +185,14 @@ pub struct HeaderReport {
 }
 
 impl HeaderReport {
-    pub fn new(prefix: String) -> HeaderReport {
+    pub fn new(prefix: String, length: u64, message: String) -> HeaderReport {
         ui::ctrlc::show_cursor_after_ctrl_c();
-        let pb = ProgressBar::new(100)
+        let pb = ProgressBar::new(length)
             .with_style(HEADER_TEMPLATE.clone())
-            .with_prefix(prefix);
+            .with_prefix(prefix)
+            .with_message(message)
+            .with_position(0);
+        pb.enable_steady_tick(Duration::from_millis(250));
         HeaderReport { pb }
     }
 }
