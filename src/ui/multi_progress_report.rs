@@ -57,7 +57,7 @@ impl MultiProgressReport {
             None => Box::new(VerboseReport::new(prefix.to_string())),
         }
     }
-    pub fn init_header(&self, label: &str, total_tools: usize) {
+    pub fn init_header(&self, message: &str, total_tools: usize) {
         if self.mp.is_none() || self.quiet {
             return;
         }
@@ -66,14 +66,12 @@ impl MultiProgressReport {
             (Some(mp), None) => {
                 let version = &*VERSION_PLAIN;
                 let prefix = format!(
-                    "{} {} {}",
+                    "{} {}",
                     style::emagenta("mise").bold(),
                     style::edim(format!("{version} by @jdx –")),
-                    style::eblue(label),
                 );
-                let mut header = HeaderReport::new(prefix);
+                let mut header = HeaderReport::new(prefix, total_tools as u64, message.to_string());
                 header.pb = mp.add(header.pb);
-                header.set_length(total_tools as u64);
                 *hdr = Some(header);
             }
             (_, Some(_h)) => {
