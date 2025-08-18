@@ -108,6 +108,11 @@ url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm6
 version = "1.7.0"
 backend = "aqua:jdx/hk"
 
+[tools.hk.platforms.linux-x64]
+checksum = "blake3:168aec65edfc5b29f7dd15d24b63000b54eba42b05b4029ad8f846cb81a0a796"
+size = 6642933
+url = "https://github.com/jdx/hk/releases/download/v1.7.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+
 [tools.hk.platforms.macos-arm64]
 checksum = "blake3:e7e7c5f105d87dd8f5c477efa0fa31281c29df9ac7d13deac748b29fb6a734d9"
 size = 5727200
