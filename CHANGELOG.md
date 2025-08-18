@@ -1,5 +1,21 @@
 # Changelog
 
+## [2025.8.13](https://github.com/jdx/mise/compare/v2025.8.12..v2025.8.13) - 2025-08-18
+
+### 🐛 Bug Fixes
+
+- clean up install progress and error output by [@jdx](https://github.com/jdx) in [#6063](https://github.com/jdx/mise/pull/6063)
+- make header progress display at start of install by [@jdx](https://github.com/jdx) in [#6065](https://github.com/jdx/mise/pull/6065)
+
+### Chore
+
+- Upgrade ubi dependency by [@suprememoocow](https://github.com/suprememoocow) in [#6061](https://github.com/jdx/mise/pull/6061)
+- replace install_or_update_python_build by [@jdx](https://github.com/jdx) in [#6064](https://github.com/jdx/mise/pull/6064)
+
+### New Contributors
+
+- @suprememoocow made their first contribution in [#6061](https://github.com/jdx/mise/pull/6061)
+
 ## [2025.8.12](https://github.com/jdx/mise/compare/v2025.8.11..v2025.8.12) - 2025-08-17
 
 ### 📦 Registry
