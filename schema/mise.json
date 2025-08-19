@@ -223,6 +223,7 @@
       "type": "object"
     },
     "settings": {
+      "type": "object",
       "properties": {
         "activate_aggressive": {
           "description": "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.",
