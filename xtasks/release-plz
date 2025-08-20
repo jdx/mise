@@ -21,7 +21,7 @@ if [[ $cur_version != "$latest_version" ]]; then
 	exit 0
 fi
 
-git submodule update --remote
+git subtree pull --squash --prefix=aqua-registry https://github.com/aquaproj/aqua-registry main
 
 year="$(date +%Y)"
 month="$(date +%-m)"
