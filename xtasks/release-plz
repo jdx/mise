@@ -56,6 +56,7 @@ git add \
 git clean -df
 git checkout -B release
 git commit -m "chore: release $version"
+git status
 git subtree pull --squash --prefix=aqua-registry https://github.com/aquaproj/aqua-registry main
 git push origin release --force
 
