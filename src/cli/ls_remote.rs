@@ -87,7 +87,7 @@ impl LsRemote {
                 let backend = tool_arg.ba.backend()?;
                 let mpr = MultiProgressReport::get();
                 if let Some(plugin) = backend.plugin() {
-                    plugin.ensure_installed(config, &mpr, false).await?;
+                    plugin.ensure_installed(config, &mpr, false, false).await?;
                 }
                 Ok(Some(backend))
             }

@@ -165,11 +165,14 @@ impl PluginEnum {
         config: &Arc<Config>,
         mpr: &MultiProgressReport,
         force: bool,
+        dry_run: bool,
     ) -> eyre::Result<()> {
         match self {
-            PluginEnum::Asdf(plugin) => plugin.ensure_installed(config, mpr, force).await,
-            PluginEnum::Vfox(plugin) => plugin.ensure_installed(config, mpr, force).await,
-            PluginEnum::VfoxBackend(plugin) => plugin.ensure_installed(config, mpr, force).await,
+            PluginEnum::Asdf(plugin) => plugin.ensure_installed(config, mpr, force, dry_run).await,
+            PluginEnum::Vfox(plugin) => plugin.ensure_installed(config, mpr, force, dry_run).await,
+            PluginEnum::VfoxBackend(plugin) => {
+                plugin.ensure_installed(config, mpr, force, dry_run).await
+            }
         }
     }
 }
@@ -251,6 +254,7 @@ pub trait Plugin: Debug + Send {
         _config: &Arc<Config>,
         _mpr: &MultiProgressReport,
         _force: bool,
+        _dry_run: bool,
     ) -> eyre::Result<()> {
         Ok(())
     }

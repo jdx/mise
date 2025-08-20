@@ -346,44 +346,35 @@ impl Toolset {
         // Track plugin installation errors to avoid early returns
         let mut plugin_errors = Vec::new();
 
-        // Skip plugin installation in dry-run mode
-        if !opts.dry_run {
-            // Ensure plugins are installed
-            for (backend, trs) in &queue {
-                if let Some(plugin) = backend.plugin() {
-                    if !plugin.is_installed() {
-                        let mpr = MultiProgressReport::get();
-                        if let Err(e) =
-                            plugin
-                                .ensure_installed(config, &mpr, false)
-                                .await
-                                .or_else(|err| {
-                                    if let Some(&Error::PluginNotInstalled(_)) =
-                                        err.downcast_ref::<Error>()
-                                    {
-                                        Ok(())
-                                    } else {
-                                        Err(err)
-                                    }
-                                })
-                        {
-                            // Collect plugin installation errors instead of returning early
-                            let plugin_name = backend.ba().short.clone();
-                            for tr in trs {
-                                plugin_errors.push((
-                                    tr.clone(),
-                                    eyre::eyre!(
-                                        "Plugin '{}' installation failed: {}",
-                                        plugin_name,
-                                        e
-                                    ),
-                                ));
+        // Ensure plugins are installed
+        for (backend, trs) in &queue {
+            if let Some(plugin) = backend.plugin() {
+                if !plugin.is_installed() {
+                    let mpr = MultiProgressReport::get();
+                    if let Err(e) = plugin
+                        .ensure_installed(config, &mpr, false, opts.dry_run)
+                        .await
+                        .or_else(|err| {
+                            if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>()
+                            {
+                                Ok(())
+                            } else {
+                                Err(err)
                             }
+                        })
+                    {
+                        // Collect plugin installation errors instead of returning early
+                        let plugin_name = backend.ba().short.clone();
+                        for tr in trs {
+                            plugin_errors.push((
+                                tr.clone(),
+                                eyre::eyre!("Plugin '{}' installation failed: {}", plugin_name, e),
+                            ));
                         }
                     }
                 }
             }
-        } // End of dry_run check
+        }
 
         let raw = opts.raw || Settings::get().raw;
         let jobs = match raw {
