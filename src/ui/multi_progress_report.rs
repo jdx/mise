@@ -66,41 +66,34 @@ impl MultiProgressReport {
             return;
         }
 
-        // Print header for non-tty mode
-        if self.mp.is_none() {
-            let version = &*VERSION_PLAIN;
-            let icon = if message.contains("(dry-run)") {
-                style::eyellow("○")
-            } else {
-                style::egreen("✓").bright()
-            };
-            eprintln!(
-                "{} {} {} {}",
-                style::emagenta("mise").bold(),
-                style::edim(format!("{version} by @jdx –")),
-                icon,
-                message
-            );
-            return;
-        }
+        // Always print header as static text at the beginning
+        // This ensures it stays visible and appears at the top
+        let version = &*VERSION_PLAIN;
+        let icon = if message.contains("(dry-run)") {
+            style::eyellow("○")
+        } else {
+            style::egreen("✓").bright()
+        };
+        eprintln!(
+            "{} {} {} {}",
+            style::emagenta("mise").bold(),
+            style::edim(format!("{version} by @jdx –")),
+            icon,
+            message
+        );
 
-        let mut hdr = self.header.lock().unwrap();
-        match (&self.mp, hdr.as_ref()) {
-            (Some(mp), None) => {
-                let version = &*VERSION_PLAIN;
-                let prefix = format!(
-                    "{} {}",
-                    style::emagenta("mise").bold(),
-                    style::edim(format!("{version} by @jdx –")),
-                );
-                let mut header = HeaderReport::new(prefix, total_tools as u64, message.to_string());
-                header.pb = mp.add(header.pb);
+        // For TTY mode with MultiProgress, still create the header for tracking
+        // but it won't be displayed as a progress bar
+        if self.mp.is_some() {
+            let mut hdr = self.header.lock().unwrap();
+            if hdr.is_none() {
+                // Create a dummy header just for tracking state
+                // We won't actually add it to the MultiProgress
+                let prefix = String::new();
+                let header = HeaderReport::new(prefix, total_tools as u64, message.to_string());
+                // Don't add to mp - just track it internally
                 *hdr = Some(header);
             }
-            (_, Some(_h)) => {
-                // header already initialized; do not change total
-            }
-            _ => {}
         }
     }
     pub fn header_inc(&self, n: usize) {
@@ -112,11 +105,11 @@ impl MultiProgressReport {
         }
     }
     pub fn header_finish(&self) {
-        if let Some(h) = &*self.header.lock().unwrap() {
-            h.finish();
-        }
-        // Note: For non-tty mode, the header was already printed with the final icon
-        // in init_header, so we don't need to do anything here
+        // The header is now printed as static text in init_header
+        // so we don't need to call finish on a progress bar
+        // Just clear our internal tracking
+        let mut hdr = self.header.lock().unwrap();
+        *hdr = None;
     }
     pub fn suspend_if_active<F: FnOnce() -> R, R>(f: F) -> R {
         match Self::try_get() {
