@@ -62,9 +62,28 @@ impl MultiProgressReport {
         }
     }
     pub fn init_header(&self, message: &str, total_tools: usize) {
-        if self.mp.is_none() || self.quiet {
+        if self.quiet {
             return;
         }
+
+        // Print header for non-tty mode
+        if self.mp.is_none() {
+            let version = &*VERSION_PLAIN;
+            let icon = if message.contains("(dry-run)") {
+                style::eyellow("○")
+            } else {
+                style::egreen("✓").bright()
+            };
+            eprintln!(
+                "{} {} {} {}",
+                style::emagenta("mise").bold(),
+                style::edim(format!("{version} by @jdx –")),
+                icon,
+                message
+            );
+            return;
+        }
+
         let mut hdr = self.header.lock().unwrap();
         match (&self.mp, hdr.as_ref()) {
             (Some(mp), None) => {
@@ -96,6 +115,8 @@ impl MultiProgressReport {
         if let Some(h) = &*self.header.lock().unwrap() {
             h.finish();
         }
+        // Note: For non-tty mode, the header was already printed with the final icon
+        // in init_header, so we don't need to do anything here
     }
     pub fn suspend_if_active<F: FnOnce() -> R, R>(f: F) -> R {
         match Self::try_get() {

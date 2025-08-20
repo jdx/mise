@@ -341,9 +341,7 @@ impl Toolset {
             }
         };
 
-        // Initialize global header progress (overall tools)
-        let mpr = MultiProgressReport::get();
-        mpr.init_header("install", versions_clone.len());
+        // Don't initialize header here - it's already done in install_all_versions
 
         // Track plugin installation errors to avoid early returns
         let mut plugin_errors = Vec::new();
