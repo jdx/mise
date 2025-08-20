@@ -1,5 +1,21 @@
 # Changelog
 
+## [2025.8.14](https://github.com/jdx/mise/compare/v2025.8.13..v2025.8.14) - 2025-08-20
+
+### 🚀 Features
+
+- **(http)** auto-clean OS/arch suffixes from binary names by [@jdx](https://github.com/jdx) in [#6077](https://github.com/jdx/mise/pull/6077)
+- **(install)** add --dry-run flag to show what would be installed by [@jdx](https://github.com/jdx) in [#6078](https://github.com/jdx/mise/pull/6078)
+
+### 🐛 Bug Fixes
+
+- **(python)** patching sysconfig data fails for RC versions by [@roele](https://github.com/roele) in [#6069](https://github.com/jdx/mise/pull/6069)
+- **(schema)** add missing `settings` type by [@br3ndonland](https://github.com/br3ndonland) in [#6070](https://github.com/jdx/mise/pull/6070)
+
+### Chore
+
+- add liblzma-dev for e2e tests to avoid python-build warning by [@jdx](https://github.com/jdx) in [#6066](https://github.com/jdx/mise/pull/6066)
+
 ## [2025.8.13](https://github.com/jdx/mise/compare/v2025.8.12..v2025.8.13) - 2025-08-18
 
 ### 🐛 Bug Fixes
