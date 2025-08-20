@@ -142,7 +142,7 @@ jobs:
         with:
           submodules: true
       - name: Install zsh/fish/direnv/fd
-        run: sudo apt-get update; sudo apt-get install zsh fish direnv fd-find liblzma-dev
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv fd-find liblzma-dev libbz2-dev
       - name: Install fd-find
         run: |
           mkdir -p "$HOME/.local/bin"
