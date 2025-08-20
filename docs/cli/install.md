@@ -22,6 +22,10 @@ Tool(s) to install e.g.: node@20
 
 ## Flags
 
+### `-n --dry-run`
+
+Show what would be installed without actually installing
+
 ### `-f --force`
 
 Force reinstall even if already installed
@@ -48,4 +52,6 @@ mise install node@20.0.0  # install specific node version
 mise install node@20      # install fuzzy node version
 mise install node         # install version specified in mise.toml
 mise install              # installs everything specified in mise.toml
+mise install --dry-run     # show what would be installed
+mise install -n node@20   # show what would be installed (short form)
 ```

@@ -51,6 +51,10 @@ this is the default behavior unless `MISE_PIN=1`
 
 Use the global config file (`~/.config/mise/config.toml`) instead of the local one
 
+### `-n --dry-run`
+
+Perform a dry run, showing what would be installed and modified without making changes
+
 ### `-e --env <ENV>`
 
 Create/modify an environment-specific config file like .mise.&lt;env>.toml
