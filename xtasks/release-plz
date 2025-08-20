@@ -55,8 +55,8 @@ git add \
 	man/
 git clean -df
 git checkout -B release
-git subtree pull --squash --prefix=aqua-registry https://github.com/aquaproj/aqua-registry main
 git commit -m "chore: release $version"
+git subtree pull --squash --prefix=aqua-registry https://github.com/aquaproj/aqua-registry main
 git push origin release --force
 
 if [[ "$(gh pr list --label release)" == "" ]]; then
