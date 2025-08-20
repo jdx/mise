@@ -55,6 +55,8 @@ impl MultiProgressReport {
             _ if self.quiet => Box::new(QuietReport::new()),
             Some(mp) if !dry_run => {
                 let mut pr = ProgressReport::new(prefix.into());
+                // Always use add() to append progress bars
+                // The header should already be at position 0 if it exists
                 pr.pb = mp.add(pr.pb);
                 Box::new(pr)
             }
@@ -94,6 +96,7 @@ impl MultiProgressReport {
                     style::edim(format!("{version} by @jdx –")),
                 );
                 let mut header = HeaderReport::new(prefix, total_tools as u64, message.to_string());
+                // Use add() instead of insert() to avoid potential duplicates
                 header.pb = mp.add(header.pb);
                 *hdr = Some(header);
             }

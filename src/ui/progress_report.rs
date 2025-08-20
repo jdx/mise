@@ -99,7 +99,8 @@ impl ProgressReport {
 
 impl SingleReport for ProgressReport {
     fn println(&self, message: String) {
-        self.pb.suspend(|| {
+        // Suspend the entire MultiProgress to prevent header duplication
+        crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
             eprintln!("{message}");
         });
     }
@@ -222,7 +223,8 @@ impl HeaderReport {
 
 impl SingleReport for HeaderReport {
     fn println(&self, message: String) {
-        self.pb.suspend(|| {
+        // Suspend the entire MultiProgress to prevent header duplication
+        crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
             eprintln!("{message}");
         });
     }
