@@ -147,13 +147,8 @@ jobs:
           # Store the original working directory
           ORIG_DIR="$(pwd)"
           
-          # Create original tarball with submodules (needed for aqua-registry)
+          # Create tarball
           git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar"
-          
-          # Add aqua-registry submodule to the tarball (required for build)
-          cd aqua-registry
-          git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/aqua-registry/" HEAD >> "../../${PACKAGE_NAME}_${VERSION}.orig.tar"
-          cd "$ORIG_DIR"
           
           # Compress the tarball
           gzip "../${PACKAGE_NAME}_${VERSION}.orig.tar"
