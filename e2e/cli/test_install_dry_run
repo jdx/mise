@@ -4,35 +4,17 @@
 set -euo pipefail
 
 # Test: Dry-run should show what would be installed without actually installing
-output=$(mise install tiny@3.1.0 --dry-run 2>&1 || true)
-if [[ ! $output =~ "would install" ]]; then
-	echo "ERROR: Expected 'would install' in output: $output"
-	exit 1
-fi
+assert_contains "mise install tiny@3.1.0 --dry-run 2>&1" "would install"
 
-# Verify tiny is NOT actually installed (should exit with non-zero)
-if mise which tiny 2>/dev/null; then
-	echo "ERROR: tiny should not be installed after dry-run"
-	exit 1
-fi
+# Verify tiny is NOT actually installed
+assert_fail "mise which tiny"
 
 # Test: Dry-run should show already installed for existing tools
 mise install jq@latest --force
-output=$(mise install jq@latest --dry-run 2>&1 || true)
-if [[ ! $output =~ "already installed" ]]; then
-	echo "ERROR: Expected 'already installed' in output: $output"
-	exit 1
-fi
+assert_contains "mise install jq@latest --dry-run 2>&1" "already installed"
 
 # Test: Dry-run should work with multiple tools
-output=$(mise install tiny@3.1.0 shfmt@3.10.0 --dry-run 2>&1 || true)
-if [[ ! $output =~ "would install" ]]; then
-	echo "ERROR: Expected 'would install' in output: $output"
-	exit 1
-fi
+assert_contains "mise install tiny@3.1.0 shfmt@3.10.0 --dry-run 2>&1" "would install"
 
 # Verify neither tool was actually installed
-if mise which tiny 2>/dev/null; then
-	echo "ERROR: tiny should not be installed after dry-run"
-	exit 1
-fi
+assert_fail "mise which tiny"
