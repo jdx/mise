@@ -179,8 +179,8 @@ pub fn verify_checksum_str(
 ///
 /// Examples:
 /// - "docker-compose-linux-x86_64" -> "docker-compose"
-/// - "tool-darwin-arm64.exe" -> "tool"
-/// - "mytool-v1.2.3-windows-amd64" -> "mytool-v1.2.3"
+/// - "tool-darwin-arm64.exe" -> "tool.exe"
+/// - "mytool-v1.2.3-windows-amd64" -> "mytool"
 pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     // Common OS patterns to remove
     let os_patterns = [
@@ -193,21 +193,21 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
         "riscv64", "s390x", "i686", "i386", "x64", "mips", "arm", "x86",
     ];
 
-    // Remove file extension first (but preserve version numbers like v1.2.3)
-    let name_without_ext = if let Some(pos) = name.rfind('.') {
-        // Check if this looks like a file extension (not a version number)
+    // Extract extension if present (to preserve it)
+    let (name_without_ext, extension) = if let Some(pos) = name.rfind('.') {
         let potential_ext = &name[pos + 1..];
-        // Common file extensions to remove
-        let file_extensions = [
-            "exe", "tar", "gz", "zip", "bz2", "xz", "7z", "deb", "rpm", "dmg", "pkg", "msi",
+        // Common executable extensions to preserve
+        let executable_extensions = [
+            "exe", "bat", "cmd", "sh", "ps1", "app", "AppImage", "run", "bin",
         ];
-        if file_extensions.contains(&potential_ext) {
-            &name[..pos]
+        if executable_extensions.contains(&potential_ext) {
+            (&name[..pos], Some(&name[pos..]))
         } else {
-            name
+            // Not an executable extension, treat it as part of the name
+            (name, None)
         }
     } else {
-        name
+        (name, None)
     };
 
     // Try to find and remove platform suffixes
@@ -230,7 +230,13 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
                 if let Some(pos) = cleaned.rfind(pattern) {
                     cleaned = cleaned[..pos].to_string();
                     // Continue processing to also remove version numbers
-                    return clean_version_suffix(&cleaned, tool_name);
+                    let result = clean_version_suffix(&cleaned, tool_name);
+                    // Add the extension back if we had one
+                    if let Some(ext) = extension {
+                        return format!("{}{}", result, ext);
+                    } else {
+                        return result;
+                    }
                 }
             }
         }
@@ -248,7 +254,13 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
                     let before = &cleaned[..pos];
                     if !before.is_empty() {
                         cleaned = before.to_string();
-                        return clean_version_suffix(&cleaned, tool_name);
+                        let result = clean_version_suffix(&cleaned, tool_name);
+                        // Add the extension back if we had one
+                        if let Some(ext) = extension {
+                            return format!("{}{}", result, ext);
+                        } else {
+                            return result;
+                        }
                     }
                 }
             }
@@ -267,7 +279,13 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
                     let before = &cleaned[..pos];
                     if !before.is_empty() {
                         cleaned = before.to_string();
-                        return clean_version_suffix(&cleaned, tool_name);
+                        let result = clean_version_suffix(&cleaned, tool_name);
+                        // Add the extension back if we had one
+                        if let Some(ext) = extension {
+                            return format!("{}{}", result, ext);
+                        } else {
+                            return result;
+                        }
                     }
                 }
             }
@@ -275,7 +293,14 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     }
 
     // Try to remove version suffixes as a final step
-    clean_version_suffix(&cleaned, tool_name)
+    let cleaned = clean_version_suffix(&cleaned, tool_name);
+
+    // Add the extension back if we had one
+    if let Some(ext) = extension {
+        format!("{}{}", cleaned, ext)
+    } else {
+        cleaned
+    }
 }
 
 /// Remove version suffixes from binary names
@@ -329,7 +354,7 @@ mod tests {
         );
         assert_eq!(
             clean_binary_name("docker-compose-linux-x86_64.exe", None),
-            "docker-compose"
+            "docker-compose.exe"
         );
         assert_eq!(clean_binary_name("tool-darwin-arm64", None), "tool");
         assert_eq!(
@@ -381,9 +406,20 @@ mod tests {
         // Test no cleaning needed
         assert_eq!(clean_binary_name("simple-tool", None), "simple-tool");
 
-        // Test with extensions
-        assert_eq!(clean_binary_name("app-linux-x64.tar", None), "app");
-        assert_eq!(clean_binary_name("app-windows-x86_64.zip", None), "app");
+        // Test that executable extensions are preserved
+        assert_eq!(clean_binary_name("app-linux-x64.exe", None), "app.exe");
+        assert_eq!(
+            clean_binary_name("tool-v1.2.3-windows.bat", None),
+            "tool.bat"
+        );
+        assert_eq!(
+            clean_binary_name("script-darwin-arm64.sh", None),
+            "script.sh"
+        );
+        assert_eq!(
+            clean_binary_name("app-linux.AppImage", None),
+            "app.AppImage"
+        );
 
         // Test edge cases
         assert_eq!(clean_binary_name("linux", None), "linux"); // Just OS name
