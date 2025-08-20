@@ -183,7 +183,7 @@ pub fn verify_checksum_str(
 /// - `tool_name`: Optional hint for the expected tool name. When provided:
 ///   - Version removal is more aggressive, only keeping the result if it matches the tool name
 ///   - Helps ensure the cleaned name matches the expected tool
-///   When `None`, version removal is more conservative to avoid over-cleaning
+///   – When `None`, version removal is more conservative to avoid over-cleaning
 ///
 /// # Examples
 /// - "docker-compose-linux-x86_64" -> "docker-compose"
