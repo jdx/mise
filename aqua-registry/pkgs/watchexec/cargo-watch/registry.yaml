@@ -1,0 +1,182 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: watchexec
+    repo_name: cargo-watch
+    description: Watches over your Cargo project's source
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 7.0.1")
+        no_asset: true
+      - version_constraint: semver("<= 7.0.5")
+        asset: cargo-watch-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: cargo-watch
+            src: "{{.AssetWithoutExt}}/cargo-watch"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: cargo-watch
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 7.5.1")
+        asset: cargo-watch-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: cargo-watch
+            src: "{{.AssetWithoutExt}}/cargo-watch"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 7.7.2")
+        asset: cargo-watch-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: cargo-watch
+            src: "{{.AssetWithoutExt}}/cargo-watch"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 8.0.0")
+        asset: cargo-watch-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        files:
+          - name: cargo-watch
+            src: "{{.AssetWithoutExt}}/cargo-watch"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA512SUMS
+          algorithm: sha512
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 8.1.1")
+        asset: cargo-watch-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: cargo-watch
+            src: "{{.AssetWithoutExt}}/cargo-watch"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA512SUMS
+          algorithm: sha512
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v8.1.2"
+        asset: cargo-watch-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: cargo-watch
+            src: "{{.AssetWithoutExt}}/cargo-watch"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA512SUMS
+          algorithm: sha512
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: cargo-watch-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: cargo-watch
+            src: "{{.AssetWithoutExt}}/cargo-watch"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: SHA512SUMS
+          algorithm: sha512
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip

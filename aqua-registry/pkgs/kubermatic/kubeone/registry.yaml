@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubermatic
+    repo_name: kubeone
+    asset: kubeone_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    description: Kubermatic KubeOne automate cluster operations on all your cloud, on-prem, edge, and IoT environments
+    supported_envs:
+      - linux
+      - darwin
+    checksum:
+      type: github_release
+      asset: kubeone_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 1.4.2")
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin

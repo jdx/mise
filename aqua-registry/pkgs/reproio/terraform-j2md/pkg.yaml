@@ -1,0 +1,4 @@
+packages:
+  - name: reproio/terraform-j2md@v0.0.9
+  - name: reproio/terraform-j2md
+    version: v0.0.3

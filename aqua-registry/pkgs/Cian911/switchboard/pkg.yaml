@@ -1,0 +1,4 @@
+packages:
+  - name: Cian911/switchboard@v1.0.1
+  - name: Cian911/switchboard
+    version: v1.0.0

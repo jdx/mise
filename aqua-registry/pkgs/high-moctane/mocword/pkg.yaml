@@ -1,0 +1,4 @@
+packages:
+  - name: high-moctane/mocword@v0.2.0
+  - name: high-moctane/mocword
+    version: v0.1.0

@@ -1,0 +1,4 @@
+packages:
+  - name: DeNA/unity-meta-check/unity-meta-check-github-pr-comment@v4.0.0
+  - name: DeNA/unity-meta-check/unity-meta-check-github-pr-comment
+    version: v3.3.0

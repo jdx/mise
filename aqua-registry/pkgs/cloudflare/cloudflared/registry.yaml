@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloudflare
+    repo_name: cloudflared
+    description: cloudflared connects your machine or user identity to Cloudflare's global network
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: cloudflared-{{.OS}}-{{.Arch}}
+    overrides:
+      - goos: darwin
+        asset: cloudflared-{{.OS}}-{{.Arch}}.tgz

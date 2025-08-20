@@ -1,0 +1,14 @@
+packages:
+  - name: EdJoPaTo/mqttui@v0.22.1
+  - name: EdJoPaTo/mqttui
+    version: v0.16.2
+  - name: EdJoPaTo/mqttui
+    version: v0.12.0
+  - name: EdJoPaTo/mqttui
+    version: v0.11.0
+  - name: EdJoPaTo/mqttui
+    version: v0.10.0
+  - name: EdJoPaTo/mqttui
+    version: v0.4.0
+  - name: EdJoPaTo/mqttui
+    version: v0.1.0

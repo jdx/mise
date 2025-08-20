@@ -1,0 +1,12 @@
+packages:
+  - name: nametake/golangci-lint-langserver@v0.0.11
+  - name: nametake/golangci-lint-langserver
+    version: v0.0.8
+  - name: nametake/golangci-lint-langserver
+    version: v0.0.7
+  - name: nametake/golangci-lint-langserver
+    version: v0.0.6
+  - name: nametake/golangci-lint-langserver
+    version: v0.0.4
+  - name: nametake/golangci-lint-langserver
+    version: v0.0.2

@@ -1,0 +1,7 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+version_filter: not (Version endsWith "-victorialogs")
+all_assets_filter: |
+  let ngwords = ["vmutils", "victoria-logs", "vlogscli", "cluster", "enterprise"];
+  not any(ngwords, {Asset matches #})

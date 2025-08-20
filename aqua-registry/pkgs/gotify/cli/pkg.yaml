@@ -1,0 +1,8 @@
+packages:
+  - name: gotify/cli@v2.3.2
+  - name: gotify/cli
+    version: v2.2.4
+  - name: gotify/cli
+    version: v2.2.1
+  - name: gotify/cli
+    version: v2.1.0

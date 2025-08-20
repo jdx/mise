@@ -1,0 +1,2 @@
+packages:
+  - name: harness/drone-cli@v1.9.0

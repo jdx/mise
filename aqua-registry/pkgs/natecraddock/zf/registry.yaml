@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: natecraddock
+    repo_name: zf
+    description: a commandline fuzzy finder designed for filtering filepaths
+    asset: zf-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.xz
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      darwin: macos
+    supported_envs:
+      - linux
+      - darwin
+    files:
+      - name: zf
+        src: "zf-{{.Version}}-{{.Arch}}-{{.OS}}"

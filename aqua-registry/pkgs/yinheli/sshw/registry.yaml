@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: yinheli
+    repo_name: sshw
+    asset: sshw_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: ssh client wrapper for automatic login
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: sshw_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 1.1.1")
+    version_overrides:
+      - version_constraint: semver(">= 1.0.8")
+        # asset name was changed
+        asset: sshw-{{.OS}}-{{.Arch}}-{{.Version}}.tar.gz
+        files:
+          - name: sshw
+            src: sshw-{{.OS}}-{{.Arch}}-{{.Version}}/sshw
+        overrides: []
+        # arm64 wasn't supported
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        checksum:
+          # SHA1 is used for algorithm of checksum
+          type: github_release
+          asset: checksum.txt
+          file_format: regexp
+          algorithm: sha1
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{40}\b)
+            file: "^\\b[A-Fa-f0-9]{40}\\b\\s+(\\S+)$"
+      - version_constraint: "true"
+        # asset name was changed
+        asset: sshw-{{.OS}}-{{.Arch}}.tar.gz
+        overrides: []
+        rosetta2: true
+        # windows wasn't supported
+        supported_envs:
+          - darwin
+          - linux/amd64
+        checksum:
+          # checksum file not provided
+          enabled: false

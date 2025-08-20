@@ -1,0 +1,6 @@
+packages:
+  - name: pivotal-cf/pivnet-cli@v4.1.1
+  - name: pivotal-cf/pivnet-cli
+    version: v3.0.1
+  - name: pivotal-cf/pivnet-cli
+    version: v1.0.0-rc.1

@@ -1,0 +1,2 @@
+pkgs/**/*.yaml linguist-detectable
+/registry.yaml linguist-generated

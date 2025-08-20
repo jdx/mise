@@ -1,0 +1,8 @@
+packages:
+  - name: cybozu/assam@v1.2.7
+  - name: cybozu/assam
+    version: v1.2.6
+  - name: cybozu/assam
+    version: v1.2.4
+  - name: cybozu/assam
+    version: v1.0.2

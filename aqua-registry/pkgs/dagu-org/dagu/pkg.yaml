@@ -1,0 +1,6 @@
+packages:
+  - name: dagu-org/dagu@v1.21.0
+  - name: dagu-org/dagu
+    version: v1.1.0
+  - name: dagu-org/dagu
+    version: v1.0.0

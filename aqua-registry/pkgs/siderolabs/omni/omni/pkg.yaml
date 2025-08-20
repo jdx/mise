@@ -1,0 +1,4 @@
+packages:
+  - name: siderolabs/omni/omni@v1.0.1
+  - name: siderolabs/omni/omni
+    version: v0.31.2

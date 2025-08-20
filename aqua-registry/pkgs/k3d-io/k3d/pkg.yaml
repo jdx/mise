@@ -1,0 +1,12 @@
+packages:
+  - name: k3d-io/k3d@v5.8.3
+  - name: k3d-io/k3d
+    version: v5.4.9
+  - name: k3d-io/k3d
+    version: v5.3.0
+  - name: k3d-io/k3d
+    version: v4.2.0
+  - name: k3d-io/k3d
+    version: v3.0.0-syntax.0
+  - name: k3d-io/k3d
+    version: v3.0.0-rc.3

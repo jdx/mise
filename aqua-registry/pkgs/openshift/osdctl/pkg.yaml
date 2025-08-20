@@ -1,0 +1,10 @@
+packages:
+  - name: openshift/osdctl@v0.46.0
+  - name: openshift/osdctl
+    version: v0.12.0
+  - name: openshift/osdctl
+    version: v0.9.4
+  - name: openshift/osdctl
+    version: v0.4.0
+  - name: openshift/osdctl
+    version: v0.1.0

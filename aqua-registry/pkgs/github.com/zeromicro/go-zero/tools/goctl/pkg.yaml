@@ -1,0 +1,2 @@
+packages:
+  - name: github.com/zeromicro/go-zero/tools/goctl@v1.5.2

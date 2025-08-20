@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: datastax-labs
+    repo_name: astra-cli
+    description: DataStax Astra automation CLI
+    asset: astra-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    files:
+      - name: astra
+    checksum:
+      type: github_release
+      asset: astra-cli_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

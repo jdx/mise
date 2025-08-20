@@ -1,0 +1,4 @@
+packages:
+  - name: sigoden/aichat@v0.30.0
+  - name: sigoden/aichat
+    version: v0.8.0

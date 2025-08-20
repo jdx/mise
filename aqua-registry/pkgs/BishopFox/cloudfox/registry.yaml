@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: BishopFox
+    repo_name: cloudfox
+    description: Automating situational awareness for cloud penetration tests
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: cloudfox-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: cloudfox
+            src: cloudfox/cloudfox
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

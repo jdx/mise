@@ -1,0 +1,6 @@
+packages:
+  - name: alajmo/mani@v0.31.0
+  - name: alajmo/mani
+    version: v0.25.0
+  - name: alajmo/mani
+    version: v0.24.0

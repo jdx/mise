@@ -1,0 +1,4 @@
+packages:
+  - name: goph/licensei@v0.9.0
+  - name: goph/licensei
+    version: v0.5.0

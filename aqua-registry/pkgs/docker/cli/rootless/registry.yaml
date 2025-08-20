@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: docker/cli/rootless
+    type: http
+    repo_owner: docker
+    repo_name: cli
+    description: Docker CE CLI for Rootless mode
+    version_source: github_tag
+    version_filter: not (Version contains "beta" or Version contains "rc")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 28.0.0")
+        url: https://download.docker.com/{{.OS}}/static/stable/{{.Arch}}/docker-rootless-extras-{{trimV .Version}}.tgz
+        files:
+          - name: rootlesskit
+            src: docker-rootless-extras/rootlesskit
+          - name: rootlesskit-docker-proxy
+            src: docker-rootless-extras/rootlesskit-docker-proxy
+          - name: vpnkit
+            src: docker-rootless-extras/vpnkit
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux
+      - version_constraint: "true"
+        url: https://download.docker.com/{{.OS}}/static/stable/{{.Arch}}/docker-rootless-extras-{{trimV .Version}}.tgz
+        files:
+          - name: rootlesskit
+            src: docker-rootless-extras/rootlesskit
+          - name: vpnkit
+            src: docker-rootless-extras/vpnkit
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux

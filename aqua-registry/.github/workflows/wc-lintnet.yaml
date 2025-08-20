@@ -1,0 +1,27 @@
+---
+name: wc-lintnet
+on: workflow_call
+env:
+  AQUA_LOG_COLOR: always
+jobs:
+  lintnet:
+    runs-on: ubuntu-latest
+    env:
+      AQUA_CONFIG: aqua-all.yaml
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: aquaproj/aqua-installer@d1fe50798dbadd4eb5b98957290ca175f6b4870f # v4.0.2
+        with:
+          aqua_version: v2.53.9
+          policy_allow: "true"
+        env:
+          AQUA_GITHUB_TOKEN: ${{github.token}}
+
+      - run: lintnet lint
+        env:
+          GITHUB_TOKEN: ${{github.token}}

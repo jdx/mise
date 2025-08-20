@@ -1,0 +1,4 @@
+packages:
+  - name: fullstorydev/grpcui@v1.4.3
+  - name: fullstorydev/grpcui
+    version: v1.2.0

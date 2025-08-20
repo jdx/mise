@@ -1,0 +1,8 @@
+packages:
+  - name: linebender/resvg@v0.45.1
+  - name: linebender/resvg
+    version: 0.45.0
+  - name: linebender/resvg
+    version: v0.44.0
+  - name: linebender/resvg
+    version: v0.41.0

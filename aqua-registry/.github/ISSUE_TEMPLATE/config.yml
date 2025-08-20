@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Issue of aqua
+    url: https://github.com/aquaproj/aqua/issues
+    about: Please report issues about aqua itself
+  - name: Contribution guide
+    url: https://aquaproj.github.io/docs/products/aqua-registry/contributing
+    about: This repository's contribution guide

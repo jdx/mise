@@ -1,0 +1,4 @@
+packages:
+  - name: nucleuscloud/neosync@v0.5.41
+  - name: nucleuscloud/neosync
+    version: v0.3.25

@@ -1,0 +1,8 @@
+packages:
+  - name: sho-hata/tparagen@v1.1.2
+  - name: sho-hata/tparagen
+    version: v1.1.1
+  - name: sho-hata/tparagen
+    version: v1.1.0
+  - name: sho-hata/tparagen
+    version: v1.0.0

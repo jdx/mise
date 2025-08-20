@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mumoshu
+    repo_name: variant
+    description: Wrap up your bash scripts into a modern CLI today. Graduate to a full-blown golang app tomorrow
+    rosetta2: true
+    asset: variant_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    supported_envs:
+      - darwin
+      - linux
+    checksum:
+      type: github_release
+      asset: variant_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

@@ -1,0 +1,8 @@
+packages:
+  - name: oppiliappan/dijo@v0.2.7
+  - name: oppiliappan/dijo
+    version: v0.2.2-alpha
+  - name: oppiliappan/dijo
+    version: v0.2.1
+  - name: oppiliappan/dijo
+    version: v0.2.0

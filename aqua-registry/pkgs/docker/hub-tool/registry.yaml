@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: docker
+    repo_name: hub-tool
+    asset: hub-tool-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: Docker Hub experimental CLI tool
+    files:
+      - name: hub-tool
+        src: hub-tool/hub-tool
+    overrides:
+      - goos: windows
+        format: zip
+        files:
+          - name: hub-tool
+            src: hub-tool.exe
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    version_constraint: semver(">= 0.4.1")
+    # darwin/arm64 was supported
+    version_overrides:
+      - version_constraint: semver(">= 0.1.1")
+        # linux/arm64 was supported
+        # asset name and format were changed
+        rosetta2: true
+      - version_constraint: "true"
+        asset: hub-tool_{{.OS}}_{{.Arch}}
+        overrides: []
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64

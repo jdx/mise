@@ -1,0 +1,4 @@
+packages:
+  - name: iovisor/kubectl-trace@v0.1.2
+  - name: iovisor/kubectl-trace
+    version: v0.1.1-rc.0

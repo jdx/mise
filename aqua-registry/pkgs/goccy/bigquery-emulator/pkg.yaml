@@ -1,0 +1,4 @@
+packages:
+  - name: goccy/bigquery-emulator@v0.6.6
+  - name: goccy/bigquery-emulator
+    version: v0.1.2

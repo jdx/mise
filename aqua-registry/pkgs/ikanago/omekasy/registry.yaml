@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ikanago
+    repo_name: omekasy
+    description: Command line application that converts alphanumeric characters to various styles defined in Unicode
+    asset: omekasy-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      amd64: x86_64
+      darwin: apple-darwin
+      linux: unknown-linux-gnu
+      windows: pc-windows-msvc
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    files:
+      - name: omekasy
+        src: archive/omekasy
+    version_constraint: semver(">= 0.2.0")
+    version_overrides:
+      - version_constraint: semver("< 0.2.0")
+        overrides: []
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin

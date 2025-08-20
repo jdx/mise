@@ -1,0 +1,4 @@
+packages:
+  - name: rustsec/rustsec/cargo-audit@cargo-audit/v0.21.2
+  - name: rustsec/rustsec/cargo-audit
+    version: cargo-audit/v0.17.0

@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bytecodealliance
+    repo_name: wasmtime
+    description: A lightweight WebAssembly runtime that is fast, secure, and standards-compliant
+    files:
+      - name: wasmtime
+        src: wasmtime-{{.Version}}-{{.Arch}}-{{.OS}}/wasmtime
+    version_filter: not (Version == "dev")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.34.1"
+        asset: wasmtime-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "cranelift-v0.60.0"
+        asset: wasmtime-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.15.0")
+        asset: wasmtime-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.36.0")
+        asset: wasmtime-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 21.0.2")
+        asset: wasmtime-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            replacements: {}
+      - version_constraint: semver("<= 25.0.3")
+        asset: wasmtime-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("< 28.0.0")
+        asset: wasmtime-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: wasmtime-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        github_artifact_attestations:
+          signer_workflow: bytecodealliance/wasmtime/.github/workflows/publish-artifacts.yml
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip

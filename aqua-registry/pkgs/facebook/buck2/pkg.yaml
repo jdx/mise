@@ -1,0 +1,4 @@
+packages:
+  - name: facebook/buck2@2025-02-01
+  - name: facebook/buck2
+    version: "2023-07-11"

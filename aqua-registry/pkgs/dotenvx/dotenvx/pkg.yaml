@@ -1,0 +1,16 @@
+packages:
+  - name: dotenvx/dotenvx@v1.49.0
+  - name: dotenvx/dotenvx
+    version: v0.44.5
+  - name: dotenvx/dotenvx
+    version: v0.2.19
+  - name: dotenvx/dotenvx
+    version: v0.2.10
+  - name: dotenvx/dotenvx
+    version: v0.2.8
+  - name: dotenvx/dotenvx
+    version: v0.2.7
+  - name: dotenvx/dotenvx
+    version: v0.1.18
+  - name: dotenvx/dotenvx
+    version: v0.1.7

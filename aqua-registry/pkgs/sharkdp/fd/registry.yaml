@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sharkdp
+    repo_name: fd
+    description: A simple, fast and user-friendly alternative to 'find'
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.1.0"
+        asset: fd
+        format: raw
+        windows_arm_emulation: true
+        supported_envs:
+          - windows
+          - linux/amd64
+      - version_constraint: semver("<= 3.1.0")
+        asset: fd
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v4.0.0"
+        asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: fd
+            src: "{{.AssetWithoutExt}}/fd"
+        replacements:
+          amd64: x86_64
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fd
+        supported_envs:
+          - linux/amd64
+          - windows
+      - version_constraint: semver("<= 8.2.1")
+        asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: fd
+            src: "{{.AssetWithoutExt}}/fd"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fd
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 9.0.0")
+        asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: fd
+            src: "{{.AssetWithoutExt}}/fd"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v10.0.0"
+        asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: fd
+            src: "{{.AssetWithoutExt}}/fd"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: fd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: fd
+            src: "{{.AssetWithoutExt}}/fd"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip

@@ -1,0 +1,4 @@
+packages:
+  - name: CrunchyData/postgres-operator-client@v0.5.2
+  - name: CrunchyData/postgres-operator-client
+    version: v0.1.0

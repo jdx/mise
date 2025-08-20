@@ -1,0 +1,4 @@
+packages:
+  - name: int128/yamlpatch@v0.1.1
+  - name: int128/yamlpatch
+    version: v0.1.0

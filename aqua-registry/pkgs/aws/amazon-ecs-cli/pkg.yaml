@@ -1,0 +1,6 @@
+packages:
+  - name: aws/amazon-ecs-cli@v1.21.0
+  - name: aws/amazon-ecs-cli
+    version: v1.0.0
+  - name: aws/amazon-ecs-cli
+    version: v0.6.6

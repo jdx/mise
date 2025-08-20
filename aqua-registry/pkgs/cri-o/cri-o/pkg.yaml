@@ -1,0 +1,20 @@
+packages:
+  - name: cri-o/cri-o@v1.33.3
+  - name: cri-o/cri-o
+    version: v1.30.3
+  - name: cri-o/cri-o
+    version: v1.29.13
+  - name: cri-o/cri-o
+    version: v1.29.6
+  - name: cri-o/cri-o
+    version: v1.29.0
+  - name: cri-o/cri-o
+    version: v1.28.8
+  - name: cri-o/cri-o
+    version: v1.28.2
+  - name: cri-o/cri-o
+    version: v1.25.4
+  - name: cri-o/cri-o
+    version: v1.24.6
+  - name: cri-o/cri-o
+    version: v1.24.5

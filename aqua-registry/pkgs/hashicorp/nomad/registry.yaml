@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: hashicorp
+    repo_name: nomad
+    description: Nomad is an easy-to-use, flexible, and performant workload orchestrator that can deploy a mix of microservice, batch, containerized, and non-containerized applications. Nomad is easy to operate and scale and has native Consul and Vault integrations
+    url: https://releases.hashicorp.com/nomad/{{trimV .Version}}/nomad_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    version_filter: Version matches "^v\\d+\\.\\d+\\.\\d+"
+    checksum:
+      type: http
+      url: https://releases.hashicorp.com/nomad/{{trimV .Version}}/nomad_{{trimV .Version}}_SHA256SUMS
+      algorithm: sha256
+    version_constraint: semver(">= 1.2.7")
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true

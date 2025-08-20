@@ -1,0 +1,4 @@
+packages:
+  - name: gleam-lang/gleam@v1.12.0
+  - name: gleam-lang/gleam
+    version: v0.22.1

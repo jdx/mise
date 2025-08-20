@@ -1,0 +1,4 @@
+packages:
+  - name: mattn/zig-update@v0.0.4
+  - name: mattn/zig-update
+    version: v0.0.1

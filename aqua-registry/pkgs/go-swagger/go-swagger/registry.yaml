@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: go-swagger
+    repo_name: go-swagger
+    asset: swagger_{{.OS}}_{{.Arch}}
+    format: raw
+    description: Swagger 2.0 implementation for go
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: swagger
+    checksum:
+      type: github_release
+      asset: sha256sum.txt
+      algorithm: sha256

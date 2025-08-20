@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: Automattic/harper/harper-ls
+    aliases:
+      - name: elijah-potter/harper/harper-ls
+    type: github_release
+    repo_owner: Automattic
+    repo_name: harper
+    description: The Grammar Checker for Developers
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.11.0")
+        asset: harper-ls-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-gnu
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: harper-ls-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip

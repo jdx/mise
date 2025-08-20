@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: argoproj-labs
+    repo_name: argocd-image-updater
+    description: Automatic container image update for Argo CD
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.10.1"
+        no_asset: true
+      - version_constraint: Version == "v0.9.1"
+        asset: argocd-image-updater_{{.Version}}_{{.OS}}-{{.Arch}}.1-linux_amd64
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.7.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.11.3")
+        asset: argocd-image-updater_{{.Version}}_{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: "true"
+        asset: argocd-image-updater-{{.OS}}_{{.Arch}}
+        format: raw
+        replacements:
+          windows: win64
+        checksum:
+          type: github_release
+          asset: release-{{.Version}}.sha256
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            asset: argocd-image-updater-{{.OS}}

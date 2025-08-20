@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: getgauge
+    repo_name: gauge
+    asset: gauge-{{trimV .Version}}-{{.OS}}.{{.Arch}}.zip
+    description: Light weight cross-platform test automation
+    replacements:
+      amd64: x86_64
+    supported_envs:
+      - darwin
+      - linux
+      - amd64

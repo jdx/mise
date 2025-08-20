@@ -1,0 +1,4 @@
+packages:
+  - name: clowdhaus/eksup@v0.11.1
+  - name: clowdhaus/eksup
+    version: v0.10.0

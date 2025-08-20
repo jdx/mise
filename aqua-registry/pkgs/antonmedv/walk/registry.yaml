@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: antonmedv
+    repo_name: walk
+    description: Terminal file manager
+    aliases:
+      - name: antonmedv/llama
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.5.0"
+        no_asset: true
+      - version_constraint: semver("<= 1.1.0")
+        asset: llama_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: llama
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.4.0")
+        asset: llama_{{.OS}}_{{.Arch}}
+        format: raw
+        files:
+          - name: llama
+      - version_constraint: "true"
+        asset: walk_{{.OS}}_{{.Arch}}
+        format: raw

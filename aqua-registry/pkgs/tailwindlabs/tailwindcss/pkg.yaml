@@ -1,0 +1,10 @@
+packages:
+  - name: tailwindlabs/tailwindcss@v4.1.12
+  - name: tailwindlabs/tailwindcss
+    version: v3.4.17
+  - name: tailwindlabs/tailwindcss
+    version: v3.2.7
+  - name: tailwindlabs/tailwindcss
+    version: v3.2.4
+  - name: tailwindlabs/tailwindcss
+    version: v3.0.7

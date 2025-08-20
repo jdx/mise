@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: siderolabs
+    repo_name: talos
+    aliases:
+      - name: talos-systems/talos
+    description: Talos is a modern OS for Kubernetes. talosctl is a CLI for out-of-band management of Kubernetes nodes created by Talos
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: talosctl-{{.OS}}-{{.Arch}}
+    files:
+      - name: talosctl
+    format: raw
+    checksum:
+      type: github_release
+      asset: sha512sum.txt
+      algorithm: sha512

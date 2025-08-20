@@ -1,0 +1,2 @@
+packages:
+  - name: restic/restic@v0.18.0

@@ -1,0 +1,8 @@
+packages:
+  - name: vmware/govmomi/vcsim@v0.52.0
+  - name: vmware/govmomi/vcsim
+    version: v0.27.4
+  - name: vmware/govmomi/vcsim
+    version: v0.26.0
+  - name: vmware/govmomi/vcsim
+    version: v0.25.0

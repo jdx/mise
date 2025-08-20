@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: github-release
+    repo_name: github-release
+    asset: "{{.OS}}-{{.Arch}}-github-release.{{.Format}}"
+    format: bz2
+    description: Commandline app to create and edit releases on Github (and upload artifacts)
+    overrides:
+      - goos: windows
+        format: zip
+        files:
+          - name: github-release
+            src: bin/windows/{{.Arch}}/github-release.exe
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    files:
+      - name: github-release
+        src: "{{.OS}}-{{.Arch}}-github-release"
+    version_constraint: semver(">= 0.8.0")
+    version_overrides:
+      - version_constraint: semver(">= 0.5.0")
+        format: tar.bz2
+        files:
+          - name: github-release
+            src: bin/{{.OS}}/{{.Arch}}/github-release
+      - version_constraint: "true"
+        supported_envs: []
+        rosetta2: false

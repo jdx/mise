@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: xremap/xremap/kde
+    aliases:
+      - name: k0kubun/xremap/kde
+    type: github_release
+    repo_owner: xremap
+    repo_name: xremap
+    description: Key remapper for X11 and Wayland (for KDE-Plasma Wayland)
+    asset: xremap-{{.OS}}-{{.Arch}}-kde.{{.Format}}
+    format: zip
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+    supported_envs:
+      - linux
+    files:
+      - name: xremap
+    version_constraint: semver(">= 0.8.3")
+    version_overrides:
+      - version_constraint: semver("< 0.8.3")
+        no_asset: true

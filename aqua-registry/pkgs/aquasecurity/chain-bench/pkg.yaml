@@ -1,0 +1,4 @@
+packages:
+  - name: aquasecurity/chain-bench@v0.1.10
+  - name: aquasecurity/chain-bench
+    version: v0.1.7

@@ -1,0 +1,4 @@
+packages:
+  - name: idursun/jjui@v0.9.1
+  - name: idursun/jjui
+    version: v0.7.1

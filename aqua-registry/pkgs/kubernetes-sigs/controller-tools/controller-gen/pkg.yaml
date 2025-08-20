@@ -1,0 +1,2 @@
+packages:
+  - name: kubernetes-sigs/controller-tools/controller-gen@v0.18.0

@@ -1,0 +1,6 @@
+packages:
+  - name: str4d/rage@v0.11.1
+  - name: str4d/rage
+    version: v0.10.1
+  - name: str4d/rage
+    version: v0.1.1

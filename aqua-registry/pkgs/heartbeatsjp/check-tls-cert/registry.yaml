@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: heartbeatsjp
+    repo_name: check-tls-cert
+    description: Check-tls-cert is a TLS certificate checker
+    asset: check-tls-cert-{{trimV .Version}}-{{.OS}}-{{.Arch}}.tar.xz
+    supported_envs:
+      - linux
+      - darwin
+      - amd64
+    files:
+      - name: check-tls-cert
+        src: check-tls-cert-{{trimV .Version}}/check-tls-cert

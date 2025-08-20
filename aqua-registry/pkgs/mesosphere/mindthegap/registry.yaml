@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mesosphere
+    repo_name: mindthegap
+    description: Easily create and use bundles for air-gapped environments
+    asset: mindthegap_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.13.0")
+    version_overrides:
+      - version_constraint: semver(">= 0.7.3")
+        overrides:
+          - goos: darwin
+            asset: mindthegap_{{.Version}}_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: semver(">= 0.6.6")
+      - version_constraint: semver("< 0.6.6")
+        asset: mindthegap_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        overrides:
+          - goos: darwin
+            asset: mindthegap_{{.Version}}_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip

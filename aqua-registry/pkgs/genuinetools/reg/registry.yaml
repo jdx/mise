@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: genuinetools
+    repo_name: reg
+    description: Docker registry v2 command line client and repo listing generator with security checks
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.4.0"
+        asset: reg-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+      - version_constraint: Version == "v0.15.4"
+        asset: reg-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: reg-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5

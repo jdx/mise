@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sirrend
+    repo_name: terrap-cli
+    description: Terrap - a powerful CLI tool that scans your infrastructure and identifies any required changes
+    asset: terrap-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: terrap
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

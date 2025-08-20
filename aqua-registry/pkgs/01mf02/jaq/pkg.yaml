@@ -1,0 +1,8 @@
+packages:
+  - name: 01mf02/jaq@v2.3.0
+  - name: 01mf02/jaq
+    version: v2.0.0-alpha.1
+  - name: 01mf02/jaq
+    version: v1.3.0
+  - name: 01mf02/jaq
+    version: v1.0.0-gamma

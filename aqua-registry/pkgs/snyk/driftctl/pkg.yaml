@@ -1,0 +1,8 @@
+packages:
+  - name: snyk/driftctl@v0.40.0
+  - name: snyk/driftctl
+    version: v0.18.5
+  - name: snyk/driftctl
+    version: v0.4.0
+  - name: snyk/driftctl
+    version: v0.3.1

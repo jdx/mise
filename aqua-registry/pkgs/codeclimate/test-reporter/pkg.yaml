@@ -1,0 +1,2 @@
+packages:
+  - name: codeclimate/test-reporter@v0.11.1

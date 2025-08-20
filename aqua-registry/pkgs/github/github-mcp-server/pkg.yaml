@@ -1,0 +1,4 @@
+packages:
+  - name: github/github-mcp-server@v0.12.1
+  - name: github/github-mcp-server
+    version: v0.1.1

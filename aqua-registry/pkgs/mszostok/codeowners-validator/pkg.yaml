@@ -1,0 +1,4 @@
+packages:
+  - name: mszostok/codeowners-validator@v0.7.4
+  - name: mszostok/codeowners-validator
+    version: v0.6.0

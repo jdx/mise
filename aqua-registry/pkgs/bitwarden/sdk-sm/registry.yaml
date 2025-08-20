@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bitwarden
+    repo_name: sdk-sm
+    description: Bitwarden Secrets Manager
+    version_prefix: bws-v
+    search_words:
+      - secret manager
+    files:
+      - name: bws
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["bws-v0.2.1", "bws-v0.3.0"]
+        asset: bws-{{.Arch}}-{{.OS}}-{{.SemVer}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: bws-sha256-checksums-{{.SemVer}}.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: bws-{{.Arch}}-{{.OS}}-{{.SemVer}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: bws-sha256-checksums-{{.SemVer}}.txt
+          algorithm: sha256

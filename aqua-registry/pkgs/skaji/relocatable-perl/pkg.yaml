@@ -1,0 +1,10 @@
+packages:
+  - name: skaji/relocatable-perl@5.42.0.0
+  - name: skaji/relocatable-perl
+    version: 5.38.2.0
+  - name: skaji/relocatable-perl
+    version: 5.36.1.0
+  - name: skaji/relocatable-perl
+    version: 5.36.0.0
+  - name: skaji/relocatable-perl
+    version: 5.34.1.0

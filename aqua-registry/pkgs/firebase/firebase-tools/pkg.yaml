@@ -1,0 +1,2 @@
+packages:
+  - name: firebase/firebase-tools@v14.12.1

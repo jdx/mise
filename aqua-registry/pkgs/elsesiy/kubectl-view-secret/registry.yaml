@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: elsesiy
+    repo_name: kubectl-view-secret
+    description: Kubernetes CLI plugin to decode Kubernetes secrets
+    files:
+      - name: kubectl-view_secret
+        src: kubectl-view-secret
+    version_constraint: semver(">= 0.8.0")
+    asset: kubectl-view-secret_{{.Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: kubectl-view-secret_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_overrides:
+      - version_constraint: semver("= 0.7.0")
+        rosetta2: true
+      - version_constraint: "true"
+        asset: kubectl-view-secret_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64
+        replacements:
+          darwin: Darwin
+          windows: Windows
+          linux: Linux
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ryodocx
+    repo_name: kube-credential-cache
+    asset: kube-credential-cache_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: Accelerator cache for kubernetes access
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: kcc-cache
+      - name: kcc-injector
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

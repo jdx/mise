@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: projectdiscovery
+    repo_name: proxify
+    description: A versatile and portable proxy for capturing, manipulating, and replaying HTTP/HTTPS traffic on the go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.4")
+        asset: proxify_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: proxify_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.0.6")
+        asset: proxify_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: proxify_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v0.0.7"
+        no_asset: true
+      - version_constraint: "true"
+        asset: proxify_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: proxify_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

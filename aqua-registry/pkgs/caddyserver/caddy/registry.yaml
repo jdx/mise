@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: caddyserver
+    repo_name: caddy
+    description: Fast, multi-platform web server with automatic HTTPS
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.5.2")
+        asset: caddy_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: windows
+            format: zip
+        checksum:
+          type: github_release
+          asset: caddy_{{trimV .Version}}_checksums.txt
+          algorithm: sha512
+      - version_constraint: "true"
+        asset: caddy_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: windows
+            format: zip
+        checksum:
+          type: github_release
+          asset: caddy_{{trimV .Version}}_checksums.txt
+          algorithm: sha512
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/caddyserver/caddy/\\.github/workflows/release\\.yml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/caddyserver/caddy/releases/download/v{{trimV .Version}}/caddy_{{trimV .Version}}_checksums.txt.sig
+              - --certificate
+              - https://github.com/caddyserver/caddy/releases/download/v{{trimV .Version}}/caddy_{{trimV .Version}}_checksums.txt.pem

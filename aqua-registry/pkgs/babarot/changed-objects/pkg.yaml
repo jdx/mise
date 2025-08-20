@@ -1,0 +1,16 @@
+packages:
+  - name: babarot/changed-objects@v0.3.9
+  - name: babarot/changed-objects
+    version: v0.3.7
+  - name: babarot/changed-objects
+    version: v0.1.16
+  - name: babarot/changed-objects
+    version: v0.1.11
+  - name: babarot/changed-objects
+    version: v0.1.7
+  - name: babarot/changed-objects
+    version: v0.1.2
+  - name: babarot/changed-objects
+    version: v0.1.1
+  - name: babarot/changed-objects
+    version: v0.1.0

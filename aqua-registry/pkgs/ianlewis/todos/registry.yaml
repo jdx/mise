@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ianlewis
+    repo_name: todos
+    description: Parse TODO and FIXME comments from code
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.1"
+        asset: todos-{{.OS}}-{{.Arch}}
+        format: raw
+        complete_windows_ext: false
+        slsa_provenance:
+          type: github_release
+          asset: todos-{{.OS}}-{{.Arch}}.intoto.jsonl
+      - version_constraint: "true"
+        asset: todos-{{.OS}}-{{.Arch}}
+        format: raw
+        slsa_provenance:
+          type: github_release
+          asset: todos-{{.OS}}-{{.Arch}}.intoto.jsonl
+        overrides:
+          - goos: windows
+            complete_windows_ext: false
+            asset: todos-{{.OS}}-{{.Arch}}.exe
+            slsa_provenance:
+              type: github_release
+              asset: todos-{{.OS}}-{{.Arch}}.exe.intoto.jsonl

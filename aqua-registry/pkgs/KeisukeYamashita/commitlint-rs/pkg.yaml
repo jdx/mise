@@ -1,0 +1,4 @@
+packages:
+  - name: KeisukeYamashita/commitlint-rs@v0.2.2
+  - name: KeisukeYamashita/commitlint-rs
+    version: v0.1.12

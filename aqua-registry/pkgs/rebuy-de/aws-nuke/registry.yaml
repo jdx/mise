@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rebuy-de
+    repo_name: aws-nuke
+    description: Nuke a whole AWS account and delete all its resources
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: aws-nuke-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+        files:
+          - name: aws-nuke
+            src: aws-nuke-{{.Version}}-windows-{{.Arch}}.exe
+    files:
+      - name: aws-nuke
+        src: aws-nuke-{{.Version}}-{{.OS}}-{{.Arch}}

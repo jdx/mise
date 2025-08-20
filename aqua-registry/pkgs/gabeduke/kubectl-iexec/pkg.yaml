@@ -1,0 +1,16 @@
+packages:
+  - name: gabeduke/kubectl-iexec@1.19.14
+  - name: gabeduke/kubectl-iexec
+    version: 1.19.12
+  - name: gabeduke/kubectl-iexec
+    version: 1.19.11
+  - name: gabeduke/kubectl-iexec
+    version: v1.18.0
+  - name: gabeduke/kubectl-iexec
+    version: v1.8.0
+  - name: gabeduke/kubectl-iexec
+    version: v1.6.1
+  - name: gabeduke/kubectl-iexec
+    version: 1.4.0
+  - name: gabeduke/kubectl-iexec
+    version: 1.2.0

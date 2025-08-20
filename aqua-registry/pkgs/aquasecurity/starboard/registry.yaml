@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: aquasecurity
+    repo_name: starboard
+    description: Kubernetes-native security toolkit
+    asset: starboard_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: starboard
+      - name: kubectl-starboard
+        src: starboard
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.15.0")
+    replacements:
+      amd64: x86_64
+      arm64: ARM64
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64
+        replacements:
+          amd64: x86_64

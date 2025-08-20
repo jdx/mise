@@ -1,0 +1,3 @@
+packages:
+  - name: golang.org/x/perf/cmd/benchstat
+    version: 84e58bfe0a7e5416369e236afa007d5d9c58a0fa

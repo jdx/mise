@@ -1,0 +1,8 @@
+packages:
+  - name: liweiyi88/gosnakego@v1.0.0
+  - name: liweiyi88/gosnakego
+    version: v0.3.1
+  - name: liweiyi88/gosnakego
+    version: v0.2.0
+  - name: liweiyi88/gosnakego
+    version: v0.1

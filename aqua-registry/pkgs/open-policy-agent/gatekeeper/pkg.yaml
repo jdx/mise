@@ -1,0 +1,2 @@
+packages:
+  - name: open-policy-agent/gatekeeper@v3.20.0

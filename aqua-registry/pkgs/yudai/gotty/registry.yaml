@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: yudai
+    repo_name: gotty
+    asset: gotty_{{.OS}}_{{.Arch}}.tar.gz
+    description: Share your terminal as a web application
+    supported_envs:
+      - linux/amd64
+      - darwin
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256

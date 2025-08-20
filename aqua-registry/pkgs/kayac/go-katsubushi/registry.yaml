@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kayac
+    repo_name: go-katsubushi
+    description: ID generator server
+    version_constraint: semver(">= 2.0.0")
+    asset: go-katsubushi_{{.Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    files:
+      - name: katsubushi
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_overrides:
+      # checksum file not provided & tag style was changed
+      - version_constraint: semver(">= 1.6.1")
+        asset: go-katsubushi_v{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        overrides:
+          - goos: linux
+            format: tar.gz
+        rosetta2: true
+        files:
+          - name: katsubushi
+            src: go-katsubushi_v{{.Version}}_{{.OS}}_{{.Arch}}/katsubushi
+        supported_envs:
+          - darwin
+          - linux/amd64
+        checksum:
+          enabled: false
+      # asset name was changed
+      - version_constraint: semver(">= 0.1.0")
+        asset: katsubushi-{{.Version}}-{{.OS}}-{{.Arch}}.zip
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux/amd64
+        checksum:
+          enabled: false
+      # linux only support
+      - version_constraint: "true"
+        asset: katsubushi-{{.Version}}-{{.OS}}-{{.Arch}}.zip
+        files:
+          - name: katsubushi
+            src: katsubushi-{{.Version}}-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - linux/amd64
+        checksum:
+          enabled: false

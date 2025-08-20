@@ -1,0 +1,6 @@
+packages:
+  - name: mongodb/mongodb-atlas-cli/mongocli@mongocli/v2.0.3
+  - name: mongodb/mongodb-atlas-cli/mongocli
+    version: v1.15.0
+  - name: mongodb/mongodb-atlas-cli/mongocli
+    version: v1.14.0

@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: alexellis
+    repo_name: kubetrim
+    description: Trim  your KUBECONFIG automatically
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.1-rc1")
+        no_asset: true
+      - version_constraint: semver("<= 0.0.1-rc3")
+        asset: kubetrim
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: kubetrim-arm64
+          - goos: darwin
+            goarch: amd64
+            asset: kubetrim-darwin
+          - goos: darwin
+            goarch: arm64
+            asset: kubetrim-darwin-arm64
+      - version_constraint: "true"
+        asset: kubetrim.tgz
+        format: tgz
+        files:
+          - name: kubetrim
+            src: '{{trimSuffix ".tgz" .Asset}}'
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: kubetrim-arm64.tgz
+          - goos: darwin
+            goarch: amd64
+            asset: kubetrim-darwin.tgz
+          - goos: darwin
+            goarch: arm64
+            asset: kubetrim-darwin-arm64.tgz
+          - goos: windows
+            asset: kubetrim.exe.tgz

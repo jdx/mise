@@ -1,0 +1,2 @@
+packages:
+  - name: travis-ci/gimme@v1.5.6

@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: projectdiscovery
+    repo_name: httpx
+    description: httpx is a fast and multi-purpose HTTP toolkit allows to run multiple probers using retryablehttp library, it is designed to maintain the result reliability with increased threads
+    asset: httpx_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    replacements:
+      darwin: macOS
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: httpx_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

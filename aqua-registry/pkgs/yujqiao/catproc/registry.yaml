@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: yujqiao
+    repo_name: catproc
+    aliases:
+      - name: rapiz1/catp
+      - name: yujqiao/catp
+    description: Print the output of a running process
+    files:
+      - name: catp
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: catp-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64

@@ -1,0 +1,2 @@
+packages:
+  - name: theupdateframework/go-tuf/tuf-client@v0.7.0

@@ -1,0 +1,6 @@
+packages:
+  - name: sstadick/crabz@v0.10.0
+  - name: sstadick/crabz
+    version: v0.7.2
+  - name: sstadick/crabz
+    version: v0.7.0
