@@ -2,9 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use indicatif::MultiProgress;
 
-use crate::ui::progress_report::{
-    HeaderReport, ProgressReport, QuietReport, SingleReport, VerboseReport,
-};
+use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
 use crate::ui::style;
 use crate::{cli::version::VERSION_PLAIN, config::Settings};
 
@@ -12,7 +10,7 @@ use crate::{cli::version::VERSION_PLAIN, config::Settings};
 pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
     quiet: bool,
-    header: Mutex<Option<HeaderReport>>,
+    header: Mutex<Option<Box<dyn SingleReport>>>,
 }
 
 static INSTANCE: Mutex<Option<Arc<MultiProgressReport>>> = Mutex::new(None);
@@ -47,38 +45,47 @@ impl MultiProgressReport {
         }
     }
     pub fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
+        self.add_with_options(prefix, false)
+    }
+
+    pub fn add_with_options(&self, prefix: &str, dry_run: bool) -> Box<dyn SingleReport> {
         match &self.mp {
             _ if self.quiet => Box::new(QuietReport::new()),
-            Some(mp) => {
+            Some(mp) if !dry_run => {
                 let mut pr = ProgressReport::new(prefix.into());
+                // Always use add() to append progress bars
+                // The header should already be at position 0 if it exists
                 pr.pb = mp.add(pr.pb);
                 Box::new(pr)
             }
-            None => Box::new(VerboseReport::new(prefix.to_string())),
+            _ => Box::new(VerboseReport::new(prefix.to_string())),
         }
     }
-    pub fn init_header(&self, message: &str, total_tools: usize) {
-        if self.mp.is_none() || self.quiet {
+    pub fn init_header(&self, dry_run: bool, message: &str, total_tools: usize) {
+        let mut hdr = self.header.lock().unwrap();
+        if let Some(_hdr) = hdr.as_ref() {
             return;
         }
-        let mut hdr = self.header.lock().unwrap();
-        match (&self.mp, hdr.as_ref()) {
-            (Some(mp), None) => {
-                let version = &*VERSION_PLAIN;
-                let prefix = format!(
-                    "{} {}",
-                    style::emagenta("mise").bold(),
-                    style::edim(format!("{version} by @jdx –")),
-                );
-                let mut header = HeaderReport::new(prefix, total_tools as u64, message.to_string());
+        let version = &*VERSION_PLAIN;
+        let prefix = format!(
+            "{} {}",
+            style::emagenta("mise").bold(),
+            style::edim(format!("{version} by @jdx –")),
+        );
+        *hdr = Some(match &self.mp {
+            _ if self.quiet => return,
+            Some(mp) if !dry_run => {
+                let mut header =
+                    ProgressReport::new_header(prefix, total_tools as u64, message.to_string());
                 header.pb = mp.add(header.pb);
-                *hdr = Some(header);
+                Box::new(header)
             }
-            (_, Some(_h)) => {
-                // header already initialized; do not change total
+            _ => {
+                let header = VerboseReport::new(prefix);
+                header.set_message(message.to_string());
+                Box::new(header)
             }
-            _ => {}
-        }
+        });
     }
     pub fn header_inc(&self, n: usize) {
         if n == 0 {

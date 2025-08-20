@@ -25,6 +25,10 @@ pub struct Install {
     #[clap(value_name = "TOOL@VERSION")]
     tool: Option<Vec<ToolArg>>,
 
+    /// Show what would be installed without actually installing
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    dry_run: bool,
+
     /// Force reinstall even if already installed
     #[clap(long, short, requires = "tool")]
     force: bool,
@@ -94,7 +98,11 @@ impl Install {
         let current_versions = ts.list_current_versions();
         // ensure that only current versions are sent to lockfile rebuild
         versions.retain(|tv| current_versions.iter().any(|(_, cv)| tv == cv));
-        config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
+
+        // Skip rebuilding shims and symlinks in dry-run mode
+        if !self.dry_run {
+            config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
+        }
         Ok(())
     }
 
@@ -108,6 +116,7 @@ impl Install {
                 use_locked_version: true,
                 latest_versions: true,
             },
+            dry_run: self.dry_run,
             ..Default::default()
         }
     }
@@ -181,10 +190,13 @@ impl Install {
                     .await?
             })
         };
-        measure!("rebuild_shims_and_runtime_symlinks", {
-            let ts = config.get_toolset().await?;
-            config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
-        });
+        // Skip rebuilding shims and symlinks in dry-run mode
+        if !self.dry_run {
+            measure!("rebuild_shims_and_runtime_symlinks", {
+                let ts = config.get_toolset().await?;
+                config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
+            });
+        }
         Ok(())
     }
 }

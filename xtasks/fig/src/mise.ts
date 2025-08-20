@@ -1333,6 +1333,12 @@ const completionSpec: Fig.Spec = {
       description: "Install a tool version",
       options: [
         {
+          name: ["-n", "--dry-run"],
+          description:
+            "Show what would be installed without actually installing",
+          isRepeatable: false,
+        },
+        {
           name: ["-f", "--force"],
           description: "Force reinstall even if already installed",
           isRepeatable: false,
@@ -3009,6 +3015,12 @@ const completionSpec: Fig.Spec = {
           name: ["-g", "--global"],
           description:
             "Use the global config file (`~/.config/mise/config.toml`) instead of the local one",
+          isRepeatable: false,
+        },
+        {
+          name: ["-n", "--dry-run"],
+          description:
+            "Perform a dry run, showing what would be installed and modified without making changes",
           isRepeatable: false,
         },
         {

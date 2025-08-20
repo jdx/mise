@@ -38,7 +38,7 @@ impl Latest {
         let backend = self.tool.ba.backend()?;
         let mpr = MultiProgressReport::get();
         if let Some(plugin) = backend.plugin() {
-            plugin.ensure_installed(&config, &mpr, false).await?;
+            plugin.ensure_installed(&config, &mpr, false, false).await?;
         }
         if let Some(v) = prefix {
             prefix = Some(config.resolve_alias(&backend, &v).await?);
