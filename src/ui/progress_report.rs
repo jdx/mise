@@ -32,19 +32,20 @@ impl Display for ProgressIcon {
     }
 }
 
-pub trait SingleReport: Send + Sync {
+pub trait SingleReport: Send + Sync + std::fmt::Debug {
     fn println(&self, _message: String) {}
     fn set_message(&self, _message: String) {}
     fn inc(&self, _delta: u64) {}
     fn set_position(&self, _delta: u64) {}
     fn set_length(&self, _length: u64) {}
     fn abandon(&self) {}
-    fn finish(&self) {}
-    fn finish_with_message(&self, _message: String) {}
-    fn finish_with_icon(&self, message: String, _icon: ProgressIcon) {
-        // Default implementation just calls finish_with_message
-        self.finish_with_message(message);
+    fn finish(&self) {
+        self.finish_with_message(String::new());
     }
+    fn finish_with_message(&self, message: String) {
+        self.finish_with_icon(message, ProgressIcon::Success);
+    }
+    fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {}
 }
 
 static SPIN_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
@@ -109,6 +110,17 @@ impl ProgressReport {
         pb.enable_steady_tick(TICK_INTERVAL);
         ProgressReport { pb }
     }
+
+    pub fn new_header(prefix: String, length: u64, message: String) -> ProgressReport {
+        ui::ctrlc::show_cursor_after_ctrl_c();
+        let pad = *LONGEST_PLUGIN_NAME;
+        let pb = ProgressBar::new(length)
+            .with_style(HEADER_TEMPLATE.clone())
+            .with_prefix(normal_prefix(pad, &prefix))
+            .with_message(message);
+        pb.enable_steady_tick(TICK_INTERVAL);
+        ProgressReport { pb }
+    }
 }
 
 impl SingleReport for ProgressReport {
@@ -144,21 +156,12 @@ impl SingleReport for ProgressReport {
     fn abandon(&self) {
         self.pb.abandon();
     }
-    fn finish(&self) {
-        self.pb.finish_and_clear();
-    }
-    fn finish_with_message(&self, _message: String) {
-        // Keep existing behavior - clear the progress bar
-        self.pb.finish_and_clear();
-    }
-
     fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {
-        // For ProgressReport (indicatif), we still clear since it's a progress bar
-        // The message would be transient anyway
         self.pb.finish_and_clear();
     }
 }
 
+#[derive(Debug)]
 pub struct QuietReport {}
 
 impl QuietReport {
@@ -169,6 +172,7 @@ impl QuietReport {
 
 impl SingleReport for QuietReport {}
 
+#[derive(Debug)]
 pub struct VerboseReport {
     prefix: String,
     prev_message: Mutex<String>,
@@ -201,79 +205,9 @@ impl SingleReport for VerboseReport {
     fn finish(&self) {
         self.finish_with_message(style::egreen("done").to_string());
     }
-    fn finish_with_message(&self, message: String) {
-        self.finish_with_icon(message, ProgressIcon::Success);
-    }
-
     fn finish_with_icon(&self, message: String, icon: ProgressIcon) {
         let prefix = pad_prefix(self.pad - 2, &self.prefix);
         log::info!("{prefix} {icon} {message}");
-    }
-}
-
-#[derive(Debug)]
-pub struct HeaderReport {
-    pub pb: ProgressBar,
-}
-
-impl HeaderReport {
-    pub fn new(prefix: String, length: u64, message: String) -> HeaderReport {
-        ui::ctrlc::show_cursor_after_ctrl_c();
-        let pb = ProgressBar::new(length)
-            .with_style(HEADER_TEMPLATE.clone())
-            .with_prefix(prefix)
-            .with_message(message)
-            .with_position(0);
-        pb.enable_steady_tick(TICK_INTERVAL);
-        HeaderReport { pb }
-    }
-}
-
-impl SingleReport for HeaderReport {
-    fn println(&self, message: String) {
-        // Suspend the entire MultiProgress to prevent header duplication
-        crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-            eprintln!("{message}");
-        });
-    }
-    fn set_message(&self, message: String) {
-        self.pb.set_message(message.replace('\r', ""));
-    }
-    fn inc(&self, delta: u64) {
-        self.pb.inc(delta);
-    }
-    fn set_position(&self, pos: u64) {
-        self.pb.set_position(pos);
-        if Some(self.pb.position()) == self.pb.length() {
-            self.pb.set_style(SPIN_TEMPLATE.clone());
-            self.pb.enable_steady_tick(Duration::from_millis(250));
-        }
-    }
-    fn set_length(&self, length: u64) {
-        self.pb.set_position(0);
-        self.pb.set_style(HEADER_TEMPLATE.clone());
-        self.pb.set_length(length);
-    }
-    fn abandon(&self) {
-        self.pb.abandon();
-    }
-    fn finish(&self) {
-        // Check if message contains "(dry-run)" to use appropriate icon
-        let message = self.pb.message();
-        if message.contains("(dry-run)") {
-            self.finish_with_icon(message.to_string(), ProgressIcon::Skipped);
-        } else {
-            self.finish_with_icon(message.to_string(), ProgressIcon::Success);
-        }
-    }
-    fn finish_with_message(&self, message: String) {
-        self.finish_with_icon(message, ProgressIcon::Success);
-    }
-    fn finish_with_icon(&self, _message: String, icon: ProgressIcon) {
-        let tmpl = format!("{{prefix}} {icon} {{wide_msg}}");
-        let icon_style = ProgressStyle::with_template(tmpl.as_str()).unwrap();
-        self.pb.set_style(icon_style);
-        self.pb.finish();
     }
 }
 

@@ -220,7 +220,7 @@ impl Toolset {
         } else {
             opts.reason.clone()
         };
-        mpr.init_header(&header_reason, versions.len());
+        mpr.init_header(opts.dry_run, &header_reason, versions.len());
 
         // Skip hooks in dry-run mode
         if !opts.dry_run {
@@ -304,7 +304,9 @@ impl Toolset {
         }
 
         // Finish the global header
-        mpr.header_finish();
+        if !opts.dry_run {
+            mpr.header_finish();
+        }
         Ok(installed)
     }
 

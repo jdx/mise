@@ -2,9 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use indicatif::MultiProgress;
 
-use crate::ui::progress_report::{
-    HeaderReport, ProgressReport, QuietReport, SingleReport, VerboseReport,
-};
+use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
 use crate::ui::style;
 use crate::{cli::version::VERSION_PLAIN, config::Settings};
 
@@ -12,7 +10,7 @@ use crate::{cli::version::VERSION_PLAIN, config::Settings};
 pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
     quiet: bool,
-    header: Mutex<Option<HeaderReport>>,
+    header: Mutex<Option<Box<dyn SingleReport>>>,
 }
 
 static INSTANCE: Mutex<Option<Arc<MultiProgressReport>>> = Mutex::new(None);
@@ -63,48 +61,31 @@ impl MultiProgressReport {
             _ => Box::new(VerboseReport::new(prefix.to_string())),
         }
     }
-    pub fn init_header(&self, message: &str, total_tools: usize) {
-        if self.quiet {
-            return;
-        }
-
-        // Print header for non-tty mode
-        if self.mp.is_none() {
-            let version = &*VERSION_PLAIN;
-            let icon = if message.contains("(dry-run)") {
-                style::eyellow("○")
-            } else {
-                style::egreen("✓").bright()
-            };
-            eprintln!(
-                "{} {} {} {}",
-                style::emagenta("mise").bold(),
-                style::edim(format!("{version} by @jdx –")),
-                icon,
-                message
-            );
-            return;
-        }
-
+    pub fn init_header(&self, dry_run: bool, message: &str, total_tools: usize) {
         let mut hdr = self.header.lock().unwrap();
-        match (&self.mp, hdr.as_ref()) {
-            (Some(mp), None) => {
-                let version = &*VERSION_PLAIN;
-                let prefix = format!(
-                    "{} {}",
-                    style::emagenta("mise").bold(),
-                    style::edim(format!("{version} by @jdx –")),
-                );
-                let mut header = HeaderReport::new(prefix, total_tools as u64, message.to_string());
-                // Use add() instead of insert() to avoid potential duplicates
-                header.pb = mp.add(header.pb);
-                *hdr = Some(header);
-            }
-            (_, Some(_h)) => {
-                // header already initialized; do not change total
-            }
-            _ => {}
+        if let Some(_hdr) = hdr.as_ref() {
+            return;
         }
+        let version = &*VERSION_PLAIN;
+        let prefix = format!(
+            "{} {}",
+            style::emagenta("mise").bold(),
+            style::edim(format!("{version} by @jdx –")),
+        );
+        *hdr = Some(match &self.mp {
+            _ if self.quiet => return,
+            Some(mp) if !dry_run => {
+                let mut header =
+                    ProgressReport::new_header(prefix, total_tools as u64, message.to_string());
+                header.pb = mp.add(header.pb);
+                Box::new(header)
+            }
+            _ => {
+                let header = VerboseReport::new(prefix);
+                header.set_message(message.to_string());
+                Box::new(header)
+            }
+        });
     }
     pub fn header_inc(&self, n: usize) {
         if n == 0 {
@@ -118,8 +99,6 @@ impl MultiProgressReport {
         if let Some(h) = &*self.header.lock().unwrap() {
             h.finish();
         }
-        // Note: For non-tty mode, the header was already printed with the final icon
-        // in init_header, so we don't need to do anything here
     }
     pub fn suspend_if_active<F: FnOnce() -> R, R>(f: F) -> R {
         match Self::try_get() {
