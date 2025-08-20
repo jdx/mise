@@ -137,8 +137,15 @@ impl SingleReport for ProgressReport {
     fn finish(&self) {
         self.pb.finish_and_clear();
     }
-    fn finish_with_message(&self, message: String) {
-        self.pb.finish_with_message(message);
+    fn finish_with_message(&self, _message: String) {
+        // Keep existing behavior - clear the progress bar
+        self.pb.finish_and_clear();
+    }
+
+    fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {
+        // For ProgressReport (indicatif), we still clear since it's a progress bar
+        // The message would be transient anyway
+        self.pb.finish_and_clear();
     }
 }
 
