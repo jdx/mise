@@ -62,6 +62,10 @@ pub struct Use {
     #[clap(short, long, overrides_with_all = & ["path", "env"])]
     global: bool,
 
+    /// Perform a dry run, showing what would be installed and modified without making changes
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    dry_run: bool,
+
     /// Create/modify an environment-specific config file like .mise.<env>.toml
     #[clap(long, short, overrides_with_all = & ["global", "path"])]
     env: Option<String>,
@@ -95,10 +99,6 @@ pub struct Use {
     /// https://mise.jdx.dev/configuration/settings.html#lockfile
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
-
-    /// Perform a dry run, showing what would be installed and modified without making changes
-    #[clap(long, short = 'n')]
-    dry_run: bool,
 }
 
 impl Use {
@@ -157,33 +157,8 @@ impl Use {
         let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
 
         if self.dry_run {
-            // Show what would be modified without actually doing it
-            for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
-                let tool_versions: Vec<_> = tvl
-                    .into_iter()
-                    .map(|tv| {
-                        if pin {
-                            tv.version.clone()
-                        } else {
-                            tv.request.version().to_string()
-                        }
-                    })
-                    .collect();
-                let versions_str = tool_versions.join(", ");
-                info!(
-                    "would add {}@{} to {}",
-                    ba,
-                    versions_str,
-                    display_path(cf.get_path())
-                );
-            }
-            for plugin_name in &self.remove {
-                info!(
-                    "would remove {} from {}",
-                    plugin_name,
-                    display_path(cf.get_path())
-                );
-            }
+            // In dry-run mode, don't modify the config file
+            // The summary message at the end will show what would be changed
         } else {
             for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
                 let versions: Vec<_> = tvl
@@ -232,7 +207,7 @@ impl Use {
             config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
         }
 
-        self.render_success_message(cf.as_ref(), &versions, self.dry_run)?;
+        self.render_success_message(cf.as_ref(), &versions, &self.remove)?;
         Ok(())
     }
 
@@ -288,22 +263,48 @@ impl Use {
         &self,
         cf: &dyn ConfigFile,
         versions: &[ToolVersion],
-        dry_run: bool,
+        remove: &[BackendArg],
     ) -> Result<()> {
         let path = display_path(cf.get_path());
-        let tools = versions.iter().map(|t| t.style()).join(", ");
-        if dry_run {
-            miseprintln!(
-                "{} would update {} with tools: {tools}",
-                style("mise").green(),
-                style(path).cyan().for_stderr(),
-            );
+
+        if self.dry_run {
+            let mut messages = vec![];
+
+            if !versions.is_empty() {
+                let tools = versions.iter().map(|t| t.style()).join(", ");
+                messages.push(format!("add: {tools}"));
+            }
+
+            if !remove.is_empty() {
+                let tools_to_remove = remove.iter().map(|r| r.to_string()).join(", ");
+                messages.push(format!("remove: {tools_to_remove}"));
+            }
+
+            if !messages.is_empty() {
+                miseprintln!(
+                    "{} would update {} ({})",
+                    style("mise").green(),
+                    style(&path).cyan().for_stderr(),
+                    messages.join(", ")
+                );
+            }
         } else {
-            miseprintln!(
-                "{} {} tools: {tools}",
-                style("mise").green(),
-                style(path).cyan().for_stderr(),
-            );
+            if !versions.is_empty() {
+                let tools = versions.iter().map(|t| t.style()).join(", ");
+                miseprintln!(
+                    "{} {} tools: {tools}",
+                    style("mise").green(),
+                    style(&path).cyan().for_stderr(),
+                );
+            }
+            if !remove.is_empty() {
+                let tools_to_remove = remove.iter().map(|r| r.to_string()).join(", ");
+                miseprintln!(
+                    "{} {} removed: {tools_to_remove}",
+                    style("mise").green(),
+                    style(&path).cyan().for_stderr(),
+                );
+            }
         }
         Ok(())
     }
