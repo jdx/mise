@@ -1,8 +1,11 @@
 #![allow(unknown_lints)]
 #![allow(clippy::literal_string_with_formatting_args)]
 
-use std::sync::Mutex;
 use std::time::Duration;
+use std::{
+    fmt::{Display, Formatter},
+    sync::Mutex,
+};
 
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::LazyLock as Lazy;
@@ -16,6 +19,17 @@ pub enum ProgressIcon {
     Skipped,
     Warning,
     Error,
+}
+
+impl Display for ProgressIcon {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProgressIcon::Success => write!(f, "{}", style::egreen("✓").bright()),
+            ProgressIcon::Skipped => write!(f, "{}", style::eyellow("⇢").bright()),
+            ProgressIcon::Warning => write!(f, "{}", style::eyellow("⚠").bright()),
+            ProgressIcon::Error => write!(f, "{}", style::ered("✗").bright()),
+        }
+    }
 }
 
 pub trait SingleReport: Send + Sync {
@@ -193,13 +207,7 @@ impl SingleReport for VerboseReport {
 
     fn finish_with_icon(&self, message: String, icon: ProgressIcon) {
         let prefix = pad_prefix(self.pad - 2, &self.prefix);
-        let ico = match icon {
-            ProgressIcon::Success => style::egreen("✓").bright().to_string(),
-            ProgressIcon::Skipped => style::eyellow("○").to_string(),
-            ProgressIcon::Warning => style::eyellow("⚠").to_string(),
-            ProgressIcon::Error => style::ered("✗").bright().to_string(),
-        };
-        log::info!("{prefix} {ico} {message}");
+        log::info!("{prefix} {icon} {message}");
     }
 }
 
@@ -262,13 +270,7 @@ impl SingleReport for HeaderReport {
         self.finish_with_icon(message, ProgressIcon::Success);
     }
     fn finish_with_icon(&self, _message: String, icon: ProgressIcon) {
-        let icon_str = match icon {
-            ProgressIcon::Success => style::egreen("✓").bright().to_string(),
-            ProgressIcon::Skipped => style::eyellow("○").to_string(),
-            ProgressIcon::Warning => style::eyellow("⚠").to_string(),
-            ProgressIcon::Error => style::ered("✗").bright().to_string(),
-        };
-        let tmpl = format!("{{prefix}} {} {{wide_msg}}", icon_str);
+        let tmpl = format!("{{prefix}} {icon} {{wide_msg}}");
         let icon_style = ProgressStyle::with_template(tmpl.as_str()).unwrap();
         self.pb.set_style(icon_style);
         self.pb.finish();
