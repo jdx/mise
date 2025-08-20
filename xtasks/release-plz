@@ -21,8 +21,6 @@ if [[ $cur_version != "$latest_version" ]]; then
 	exit 0
 fi
 
-git subtree pull --squash --prefix=aqua-registry https://github.com/aquaproj/aqua-registry main
-
 year="$(date +%Y)"
 month="$(date +%-m)"
 if echo "$cur_version" | grep -e "^$year\.$month\."; then
@@ -50,7 +48,6 @@ git add \
 	Cargo.toml \
 	CHANGELOG.md \
 	README.md \
-	aqua-registry \
 	default.nix \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \
@@ -58,6 +55,7 @@ git add \
 	man/
 git clean -df
 git checkout -B release
+git subtree pull --squash --prefix=aqua-registry https://github.com/aquaproj/aqua-registry main
 git commit -m "chore: release $version"
 git push origin release --force
 
