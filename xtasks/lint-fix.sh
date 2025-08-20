@@ -17,4 +17,4 @@ EOF
 cargo fmt --all
 rm rustfmt.toml
 
-hk fix --all
+hk fix --all  --exclude aqua-registry

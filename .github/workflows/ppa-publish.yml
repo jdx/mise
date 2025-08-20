@@ -143,8 +143,6 @@ jobs:
 
       - name: Create source package for each distribution
         run: |
-        
-          
           # Create tarball
           git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar"
           
