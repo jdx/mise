@@ -143,9 +143,7 @@ jobs:
 
       - name: Create source package for each distribution
         run: |
-          
-          # Store the original working directory
-          ORIG_DIR="$(pwd)"
+        
           
           # Create tarball
           git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar"
