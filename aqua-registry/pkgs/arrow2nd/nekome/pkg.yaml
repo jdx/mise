@@ -1,0 +1,4 @@
+packages:
+  - name: arrow2nd/nekome@v2.2.3
+  - name: arrow2nd/nekome
+    version: v2.1.0

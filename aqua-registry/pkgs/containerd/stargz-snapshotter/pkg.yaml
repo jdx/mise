@@ -1,0 +1,4 @@
+packages:
+  - name: containerd/stargz-snapshotter@v0.17.0
+  - name: containerd/stargz-snapshotter
+    version: v0.3.0

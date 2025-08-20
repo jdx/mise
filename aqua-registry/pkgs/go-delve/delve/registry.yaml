@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: go-delve
+    repo_name: delve
+    description: Delve is a debugger for the Go programming language
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        path: github.com/go-delve/delve/cmd/dlv
+        files:
+          - name: dlv

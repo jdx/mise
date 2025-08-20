@@ -1,0 +1,8 @@
+packages:
+  - name: werf/nelm@v1.12.2
+  - name: werf/nelm
+    version: v1.1.1
+  - name: werf/nelm
+    version: v1.1.0
+  - name: werf/nelm
+    version: v1.0.0

@@ -1,0 +1,4 @@
+packages:
+  - name: openclarity/kubeclarity@v2.23.3
+  - name: openclarity/kubeclarity
+    version: v2.0.0

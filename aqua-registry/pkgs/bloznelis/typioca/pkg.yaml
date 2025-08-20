@@ -1,0 +1,4 @@
+packages:
+  - name: bloznelis/typioca@3.1.0
+  - name: bloznelis/typioca
+    version: 1.0.1

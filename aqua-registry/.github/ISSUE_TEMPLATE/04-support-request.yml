@@ -1,0 +1,85 @@
+name: Support Request
+description: |
+  Please use this template when you face any problem (not bug) and need our help.
+  If you're not sure if it's a bug or not, please use this template.
+labels:
+  - support-request
+body:
+  - type: textarea
+    id: package-name
+    attributes:
+      label: package name
+      description: |
+        e.g. `suzuki-shunsuke/github-comment`
+    validations:
+      required: false
+  - type: textarea
+    id: aqua-info
+    attributes:
+      label: aqua info
+      description: |
+        Please use the latest version.
+        Please run `aqua info` command and paste the result.
+        `aqua info` requires `aqua >= v2.10.0`.
+        If you use `aqua < v2.10.0`, please run `aqua -v` and write OS and CPU architecture instead.
+        If you checked multiple versions, please write the result too.
+        e.g. This issue occurs with aqua v2.5.0 too, but doesn't occur with aqua v2.4.0.
+      value: |
+        ```console
+        $ aqua info
+
+        ```
+    validations:
+      required: true
+  - type: textarea
+    id: overview
+    attributes:
+      label: Overview
+    validations:
+      required: true
+  - type: textarea
+    id: how-to-reproduce
+    attributes:
+      label: How to reproduce
+      description: |
+        Please see [the guide](https://github.com/suzuki-shunsuke/oss-contribution-guide#write-good-how-to-reproduce) too.
+        aqua.yaml should be not partial but complete configuration.
+        Please remove unneeded configuration to reproduce the issue.
+      value: |
+        aqua.yaml
+
+        ```yaml
+
+        ```
+
+        Other related code such as local Registry
+
+        ```
+
+        ```
+
+        Executed command and output
+
+        ```console
+        $ 
+        ```
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behaviour
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual-behaviour
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: note
+    attributes:
+      label: Note
+    validations:
+      required: false

@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jpillora
+    repo_name: chisel
+    description: A fast TCP/UDP tunnel over HTTP
+    asset: chisel_{{trimV .Version}}_{{.OS}}_{{.Arch}}.gz
+    files:
+      - name: chisel
+        src: chisel_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+    checksum:
+      type: github_release
+      asset: chisel_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

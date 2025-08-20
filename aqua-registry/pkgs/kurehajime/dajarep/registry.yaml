@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kurehajime
+    repo_name: dajarep
+    description: ダジャレを検索するコマンド
+    version_constraint: semver(">= 1.9.8")
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    asset: dajarep_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+        asset: dajarep_{{.OS}}_{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        checksum:
+          type: github_release
+          asset: dajarep_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

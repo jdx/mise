@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: civo
+    repo_name: cli
+    description: Our Command Line Interface (CLI) for interacting with your Civo resources
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: civo-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: civo
+    checksum:
+      type: github_release
+      asset: civo-{{trimV .Version}}-checksums.sha256
+      algorithm: sha256

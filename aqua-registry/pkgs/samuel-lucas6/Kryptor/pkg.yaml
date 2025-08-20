@@ -1,0 +1,6 @@
+packages:
+  - name: samuel-lucas6/Kryptor@v4.1.1
+  - name: samuel-lucas6/Kryptor
+    version: v3.1.1
+  - name: samuel-lucas6/Kryptor
+    version: v2.2.2

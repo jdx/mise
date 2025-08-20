@@ -1,0 +1,12 @@
+packages:
+  - name: theurichde/go-aws-sso@v1.5.0
+  - name: theurichde/go-aws-sso
+    version: v1.2.0-dev.1
+  - name: theurichde/go-aws-sso
+    version: v0.6.1
+  - name: theurichde/go-aws-sso
+    version: v0.3.0
+  - name: theurichde/go-aws-sso
+    version: v0.1.0
+  - name: theurichde/go-aws-sso
+    version: v0.0.1

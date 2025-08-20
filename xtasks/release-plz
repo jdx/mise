@@ -21,8 +21,6 @@ if [[ $cur_version != "$latest_version" ]]; then
 	exit 0
 fi
 
-git submodule update --remote
-
 year="$(date +%Y)"
 month="$(date +%-m)"
 if echo "$cur_version" | grep -e "^$year\.$month\."; then
@@ -50,7 +48,6 @@ git add \
 	Cargo.toml \
 	CHANGELOG.md \
 	README.md \
-	aqua-registry \
 	default.nix \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \
@@ -59,6 +56,7 @@ git add \
 git clean -df
 git checkout -B release
 git commit -m "chore: release $version"
+git subtree pull --squash --prefix=aqua-registry https://github.com/aquaproj/aqua-registry main
 git push origin release --force
 
 if [[ "$(gh pr list --label release)" == "" ]]; then

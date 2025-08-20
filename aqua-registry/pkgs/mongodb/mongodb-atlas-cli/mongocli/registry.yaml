@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: mongodb/mongodb-atlas-cli/mongocli
+    type: github_release
+    repo_owner: mongodb
+    repo_name: mongodb-atlas-cli
+    description: MongoDB Atlas CLI and MongoDB CLI enable you to manage your MongoDB in the Cloud
+    aliases:
+      - name: mongodb/mongocli
+    asset: mongocli_{{trimPrefix "mongocli/v" .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    replacements:
+      darwin: macos
+      amd64: x86_64
+    files:
+      - name: mongocli
+        src: bin/mongocli
+    overrides:
+      - goos: linux
+        format: tar.gz
+        files:
+          - name: mongocli
+            src: mongocli_{{trimPrefix "mongocli/v" .Version}}_{{.OS}}_{{.Arch}}/bin/mongocli
+    supported_envs:
+      - darwin
+      - linux
+    version_filter: Version startsWith "mongocli/" or semver("< 1.23.0")
+    version_constraint: semverWithVersion(">= 1.23.0", trimPrefix(Version, "mongocli/"))
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_overrides:
+      # asset style was changed
+      - version_constraint: semver(">= 1.15.0")
+        asset: mongocli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - linux
+        overrides:
+          - goos: linux
+            format: tar.gz
+            files:
+              - name: mongocli
+                src: mongocli_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/mongocli
+      # arm64 wasn't supported
+      - version_constraint: "true"
+        asset: mongocli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        supported_envs:
+          - amd64
+          - darwin
+        rosetta2: true
+        files:
+          - name: mongocli
+        overrides:
+          - goos: linux
+            format: tar.gz
+            files:
+              - name: mongocli
+                src: mongocli_{{trimV .Version}}_{{.OS}}_{{.Arch}}/mongocli

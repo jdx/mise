@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: wtfutil
+    repo_name: wtf
+    description: WTF is the personal information dashboard for your terminal
+    supported_envs:
+      - darwin
+      - linux
+    asset: wtf_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    files:
+      - name: wtfutil
+        src: wtf_{{trimV .Version}}_{{.OS}}_{{.Arch}}/wtfutil
+    checksum:
+      type: github_release
+      asset: wtf_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

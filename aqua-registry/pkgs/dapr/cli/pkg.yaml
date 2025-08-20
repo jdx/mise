@@ -1,0 +1,2 @@
+packages:
+  - name: dapr/cli@v1.15.2

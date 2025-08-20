@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sahilm
+    repo_name: yamldiff
+    description: A CLI tool to diff two YAML files
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - amd64
+    complete_windows_ext: false
+    format: raw
+    asset: yamldiff-v{{.Version}}-{{.OS}}-amd64

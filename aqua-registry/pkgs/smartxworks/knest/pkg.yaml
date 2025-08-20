@@ -1,0 +1,4 @@
+packages:
+  - name: smartxworks/knest@v0.7.0
+  - name: smartxworks/knest
+    version: v0.1.0

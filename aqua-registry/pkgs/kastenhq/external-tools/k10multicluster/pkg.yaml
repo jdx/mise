@@ -1,0 +1,12 @@
+packages:
+  - name: kastenhq/external-tools/k10multicluster@6.5.14
+  - name: kastenhq/external-tools/k10multicluster
+    version: 6.0.3
+  - name: kastenhq/external-tools/k10multicluster
+    version: 4.5.0
+  - name: kastenhq/external-tools/k10multicluster
+    version: 4.0.3
+  - name: kastenhq/external-tools/k10multicluster
+    version: 3.0.7
+  - name: kastenhq/external-tools/k10multicluster
+    version: 2.5.24

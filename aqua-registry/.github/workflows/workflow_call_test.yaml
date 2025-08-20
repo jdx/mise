@@ -1,0 +1,85 @@
+---
+name: test (workflow_call)
+on: workflow_call
+permissions: {}
+env:
+  AQUA_LOG_COLOR: always
+jobs:
+  path-filter:
+    # Get changed files to filter jobs
+    outputs:
+      renovate-config-validator: ${{steps.changes.outputs.renovate-config-validator}}
+      check-files: ${{steps.changes.outputs.check-files}}
+      json-schema: ${{steps.changes.outputs.json-schema}}
+      test-docker: ${{steps.changes.outputs.test-docker}}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    timeout-minutes: 15
+    steps:
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: changes
+        with:
+          filters: |
+            renovate-config-validator:
+              - renovate.json5
+              - .github/workflows/wc-renovate-config-validator.yaml
+            check-files:
+              - pkgs/**/pkg.yaml
+              - pkgs/**/registry.yaml
+              - .github/workflows/wc-check-files.yaml
+            json-schema:
+              - registry.yaml
+              - .github/workflows/wc-json-schema.yaml
+            test-docker:
+              - docker/*
+              - scripts/**
+              - cmdx.yaml
+              - .github/workflows/wc-test-docker.yaml
+
+  renovate-config-validator:
+    uses: ./.github/workflows/wc-renovate-config-validator.yaml
+    needs: path-filter
+    if: ${{needs.path-filter.outputs.renovate-config-validator == 'true'}}
+    permissions:
+      contents: read
+
+  check-files:
+    uses: ./.github/workflows/wc-check-files.yaml
+    needs: path-filter
+    if: ${{needs.path-filter.outputs.check-files == 'true'}}
+    permissions:
+      contents: read
+
+  json-schema:
+    uses: ./.github/workflows/wc-json-schema.yaml
+    needs: path-filter
+    if: ${{needs.path-filter.outputs.json-schema == 'true'}}
+    permissions:
+      contents: read
+
+  test-docker:
+    uses: ./.github/workflows/wc-test-docker.yaml
+    needs: path-filter
+    if: ${{needs.path-filter.outputs.test-docker == 'true'}}
+    permissions:
+      contents: read
+
+  ci-info:
+    uses: ./.github/workflows/wc-ci-info.yaml
+    permissions:
+      contents: read
+      pull-requests: read
+
+  lintnet:
+    uses: ./.github/workflows/wc-lintnet.yaml
+    permissions:
+      contents: read
+
+  test:
+    needs: ci-info
+    uses: ./.github/workflows/wc-test.yaml
+    permissions:
+      contents: read
+      pull-requests: read

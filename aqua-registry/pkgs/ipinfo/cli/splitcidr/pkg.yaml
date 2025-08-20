@@ -1,0 +1,2 @@
+packages:
+  - name: ipinfo/cli/splitcidr@splitcidr-1.0.0

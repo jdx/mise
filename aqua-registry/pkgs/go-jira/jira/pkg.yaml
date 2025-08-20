@@ -1,0 +1,10 @@
+packages:
+  - name: go-jira/jira@v1.0.27
+  - name: go-jira/jira
+    version: v1.0.20
+  - name: go-jira/jira
+    version: v0.1.7
+  - name: go-jira/jira
+    version: v0.1.0
+  - name: go-jira/jira
+    version: 0.0.12

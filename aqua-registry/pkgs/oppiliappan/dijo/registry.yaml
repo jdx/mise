@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: oppiliappan
+    repo_name: dijo
+    aliases:
+      - name: nerdypepper/dijo
+    description: scriptable, curses-based, digital habit tracker
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.0")
+        asset: dijo-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.2.1"
+        asset: dijo-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v0.2.2-alpha"
+        asset: dijo-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: dijo-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

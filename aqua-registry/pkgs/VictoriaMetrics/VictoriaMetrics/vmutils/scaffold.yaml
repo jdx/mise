@@ -1,0 +1,10 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+# aqua - Declarative CLI Version Manager
+# https://aquaproj.github.io/
+# Other than name is optional. All initial values are just examples.
+name: victoriametrics/victoriametrics/vmutils
+# version_filter: not (Version matches "-rc$")
+# version_prefix: cli-
+all_assets_filter: (Asset matches "vmutils-") and not (Asset matches "-enterprise") and not (Asset matches "-arm-")
+version_filter: semver("> 1.78.1") and not (Version endsWith "-victorialogs") and (Version endsWith ".0")

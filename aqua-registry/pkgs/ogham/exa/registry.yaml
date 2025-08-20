@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ogham
+    repo_name: exa
+    asset: exa-{{.OS}}-{{.Arch}}-musl-{{.Version}}.{{.Format}}
+    format: zip
+    description: A modern replacement for ‘ls’
+    replacements:
+      amd64: x86_64
+      darwin: macos
+    overrides:
+      - goos: darwin
+        asset: exa-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+    supported_envs:
+      - linux/amd64
+      - darwin
+    rosetta2: true
+    files:
+      - name: exa
+        src: bin/exa

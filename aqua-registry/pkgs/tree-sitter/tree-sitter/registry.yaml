@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tree-sitter
+    repo_name: tree-sitter
+    description: An incremental parsing system for programming tools
+    asset: tree-sitter-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: gz
+    replacements:
+      amd64: x64
+      darwin: macos
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: tree-sitter
+        src: tree-sitter-{{.OS}}-{{.Arch}}
+    version_constraint: semver(">= 0.20.8")
+    version_overrides:
+      - version_constraint: semver(">= 0.18.1")
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver("< 0.18.1")
+        replacements:
+          amd64: x64
+          darwin: osx
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true

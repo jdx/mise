@@ -1,0 +1,12 @@
+packages:
+  - name: qarmin/czkawka@10.0.0
+  - name: qarmin/czkawka
+    version: 9.0.0
+  - name: qarmin/czkawka
+    version: 2.3.0
+  - name: qarmin/czkawka
+    version: 1.3.0
+  - name: qarmin/czkawka
+    version: 1.0.1
+  - name: qarmin/czkawka
+    version: 1.0.0

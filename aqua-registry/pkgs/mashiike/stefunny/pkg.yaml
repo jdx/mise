@@ -1,0 +1,4 @@
+packages:
+  - name: mashiike/stefunny@v0.9.3
+  - name: mashiike/stefunny
+    version: v0.8.4

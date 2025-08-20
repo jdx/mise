@@ -1,0 +1,4 @@
+packages:
+  - name: kubernetes-sigs/cloud-provider-kind@v0.7.0
+  - name: kubernetes-sigs/cloud-provider-kind
+    version: v0.0.1

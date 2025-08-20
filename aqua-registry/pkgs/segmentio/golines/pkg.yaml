@@ -1,0 +1,4 @@
+packages:
+  - name: segmentio/golines@v0.12.2
+  - name: segmentio/golines
+    version: v0.11.0

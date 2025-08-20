@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: omegion
+    repo_name: ssh-manager
+    description: SSH Key Manager for 1Password, Bitwarden and AWS S3
+    asset: ssh-manager-{{.OS}}-{{.Arch}}
+    format: raw
+    complete_windows_ext: false
+    version_constraint: semver(">= 0.13.0")
+    version_overrides:
+      - version_constraint: semver(">= 0.11.0")
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("< 0.11.0")
+        supported_envs:
+          - linux/arm64

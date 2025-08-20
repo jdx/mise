@@ -1,0 +1,8 @@
+packages:
+  - name: zizmorcore/zizmor@v1.12.1
+  - name: zizmorcore/zizmor
+    version: v1.12.0
+  - name: zizmorcore/zizmor
+    version: v1.11.0
+  - name: zizmorcore/zizmor
+    version: v1.8.0-rc3

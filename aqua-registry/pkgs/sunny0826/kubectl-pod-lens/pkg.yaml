@@ -1,0 +1,8 @@
+packages:
+  - name: sunny0826/kubectl-pod-lens@v0.3.1
+  - name: sunny0826/kubectl-pod-lens
+    version: v0.2.2
+  - name: sunny0826/kubectl-pod-lens
+    version: v0.2.1
+  - name: sunny0826/kubectl-pod-lens
+    version: v0.2.0

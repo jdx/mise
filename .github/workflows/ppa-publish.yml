@@ -35,7 +35,6 @@ jobs:
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
         with:
           fetch-depth: 0
-          submodules: true
 
       - name: Set up environment variables
         run: |
@@ -144,17 +143,8 @@ jobs:
 
       - name: Create source package for each distribution
         run: |
-          
-          # Store the original working directory
-          ORIG_DIR="$(pwd)"
-          
-          # Create original tarball with submodules (needed for aqua-registry)
+          # Create tarball
           git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar"
-          
-          # Add aqua-registry submodule to the tarball (required for build)
-          cd aqua-registry
-          git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/aqua-registry/" HEAD >> "../../${PACKAGE_NAME}_${VERSION}.orig.tar"
-          cd "$ORIG_DIR"
           
           # Compress the tarball
           gzip "../${PACKAGE_NAME}_${VERSION}.orig.tar"

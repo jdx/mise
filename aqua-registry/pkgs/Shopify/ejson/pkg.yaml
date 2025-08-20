@@ -1,0 +1,8 @@
+packages:
+  - name: Shopify/ejson@v1.5.4
+  - name: Shopify/ejson
+    version: v1.4.0
+  - name: Shopify/ejson
+    version: v1.3.3
+  - name: Shopify/ejson
+    version: v1.3.2

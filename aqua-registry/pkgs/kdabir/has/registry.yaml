@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_content
+    repo_owner: kdabir
+    repo_name: has
+    path: has
+    description: checks presence of various command line tools and their versions on the path

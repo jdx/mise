@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubemq-io
+    repo_name: kubemqctl
+    rosetta2: true
+    description: Kubemqctl is a command line interface (CLI) for KubeMQ, Kubernetes Message Broker
+    supported_envs:
+      - darwin
+      - amd64
+    asset: kubemqctl_{{.OS}}_{{.Arch}}
+    overrides:
+      - goos: windows
+        asset: kubemqctl.exe

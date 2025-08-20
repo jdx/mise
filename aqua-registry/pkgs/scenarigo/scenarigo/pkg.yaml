@@ -1,0 +1,13 @@
+packages:
+  - name: scenarigo/scenarigo@v0.22.1
+    vars:
+      go_version: 1.23.6
+  - name: scenarigo/scenarigo@v0.17.3
+    vars:
+      go_version: 1.22.2
+  - name: scenarigo/scenarigo
+    version: v0.7.0
+  - name: scenarigo/scenarigo
+    version: v0.6.1
+  - name: scenarigo/scenarigo
+    version: v0.5.1

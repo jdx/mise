@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bonnefoa
+    repo_name: kubectl-fzf
+    asset: kubectl-fzf_{{.OS}}_{{.Arch}}.tar.gz
+    description: A fast kubectl autocompletion with fzf
+    supported_envs:
+      - linux/amd64
+      - darwin
+    rosetta2: true
+    files:
+      - name: kubectl-fzf-server
+      - name: kubectl-fzf-completion
+    checksum:
+      type: github_release
+      asset: kubectl-fzf_checksums.txt
+      algorithm: sha256

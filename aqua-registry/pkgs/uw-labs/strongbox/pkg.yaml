@@ -1,0 +1,14 @@
+packages:
+  - name: uw-labs/strongbox@v2.1.0
+  - name: uw-labs/strongbox
+    version: v2.0.0-RC3
+  - name: uw-labs/strongbox
+    version: v0.2.1
+  - name: uw-labs/strongbox
+    version: v0.2.0
+  - name: uw-labs/strongbox
+    version: v0.1.0
+  - name: uw-labs/strongbox
+    version: 0.1.0-rc3
+  - name: uw-labs/strongbox
+    version: 0.1.0-rc2

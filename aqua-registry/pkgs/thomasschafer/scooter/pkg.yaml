@@ -1,0 +1,4 @@
+packages:
+  - name: thomasschafer/scooter@v0.6.0
+  - name: thomasschafer/scooter
+    version: v0.2.2

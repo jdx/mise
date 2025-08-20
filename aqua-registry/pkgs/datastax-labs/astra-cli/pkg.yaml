@@ -1,0 +1,2 @@
+packages:
+  - name: datastax-labs/astra-cli@v0.6.0

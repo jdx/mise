@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: LGUG2Z
+    repo_name: komorebi
+    description: A tiling window manager for Windows
+    files:
+      - name: komorebi.exe # https://github.com/aquaproj/aqua-registry/pull/16647
+      - name: komorebi
+      - name: komorebic
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.29")
+        asset: komorebi-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - windows
+      - version_constraint: "true"
+        asset: komorebi-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - windows

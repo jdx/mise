@@ -1,0 +1,4 @@
+packages:
+  - name: suzuki-shunsuke/akoi@v2.2.1
+  - name: suzuki-shunsuke/akoi
+    version: 0.12.0

@@ -1,0 +1,6 @@
+packages:
+  - name: chriswalz/bit@v1.1.2
+  - name: chriswalz/bit
+    version: v1.0.2
+  - name: chriswalz/bit
+    version: v0.6.14

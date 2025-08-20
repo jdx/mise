@@ -1,0 +1,10 @@
+packages:
+  - name: mvisonneau/vac@v0.0.11
+  - name: mvisonneau/vac
+    version: v0.0.5
+  - name: mvisonneau/vac
+    version: edge
+  - name: mvisonneau/vac
+    version: 0.0.4
+  - name: mvisonneau/vac
+    version: 0.0.3

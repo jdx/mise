@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: k3d-io
+    repo_name: k3d
+    aliases:
+      - name: rancher/k3d
+    description: Little helper to run CNCF's k3s in Docker
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v3.0.0-syntax.0", "v3.1.0-dev.0", "v3.4.0-test.0", "v4.1.0-alpha.2"]
+        asset: k3d-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 3.0.0-rc.3")
+        asset: k3d-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 4.2.0")
+        asset: k3d-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 5.3.0")
+        asset: k3d-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 5.4.9")
+        asset: k3d-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+      - version_constraint: "true"
+        asset: k3d-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

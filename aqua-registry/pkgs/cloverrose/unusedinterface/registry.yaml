@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloverrose
+    repo_name: unusedinterface
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: unusedinterface_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: unusedinterface
+            src: "unusedinterface_{{.OS}}_{{.Arch}}/unusedinterface"
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: unusedinterface_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gohugoio
+    repo_name: hugo
+    asset: hugo_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+    description: The world’s fastest framework for building websites
+    files:
+      - name: hugo
+    format: tar.gz
+    checksum:
+      type: github_release
+      asset: hugo_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.103.0")
+    overrides:
+      - goos: windows
+        format: zip
+      - goos: darwin
+        asset: hugo_{{trimV .Version}}_darwin-universal.tar.gz
+    version_overrides:
+      - version_constraint: semver(">= 0.102.0")
+        overrides:
+          - goos: windows
+            format: zip
+          - goos: darwin
+            asset: hugo_{{trimV .Version}}_macOS-universal.tar.gz
+        replacements: &hugo_replacements_1
+          amd64: 64bit
+          386: 32bit
+          arm: ARM
+          arm64: ARM64
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+          openbsd: OpenBSD
+          netbsd: NetBSD
+          freebsd: FreeBSD
+          dragonfly: DragonFlyBSD
+      - version_constraint: "true"
+        replacements: *hugo_replacements_1
+        overrides:
+          - goos: windows
+            format: zip

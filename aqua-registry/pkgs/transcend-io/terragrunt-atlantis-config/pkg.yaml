@@ -1,0 +1,6 @@
+packages:
+  - name: transcend-io/terragrunt-atlantis-config@v1.20.0
+  - name: transcend-io/terragrunt-atlantis-config
+    version: v1.17.4
+  - name: transcend-io/terragrunt-atlantis-config
+    version: v1.7.0

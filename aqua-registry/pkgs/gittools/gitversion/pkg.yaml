@@ -1,0 +1,4 @@
+packages:
+  - name: gittools/gitversion@6.4.0
+  - name: gittools/gitversion
+    version: 5.12.0

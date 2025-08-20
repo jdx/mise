@@ -1,0 +1,2 @@
+packages:
+  - name: golang/tools/goyacc@v0.36.0

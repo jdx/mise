@@ -1,0 +1,4 @@
+packages:
+  - name: bronze1man/yaml2json@v1.3.5
+  - name: bronze1man/yaml2json
+    version: v1.3

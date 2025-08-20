@@ -1,0 +1,4 @@
+packages:
+  - name: bflad/tfproviderlint@v0.31.0
+  - name: bflad/tfproviderlint
+    version: v0.28.1

@@ -1,0 +1,6 @@
+packages:
+  - name: astral-sh/rye@0.44.0
+  - name: astral-sh/rye
+    version: 0.3.0
+  - name: astral-sh/rye
+    version: 0.1.2

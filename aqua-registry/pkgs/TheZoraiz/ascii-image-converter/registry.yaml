@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: TheZoraiz
+    repo_name: ascii-image-converter
+    asset: ascii-image-converter_{{.OS}}_{{.Arch}}.{{.Format}}
+    description: A cross-platform command-line tool to convert images into ascii art and print them on the console. Now supports braille art
+    files:
+      - name: ascii-image-converter
+        src: ascii-image-converter_{{.OS}}_{{.Arch}}/ascii-image-converter
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      linux: Linux
+      windows: Windows
+      darwin: macOS
+      amd64: amd64_64bit
+      arm64: arm64_64bit
+      386: i386_32bit
+      arm: armv6_32bit
+    checksum:
+      type: github_release
+      asset: sha256_checksums.txt
+      algorithm: sha256

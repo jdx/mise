@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: homeport
+    repo_name: dyff
+    description: A diff tool for YAML files, and sometimes JSON
+    supported_envs:
+      - darwin
+      - linux
+    asset: dyff_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: self-actuated
+    repo_name: actuated-cli
+    description: CLI for actuated
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: actuated-cli
+        format: raw
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            asset: actuated-cli-{{.OS}}
+          - goos: darwin
+            goarch: arm64
+            asset: actuated-cli-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - darwin
+          - amd64

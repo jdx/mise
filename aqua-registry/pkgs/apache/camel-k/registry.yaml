@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: apache
+    repo_name: camel-k
+    description: Apache Camel K is a lightweight integration platform, born on Kubernetes, with serverless superpowers
+    asset: camel-k-client-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: kamel
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    version_constraint: semver(">= 2.0.0-nightly")
+    version_overrides:
+      - version_constraint: semver(">= 1.9.0")
+        replacements:
+          amd64: 64bit
+          arm64: arm64bit
+          darwin: mac
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: semver(">= 1.9.0-nightly")
+        replacements:
+          amd64: 64bit
+          darwin: mac
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver(">= 1.6.1")
+        replacements:
+          amd64: 64bit
+          arm64: arm64bit
+          darwin: mac
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: semver(">= 1.0.0-M1")
+        replacements:
+          amd64: 64bit
+          darwin: mac
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver(">= 0.3.4")
+        replacements:
+          amd64: 64bit
+          darwin: mac
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha512"
+          algorithm: sha512
+      - version_constraint: semver("< 0.3.4")
+        replacements:
+          amd64: 64bit
+          darwin: mac
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true

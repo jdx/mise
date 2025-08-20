@@ -1,0 +1,8 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+name: godotengine/godot
+# version_filter: not (Version matches "-rc$")
+# version_prefix: cli-
+all_assets_filter: |
+  let words = ["server", "headless", "mono", "android", "editor", "templates", "export", "32"];
+  not any(words, {Asset matches #})

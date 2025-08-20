@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mmalcek
+    repo_name: bafi
+    asset: bafi_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tgz
+    description: Universal JSON, BSON, YAML, CSV, XML converter with templates
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: bafi_{{.Version}}_{{.OS}}_{{.Arch}}_checksum.txt
+      algorithm: md5

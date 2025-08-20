@@ -1,0 +1,6 @@
+packages:
+  - name: ikanago/omekasy@v1.3.3
+  - name: ikanago/omekasy
+    version: v0.2.0
+  - name: ikanago/omekasy
+    version: v0.1.0

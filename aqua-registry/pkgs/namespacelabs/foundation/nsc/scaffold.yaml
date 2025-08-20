@@ -1,0 +1,6 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+name: namespacelabs/foundation/nsc
+all_assets_filter: |
+  let words = ["nsboot", "fn_", "ns_"];
+  not any(words, {Asset matches #})

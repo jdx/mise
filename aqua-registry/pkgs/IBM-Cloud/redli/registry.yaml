@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: IBM-Cloud
+    repo_name: redli
+    description: "Redli - A humane alternative to the Redis-cli and TLS"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.11.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.10.0")
+        asset: redli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: redli_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: redli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: redli
+            src: redli_{{.OS}}_{{.Arch}}
+        checksum:
+          type: github_release
+          asset: redli_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            goarch: amd64
+            files:
+              - name: redli
+          - goos: windows
+            goarch: arm64
+            files:
+              - name: redli
+                src: redli_{{.Arch}}.exe

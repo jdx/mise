@@ -1,0 +1,4 @@
+packages:
+  - name: grafana/grizzly@v0.7.1
+  - name: grafana/grizzly
+    version: v0.1.0

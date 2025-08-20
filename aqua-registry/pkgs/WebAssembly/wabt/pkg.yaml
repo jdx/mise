@@ -1,0 +1,20 @@
+packages:
+  - name: WebAssembly/wabt@1.0.37
+  - name: WebAssembly/wabt
+    version: 1.0.34
+  - name: WebAssembly/wabt
+    version: 1.0.33
+  - name: WebAssembly/wabt
+    version: 1.0.17
+  - name: WebAssembly/wabt
+    version: 1.0.15
+  - name: WebAssembly/wabt
+    version: 1.0.14
+  - name: WebAssembly/wabt
+    version: 1.0.13
+  - name: WebAssembly/wabt
+    version: 1.0.5
+  - name: WebAssembly/wabt
+    version: 1.0.3
+  - name: WebAssembly/wabt
+    version: 1.0.2

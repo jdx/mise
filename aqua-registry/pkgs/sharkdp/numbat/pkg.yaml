@@ -1,0 +1,12 @@
+packages:
+  - name: sharkdp/numbat@v1.16.0
+  - name: sharkdp/numbat
+    version: v1.14.0
+  - name: sharkdp/numbat
+    version: v1.10.0
+  - name: sharkdp/numbat
+    version: v1.9.0
+  - name: sharkdp/numbat
+    version: v1.8.0
+  - name: sharkdp/numbat
+    version: v1.6.1

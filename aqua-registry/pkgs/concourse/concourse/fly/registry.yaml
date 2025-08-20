@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: concourse/concourse/fly
+    type: github_release
+    repo_owner: concourse
+    repo_name: concourse
+    asset: fly-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tgz
+    description: Concourse is a container-based continuous thing-doer written in Go
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    # TODO checksum: support sha1
+    # https://github.com/aquaproj/aqua/issues/1216
+    files:
+      - name: fly

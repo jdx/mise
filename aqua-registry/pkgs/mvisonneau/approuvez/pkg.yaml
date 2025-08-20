@@ -1,0 +1,6 @@
+packages:
+  - name: mvisonneau/approuvez@v0.1.1
+  - name: mvisonneau/approuvez
+    version: v0.1.0
+  - name: mvisonneau/approuvez
+    version: edge

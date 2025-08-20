@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_content
+    repo_owner: suzuki-shunsuke
+    repo_name: checkout-merged-branch-with-ci-info
+    path: checkout-merged-branch
+    description: checkout a merged branch
+    files:
+      - name: checkout-merged-branch

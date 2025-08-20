@@ -1,0 +1,6 @@
+packages:
+  - name: genuinetools/reg@v0.16.1
+  - name: genuinetools/reg
+    version: v0.15.4
+  - name: genuinetools/reg
+    version: v0.4.0

@@ -1,0 +1,6 @@
+packages:
+  - name: coreos/butane@v0.24.0
+  - name: coreos/butane
+    version: v0.15.0
+  - name: coreos/butane
+    version: v0.10.0

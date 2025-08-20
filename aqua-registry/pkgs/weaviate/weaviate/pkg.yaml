@@ -1,0 +1,18 @@
+packages:
+  - name: weaviate/weaviate@v1.32.4
+  - name: weaviate/weaviate
+    version: v1.30.3
+  - name: weaviate/weaviate
+    version: v1.22.1
+  - name: weaviate/weaviate
+    version: v1.22.0
+  - name: weaviate/weaviate
+    version: v1.20.6
+  - name: weaviate/weaviate
+    version: v1.19.13
+  - name: weaviate/weaviate
+    version: v1.19.12
+  - name: weaviate/weaviate
+    version: v1.19.5
+  - name: weaviate/weaviate
+    version: v1.18.5

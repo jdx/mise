@@ -1,0 +1,10 @@
+packages:
+  - name: fwdcloudsec/granted@v0.38.0
+  - name: fwdcloudsec/granted
+    version: v0.17.0
+  - name: fwdcloudsec/granted
+    version: v0.16.1
+  - name: fwdcloudsec/granted
+    version: v0.16.0
+  - name: fwdcloudsec/granted
+    version: v0.1.3

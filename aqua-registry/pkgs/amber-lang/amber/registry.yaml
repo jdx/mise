@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: amber-lang
+    repo_name: amber
+    aliases:
+      - name: Ph0enixKM/Amber
+    description: Amber the programming language compiled to bash
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.1-alpha")
+        asset: amber_{{.OS}}_{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: amber-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: amber
+            src: "{{.AssetWithoutExt}}/amber"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: arm64
+            files:
+              - name: amber
+            checksum:
+              enabled: false

@@ -1,0 +1,8 @@
+packages:
+  - name: chenjiandongx/kubectl-images@v0.6.3
+  - name: chenjiandongx/kubectl-images
+    version: v0.3.4
+  - name: chenjiandongx/kubectl-images
+    version: v0.3.3
+  - name: chenjiandongx/kubectl-images
+    version: v0.3.2

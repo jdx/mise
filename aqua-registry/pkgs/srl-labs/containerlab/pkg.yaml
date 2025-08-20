@@ -1,0 +1,14 @@
+packages:
+  - name: srl-labs/containerlab@v0.69.3
+  - name: srl-labs/containerlab
+    version: v0.53.0
+  - name: srl-labs/containerlab
+    version: v0.20.1
+  - name: srl-labs/containerlab
+    version: v0.10.4
+  - name: srl-labs/containerlab
+    version: v0.9.1
+  - name: srl-labs/containerlab
+    version: v0.6.1
+  - name: srl-labs/containerlab
+    version: v0.6.0

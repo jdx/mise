@@ -1,0 +1,6 @@
+packages:
+  - name: NimbleArchitect/kubectl-ice@v0.2.13
+  - name: NimbleArchitect/kubectl-ice
+    version: v0.0.2
+  - name: NimbleArchitect/kubectl-ice
+    version: v0.0.1

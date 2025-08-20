@@ -1,0 +1,10 @@
+packages:
+  - name: mantil-io/mantil@v0.2.12
+  - name: mantil-io/mantil
+    version: v0.1.28
+  - name: mantil-io/mantil
+    version: v0.1.22
+  - name: mantil-io/mantil
+    version: v0.1.12
+  - name: mantil-io/mantil
+    version: v0.1.1

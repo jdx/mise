@@ -1,0 +1,16 @@
+packages:
+  - name: cross-rs/cross@v0.2.5
+  - name: cross-rs/cross
+    version: v0.2.1
+  - name: cross-rs/cross
+    version: v0.1.16
+  - name: cross-rs/cross
+    version: v0.1.5
+  - name: cross-rs/cross
+    version: v0.1.4
+  - name: cross-rs/cross
+    version: v0.1.2
+  - name: cross-rs/cross
+    version: v0.1.2-rc1
+  - name: cross-rs/cross
+    version: v0.1.1

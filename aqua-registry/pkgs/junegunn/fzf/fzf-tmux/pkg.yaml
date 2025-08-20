@@ -1,0 +1,2 @@
+packages:
+  - name: junegunn/fzf/fzf-tmux@v0.65.1

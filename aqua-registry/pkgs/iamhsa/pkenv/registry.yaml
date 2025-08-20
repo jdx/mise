@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_archive
+    repo_owner: iamhsa
+    repo_name: pkenv
+    description: Packer version manager
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        files:
+          - name: pkenv
+            src: pkenv-{{trimV .Version}}/bin/pkenv
+          - name: packer
+            src: pkenv-{{trimV .Version}}/bin/packer

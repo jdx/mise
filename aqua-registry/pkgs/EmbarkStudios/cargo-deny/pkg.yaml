@@ -1,0 +1,10 @@
+packages:
+  - name: EmbarkStudios/cargo-deny@0.18.4
+  - name: EmbarkStudios/cargo-deny
+    version: 0.14.22
+  - name: EmbarkStudios/cargo-deny
+    version: 0.9.0
+  - name: EmbarkStudios/cargo-deny
+    version: 0.6.5
+  - name: EmbarkStudios/cargo-deny
+    version: 0.6.4

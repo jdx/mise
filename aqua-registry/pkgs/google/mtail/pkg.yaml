@@ -1,0 +1,14 @@
+packages:
+  - name: google/mtail@v3.0.8
+  - name: google/mtail
+    version: v3.0.0-rc54
+  - name: google/mtail
+    version: v3.0.0-rc51
+  - name: google/mtail
+    version: v3.0.0-rc47
+  - name: google/mtail
+    version: v3.0.0-rc44
+  - name: google/mtail
+    version: v3.0.0-rc38
+  - name: google/mtail
+    version: v3.0.0-rc36

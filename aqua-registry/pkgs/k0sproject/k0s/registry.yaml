@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: k0sproject
+    repo_name: k0s
+    description: k0s - The Zero Friction Kubernetes
+    version_filter: not (Version matches "-(alpha|beta|rc)")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.8.1")
+        asset: k0s-{{.Version}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 1.27.16+k0s.0")
+        asset: k0s-{{.Version}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        supported_envs:
+          - linux
+          - windows
+      - version_constraint: semver("<= 1.28.15+k0s.0")
+        asset: k0s-{{.Version}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - windows
+      - version_constraint: >-
+          (semver("<= 1.32.3+k0s.0") && semver(">= 1.32.0+k0s.0")) ||
+          (semver("<= 1.31.7+k0s.0") && semver(">= 1.31.0+k0s.0")) ||
+          (semver("<= 1.30.11+k0s.0") && semver(">= 1.30.0+k0s.0")) ||
+          semver("<= 1.29.15+k0s.0")
+        asset: k0s-{{.Version}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+        cosign:
+          signature:
+            type: github_release
+            asset: "{{.Asset}}.sig"
+          key:
+            type: github_release
+            asset: "cosign.pub"
+          opts:
+            # `--insecure-ignore-tlog` is required because it is signed with `--tlog-upload=false` option
+            # see also:
+            # https://github.com/k0sproject/k0s/pull/5724
+            # https://github.com/k0sproject/k0s/commit/a01579db2dc7916194e6fd95949b6b4fbbfa2252
+            - --insecure-ignore-tlog
+        supported_envs:
+          - linux
+          - windows
+      - version_constraint: "true"
+        asset: k0s-{{.Version}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+        cosign:
+          signature:
+            type: github_release
+            asset: "{{.Asset}}.sig"
+          key:
+            type: github_release
+            asset: "cosign.pub"
+        supported_envs:
+          - linux
+          - windows

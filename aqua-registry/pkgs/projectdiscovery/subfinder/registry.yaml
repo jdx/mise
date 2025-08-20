@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: projectdiscovery
+    repo_name: subfinder
+    asset: subfinder_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    description: Subfinder is a subdomain discovery tool that discovers valid subdomains for websites. Designed as a passive framework to be useful for bug bounties and safe for penetration testing
+    replacements:
+      darwin: macOS
+    checksum:
+      type: github_release
+      asset: subfinder_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

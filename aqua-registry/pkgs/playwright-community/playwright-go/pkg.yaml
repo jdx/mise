@@ -1,0 +1,2 @@
+packages:
+  - name: playwright-community/playwright-go@v0.5200.0

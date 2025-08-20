@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  # TODO: Consider merging this package with altsem/gitu pkgs/altsem/gitu.
+  # https://github.com/aquaproj/aqua-registry/issues/22840
+  - name: crates.io/gitu
+    type: cargo
+    repo_owner: altsem
+    repo_name: gitu
+    description: A TUI Git client inspired by Magit
+    crate: gitu

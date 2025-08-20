@@ -1,0 +1,6 @@
+packages:
+  - name: astefanutti/kubebox@v0.10.0
+  - name: astefanutti/kubebox
+    version: v0.4.0
+  - name: astefanutti/kubebox
+    version: v0.1.0
