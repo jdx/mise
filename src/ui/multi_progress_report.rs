@@ -2,7 +2,9 @@ use std::sync::{Arc, Mutex};
 
 use indicatif::MultiProgress;
 
-use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
+use crate::ui::progress_report::{
+    HeaderReport, ProgressReport, QuietReport, SingleReport, VerboseReport,
+};
 use crate::ui::style;
 use crate::{cli::version::VERSION_PLAIN, config::Settings};
 
@@ -10,6 +12,7 @@ use crate::{cli::version::VERSION_PLAIN, config::Settings};
 pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
     quiet: bool,
+    header: Mutex<Option<HeaderReport>>,
 }
 
 static INSTANCE: Mutex<Option<Arc<MultiProgressReport>>> = Mutex::new(None);
@@ -40,6 +43,7 @@ impl MultiProgressReport {
         MultiProgressReport {
             mp,
             quiet: settings.quiet,
+            header: Mutex::new(None),
         }
     }
     pub fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
@@ -57,13 +61,12 @@ impl MultiProgressReport {
             _ => Box::new(VerboseReport::new(prefix.to_string())),
         }
     }
-    pub fn init_header(&self, message: &str, _total_tools: usize) {
+    pub fn init_header(&self, message: &str, total_tools: usize) {
         if self.quiet {
             return;
         }
 
-        // Only print header for non-tty mode
-        // In TTY mode with progress bars, the header gets buried and doesn't display properly
+        // Print header for non-tty mode
         if self.mp.is_none() {
             let version = &*VERSION_PLAIN;
             let icon = if message.contains("(dry-run)") {
@@ -78,14 +81,42 @@ impl MultiProgressReport {
                 icon,
                 message
             );
+            return;
         }
-        // Don't create a header progress bar for TTY mode
+
+        let mut hdr = self.header.lock().unwrap();
+        match (&self.mp, hdr.as_ref()) {
+            (Some(mp), None) => {
+                let version = &*VERSION_PLAIN;
+                let prefix = format!(
+                    "{} {}",
+                    style::emagenta("mise").bold(),
+                    style::edim(format!("{version} by @jdx –")),
+                );
+                let mut header = HeaderReport::new(prefix, total_tools as u64, message.to_string());
+                header.pb = mp.add(header.pb);
+                *hdr = Some(header);
+            }
+            (_, Some(_h)) => {
+                // header already initialized; do not change total
+            }
+            _ => {}
+        }
     }
-    pub fn header_inc(&self, _n: usize) {
-        // No header in TTY mode, so nothing to increment
+    pub fn header_inc(&self, n: usize) {
+        if n == 0 {
+            return;
+        }
+        if let Some(h) = &*self.header.lock().unwrap() {
+            h.inc(n as u64);
+        }
     }
     pub fn header_finish(&self) {
-        // No header to finish - it was already printed in non-TTY mode
+        if let Some(h) = &*self.header.lock().unwrap() {
+            h.finish();
+        }
+        // Note: For non-tty mode, the header was already printed with the final icon
+        // in init_header, so we don't need to do anything here
     }
     pub fn suspend_if_active<F: FnOnce() -> R, R>(f: F) -> R {
         match Self::try_get() {
