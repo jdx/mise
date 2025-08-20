@@ -440,7 +440,7 @@ cmd implode help="Removes mise CLI and all related data" {
 cmd install help="Install a tool version" {
     alias i
     long_help "Install a tool version\n\nInstalls a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`\nInstalling alone will not activate the tools so they won't be in PATH.\nTo install and/or activate in one command, use `mise use` which will create a `mise.toml` file\nin the current directory to activate this tool when inside the directory.\nAlternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.\n\nTools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`"
-    after_long_help "Examples:\n\n    $ mise install node@20.0.0  # install specific node version\n    $ mise install node@20      # install fuzzy node version\n    $ mise install node         # install version specified in mise.toml\n    $ mise install              # installs everything specified in mise.toml\n    $ mise install --dry-run     # show what would be installed\n    $ mise install -n node@20   # show what would be installed (short form)\n"
+    after_long_help "Examples:\n\n    $ mise install node@20.0.0  # install specific node version\n    $ mise install node@20      # install fuzzy node version\n    $ mise install node         # install version specified in mise.toml\n    $ mise install              # installs everything specified in mise.toml\n"
     flag "-n --dry-run" help="Show what would be installed without actually installing"
     flag "-f --force" help="Force reinstall even if already installed"
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
