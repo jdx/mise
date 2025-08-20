@@ -174,13 +174,23 @@ pub fn verify_checksum_str(
     Ok(())
 }
 
-/// Cleans a binary name by removing OS/arch suffixes.
+/// Cleans a binary name by removing OS/arch suffixes and version numbers.
 /// This is useful when downloading single binaries that have platform-specific names.
+/// Executable extensions (.exe, .bat, .sh, etc.) are preserved.
 ///
-/// Examples:
+/// # Parameters
+/// - `name`: The binary name to clean
+/// - `tool_name`: Optional hint for the expected tool name. When provided:
+///   - Version removal is more aggressive, only keeping the result if it matches the tool name
+///   - Helps ensure the cleaned name matches the expected tool
+///   When `None`, version removal is more conservative to avoid over-cleaning
+///
+/// # Examples
 /// - "docker-compose-linux-x86_64" -> "docker-compose"
-/// - "tool-darwin-arm64.exe" -> "tool.exe"
+/// - "tool-darwin-arm64.exe" -> "tool.exe" (preserves extension)
 /// - "mytool-v1.2.3-windows-amd64" -> "mytool"
+/// - "app-2.0.0-linux-x64" -> "app" (with tool_name="app")
+/// - "script-darwin-arm64.sh" -> "script.sh" (preserves .sh extension)
 pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     // Common OS patterns to remove
     let os_patterns = [
@@ -303,7 +313,14 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     }
 }
 
-/// Remove version suffixes from binary names
+/// Remove version suffixes from binary names.
+///
+/// When `tool_name` is provided, aggressively removes version patterns but only
+/// if the result matches or relates to the tool name. This prevents accidentally
+/// removing too much from the name.
+///
+/// When `tool_name` is None, only removes clear version patterns at the end
+/// while ensuring we don't leave an empty or invalid result.
 fn clean_version_suffix(name: &str, tool_name: Option<&str>) -> String {
     // Common version patterns to remove
     // Matches: -v1.2.3, _v1.2.3, -1.2.3, _1.2.3, etc.
