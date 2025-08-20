@@ -132,6 +132,21 @@ strip_components = 1
 If `strip_components` is not explicitly set, mise will automatically detect when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
 :::
 
+### `bin`
+
+Rename the downloaded binary to a specific name. This is useful when downloading single binaries that have platform-specific names:
+
+```toml
+[tools."http:docker-compose"]
+version = "2.29.1"
+url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-linux-x86_64"
+bin = "docker-compose"  # Rename from docker-compose-linux-x86_64 to docker-compose
+```
+
+::: info
+When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `docker-compose-linux-x86_64` becomes `docker-compose` automatically. Use the `bin` option only when you need a specific custom name.
+:::
+
 ### `bin_path`
 
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with `{{version}}`:

@@ -92,8 +92,16 @@ pub fn install_artifact(
             let dest = bin_dir.join(file_path.file_name().unwrap());
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
+        } else if let Some(bin_name) = opts.get("bin") {
+            // If bin is specified, rename the file to this name
+            let dest = install_path.join(bin_name);
+            file::copy(file_path, &dest)?;
+            file::make_executable(&dest)?;
         } else {
-            let dest = install_path.join(file_path.file_name().unwrap());
+            // Always auto-clean binary names by removing OS/arch suffixes
+            let original_name = file_path.file_name().unwrap().to_string_lossy();
+            let cleaned_name = clean_binary_name(&original_name, Some(&tv.ba().tool_name));
+            let dest = install_path.join(cleaned_name);
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
         }
@@ -166,11 +174,154 @@ pub fn verify_checksum_str(
     Ok(())
 }
 
+/// Cleans a binary name by removing OS/arch suffixes.
+/// This is useful when downloading single binaries that have platform-specific names.
+///
+/// Examples:
+/// - "docker-compose-linux-x86_64" -> "docker-compose"
+/// - "tool-darwin-arm64.exe" -> "tool"
+/// - "mytool-v1.2.3-windows-amd64" -> "mytool-v1.2.3"
+pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
+    // Common OS patterns to remove
+    let os_patterns = [
+        "linux", "darwin", "macos", "windows", "win", "freebsd", "openbsd", "netbsd", "android",
+    ];
+
+    // Common architecture patterns to remove
+    let arch_patterns = [
+        "x86_64", "x64", "amd64", "i386", "i686", "x86", "aarch64", "arm64", "armv7", "armv6",
+        "arm", "ppc64le", "ppc64", "s390x", "mips", "mipsel", "riscv64",
+    ];
+
+    // Remove file extension first (but preserve version numbers like v1.2.3)
+    let name_without_ext = if let Some(pos) = name.rfind('.') {
+        // Check if this looks like a file extension (not a version number)
+        let potential_ext = &name[pos + 1..];
+        // Common file extensions to remove
+        let file_extensions = [
+            "exe", "tar", "gz", "zip", "bz2", "xz", "7z", "deb", "rpm", "dmg", "pkg", "msi",
+        ];
+        if file_extensions.contains(&potential_ext) {
+            &name[..pos]
+        } else {
+            name
+        }
+    } else {
+        name
+    };
+
+    // Try to find and remove platform suffixes
+    let mut cleaned = name_without_ext.to_string();
+
+    // Build a regex-like pattern to match -os-arch or _os_arch suffixes
+    for os in &os_patterns {
+        for arch in &arch_patterns {
+            // Try different separator combinations
+            let patterns = [
+                format!("-{os}-{arch}"),
+                format!("-{os}_{arch}"),
+                format!("_{os}-{arch}"),
+                format!("_{os}_{arch}"),
+                format!("-{arch}-{os}"), // Sometimes arch comes before OS
+                format!("_{arch}_{os}"),
+            ];
+
+            for pattern in &patterns {
+                if let Some(pos) = cleaned.rfind(pattern) {
+                    cleaned = cleaned[..pos].to_string();
+                    return cleaned;
+                }
+            }
+        }
+
+        // Also try just OS suffix (sometimes arch is omitted)
+        let os_patterns = [format!("-{os}"), format!("_{os}")];
+        for pattern in &os_patterns {
+            if let Some(pos) = cleaned.rfind(pattern.as_str()) {
+                // Only remove if it's at the end or followed by more platform info
+                let after = &cleaned[pos + pattern.len()..];
+                if after.is_empty() || after.starts_with('-') || after.starts_with('_') {
+                    // Check if what comes before looks like a valid name
+                    let before = &cleaned[..pos];
+                    if !before.is_empty() {
+                        // If we have a tool name hint, check if the cleaned name matches
+                        if let Some(tool) = tool_name {
+                            if before.contains(tool) || tool.contains(before) {
+                                cleaned = before.to_string();
+                                return cleaned;
+                            }
+                        } else {
+                            cleaned = before.to_string();
+                            return cleaned;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    cleaned
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::toolset::ToolVersionOptions;
     use indexmap::IndexMap;
+
+    #[test]
+    fn test_clean_binary_name() {
+        // Test basic OS/arch removal
+        assert_eq!(
+            clean_binary_name("docker-compose-linux-x86_64", None),
+            "docker-compose"
+        );
+        assert_eq!(
+            clean_binary_name("docker-compose-linux-x86_64.exe", None),
+            "docker-compose"
+        );
+        assert_eq!(clean_binary_name("tool-darwin-arm64", None), "tool");
+        assert_eq!(
+            clean_binary_name("mytool-v1.2.3-windows-amd64", None),
+            "mytool-v1.2.3"
+        );
+
+        // Test different separators
+        assert_eq!(clean_binary_name("app_linux_amd64", None), "app");
+        assert_eq!(clean_binary_name("app-linux_x64", None), "app");
+        assert_eq!(clean_binary_name("app_darwin-arm64", None), "app");
+
+        // Test arch before OS
+        assert_eq!(clean_binary_name("tool-x86_64-linux", None), "tool");
+        assert_eq!(clean_binary_name("tool_amd64_windows", None), "tool");
+
+        // Test with tool name hint
+        assert_eq!(
+            clean_binary_name("docker-compose-linux-x86_64", Some("docker-compose")),
+            "docker-compose"
+        );
+        assert_eq!(
+            clean_binary_name("compose-linux-x86_64", Some("compose")),
+            "compose"
+        );
+
+        // Test single OS or arch suffix
+        assert_eq!(clean_binary_name("binary-linux", None), "binary");
+        assert_eq!(clean_binary_name("binary-x86_64", None), "binary");
+        assert_eq!(clean_binary_name("binary_arm64", None), "binary");
+
+        // Test no cleaning needed
+        assert_eq!(clean_binary_name("simple-tool", None), "simple-tool");
+        assert_eq!(clean_binary_name("tool-v1.2.3", None), "tool-v1.2.3");
+
+        // Test with extensions
+        assert_eq!(clean_binary_name("app-linux-x64.tar", None), "app");
+        assert_eq!(clean_binary_name("app-windows-x86_64.zip", None), "app");
+
+        // Test edge cases
+        assert_eq!(clean_binary_name("linux", None), "linux"); // Just OS name
+        assert_eq!(clean_binary_name("", None), "");
+    }
 
     #[test]
     fn test_verify_artifact_platform_specific() {

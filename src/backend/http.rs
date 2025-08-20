@@ -1,7 +1,7 @@
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::backend::static_helpers::{
-    get_filename_from_url, lookup_platform_key, template_string, verify_artifact,
+    clean_binary_name, get_filename_from_url, lookup_platform_key, template_string, verify_artifact,
 };
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -152,10 +152,12 @@ impl HttpBackend {
                 // If bin is specified, rename the file to this name
                 (cache_path.to_path_buf(), std::ffi::OsString::from(bin_name))
             } else {
-                // Default behavior: place file directly in cache root with original name
+                // Always auto-clean binary names by removing OS/arch suffixes
+                let original_name = file_path.file_name().unwrap().to_string_lossy();
+                let cleaned_name = clean_binary_name(&original_name, Some(&self.ba.tool_name));
                 (
                     cache_path.to_path_buf(),
-                    file_path.file_name().unwrap().to_os_string(),
+                    std::ffi::OsString::from(cleaned_name),
                 )
             };
 
