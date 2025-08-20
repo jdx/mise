@@ -156,47 +156,42 @@ impl Use {
 
         let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
 
-        if self.dry_run {
-            // In dry-run mode, don't modify the config file
-            // The summary message at the end will show what would be changed
-        } else {
-            for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
-                let versions: Vec<_> = tvl
-                    .into_iter()
-                    .map(|tv| {
-                        let mut request = tv.request.clone();
-                        if pin {
-                            if let ToolRequest::Version {
-                                version: _version,
+        for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
+            let versions: Vec<_> = tvl
+                .into_iter()
+                .map(|tv| {
+                    let mut request = tv.request.clone();
+                    if pin {
+                        if let ToolRequest::Version {
+                            version: _version,
+                            source,
+                            options,
+                            backend,
+                        } = request
+                        {
+                            request = ToolRequest::Version {
+                                version: tv.version.clone(),
                                 source,
                                 options,
                                 backend,
-                            } = request
-                            {
-                                request = ToolRequest::Version {
-                                    version: tv.version.clone(),
-                                    source,
-                                    options,
-                                    backend,
-                                };
-                            }
+                            };
                         }
-                        request
-                    })
-                    .collect();
-                cf.replace_versions(ba, versions)?;
-            }
+                    }
+                    request
+                })
+                .collect();
+            cf.replace_versions(ba, versions)?;
+        }
 
-            if self.global {
-                self.warn_if_hidden(&config, cf.get_path()).await;
-            }
-            for plugin_name in &self.remove {
-                cf.remove_tool(plugin_name)?;
-            }
-            cf.save()?;
+        if self.global {
+            self.warn_if_hidden(&config, cf.get_path()).await;
+        }
+        for plugin_name in &self.remove {
+            cf.remove_tool(plugin_name)?;
         }
 
         if !self.dry_run {
+            cf.save()?;
             for tv in &mut versions {
                 // update the source so the lockfile is updated correctly
                 tv.request.set_source(cf.source());

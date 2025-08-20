@@ -208,7 +208,5 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise install node@20</bold>      # install fuzzy node version
     $ <bold>mise install node</bold>         # install version specified in mise.toml
     $ <bold>mise install</bold>              # installs everything specified in mise.toml
-    $ <bold>mise install --dry-run</bold>     # show what would be installed
-    $ <bold>mise install -n node@20</bold>   # show what would be installed (short form)
 "#
 );
