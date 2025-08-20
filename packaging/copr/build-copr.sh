@@ -111,7 +111,6 @@ echo ""
 git config --global user.name "$MAINTAINER_NAME"
 git config --global user.email "$MAINTAINER_EMAIL"
 git config --global --add safe.directory "$REPO_ROOT"
-git config --global --add safe.directory "$REPO_ROOT/aqua-registry"
 
 # Set up COPR configuration if not in dry-run mode
 if [ "$DRY_RUN" != "true" ]; then
