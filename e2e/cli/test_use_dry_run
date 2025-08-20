@@ -31,8 +31,10 @@ assert_not_contains "cat mise.toml" "tiny"
 
 # Test: Dry-run with multiple tools
 rm -f mise.toml # Start fresh
-assert_contains "mise use jq@latest shfmt@3.10.0 --dry-run 2>&1" "would update"
-assert_contains "mise use jq@latest shfmt@3.10.0 --dry-run 2>&1" "add: jq@"
+output=$(mise use jq@latest shfmt@3.10.0 --dry-run 2>&1)
+assert_contains "echo '$output'" "would update"
+assert_contains "echo '$output'" "jq@"
+assert_contains "echo '$output'" "shfmt@"
 assert_fail "test -f mise.toml" # File should not be created
 
 # Clean up

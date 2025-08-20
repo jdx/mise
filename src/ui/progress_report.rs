@@ -52,11 +52,6 @@ static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     ProgressStyle::with_template(tmpl).unwrap()
 });
 
-static SUCCESS_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
-    let tmpl = format!("{{prefix}} {} {{wide_msg}}", style::egreen("✓").bright());
-    ProgressStyle::with_template(tmpl.as_str()).unwrap()
-});
-
 static HEADER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     let width = match *env::TERM_WIDTH {
         0..=79 => 10,
@@ -253,12 +248,28 @@ impl SingleReport for HeaderReport {
         self.pb.abandon();
     }
     fn finish(&self) {
-        self.pb.set_style(SUCCESS_TEMPLATE.clone());
-        self.pb.finish()
+        // Check if message contains "(dry-run)" to use appropriate icon
+        let message = self.pb.message();
+        if message.contains("(dry-run)") {
+            self.finish_with_icon(message.to_string(), ProgressIcon::Skipped);
+        } else {
+            self.finish_with_icon(message.to_string(), ProgressIcon::Success);
+        }
     }
     fn finish_with_message(&self, message: String) {
-        self.pb.set_style(SUCCESS_TEMPLATE.clone());
-        self.pb.finish_with_message(message);
+        self.finish_with_icon(message, ProgressIcon::Success);
+    }
+    fn finish_with_icon(&self, _message: String, icon: ProgressIcon) {
+        let icon_str = match icon {
+            ProgressIcon::Success => style::egreen("✓").bright().to_string(),
+            ProgressIcon::Skipped => style::eyellow("○").to_string(),
+            ProgressIcon::Warning => style::eyellow("⚠").to_string(),
+            ProgressIcon::Error => style::ered("✗").bright().to_string(),
+        };
+        let tmpl = format!("{{prefix}} {} {{wide_msg}}", icon_str);
+        let icon_style = ProgressStyle::with_template(tmpl.as_str()).unwrap();
+        self.pb.set_style(icon_style);
+        self.pb.finish();
     }
 }
 
