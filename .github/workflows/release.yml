@@ -68,8 +68,6 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
-        with:
-          submodules: true
       - name: cache crates
         id: cache-crates
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
@@ -139,8 +137,6 @@ jobs:
         tranche: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
-        with:
-          submodules: true
       - name: Install zsh/fish/direnv/fd
         run: sudo apt-get update; sudo apt-get install zsh fish direnv fd-find liblzma-dev libbz2-dev
       - name: Install fd-find
