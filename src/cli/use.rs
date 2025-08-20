@@ -95,6 +95,10 @@ pub struct Use {
     /// https://mise.jdx.dev/configuration/settings.html#lockfile
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
+
+    /// Perform a dry run, showing what would be installed and modified without making changes
+    #[clap(long, short = 'n')]
+    dry_run: bool,
 }
 
 impl Use {
@@ -143,6 +147,7 @@ impl Use {
                     force: self.force,
                     jobs: self.jobs,
                     raw: self.raw,
+                    dry_run: self.dry_run,
                     resolve_options,
                     ..Default::default()
                 },
@@ -151,51 +156,83 @@ impl Use {
 
         let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
 
-        for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
-            let versions: Vec<_> = tvl
-                .into_iter()
-                .map(|tv| {
-                    let mut request = tv.request.clone();
-                    if pin {
-                        if let ToolRequest::Version {
-                            version: _version,
-                            source,
-                            options,
-                            backend,
-                        } = request
-                        {
-                            request = ToolRequest::Version {
-                                version: tv.version.clone(),
+        if self.dry_run {
+            // Show what would be modified without actually doing it
+            for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
+                let tool_versions: Vec<_> = tvl
+                    .into_iter()
+                    .map(|tv| {
+                        if pin {
+                            tv.version.clone()
+                        } else {
+                            tv.request.version().to_string()
+                        }
+                    })
+                    .collect();
+                let versions_str = tool_versions.join(", ");
+                info!(
+                    "would add {}@{} to {}",
+                    ba,
+                    versions_str,
+                    display_path(cf.get_path())
+                );
+            }
+            for plugin_name in &self.remove {
+                info!(
+                    "would remove {} from {}",
+                    plugin_name,
+                    display_path(cf.get_path())
+                );
+            }
+        } else {
+            for (ba, tvl) in &versions.iter().chunk_by(|tv| tv.ba()) {
+                let versions: Vec<_> = tvl
+                    .into_iter()
+                    .map(|tv| {
+                        let mut request = tv.request.clone();
+                        if pin {
+                            if let ToolRequest::Version {
+                                version: _version,
                                 source,
                                 options,
                                 backend,
-                            };
+                            } = request
+                            {
+                                request = ToolRequest::Version {
+                                    version: tv.version.clone(),
+                                    source,
+                                    options,
+                                    backend,
+                                };
+                            }
                         }
-                    }
-                    request
-                })
-                .collect();
-            cf.replace_versions(ba, versions)?;
+                        request
+                    })
+                    .collect();
+                cf.replace_versions(ba, versions)?;
+            }
+
+            if self.global {
+                self.warn_if_hidden(&config, cf.get_path()).await;
+            }
+            for plugin_name in &self.remove {
+                cf.remove_tool(plugin_name)?;
+            }
+            cf.save()?;
         }
 
-        if self.global {
-            self.warn_if_hidden(&config, cf.get_path()).await;
-        }
-        for plugin_name in &self.remove {
-            cf.remove_tool(plugin_name)?;
-        }
-        cf.save()?;
+        if !self.dry_run {
+            for tv in &mut versions {
+                // update the source so the lockfile is updated correctly
+                tv.request.set_source(cf.source());
+            }
 
-        for tv in &mut versions {
-            // update the source so the lockfile is updated correctly
-            tv.request.set_source(cf.source());
+            let config = Config::reset().await?;
+            let ts = config.get_toolset().await?;
+            config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
         }
 
-        let config = Config::reset().await?;
-        let ts = config.get_toolset().await?;
-        config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
-
-        self.render_success_message(cf.as_ref(), &versions)?;
+        self.render_success_message(cf.as_ref(), &versions, self.dry_run)?;
         Ok(())
     }
 
@@ -247,14 +284,27 @@ impl Use {
         }
     }
 
-    fn render_success_message(&self, cf: &dyn ConfigFile, versions: &[ToolVersion]) -> Result<()> {
+    fn render_success_message(
+        &self,
+        cf: &dyn ConfigFile,
+        versions: &[ToolVersion],
+        dry_run: bool,
+    ) -> Result<()> {
         let path = display_path(cf.get_path());
         let tools = versions.iter().map(|t| t.style()).join(", ");
-        miseprintln!(
-            "{} {} tools: {tools}",
-            style("mise").green(),
-            style(path).cyan().for_stderr(),
-        );
+        if dry_run {
+            miseprintln!(
+                "{} would update {} with tools: {tools}",
+                style("mise").green(),
+                style(path).cyan().for_stderr(),
+            );
+        } else {
+            miseprintln!(
+                "{} {} tools: {tools}",
+                style("mise").green(),
+                style(path).cyan().for_stderr(),
+            );
+        }
         Ok(())
     }
 
