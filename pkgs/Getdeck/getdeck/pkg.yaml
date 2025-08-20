@@ -1,0 +1,6 @@
+packages:
+  - name: Getdeck/getdeck@0.11.1
+  - name: Getdeck/getdeck
+    version: 0.7.1
+  - name: Getdeck/getdeck
+    version: 0.6.0

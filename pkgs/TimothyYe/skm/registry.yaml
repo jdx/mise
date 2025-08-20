@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: TimothyYe
+    repo_name: skm
+    description: A simple and powerful SSH keys manager
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.8.6"
+        asset: skm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.7.0")
+        version_prefix: V
+        asset: skm-{{.OS}}64-{{.SemVer}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x64
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.8.1")
+        version_prefix: V
+        asset: skm-{{.OS}}64-{{.SemVer}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: mac
+          windows: win64
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x64
+          - goos: windows
+            asset: skm-{{.OS}}-{{.SemVer}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.8.5")
+        asset: skm-{{.OS}}64-{{trimV .Version}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: mac
+          windows: win64
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x64
+          - goos: windows
+            asset: skm-{{.OS}}-{{trimV .Version}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: skm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

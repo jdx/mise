@@ -1,0 +1,12 @@
+packages:
+  - name: jqlang/jq@jq-1.8.1
+  - name: jqlang/jq
+    version: jq-1.7.1
+  - name: jqlang/jq
+    version: jq-1.6
+  - name: jqlang/jq
+    version: jq-1.5rc2
+  - name: jqlang/jq
+    version: jq-1.5rc1
+  - name: jqlang/jq
+    version: jq-1.4

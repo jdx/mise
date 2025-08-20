@@ -1,0 +1,10 @@
+packages:
+  - name: openziti/zrok@v1.1.2
+  - name: openziti/zrok
+    version: v0.4.49
+  - name: openziti/zrok
+    version: v0.4.48
+  - name: openziti/zrok
+    version: v0.3.0
+  - name: openziti/zrok
+    version: v0.2.10

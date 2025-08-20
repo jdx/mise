@@ -1,0 +1,2 @@
+packages:
+  - name: slack.com/slack-cli@v2.23.0

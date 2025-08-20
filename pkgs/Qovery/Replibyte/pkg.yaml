@@ -1,0 +1,10 @@
+packages:
+  - name: Qovery/Replibyte@v0.10.0
+  - name: Qovery/Replibyte
+    version: v0.4.3
+  - name: Qovery/Replibyte
+    version: v0.4.2
+  - name: Qovery/Replibyte
+    version: v0.4.1
+  - name: Qovery/Replibyte
+    version: v0.1.8

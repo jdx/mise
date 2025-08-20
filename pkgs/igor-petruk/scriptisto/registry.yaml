@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: igor-petruk
+    repo_name: scriptisto
+    description: A language-agnostic "shebang interpreter" that enables you to write scripts in compiled languages
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.0")
+        asset: scriptisto.{{.Format}}
+        format: bz2
+        supported_envs:
+          - linux/amd64
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+      - version_constraint: Version == "v2.0.0"
+        asset: scriptisto.{{.Format}}
+        format: bz2
+        supported_envs:
+          - linux/amd64
+      - version_constraint: "true"
+        asset: scriptisto-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.bz2
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin

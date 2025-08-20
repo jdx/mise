@@ -1,0 +1,10 @@
+packages:
+  - name: direnv/direnv@v2.37.1
+  - name: direnv/direnv
+    version: v2.36.0
+  - name: direnv/direnv
+    version: v2.27.0
+  - name: direnv/direnv
+    version: v2.24.0
+  - name: direnv/direnv
+    version: v2.6.0

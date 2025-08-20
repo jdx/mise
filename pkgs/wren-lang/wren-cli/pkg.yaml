@@ -1,0 +1,4 @@
+packages:
+  - name: wren-lang/wren-cli@0.4.0
+  - name: wren-lang/wren-cli
+    version: 0.3.0

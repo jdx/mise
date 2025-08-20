@@ -1,0 +1,8 @@
+packages:
+  - name: innobead/huber@v1.0.11
+  - name: innobead/huber
+    version: v0.3.11
+  - name: innobead/huber
+    version: v0.2.3
+  - name: innobead/huber
+    version: v0.1.0

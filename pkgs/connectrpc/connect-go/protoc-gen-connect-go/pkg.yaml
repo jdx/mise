@@ -1,0 +1,2 @@
+packages:
+  - name: connectrpc/connect-go/protoc-gen-connect-go@v1.18.1

@@ -1,0 +1,6 @@
+packages:
+  - name: lusingander/stu@v0.7.4
+  - name: lusingander/stu
+    version: v0.6.5
+  - name: lusingander/stu
+    version: v0.4.0

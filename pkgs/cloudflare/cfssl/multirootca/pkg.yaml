@@ -1,0 +1,6 @@
+packages:
+  - name: cloudflare/cfssl/multirootca@v1.6.5
+  - name: cloudflare/cfssl/multirootca
+    version: v1.6.3
+  - name: cloudflare/cfssl/multirootca
+    version: 1.2.0

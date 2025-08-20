@@ -1,0 +1,8 @@
+packages:
+  - name: vmware-archive/octant@v0.25.1
+  - name: vmware-archive/octant
+    version: v0.24.0
+  - name: vmware-archive/octant
+    version: v0.17.0
+  - name: vmware-archive/octant
+    version: v0.8.0

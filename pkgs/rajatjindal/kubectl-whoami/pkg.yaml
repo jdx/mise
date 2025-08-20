@@ -1,0 +1,12 @@
+packages:
+  - name: rajatjindal/kubectl-whoami@v0.0.46
+  - name: rajatjindal/kubectl-whoami
+    version: v0.0.45
+  - name: rajatjindal/kubectl-whoami
+    version: v0.0.42
+  - name: rajatjindal/kubectl-whoami
+    version: v0.0.41
+  - name: rajatjindal/kubectl-whoami
+    version: v0.0.18
+  - name: rajatjindal/kubectl-whoami
+    version: v0.0.6

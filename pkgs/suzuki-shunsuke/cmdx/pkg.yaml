@@ -1,0 +1,10 @@
+packages:
+  - name: suzuki-shunsuke/cmdx@v2.0.2
+  - name: suzuki-shunsuke/cmdx
+    version: v2.0.0-0
+  - name: suzuki-shunsuke/cmdx
+    version: v1.7.0-2
+  - name: suzuki-shunsuke/cmdx
+    version: v1.6.1
+  - name: suzuki-shunsuke/cmdx
+    version: v1.6.0

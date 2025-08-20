@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: CircleCI-Public
+    repo_name: circleci-cli
+    description: Use CircleCI from the command line
+    rosetta2: true
+    asset: circleci-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: circleci
+        src: circleci-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}/circleci
+    version_constraint: semver(">= 0.1.17554")
+    version_overrides:
+      - version_constraint: "true"
+        supported_envs:
+          - darwin
+          - amd64
+    checksum:
+      type: github_release
+      asset: circleci-cli_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: ko1nksm/getoptions/gengetoptions
+    repo_owner: ko1nksm
+    repo_name: getoptions
+    type: github_release
+    description: An elegant option/argument parser for shell scripts (full support for bash and all POSIX shells)
+    asset: gengetoptions
+    supported_envs:
+      - linux
+      - darwin

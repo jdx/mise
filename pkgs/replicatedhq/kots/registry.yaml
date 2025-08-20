@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: replicatedhq
+    repo_name: kots
+    description: KOTS provides the framework, tools and integrations that enable the delivery and management of 3rd-party Kubernetes applications, a.k.a. Kubernetes Off-The-Shelf (KOTS) Software
+    supported_envs:
+      - darwin
+      - linux
+    files:
+      - name: kubectl-kots
+        src: kots
+    asset: kots_{{.OS}}_{{.Arch}}.tar.gz
+    version_constraint: semver(">= 1.59.2")
+    overrides:
+      - goos: darwin
+        asset: kots_{{.OS}}_all.tar.gz
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux/amd64
+        overrides: []
+    checksum:
+      type: github_release
+      asset: kots_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

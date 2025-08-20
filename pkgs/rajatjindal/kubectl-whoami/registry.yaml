@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rajatjindal
+    repo_name: kubectl-whoami
+    description: This plugin gets the subject name using the effective kubeconfig
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.6")
+        asset: "{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}"
+        format: tar.gz
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.0.16")
+        no_asset: true
+      - version_constraint: semver("<= 0.0.18")
+        asset: kubectl-whoami_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+        checksum:
+          type: github_release
+          asset: kubectl-whoami_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v0.0.19"
+        no_asset: true
+      - version_constraint: semver("<= 0.0.41")
+        asset: kubectl-whoami_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+        checksum:
+          type: github_release
+          asset: kubectl-whoami_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v0.0.42"
+        asset: kubectl-whoami_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: kubectl-whoami_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.0.45")
+        asset: kubectl-whoami_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: kubectl-whoami_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: kubectl-whoami_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: kubectl-whoami_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

@@ -1,0 +1,10 @@
+packages:
+  - name: bazelbuild/bazel@8.3.1
+  - name: bazelbuild/bazel
+    version: 5.0.0
+  - name: bazelbuild/bazel
+    version: 4.0.0
+  - name: bazelbuild/bazel
+    version: 3.3.1
+  - name: bazelbuild/bazel
+    version: 0.11.1

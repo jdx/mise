@@ -1,0 +1,10 @@
+packages:
+  - name: michidk/vscli@v1.3.0
+  - name: michidk/vscli
+    version: v0.1.7
+  - name: michidk/vscli
+    version: v0.1.6
+  - name: michidk/vscli
+    version: v0.1.5
+  - name: michidk/vscli
+    version: v0.1.2

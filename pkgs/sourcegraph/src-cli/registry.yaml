@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sourcegraph
+    repo_name: src-cli
+    description: Sourcegraph CLI
+    asset: src-cli_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: src
+    checksum:
+      type: github_release
+      asset: src-cli_{{.Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 3.31.1")
+    version_overrides:
+      - version_constraint: semver(">= 3.30.4")
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: semver(">= 3.10.9")
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver("< 3.10.9")
+        asset: src_{{.OS}}_{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          enabled: false

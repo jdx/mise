@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: tauri-apps/tauri/cargo-tauri
+    type: github_release
+    repo_owner: tauri-apps
+    repo_name: tauri
+    description: Build smaller, faster, and more secure desktop and mobile applications with a web frontend
+    version_prefix: tauri-cli-
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["tauri-cli-v2.0.0-rc.10", "tauri-cli-v1.6.4", "tauri-cli-v2.0.0-beta.5"]
+        no_asset: true
+      - version_constraint: "true"
+        asset: cargo-tauri-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            format: tgz
+            replacements:
+              arm64: arm64
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows

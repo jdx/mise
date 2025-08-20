@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: doitintl
+    repo_name: kube-no-trouble
+    description: Easily check your clusters for use of deprecated APIs
+    asset: kubent-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    files:
+      - name: kubent
+    supported_envs:
+      - darwin
+      - linux
+      - amd64

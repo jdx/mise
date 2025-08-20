@@ -1,0 +1,6 @@
+packages:
+  - name: bitwarden/sdk-sm@bws-v1.0.0
+  - name: bitwarden/sdk-sm
+    version: bws-v0.3.0
+  - name: bitwarden/sdk-sm
+    version: bws-v0.2.1

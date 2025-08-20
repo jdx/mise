@@ -1,0 +1,14 @@
+packages:
+  - name: redpanda-data/connect@v4.62.0
+  - name: redpanda-data/connect
+    version: v4.27.0
+  - name: redpanda-data/connect
+    version: v3.54.1
+  - name: redpanda-data/connect
+    version: v3.43.0-rc1
+  - name: redpanda-data/connect
+    version: v3.7.0
+  - name: redpanda-data/connect
+    version: v1.7.7
+  - name: redpanda-data/connect
+    version: v0.13.1

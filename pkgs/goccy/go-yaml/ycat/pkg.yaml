@@ -1,0 +1,2 @@
+packages:
+  - name: goccy/go-yaml/ycat@v1.18.0

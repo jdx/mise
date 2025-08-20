@@ -1,0 +1,2 @@
+packages:
+  - name: pulumi/tf2pulumi@v0.12.0

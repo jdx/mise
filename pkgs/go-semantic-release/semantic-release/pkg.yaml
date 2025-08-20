@@ -1,0 +1,10 @@
+packages:
+  - name: go-semantic-release/semantic-release@v2.31.0
+  - name: go-semantic-release/semantic-release
+    version: v2.21.0
+  - name: go-semantic-release/semantic-release
+    version: v2.14.3
+  - name: go-semantic-release/semantic-release
+    version: v2.13.0
+  - name: go-semantic-release/semantic-release
+    version: v2.2.0

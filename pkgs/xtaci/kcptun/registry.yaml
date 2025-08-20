@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: xtaci
+    repo_name: kcptun
+    asset: kcptun-{{.OS}}-{{.Arch}}-{{trimV .Version}}.tar.gz
+    description: A Stable & Secure Tunnel based on KCP with N:M multiplexing and FEC. Available for ARM, MIPS, 386 and AMD64
+    files:
+      - name: kcptun-client
+        src: client_{{.OS}}_{{.Arch}}
+      - name: kcptun-server
+        src: server_{{.OS}}_{{.Arch}}
+    supported_envs:
+      - darwin
+      - linux
+      - amd64

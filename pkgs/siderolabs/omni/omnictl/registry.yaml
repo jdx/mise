@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: siderolabs/omni/omnictl
+    type: github_release
+    repo_owner: siderolabs
+    repo_name: omni
+    description: SaaS-simple deployment of Kubernetes - on your own hardware
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: omnictl-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256

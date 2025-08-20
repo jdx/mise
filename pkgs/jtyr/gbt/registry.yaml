@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jtyr
+    repo_name: gbt
+    description: Highly configurable prompt builder for Bash, ZSH and PowerShell written in Go
+    rosetta2: true
+    asset: gbt-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: gbt
+        src: gbt-{{trimV .Version}}/gbt
+    checksum:
+      type: github_release
+      asset: gbt-{{trimV .Version}}-checksums-sha256.txt
+      algorithm: sha256

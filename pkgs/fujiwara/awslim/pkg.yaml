@@ -1,0 +1,6 @@
+packages:
+  - name: fujiwara/awslim@v0.4.0
+  - name: fujiwara/awslim
+    version: v0.0.14
+  - name: fujiwara/awslim
+    version: v0.0.7

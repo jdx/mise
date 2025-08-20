@@ -1,0 +1,6 @@
+packages:
+  - name: traefik/yaegi@v0.16.1
+  - name: traefik/yaegi
+    version: v0.9.23
+  - name: traefik/yaegi
+    version: v0.9.13

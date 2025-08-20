@@ -1,0 +1,6 @@
+packages:
+  - name: igor-petruk/scriptisto@v2.2.0
+  - name: igor-petruk/scriptisto
+    version: v2.0.0
+  - name: igor-petruk/scriptisto
+    version: v1.0.0

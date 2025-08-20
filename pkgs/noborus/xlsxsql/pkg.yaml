@@ -1,0 +1,4 @@
+packages:
+  - name: noborus/xlsxsql@v0.4.0
+  - name: noborus/xlsxsql
+    version: v0.1.0

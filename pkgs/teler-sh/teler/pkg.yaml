@@ -1,0 +1,6 @@
+packages:
+  - name: teler-sh/teler@v2.0.0
+  - name: teler-sh/teler
+    version: v2.0.0-rc.4
+  - name: teler-sh/teler
+    version: v2.0.0-beta

@@ -1,0 +1,78 @@
+packages:
+  - name: fastfetch-cli/fastfetch@2.50.2
+  - name: fastfetch-cli/fastfetch
+    version: 2.45.0
+  - name: fastfetch-cli/fastfetch
+    version: 2.40.0
+  - name: fastfetch-cli/fastfetch
+    version: 2.13.0
+  - name: fastfetch-cli/fastfetch
+    version: 2.12.0
+  - name: fastfetch-cli/fastfetch
+    version: 2.11.4
+  - name: fastfetch-cli/fastfetch
+    version: 2.9.2
+  - name: fastfetch-cli/fastfetch
+    version: 2.9.0
+  - name: fastfetch-cli/fastfetch
+    version: 2.8.10
+  - name: fastfetch-cli/fastfetch
+    version: 2.8.7
+  - name: fastfetch-cli/fastfetch
+    version: 2.8.6
+  - name: fastfetch-cli/fastfetch
+    version: 2.8.5
+  - name: fastfetch-cli/fastfetch
+    version: 2.8.4
+  - name: fastfetch-cli/fastfetch
+    version: 2.8.3
+  - name: fastfetch-cli/fastfetch
+    version: 2.8.2
+  - name: fastfetch-cli/fastfetch
+    version: 2.7.1
+  - name: fastfetch-cli/fastfetch
+    version: 2.7.0
+  - name: fastfetch-cli/fastfetch
+    version: 2.6.3
+  - name: fastfetch-cli/fastfetch
+    version: 2.6.0
+  - name: fastfetch-cli/fastfetch
+    version: 2.3.2
+  - name: fastfetch-cli/fastfetch
+    version: 2.2.3
+  - name: fastfetch-cli/fastfetch
+    version: 2.2.0
+  - name: fastfetch-cli/fastfetch
+    version: 2.1.2
+  - name: fastfetch-cli/fastfetch
+    version: 2.1.1
+  - name: fastfetch-cli/fastfetch
+    version: 2.0.5
+  - name: fastfetch-cli/fastfetch
+    version: 2.0.3
+  - name: fastfetch-cli/fastfetch
+    version: 2.0.2
+  - name: fastfetch-cli/fastfetch
+    version: 2.0.1
+  - name: fastfetch-cli/fastfetch
+    version: 1.12.2
+  - name: fastfetch-cli/fastfetch
+    version: 1.10.2
+  - name: fastfetch-cli/fastfetch
+    version: 1.10.1
+  - name: fastfetch-cli/fastfetch
+    version: 1.9.1
+  - name: fastfetch-cli/fastfetch
+    version: 1.8.2
+  - name: fastfetch-cli/fastfetch
+    version: 1.8.1
+  - name: fastfetch-cli/fastfetch
+    version: 1.8.0
+  - name: fastfetch-cli/fastfetch
+    version: 1.7.5
+  - name: fastfetch-cli/fastfetch
+    version: 1.7.0
+  - name: fastfetch-cli/fastfetch
+    version: 1.2.1
+  - name: fastfetch-cli/fastfetch
+    version: 1.2.0

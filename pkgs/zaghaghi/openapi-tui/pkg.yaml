@@ -1,0 +1,6 @@
+packages:
+  - name: zaghaghi/openapi-tui@0.10.2
+  - name: zaghaghi/openapi-tui
+    version: 0.6.0
+  - name: zaghaghi/openapi-tui
+    version: 0.5.0

@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: apple
+    repo_name: pkl
+    description: A configuration as code language with rich validation and tooling
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.25.3")
+        asset: pkl-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          arm64: aarch64
+          darwin: macos
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: pkl-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          arm64: aarch64
+          darwin: macos

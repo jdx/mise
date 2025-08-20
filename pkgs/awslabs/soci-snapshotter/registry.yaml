@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: awslabs
+    repo_name: soci-snapshotter
+    version_constraint: "false"
+    files:
+      - name: soci
+      - name: soci-snapshotter-grpc
+    version_overrides:
+      - version_constraint: semver("<= 0.1.0")
+        asset: soci-snapshotter-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        files:
+          - name: soci
+          - name: soci-snapshotter-grpc
+        supported_envs:
+          - linux
+      - version_constraint: "true"
+        asset: soci-snapshotter-{{trimV .Version}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        files:
+          - name: soci
+          - name: soci-snapshotter-grpc
+        supported_envs:
+          - linux

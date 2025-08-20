@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: containerd/containerd/static
+    type: github_release
+    repo_owner: containerd
+    repo_name: containerd
+    description: An open and reliable container runtime (static binary)
+    files:
+      - name: containerd
+        src: bin/{{.FileName}}
+      - name: containerd-shim-runc-v2
+        src: bin/{{.FileName}}
+      - name: containerd-stress
+        src: bin/{{.FileName}}
+      - name: ctr
+        src: bin/{{.FileName}}
+    version_filter: Version matches "^v[0-9]+.[0-9]+.[0-9]+$"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.6.38")
+        no_asset: true
+      - version_constraint: semver("<= 2.0.0")
+        asset: containerd-static-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        supported_envs:
+          - linux
+      - version_constraint: "true"
+        asset: containerd-static-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        github_artifact_attestations:
+          signer-workflow: containerd/containerd/.github/workflows/release.yml
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        supported_envs:
+          - linux

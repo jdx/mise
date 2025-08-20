@@ -1,0 +1,6 @@
+packages:
+  - name: mgunyho/tere@v1.6.0
+  - name: mgunyho/tere
+    version: v1.1.0
+  - name: mgunyho/tere
+    version: v1.0.0

@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sharkdp
+    repo_name: diskus
+    asset: diskus-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    description: A minimal, fast alternative to 'du -sh'
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    rosetta2: true
+    format: tar.gz
+    replacements:
+      darwin: apple-darwin
+      windows: pc-windows-msvc
+      linux: unknown-linux-musl
+      arm64: aarch64
+      amd64: x86_64
+    overrides:
+      - goos: linux
+        goarch: arm64
+        replacements:
+          linux: unknown-linux-gnu
+      - goos: windows
+        format: zip
+    files:
+      - name: diskus
+        src: diskus-{{.Version}}-{{.Arch}}-{{.OS}}/diskus

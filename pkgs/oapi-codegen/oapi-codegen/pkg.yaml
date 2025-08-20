@@ -1,0 +1,8 @@
+packages:
+  - name: oapi-codegen/oapi-codegen@v2.5.0
+  - name: oapi-codegen/oapi-codegen
+    version: v2.2.0
+  - name: oapi-codegen/oapi-codegen
+    version: v2.1.0
+  - name: oapi-codegen/oapi-codegen
+    version: v1.16.2

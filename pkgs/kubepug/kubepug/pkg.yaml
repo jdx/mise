@@ -1,0 +1,8 @@
+packages:
+  - name: kubepug/kubepug@v1.7.1
+  - name: kubepug/kubepug
+    version: v1.4.0
+  - name: kubepug/kubepug
+    version: v1.2.2
+  - name: kubepug/kubepug
+    version: v1.1.3

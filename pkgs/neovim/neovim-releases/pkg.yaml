@@ -1,0 +1,4 @@
+packages:
+  - name: neovim/neovim-releases@v0.11.3
+  - name: neovim/neovim-releases
+    version: v0.10.3

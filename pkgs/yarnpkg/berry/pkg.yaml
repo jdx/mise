@@ -1,0 +1,2 @@
+packages:
+  - name: yarnpkg/berry@@yarnpkg/cli/4.9.2

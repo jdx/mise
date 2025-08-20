@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: KhronosGroup
+    repo_name: KTX-Software
+    description: KTX (Khronos Texture) Library and Tools
+    search_words:
+      - Linux Only
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v4.0.0"
+        asset: KTX-Software-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        rosetta2: true
+        overrides:
+          - goos: linux
+            format: tar.bz2
+            files:
+              - name: ktx2check
+                src: "{{.AssetWithoutExt}}/bin/ktx2check"
+              - name: ktxinfo
+                src: "{{.AssetWithoutExt}}/bin/ktxinfo"
+              - name: ktx2ktx2
+                src: "{{.AssetWithoutExt}}/bin/ktx2ktx2"
+              - name: ktxsc
+                src: "{{.AssetWithoutExt}}/bin/ktxsc"
+              - name: toktx
+                src: "{{.AssetWithoutExt}}/bin/toktx"
+            checksum:
+              type: github_release
+              asset: "{{.Asset}}.sha1"
+              algorithm: sha1
+            replacements:
+              linux: Linux
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v4.1.0"
+        asset: KTX-Software-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            format: tar.bz2
+            files:
+              - name: ktx2check
+                src: "{{.AssetWithoutExt}}/bin/ktx2check"
+              - name: ktxinfo
+                src: "{{.AssetWithoutExt}}/bin/ktxinfo"
+              - name: ktx2ktx2
+                src: "{{.AssetWithoutExt}}/bin/ktx2ktx2"
+              - name: ktxsc
+                src: "{{.AssetWithoutExt}}/bin/ktxsc"
+              - name: toktx
+                src: "{{.AssetWithoutExt}}/bin/toktx"
+            checksum:
+              type: github_release
+              asset: "{{.Asset}}.sha1"
+              algorithm: sha1
+            replacements:
+              linux: Linux
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 4.2.1")
+        asset: KTX-Software-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            format: tar.bz2
+            files:
+              - name: ktx2check
+                src: "{{.AssetWithoutExt}}/bin/ktx2check"
+              - name: ktxinfo
+                src: "{{.AssetWithoutExt}}/bin/ktxinfo"
+              - name: ktx2ktx2
+                src: "{{.AssetWithoutExt}}/bin/ktx2ktx2"
+              - name: ktxsc
+                src: "{{.AssetWithoutExt}}/bin/ktxsc"
+              - name: toktx
+                src: "{{.AssetWithoutExt}}/bin/toktx"
+            checksum:
+              type: github_release
+              asset: "{{.Asset}}.sha1"
+              algorithm: sha1
+            replacements:
+              linux: Linux
+        supported_envs:
+          - linux
+      - version_constraint: "true"
+        asset: KTX-Software-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            format: tar.bz2
+            files:
+              - name: ktx
+                src: "{{.AssetWithoutExt}}/bin/ktx"
+              - name: ktx2check
+                src: "{{.AssetWithoutExt}}/bin/ktx2check"
+              - name: ktxinfo
+                src: "{{.AssetWithoutExt}}/bin/ktxinfo"
+              - name: ktx2ktx2
+                src: "{{.AssetWithoutExt}}/bin/ktx2ktx2"
+              - name: ktxsc
+                src: "{{.AssetWithoutExt}}/bin/ktxsc"
+              - name: toktx
+                src: "{{.AssetWithoutExt}}/bin/toktx"
+            checksum:
+              type: github_release
+              asset: "{{.Asset}}.sha1"
+              algorithm: sha1
+            replacements:
+              linux: Linux
+        supported_envs:
+          - linux

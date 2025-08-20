@@ -1,0 +1,4 @@
+packages:
+  - name: aduros/wasm4@v2.7.1
+  - name: aduros/wasm4
+    version: v1.0.9

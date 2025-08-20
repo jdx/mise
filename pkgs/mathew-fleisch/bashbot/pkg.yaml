@@ -1,0 +1,4 @@
+packages:
+  - name: mathew-fleisch/bashbot@bashbot-v2.0.6
+  - name: mathew-fleisch/bashbot
+    version: v1.8.46

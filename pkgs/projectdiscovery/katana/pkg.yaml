@@ -1,0 +1,6 @@
+packages:
+  - name: projectdiscovery/katana@v1.2.1
+  - name: projectdiscovery/katana
+    version: v1.1.0
+  - name: projectdiscovery/katana
+    version: v1.0.2

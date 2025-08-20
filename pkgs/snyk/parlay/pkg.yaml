@@ -1,0 +1,4 @@
+packages:
+  - name: snyk/parlay@v0.9.0
+  - name: snyk/parlay
+    version: v0.1.2

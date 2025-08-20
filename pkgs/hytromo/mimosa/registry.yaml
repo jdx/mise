@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: hytromo
+    repo_name: mimosa
+    description: Zero-config docker image promotion
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.7")
+        asset: mimosa_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: mimosa_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: mimosa_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: mimosa_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

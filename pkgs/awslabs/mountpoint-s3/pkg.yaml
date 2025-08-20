@@ -1,0 +1,2 @@
+packages:
+  - name: awslabs/mountpoint-s3@mountpoint-s3-1.19.0

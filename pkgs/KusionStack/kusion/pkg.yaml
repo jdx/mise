@@ -1,0 +1,10 @@
+packages:
+  - name: KusionStack/kusion@v0.15.0
+  - name: KusionStack/kusion
+    version: v0.10.0
+  - name: KusionStack/kusion
+    version: v0.7.2
+  - name: KusionStack/kusion
+    version: v0.5.3
+  - name: KusionStack/kusion
+    version: v0.4.1

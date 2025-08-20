@@ -1,0 +1,4 @@
+packages:
+  - name: influxdata/influx-cli@v2.7.5
+  - name: influxdata/influx-cli
+    version: v2.6.1

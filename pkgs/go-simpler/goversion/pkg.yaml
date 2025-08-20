@@ -1,0 +1,2 @@
+packages:
+  - name: go-simpler/goversion@v0.5.0

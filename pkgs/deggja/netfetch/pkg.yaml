@@ -1,0 +1,6 @@
+packages:
+  - name: deggja/netfetch@5.2.10
+  - name: deggja/netfetch
+    version: v0.5.4
+  - name: deggja/netfetch
+    version: 0.0.66

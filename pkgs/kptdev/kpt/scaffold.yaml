@@ -1,0 +1,6 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+# aqua - Declarative CLI Version Manager
+# https://aquaproj.github.io/
+name: kptdev/kpt
+version_filter: not (Version startsWith "porch/")

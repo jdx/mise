@@ -1,0 +1,8 @@
+packages:
+  - name: kdash-rs/kdash@v0.6.2
+  - name: kdash-rs/kdash
+    version: v0.4.2
+  - name: kdash-rs/kdash
+    version: v0.3.0
+  - name: kdash-rs/kdash
+    version: v0.0.3

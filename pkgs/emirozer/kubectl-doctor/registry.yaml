@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: emirozer
+    repo_name: kubectl-doctor
+    description: kubectl cluster triage plugin for k8s - (brew doctor equivalent)
+    version_constraint: semver(">= 0.3.1")
+    asset: kubectl-doctor_{{.OS}}_{{.Arch}}
+    supported_envs:
+      - darwin
+      - amd64
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+        asset: kubectl-doctor_{{.OS}}_{{.Arch}}.zip

@@ -1,0 +1,8 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+# aqua - Declarative CLI Version Manager
+# https://aquaproj.github.io/
+# Other than name is optional. All initial values are just examples.
+name: pkolaczk/fclones
+all_assets_filter: not ((Asset matches ".deb$") or (Asset matches ".rpm$"))
+version_filter: not (Version matches "^gui")

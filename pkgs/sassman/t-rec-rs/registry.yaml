@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sassman
+    repo_name: t-rec-rs
+    description: Blazingly fast terminal recorder that generates animated gif images for the web written in rust
+    asset: t-rec-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    replacements:
+      amd64: x86_64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+    supported_envs:
+      - linux/amd64
+      - darwin
+    rosetta2: true
+    files:
+      - name: t-rec
+    version_constraint: semver(">= 0.7.3")
+    version_overrides:
+      - version_constraint: semver(">= 0.7.2")
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+        rosetta2: false
+      - version_constraint: semver(">= 0.7.1")
+      - version_constraint: semver(">= 0.7.0")
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+      - version_constraint: semver("< 0.7.0")
+        no_asset: true

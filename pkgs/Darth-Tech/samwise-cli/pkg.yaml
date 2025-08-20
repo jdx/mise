@@ -1,0 +1,4 @@
+packages:
+  - name: Darth-Tech/samwise-cli@v0.6.0
+  - name: Darth-Tech/samwise-cli
+    version: v0.2.0

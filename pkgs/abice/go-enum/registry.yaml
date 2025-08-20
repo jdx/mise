@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: abice
+    repo_name: go-enum
+    description: An enum generator for go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.5.9-beta-1", "v0.5.9"]
+        no_asset: true
+      - version_constraint: Version == "v0.3.5"
+        asset: go-enum_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v0.3.6"
+        asset: go-enum_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: go-enum_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v0.5.9-beta-2"
+        asset: go-enum_{{.OS}}_{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: go-enum_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.3.4")
+        no_asset: true
+      - version_constraint: semver("<= 0.3.11")
+        asset: go-enum_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: go-enum_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: go-enum_{{.OS}}_{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: go-enum_checksums.txt
+          algorithm: sha256

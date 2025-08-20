@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: zk-org
+    repo_name: zk
+    description: A plain text note-taking assistant
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.11.0"
+        asset: zk-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 0.2.1")
+        asset: zk-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            format: zip
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.14.1")
+        asset: zk-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            format: zip
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.15.0")
+        asset: zk-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            goarch: arm64
+            asset: zk-{{.Version}}-{{.OS}}_{{.Arch}}.{{.Format}}
+          - goos: windows
+            asset: zk-{{.Version}}-{{.OS}}_{{.Arch}}.{{.Format}}
+            replacements:
+              amd64: x64_86
+      - version_constraint: "true"
+        asset: zk-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: x86_64
+          - goos: windows
+            replacements:
+              amd64: x86_64

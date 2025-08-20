@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: josephburnett
+    repo_name: jd
+    description: JSON diff and patch
+    asset: jd-{{.Arch}}-{{.OS}}
+    format: raw
+    version_constraint: semver(">= 1.6.1")
+    version_overrides:
+      - version_constraint: semver(">= 1.5.0")
+        complete_windows_ext: false
+      - version_constraint: Version == "v1.4.0"
+        complete_windows_ext: false
+        rosetta2: true
+        overrides:
+          - goos: linux
+            goarch: arm64
+            type: go_install
+            path: github.com/josephburnett/jd
+          - goos: windows
+            goarch: arm64
+            type: go_install
+            path: github.com/josephburnett/jd
+      - version_constraint: semver(">= 1.2.0")
+        asset: jd
+        overrides:
+          - goarch: arm64
+            type: go_install
+            path: github.com/josephburnett/jd
+          - goos: darwin
+            goarch: amd64
+            type: go_install
+            path: github.com/josephburnett/jd
+          - goos: windows
+            goarch: amd64
+            type: go_install
+            path: github.com/josephburnett/jd
+      - version_constraint: semver("< 1.2.0")
+        asset: jd
+        supported_envs:
+          - linux/amd64

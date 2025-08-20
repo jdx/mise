@@ -1,0 +1,8 @@
+packages:
+  - name: antham/gommit@v2.12.0
+  - name: antham/gommit
+    version: v2.6.0
+  - name: antham/gommit
+    version: v2.4.0
+  - name: antham/gommit
+    version: v2.3.0

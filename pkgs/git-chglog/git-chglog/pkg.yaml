@@ -1,0 +1,8 @@
+packages:
+  - name: git-chglog/git-chglog@v0.15.4
+  - name: git-chglog/git-chglog
+    version: v0.15.1
+  - name: git-chglog/git-chglog
+    version: v0.11.2
+  - name: git-chglog/git-chglog
+    version: 0.9.1

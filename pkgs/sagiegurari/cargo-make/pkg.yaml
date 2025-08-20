@@ -1,0 +1,12 @@
+packages:
+  - name: sagiegurari/cargo-make@0.37.24
+  - name: sagiegurari/cargo-make
+    version: 0.36.6
+  - name: sagiegurari/cargo-make
+    version: 0.35.14
+  - name: sagiegurari/cargo-make
+    version: 0.30.2
+  - name: sagiegurari/cargo-make
+    version: 0.19.0
+  - name: sagiegurari/cargo-make
+    version: 0.16.5

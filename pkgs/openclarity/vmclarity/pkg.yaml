@@ -1,0 +1,4 @@
+packages:
+  - name: openclarity/vmclarity@v0.7.2
+  - name: openclarity/vmclarity
+    version: v0.5.0

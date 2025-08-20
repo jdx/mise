@@ -1,0 +1,4 @@
+packages:
+  - name: github/git-sizer@v1.5.0
+  - name: github/git-sizer
+    version: v1.3.0

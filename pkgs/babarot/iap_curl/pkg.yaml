@@ -1,0 +1,4 @@
+packages:
+  - name: babarot/iap_curl@v0.2.0
+  - name: babarot/iap_curl
+    version: v0.1.3

@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: IxDay
+    repo_name: mruby
+    description: Lightweight Ruby
+    files:
+      - name: mruby
+      - name: mrake
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: mruby-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: mruby
+          - name: mrake
+        overrides:
+          - goos: windows
+            files:
+              - name: mruby
+              - name: mrake
+                src: mrake.bat
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          arm64: aarch64

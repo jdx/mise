@@ -1,0 +1,10 @@
+---
+# aqua - Declarative CLI Version Manager
+# https://aquaproj.github.io/
+# aqua-registry create-pr-new-pkg command depends on this file.
+registries:
+  - name: standard
+    type: local
+    path: ../registry.yaml
+packages:
+  - import: ../pkgs/cli/cli/pkg.yaml

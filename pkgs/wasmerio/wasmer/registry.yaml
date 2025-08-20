@@ -1,0 +1,147 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: wasmerio
+    repo_name: wasmer
+    description: The leading WebAssembly Runtime supporting WASI and Emscripten
+    asset: wasmer-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    replacements:
+      arm64: aarch64
+    overrides:
+      - goos: darwin
+        replacements:
+          arm64: arm64
+      - goos: linux
+        goarch: arm64
+        files:
+          - name: wasmer
+            src: bin/wasmer
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: wasmer
+        src: bin/wasmer
+      - name: wasmer-headless
+        src: bin/wasmer-headless
+    version_constraint: semver(">= 3.0.0-beta")
+    version_overrides:
+      - version_constraint: semver(">= 3.0.0-alpha")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        replacements: {}
+      - version_constraint: semver(">= 2.2.1")
+        files:
+          - name: wapm
+            src: bin/wapm
+          - name: wasmer-headless
+            src: bin/wasmer-headless
+          - name: wax
+            src: bin/wax
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: arm64
+          - goos: linux
+            goarch: arm64
+            files:
+              - name: wasmer
+                src: bin/wasmer
+          - goos: windows
+            files:
+              - name: wapm
+                src: bin/wapm.exe
+              - name: wasmer-headless
+                src: bin/wasmer-headless.exe
+              - name: wasmer
+                src: bin/wasmer.exe
+      - version_constraint: semver(">= 2.0.0-rc1")
+        replacements: {}
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: semver(">= 1.0.0-beta1")
+        files:
+          - name: wasmer
+            src: bin/wasmer
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: raw
+            asset: wasmer-{{.OS}}
+        replacements: {}
+      - version_constraint: semver(">= 1.0.0-alpha3")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: raw
+            asset: wasmer-{{.OS}}
+        replacements: {}
+        rosetta2: true
+      - version_constraint: semver(">= 0.16.0")
+        files: &wasmerio_wasmer_files_1
+          - name: wapm
+            src: bin/wapm
+          - name: wasmer
+            src: bin/wasmer
+        replacements: {}
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux/amd64
+      - version_constraint: semver(">= 0.14.0")
+        files: *wasmerio_wasmer_files_1
+        overrides:
+          - goos: windows
+            asset: wasmer-c-api-{{.OS}}.{{.Format}}
+        replacements: {}
+        supported_envs:
+          - darwin
+          - linux/amd64
+        rosetta2: true
+      - version_constraint: semver(">= 0.10.2")
+        files: *wasmerio_wasmer_files_1
+        overrides:
+          - goos: windows
+            format: raw
+            asset: wasmer-{{.OS}}
+        replacements: {}
+        rosetta2: true
+      - version_constraint: semver(">= 0.10.0")
+        files: *wasmerio_wasmer_files_1
+        overrides:
+          - goos: windows
+            format: raw
+            asset: wasmer-{{.OS}}
+        replacements: {}
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver(">= 0.3.0")
+        files:
+          - name: wasmer
+            src: bin/wasmer
+        replacements: {}
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+      - version_constraint: semver("< 0.3.0")
+        asset: wasmer-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements: {}
+        supported_envs:
+          - darwin
+          - linux/amd64
+        rosetta2: true

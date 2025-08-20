@@ -1,0 +1,6 @@
+packages:
+  - name: magodo/pipeform@v0.2.1
+  - name: magodo/pipeform
+    version: v0.1.0
+  # - name: magodo/pipeform
+  #   version: 91dbcabf38da01e1b59856e00cfa6068200c7237

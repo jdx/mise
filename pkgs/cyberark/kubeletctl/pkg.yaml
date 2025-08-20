@@ -1,0 +1,10 @@
+packages:
+  - name: cyberark/kubeletctl@v1.12
+  - name: cyberark/kubeletctl
+    version: v1.11
+  - name: cyberark/kubeletctl
+    version: v1.10
+  - name: cyberark/kubeletctl
+    version: v1.9
+  - name: cyberark/kubeletctl
+    version: v1.3

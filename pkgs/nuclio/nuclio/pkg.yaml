@@ -1,0 +1,2 @@
+packages:
+  - name: nuclio/nuclio@1.15.2

@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: skaji
+    repo_name: relocatable-perl
+    description: self-contained, portable perl binaries
+    files:
+      - name: perl
+        src: "{{.AssetWithoutExt}}/bin/perl"
+      - name: cpanm
+        src: "{{.AssetWithoutExt}}/bin/cpanm"
+      - name: perldoc
+        src: "{{.AssetWithoutExt}}/bin/perldoc"
+      - name: prove
+        src: "{{.AssetWithoutExt}}/bin/prove"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 5.34.1.0")
+        asset: perl-{{.OS}}-2level.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            asset: perl-{{.Arch}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 5.36.0.0")
+        asset: perl-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+          - goos: darwin
+            asset: perl-{{.OS}}-2level.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: perl-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux
+          - darwin

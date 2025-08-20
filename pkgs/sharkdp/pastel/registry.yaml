@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sharkdp
+    repo_name: pastel
+    asset: pastel-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    description: A command-line tool to generate, analyze, convert and manipulate colors
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    format: tar.gz
+    replacements:
+      darwin: apple-darwin
+      windows: pc-windows-msvc
+      linux: unknown-linux-musl
+      arm64: aarch64
+      amd64: x86_64
+    overrides:
+      - goos: linux
+        goarch: arm64
+        replacements:
+          linux: unknown-linux-gnu
+      - goos: windows
+        format: zip
+    files:
+      - name: pastel
+        src: pastel-{{.Version}}-{{.Arch}}-{{.OS}}/pastel

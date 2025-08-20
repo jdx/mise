@@ -1,0 +1,8 @@
+packages:
+  - name: iffse/pay-respects@v0.7.8
+  - name: iffse/pay-respects
+    version: v0.6.12
+  - name: iffse/pay-respects
+    version: v0.6.2
+  - name: iffse/pay-respects
+    version: v0.5.13

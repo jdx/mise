@@ -1,0 +1,4 @@
+packages:
+  - name: tomohiro/gyazo-cli@1.0.0
+  - name: tomohiro/gyazo-cli
+    version: 0.1.0

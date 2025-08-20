@@ -1,0 +1,30 @@
+name: Question
+description: |
+  Please use this template when you have any questions.
+  Please don't hesitate to ask any questions via Issues.
+labels:
+  - question
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: |
+        Please explain your question in details.
+        If example code is useful to explain your question, please write it.
+    validations:
+      required: true
+  - type: textarea
+    id: background
+    attributes:
+      label: Background
+      description: Please explain the background and why you have the question
+    validations:
+      required: false
+  - type: textarea
+    id: note
+    attributes:
+      label: Note
+      description: Please write any additional information
+    validations:
+      required: false

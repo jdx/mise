@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: justjanne
+    repo_name: powerline-go
+    description: A beautiful and useful low-latency prompt for your shell, written in go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.1")
+        asset: powerline-go
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.15.0")
+        asset: powerline-go-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v1.16.0"
+        no_asset: true
+      - version_constraint: semver("<= 1.18.0")
+        asset: powerline-go-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.19.0"
+        no_asset: true
+      - version_constraint: semver("< 1.23")
+        asset: powerline-go-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+      - version_constraint: Version == "v1.23"
+        asset: powerline-go-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        supported_envs:
+          - amd64
+      - version_constraint: "true"
+        asset: powerline-go-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

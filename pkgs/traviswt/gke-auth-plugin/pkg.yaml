@@ -1,0 +1,2 @@
+packages:
+  - name: traviswt/gke-auth-plugin@0.3.0

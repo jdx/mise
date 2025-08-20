@@ -1,0 +1,4 @@
+packages:
+  - name: aws/amazon-ec2-spot-interrupter@v0.0.10
+  - name: aws/amazon-ec2-spot-interrupter
+    version: v0.0.7

@@ -1,0 +1,2 @@
+packages:
+  - name: golang/tools/godoc@v0.36.0

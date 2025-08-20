@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: git-bug
+    repo_name: git-bug
+    aliases:
+      - name: MichaelMure/git-bug
+    description: Distributed, offline-first bug tracker embedded in git, with bridges
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: git-bug_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

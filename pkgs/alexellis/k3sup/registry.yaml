@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: alexellis
+    repo_name: k3sup
+    description: bootstrap K3s over SSH in < 60s
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["0.3.2", "0.4.4", "0.5.9", "0.12.9"]
+        no_asset: true
+      - version_constraint: semver("<= 0.2.1")
+        asset: k3sup
+        format: raw
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: k3sup-arm64
+          - goos: darwin
+            asset: k3sup-darwin
+        supported_envs:
+          - darwin
+          - linux
+      - version_constraint: semver("<= 0.5.8")
+        asset: k3sup
+        format: raw
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: k3sup-arm64
+          - goos: darwin
+            asset: k3sup-darwin
+      - version_constraint: semver("<= 0.9.7")
+        asset: k3sup
+        format: raw
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: k3sup-arm64
+          - goos: darwin
+            asset: k3sup-darwin
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: semver("<= 0.9.10")
+        no_asset: true
+      - version_constraint: semver("<= 0.12.1")
+        asset: k3sup
+        format: raw
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: k3sup-arm64
+          - goos: darwin
+            asset: k3sup-darwin
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: k3sup
+        format: raw
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: k3sup-arm64
+          - goos: darwin
+            goarch: amd64
+            asset: k3sup-darwin
+          - goos: darwin
+            goarch: arm64
+            asset: k3sup-darwin-arm64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
