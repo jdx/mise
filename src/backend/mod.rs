@@ -455,9 +455,23 @@ pub trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        // Handle dry-run mode early to avoid plugin installation
+        if ctx.dry_run {
+            use crate::ui::progress_report::ProgressIcon;
+            if self.is_version_installed(&ctx.config, &tv, true) {
+                ctx.pr
+                    .finish_with_icon("already installed".into(), ProgressIcon::Skipped);
+            } else {
+                ctx.pr
+                    .finish_with_icon("would install".into(), ProgressIcon::Skipped);
+            }
+            return Ok(tv);
+        }
+
         if let Some(plugin) = self.plugin() {
             plugin.is_installed_err()?;
         }
+
         if self.is_version_installed(&ctx.config, &tv, true) {
             if ctx.force {
                 self.uninstall_version(&ctx.config, &tv, &ctx.pr, false)

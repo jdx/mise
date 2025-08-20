@@ -10,6 +10,14 @@ use std::sync::LazyLock as Lazy;
 use crate::ui::style;
 use crate::{backend, env, ui};
 
+#[derive(Debug, Clone, Copy)]
+pub enum ProgressIcon {
+    Success,
+    Skipped,
+    Warning,
+    Error,
+}
+
 pub trait SingleReport: Send + Sync {
     fn println(&self, _message: String) {}
     fn set_message(&self, _message: String) {}
@@ -19,6 +27,10 @@ pub trait SingleReport: Send + Sync {
     fn abandon(&self) {}
     fn finish(&self) {}
     fn finish_with_message(&self, _message: String) {}
+    fn finish_with_icon(&self, message: String, _icon: ProgressIcon) {
+        // Default implementation just calls finish_with_message
+        self.finish_with_message(message);
+    }
 }
 
 static SPIN_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
@@ -125,8 +137,8 @@ impl SingleReport for ProgressReport {
     fn finish(&self) {
         self.pb.finish_and_clear();
     }
-    fn finish_with_message(&self, _message: String) {
-        self.pb.finish_and_clear();
+    fn finish_with_message(&self, message: String) {
+        self.pb.finish_with_message(message);
     }
 }
 
@@ -173,8 +185,17 @@ impl SingleReport for VerboseReport {
         self.finish_with_message(style::egreen("done").to_string());
     }
     fn finish_with_message(&self, message: String) {
+        self.finish_with_icon(message, ProgressIcon::Success);
+    }
+
+    fn finish_with_icon(&self, message: String, icon: ProgressIcon) {
         let prefix = pad_prefix(self.pad - 2, &self.prefix);
-        let ico = style::egreen("✓").bright();
+        let ico = match icon {
+            ProgressIcon::Success => style::egreen("✓").bright().to_string(),
+            ProgressIcon::Skipped => style::eyellow("○").to_string(),
+            ProgressIcon::Warning => style::eyellow("⚠").to_string(),
+            ProgressIcon::Error => style::ered("✗").bright().to_string(),
+        };
         log::info!("{prefix} {ico} {message}");
     }
 }

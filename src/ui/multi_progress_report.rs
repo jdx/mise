@@ -47,14 +47,18 @@ impl MultiProgressReport {
         }
     }
     pub fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
+        self.add_with_options(prefix, false)
+    }
+
+    pub fn add_with_options(&self, prefix: &str, dry_run: bool) -> Box<dyn SingleReport> {
         match &self.mp {
             _ if self.quiet => Box::new(QuietReport::new()),
-            Some(mp) => {
+            Some(mp) if !dry_run => {
                 let mut pr = ProgressReport::new(prefix.into());
                 pr.pb = mp.add(pr.pb);
                 Box::new(pr)
             }
-            None => Box::new(VerboseReport::new(prefix.to_string())),
+            _ => Box::new(VerboseReport::new(prefix.to_string())),
         }
     }
     pub fn init_header(&self, message: &str, total_tools: usize) {
