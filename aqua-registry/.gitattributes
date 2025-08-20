@@ -1,2 +1,3 @@
-pkgs/**/*.yaml linguist-detectable
+# pkgs/**/*.yaml linguist-detectable
 /registry.yaml linguist-generated
+pkgs/**/pkg.yaml linguist-generated
