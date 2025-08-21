@@ -1,8 +1,0 @@
-packages:
-  - name: miniscruff/changie@v1.22.1
-  - name: miniscruff/changie
-    version: v1.0.0
-  - name: miniscruff/changie
-    version: v0.3.0
-  - name: miniscruff/changie
-    version: v0.1.0

@@ -1,4 +1,0 @@
-packages:
-  - name: nao1215/gup@v0.27.8
-  - name: nao1215/gup
-    version: v0.22.0

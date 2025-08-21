@@ -1,2 +1,0 @@
-packages:
-  - name: grafana/loki/logcli@v3.5.3

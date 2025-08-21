@@ -1,8 +1,0 @@
-packages:
-  - name: kubernetes/kubernetes/kube-proxy@v1.33.4
-  - name: kubernetes/kubernetes/kube-proxy
-    version: v1.25.4
-  - name: kubernetes/kubernetes/kube-proxy
-    version: v1.15.3
-  - name: kubernetes/kubernetes/kube-proxy
-    version: v1.2.7

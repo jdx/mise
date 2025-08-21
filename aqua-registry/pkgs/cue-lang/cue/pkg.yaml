@@ -1,6 +1,0 @@
-packages:
-  - name: cue-lang/cue@v0.14.1
-  - name: cue-lang/cue
-    version: v0.4.0
-  - name: cue-lang/cue
-    version: v0.3.0-beta.5

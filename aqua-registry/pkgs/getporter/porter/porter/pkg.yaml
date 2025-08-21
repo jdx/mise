@@ -1,6 +1,0 @@
-packages:
-  - name: getporter/porter/porter@v1.3.0
-  - name: getporter/porter/porter
-    version: v1.0.14
-  - name: getporter/porter/porter
-    version: v1.0.11

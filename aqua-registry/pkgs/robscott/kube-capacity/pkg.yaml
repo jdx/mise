@@ -1,4 +1,0 @@
-packages:
-  - name: robscott/kube-capacity@v0.8.0
-  - name: robscott/kube-capacity
-    version: v0.7.3

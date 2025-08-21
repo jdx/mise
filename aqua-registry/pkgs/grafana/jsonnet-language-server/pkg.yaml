@@ -1,4 +1,0 @@
-packages:
-  - name: grafana/jsonnet-language-server@v0.16.0
-  - name: grafana/jsonnet-language-server
-    version: v0.7.1

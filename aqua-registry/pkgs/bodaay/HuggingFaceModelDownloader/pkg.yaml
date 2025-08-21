@@ -1,4 +1,0 @@
-packages:
-  - name: bodaay/HuggingFaceModelDownloader@1.4.2
-  - name: bodaay/HuggingFaceModelDownloader
-    version: 1.0.0

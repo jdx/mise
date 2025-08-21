@@ -1,8 +1,0 @@
-packages:
-  - name: alexellis/arkade@0.11.41
-  - name: alexellis/arkade
-    version: 0.8.12
-  - name: alexellis/arkade
-    version: 0.6.33
-  - name: alexellis/arkade
-    version: 0.1.0

@@ -1,7 +1,0 @@
-aqua-local.yaml
-.DS_Store
-aqua-checksums.json
-.aqua-checksums.json
-.build
-docker/aqua-policy.yaml
-aqua-generate-registry.yaml

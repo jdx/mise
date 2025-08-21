@@ -1,6 +1,0 @@
-packages:
-  - name: maxpert/marmot@v0.8.7
-  - name: maxpert/marmot
-    version: v0.3.3
-  - name: maxpert/marmot
-    version: v0.3.1

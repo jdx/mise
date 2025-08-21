@@ -1,6 +1,0 @@
-packages:
-  - name: cockroachdb/cockroach@v25.3.0
-  - name: cockroachdb/cockroach
-    version: v22.2.13
-  - name: cockroachdb/cockroach
-    version: v22.1.22

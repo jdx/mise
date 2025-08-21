@@ -1,8 +1,0 @@
-packages:
-  - name: containerd/nerdctl@v2.1.3
-  - name: containerd/nerdctl
-    version: v2.0.4
-  - name: containerd/nerdctl
-    version: v0.8.1
-  - name: containerd/nerdctl
-    version: v0.0.1
