@@ -1,5 +1,14 @@
 # Changelog
 
+## [2025.8.15](https://github.com/jdx/mise/compare/v2025.8.14..v2025.8.15) - 2025-08-21
+
+### Chore
+
+- **(release-plz)** get `git status` by [@jdx](https://github.com/jdx) in [#6083](https://github.com/jdx/mise/pull/6083)
+- add libbz2-dev to e2e test dependencies by [@jdx](https://github.com/jdx) in [#6080](https://github.com/jdx/mise/pull/6080)
+- replace submodule with subtree by [@risu729](https://github.com/risu729) in [#6082](https://github.com/jdx/mise/pull/6082)
+- fix aqua-registry subtree by [@jdx](https://github.com/jdx) in [522f7f5](https://github.com/jdx/mise/commit/522f7f591dbfa01e537c294647ffdc2a2357c32c)
+
 ## [2025.8.14](https://github.com/jdx/mise/compare/v2025.8.13..v2025.8.14) - 2025-08-20
 
 ### 🚀 Features

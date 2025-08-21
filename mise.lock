@@ -27,33 +27,24 @@ size = 4758557
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"
 
 [tools.bun]
-version = "1.2.19"
+version = "1.2.20"
 backend = "core:bun"
 
 [tools.bun.platforms.linux-x64]
-checksum = "blake3:59b98062e8014acf0bebfccbae2825fb88ac4486269f2b04e596862f07b01c86"
-size = 38401482
-
-[tools.bun.platforms.macos-arm64]
-checksum = "blake3:1d033789f9a12ddcc7b1e03c675af1dfcbf770aa7fbfa2c49dc6599e591e4779"
-size = 21573514
+checksum = "blake3:b16555642ccb461c9d0f280b1a8c664f8c8421925c210ec40e8e7427d3286679"
+size = 38849822
 
 [tools.cargo-binstall]
-version = "1.14.1"
+version = "1.14.4"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "blake3:f7e2fda3111092730a03feec1fabf436a89ddab1ffa8ae51b953f3183c8617e3"
-size = 6821106
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.14.1/cargo-binstall-x86_64-unknown-linux-musl.tgz"
-
-[tools.cargo-binstall.platforms.macos-arm64]
-checksum = "blake3:5993dfa234baa8ae3748e21de57bd0613e592d7db9a95edaa4c61efb4d5f820d"
-size = 5997141
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.14.1/cargo-binstall-aarch64-apple-darwin.zip"
+checksum = "blake3:b2a4a55c83830ef20d2024c5d7394df9571fecd06c24e5f99568899dc507ace0"
+size = 6715267
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.14.4/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [tools."cargo:cargo-edit"]
-version = "0.13.6"
+version = "0.13.7"
 backend = "cargo:cargo-edit"
 
 [tools."cargo:cargo-insta"]
@@ -65,7 +56,7 @@ version = "0.25.18"
 backend = "cargo:cargo-release"
 
 [tools."cargo:git-cliff"]
-version = "2.9.1"
+version = "2.10.0"
 backend = "cargo:git-cliff"
 
 [tools."cargo:toml-cli"]
@@ -145,32 +136,22 @@ version = "0.24.2"
 backend = "pipx:toml-sort"
 
 [tools.pkl]
-version = "0.28.2"
+version = "0.29.0"
 backend = "aqua:apple/pkl"
 
 [tools.pkl.platforms.linux-x64]
-checksum = "blake3:307c4fe33a13f5293dce699b1544d292537caa2c1b711f984f7d3ecc9e729ed2"
-size = 101155760
-url = "https://github.com/apple/pkl/releases/download/0.28.2/pkl-linux-amd64"
-
-[tools.pkl.platforms.macos-arm64]
-checksum = "blake3:d133ebaf6608bd51ae14b78aacacfc5f37d0f0ed23c276740767f4264c26134a"
-size = 102083376
-url = "https://github.com/apple/pkl/releases/download/0.28.2/pkl-macos-aarch64"
+checksum = "blake3:954ab61f352db192105bc3dd6daef7bd27aa847b1ea0a8f469f1f05881644864"
+size = 103994096
+url = "https://github.com/apple/pkl/releases/download/0.29.0/pkl-linux-amd64"
 
 [tools.pre-commit]
-version = "4.2.0"
+version = "4.3.0"
 backend = "aqua:pre-commit/pre-commit"
 
 [tools.pre-commit.platforms.linux-x64]
-checksum = "sha256:0d4d80fd598dd1f7c268569de49e7c7a692a3de6f7a97cf14ad4e6cce993bbdf"
-size = 6544274
-url = "https://github.com/pre-commit/pre-commit/releases/download/v4.2.0/pre-commit-4.2.0.pyz"
-
-[tools.pre-commit.platforms.macos-arm64]
-checksum = "sha256:0d4d80fd598dd1f7c268569de49e7c7a692a3de6f7a97cf14ad4e6cce993bbdf"
-size = 6544274
-url = "https://github.com/pre-commit/pre-commit/releases/download/v4.2.0/pre-commit-4.2.0.pyz"
+checksum = "sha256:f1d50b97e9ca9167aceb76c14e90b07cde8b6789bc199d5005cfd817a718878c"
+size = 8268268
+url = "https://github.com/pre-commit/pre-commit/releases/download/v4.3.0/pre-commit-4.3.0.pyz"
 
 [tools.ripgrep]
 version = "14.1.1"
@@ -187,18 +168,13 @@ size = 1787248
 url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
 
 [tools.shellcheck]
-version = "0.10.0"
+version = "0.11.0"
 backend = "aqua:koalaman/shellcheck"
 
 [tools.shellcheck.platforms.linux-x64]
-checksum = "blake3:729ad9734a3d9ecaf613b25714d6c70812e8808270c13cbe19eca2412f0ffc2d"
-size = 2404716
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz"
-
-[tools.shellcheck.platforms.macos-arm64]
-checksum = "blake3:a03f7e89a3ae96103d5a425053566ff0643ce8aa1a0bee7fd0f09da50c18b41c"
-size = 7205756
-url = "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.darwin.aarch64.tar.xz"
+checksum = "blake3:0ad9524f3f16ad030f8350e7b970c62c24aeff3d813f2565665aecc5a8b79644"
+size = 2559196
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
 
 [tools.shfmt]
 version = "3.12.0"
