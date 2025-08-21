@@ -41,13 +41,18 @@ sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/versio
 
 mise run render ::: lint-fix
 
+rm -rf aqua-registry
+git clone https://github.com/aquaproj/aqua-registry
+
 mise up
+git status
 # cargo update
 git add \
 	Cargo.lock \
 	Cargo.toml \
 	CHANGELOG.md \
 	README.md \
+	aqua-registry \
 	default.nix \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \
@@ -57,8 +62,6 @@ git add \
 git clean -df
 git checkout -B release
 git commit -m "chore: release $version"
-git status
-git subtree pull --squash --prefix=aqua-registry https://github.com/aquaproj/aqua-registry main
 git push origin release --force
 
 if [[ "$(gh pr list --label release)" == "" ]]; then

@@ -153,6 +153,11 @@ checksum = "sha256:f1d50b97e9ca9167aceb76c14e90b07cde8b6789bc199d5005cfd817a7188
 size = 8268268
 url = "https://github.com/pre-commit/pre-commit/releases/download/v4.3.0/pre-commit-4.3.0.pyz"
 
+[tools.pre-commit.platforms.macos-arm64]
+checksum = "sha256:f1d50b97e9ca9167aceb76c14e90b07cde8b6789bc199d5005cfd817a718878c"
+size = 8268268
+url = "https://github.com/pre-commit/pre-commit/releases/download/v4.3.0/pre-commit-4.3.0.pyz"
+
 [tools.ripgrep]
 version = "14.1.1"
 backend = "aqua:BurntSushi/ripgrep"
