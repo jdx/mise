@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: crates.io/broot
+    type: cargo
+    repo_owner: Canop
+    repo_name: broot
+    description: A new file manager
+    link: https://dystroy.org/broot
+    crate: broot

@@ -1,0 +1,8 @@
+packages:
+  - name: kyoh86/richgo@v0.3.12
+  - name: kyoh86/richgo
+    version: v0.3.10
+  - name: kyoh86/richgo
+    version: v0.3.8
+  - name: kyoh86/richgo
+    version: v0.3.6

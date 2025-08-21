@@ -1,0 +1,2 @@
+packages:
+  - name: GoogleCloudPlatform/terraformer/aws@0.8.30

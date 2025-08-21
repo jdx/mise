@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rclone
+    repo_name: rclone
+    asset: rclone-{{.Version}}-{{.OS}}-{{.Arch}}.zip
+    description: '"rsync for cloud storage" - Google Drive, S3, Dropbox, Backblaze B2, One Drive, Swift, Hubic, Wasabi, Google Cloud Storage, Yandex Files'
+    files:
+      - name: rclone
+        src: rclone-{{.Version}}-{{.OS}}-{{.Arch}}/rclone
+    replacements:
+      darwin: osx
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256

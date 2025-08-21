@@ -1,0 +1,10 @@
+packages:
+  - name: psf/black@25.1.0
+  - name: psf/black
+    version: 22.8.0
+  - name: psf/black
+    version: 22.6.0
+  - name: psf/black
+    version: 21.5b1
+  - name: psf/black
+    version: 19.10b0

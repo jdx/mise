@@ -1,0 +1,10 @@
+packages:
+  - name: Melkeydev/go-blueprint@v0.10.11
+  - name: Melkeydev/go-blueprint
+    version: v0.3.0
+  - name: Melkeydev/go-blueprint
+    version: v0.2.13
+  - name: Melkeydev/go-blueprint
+    version: v0.2.11
+  - name: Melkeydev/go-blueprint
+    version: v0.2.4

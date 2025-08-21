@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kurehajime
+    repo_name: pong-command
+    description: pong is not ping. pong is CLI game
+    files:
+      - name: pong
+    version_constraint: semver(">= 2.0.8")
+    asset: pong-command_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    replacements:
+      amd64: x86_64
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_overrides:
+      - version_constraint: semver(">= 2.0.5")
+        supported_envs: []
+      - version_constraint: "true"
+        rosetta2: true
+        asset: "{{.OS}}_{{.Arch}}.zip"
+        supported_envs:
+          - darwin
+          - amd64
+        replacements:
+          darwin: macos
+        checksum:
+          enabled: false

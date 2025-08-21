@@ -1,0 +1,6 @@
+packages:
+  - name: interlynk-io/sbomqs@v1.1.0
+  - name: interlynk-io/sbomqs
+    version: v0.0.10
+  - name: interlynk-io/sbomqs
+    version: v0.0.9

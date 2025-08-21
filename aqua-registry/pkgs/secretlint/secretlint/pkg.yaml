@@ -1,0 +1,14 @@
+packages:
+  - name: secretlint/secretlint@v11.0.2
+  - name: secretlint/secretlint
+    version: v8.2.4
+  - name: secretlint/secretlint
+    version: v8.2.2
+  - name: secretlint/secretlint
+    version: v8.2.1
+  - name: secretlint/secretlint
+    version: v8.2.0
+  - name: secretlint/secretlint
+    version: v4.1.0
+  - name: secretlint/secretlint
+    version: v0.7.2

@@ -1,0 +1,16 @@
+packages:
+  - name: nextest-rs/nextest/cargo-nextest@cargo-nextest-0.9.102
+  - name: nextest-rs/nextest/cargo-nextest
+    version: cargo-nextest-0.9.84
+  - name: nextest-rs/nextest/cargo-nextest
+    version: cargo-nextest-0.9.61
+  - name: nextest-rs/nextest/cargo-nextest
+    version: cargo-nextest-0.9.59
+  - name: nextest-rs/nextest/cargo-nextest
+    version: cargo-nextest-0.9.46
+  - name: nextest-rs/nextest/cargo-nextest
+    version: cargo-nextest-0.9.41
+  - name: nextest-rs/nextest/cargo-nextest
+    version: cargo-nextest-0.9.40
+  - name: nextest-rs/nextest/cargo-nextest
+    version: cargo-nextest-0.9.28

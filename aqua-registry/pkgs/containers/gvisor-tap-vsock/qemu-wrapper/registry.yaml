@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: containers/gvisor-tap-vsock/qemu-wrapper
+    type: github_release
+    repo_owner: containers
+    repo_name: gvisor-tap-vsock
+    description: A new network stack based on gVisor
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: qemu-wrapper
+        format: raw
+        supported_envs:
+          - linux/amd64

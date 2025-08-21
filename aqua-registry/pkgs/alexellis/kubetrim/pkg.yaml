@@ -1,0 +1,4 @@
+packages:
+  - name: alexellis/kubetrim@v0.0.1
+  - name: alexellis/kubetrim
+    version: v0.0.1-rc3

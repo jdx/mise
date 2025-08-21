@@ -1,0 +1,4 @@
+packages:
+  - name: muesli/markscribe@v0.6.0
+  - name: muesli/markscribe
+    version: v0.3.0

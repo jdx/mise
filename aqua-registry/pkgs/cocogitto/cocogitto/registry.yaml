@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cocogitto
+    repo_name: cocogitto
+    description: The Conventional Commits toolbox
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 5.3.1")
+        asset: cocogitto-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: cog
+        replacements:
+          amd64: x86_64
+          darwin: osx
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 5.6.0")
+        asset: cocogitto-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: cog
+        replacements:
+          amd64: x86_64
+          darwin: osx
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "6.0.0"
+        asset: cocogitto-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: cog
+            src: "{{.Arch}}-{{.OS}}/cog/cog"
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: windows
+            files:
+              - name: cog
+                src: "{{.Arch}}-{{.OS}}/cog.exe/cog.exe"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+      - version_constraint: "true"
+        asset: cocogitto-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: cog
+            src: "{{.Arch}}-{{.OS}}/cog"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: windows
+            files:
+              - name: cog
+                src: "{{.Arch}}-{{.OS}}/cog.exe"

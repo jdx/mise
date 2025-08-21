@@ -1,0 +1,4 @@
+packages:
+  - name: palantir/conjure-rust@4.15.0
+  - name: palantir/conjure-rust
+    version: 4.0.0

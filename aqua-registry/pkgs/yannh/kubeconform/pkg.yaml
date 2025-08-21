@@ -1,0 +1,6 @@
+packages:
+  - name: yannh/kubeconform@v0.7.0
+  - name: yannh/kubeconform
+    version: v0.4.8
+  - name: yannh/kubeconform
+    version: 0.1.0

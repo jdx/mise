@@ -1,0 +1,8 @@
+packages:
+  - name: norwoodj/helm-docs@v1.14.2
+  - name: norwoodj/helm-docs
+    version: v1.11.2
+  - name: norwoodj/helm-docs
+    version: v1.5.0
+  - name: norwoodj/helm-docs
+    version: v1.3.0

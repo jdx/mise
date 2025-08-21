@@ -1,0 +1,2 @@
+packages:
+  - name: pre-commit/pre-commit@v4.3.0

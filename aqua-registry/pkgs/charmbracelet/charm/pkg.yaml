@@ -1,0 +1,4 @@
+packages:
+  - name: charmbracelet/charm@v0.12.6
+  - name: charmbracelet/charm
+    version: v0.12.4

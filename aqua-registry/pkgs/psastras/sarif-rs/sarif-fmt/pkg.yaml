@@ -1,0 +1,6 @@
+packages:
+  - name: psastras/sarif-rs/sarif-fmt@sarif-fmt-v0.8.0
+  - name: psastras/sarif-rs/sarif-fmt
+    version: sarif-fmt-v0.6.2
+  - name: psastras/sarif-rs/sarif-fmt
+    version: sarif-fmt-v0.4.2

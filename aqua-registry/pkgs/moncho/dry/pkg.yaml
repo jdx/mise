@@ -1,0 +1,12 @@
+packages:
+  - name: moncho/dry@v0.11.2
+  - name: moncho/dry
+    version: v0.10-beta.1
+  - name: moncho/dry
+    version: v0.9-beta.9
+  - name: moncho/dry
+    version: v0.9-beta.5
+  - name: moncho/dry
+    version: v0.3-beta.10
+  - name: moncho/dry
+    version: v0.3-beta.1

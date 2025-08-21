@@ -1,0 +1,8 @@
+packages:
+  - name: GhostTroops/scan4all@2.8.7
+  - name: GhostTroops/scan4all
+    version: 2.8.6
+  - name: GhostTroops/scan4all
+    version: 2.6.9
+  - name: GhostTroops/scan4all
+    version: 2.4.5

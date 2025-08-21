@@ -1,0 +1,12 @@
+packages:
+  - name: kubernetes/kubernetes/kubectl@v1.33.4
+  - name: kubernetes/kubernetes/kubectl
+    version: v1.25.4
+  - name: kubernetes/kubernetes/kubectl
+    version: v1.22.17
+  - name: kubernetes/kubernetes/kubectl
+    version: v1.20.15
+  - name: kubernetes/kubernetes/kubectl
+    version: v1.15.3
+  - name: kubernetes/kubernetes/kubectl
+    version: v1.2.7

@@ -1,0 +1,4 @@
+packages:
+  - name: cnrancher/autok3s@v0.9.3
+  - name: cnrancher/autok3s
+    version: v0.4.7-rc2

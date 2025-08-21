@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Melkeydev
+    repo_name: go-blueprint
+    description: Go-blueprint allows users to spin up a quick Go project using a popular framework
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.2.4"
+        asset: go-blueprint-{{.Arch}}
+        replacements:
+          amd64: x86
+          arm64: arm
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 0.2.11")
+        asset: go-blueprint-{{.OS}}_{{.Arch}}
+        format: raw
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+        replacements:
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: semver("<= 0.2.13")
+        asset: go-blueprint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: darwin
+            asset: go-blueprint_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v0.3.0"
+        asset: go-blueprint_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: darwin
+            asset: go-blueprint_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: go-blueprint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: darwin
+            asset: go-blueprint_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

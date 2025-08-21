@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: awslabs
+    repo_name: kubernetes-iteration-toolkit
+    version_filter: not (Version startsWith "kit-operator-")
+    files:
+      - name: kitctl
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: kitctl_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        supported_envs:
+          - darwin

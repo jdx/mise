@@ -1,0 +1,8 @@
+packages:
+  - name: project-zot/zot@v2.1.7
+  - name: project-zot/zot
+    version: v2.0.1
+  - name: project-zot/zot
+    version: v1.3.7
+  - name: project-zot/zot
+    version: v1.3.5

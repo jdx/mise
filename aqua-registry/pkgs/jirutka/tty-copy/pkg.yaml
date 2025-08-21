@@ -1,0 +1,4 @@
+packages:
+  - name: jirutka/tty-copy@v0.2.2
+  - name: jirutka/tty-copy
+    version: v0.2.0

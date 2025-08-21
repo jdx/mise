@@ -1,0 +1,10 @@
+packages:
+  - name: create-go-app/cli@v4.1.0
+  - name: create-go-app/cli
+    version: v1.7.0
+  - name: create-go-app/cli
+    version: v1.6.3
+  - name: create-go-app/cli
+    version: v1.0.0
+  - name: create-go-app/cli
+    version: 0.8.4

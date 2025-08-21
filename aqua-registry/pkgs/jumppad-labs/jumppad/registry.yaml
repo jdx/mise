@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jumppad-labs
+    repo_name: jumppad
+    aliases:
+      - name: shipyard-run/shipyard
+    description: Modern cloud native development environments
+    asset: jumppad_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    replacements:
+      amd64: x86_64
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.5.8")
+    version_overrides:
+      - version_constraint: semver(">= 0.3.20")
+        asset: shipyard_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        checksum:
+          enabled: false
+        files:
+          - name: shipyard
+      - version_constraint: semver(">= 0.3.13")
+        files:
+          - name: shipyard
+        asset: shipyard_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+      - version_constraint: semver(">= 0.3.6")
+        files:
+          - name: shipyard
+        asset: shipyard_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+      - version_constraint: semver(">= 0.0.3")
+        files:
+          - name: shipyard
+        asset: shipyard_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        rosetta2: true
+      - version_constraint: semver(">= 0.0.2")
+        asset: shipyard_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: shipyard
+        replacements:
+          amd64: x86_64
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - linux
+          - windows/amd64

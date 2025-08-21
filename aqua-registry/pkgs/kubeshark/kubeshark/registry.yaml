@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubeshark
+    repo_name: kubeshark
+    aliases:
+      # Repository was transferred at 37.0
+      - name: up9inc/mizu
+    description: The API traffic analyzer for Kubernetes providing real-time K8s protocol-level visibility, capturing and monitoring all traffic and payloads going in, out and across containers, pods, nodes and clusters. Inspired by Wireshark, purposely built for Kubernetes
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.17.0")
+        asset: mizu_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        files:
+          - name: mizu
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.23.0")
+        asset: mizu_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        files:
+          - name: mizu
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            asset: mizu.exe
+            checksum:
+              enabled: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 36.0")
+        asset: mizu_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        files:
+          - name: mizu
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            asset: mizu.exe
+            checksum:
+              enabled: false
+      - version_constraint: semver("<= 37.0")
+        asset: kubeshark_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            asset: kubeshark.exe
+            checksum:
+              enabled: false
+      - version_constraint: semver("<= 50.4")
+        asset: kubeshark_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: kubeshark_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 52.1.50")
+        asset: kubeshark_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: kubeshark_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: kubeshark_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            asset: kubeshark
+            checksum:
+              enabled: false

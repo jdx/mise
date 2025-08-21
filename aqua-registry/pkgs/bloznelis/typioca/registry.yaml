@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bloznelis
+    repo_name: typioca
+    description: Cozy typing speed tester in terminal
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.1")
+        asset: typioca-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          darwin: mac
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.4.1")
+        no_asset: true
+      - version_constraint: "true"
+        asset: typioca-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          darwin: mac
+          windows: win
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows

@@ -1,0 +1,4 @@
+packages:
+  - name: dispatchrun/wzprof@v0.2.0
+  - name: dispatchrun/wzprof
+    version: v0.1.5

@@ -1,0 +1,18 @@
+packages:
+  - name: Wilfred/difftastic@0.64.0
+  - name: Wilfred/difftastic
+    version: 0.62.0
+  - name: Wilfred/difftastic
+    version: 0.56.0
+  - name: Wilfred/difftastic
+    version: 0.53.0
+  - name: Wilfred/difftastic
+    version: 0.52.0
+  - name: Wilfred/difftastic
+    version: 0.51.1
+  - name: Wilfred/difftastic
+    version: 0.50.0
+  - name: Wilfred/difftastic
+    version: 0.36.0
+  - name: Wilfred/difftastic
+    version: 0.26.2

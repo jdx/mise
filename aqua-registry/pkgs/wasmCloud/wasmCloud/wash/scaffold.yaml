@@ -1,0 +1,3 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+name: wasmCloud/wasmCloud/wash
+version_prefix: wash-v

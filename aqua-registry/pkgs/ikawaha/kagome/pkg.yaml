@@ -1,0 +1,10 @@
+packages:
+  - name: ikawaha/kagome@v2.10.2
+  - name: ikawaha/kagome
+    version: v2.9.2
+  - name: ikawaha/kagome
+    version: v2.6.3
+  - name: ikawaha/kagome
+    version: v2.6.0
+  - name: ikawaha/kagome
+    version: v0.1.0

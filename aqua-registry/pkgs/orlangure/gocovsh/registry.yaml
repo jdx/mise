@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: orlangure
+    repo_name: gocovsh
+    description: "Go Coverage in your terminal: a tool for exploring Go Coverage reports from the command line"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: gocovsh_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/orlangure/gocovsh/\\.github/workflows/.+\\.ya?ml@refs/tags/"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/orlangure/gocovsh/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/orlangure/gocovsh/releases/download/{{.Version}}/checksums.txt.pem

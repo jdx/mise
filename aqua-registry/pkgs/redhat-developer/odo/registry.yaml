@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: redhat-developer
+    repo_name: odo
+    description: A fast, and iterative CLI tool for container-based application development
+    url: https://developers.redhat.com/content-gateway/rest/mirror/pub/openshift-v4/clients/odo/{{.Version}}/odo-{{.OS}}-{{.Arch}}
+    format: raw
+    supported_envs:
+      - darwin
+      - linux
+      - windows/amd64
+    checksum:
+      type: http
+      url: https://developers.redhat.com/content-gateway/rest/mirror/pub/openshift-v4/clients/odo/{{.Version}}/odo-{{.OS}}-{{.Arch}}.sha256
+      algorithm: sha256
+    overrides:
+      - goos: windows
+        checksum:
+          type: http
+          url: https://developers.redhat.com/content-gateway/rest/mirror/pub/openshift-v4/clients/odo/{{.Version}}/odo-{{.OS}}-{{.Arch}}.exe.sha256
+          algorithm: sha256

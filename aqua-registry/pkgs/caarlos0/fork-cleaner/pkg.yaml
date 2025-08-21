@@ -1,0 +1,18 @@
+packages:
+  - name: caarlos0/fork-cleaner@v2.3.1
+  - name: caarlos0/fork-cleaner
+    version: v2.2.1
+  - name: caarlos0/fork-cleaner
+    version: v2.2.0
+  - name: caarlos0/fork-cleaner
+    version: v2.1.0
+  - name: caarlos0/fork-cleaner
+    version: v2.0.3
+  - name: caarlos0/fork-cleaner
+    version: v1.8.0
+  - name: caarlos0/fork-cleaner
+    version: v1.2.0
+  - name: caarlos0/fork-cleaner
+    version: v1.1.0
+  - name: caarlos0/fork-cleaner
+    version: v1.0.8

@@ -1,0 +1,8 @@
+packages:
+  - name: tummychow/git-absorb@0.8.0
+  - name: tummychow/git-absorb
+    version: 0.6.10
+  - name: tummychow/git-absorb
+    version: 0.6.7
+  - name: tummychow/git-absorb
+    version: 0.6.6

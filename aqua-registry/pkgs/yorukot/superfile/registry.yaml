@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: yorukot
+    repo_name: superfile
+    aliases:
+      - name: MHNightCat/superfile
+    description: Pretty fancy and modern terminal file manager
+    files:
+      - name: spf
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0"
+        asset: spf
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: "true"
+        asset: superfile-{{.OS}}-{{.Version}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: spf
+            src: dist/{{.AssetWithoutExt}}/spf
+        supported_envs:
+          - linux
+          - darwin

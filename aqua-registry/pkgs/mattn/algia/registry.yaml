@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mattn
+    repo_name: algia
+    description: A cli application for nostr
+    asset: algia_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: algia
+        src: algia_{{.Version}}_{{.OS}}_{{.Arch}}/algia

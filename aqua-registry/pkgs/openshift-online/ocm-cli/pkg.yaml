@@ -1,0 +1,10 @@
+packages:
+  - name: openshift-online/ocm-cli@v1.0.7
+  - name: openshift-online/ocm-cli
+    version: v0.1.65
+  - name: openshift-online/ocm-cli
+    version: v0.1.58
+  - name: openshift-online/ocm-cli
+    version: v0.1.56
+  - name: openshift-online/ocm-cli
+    version: v0.1.30

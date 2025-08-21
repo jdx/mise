@@ -1,0 +1,8 @@
+packages:
+  - name: kubernetes/kubernetes/kube-scheduler@v1.33.4
+  - name: kubernetes/kubernetes/kube-scheduler
+    version: v1.25.4
+  - name: kubernetes/kubernetes/kube-scheduler
+    version: v1.15.3
+  - name: kubernetes/kubernetes/kube-scheduler
+    version: v1.2.7

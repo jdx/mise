@@ -1,0 +1,4 @@
+packages:
+  - name: sinclairtarget/git-who@v1.2
+  - name: sinclairtarget/git-who
+    version: v0.2

@@ -1,0 +1,8 @@
+packages:
+  - name: jsonnet-bundler/jsonnet-bundler@v0.6.0
+  - name: jsonnet-bundler/jsonnet-bundler
+    version: v0.5.1
+  - name: jsonnet-bundler/jsonnet-bundler
+    version: v0.4.0
+  - name: jsonnet-bundler/jsonnet-bundler
+    version: v0.3.1

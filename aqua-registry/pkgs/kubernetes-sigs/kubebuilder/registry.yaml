@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubernetes-sigs
+    repo_name: kubebuilder
+    description: Kubebuilder - SDK for building Kubernetes APIs using CRDs
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - linux
+    asset: kubebuilder_{{.OS}}_{{.Arch}}
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

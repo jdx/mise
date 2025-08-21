@@ -1,0 +1,20 @@
+packages:
+  - name: saucelabs/forwarder@v1.4.0
+  - name: saucelabs/forwarder
+    version: v1.2.0
+  - name: saucelabs/forwarder
+    version: v1.1-rc1
+  - name: saucelabs/forwarder
+    version: v1.0.2
+  - name: saucelabs/forwarder
+    version: v1.0.0
+  - name: saucelabs/forwarder
+    version: v1.0.0-rc2
+  - name: saucelabs/forwarder
+    version: v1.0.0-rc0
+  - name: saucelabs/forwarder
+    version: v0.3.4
+  - name: saucelabs/forwarder
+    version: v0.1.15
+  - name: saucelabs/forwarder
+    version: v0.1.12

@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mrjosh
+    repo_name: helm-ls
+    description: Language server for Helm
+    files:
+      - name: helm_ls
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.3"
+        asset: helm_ls_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        supported_envs:
+          - darwin
+          - windows
+          - linux/amd64
+      - version_constraint: semver("<= 0.0.5")
+        asset: helm_ls_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        supported_envs:
+          - darwin
+          - windows
+          - linux/amd64
+      - version_constraint: "true"
+        asset: helm_ls_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true

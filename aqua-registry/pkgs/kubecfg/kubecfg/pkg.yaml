@@ -1,0 +1,4 @@
+packages:
+  - name: kubecfg/kubecfg@v0.36.0
+  - name: kubecfg/kubecfg
+    version: v0.34.3

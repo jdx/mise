@@ -1,0 +1,6 @@
+packages:
+  - name: devops-works/dw-query-digest@v0.9.6
+  - name: devops-works/dw-query-digest
+    version: v0.8
+  - name: devops-works/dw-query-digest
+    version: v0.7

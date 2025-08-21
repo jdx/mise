@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: drlau
+    repo_name: akashi
+    asset: akashi_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    description: Validate "terraform plan" changes against a customizable ruleset
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    checksum:
+      type: github_release
+      asset: akashi_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.0.12")
+    version_overrides:
+      - version_constraint: semver(">= 0.0.8")
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64

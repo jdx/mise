@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: clog-tool
+    repo_name: clog-cli
+    description: Generate beautiful changelogs from your Git commit history
+    rosetta2: true
+    asset: clog-{{.Version}}-{{.Arch}}-{{.OS}}.tar.gz
+    replacements:
+      arm64: aarch64
+      amd64: x86_64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+    overrides:
+      - goos: linux
+        goarch: arm64
+        replacements:
+          linux: unknown-linux-gnu
+    supported_envs:
+      - darwin
+      - linux
+    files:
+      - name: clog

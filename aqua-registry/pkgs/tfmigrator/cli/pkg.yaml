@@ -1,0 +1,4 @@
+packages:
+  - name: tfmigrator/cli@v0.2.2
+  - name: tfmigrator/cli
+    version: v0.2.1

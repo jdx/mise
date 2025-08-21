@@ -1,0 +1,2 @@
+packages:
+  - name: Shopify/kubeaudit@v0.22.2

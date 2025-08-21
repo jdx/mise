@@ -1,0 +1,6 @@
+packages:
+  - name: opentofu/tofu-ls@v0.0.9
+  - name: opentofu/tofu-ls
+    version: v0.0.1-alpha2
+  - name: opentofu/tofu-ls
+    version: v0.0.1-alpha1

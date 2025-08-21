@@ -1,0 +1,6 @@
+packages:
+  - name: magefile/mage@v1.15.0
+  - name: magefile/mage
+    version: v1.14.0
+  - name: magefile/mage
+    version: v1.11.0

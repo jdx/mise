@@ -1,0 +1,152 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rust-lang
+    repo_name: rust-analyzer
+    description: A Rust compiler front-end for IDEs
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "2024-09-23"
+        no_asset: true
+      - version_constraint: semver("<= 2020-02-17")
+        asset: ra_lsp_server-{{.OS}}
+        format: raw
+        replacements:
+          darwin: mac
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2020-07-06")
+        asset: rust-analyzer-{{.OS}}
+        format: raw
+        replacements:
+          darwin: mac
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2020-12-21")
+        asset: rust-analyzer-{{.OS}}.{{.Format}}
+        format: gz
+        files:
+          - name: rust-analyzer
+            src: rust-analyzer-{{.OS}}
+        replacements:
+          darwin: mac
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2021-01-04")
+        asset: rust-analyzer-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: gz
+        windows_arm_emulation: true
+        files:
+          - name: rust-analyzer
+            src: rust-analyzer-{{.Arch}}-{{.OS}}
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "2021-01-11"
+        asset: rust-analyzer-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: gz
+        files:
+          - name: rust-analyzer
+            src: rust-analyzer-{{.Arch}}-{{.OS}}
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 2021-02-08")
+        asset: rust-analyzer-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: gz
+        files:
+          - name: rust-analyzer
+            src: rust-analyzer-{{.Arch}}-{{.OS}}
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+      - version_constraint: semver("<= 2024-09-16")
+        asset: rust-analyzer-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: gz
+        files:
+          - name: rust-analyzer
+            src: rust-analyzer-{{.Arch}}-{{.OS}}
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+      - version_constraint: semver("<= 2024-10-28")
+        asset: rust-analyzer-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: gz
+        files:
+          - name: rust-analyzer
+            src: rust-analyzer-{{.Arch}}-{{.OS}}
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+      - version_constraint: "true"
+        asset: rust-analyzer-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: gz
+        files:
+          - name: rust-analyzer
+            src: rust-analyzer-{{.Arch}}-{{.OS}}
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+            files:
+              - name: rust-analyzer

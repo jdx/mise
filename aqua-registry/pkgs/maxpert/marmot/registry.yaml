@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: maxpert
+    repo_name: marmot
+    description: A distributed SQLite replicator
+    version_constraint: semver(">= 0.3.7")
+    asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}-static.tar.gz
+    supported_envs:
+      - linux
+    version_overrides:
+      - version_constraint: semver(">= 0.3.3")
+        asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+        supported_envs:
+          - linux/amd64
+      - version_constraint: "true"
+        asset: marmot-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+        supported_envs:
+          - linux
+          - darwin

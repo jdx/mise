@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: restic
+    repo_name: restic
+    description: Fast, secure, efficient backup program
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: restic_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    files:
+      - name: restic
+        src: restic_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+    format: bz2
+    overrides:
+      - goos: windows
+        format: zip
+        files:
+          - name: restic
+            src: restic_{{trimV .Version}}_windows_{{.Arch}}.exe
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256

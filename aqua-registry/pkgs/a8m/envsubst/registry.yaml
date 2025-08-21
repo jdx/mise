@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: a8m
+    repo_name: envsubst
+    description: Environment variables substitution for Go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0"
+        asset: envsubst-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v1.1.0"
+        asset: envsubst-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        complete_windows_ext: false
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        overrides:
+          - goos: windows
+            asset: envsubst.exe.exec
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.2.0"
+        asset: envsubst-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        overrides:
+          - goos: windows
+            asset: envsubst
+      - version_constraint: Version == "v1.4.1"
+        asset: envsubst-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: envsubst-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        overrides:
+          - goos: windows
+            asset: envsubst

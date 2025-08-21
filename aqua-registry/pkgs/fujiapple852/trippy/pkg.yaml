@@ -1,0 +1,8 @@
+packages:
+  - name: fujiapple852/trippy@0.13.0
+  - name: fujiapple852/trippy
+    version: 0.8.0
+  - name: fujiapple852/trippy
+    version: 0.7.0
+  - name: fujiapple852/trippy
+    version: 0.6.0

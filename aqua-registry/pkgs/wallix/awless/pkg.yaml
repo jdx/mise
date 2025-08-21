@@ -1,0 +1,4 @@
+packages:
+  - name: wallix/awless@v0.1.11
+  - name: wallix/awless
+    version: v0.0.25

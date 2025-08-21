@@ -1,0 +1,16 @@
+packages:
+  - name: boz/kail@v0.17.4
+  - name: boz/kail
+    version: v0.16.1
+  - name: boz/kail
+    version: v0.15.1
+  - name: boz/kail
+    version: v0.15.0
+  - name: boz/kail
+    version: v0.9.1
+  - name: boz/kail
+    version: v0.3.5
+  - name: boz/kail
+    version: v0.3.2
+  - name: boz/kail
+    version: v0.3.0

@@ -1,0 +1,14 @@
+packages:
+  - name: toshimaru/nyan@v1.2.3
+  - name: toshimaru/nyan
+    version: v1.0.5
+  - name: toshimaru/nyan
+    version: v0.9.6
+  - name: toshimaru/nyan
+    version: v0.9.2
+  - name: toshimaru/nyan
+    version: v0.9.0
+  - name: toshimaru/nyan
+    version: v0.1.0
+  - name: toshimaru/nyan
+    version: v0.0.0

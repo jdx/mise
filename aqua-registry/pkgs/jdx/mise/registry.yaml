@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jdx
+    repo_name: mise
+    aliases:
+      - name: jdxcode/rtx
+      - name: jdx/rtx
+    description: dev tools, env vars, task runner
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2023.12.9")
+        asset: rtx-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: rtx
+            src: rtx/bin/rtx
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 2024.0.0")
+        asset: rtx-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: rtx
+            src: rtx/bin/rtx
+        overrides:
+          - goos: linux
+            asset: rtx-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver(">= 2025.7.13, <= 2025.7.15")
+        no_asset: true
+      - version_constraint: "true"
+        asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+        format: tar.gz
+        files:
+          - name: mise
+            src: mise/bin/mise
+        overrides:
+          - goos: darwin
+            asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - linux
+          - darwin

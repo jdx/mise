@@ -1,0 +1,4 @@
+packages:
+  - name: rancher/kim@v0.1.0-beta.7
+  - name: rancher/kim
+    version: v0.1.0-alpha.3

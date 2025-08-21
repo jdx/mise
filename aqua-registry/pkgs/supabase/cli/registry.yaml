@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: supabase
+    repo_name: cli
+    description: Supabase CLI. Manage postgres migrations, run Supabase locally, deploy edge functions. Postgres backups. Generating types from your database schema
+    files:
+      - name: supabase
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v1.7.8", "v1.10.0", "v1.22.2", "v1.40.0"]
+        no_asset: true
+      - version_constraint: semver("<= 1.27.10")
+        asset: supabase_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: supabase_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.126.0")
+        asset: supabase_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: supabase_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: supabase_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: supabase_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: firecow
+    repo_name: gitlab-ci-local
+    description: Tired of pushing to test your .gitlab-ci.yml
+    version_constraint: "false"
+    files:
+      - name: "gitlab-ci-local"
+        src: "{{.AssetWithoutExt}}"
+    version_overrides:
+      - version_constraint: semver("<= 4.9.0")
+        asset: "{{.OS}}.{{.Format}}"
+        format: gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 4.9.7")
+        asset: "{{.OS}}.{{.Format}}"
+        format: gz
+        rosetta2: true
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: "{{.OS}}.{{.Format}}"
+        format: gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

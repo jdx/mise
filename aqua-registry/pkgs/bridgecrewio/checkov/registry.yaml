@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bridgecrewio
+    repo_name: checkov
+    description: Prevent cloud misconfigurations and find vulnerabilities during build-time in infrastructure as code, container images and open source packages with Checkov by Bridgecrew
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "2.3.321"
+        asset: checkov_{{.OS}}_{{.Arch}}_{{.Version}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: checkov
+            src: dist/checkov
+        replacements:
+          amd64: X86_64
+      - version_constraint: Version == "2.3.340"
+        no_asset: true
+      - version_constraint: Version == "2.5.15"
+        asset: checkov_{{.OS}}_{{.Arch}}_{{.Version}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: checkov
+            src: dist/checkov
+        replacements:
+          amd64: X86_64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "3.2.317"
+        asset: checkov_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: checkov
+            src: dist/checkov
+        replacements:
+          amd64: X86_64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "3.2.322"
+        asset: checkov_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        files:
+          - name: checkov
+            src: dist/checkov
+        replacements:
+          amd64: X86_64
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 2.3.314")
+        no_asset: true
+      - version_constraint: semver("<= 2.3.318")
+        asset: checkov_{{.OS}}_{{.Version}}
+        format: raw
+        complete_windows_ext: false
+        files:
+          - name: checkov
+            src: dist/checkov
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.3.334")
+        asset: checkov_{{.OS}}_{{.Arch}}_{{.Version}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: checkov
+            src: dist/checkov
+        replacements:
+          amd64: X86_64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 3.2.51")
+        asset: checkov_{{.OS}}_{{.Arch}}_{{.Version}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: checkov
+            src: dist/checkov
+        replacements:
+          amd64: X86_64
+      - version_constraint: "true"
+        asset: checkov_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: checkov
+            src: dist/checkov
+        replacements:
+          amd64: X86_64

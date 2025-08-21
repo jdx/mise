@@ -1,0 +1,4 @@
+packages:
+  - name: charmbracelet/vhs@v0.10.0
+  - name: charmbracelet/vhs
+    version: v0.6.0

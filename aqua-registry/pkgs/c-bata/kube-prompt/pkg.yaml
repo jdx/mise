@@ -1,0 +1,4 @@
+packages:
+  - name: c-bata/kube-prompt@v1.0.11
+  - name: c-bata/kube-prompt
+    version: v1.0.5

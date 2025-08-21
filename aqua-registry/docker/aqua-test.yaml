@@ -1,0 +1,12 @@
+---
+# aqua - Declarative CLI Version Manager
+# https://aquaproj.github.io/
+checksum:
+  enabled: true
+  require_checksum: false
+registries:
+  - name: standard
+    type: local
+    path: registry.yaml
+packages:
+  - import: pkg.yaml

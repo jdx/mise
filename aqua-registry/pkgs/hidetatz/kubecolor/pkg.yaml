@@ -1,0 +1,8 @@
+packages:
+  - name: hidetatz/kubecolor@v0.0.25
+  - name: hidetatz/kubecolor
+    version: v0.0.20
+  - name: hidetatz/kubecolor
+    version: v0.0.17
+  - name: hidetatz/kubecolor
+    version: v0.0.16

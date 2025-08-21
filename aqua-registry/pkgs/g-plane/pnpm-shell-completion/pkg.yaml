@@ -1,0 +1,6 @@
+packages:
+  - name: g-plane/pnpm-shell-completion@v0.5.4
+  - name: g-plane/pnpm-shell-completion
+    version: v0.3.0
+  - name: g-plane/pnpm-shell-completion
+    version: v0.2.0

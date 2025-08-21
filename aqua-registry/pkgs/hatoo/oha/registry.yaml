@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: hatoo
+    repo_name: oha
+    description: Ohayou(おはよう), HTTP load generator, inspired by rakyll/hey with tui animation
+    asset: oha-{{.OS}}-{{.Arch}}
+
+    # https://github.com/aquaproj/aqua-registry/pull/11995#issuecomment-1537367448
+    # Unfortunately, the prebuilt binary for darwin/arm64 doesn't work, so we enable rosetta2
+    rosetta2: true
+
+    format: raw
+    replacements:
+      darwin: macos
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    version_constraint: semver(">= 0.5.4")
+    version_overrides:
+      - version_constraint: semver(">= 0.5.3")
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: semver(">= 0.5.3-test")
+      - version_constraint: semver("< 0.5.3-test")
+        supported_envs:
+          - darwin
+          - amd64

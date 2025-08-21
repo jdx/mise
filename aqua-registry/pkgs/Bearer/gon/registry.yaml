@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Bearer
+    repo_name: gon
+    description: Sign, notarize, and package macOS CLI tools and applications written in any language. Available as both a CLI and a Go library
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.13")
+        no_asset: true
+      - version_constraint: "true"
+        asset: gon_{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin

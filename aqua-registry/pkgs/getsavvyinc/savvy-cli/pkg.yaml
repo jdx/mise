@@ -1,0 +1,4 @@
+packages:
+  - name: getsavvyinc/savvy-cli@0.23.0
+  - name: getsavvyinc/savvy-cli
+    version: v0.0.1

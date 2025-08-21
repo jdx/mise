@@ -1,0 +1,2 @@
+packages:
+  - name: GoTestTools/gotestfmt@v2.5.0

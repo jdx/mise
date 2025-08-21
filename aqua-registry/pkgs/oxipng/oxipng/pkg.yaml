@@ -1,0 +1,26 @@
+packages:
+  - name: oxipng/oxipng@v9.1.5
+  - name: oxipng/oxipng
+    version: v8.0.0
+  - name: oxipng/oxipng
+    version: v3.0.1
+  - name: oxipng/oxipng
+    version: v3.0.0
+  - name: oxipng/oxipng
+    version: v2.2.0
+  - name: oxipng/oxipng
+    version: v0.19.0
+  - name: oxipng/oxipng
+    version: v0.16.3
+  - name: oxipng/oxipng
+    version: v0.15.1
+  - name: oxipng/oxipng
+    version: v0.14.3
+  - name: oxipng/oxipng
+    version: v0.14.2
+  - name: oxipng/oxipng
+    version: v0.14.0
+  - name: oxipng/oxipng
+    version: v0.13.1
+  - name: oxipng/oxipng
+    version: v0.11.0

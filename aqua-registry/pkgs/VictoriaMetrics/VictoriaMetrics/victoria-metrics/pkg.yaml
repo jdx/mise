@@ -1,0 +1,24 @@
+packages:
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics@v1.124.0
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+    version: v1.110.0
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+    version: v1.103.0
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+    version: v1.102.1
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+    version: v1.97.1
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+    version: v1.89.1
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+    version: v1.78.1
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+    version: v1.72.0
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+    version: v1.52.0
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+    version: v1.29.4
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+    version: v1.8.2
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
+    version: v1.2.1

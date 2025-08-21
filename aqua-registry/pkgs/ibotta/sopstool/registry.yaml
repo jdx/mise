@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ibotta
+    repo_name: sopstool
+    description: SOPS multi-file wrapper
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.2.0"
+        asset: sopstool_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: sopstool_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: sopstool_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.4.4")
+        asset: sopstool_{{.OS}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: sopstool_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.1.3")
+        asset: sopstool_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: sopstool_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: sopstool_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: sopstool_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

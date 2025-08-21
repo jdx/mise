@@ -1,0 +1,26 @@
+packages:
+  - name: pkolaczk/fclones@v0.35.0
+  - name: pkolaczk/fclones
+    version: v0.28.0
+  - name: pkolaczk/fclones
+    version: v0.25.0
+  - name: pkolaczk/fclones
+    version: v0.24.0
+  - name: pkolaczk/fclones
+    version: v0.22.0
+  - name: pkolaczk/fclones
+    version: v0.21.0
+  - name: pkolaczk/fclones
+    version: v0.20.1
+  - name: pkolaczk/fclones
+    version: v0.20.0
+  - name: pkolaczk/fclones
+    version: v0.19.0
+  - name: pkolaczk/fclones
+    version: v0.10.2
+  - name: pkolaczk/fclones
+    version: 0.9.1
+  - name: pkolaczk/fclones
+    version: 0.6.0
+  - name: pkolaczk/fclones
+    version: 0.2.0

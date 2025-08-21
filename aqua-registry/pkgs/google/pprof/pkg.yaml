@@ -1,0 +1,3 @@
+packages:
+  - name: google/pprof
+    version: "d04f2422c8a17569c14e84da0fae252d9529826b"

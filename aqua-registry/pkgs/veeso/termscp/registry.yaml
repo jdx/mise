@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: veeso
+    repo_name: termscp
+    asset: termscp-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    description: A feature rich terminal UI file transfer and explorer with support for SCP/SFTP/FTP/S3
+    replacements:
+      amd64: x86_64
+      darwin: apple-darwin
+      linux: unknown-linux-gnu
+      windows: pc-windows-msvc
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - amd64
+    version_constraint: semver(">= 0.8.1")
+    version_overrides:
+      - version_constraint: semver(">= 0.6.1")
+        rosetta2: true
+      - version_constraint: "true"
+        asset: termscp-{{.OS}}.{{.Format}}
+        rosetta2: true
+        replacements:
+          darwin: mac
+          windows: msvc
+        overrides:
+          - goos: linux
+            format: txz
+            asset: termscp-{{trimV .Version}}.{{.Format}}
+            files:
+              - name: termscp
+                src: usr/local/bin/termscp
+          - goos: windows
+            format: zip
+            asset: termscp-{{trimV .Version}}-{{.OS}}.{{.Format}}

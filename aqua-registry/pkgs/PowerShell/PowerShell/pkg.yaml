@@ -1,0 +1,44 @@
+packages:
+  - name: PowerShell/PowerShell@v7.5.2
+  - name: PowerShell/PowerShell
+    version: v7.6.0-preview.4
+  - name: PowerShell/PowerShell
+    version: v7.5.1
+  - name: PowerShell/PowerShell
+    version: v7.5.0-rc.1
+  - name: PowerShell/PowerShell
+    version: v7.5.0-preview.1
+  - name: PowerShell/PowerShell
+    version: v7.4.10
+  - name: PowerShell/PowerShell
+    version: v7.4.7
+  - name: PowerShell/PowerShell
+    version: v7.3.12
+  - name: PowerShell/PowerShell
+    version: v7.3.9
+  - name: PowerShell/PowerShell
+    version: v7.2.24
+  - name: PowerShell/PowerShell
+    version: v7.2.19
+  - name: PowerShell/PowerShell
+    version: v7.2.7
+  - name: PowerShell/PowerShell
+    version: v7.2.1
+  - name: PowerShell/PowerShell
+    version: v7.0.13
+  - name: PowerShell/PowerShell
+    version: v7.0.2
+  - name: PowerShell/PowerShell
+    version: v7.0.0
+  - name: PowerShell/PowerShell
+    version: v6.2.6
+  - name: PowerShell/PowerShell
+    version: v6.2.2
+  - name: PowerShell/PowerShell
+    version: v6.1.6
+  - name: PowerShell/PowerShell
+    version: v6.1.1
+  - name: PowerShell/PowerShell
+    version: v6.0.3
+  - name: PowerShell/PowerShell
+    version: v6.0.2

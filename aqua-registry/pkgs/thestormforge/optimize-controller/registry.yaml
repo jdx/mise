@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: thestormforge
+    repo_name: optimize-controller
+    asset: stormforge-{{.OS}}-{{.Arch}}.tar.gz
+    description: Release with Confidence
+    supported_envs:
+      - linux/amd64
+      - darwin
+    files:
+      - name: stormforge
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

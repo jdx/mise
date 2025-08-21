@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: arch-go
+    repo_name: arch-go
+    description: Architecture checks for Go projects
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.6.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: arch-go_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: arch-go_{{.Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - "https://github.com/arch-go/arch-go/.github/workflows/ci.yml@refs/heads/main"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/arch-go/arch-go/releases/download/{{.Version}}/arch-go_{{.Version}}_checksums.txt-keyless.sig
+              - --certificate
+              - https://github.com/arch-go/arch-go/releases/download/{{.Version}}/arch-go_{{.Version}}_checksums.txt-keyless.pem
+        overrides:
+          - goos: windows
+            format: zip
+        cosign:
+          opts:
+            - --certificate-identity
+            - "https://github.com/arch-go/arch-go/.github/workflows/ci.yml@refs/heads/main"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --signature
+            - https://github.com/arch-go/arch-go/releases/download/{{.Version}}/{{.Asset}}-keyless.sig
+            - --certificate
+            - https://github.com/arch-go/arch-go/releases/download/{{.Version}}/{{.Asset}}-keyless.pem

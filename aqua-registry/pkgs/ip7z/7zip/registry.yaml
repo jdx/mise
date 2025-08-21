@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ip7z
+    repo_name: 7zip
+    description: 7-Zip is a file archiver with a high compression ratio
+    files:
+      - name: 7zzs
+      - name: 7zz
+      - name: 7za
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "21.07"
+        asset: 7z{{replace "." "" .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+          amd64: x64
+        overrides:
+          - goos: linux
+            files:
+              - name: 7zzs
+          - goos: darwin
+            asset: 7z{{replace "." "" .Version}}-{{.OS}}.{{.Format}}
+            files:
+              - name: 7zz
+          - goos: windows
+            format: 7z
+            asset: 7z{{replace "." "" .Version}}-extra.{{.Format}}
+            files:
+              - name: 7za
+                src: "{{.Arch}}/7za.exe"
+      - version_constraint: Version in ["22.00", "22.01"]
+        asset: 7z{{replace "." "" .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: linux
+            files:
+              - name: 7zzs
+          - goos: windows
+            format: 7z
+            asset: 7z{{replace "." "" .Version}}-extra.{{.Format}}
+            files:
+              - name: 7za
+                src: "{{.Arch}}/7za.exe"
+        supported_envs:
+          - linux
+          - windows
+      - version_constraint: Version == "23.01"
+        asset: 7z{{replace "." "" .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+          amd64: x64
+        overrides:
+          - goos: linux
+            files:
+              - name: 7zzs
+          - goos: darwin
+            asset: 7z{{replace "." "" .Version}}-{{.OS}}.{{.Format}}
+            files:
+              - name: 7zz
+          - goos: windows
+            format: 7z
+            asset: 7z{{replace "." "" .Version}}-extra.{{.Format}}
+            files:
+              - name: 7za
+                src: "{{.Arch}}/7za.exe"
+      - version_constraint: Version in ["24.05", "24.06"]
+        asset: 7z{{replace "." "" .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+          amd64: x64
+        overrides:
+          - goos: linux
+            files:
+              - name: 7zzs
+          - goos: darwin
+            asset: 7z{{replace "." "" .Version}}-{{.OS}}.{{.Format}}
+            files:
+              - name: 7zz
+          - goos: windows
+            format: 7z
+            asset: 7z{{replace "." "" .Version}}-extra.{{.Format}}
+            files:
+              - name: 7za
+                src: "{{.Arch}}/7za.exe"
+      - version_constraint: "true"
+        asset: 7z{{replace "." "" .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.xz
+        replacements:
+          amd64: x64
+          darwin: mac
+        overrides:
+          - goos: linux
+            files:
+              - name: 7zzs
+              - name: 7zz
+          - goos: darwin
+            asset: 7z{{replace "." "" .Version}}-{{.OS}}.{{.Format}}
+            files:
+              - name: 7zz
+          - goos: windows
+            format: 7z
+            asset: 7z{{replace "." "" .Version}}-extra.{{.Format}}
+            files:
+              - name: 7za
+                src: "{{.Arch}}/7za.exe"

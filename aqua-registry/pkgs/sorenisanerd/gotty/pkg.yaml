@@ -1,0 +1,6 @@
+packages:
+  - name: sorenisanerd/gotty@v1.6.0
+  - name: sorenisanerd/gotty
+    version: v1.2.0
+  - name: sorenisanerd/gotty
+    version: v1.1.0

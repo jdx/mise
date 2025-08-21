@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloudfoundry
+    repo_name: credhub-cli
+    description: CredHub CLI provides a command line interface to interact with CredHub servers
+    asset: credhub-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+    format: tgz
+    files:
+      - name: credhub
+    supported_envs:
+      - darwin
+      - amd64
+    version_constraint: semver(">= 2.9.21")
+    version_overrides:
+      - version_constraint: semver("< 2.9.21")
+        asset: credhub-{{.OS}}-{{.Version}}.{{.Format}}
+        rosetta2: true

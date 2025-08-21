@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: thazelart
+    repo_name: terraform-validator
+    description: A norms and conventions validator for Terraform
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    asset: terraform-validator_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      darwin: Darwin
+      linux: Linux
+      386: i386
+      amd64: x86_64
+    checksum:
+      type: github_release
+      asset: terraform-validator_checksums.txt
+      algorithm: sha256

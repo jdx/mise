@@ -1,0 +1,6 @@
+packages:
+  - name: sheepla/fzwiki@v0.1.0-alpha
+  - name: sheepla/fzwiki
+    version: v0.0.9
+  - name: sheepla/fzwiki
+    version: v0.0.2

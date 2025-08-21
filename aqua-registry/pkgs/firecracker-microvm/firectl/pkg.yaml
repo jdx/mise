@@ -1,0 +1,3 @@
+packages:
+  - name: firecracker-microvm/firectl
+    version: v0.2.0

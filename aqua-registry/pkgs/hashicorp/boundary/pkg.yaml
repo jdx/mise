@@ -1,0 +1,2 @@
+packages:
+  - name: hashicorp/boundary@v0.19.3

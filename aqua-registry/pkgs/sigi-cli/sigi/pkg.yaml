@@ -1,0 +1,4 @@
+packages:
+  - name: sigi-cli/sigi@v3.7.1
+  - name: sigi-cli/sigi
+    version: v3.6.3

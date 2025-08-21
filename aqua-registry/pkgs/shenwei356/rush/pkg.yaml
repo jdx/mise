@@ -1,0 +1,4 @@
+packages:
+  - name: shenwei356/rush@v0.7.0
+  - name: shenwei356/rush
+    version: v0.4.2

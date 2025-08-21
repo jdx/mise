@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cilium
+    repo_name: hubble
+    description: "Hubble - Network, Service & Security Observability for Kubernetes using eBPF"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.6.1"
+        asset: hubble-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: hubble-{{.OS}}-{{.Arch}}.tar.gz.sha256sum
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.6.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.7.1")
+        asset: hubble-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          arm64: arm
+        checksum:
+          type: github_release
+          asset: hubble-{{.OS}}-{{.Arch}}.tar.gz.sha256sum
+          algorithm: sha256
+      - version_constraint: semver("<= 0.8.2")
+        asset: hubble-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: hubble-{{.OS}}-{{.Arch}}.tar.gz.sha256sum
+          algorithm: sha256
+      - version_constraint: semver("<= 1.16.2")
+        asset: hubble-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: hubble-{{.OS}}-{{.Arch}}.tar.gz.sha256sum
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: hubble-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: hubble-{{.OS}}-{{.Arch}}.tar.gz.sha256sum
+          algorithm: sha256

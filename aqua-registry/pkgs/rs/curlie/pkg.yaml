@@ -1,0 +1,10 @@
+packages:
+  - name: rs/curlie@v1.8.2
+  - name: rs/curlie
+    version: v1.7.2
+  - name: rs/curlie
+    version: v1.6.0
+  - name: rs/curlie
+    version: v1.0.0
+  - name: rs/curlie
+    version: v0.0.1

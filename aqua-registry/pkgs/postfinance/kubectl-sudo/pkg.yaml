@@ -1,0 +1,2 @@
+packages:
+  - name: postfinance/kubectl-sudo@v1.1.0
