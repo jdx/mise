@@ -1,0 +1,14 @@
+packages:
+  - name: sacloud/usacloud@v1.15.0
+  - name: sacloud/usacloud
+    version: v1.6.1
+  - name: sacloud/usacloud
+    version: v1.1.4
+  - name: sacloud/usacloud
+    version: v1.0.0-beta.1
+  - name: sacloud/usacloud
+    version: v0.29.1
+  - name: sacloud/usacloud
+    version: v0.26.0
+  - name: sacloud/usacloud
+    version: v0.15.0

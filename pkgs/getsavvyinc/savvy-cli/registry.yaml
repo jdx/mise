@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: getsavvyinc
+    repo_name: savvy-cli
+    description: Create, share, and run runbooks from your terminal
+    files:
+      - name: savvy
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.1")
+        asset: savvy_{{.OS}}_{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: savvy_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: savvy_{{.OS}}_{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: savvy_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

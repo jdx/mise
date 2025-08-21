@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kyoshidajp
+    repo_name: ghkw
+    asset: ghkw_{{.OS}}_{{.Arch}}.tar.gz
+    description: Search how many keywords in GitHub Code tool
+    replacements:
+      amd64: x86_64
+    supported_envs:
+      - linux/amd64
+      - darwin
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: ghkw_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

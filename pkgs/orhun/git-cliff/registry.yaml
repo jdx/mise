@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: orhun
+    repo_name: git-cliff
+    asset: git-cliff-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    description: A highly customizable Changelog Generator that follows Conventional Commit specifications
+    replacements:
+      amd64: x86_64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+      windows: pc-windows-msvc
+    overrides:
+      - goos: windows
+        format: zip
+        checksum:
+          enabled: false
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    files:
+      - name: git-cliff
+        src: git-cliff-{{trimV .Version}}/git-cliff
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha512"
+      algorithm: sha512

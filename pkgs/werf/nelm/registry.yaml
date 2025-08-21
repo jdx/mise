@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: werf
+    repo_name: nelm
+    description: Nelm is a Helm 3 alternative. It is a Kubernetes deployment tool that manages Helm Charts and deploys them to Kubernetes
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.1.1")
+        url: https://storage.googleapis.com/nelm-tuf/targets/releases/{{trimV .Version}}/{{.OS}}-{{.Arch}}/bin/nelm
+        format: raw
+        windows_arm_emulation: true
+      - version_constraint: "true"
+        url: https://tuf.nelm.sh/targets/releases/{{trimV .Version}}/{{.OS}}-{{.Arch}}/bin/nelm
+        format: raw
+        windows_arm_emulation: true

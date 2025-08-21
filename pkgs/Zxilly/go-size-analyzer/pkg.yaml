@@ -1,0 +1,16 @@
+packages:
+  - name: Zxilly/go-size-analyzer@v1.9.2
+  - name: Zxilly/go-size-analyzer
+    version: v1.9.1
+  - name: Zxilly/go-size-analyzer
+    version: v1.3.3
+  - name: Zxilly/go-size-analyzer
+    version: v1.2.2
+  - name: Zxilly/go-size-analyzer
+    version: v1.0.9
+  - name: Zxilly/go-size-analyzer
+    version: v1.0.5
+  - name: Zxilly/go-size-analyzer
+    version: v0.4.0
+  - name: Zxilly/go-size-analyzer
+    version: 0.2.2

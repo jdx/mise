@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: goccy
+    repo_name: bigquery-emulator
+    description: BigQuery emulator server implemented in Go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.2"
+        asset: bigquery-emulator-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: bigquery-emulator-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin

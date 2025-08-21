@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rui314
+    repo_name: mold
+    description: "Mold: A Modern Linker"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.3") || Version == "v1.6.0-pre.1"
+        no_asset: true
+      - version_constraint: semver("<= 1.5.1")
+        asset: mold-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux
+        files:
+          - name: mold
+            src: mold-{{trimV .Version}}-{{.Arch}}-{{.OS}}/bin/mold
+          - name: ld.mold
+            src: mold-{{trimV .Version}}-{{.Arch}}-{{.OS}}/bin/mold
+          - name: ld64.mold
+            src: mold-{{trimV .Version}}-{{.Arch}}-{{.OS}}/bin/mold
+      - version_constraint: "true"
+        asset: mold-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux
+        files:
+          - name: mold
+            src: mold-{{trimV .Version}}-{{.Arch}}-{{.OS}}/bin/mold
+          - name: ld.mold
+            src: mold-{{trimV .Version}}-{{.Arch}}-{{.OS}}/bin/mold

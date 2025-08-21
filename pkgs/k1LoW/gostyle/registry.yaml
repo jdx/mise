@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: k1LoW
+    repo_name: gostyle
+    description: gostyle is a set of analyzers for coding styles
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.14.1", "v0.20.1"]
+        no_asset: true
+      - version_constraint: "true"
+        asset: gostyle_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            format: zip

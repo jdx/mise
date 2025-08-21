@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bengadbois
+    repo_name: pewpew
+    description: Flexible HTTP command line stress tester for websites and web services
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.3"
+        no_asset: true
+      - version_constraint: "true"
+        asset: "{{.OS}}_{{.Arch}}.{{.Format}}"
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: pewpew
+            src: pewpew/pewpew
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

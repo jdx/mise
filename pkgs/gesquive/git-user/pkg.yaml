@@ -1,0 +1,6 @@
+packages:
+  - name: gesquive/git-user@v2.0.6
+  - name: gesquive/git-user
+    version: v2.0.3
+  - name: gesquive/git-user
+    version: v2.0.0

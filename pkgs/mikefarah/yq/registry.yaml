@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mikefarah
+    repo_name: yq
+    description: yq is a portable command-line YAML processor
+    asset: yq_{{.OS}}_{{.Arch}}
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    # https://github.com/mikefarah/yq/issues/801#issuecomment-853523411
+    version_constraint: semver(">= 4.9.6")
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true

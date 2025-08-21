@@ -1,0 +1,4 @@
+packages:
+  - name: fujiwara/knockrd@v0.0.18
+  - name: fujiwara/knockrd
+    version: v0.0.16

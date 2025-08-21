@@ -1,0 +1,6 @@
+packages:
+  - name: syumai/sbx@v0.0.5
+  - name: syumai/sbx
+    version: v0.0.4
+  - name: syumai/sbx
+    version: v0.0.2

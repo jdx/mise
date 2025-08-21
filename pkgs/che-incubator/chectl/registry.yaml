@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: che-incubator
+    repo_name: chectl
+    description: CLI to manage Eclipse Che server and workspaces
+    rosetta2: true
+    asset: chectl-{{.OS}}-{{.Arch}}.tar.gz
+    supported_envs:
+      - darwin
+      - linux/amd64
+    replacements:
+      amd64: x64
+    files:
+      - name: chectl
+        src: chectl/bin/chectl

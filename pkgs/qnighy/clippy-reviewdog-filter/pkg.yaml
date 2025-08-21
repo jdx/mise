@@ -1,0 +1,6 @@
+packages:
+  - name: qnighy/clippy-reviewdog-filter@v0.1.6
+  - name: qnighy/clippy-reviewdog-filter
+    version: v0.1.4
+  - name: qnighy/clippy-reviewdog-filter
+    version: v0.1.1

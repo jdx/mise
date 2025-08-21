@@ -1,0 +1,4 @@
+packages:
+  - name: kubernetes-sigs/krew@v0.4.5
+  - name: kubernetes-sigs/krew
+    version: v0.4.1

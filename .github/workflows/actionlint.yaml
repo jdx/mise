@@ -1,0 +1,12 @@
+---
+name: actionlint
+on: pull_request
+jobs:
+  actionlint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: suzuki-shunsuke/actionlint-action@29e0b7cda52e51a495d15f22759745ef6e19583a # v0.1.1

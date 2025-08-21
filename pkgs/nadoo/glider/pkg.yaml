@@ -1,0 +1,18 @@
+packages:
+  - name: nadoo/glider@v0.16.4
+  - name: nadoo/glider
+    version: v0.16.3
+  - name: nadoo/glider
+    version: v0.15.2
+  - name: nadoo/glider
+    version: v0.15.0
+  - name: nadoo/glider
+    version: v0.14.0
+  - name: nadoo/glider
+    version: v0.13.0
+  - name: nadoo/glider
+    version: v0.7.0
+  - name: nadoo/glider
+    version: v0.6.11
+  - name: nadoo/glider
+    version: v0.3.2

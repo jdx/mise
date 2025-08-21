@@ -1,0 +1,8 @@
+packages:
+  - name: legal90/awscurl@0.3.0
+  - name: legal90/awscurl
+    version: v0.1.3
+  - name: legal90/awscurl
+    version: v0.1.2
+  - name: legal90/awscurl
+    version: v0.1.1

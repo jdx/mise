@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: krallin
+    repo_name: tini
+    description: A tiny but valid `init` for containers
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: tini-static-{{.Arch}}
+        supported_envs:
+          - linux

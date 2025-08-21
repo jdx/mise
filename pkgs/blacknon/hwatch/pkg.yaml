@@ -1,0 +1,10 @@
+packages:
+  - name: blacknon/hwatch@0.3.19
+  - name: blacknon/hwatch
+    version: 0.3.0
+  - name: blacknon/hwatch
+    version: 0.2.1
+  - name: blacknon/hwatch
+    version: 0.1.2
+  - name: blacknon/hwatch
+    version: 0.1.0

@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: bytecodealliance/wrpc/wit-bindgen-wrpc
+    type: github_release
+    repo_owner: bytecodealliance
+    repo_name: wrpc
+    description: Wasm component-native RPC framework
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: wit-bindgen-wrpc-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu

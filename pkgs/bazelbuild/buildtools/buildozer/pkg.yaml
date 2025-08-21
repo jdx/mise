@@ -1,0 +1,14 @@
+packages:
+  - name: bazelbuild/buildtools/buildozer@v8.2.1
+  - name: bazelbuild/buildtools/buildozer
+    version: 4.0.1
+  - name: bazelbuild/buildtools/buildozer
+    version: 4.0.0
+  - name: bazelbuild/buildtools/buildozer
+    version: 3.5.0
+  - name: bazelbuild/buildtools/buildozer
+    version: 0.25.0
+  - name: bazelbuild/buildtools/buildozer
+    version: 0.22.0
+  - name: bazelbuild/buildtools/buildozer
+    version: 0.4.3

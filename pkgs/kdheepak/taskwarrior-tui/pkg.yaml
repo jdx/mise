@@ -1,0 +1,12 @@
+packages:
+  - name: kdheepak/taskwarrior-tui@v0.26.3
+  - name: kdheepak/taskwarrior-tui
+    version: v0.26.0
+  - name: kdheepak/taskwarrior-tui
+    version: v0.25.2
+  - name: kdheepak/taskwarrior-tui
+    version: v0.13.3
+  - name: kdheepak/taskwarrior-tui
+    version: v0.2.0
+  - name: kdheepak/taskwarrior-tui
+    version: v0.1.0

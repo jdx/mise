@@ -1,0 +1,10 @@
+packages:
+  - name: jedisct1/minisign@0.12
+  - name: jedisct1/minisign
+    version: "0.11"
+  - name: jedisct1/minisign
+    version: "0.9"
+  - name: jedisct1/minisign
+    version: "0.8"
+  - name: jedisct1/minisign
+    version: "0.3"

@@ -1,0 +1,9 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+# aqua - Declarative CLI Version Manager
+# https://aquaproj.github.io/
+# Other than name is optional. All initial values are just examples.
+name: cloudflare/cfssl/cfssl-bundle
+all_assets_filter: |
+  let words = ["cfssl-bundle", "checksums.txt", "SHA256SUMS"];
+  any(words, {Asset matches #})

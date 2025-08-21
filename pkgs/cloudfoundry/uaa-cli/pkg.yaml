@@ -1,0 +1,4 @@
+packages:
+  - name: cloudfoundry/uaa-cli@0.16.0
+  - name: cloudfoundry/uaa-cli
+    version: 0.10.0

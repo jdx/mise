@@ -1,0 +1,4 @@
+packages:
+  - name: so-dang-cool/fib@v1.1.2.3.5.8
+  - name: so-dang-cool/fib
+    version: v1

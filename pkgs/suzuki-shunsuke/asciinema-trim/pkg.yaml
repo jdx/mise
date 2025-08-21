@@ -1,0 +1,4 @@
+packages:
+  - name: suzuki-shunsuke/asciinema-trim@v0.1.5
+  - name: suzuki-shunsuke/asciinema-trim
+    version: v0.1.1

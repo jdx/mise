@@ -1,0 +1,8 @@
+packages:
+  - name: psastras/sarif-rs/shellcheck-sarif@shellcheck-sarif-v0.8.0
+  - name: psastras/sarif-rs/shellcheck-sarif
+    version: shellcheck-sarif-v0.4.2
+  - name: psastras/sarif-rs/shellcheck-sarif
+    version: shellcheck-sarif-v0.2.24
+  - name: psastras/sarif-rs/shellcheck-sarif
+    version: shellcheck-sarif-v0.2.23

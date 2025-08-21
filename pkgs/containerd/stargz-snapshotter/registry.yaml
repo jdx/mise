@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: containerd
+    repo_name: stargz-snapshotter
+    description: |-
+      Fast container image distribution plugin with lazy pulling
+
+      ## How to set up
+
+      Please see:
+
+      https://github.com/containerd/stargz-snapshotter/blob/main/docs/INSTALL.md
+      https://github.com/containerd/stargz-snapshotter/blob/main/docs/rootless.md
+    files:
+      - name: containerd-stargz-grpc
+      - name: ctr-remote
+      - name: stargz-store
+      - name: stargz-store-helper
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.0")
+        asset: stargz-snapshotter-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: stargz-snapshotter-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz.sha256sum
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+        files:
+          - name: containerd-stargz-grpc
+          - name: ctr-remote
+      - version_constraint: "true"
+        asset: stargz-snapshotter-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: stargz-snapshotter-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz.sha256sum
+          algorithm: sha256
+        supported_envs:
+          - linux

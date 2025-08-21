@@ -1,0 +1,16 @@
+packages:
+  - name: Nukesor/pueue/pueue@v4.0.1
+  - name: Nukesor/pueue/pueue
+    version: v3.4.1
+  - name: Nukesor/pueue/pueue
+    version: v2.1.0
+  - name: Nukesor/pueue/pueue
+    version: v0.12.2
+  - name: Nukesor/pueue/pueue
+    version: v0.10.2
+  - name: Nukesor/pueue/pueue
+    version: v0.7.0
+  - name: Nukesor/pueue/pueue
+    version: v0.2.0
+  - name: Nukesor/pueue/pueue
+    version: v0.1.4

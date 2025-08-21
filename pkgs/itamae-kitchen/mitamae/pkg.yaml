@@ -1,0 +1,16 @@
+packages:
+  - name: itamae-kitchen/mitamae@v1.14.4
+  - name: itamae-kitchen/mitamae
+    version: v1.11.7
+  - name: itamae-kitchen/mitamae
+    version: v1.11.1
+  - name: itamae-kitchen/mitamae
+    version: v0.11.2
+  - name: itamae-kitchen/mitamae
+    version: v0.4.2
+  - name: itamae-kitchen/mitamae
+    version: v0.3.0
+  - name: itamae-kitchen/mitamae
+    version: v0.0.16
+  - name: itamae-kitchen/mitamae
+    version: v0.0.4

@@ -1,0 +1,4 @@
+packages:
+  - name: bomctl/bomctl@v0.4.3
+  - name: bomctl/bomctl
+    version: v0.1.8

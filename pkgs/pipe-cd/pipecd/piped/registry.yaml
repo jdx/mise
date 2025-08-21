@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: pipe-cd/pipecd/piped
+    type: github_release
+    repo_owner: pipe-cd
+    repo_name: pipecd
+    description: A component that runs inside target environment to execute deployment and report its state
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.5")
+        no_asset: true
+      - version_constraint: Version == "v0.1.6"
+        asset: piped-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 0.7.5")
+        asset: piped_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.7.6"
+        asset: piped_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.9.0")
+        asset: piped_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.9.1"
+        no_asset: true
+      - version_constraint: semver("<= 0.24.0")
+        asset: piped_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.24.3")
+        no_asset: true
+      - version_constraint: semver("<= 0.27.4")
+        asset: piped_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.29.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.33.0")
+        asset: piped_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: piped_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+          - darwin

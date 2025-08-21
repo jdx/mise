@@ -1,0 +1,4 @@
+packages:
+  - name: dotenv-linter/dotenv-linter@v3.3.0
+  - name: dotenv-linter/dotenv-linter
+    version: v2.0.0

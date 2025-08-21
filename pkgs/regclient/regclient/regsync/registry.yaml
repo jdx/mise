@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: regclient/regclient/regsync
+    type: github_release
+    repo_owner: regclient
+    repo_name: regclient
+    asset: regsync-{{.OS}}-{{.Arch}}
+    format: raw
+    files:
+      - name: regsync
+    description: Docker and OCI image mirroring tool
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    version_constraint: semver(">= 0.3.9")
+    version_overrides:
+      - version_constraint: semver("< 0.3.9")
+        rosetta2: true
+      - version_constraint: "true"

@@ -1,0 +1,112 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bvaisvil
+    repo_name: zenith
+    description: Zenith - sort of like top or htop but with zoom-able charts, CPU, GPU, network, and disk usage
+    asset: zenith.{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tgz
+    overrides:
+      - goos: darwin
+        replacements:
+          arm64: aarch64
+    replacements:
+      amd64: x86_64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+    supported_envs:
+      - linux/amd64
+      - darwin
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256
+    version_constraint: semver(">= 0.14.0")
+    version_overrides:
+      - version_constraint: semver(">= 0.13.1")
+        overrides: []
+        rosetta2: true
+      - version_constraint: semver(">= 0.12.0")
+        overrides:
+          - goos: darwin
+            asset: zenith.{{.Arch}}_{{.OS}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: unknown-linux-musl
+        rosetta2: true
+      - version_constraint: semver(">= 0.10.1")
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            asset: zenith.{{.OS}}.{{.Format}}
+        replacements:
+          darwin: MacOS
+          linux: unknown-linux-musl
+        rosetta2: true
+      - version_constraint: semver(">= 0.10.0")
+        asset: zenith.{{.OS}}.{{.Format}}
+        overrides:
+          - goos: linux
+            asset: zenith.{{.Arch}}-{{.OS}}.{{.Format}}
+            replacements:
+              amd64: x86_64
+        replacements:
+          darwin: MacOS
+          linux: unknown-linux-musl
+        rosetta2: true
+      - version_constraint: semver(">= 0.8.2")
+        asset: zenith.{{.OS}}.{{.Format}}
+        overrides: []
+        replacements:
+          darwin: MacOS
+        rosetta2: true
+      - version_constraint: semver(">= 0.7.6")
+        asset: zenith.{{.OS}}.{{.Format}}
+        overrides: []
+        replacements:
+          darwin: MacOS
+        rosetta2: true
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 0.7.4")
+        asset: zenith.{{.OS}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            format: tgz
+        replacements:
+          darwin: MacOS
+        rosetta2: true
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 0.7.1")
+        asset: zenith.{{.OS}}.{{.Format}}
+        overrides: []
+        replacements:
+          darwin: macos
+        rosetta2: true
+        checksum:
+          enabled: false
+      - version_constraint: semver("< 0.7.1")
+        asset: "{{.Arch}}-{{.OS}}.{{.Format}}"
+        format: tar.gz
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+            files:
+              - name: zenith
+                src: x86_64-linux/zenith
+          - goos: darwin
+            asset: "{{.OS}}.{{.Format}}"
+            files:
+              - name: zenith
+                src: macos/zenith
+        replacements:
+          darwin: MacOS
+        rosetta2: true
+        checksum:
+          enabled: false

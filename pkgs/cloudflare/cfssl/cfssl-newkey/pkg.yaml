@@ -1,0 +1,6 @@
+packages:
+  - name: cloudflare/cfssl/cfssl-newkey@v1.6.5
+  - name: cloudflare/cfssl/cfssl-newkey
+    version: v1.6.3
+  - name: cloudflare/cfssl/cfssl-newkey
+    version: 1.2.0

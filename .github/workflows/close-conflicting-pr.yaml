@@ -1,0 +1,42 @@
+---
+name: Close conflicting PRs created by aquaproj-aqua-registry
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "*/30 * * * *" # Every 30 minutes
+
+jobs:
+  close-conflicting-prs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      pull-requests: write # To close pull requests
+      contents: write # To delete branches
+    steps:
+      - run: |
+          set -eu
+
+          info() {
+              echo "[INFO] $*" >&2
+          }
+
+          bot=app/aquaproj-aqua-registry
+
+          info "searching pull requests"
+          numbers=$(gh -R "$GITHUB_REPOSITORY" pr list \
+            --json number,mergeable \
+            -S "author:$bot is:open" \
+            -L 100 \
+            -q '.[] | select(.mergeable == "CONFLICTING") | .number')
+
+          info "found pull requests: $numbers"
+
+          workflow_run_url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          for number in $numbers; do
+              info "closing a pull request #$number"
+              gh -R "$GITHUB_REPOSITORY" pr close "$number" -d \
+                -c "[Workflow]($workflow_run_url) Close this pull request because this is created by app/aquaproj-aqua-registry and it has conflicts"
+          done
+        env:
+          GITHUB_TOKEN: ${{github.token}}

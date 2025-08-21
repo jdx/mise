@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_archive
+    repo_owner: tgenv
+    repo_name: tgenv
+    description: A tool to manage multiples Terragrunt versions
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        files:
+          - name: tgenv
+            src: tgenv-{{trimV .Version}}/bin/tgenv
+          - name: terragrunt
+            src: tgenv-{{trimV .Version}}/bin/terragrunt
+        supported_envs:
+          - linux
+          - darwin

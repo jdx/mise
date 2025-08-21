@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: yonahd
+    repo_name: kor
+    description: A Golang Tool to discover unused Kubernetes Resources
+    asset: kor_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    supported_envs:
+      - darwin
+      - amd64
+    checksum:
+      type: github_release
+      asset: kor_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.2.0")
+    version_overrides:
+      - version_constraint: semver("< 0.2.0")
+        rosetta2: true
+        files:
+          - name: kor
+            src: kor-{{.GOOS}}-{{if eq .GOOS "darwin"}}amd64{{else}}{{.GOARCH}}{{end}}

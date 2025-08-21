@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: libbpf
+    repo_name: bpftool
+    description: Automated upstream mirror for bpftool stand-alone build
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 7.1.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: bpftool-{{ .Version}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: bpftool-{{ .Version}}-{{.Arch}}.{{.Format}}.sha256sum
+          algorithm: sha256
+        supported_envs:
+          - linux

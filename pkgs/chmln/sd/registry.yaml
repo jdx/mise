@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: chmln
+    repo_name: sd
+    description: Intuitive find & replace CLI (sed alternative)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.5")
+        asset: sd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        files:
+          - name: sd
+            src: "{{.Arch}}-{{.OS}}/sd"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: Version == "v0.7.2"
+        asset: sd-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: sd
+            src: b/{{.Arch}}-{{.OS}}/release/sd
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver("<= 0.7.4")
+        asset: sd-{{trimV .Version}}.{{.Arch}}-{{.OS}}.{{.Format}}
+        windows_arm_emulation: true
+        format: zip
+        files:
+          - name: sd
+            src: b/{{.Arch}}-{{.OS}}/release/sd
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: Version == "v0.7.5"
+        asset: sd.{{trimV .Version}}-.{{.Arch}}-{{.OS}}.{{.Format}}
+        windows_arm_emulation: true
+        format: zip
+        files:
+          - name: sd
+            src: b/{{.Arch}}-{{.OS}}/release/sd
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: Version == "v0.7.6"
+        asset: sd-{{.Version}}-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+      - version_constraint: "true"
+        asset: sd-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: sd
+            src: sd-{{.Version}}-{{.Arch}}-{{.OS}}/sd
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - linux
+          - amd64

@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Trendyol
+    repo_name: kink
+    description: KinK is a helper CLI that facilitates to manage KinD clusters as Kubernetes pods. Designed to ease clusters up for fast testing with batteries included in mind
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.2.1")
+        asset: kink_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: kink_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --key
+              - https://raw.githubusercontent.com/Trendyol/kink/refs/tags/{{.Version}}/cosign.pub
+              - --signature
+              - https://github.com/Trendyol/kink/releases/download/{{.Version}}/kink_checksums.txt.sig
+              - --insecure-ignore-tlog
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.2.1"
+        asset: kink_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: kink_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --key
+              - https://raw.githubusercontent.com/Trendyol/kink/refs/tags/{{.Version}}/cosign.pub
+              - --signature
+              - https://github.com/Trendyol/kink/releases/download/{{.Version}}/kink_checksums.txt.sig
+              - --insecure-ignore-tlog
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: kink_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: kink_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --key
+              - https://raw.githubusercontent.com/Trendyol/kink/refs/tags/{{.Version}}/cosign.pub
+              - --signature
+              - https://github.com/Trendyol/kink/releases/download/{{.Version}}/kink_checksums.txt.sig
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

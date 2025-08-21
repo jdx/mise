@@ -1,0 +1,26 @@
+packages:
+  - name: stripe/stripe-cli@v1.29.0
+  - name: stripe/stripe-cli
+    version: v1.13.2
+  - name: stripe/stripe-cli
+    version: v1.13.1
+  - name: stripe/stripe-cli
+    version: v1.12.3
+  - name: stripe/stripe-cli
+    version: v1.7.7
+  - name: stripe/stripe-cli
+    version: v1.7.6
+  - name: stripe/stripe-cli
+    version: v1.7.5
+  - name: stripe/stripe-cli
+    version: v1.7.4
+  - name: stripe/stripe-cli
+    version: v1.7.2
+  - name: stripe/stripe-cli
+    version: v1.7.1
+  - name: stripe/stripe-cli
+    version: v1.5.10
+  - name: stripe/stripe-cli
+    version: v1.5.9
+  - name: stripe/stripe-cli
+    version: v0.8.2

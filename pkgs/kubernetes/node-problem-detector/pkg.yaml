@@ -1,0 +1,14 @@
+packages:
+  - name: kubernetes/node-problem-detector@v0.8.21
+  - name: kubernetes/node-problem-detector
+    version: v0.8.15
+  - name: kubernetes/node-problem-detector
+    version: v0.8.13
+  - name: kubernetes/node-problem-detector
+    version: v0.8.12
+  - name: kubernetes/node-problem-detector
+    version: v0.8.10
+  - name: kubernetes/node-problem-detector
+    version: v0.8.8
+  - name: kubernetes/node-problem-detector
+    version: v0.8.7

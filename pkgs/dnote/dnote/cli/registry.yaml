@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    name: dnote/dnote/cli
+    repo_owner: dnote
+    repo_name: dnote
+    description: A simple command line notebook for programmers
+    asset: dnote_{{trimPrefix "cli-v" .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: dnote
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: dnote_{{trimPrefix "cli-v" .Version}}_checksums.txt
+      algorithm: sha256
+    rosetta2: true # pre built binary for darwin/arm64 doesn't work at the moment. https://github.com/dnote/dnote/issues/572#issuecomment-1465315535
+    version_filter: Version startsWith "cli-"
+    version_constraint: semverWithVersion(">= 0.11.1", trimPrefix(Version, "cli-"))
+    version_overrides:
+      - version_constraint: semverWithVersion(">= 0.6.3", trimPrefix(Version, "cli-"))
+        supported_envs:
+          - darwin
+          - amd64
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 0.4.8")
+        asset: dnote_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - amd64
+        checksum:
+          enabled: false
+      - version_constraint: semver("= 0.4.7")
+        asset: dnote_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - linux/amd64
+        checksum:
+          enabled: false
+      - version_constraint: semver("< 0.4.7")
+        asset: dnote_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - amd64
+        checksum:
+          enabled: false

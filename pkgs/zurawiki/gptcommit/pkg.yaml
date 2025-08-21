@@ -1,0 +1,6 @@
+packages:
+  - name: zurawiki/gptcommit@v0.5.17
+  - name: zurawiki/gptcommit
+    version: v0.5.3
+  - name: zurawiki/gptcommit
+    version: v0.1.7

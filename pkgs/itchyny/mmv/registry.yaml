@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: itchyny
+    repo_name: mmv
+    asset: mmv_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    description: rename multiple files with editor
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: mmv
+        src: mmv_{{.Version}}_{{.OS}}_{{.Arch}}/mmv

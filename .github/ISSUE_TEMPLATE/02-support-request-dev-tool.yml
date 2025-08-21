@@ -1,0 +1,59 @@
+name: Support Request of development tool
+description: |
+  Please use this template when you try to contribute to this repository but face any problem (not bug).
+  If you're not sure if it's a bug or not, please use this template.
+labels:
+  - support-request-of-dev-tool
+body:
+  - type: markdown
+    attributes:
+      value: |
+        [Please read the contribution guide first.](https://aquaproj.github.io/docs/products/aqua-registry/contributing)
+        If `cmdx s` generates code but you can't resolve the failure of the test, please create a pull request.
+        Then we can help you on the pull request.
+  - type: textarea
+    id: overview
+    attributes:
+      label: Overview
+      description: Please explain the detail of your problem.
+    validations:
+      required: true
+  - type: textarea
+    id: how-to-reproduce
+    attributes:
+      label: How to reproduce
+      description: |
+        Please explain how to reproduce the problem.
+        [Please see the guide too.](https://github.com/suzuki-shunsuke/oss-contribution-guide#write-good-how-to-reproduce)
+      value: |
+        Current branch name: 
+        Code:
+
+        ```
+        ```
+
+        Command and output
+
+        ```console
+        $ 
+        ```
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behaviour
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual-behaviour
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: note
+    attributes:
+      label: Note
+    validations:
+      required: false

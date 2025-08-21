@@ -1,0 +1,8 @@
+packages:
+  - name: osteele/gojekyll@v0.2.16
+  - name: osteele/gojekyll
+    version: v0.2.7
+  - name: osteele/gojekyll
+    version: v0.2.3
+  - name: osteele/gojekyll
+    version: v0.1.1

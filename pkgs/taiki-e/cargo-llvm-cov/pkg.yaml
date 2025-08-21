@@ -1,0 +1,8 @@
+packages:
+  - name: taiki-e/cargo-llvm-cov@v0.6.18
+  - name: taiki-e/cargo-llvm-cov
+    version: v0.4.4
+  - name: taiki-e/cargo-llvm-cov
+    version: v0.1.15
+  - name: taiki-e/cargo-llvm-cov
+    version: v0.1.0-alpha.4

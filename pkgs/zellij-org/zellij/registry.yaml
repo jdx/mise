@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: zellij-org
+    repo_name: zellij
+    description: A terminal workspace with batteries included
+    supported_envs:
+      - darwin
+      - linux
+    asset: zellij-{{.Arch}}-{{.OS}}.tar.gz
+    replacements:
+      linux: unknown-linux-musl
+      darwin: apple-darwin
+      amd64: x86_64
+      arm64: aarch64
+    checksum:
+      enabled: false # https://github.com/aquaproj/aqua-registry/issues/6780#issuecomment-1267714776

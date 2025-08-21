@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Songmu
+    repo_name: horenso
+    description: Command wrapper for reporting the result. It is useful for cron jobs
+    rosetta2: true
+    asset: horenso_{{.Version}}_{{.OS}}_amd64.{{.Format}}
+    supported_envs:
+      - darwin
+      - amd64
+    files:
+      - name: horenso
+        src: horenso_{{.Version}}_{{.OS}}_amd64/horenso
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz

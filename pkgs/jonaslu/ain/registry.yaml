@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jonaslu
+    repo_name: ain
+    asset: ain_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    description: An HTTP API client for the terminal
+    files:
+      - name: ain
+        src: ain_{{trimV .Version}}_{{.OS}}_{{.Arch}}/ain
+    replacements:
+      darwin: mac_os
+      amd64: x86_64
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

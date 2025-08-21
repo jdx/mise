@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bitwarden
+    repo_name: clients
+    asset: bw-{{.OS}}-{{.SemVer}}.zip
+    version_prefix: cli-v
+    files:
+      - name: bw
+    description: Bitwarden CLI
+    replacements:
+      darwin: macos
+    supported_envs:
+      - darwin
+      - amd64
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2025.5.0")
+        checksum:
+          type: github_release
+          asset: bw-{{.OS}}-sha256-{{.SemVer}}.txt
+          algorithm: sha256
+      - version_constraint: "true"

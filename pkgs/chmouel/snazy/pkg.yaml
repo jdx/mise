@@ -1,0 +1,6 @@
+packages:
+  - name: chmouel/snazy@0.58.1
+  - name: chmouel/snazy
+    version: 0.52.0
+  - name: chmouel/snazy
+    version: 0.51.2

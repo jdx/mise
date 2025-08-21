@@ -1,0 +1,4 @@
+packages:
+  - name: liggitt/audit2rbac@v0.10.0
+  - name: liggitt/audit2rbac
+    version: v0.8.0

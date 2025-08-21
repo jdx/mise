@@ -1,0 +1,6 @@
+packages:
+  - name: tamasfe/taplo/full@0.9.3
+  - name: tamasfe/taplo/full
+    version: release-taplo-cli-0.6.7
+  - name: tamasfe/taplo/full
+    version: release-cli-0.6.0

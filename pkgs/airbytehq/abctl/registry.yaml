@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: airbytehq
+    repo_name: abctl
+    description: Airbyte's CLI for managing local Airbyte installations
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.2"
+        asset: abctl-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: abctl
+            src: "{{.AssetWithoutExt}}/abctl"
+        overrides:
+          - envs:
+              - linux
+              - darwin/amd64
+            format: tar.gz
+      - version_constraint: semver("<= 0.13.1")
+        asset: abctl-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: abctl
+            src: "{{.AssetWithoutExt}}/abctl"
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: abctl-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: abctl
+            src: "{{.AssetWithoutExt}}/abctl"
+        checksum:
+          type: github_release
+          asset: abctl_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

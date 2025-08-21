@@ -1,0 +1,10 @@
+packages:
+  - name: kashav/fsql@v0.5.2
+  - name: kashav/fsql
+    version: v0.5.0
+  - name: kashav/fsql
+    version: v0.4.0
+  - name: kashav/fsql
+    version: v0.3.0
+  - name: kashav/fsql
+    version: v0.2.1

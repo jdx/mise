@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubernetes
+    repo_name: kops
+    description: Kubernetes Operations (kops) - Production Grade K8s Installation, Upgrades, and Management
+    complete_windows_ext: false
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: kops-{{.OS}}-{{.Arch}}
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256

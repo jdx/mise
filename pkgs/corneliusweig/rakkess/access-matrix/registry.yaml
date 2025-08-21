@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: corneliusweig/rakkess/access-matrix
+    type: github_release
+    repo_owner: corneliusweig
+    repo_name: rakkess
+    description: Review Access - kubectl plugin to show an access matrix for k8s server resources
+    supported_envs:
+      - darwin
+      - amd64
+    asset: access-matrix-{{.Arch}}-{{.OS}}.tar.gz
+    overrides:
+      - goos: windows
+        asset: access-matrix-amd64-windows.zip
+    files:
+      - name: kubectl-access_matrix
+        src: access-matrix-{{.Arch}}-{{.OS}}
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256

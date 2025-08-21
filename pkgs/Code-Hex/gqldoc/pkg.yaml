@@ -1,0 +1,4 @@
+packages:
+  - name: Code-Hex/gqldoc@v0.0.6
+  - name: Code-Hex/gqldoc
+    version: v0.0.4

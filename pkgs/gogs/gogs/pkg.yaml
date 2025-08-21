@@ -1,0 +1,2 @@
+packages:
+  - name: gogs/gogs@v0.13.3

@@ -1,0 +1,6 @@
+packages:
+  - name: arrow2nd/nimotsu@v1.3.5
+  - name: arrow2nd/nimotsu
+    version: v1.3.3
+  - name: arrow2nd/nimotsu
+    version: v1.2.0

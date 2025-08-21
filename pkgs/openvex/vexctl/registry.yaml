@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: openvex
+    repo_name: vexctl
+    description: A  tool to create, transform and attest VEX metadata
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.5")
+        asset: vexctl-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: vex_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/openvex/vexctl/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/openvex/vexctl/releases/download/{{.Version}}/vex_checksums.txt.sig
+              - --certificate
+              - https://github.com/openvex/vexctl/releases/download/{{.Version}}/vex_checksums.txt.pem
+        cosign:
+          opts:
+            - --certificate-identity-regexp
+            - "https://github\\.com/openvex/vexctl/\\.github/workflows/release\\.yaml@.*"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --signature
+            - https://github.com/openvex/vexctl/releases/download/{{.Version}}/{{.Asset}}.sig
+            - --certificate
+            - https://github.com/openvex/vexctl/releases/download/{{.Version}}/{{.Asset}}.pem
+      - version_constraint: "true"
+        asset: vexctl-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: vexctl_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/openvex/vexctl/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/openvex/vexctl/releases/download/{{.Version}}/vexctl_checksums.txt.sig
+              - --certificate
+              - https://github.com/openvex/vexctl/releases/download/{{.Version}}/vexctl_checksums.txt.pem
+        cosign:
+          opts:
+            - --certificate-identity-regexp
+            - "https://github\\.com/openvex/vexctl/\\.github/workflows/release\\.yaml@.*"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --signature
+            - https://github.com/openvex/vexctl/releases/download/{{.Version}}/{{.Asset}}.sig
+            - --certificate
+            - https://github.com/openvex/vexctl/releases/download/{{.Version}}/{{.Asset}}.pem

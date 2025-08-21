@@ -1,0 +1,4 @@
+packages:
+  - name: anordal/shellharden@v4.3.1
+  - name: anordal/shellharden
+    version: 4.3.0

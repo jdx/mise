@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: soh335
+    repo_name: shukujitsu
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.8"
+        no_asset: true
+      - version_constraint: "true"
+        asset: shukujitsu_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

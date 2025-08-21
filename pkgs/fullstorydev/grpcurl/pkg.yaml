@@ -1,0 +1,8 @@
+packages:
+  - name: fullstorydev/grpcurl@v1.9.3
+  - name: fullstorydev/grpcurl
+    version: v1.8.5
+  - name: fullstorydev/grpcurl
+    version: v1.8.2
+  - name: fullstorydev/grpcurl
+    version: v1.8.0

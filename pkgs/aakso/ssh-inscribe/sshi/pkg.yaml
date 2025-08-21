@@ -1,0 +1,8 @@
+packages:
+  - name: aakso/ssh-inscribe/sshi@0.11.0
+  - name: aakso/ssh-inscribe/sshi
+    version: 0.10.0
+  - name: aakso/ssh-inscribe/sshi
+    version: 0.9.1
+  - name: aakso/ssh-inscribe/sshi
+    version: 0.4.1

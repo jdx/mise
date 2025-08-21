@@ -1,0 +1,4 @@
+packages:
+  - name: kreuzwerker/envplate@v1.0.3
+  - name: kreuzwerker/envplate
+    version: 1.0.0-RC1

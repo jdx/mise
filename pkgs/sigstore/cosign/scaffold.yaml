@@ -1,0 +1,5 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+name: sigstore/cosign
+all_assets_filter: Asset matches "^cosign"
+version_filter: not (Version matches "-dev$")

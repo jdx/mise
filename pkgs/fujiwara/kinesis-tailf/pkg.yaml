@@ -1,0 +1,6 @@
+packages:
+  - name: fujiwara/kinesis-tailf@v0.5.0
+  - name: fujiwara/kinesis-tailf
+    version: v0.3.1
+  - name: fujiwara/kinesis-tailf
+    version: v0.1.1

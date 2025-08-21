@@ -1,0 +1,10 @@
+packages:
+  - name: a8m/envsubst@v1.4.3
+  - name: a8m/envsubst
+    version: v1.4.1
+  - name: a8m/envsubst
+    version: v1.2.0
+  - name: a8m/envsubst
+    version: v1.1.0
+  - name: a8m/envsubst
+    version: v1.0.0

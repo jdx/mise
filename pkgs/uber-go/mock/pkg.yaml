@@ -1,0 +1,2 @@
+packages:
+  - name: uber-go/mock@v0.6.0

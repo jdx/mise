@@ -1,0 +1,4 @@
+packages:
+  - name: mattn/bsky@v0.0.73
+  - name: mattn/bsky
+    version: v0.0.63

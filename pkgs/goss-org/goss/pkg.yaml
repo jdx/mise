@@ -1,0 +1,4 @@
+packages:
+  - name: goss-org/goss@v0.4.9
+  - name: goss-org/goss
+    version: v0.3.23

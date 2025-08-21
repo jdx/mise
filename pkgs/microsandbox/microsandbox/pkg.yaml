@@ -1,0 +1,14 @@
+packages:
+  - name: microsandbox/microsandbox@microsandbox-v0.2.6
+  - name: microsandbox/microsandbox
+    version: microsandbox-v0.2.4
+  - name: microsandbox/microsandbox
+    version: microsandbox-v0.2.3
+  - name: microsandbox/microsandbox
+    version: microsandbox-v0.2.2
+  - name: microsandbox/microsandbox
+    version: microsandbox-v0.2.1
+  - name: microsandbox/microsandbox
+    version: microsandbox-v0.2.0
+  - name: microsandbox/microsandbox
+    version: microsandbox-v0.1.0

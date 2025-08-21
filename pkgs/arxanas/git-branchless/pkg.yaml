@@ -1,0 +1,8 @@
+packages:
+  - name: arxanas/git-branchless@v0.10.0
+  - name: arxanas/git-branchless
+    version: v0.9.0
+  - name: arxanas/git-branchless
+    version: v0.5.1
+  - name: arxanas/git-branchless
+    version: v0.3.12

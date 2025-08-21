@@ -1,0 +1,6 @@
+packages:
+  - name: sharkdp/hexyl@v0.16.0
+  - name: sharkdp/hexyl
+    version: v0.15.0
+  - name: sharkdp/hexyl
+    version: v0.8.0
