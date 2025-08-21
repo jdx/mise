@@ -52,6 +52,7 @@ git add \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \
 	completions \
+	mise.lock \
 	man/
 git clean -df
 git checkout -B release
