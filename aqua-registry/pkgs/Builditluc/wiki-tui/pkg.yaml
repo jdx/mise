@@ -1,6 +1,0 @@
-packages:
-  - name: Builditluc/wiki-tui@v0.9.1
-  - name: Builditluc/wiki-tui
-    version: v0.8.2
-  - name: Builditluc/wiki-tui
-    version: v0.4.8

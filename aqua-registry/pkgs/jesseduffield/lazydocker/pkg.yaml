@@ -1,8 +1,0 @@
-packages:
-  - name: jesseduffield/lazydocker@v0.24.1
-  - name: jesseduffield/lazydocker
-    version: v0.12
-  - name: jesseduffield/lazydocker
-    version: v0.10
-  - name: jesseduffield/lazydocker
-    version: v0.7.4

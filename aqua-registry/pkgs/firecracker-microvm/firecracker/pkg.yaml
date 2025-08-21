@@ -1,4 +1,0 @@
-packages:
-  - name: firecracker-microvm/firecracker@v1.12.1
-  - name: firecracker-microvm/firecracker
-    version: v1.2.0

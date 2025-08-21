@@ -1,4 +1,0 @@
-packages:
-  - name: grpc/grpc-go/protoc-gen-go-grpc@cmd/protoc-gen-go-grpc/v1.5.1
-  - name: grpc/grpc-go/protoc-gen-go-grpc
-    version: cmd/protoc-gen-go-grpc/v1.2.0

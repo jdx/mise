@@ -1,6 +1,0 @@
-packages:
-  - name: gohugoio/hugo@v0.148.2
-  - name: gohugoio/hugo
-    version: v0.102.3
-  - name: gohugoio/hugo
-    version: v0.101.0

@@ -1,6 +1,0 @@
-packages:
-  - name: charmbracelet/gum@v0.16.2
-  - name: charmbracelet/gum
-    version: v0.13.0
-  - name: charmbracelet/gum
-    version: v0.8.0

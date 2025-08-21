@@ -1,4 +1,0 @@
-packages:
-  - name: mashiike/redshift-credentials@v0.3.4
-  - name: mashiike/redshift-credentials
-    version: v0.3.3

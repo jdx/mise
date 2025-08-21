@@ -58,7 +58,15 @@ git clean -df
 git checkout -B release
 git commit -m "chore: release $version"
 git status
-git subtree pull --squash --prefix=aqua-registry https://github.com/aquaproj/aqua-registry main
+if git log -1 --grep="git-subtree-dir: aqua-registry" --pretty=%H >/dev/null 2>&1; then
+	git subtree pull --squash --prefix=aqua-registry https://github.com/aquaproj/aqua-registry main
+else
+	# initialize subtree if it hasn't been added before
+	rm -rf aqua-registry
+	git add -A
+	git commit -m "chore: prepare aqua-registry subtree"
+	git subtree add --squash --prefix=aqua-registry https://github.com/aquaproj/aqua-registry main
+fi
 git push origin release --force
 
 if [[ "$(gh pr list --label release)" == "" ]]; then

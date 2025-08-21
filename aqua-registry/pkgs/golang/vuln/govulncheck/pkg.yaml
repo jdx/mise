@@ -1,2 +1,0 @@
-packages:
-  - name: golang/vuln/govulncheck@v1.1.4

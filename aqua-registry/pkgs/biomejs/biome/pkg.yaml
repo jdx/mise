@@ -1,6 +1,0 @@
-packages:
-  - name: biomejs/biome@cli/v1.9.4
-  - name: biomejs/biome
-    version: "@biomejs/biome@2.0.0-beta.5"
-  - name: biomejs/biome
-    version: "@biomejs/biome@2.0.0-beta"

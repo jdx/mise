@@ -1,8 +1,0 @@
-packages:
-  - name: aws/amazon-ec2-instance-selector@v3.1.1
-  - name: aws/amazon-ec2-instance-selector
-    version: v2.0.2
-  - name: aws/amazon-ec2-instance-selector
-    version: v1.3.0
-  - name: aws/amazon-ec2-instance-selector
-    version: v0.8.0

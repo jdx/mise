@@ -1,8 +1,0 @@
-packages:
-  - name: moonrepo/moon@v1.39.4
-  - name: moonrepo/moon
-    version: "@moonrepo/cli@0.12.1"
-  - name: moonrepo/moon
-    version: "@moonrepo/cli@0.2.0"
-  - name: moonrepo/moon
-    version: "@moonrepo/cli@0.0.6"
