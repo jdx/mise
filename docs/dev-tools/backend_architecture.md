@@ -199,8 +199,8 @@ disable_backends = ["asdf", "vfox"] # Don't use these backends
 ```toml
 # mise.toml
 [tools]
-node = "core:node@20" # Explicitly use core backend
-yarn = "aqua:yarn"    # Use aqua backend instead of default (vfox)
+"core:node" = "20"     # Explicitly use core backend
+"aqua:yarn" = "latest" # Use aqua backend instead of default (vfox)
 ```
 
 ### Backend-Specific Settings
