@@ -1,0 +1,4 @@
+packages:
+  - name: aereal/jsondiff@v0.4.1
+  - name: aereal/jsondiff
+    version: v0.2.3

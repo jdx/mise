@@ -1,0 +1,6 @@
+packages:
+  - name: aws/aws-sam-cli@v1.142.1
+  - name: aws/aws-sam-cli
+    version: v1.103.0
+  - name: aws/aws-sam-cli
+    version: v1.65.0

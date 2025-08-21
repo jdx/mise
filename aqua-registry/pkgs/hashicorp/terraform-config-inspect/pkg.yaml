@@ -1,0 +1,3 @@
+packages:
+  - name: hashicorp/terraform-config-inspect
+    version: 5a6f8d18746d3c23cd25f7a6d48429545f20962f

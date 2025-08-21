@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mvdan
+    repo_name: sh
+    description: A shell parser, formatter, and interpreter with bash support; includes shfmt
+    files:
+      - name: shfmt
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 3.8.0")
+        format: raw
+        asset: shfmt_{{.Version}}_{{.OS}}_{{.Arch}}
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        files:
+          - name: shfmt
+      - version_constraint: "true"
+        format: raw
+        asset: shfmt_{{.Version}}_{{.OS}}_{{.Arch}}
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        files:
+          - name: shfmt
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256

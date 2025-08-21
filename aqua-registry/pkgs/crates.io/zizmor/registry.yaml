@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: crates.io/zizmor
+    type: cargo
+    repo_owner: zizmorcore
+    repo_name: zizmor
+    description: Finds security issues in GitHub Actions setups
+    crate: zizmor

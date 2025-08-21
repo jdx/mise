@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: nicarl
+    repo_name: somafm
+    asset: somafm-{{.Version}}-{{.OS}}-{{.Arch}}
+    format: raw
+    description: CLI application to listen to SomaFM stations
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    checksum:
+      enabled: false

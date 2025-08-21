@@ -1,0 +1,10 @@
+packages:
+  - name: anchore/grype@v0.98.0
+  - name: anchore/grype
+    version: v0.71.0
+  - name: anchore/grype
+    version: v0.31.1
+  - name: anchore/grype
+    version: v0.23.0
+  - name: anchore/grype
+    version: v0.2.0

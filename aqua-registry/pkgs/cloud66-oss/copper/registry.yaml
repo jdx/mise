@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloud66-oss
+    repo_name: copper
+    description: A configuration file validator for Kubernetes
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.7")
+        no_asset: true
+      - version_constraint: "true"
+        asset: "{{.OS}}_{{.Arch}}_{{.Version}}"
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin

@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: omrikiei
+    repo_name: ktunnel
+    asset: ktunnel_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    description: A cli that exposes your local resources to kubernetes
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    files:
+      - name: kubectl-tunnel
+        src: ktunnel
+      - name: ktunnel
+        src: ktunnel
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

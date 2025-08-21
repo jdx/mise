@@ -1,0 +1,6 @@
+packages:
+  - name: funbiscuit/spacedisplay-rs@v0.3.0
+  - name: funbiscuit/spacedisplay-rs
+    version: v0.2.0
+  - name: funbiscuit/spacedisplay-rs
+    version: v0.1.1

@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: takumin
+    repo_name: zizmor-bin
+    description: Static build of `zizmor`
+    files:
+      - name: zizmor
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: zizmor-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnullvm
+        cosign:
+          opts:
+            - --certificate
+            - https://github.com/takumin/zizmor-bin/releases/download/{{.Version}}/{{.Asset}}.cert
+            - --signature
+            - https://github.com/takumin/zizmor-bin/releases/download/{{.Version}}/{{.Asset}}.sig
+            - --certificate-identity
+            - https://github.com/takumin/zizmor-bin/.github/workflows/wc-sign.yml@refs/heads/main
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/takumin/zizmor-bin/releases/download/{{.Version}}/SHA256SUMS.cert
+              - --signature
+              - https://github.com/takumin/zizmor-bin/releases/download/{{.Version}}/SHA256SUMS.sig
+              - --certificate-identity
+              - https://github.com/takumin/zizmor-bin/.github/workflows/wc-sign.yml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        github_artifact_attestations:
+          signer_workflow: takumin/zizmor-bin/.github/workflows/wc-sign.yml

@@ -1,0 +1,4 @@
+packages:
+  - name: ko-build/ko@v0.18.0
+  - name: ko-build/ko
+    version: v0.12.0

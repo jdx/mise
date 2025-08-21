@@ -1,0 +1,12 @@
+packages:
+  - name: crate-ci/committed@v1.1.7
+  - name: crate-ci/committed
+    version: v0.2.8
+  - name: crate-ci/committed
+    version: v0.2.7
+  - name: crate-ci/committed
+    version: v0.1.21
+  - name: crate-ci/committed
+    version: v0.1.15
+  - name: crate-ci/committed
+    version: v0.1.4

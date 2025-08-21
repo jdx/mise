@@ -1,0 +1,2 @@
+packages:
+  - name: google/jsonnet@v0.17.0

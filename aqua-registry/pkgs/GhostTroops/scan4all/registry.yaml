@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: GhostTroops
+    repo_name: scan4all
+    aliases:
+      - name: hktalent/scan4all
+    description: "Official repository vuls Scan: 15000+PoCs; 23 kinds of application password crack; 7000+Web fingerprints; 146 protocols and 90000+ rules Port scanning; Fuzz, HW, awesome BugBounty"
+    asset: scan4all_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    supported_envs:
+      - darwin
+      - amd64
+    checksum:
+      type: github_release
+      asset: scan4all-{{.OS}}-checksums.txt
+      algorithm: sha256
+    overrides:
+      - goos: darwin
+        checksum:
+          type: github_release
+          asset: scan4all-mac-checksums.txt
+          algorithm: sha256
+    version_constraint: semver(">= 2.8.7")
+    version_overrides:
+      - version_constraint: semver(">= 2.8.6")
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver(">= 2.6.9")
+        replacements:
+          darwin: macOS
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            checksum:
+              type: github_release
+              asset: scan4all-mac-checksums.txt
+              algorithm: sha256
+          - goos: darwin
+            goarch: arm64
+            checksum:
+              type: github_release
+              asset: scan4all-mac-arm64-checksums.txt
+              algorithm: sha256
+      - version_constraint: semver("< 2.6.9")
+        replacements:
+          darwin: macOS
+        rosetta2: true

@@ -1,0 +1,4 @@
+packages:
+  - name: instrumenta/kubeval@v0.16.1
+  - name: instrumenta/kubeval
+    version: 0.8.1

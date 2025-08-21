@@ -1,0 +1,4 @@
+packages:
+  - name: datadog/managed-kubernetes-auditing-toolkit@v0.3.1
+  - name: datadog/managed-kubernetes-auditing-toolkit
+    version: v0.1.1

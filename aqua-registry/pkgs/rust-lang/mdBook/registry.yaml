@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rust-lang
+    repo_name: mdBook
+    rosetta2: true
+    asset: mdbook-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    supported_envs:
+      - darwin
+      - amd64
+    description: Create book from markdown files. Like Gitbook but implemented in Rust
+    replacements:
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+      windows: pc-windows-msvc
+      amd64: x86_64
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: mdbook

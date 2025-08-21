@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: specstoryai
+    repo_name: getspecstory
+    description: Install our extensions for GH Copilot, Cursor and Claude Code. Try BearClaude. File issues and requests
+    files:
+      - name: specstory
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: SpecStoryCLI_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: SpecStoryCLI_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

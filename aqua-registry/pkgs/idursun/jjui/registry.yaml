@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: idursun
+    repo_name: jjui
+    description: Jujutsu UI (jjui) is a Text User Interface (TUI) designed for interacting with the Jujutsu version control system
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.7.1")
+        asset: jjui-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: jjui
+            src: "release/{{.AssetWithoutExt}}"
+      - version_constraint: "true"
+        asset: jjui-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: jjui
+            src: "{{.AssetWithoutExt}}"

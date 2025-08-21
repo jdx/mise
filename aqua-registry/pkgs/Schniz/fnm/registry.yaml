@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Schniz
+    repo_name: fnm
+    description: Fast and simple Node.js version manager, built in Rust
+    asset: fnm-linux.zip
+    overrides:
+      - goos: darwin
+        asset: fnm-macos.zip
+      - goos: windows
+        asset: fnm-windows.zip
+      - goos: linux
+        goarch: arm64
+        asset: fnm-arm64.zip

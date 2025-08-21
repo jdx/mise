@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: typstyle-rs
+    repo_name: typstyle
+    aliases:
+      - name: Enter-tainer/typstyle
+    description: Beautiful and reliable typst code formatter
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.11.6"
+        no_asset: true
+      - version_constraint: semver("<= 0.11.28")
+        asset: typstyle-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+          windows: win32
+      - version_constraint: "true"
+        asset: typstyle-{{.Arch}}-{{.OS}}
+        format: raw
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc

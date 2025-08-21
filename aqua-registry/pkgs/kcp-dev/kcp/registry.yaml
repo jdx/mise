@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kcp-dev
+    repo_name: kcp
+    asset: kcp_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    files:
+      - name: kcp
+        src: bin/kcp
+    format: tar.gz
+    description: kcp is a Kubernetes-like control plane for workloads on many clusters
+    supported_envs:
+      - darwin
+      - linux
+    checksum:
+      type: github_release
+      asset: kcp_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

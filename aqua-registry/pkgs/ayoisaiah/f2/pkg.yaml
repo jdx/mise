@@ -1,0 +1,6 @@
+packages:
+  - name: ayoisaiah/f2@v2.1.2
+  - name: ayoisaiah/f2
+    version: v1.9.1
+  - name: ayoisaiah/f2
+    version: 0.2.0

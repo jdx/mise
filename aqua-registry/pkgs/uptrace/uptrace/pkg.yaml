@@ -1,0 +1,4 @@
+packages:
+  - name: uptrace/uptrace@v2.0.1
+  - name: uptrace/uptrace
+    version: v0.2.8

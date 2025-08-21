@@ -1,0 +1,6 @@
+packages:
+  - name: dyne/zenroom@v5.25.0
+  - name: dyne/zenroom
+    version: v5.10.4
+  - name: dyne/zenroom
+    version: v3.10.1

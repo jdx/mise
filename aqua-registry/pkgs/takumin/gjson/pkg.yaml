@@ -1,0 +1,4 @@
+packages:
+  - name: takumin/gjson@v0.0.3
+  - name: takumin/gjson
+    version: v0.0.1

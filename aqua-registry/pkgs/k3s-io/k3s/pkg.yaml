@@ -1,0 +1,14 @@
+packages:
+  - name: k3s-io/k3s@v1.33.3+k3s1
+  - name: k3s-io/k3s
+    version: v1.23.8+k3s1
+  - name: k3s-io/k3s
+    version: v1.20.0+k3s2
+  - name: k3s-io/k3s
+    version: v1.18.12+k3s1
+  - name: k3s-io/k3s
+    version: v1.18.10+k3s1
+  - name: k3s-io/k3s
+    version: v0.6.1
+  - name: k3s-io/k3s
+    version: v0.6.0

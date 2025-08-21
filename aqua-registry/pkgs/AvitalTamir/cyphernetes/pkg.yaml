@@ -1,0 +1,14 @@
+packages:
+  - name: AvitalTamir/cyphernetes@v0.18.2
+  - name: AvitalTamir/cyphernetes
+    version: v0.12.1
+  - name: AvitalTamir/cyphernetes
+    version: v0.10.0
+  - name: AvitalTamir/cyphernetes
+    version: v0.8.1
+  - name: AvitalTamir/cyphernetes
+    version: v0.6.4-fix.0
+  - name: AvitalTamir/cyphernetes
+    version: v0.2
+  - name: AvitalTamir/cyphernetes
+    version: v0.1

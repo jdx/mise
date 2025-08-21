@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: babarot
+    repo_name: github-labeler
+    aliases:
+      - name: b4b4r07/github-labeler
+    rosetta2: true
+    asset: github-labeler_{{.OS}}_{{.Arch}}.{{.Format}}
+    description: Declarative way to configure GitHub labels
+    supported_envs:
+      - darwin
+      - linux/amd64
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      386: i386
+      amd64: x86_64
+    checksum:
+      type: github_release
+      asset: github-labeler_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

@@ -1,0 +1,6 @@
+packages:
+  - name: getanteon/anteon@v1.0.6
+  - name: getanteon/anteon
+    version: v1.0.3
+  - name: getanteon/anteon
+    version: v0.4.1

@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cirruslabs
+    repo_name: tart
+    description: macOS and Linux VMs on Apple Silicon to use in CI and other automations
+    asset: tart.tar.gz
+    files:
+      - name: tart
+        src: tart.app/Contents/MacOS/tart
+    checksum:
+      type: github_release
+      asset: tart_{{.Version}}_checksums.txt
+      algorithm: sha256
+    supported_envs:
+      - darwin

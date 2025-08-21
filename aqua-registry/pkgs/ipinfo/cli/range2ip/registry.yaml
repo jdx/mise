@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    name: ipinfo/cli/range2ip
+    repo_owner: ipinfo
+    repo_name: cli
+    description: Official Command Line Interface for the IPinfo API (IP geolocation and other types of IP data)
+    version_filter: Version startsWith "range2ip-"
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: range2ip_{{trimPrefix "range2ip-" .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+        files:
+          - name: range2ip
+            src: range2ip_{{trimPrefix "range2ip-" .Version}}_{{.OS}}_{{.Arch}}.exe
+    files:
+      - name: range2ip
+        src: range2ip_{{trimPrefix "range2ip-" .Version}}_{{.OS}}_{{.Arch}}

@@ -1,0 +1,8 @@
+packages:
+  - name: equinix-labs/otel-cli@v0.4.5
+  - name: equinix-labs/otel-cli
+    version: v0.0.20
+  - name: equinix-labs/otel-cli
+    version: v0.0.19
+  - name: equinix-labs/otel-cli
+    version: v0.0.3

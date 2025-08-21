@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    name: cert-manager/cert-manager/cmctl
+    repo_owner: cert-manager
+    repo_name: cert-manager
+    aliases:
+      - name: jetstack/cert-manager/cmctl
+    description: cmctl is a CLI tool that can help you to manage cert-manager resources inside your cluster
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.14.4")
+        asset: cmctl-{{.OS}}-{{.Arch}}.tar.gz
+        files:
+          - name: cmctl
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: "true"
+        error_message: |
+          Please use the package cert-manager/cmctl instead.
+          The code of cmctl was moved from cert-manager/cert-manager to cert-manager/cmctl.

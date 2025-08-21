@@ -1,0 +1,6 @@
+packages:
+  - name: dependabot/cli@v1.71.0
+  - name: dependabot/cli
+    version: v1.32.0
+  - name: dependabot/cli
+    version: v1.24.0

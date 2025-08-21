@@ -1,0 +1,4 @@
+packages:
+  - name: fiatjaf/jiq@v0.7.2
+  - name: fiatjaf/jiq
+    version: 0.6.1

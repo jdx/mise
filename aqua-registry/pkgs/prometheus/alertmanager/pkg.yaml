@@ -1,0 +1,2 @@
+packages:
+  - name: prometheus/alertmanager@v0.28.1

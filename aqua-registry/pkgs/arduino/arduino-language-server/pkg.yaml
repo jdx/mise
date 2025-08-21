@@ -1,0 +1,4 @@
+packages:
+  - name: arduino/arduino-language-server@0.7.7
+  - name: arduino/arduino-language-server
+    version: 0.7.1

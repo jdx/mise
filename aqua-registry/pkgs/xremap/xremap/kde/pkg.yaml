@@ -1,0 +1,4 @@
+packages:
+  - name: xremap/xremap/kde@v0.16.6
+  - name: xremap/xremap/kde
+    version: v0.8.3

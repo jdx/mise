@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Songmu
+    repo_name: ghg
+    description: Get the executable from github releases easily
+    rosetta2: true
+    asset: ghg_{{.Version}}_{{.OS}}_amd64.{{.Format}}
+    files:
+      - name: ghg
+        src: ghg_{{.Version}}_{{.OS}}_amd64/ghg
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz

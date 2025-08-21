@@ -1,0 +1,8 @@
+packages:
+  - name: RyuyaIshibashi/aws-s3-siggy@v0.2.2
+  - name: RyuyaIshibashi/aws-s3-siggy
+    version: v0.2.0
+  - name: RyuyaIshibashi/aws-s3-siggy
+    version: v0.0.9
+  - name: RyuyaIshibashi/aws-s3-siggy
+    version: v0.0.7

@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: tmc
+    repo_name: json-to-struct
+    description: A simple command-line tool for generating to struct definitions from JSON

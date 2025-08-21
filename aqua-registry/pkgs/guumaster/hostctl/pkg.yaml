@@ -1,0 +1,8 @@
+packages:
+  - name: guumaster/hostctl@v1.1.4
+  - name: guumaster/hostctl
+    version: v1.1.2
+  - name: guumaster/hostctl
+    version: v1.1.0
+  - name: guumaster/hostctl
+    version: v1.0.6

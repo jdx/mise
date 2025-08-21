@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubecost
+    repo_name: kubectl-cost
+    description: CLI for determining the cost of Kubernetes workloads
+    supported_envs:
+      - darwin
+      - amd64
+    complete_windows_ext: false
+    asset: kubectl-cost-{{.OS}}-{{.Arch}}.tar.gz

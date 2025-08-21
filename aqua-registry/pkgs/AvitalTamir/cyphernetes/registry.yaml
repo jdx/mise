@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: AvitalTamir
+    repo_name: cyphernetes
+    description: A Kubernetes Query Language
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1")
+        asset: cyphernetes-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: cyphernetes-{{.OS}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.2"
+        asset: cyphernetes-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.6.4-fix.0")
+        asset: cyphernetes-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64
+      - version_constraint: semver("<= 0.8.1")
+        asset: cyphernetes-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.10.0")
+        asset: cyphernetes-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin/arm64
+      - version_constraint: semver("<= 0.12.1")
+        asset: cyphernetes-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: cyphernetes-{{.OS}}-{{.Arch}}
+        format: raw

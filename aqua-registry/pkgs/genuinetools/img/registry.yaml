@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: genuinetools
+    repo_name: img
+    description: Standalone, daemon-less, unprivileged Dockerfile and OCI compatible container image builder
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: img-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        supported_envs:
+          - linux/amd64

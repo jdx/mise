@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_content
+    repo_owner: ekalinin
+    repo_name: github-markdown-toc
+    description: Easy TOC creation for GitHub README.md
+    supported_envs:
+      - darwin
+      - linux
+    path: gh-md-toc
+    files:
+      - name: gh-md-toc

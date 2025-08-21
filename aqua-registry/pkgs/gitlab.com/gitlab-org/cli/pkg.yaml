@@ -1,0 +1,6 @@
+packages:
+  - name: gitlab.com/gitlab-org/cli@v1.47.0
+  - name: gitlab.com/gitlab-org/cli
+    version: v1.46.1
+  - name: gitlab.com/gitlab-org/cli
+    version: v1.22.0

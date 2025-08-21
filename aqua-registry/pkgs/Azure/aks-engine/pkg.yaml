@@ -1,0 +1,2 @@
+packages:
+  - name: Azure/aks-engine@v0.79.0

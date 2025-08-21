@@ -1,0 +1,4 @@
+packages:
+  - name: bflad/tfproviderdocs@v0.12.1
+  - name: bflad/tfproviderdocs
+    version: v0.9.1

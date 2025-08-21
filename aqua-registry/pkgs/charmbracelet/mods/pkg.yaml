@@ -1,0 +1,6 @@
+packages:
+  - name: charmbracelet/mods@v1.8.1
+  - name: charmbracelet/mods
+    version: v1.2.1
+  - name: charmbracelet/mods
+    version: v0.2.0

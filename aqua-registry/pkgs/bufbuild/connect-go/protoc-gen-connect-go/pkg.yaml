@@ -1,0 +1,2 @@
+packages:
+  - name: bufbuild/connect-go/protoc-gen-connect-go@v1.10.0

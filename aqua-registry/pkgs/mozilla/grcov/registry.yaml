@@ -1,0 +1,149 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mozilla
+    repo_name: grcov
+    description: Rust tool to collect and aggregate code coverage data for multiple source files
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.4.0"
+        asset: grcov-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: win
+        supported_envs:
+          - windows/amd64
+      - version_constraint: Version == "v0.7.0"
+        asset: grcov-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v0.7.1"
+        asset: grcov-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.1.1")
+        asset: grcov-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.1.5")
+        asset: grcov-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: win
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: semver("<= 0.1.28")
+        asset: grcov-{{.OS}}-standalone-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: win
+        overrides:
+          - goos: windows
+            asset: grcov-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: semver("<= 0.3.2")
+        asset: grcov-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: osx
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.4.2")
+        asset: grcov-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: win
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: semver("<= 0.5.15")
+        asset: grcov-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: osx
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.6.1")
+        asset: grcov-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.8.2")
+        asset: grcov-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.bz2
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.8.6")
+        asset: grcov-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: checksums-{{.Version}}.sha256
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: grcov-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.bz2
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: checksums.sha256
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

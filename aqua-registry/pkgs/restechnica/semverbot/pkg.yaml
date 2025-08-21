@@ -1,0 +1,6 @@
+packages:
+  - name: restechnica/semverbot@v1.7.2
+  - name: restechnica/semverbot
+    version: v1.1.0
+  - name: restechnica/semverbot
+    version: v0.1.2

@@ -1,0 +1,2 @@
+packages:
+  - name: apache/pulsar@v4.0.6

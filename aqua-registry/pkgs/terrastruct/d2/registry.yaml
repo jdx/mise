@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: terrastruct
+    repo_name: d2
+    asset: d2-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    description: D2 is a modern diagram scripting language that turns text to diagrams
+    replacements:
+      darwin: macos
+    files:
+      - name: d2
+        src: d2-{{.Version}}/bin/d2

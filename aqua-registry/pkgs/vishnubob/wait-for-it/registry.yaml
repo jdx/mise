@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_content
+    repo_owner: vishnubob
+    repo_name: wait-for-it
+    description: Pure bash script to test and wait on the availability of a TCP host and port
+    path: wait-for-it.sh
+    format: raw
+    supported_envs:
+      - linux
+      - darwin

@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: vmware-tanzu
+    repo_name: velero
+    description: Backup and migrate Kubernetes applications and their persistent volumes
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.8.0-rc.1"
+        asset: ark-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: ark
+      - version_constraint: Version == "v0.10.0-beta.1"
+        asset: ark-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: ark
+        checksum:
+          type: github_release
+          asset: CHECKSUM
+          algorithm: sha256
+      - version_constraint: Version == "v1.10.0-rc.2"
+        asset: velero-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: velero
+            src: "{{.AssetWithoutExt}}/velero"
+        checksum:
+          type: github_release
+          asset: CHECKSUM
+          algorithm: sha256
+      - version_constraint: semver("<= 0.4.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.5.1")
+        asset: ark-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: ark
+        checksum:
+          type: github_release
+          asset: CHECKSUM
+          algorithm: sha256
+      - version_constraint: semver("<= 0.10.2")
+        asset: ark-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: ark
+        checksum:
+          type: github_release
+          asset: CHECKSUM
+          algorithm: sha256
+      - version_constraint: semver("<= 1.10.3")
+        asset: velero-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: velero
+            src: "{{.AssetWithoutExt}}/velero"
+        checksum:
+          type: github_release
+          asset: CHECKSUM
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: velero-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: velero
+            src: "{{.AssetWithoutExt}}/velero"
+        checksum:
+          type: github_release
+          asset: CHECKSUM
+          algorithm: sha256

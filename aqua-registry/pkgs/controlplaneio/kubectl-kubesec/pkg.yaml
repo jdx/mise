@@ -1,0 +1,8 @@
+packages:
+  - name: controlplaneio/kubectl-kubesec@v1.1.0
+  - name: controlplaneio/kubectl-kubesec
+    version: 1.0.2
+  - name: controlplaneio/kubectl-kubesec
+    version: 1.0.1
+  - name: controlplaneio/kubectl-kubesec
+    version: 0.1.0

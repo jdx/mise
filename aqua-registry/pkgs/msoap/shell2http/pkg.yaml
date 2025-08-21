@@ -1,0 +1,14 @@
+packages:
+  - name: msoap/shell2http@v1.17.0
+  - name: msoap/shell2http
+    version: "1.13"
+  - name: msoap/shell2http
+    version: "1.7"
+  - name: msoap/shell2http
+    version: "1.6"
+  - name: msoap/shell2http
+    version: "1.4"
+  - name: msoap/shell2http
+    version: "1.2"
+  - name: msoap/shell2http
+    version: "1.1"

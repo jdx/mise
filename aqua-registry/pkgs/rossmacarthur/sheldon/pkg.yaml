@@ -1,0 +1,8 @@
+packages:
+  - name: rossmacarthur/sheldon@0.8.5
+  - name: rossmacarthur/sheldon
+    version: 0.7.4
+  - name: rossmacarthur/sheldon
+    version: 0.5.0
+  - name: rossmacarthur/sheldon
+    version: 0.4.6

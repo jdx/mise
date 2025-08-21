@@ -1,0 +1,2 @@
+packages:
+  - name: howardjohn/kubeconfig-proxy@v0.4.0

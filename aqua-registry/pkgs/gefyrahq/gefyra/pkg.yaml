@@ -1,0 +1,12 @@
+packages:
+  - name: gefyrahq/gefyra@2.3.2
+  - name: gefyrahq/gefyra
+    version: 2.0.3
+  - name: gefyrahq/gefyra
+    version: 0.8.4
+  - name: gefyrahq/gefyra
+    version: 0.8.0
+  - name: gefyrahq/gefyra
+    version: 0.6.9
+  - name: gefyrahq/gefyra
+    version: 0.6.7

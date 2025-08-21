@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: EnvCLI
+    repo_name: EnvCLI
+    description: "Don't install Node, Go, ... locally - use containers you define within your project. If you have a new machine / other contributors you just have to install docker and envcli to get started"
+    files:
+      - name: envcli
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.4")
+        no_asset: true
+      - version_constraint: "true"
+        asset: "{{.OS}}_{{.Arch}}"
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

@@ -1,0 +1,8 @@
+packages:
+  - name: dduan/tre@v0.4.0
+  - name: dduan/tre
+    version: v0.3.6
+  - name: dduan/tre
+    version: 0.3.0
+  - name: dduan/tre
+    version: v0.2.3

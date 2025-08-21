@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mono0926
+    repo_name: LicensePlist
+    description: A license list generator of all your dependencies for iOS applications
+    files:
+      - name: license-plist
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.5.3") or Version in ["2.15.0", "2.11.3", "2.5.7", "2.5.6", "2.3.1", "1.7.3", "1.7.2", "1.7.1", "1.6.2"]
+        no_asset: true
+      - version_constraint: "true"
+        asset: portable_licenseplist.{{.Format}}
+        format: zip
+        files:
+          - name: license-plist
+        supported_envs:
+          - darwin

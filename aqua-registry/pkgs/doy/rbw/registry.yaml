@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: doy
+    repo_name: rbw
+    description: unofficial bitwarden cli
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: rbw_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux/amd64

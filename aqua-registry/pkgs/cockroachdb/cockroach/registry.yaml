@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: cockroachdb
+    repo_name: cockroach
+    version_source: github_tag
+    description: A distributed SQL database designed for speed, scale, and survival
+    url: https://binaries.cockroachdb.com/cockroach-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tgz
+    supported_envs:
+      - darwin
+      - linux
+      - windows/amd64
+    overrides:
+      - goos: darwin
+        goarch: amd64
+        replacements:
+          darwin: darwin-10.9
+      - goos: darwin
+        goarch: arm64
+        replacements:
+          darwin: darwin-11.0
+      - goos: windows
+        format: zip
+        replacements:
+          windows: windows-6.2
+    files:
+      - name: cockroach
+        src: cockroach-{{.Version}}.{{.OS}}-{{.Arch}}/cockroach
+    checksum:
+      type: http
+      url: https://binaries.cockroachdb.com/cockroach-{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}.sha256sum
+      algorithm: sha256
+    version_constraint: semver(">= 22.2.0")
+    version_overrides:
+      - version_constraint: semver("< 22.2.0")
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux/amd64
+          - windows/amd64
+        overrides:
+          - goos: darwin
+            replacements:
+              darwin: darwin-10.9
+          - goos: windows
+            format: zip
+            replacements:
+              windows: windows-6.2

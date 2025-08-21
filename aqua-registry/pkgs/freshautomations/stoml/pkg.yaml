@@ -1,0 +1,4 @@
+packages:
+  - name: freshautomations/stoml@v0.7.1
+  - name: freshautomations/stoml
+    version: v0.7.0

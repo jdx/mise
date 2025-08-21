@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kyma-project
+    repo_name: cli
+    description: Simple set of commands to manage a Kyma installation
+    asset: kyma_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: kyma
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 2.7.0")
+    version_overrides:
+      - version_constraint: semver(">= 1.2.0")
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver(">= 1.2.0-rc1")
+        asset: kyma_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        overrides: []
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+      - version_constraint: semver(">= 0.2.0")
+        asset: kyma-{{.OS}}
+        format: raw
+        overrides:
+          - goos: windows
+            asset: kyma
+        replacements: {}
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          enabled: false
+      - version_constraint: Version == "v0.1.0"
+        asset: kymactl-{{.OS}}
+        format: raw
+        overrides:
+          - goos: windows
+            asset: kymactl.exe
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+        checksum:
+          enabled: false

@@ -1,0 +1,6 @@
+packages:
+  - name: koalaman/shellcheck@v0.11.0
+  - name: koalaman/shellcheck
+    version: v0.9.0
+  - name: koalaman/shellcheck
+    version: v0.6.0

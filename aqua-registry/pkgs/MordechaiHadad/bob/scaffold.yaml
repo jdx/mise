@@ -1,0 +1,8 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+name: MordechaiHadad/bob
+# version_filter: not (Version matches "-rc$")
+# version_prefix: cli-
+all_assets_filter: |
+  let words = ["openssl", "appimage", "rustls"];
+  not any(words, {Asset matches #})

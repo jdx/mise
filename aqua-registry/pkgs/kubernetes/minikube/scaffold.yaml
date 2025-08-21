@@ -1,0 +1,14 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+# aqua - Declarative CLI Version Manager
+# https://aquaproj.github.io/
+# Other than name is optional. All initial values are just examples.
+name: kubernetes/minikube
+version_filter: not (Version matches "-(alpha|beta|rc)")
+# version_prefix: cli-
+all_assets_filter: >-
+  (
+    not (Asset matches "^(docker-machine-driver|kicbase|minikube-installer)-")
+  ) and (
+    not (Asset matches ".(tar.gz|deb|rpm|iso|iso.sha256)$")
+  )

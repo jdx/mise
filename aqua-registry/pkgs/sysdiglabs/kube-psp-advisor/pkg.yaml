@@ -1,0 +1,2 @@
+packages:
+  - name: sysdiglabs/kube-psp-advisor@v3.0.1

@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gesquive
+    repo_name: git-user
+    asset: git-user_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: Git plugin that allows you to save multiple user profiles and set them as project defaults
+    overrides:
+      - goos: windows
+        format: zip
+    version_constraint: semver(">= 2.0.6")
+    replacements:
+      amd64: x86_64
+    checksum:
+      type: github_release
+      asset: git-user_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_overrides:
+      - version_constraint: semver(">= 2.0.3")
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux/amd64
+        replacements:
+          amd64: x64
+          darwin: osx
+        asset: git-user-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        files:
+          - name: git-user
+            src: "git-user-{{.Version}}-{{.OS}}-{{.Arch}}/git-user"
+        checksum:
+          enabled: false
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux/amd64
+        replacements:
+          amd64: amd64
+        asset: git-user-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        files:
+          - name: git-user
+            src: "{{.OS}}-{{.Arch}}/git-user"
+        checksum:
+          enabled: false
