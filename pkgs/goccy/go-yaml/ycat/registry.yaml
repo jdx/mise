@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: goccy/go-yaml/ycat
+    type: go_build
+    repo_owner: goccy
+    repo_name: go-yaml
+    description: Print yaml file with color
+    files:
+      - name: ycat
+        dir: go-yaml-{{trimV .Version}}/cmd/ycat

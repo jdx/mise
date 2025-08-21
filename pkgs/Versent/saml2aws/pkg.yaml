@@ -1,0 +1,16 @@
+packages:
+  - name: Versent/saml2aws@v2.36.19
+  - name: Versent/saml2aws
+    version: v2.34.0
+  - name: Versent/saml2aws
+    version: v2.28.3
+  - name: Versent/saml2aws
+    version: v2.28.1
+  - name: Versent/saml2aws
+    version: v2.1.0
+  - name: Versent/saml2aws
+    version: v2.0.2
+  - name: Versent/saml2aws
+    version: v1.3.1
+  - name: Versent/saml2aws
+    version: v1.0.0

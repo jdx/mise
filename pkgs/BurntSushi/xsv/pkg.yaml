@@ -1,0 +1,10 @@
+packages:
+  - name: BurntSushi/xsv@0.13.0
+  - name: BurntSushi/xsv
+    version: 0.10.3
+  - name: BurntSushi/xsv
+    version: 0.10.0
+  - name: BurntSushi/xsv
+    version: 0.9.14
+  - name: BurntSushi/xsv
+    version: 0.4.9

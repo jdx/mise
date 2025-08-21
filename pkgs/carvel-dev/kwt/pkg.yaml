@@ -1,0 +1,4 @@
+packages:
+  - name: carvel-dev/kwt@v0.0.8
+  - name: carvel-dev/kwt
+    version: v0.0.6

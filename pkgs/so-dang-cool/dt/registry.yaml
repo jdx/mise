@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: so-dang-cool
+    repo_name: dt
+    description: "dt - duct tape for your unix pipes"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.7.0")
+        no_asset: true
+      - version_constraint: semver("<= 1.1.0")
+        asset: "{{.Arch}}-{{.OS}}.{{.Format}}"
+        format: tgz
+        files:
+          - name: dt
+            src: "{{.AssetWithoutExt}}/bin/dt"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          linux: linux-gnu
+        supported_envs:
+          - linux
+      - version_constraint: semver("<= 1.2.3")
+        asset: "{{.Arch}}-{{.OS}}.{{.Format}}"
+        format: tgz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+          linux: linux-gnu
+        overrides:
+          - goos: darwin
+            asset: "{{.Arch}}-{{.OS}}-none.{{.Format}}"
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.3.0")
+        asset: dt-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+          linux: linux-gnu
+        overrides:
+          - goos: darwin
+            asset: dt-{{.Arch}}-{{.OS}}-none.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: dt-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+          linux: linux-gnu
+        overrides:
+          - goos: darwin
+            asset: dt-{{.Arch}}-{{.OS}}-none.{{.Format}}
+          - goos: windows
+            asset: dt-{{.Arch}}-{{.OS}}-gnu.{{.Format}}
+            replacements: {}

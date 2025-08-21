@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: NimbleArchitect
+    repo_name: kubectl-ice
+    description: A kubectl plugin that allows you to easily view advanced configuration of all containers that are running inside pods
+    asset: kubectl-ice_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: kubectl-ice_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.0.2")
+    version_overrides:
+      - version_constraint: semver("< 0.0.2")
+        asset: ice_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: kubectl-ice
+            src: ice
+          - name: ice
+        checksum:
+          type: github_release
+          asset: ice_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

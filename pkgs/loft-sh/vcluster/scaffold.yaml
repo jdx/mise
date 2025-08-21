@@ -1,0 +1,4 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+name: loft-sh/vcluster
+version_filter: not (Version matches "-(alpha|beta|rc)")

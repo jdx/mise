@@ -1,0 +1,8 @@
+packages:
+  - name: ibotta/sopstool@v1.2.1
+  - name: ibotta/sopstool
+    version: v1.2.0
+  - name: ibotta/sopstool
+    version: v1.1.3
+  - name: ibotta/sopstool
+    version: v0.4.4

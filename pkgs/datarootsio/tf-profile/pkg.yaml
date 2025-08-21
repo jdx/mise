@@ -1,0 +1,8 @@
+packages:
+  - name: datarootsio/tf-profile@v0.5.0
+  - name: datarootsio/tf-profile
+    version: release/0.2.0
+  - name: datarootsio/tf-profile
+    version: release/0.1.0
+  - name: datarootsio/tf-profile
+    version: release/0.0.1

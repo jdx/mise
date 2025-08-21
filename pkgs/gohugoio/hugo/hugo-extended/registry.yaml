@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    name: gohugoio/hugo/hugo-extended
+    repo_owner: gohugoio
+    repo_name: hugo
+    description: The world’s fastest framework for building websites
+    files:
+      - name: hugo
+    format: tar.gz
+    asset: hugo_extended_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+    supported_envs:
+      - linux
+      - amd64
+      - darwin
+    checksum:
+      type: github_release
+      asset: hugo_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.103.0")
+    # Since v0.103.0, replacements was changed.
+    overrides:
+      - goos: windows
+        format: zip
+      - goos: darwin
+        asset: hugo_extended_{{trimV .Version}}_{{.OS}}-universal.tar.gz
+    version_overrides:
+      - version_constraint: semver(">= 0.102.0")
+        # Since v0.102.0, macOS archives have replaced with universal binaries, and linux/arm64 has been supported
+        replacements: &hugo_extended_replacements_1
+          amd64: 64bit
+          arm64: ARM64
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+      - version_constraint: semver("= 0.88.0")
+        # In v0.88.0, macOS/arm64 was missing
+        rosetta2: true
+        overrides:
+          - goos: windows
+            format: zip
+        replacements: *hugo_extended_replacements_1
+        supported_envs:
+          - amd64
+          - darwin
+      - version_constraint: semver(">= 0.81.0")
+        # Since v0.81.0, macOS/arm64 has been supported
+        overrides:
+          - goos: windows
+            format: zip
+        replacements: *hugo_extended_replacements_1
+        supported_envs:
+          - amd64
+          - darwin
+      - version_constraint: "true"
+        rosetta2: true
+        replacements: *hugo_extended_replacements_1
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - amd64
+          - darwin

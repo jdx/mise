@@ -1,0 +1,10 @@
+packages:
+  - name: minamijoyo/myaws@v0.4.9
+  - name: minamijoyo/myaws
+    version: v0.4.1
+  - name: minamijoyo/myaws
+    version: v0.3.4
+  - name: minamijoyo/myaws
+    version: v0.0.3
+  - name: minamijoyo/myaws
+    version: v0.0.1

@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    name: slack.com/slack-cli
+    description: Slack CLI allows you to interact with your workflow apps via the command line
+    link: https://api.slack.com/automation/cli/commands
+    url: https://downloads.slack-edge.com/slack-cli/slack_cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    rosetta2: true
+    windows_arm_emulation: true
+    files:
+      - name: slack
+        src: bin/slack
+    replacements:
+      amd64: 64-bit
+      darwin: macOS
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - linux/amd64
+      - windows
+      - darwin

@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    name: protocolbuffers/protobuf/protoc
+    repo_owner: protocolbuffers
+    repo_name: protobuf
+    asset: protoc-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: zip
+    files:
+      - name: protoc
+        src: bin/protoc
+    description: Protocol Buffers - Google's data interchange format
+    replacements:
+      arm64: aarch_64
+      amd64: x86_64
+      darwin: osx
+      windows: win64
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    overrides:
+      - goos: windows
+        asset: protoc-{{trimV .Version}}-{{.OS}}.{{.Format}}

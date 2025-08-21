@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: firecracker-microvm
+    repo_name: firectl
+    description: firectl is a command-line tool to run Firecracker microVMs
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: firectl-{{ .Version }}
+        format: raw
+        supported_envs:
+          - linux/amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256

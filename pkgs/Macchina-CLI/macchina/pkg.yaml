@@ -1,0 +1,16 @@
+packages:
+  - name: Macchina-CLI/macchina@v6.4.0
+  - name: Macchina-CLI/macchina
+    version: v6.1.8
+  - name: Macchina-CLI/macchina
+    version: v3.0.0
+  - name: Macchina-CLI/macchina
+    version: v2.0.0
+  - name: Macchina-CLI/macchina
+    version: v1.0.0
+  - name: Macchina-CLI/macchina
+    version: v0.9.1
+  - name: Macchina-CLI/macchina
+    version: v0.8.0
+  - name: Macchina-CLI/macchina
+    version: v0.6.3

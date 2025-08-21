@@ -1,0 +1,4 @@
+packages:
+  - name: bytecodealliance/wasm-pkg-tools@v0.11.0
+  - name: bytecodealliance/wasm-pkg-tools
+    version: v0.6.0

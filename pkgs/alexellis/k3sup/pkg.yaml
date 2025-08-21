@@ -1,0 +1,10 @@
+packages:
+  - name: alexellis/k3sup@0.13.11
+  - name: alexellis/k3sup
+    version: 0.12.1
+  - name: alexellis/k3sup
+    version: 0.9.7
+  - name: alexellis/k3sup
+    version: 0.5.8
+  - name: alexellis/k3sup
+    version: 0.2.1

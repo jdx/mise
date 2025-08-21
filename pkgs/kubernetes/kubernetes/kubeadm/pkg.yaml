@@ -1,0 +1,10 @@
+packages:
+  - name: kubernetes/kubernetes/kubeadm@v1.33.4
+  - name: kubernetes/kubernetes/kubeadm
+    version: v1.25.4
+  - name: kubernetes/kubernetes/kubeadm
+    version: v1.22.17
+  - name: kubernetes/kubernetes/kubeadm
+    version: v1.20.15
+  - name: kubernetes/kubernetes/kubeadm
+    version: v1.15.3

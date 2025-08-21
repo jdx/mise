@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sharkdp
+    repo_name: numbat
+    description: A statically typed programming language for scientific computations with first class support for physical dimensions and units
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.6.1")
+        asset: numbat-{{trimV .Version}}
+        format: tar.gz
+        files:
+          - name: numbat
+            src: numbat/numbat
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v1.9.0"
+        asset: numbat-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        files:
+          - name: numbat
+            src: "{{.AssetWithoutExt}}/numbat"
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: numbat-{{.Version}}-{{.Arch}}-{{.OS}}eabihf.{{.Format}}
+            replacements:
+              arm64: arm
+          - goos: windows
+            format: zip
+            asset: numbat-{{.Version}}-i686-{{.OS}}.{{.Format}}
+      - version_constraint: semver("<= 1.14.0")
+        asset: numbat-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        files:
+          - name: numbat
+            src: "{{.AssetWithoutExt}}/numbat"
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: numbat-{{.Version}}-{{.Arch}}-{{.OS}}eabihf.{{.Format}}
+            replacements:
+              arm64: arm
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: numbat-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: numbat
+            src: "{{.AssetWithoutExt}}/numbat"
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: numbat-{{.Version}}-{{.Arch}}-{{.OS}}eabihf.{{.Format}}
+            replacements:
+              arm64: arm
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip

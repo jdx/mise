@@ -1,0 +1,8 @@
+packages:
+  - name: banzaicloud/banzai-cli@0.21.9
+  - name: banzaicloud/banzai-cli
+    version: 0.21.0
+  - name: banzaicloud/banzai-cli
+    version: 0.14.1
+  - name: banzaicloud/banzai-cli
+    version: 0.0.3

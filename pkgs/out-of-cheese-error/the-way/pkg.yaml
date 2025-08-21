@@ -1,0 +1,6 @@
+packages:
+  - name: out-of-cheese-error/the-way@v0.20.3
+  - name: out-of-cheese-error/the-way
+    version: v0.14.0
+  - name: out-of-cheese-error/the-way
+    version: v0.2.1-osx

@@ -1,0 +1,14 @@
+packages:
+  - name: kubeshark/kubeshark@v72.3.83
+  - name: kubeshark/kubeshark
+    version: v52.1.50
+  - name: kubeshark/kubeshark
+    version: "50.4"
+  - name: kubeshark/kubeshark
+    version: "37.0"
+  - name: kubeshark/kubeshark
+    version: "36.0"
+  - name: kubeshark/kubeshark
+    version: 0.23.0
+  - name: kubeshark/kubeshark
+    version: 0.17.0

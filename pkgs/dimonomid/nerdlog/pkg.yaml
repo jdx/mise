@@ -1,0 +1,4 @@
+packages:
+  - name: dimonomid/nerdlog@v1.10.0
+  - name: dimonomid/nerdlog
+    version: v1.5.0

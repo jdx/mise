@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: allero-io
+    repo_name: allero
+    description: By scanning CI/CD misconfigurations, Allero helps reduce production issues, harden your security posture and shift-left CI/CD from DevOps to developers
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: allero_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

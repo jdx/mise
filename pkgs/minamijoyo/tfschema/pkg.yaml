@@ -1,0 +1,6 @@
+packages:
+  - name: minamijoyo/tfschema@v0.7.9
+  - name: minamijoyo/tfschema
+    version: v0.7.2
+  - name: minamijoyo/tfschema
+    version: v0.1.0

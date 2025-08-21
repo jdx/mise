@@ -1,0 +1,16 @@
+packages:
+  - name: justmiles/go-markdown2confluence@v3.4.6
+  - name: justmiles/go-markdown2confluence
+    version: v3.3.2
+  - name: justmiles/go-markdown2confluence
+    version: v3.3.1
+  - name: justmiles/go-markdown2confluence
+    version: v3.3.0
+  - name: justmiles/go-markdown2confluence
+    version: v3.1.1
+  - name: justmiles/go-markdown2confluence
+    version: v3.0.0
+  - name: justmiles/go-markdown2confluence
+    version: v2.0.0
+  - name: justmiles/go-markdown2confluence
+    version: v1.0.0

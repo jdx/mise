@@ -1,0 +1,698 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: WebAssembly
+    repo_name: binaryen
+    description: Optimizer and compiler/toolchain library for WebAssembly
+    asset: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    replacements:
+      amd64: x86_64
+      darwin: macos
+    supported_envs:
+      - darwin
+      - amd64
+    version_prefix: version_
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256
+    files:
+      - name: binaryen-unittests
+        src: binaryen-{{.Version}}/bin/binaryen-unittests
+      - name: wasm-as
+        src: binaryen-{{.Version}}/bin/wasm-as
+      - name: wasm-ctor-eval
+        src: binaryen-{{.Version}}/bin/wasm-ctor-eval
+      - name: wasm-dis
+        src: binaryen-{{.Version}}/bin/wasm-dis
+      - name: wasm-emscripten-finalize
+        src: binaryen-{{.Version}}/bin/wasm-emscripten-finalize
+      - name: wasm-fuzz-types
+        src: binaryen-{{.Version}}/bin/wasm-fuzz-types
+      - name: wasm-metadce
+        src: binaryen-{{.Version}}/bin/wasm-metadce
+      - name: wasm-opt
+        src: binaryen-{{.Version}}/bin/wasm-opt
+      - name: wasm-reduce
+        src: binaryen-{{.Version}}/bin/wasm-reduce
+      - name: wasm-shell
+        src: binaryen-{{.Version}}/bin/wasm-shell
+      - name: wasm-split
+        src: binaryen-{{.Version}}/bin/wasm-split
+      - name: wasm2js
+        src: binaryen-{{.Version}}/bin/wasm2js
+    version_constraint: semver(">= 108")
+    version_overrides:
+      - version_constraint: semver(">= 106")
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: semver(">= 105")
+        files:
+          - name: wasm-as
+            src: binaryen-{{.Version}}/bin/wasm-as
+          - name: wasm-ctor-eval
+            src: binaryen-{{.Version}}/bin/wasm-ctor-eval
+          - name: wasm-dis
+            src: binaryen-{{.Version}}/bin/wasm-dis
+          - name: wasm-emscripten-finalize
+            src: binaryen-{{.Version}}/bin/wasm-emscripten-finalize
+          - name: wasm-fuzz-types
+            src: binaryen-{{.Version}}/bin/wasm-fuzz-types
+          - name: wasm-metadce
+            src: binaryen-{{.Version}}/bin/wasm-metadce
+          - name: wasm-opt
+            src: binaryen-{{.Version}}/bin/wasm-opt
+          - name: wasm-reduce
+            src: binaryen-{{.Version}}/bin/wasm-reduce
+          - name: wasm-shell
+            src: binaryen-{{.Version}}/bin/wasm-shell
+          - name: wasm-split
+            src: binaryen-{{.Version}}/bin/wasm-split
+          - name: wasm2js
+            src: binaryen-{{.Version}}/bin/wasm2js
+      - version_constraint: semver(">= 100")
+        rosetta2: true
+        overrides:
+          - goos: windows
+            checksum:
+              enabled: false
+        files:
+          - name: wasm-as
+            src: binaryen-{{.Version}}/bin/wasm-as
+          - name: wasm-ctor-eval
+            src: binaryen-{{.Version}}/bin/wasm-ctor-eval
+          - name: wasm-dis
+            src: binaryen-{{.Version}}/bin/wasm-dis
+          - name: wasm-emscripten-finalize
+            src: binaryen-{{.Version}}/bin/wasm-emscripten-finalize
+          - name: wasm-metadce
+            src: binaryen-{{.Version}}/bin/wasm-metadce
+          - name: wasm-opt
+            src: binaryen-{{.Version}}/bin/wasm-opt
+          - name: wasm-reduce
+            src: binaryen-{{.Version}}/bin/wasm-reduce
+          - name: wasm-shell
+            src: binaryen-{{.Version}}/bin/wasm-shell
+          - name: wasm-split
+            src: binaryen-{{.Version}}/bin/wasm-split
+          - name: wasm2js
+            src: binaryen-{{.Version}}/bin/wasm2js
+      - version_constraint: semver(">= 98")
+        supported_envs:
+          - darwin
+          - windows/amd64
+        rosetta2: true
+        overrides:
+          - goos: windows
+            checksum:
+              enabled: false
+        files:
+          - name: wasm-as
+            src: binaryen-{{.Version}}/bin/wasm-as
+          - name: wasm-ctor-eval
+            src: binaryen-{{.Version}}/bin/wasm-ctor-eval
+          - name: wasm-dis
+            src: binaryen-{{.Version}}/bin/wasm-dis
+          - name: wasm-emscripten-finalize
+            src: binaryen-{{.Version}}/bin/wasm-emscripten-finalize
+          - name: wasm-metadce
+            src: binaryen-{{.Version}}/bin/wasm-metadce
+          - name: wasm-opt
+            src: binaryen-{{.Version}}/bin/wasm-opt
+          - name: wasm-reduce
+            src: binaryen-{{.Version}}/bin/wasm-reduce
+          - name: wasm-shell
+            src: binaryen-{{.Version}}/bin/wasm-shell
+          - name: wasm2js
+            src: binaryen-{{.Version}}/bin/wasm2js
+      - version_constraint: semver(">= 93")
+        rosetta2: true
+        overrides:
+          - goos: windows
+            checksum:
+              enabled: false
+        files: &webassembly_binaryen_files_3
+          - name: wasm-as
+            src: binaryen-{{.Version}}/wasm-as
+          - name: wasm-ctor-eval
+            src: binaryen-{{.Version}}/wasm-ctor-eval
+          - name: wasm-dis
+            src: binaryen-{{.Version}}/wasm-dis
+          - name: wasm-emscripten-finalize
+            src: binaryen-{{.Version}}/wasm-emscripten-finalize
+          - name: wasm-metadce
+            src: binaryen-{{.Version}}/wasm-metadce
+          - name: wasm-opt
+            src: binaryen-{{.Version}}/wasm-opt
+          - name: wasm-reduce
+            src: binaryen-{{.Version}}/wasm-reduce
+          - name: wasm-shell
+            src: binaryen-{{.Version}}/wasm-shell
+          - name: wasm2js
+            src: binaryen-{{.Version}}/wasm2js
+      - version_constraint: semver(">= 92")
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        rosetta2: true
+        files: *webassembly_binaryen_files_3
+        overrides:
+          - goos: windows
+            checksum:
+              enabled: false
+            files: &webassembly_binaryen_files_windows_3
+              - name: asm2wasm
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/asm2wasm
+              - name: wasm-as
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-as
+              - name: wasm-ctor-eval
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-ctor-eval
+              - name: wasm-dis
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-dis
+              - name: wasm-emscripten-finalize
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-emscripten-finalize
+              - name: wasm-metadce
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-metadce
+              - name: wasm-opt
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-opt
+              - name: wasm-reduce
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-reduce
+              - name: wasm-shell
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-shell
+              - name: wasm2js
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm2js
+      - version_constraint: semver(">= 91")
+        overrides:
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+            checksum:
+              enabled: false
+          - goos: windows
+            checksum:
+              enabled: false
+            files: *webassembly_binaryen_files_windows_3
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+        files: *webassembly_binaryen_files_3
+      - version_constraint: semver(">= 90")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            asset: binaryen-{{.Version}}-x86-{{.OS}}.{{.Format}}
+            checksum:
+              enabled: false
+            files: &webassembly_binaryen_files_windows_2
+              - name: asm2wasm
+                src: binaryen-{{.Version}}-x86-{{.OS}}/asm2wasm
+              - name: wasm-as
+                src: binaryen-{{.Version}}-x86-{{.OS}}/wasm-as
+              - name: wasm-ctor-eval
+                src: binaryen-{{.Version}}-x86-{{.OS}}/wasm-ctor-eval
+              - name: wasm-dis
+                src: binaryen-{{.Version}}-x86-{{.OS}}/wasm-dis
+              - name: wasm-emscripten-finalize
+                src: binaryen-{{.Version}}-x86-{{.OS}}/wasm-emscripten-finalize
+              - name: wasm-metadce
+                src: binaryen-{{.Version}}-x86-{{.OS}}/wasm-metadce
+              - name: wasm-opt
+                src: binaryen-{{.Version}}-x86-{{.OS}}/wasm-opt
+              - name: wasm-reduce
+                src: binaryen-{{.Version}}-x86-{{.OS}}/wasm-reduce
+              - name: wasm-shell
+                src: binaryen-{{.Version}}-x86-{{.OS}}/wasm-shell
+              - name: wasm2js
+                src: binaryen-{{.Version}}-x86-{{.OS}}/wasm2js
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+        files: *webassembly_binaryen_files_3
+      - version_constraint: semver(">= 89")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            checksum:
+              enabled: false
+            files: *webassembly_binaryen_files_windows_3
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+        files: *webassembly_binaryen_files_3
+      - version_constraint: semver(">= 88")
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+          - windows/amd64
+        rosetta2: true
+        files: *webassembly_binaryen_files_3
+        overrides:
+          - goos: windows
+            checksum:
+              enabled: false
+            files: *webassembly_binaryen_files_windows_3
+      - version_constraint: semver(">= 84")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            checksum:
+              enabled: false
+            files: *webassembly_binaryen_files_windows_3
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+        files: *webassembly_binaryen_files_3
+      - version_constraint: semver(">= 82")
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - windows/amd64
+        checksum:
+          enabled: false
+        files: *webassembly_binaryen_files_3
+        overrides:
+          - goos: windows
+            files: *webassembly_binaryen_files_windows_3
+      - version_constraint: semver(">= 77")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            checksum:
+              enabled: false
+            files: *webassembly_binaryen_files_windows_3
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+        files: *webassembly_binaryen_files_3
+      - version_constraint: semver(">= 76")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            asset: binaryen-{{.Version}}-x86-{{.OS}}.{{.Format}}
+            checksum:
+              enabled: false
+            files: *webassembly_binaryen_files_windows_2
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+        files: *webassembly_binaryen_files_3
+      - version_constraint: semver(">= 75")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            checksum:
+              enabled: false
+            files: *webassembly_binaryen_files_windows_3
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+        files: *webassembly_binaryen_files_3
+      - version_constraint: semver(">= 74")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            checksum:
+              enabled: false
+            files:
+              - name: asm2wasm
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/asm2wasm
+              - name: wasm-as
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-as
+              - name: wasm-ctor-eval
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-ctor-eval
+              - name: wasm-dis
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-dis
+              - name: wasm-emscripten-finalize
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-emscripten-finalize
+              - name: wasm-metadce
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-metadce
+              - name: wasm-opt
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-opt
+              - name: wasm-reduce
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-reduce
+              - name: wasm-shell
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-shell
+              - name: wasm2js
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm2js
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux
+          - windows/amd64
+        files: *webassembly_binaryen_files_3
+      - version_constraint: semver(">= 44")
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux
+        files: &webassembly_binaryen_files_4
+          - name: asm2wasm
+            src: binaryen-{{.Version}}/asm2wasm
+          - name: s2wasm
+            src: binaryen-{{.Version}}/s2wasm
+          - name: wasm-as
+            src: binaryen-{{.Version}}/wasm-as
+          - name: wasm-ctor-eval
+            src: binaryen-{{.Version}}/wasm-ctor-eval
+          - name: wasm-dis
+            src: binaryen-{{.Version}}/wasm-dis
+          - name: wasm-emscripten-finalize
+            src: binaryen-{{.Version}}/wasm-emscripten-finalize
+          - name: wasm-merge
+            src: binaryen-{{.Version}}/wasm-merge
+          - name: wasm-metadce
+            src: binaryen-{{.Version}}/wasm-metadce
+          - name: wasm-opt
+            src: binaryen-{{.Version}}/wasm-opt
+          - name: wasm-reduce
+            src: binaryen-{{.Version}}/wasm-reduce
+          - name: wasm-shell
+            src: binaryen-{{.Version}}/wasm-shell
+          - name: wasm2asm
+            src: binaryen-{{.Version}}/wasm2asm
+      - version_constraint: semver(">= 42")
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+        files:
+          - name: asm2wasm
+            src: binaryen-{{.Version}}/asm2wasm
+          - name: s2wasm
+            src: binaryen-{{.Version}}/s2wasm
+          - name: wasm-as
+            src: binaryen-{{.Version}}/wasm-as
+          - name: wasm-ctor-eval
+            src: binaryen-{{.Version}}/wasm-ctor-eval
+          - name: wasm-dis
+            src: binaryen-{{.Version}}/wasm-dis
+          - name: wasm-merge
+            src: binaryen-{{.Version}}/wasm-merge
+          - name: wasm-metadce
+            src: binaryen-{{.Version}}/wasm-metadce
+          - name: wasm-opt
+            src: binaryen-{{.Version}}/wasm-opt
+          - name: wasm-reduce
+            src: binaryen-{{.Version}}/wasm-reduce
+          - name: wasm-shell
+            src: binaryen-{{.Version}}/wasm-shell
+          - name: wasm2asm
+            src: binaryen-{{.Version}}/wasm2asm
+      - version_constraint: semver(">= 38")
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux
+        files:
+          - name: asm2wasm
+            src: binaryen-{{.Version}}/asm2wasm
+          - name: s2wasm
+            src: binaryen-{{.Version}}/s2wasm
+          - name: wasm-as
+            src: binaryen-{{.Version}}/wasm-as
+          - name: wasm-ctor-eval
+            src: binaryen-{{.Version}}/wasm-ctor-eval
+          - name: wasm-dis
+            src: binaryen-{{.Version}}/wasm-dis
+          - name: wasm-merge
+            src: binaryen-{{.Version}}/wasm-merge
+          - name: wasm-opt
+            src: binaryen-{{.Version}}/wasm-opt
+          - name: wasm-reduce
+            src: binaryen-{{.Version}}/wasm-reduce
+          - name: wasm-shell
+            src: binaryen-{{.Version}}/wasm-shell
+          - name: wasm2asm
+            src: binaryen-{{.Version}}/wasm2asm
+      - version_constraint: semver(">= 1.39.1")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            checksum:
+              enabled: false
+            files: &webassembly_binaryen_files_windows_1
+              - name: asm2wasm
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/asm2wasm
+              - name: wasm-as
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-as
+              - name: wasm-ctor-eval
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-ctor-eval
+              - name: wasm-dis
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-dis
+              - name: wasm-emscripten-finalize
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-emscripten-finalize
+              - name: wasm-metadce
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-metadce
+              - name: wasm-opt
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-opt
+              - name: wasm-reduce
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-reduce
+              - name: wasm-shell
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-shell
+              - name: wasm2js
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm2js
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        version_prefix: ""
+        rosetta2: true
+        files: *webassembly_binaryen_files_3
+      - version_constraint: semver(">= 1.38.48")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            checksum:
+              enabled: false
+            files: *webassembly_binaryen_files_windows_1
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux
+          - windows/amd64
+        version_prefix: ""
+        files: *webassembly_binaryen_files_3
+      - version_constraint: semver(">= 1.38.47")
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - windows/amd64
+        version_prefix: ""
+        checksum:
+          enabled: false
+        files: *webassembly_binaryen_files_3
+        overrides:
+          - goos: windows
+            files: *webassembly_binaryen_files_windows_1
+      - version_constraint: semver(">= 1.38.32")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            checksum:
+              enabled: false
+            files: *webassembly_binaryen_files_windows_1
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        version_prefix: ""
+        rosetta2: true
+        files: *webassembly_binaryen_files_3
+      - version_constraint: semver(">= 1.38.31")
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - windows/amd64
+        version_prefix: ""
+        checksum:
+          enabled: false
+        files: *webassembly_binaryen_files_3
+        overrides:
+          - goos: windows
+            files:
+              - name: asm2wasm
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/asm2wasm
+              - name: wasm-as
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-as
+              - name: wasm-ctor-eval
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-ctor-eval
+              - name: wasm-dis
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-dis
+              - name: wasm-emscripten-finalize
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-emscripten-finalize
+              - name: wasm-metadce
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-metadce
+              - name: wasm-opt
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-opt
+              - name: wasm-reduce
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-reduce
+              - name: wasm-shell
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm-shell
+              - name: wasm2js
+                src: binaryen-{{.Version}}-{{.Arch}}-{{.OS}}/wasm2js
+      - version_constraint: semver(">= 1.38.30")
+        asset: binaryen-{{.Version}}-x86-{{.OS}}.{{.Format}}
+        replacements: {}
+        supported_envs:
+          - linux/amd64
+        version_prefix: ""
+        files: *webassembly_binaryen_files_3
+      - version_constraint: semver(">= 1.37.34")
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux
+        version_prefix: ""
+        files:
+          - name: asm2wasm
+            src: binaryen-{{.Version}}/asm2wasm
+          - name: s2wasm
+            src: binaryen-{{.Version}}/s2wasm
+          - name: wasm-as
+            src: binaryen-{{.Version}}/wasm-as
+          - name: wasm-ctor-eval
+            src: binaryen-{{.Version}}/wasm-ctor-eval
+          - name: wasm-dis
+            src: binaryen-{{.Version}}/wasm-dis
+          - name: wasm-emscripten-finalize
+            src: binaryen-{{.Version}}/wasm-emscripten-finalize
+          - name: wasm-merge
+            src: binaryen-{{.Version}}/wasm-merge
+          - name: wasm-metadce
+            src: binaryen-{{.Version}}/wasm-metadce
+          - name: wasm-opt
+            src: binaryen-{{.Version}}/wasm-opt
+          - name: wasm-reduce
+            src: binaryen-{{.Version}}/wasm-reduce
+          - name: wasm-shell
+            src: binaryen-{{.Version}}/wasm-shell
+          - name: wasm2asm
+            src: binaryen-{{.Version}}/wasm2asm
+      - version_constraint: semver(">= 1.37.29")
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+        version_prefix: ""
+        files:
+          - name: asm2wasm
+            src: binaryen-{{.Version}}/asm2wasm
+          - name: s2wasm
+            src: binaryen-{{.Version}}/s2wasm
+          - name: wasm-as
+            src: binaryen-{{.Version}}/wasm-as
+          - name: wasm-ctor-eval
+            src: binaryen-{{.Version}}/wasm-ctor-eval
+          - name: wasm-dis
+            src: binaryen-{{.Version}}/wasm-dis
+          - name: wasm-emscripten-finalize
+            src: binaryen-{{.Version}}/wasm-emscripten-finalize
+          - name: wasm-link-metadata
+            src: binaryen-{{.Version}}/wasm-link-metadata
+          - name: wasm-merge
+            src: binaryen-{{.Version}}/wasm-merge
+          - name: wasm-metadce
+            src: binaryen-{{.Version}}/wasm-metadce
+          - name: wasm-opt
+            src: binaryen-{{.Version}}/wasm-opt
+          - name: wasm-reduce
+            src: binaryen-{{.Version}}/wasm-reduce
+          - name: wasm-shell
+            src: binaryen-{{.Version}}/wasm-shell
+          - name: wasm2asm
+            src: binaryen-{{.Version}}/wasm2asm
+      - version_constraint: semver("< 1.37.29")
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        supported_envs:
+          - linux
+        version_prefix: ""
+        files:
+          - name: asm2wasm
+            src: binaryen-{{.Version}}/asm2wasm
+          - name: s2wasm
+            src: binaryen-{{.Version}}/s2wasm
+          - name: wasm-as
+            src: binaryen-{{.Version}}/wasm-as
+          - name: wasm-ctor-eval
+            src: binaryen-{{.Version}}/wasm-ctor-eval
+          - name: wasm-dis
+            src: binaryen-{{.Version}}/wasm-dis
+          - name: wasm-merge
+            src: binaryen-{{.Version}}/wasm-merge
+          - name: wasm-opt
+            src: binaryen-{{.Version}}/wasm-opt
+          - name: wasm-shell
+            src: binaryen-{{.Version}}/wasm-shell
+          - name: wasm2asm
+            src: binaryen-{{.Version}}/wasm2asm

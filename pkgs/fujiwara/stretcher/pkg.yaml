@@ -1,0 +1,4 @@
+packages:
+  - name: fujiwara/stretcher@v1.1.0
+  - name: fujiwara/stretcher
+    version: v1.0.0

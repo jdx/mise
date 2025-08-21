@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: concourse/concourse/concourse
+    type: github_release
+    repo_owner: concourse
+    repo_name: concourse
+    asset: concourse-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tgz
+    description: Concourse is a container-based continuous thing-doer written in Go
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    files:
+      - name: concourse
+        src: concourse/bin/concourse
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha1"
+      file_format: regexp
+      algorithm: sha1
+      pattern:
+        checksum: ^(\b[A-Fa-f0-9]{40}\b)
+        file: "^\\b[A-Fa-f0-9]{40}\\b\\s+(\\S+)$"

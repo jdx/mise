@@ -1,0 +1,8 @@
+packages:
+  - name: solidiquis/erdtree@v3.1.2
+  - name: solidiquis/erdtree
+    version: v1.8.1
+  - name: solidiquis/erdtree
+    version: v1.6.0
+  - name: solidiquis/erdtree
+    version: v1.0

@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: projectdiscovery
+    repo_name: nuclei
+    description: Fast and customizable vulnerability scanner based on simple YAML based DSL
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: nuclei_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    replacements:
+      darwin: macOS
+    checksum:
+      type: github_release
+      asset: nuclei_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

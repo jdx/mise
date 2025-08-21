@@ -1,0 +1,22 @@
+packages:
+  - name: 99designs/aws-vault@v7.2.0
+  - name: 99designs/aws-vault
+    version: v6.4.0
+  - name: 99designs/aws-vault
+    version: v6.2.0
+  - name: 99designs/aws-vault
+    version: v5.1.2
+  - name: 99designs/aws-vault
+    version: v5.0.1
+  - name: 99designs/aws-vault
+    version: v4.6.4
+  - name: 99designs/aws-vault
+    version: v3.4.0
+  - name: 99designs/aws-vault
+    version: v2.4.1
+  - name: 99designs/aws-vault
+    version: v2.3.3
+  - name: 99designs/aws-vault
+    version: v2.3.2
+  - name: 99designs/aws-vault
+    version: v2.3.1

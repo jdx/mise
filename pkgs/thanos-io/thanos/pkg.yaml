@@ -1,0 +1,2 @@
+packages:
+  - name: thanos-io/thanos@v0.39.0

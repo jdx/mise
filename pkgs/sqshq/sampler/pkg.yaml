@@ -1,0 +1,8 @@
+packages:
+  - name: sqshq/sampler@v1.1.0
+  - name: sqshq/sampler
+    version: v1.0.1
+  - name: sqshq/sampler
+    version: v1.0.0
+  - name: sqshq/sampler
+    version: v0.9.1-beta

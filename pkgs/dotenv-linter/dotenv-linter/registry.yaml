@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dotenv-linter
+    repo_name: dotenv-linter
+    rosetta2: true
+    asset: dotenv-linter-{{.OS}}-{{.Arch}}.{{.Format}}
+    description: Lightning-fast linter for .env files. Written in Rust
+    format: tar.gz
+    replacements:
+      amd64: x86_64
+      windows: win
+    overrides:
+      - goos: linux
+        replacements:
+          arm64: aarch64
+      - goos: windows
+        format: zip
+        replacements:
+          amd64: x64
+    version_constraint: semver(">= 2.1.0")
+    supported_envs:
+      - darwin
+      - amd64
+    version_overrides:
+      - version_constraint: "true"
+        supported_envs:
+          - darwin
+          - linux/amd64

@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    name: kubernetes-sigs/controller-tools/controller-gen
+    search_words:
+      - kubebuilder
+    path: sigs.k8s.io/controller-tools/cmd/controller-gen
+    repo_owner: kubernetes-sigs
+    repo_name: controller-tools
+    description: controller-gen - Generate Kubernetes API extension resources and code
+    version_filter: 'not (Version startsWith "envtest-")'
+    files:
+      - name: controller-gen

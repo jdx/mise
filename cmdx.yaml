@@ -1,0 +1,290 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/suzuki-shunsuke/cmdx/v2.0.2/json-schema/cmdx.json
+# the configuration file of cmdx - task runner
+# https://github.com/suzuki-shunsuke/cmdx
+tasks:
+  - name: scaffold
+    short: s
+    usage: Scaffold the configuration for a given package
+    description: |
+      Scaffold the configuration for a given package
+
+      e.g.
+
+      $ cmdx s cli/cli
+
+      After scaffolding, tests are run.
+
+    flags:
+      - name: recreate
+        short: r
+        type: bool
+        usage: Recreate the container
+        script_envs:
+          - IS_RECREATE
+      - name: no-create-branch
+        short: B
+        type: bool
+        usage: Don't create a branch
+        script_envs:
+          - NO_CREATE_BRANCH
+      - name: cmd
+        type: string
+        usage: A list of commands joined with commas ','
+        script_envs:
+          - CMD
+      - name: limit
+        type: string
+        short: l
+        usage: The maximum number of versions
+        script_envs:
+          - LIMIT
+      - name: config
+        short: c
+        type: string
+        usage: A configuration file path
+        script_envs:
+          - CONFIG
+    script: |
+      PACKAGE=${PACKAGE#https://github.com/}
+
+      bash scripts/check_commands.sh
+      bash scripts/check_gpgsign.sh
+      bash scripts/check_diff.sh
+      bash scripts/checkout.sh "$PACKAGE"
+
+      if [ "$IS_RECREATE" = true ]; then
+        aqua exec -- cmdx rm
+      fi
+
+      bash scripts/start.sh
+      bash scripts/scaffold.sh "$PACKAGE" "$CMD" "$LIMIT" "$CONFIG"
+      aqua exec -- cmdx gr
+      bash scripts/commit.sh "$PACKAGE"
+      bash scripts/test.sh "$PACKAGE"
+      bash scripts/start.sh aqua-registry-windows
+      bash scripts/test-windows.sh "$PACKAGE"
+    args:
+      - name: package
+        usage: a package name. e.g. `cli/cli`
+        required: true
+        script_envs:
+          - PACKAGE
+
+  - name: test
+    short: t
+    usage: Test a given package in the container
+    description: |
+      Test a given package in the container.
+
+      $ cmdx t [-r] <package name>
+
+      Tests are run on all platforms with AQUA_GOOS and AQUA_GOARCH same with CI in a container.
+
+      If the test fails, bash is attached to the container for debugging.
+      If you want to exit from the container, please run exit.
+    flags:
+      - name: recreate
+        short: r
+        type: bool
+        usage: Recreate the container
+        script_envs:
+          - IS_RECREATE
+    args:
+      - name: package
+        usage: a package name. e.g. `cli/cli`
+        script_envs:
+          - PACKAGE
+    script: |
+      PACKAGE=${PACKAGE#https://github.com/}
+
+      pkg=$(bash scripts/get_test_pkg.sh "$PACKAGE")
+      if [ "$IS_RECREATE" = true ]; then
+        cmdx rm
+      fi
+
+      bash scripts/start.sh
+      bash scripts/test.sh "$pkg"
+      bash scripts/start.sh aqua-registry-windows
+      bash scripts/test-windows.sh "$pkg"
+      aqua exec -- aqua-registry gr
+
+  - name: connect
+    short: con
+    usage: Connect to the container
+    description: |
+      Connect to the container
+
+      $ cmdx connect <os> <arch>
+
+      e.g.
+
+      $ cmdx connect linux amd64
+
+      You need to specify os and arch.
+      These arguments are set to AQUA_GOOS and AQUA_GOARCH.
+    args:
+      - name: os
+        required: false
+        default: linux
+        script_envs:
+          - OS
+      - name: arch
+        required: false
+        script_envs:
+          - ARCH
+    script: bash scripts/connect.sh
+
+  - name: generate-registry
+    short: gr
+    usage: Update registry.yaml
+    description: |
+      Update registry.yaml
+
+      $ cmdx gr
+    script: aqua exec -- aqua-registry gr
+
+  - name: new
+    usage: Create a branch, a commit, and a pull request to add a given package
+    description: |
+      Create a branch, a commit, and a pull request to add a given package.
+
+      $ cmdx new <package name>
+
+      e.g.
+
+      $ cmdx new cli/cli
+    script: |
+      if ! bash scripts/new.sh; then
+        bash scripts/ask_report.sh
+      fi
+    args:
+      - name: package
+        usage: a package name. e.g. cli/cli
+        script_envs:
+          - PACKAGE
+
+  - name: stop
+    usage: Stop containers
+    description: |
+      Stop containers.
+
+      $ cmdx stop
+    script: |
+      bash scripts/stop.sh
+      bash scripts/stop.sh aqua-registry-windows
+
+  - name: remove
+    short: rm
+    usage: Remove containers
+    description: |
+      Remove containers.
+
+      $ cmdx rm
+    script: |
+      bash scripts/remove_container.sh
+      bash scripts/remove_container.sh aqua-registry-windows
+
+  - name: remove-package
+    short: rmp
+    usage: Remove a package from containers
+    description: |
+      Remove a package from containers
+
+      $ cmdx rmp [<package name>]
+    args:
+      - name: package
+        usage: a package name. e.g. cli/cli
+        script_envs:
+          - PACKAGE
+    script: |
+      pkg=$(bash scripts/get_test_pkg.sh "$PACKAGE")
+      bash scripts/remove_package.sh "$pkg"
+
+  - name: start
+    usage: Start containers
+    description: |
+      Start containers.
+
+      $ cmdx start
+    flags:
+      - name: recreate
+        short: r
+        type: bool
+        usage: Recreate the container
+        script_envs:
+          - IS_RECREATE
+    script: |
+      if [ "$IS_RECREATE" = true ]; then
+        cmdx rm
+      fi
+      bash scripts/start.sh
+      bash scripts/start.sh aqua-registry-windows
+
+  - name: release
+    short: r
+    description: Release the new version
+    usage: Release the new version
+    script: |
+      git tag -m "chore: release $VERSION" "$VERSION"
+      git push origin "$VERSION"
+    args:
+      - name: version
+        required: true
+        script_envs:
+          - VERSION
+        validate:
+          - regexp: "^v\\d+\\.\\d+.\\d+(-\\d+)?$"
+
+  - name: resolve-conflict
+    description: Resolve the conflict of registry.yaml
+    usage: Resolve the conflict of registry.yaml
+    args:
+      - name: pr
+        required: true
+        script_envs:
+          - PR_NUMBER
+    script: |
+      git fetch origin main
+      gh pr checkout "$PR_NUMBER"
+      tempfile=$(mktemp)
+      cp registry.yaml "$tempfile"
+      git merge origin/main || :
+      mv "$tempfile" registry.yaml
+      cmdx gr
+      git add registry.yaml
+      git commit
+
+  - name: summarize
+    short: sum
+    description: Summarize a given pull request
+    usage: Summarize a given pull request
+    args:
+      - name: pr
+        required: true
+        script_envs:
+          - PR_NUMBER
+    script: |
+      bash scripts/summarize.sh "$PR_NUMBER"
+
+  - name: ls-assets
+    short: lsa
+    description: List asset names
+    usage: List asset names
+    flags:
+      - name: repo
+        short: r
+        type: string
+        usage: Repo name
+        script_envs:
+          - REPO
+    args:
+      - name: version
+        required: true
+        script_envs:
+          - VERSION
+    script: |
+      REPO=${REPO#https://github.com/}
+      repo=$(bash scripts/get_test_pkg.sh "$REPO")
+
+      gh release view --json assets --jq ".assets[].name" -R "$repo" "$VERSION"

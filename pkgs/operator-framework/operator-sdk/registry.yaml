@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: operator-framework
+    repo_name: operator-sdk
+    description: SDK for building Kubernetes applications. Provides high level APIs, useful abstractions, and project scaffolding
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.6") or Version == "v1.34.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.16.0")
+        asset: operator-sdk-{{.Version}}-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.2.0")
+        asset: operator-sdk-{{.Version}}-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: linux-gnu
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.18.1")
+        asset: operator-sdk_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: operator-sdk_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

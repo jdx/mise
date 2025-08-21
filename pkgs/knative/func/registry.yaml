@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: knative
+    repo_name: func
+    description: Knative Functions client API and CLI
+    format: raw
+    asset: func_{{.OS}}_{{.Arch}}
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_constraint: semverWithVersion(">= 1.7.0", trimPrefix(Version, "knative-")) or semver(">= 0.26.0")
+    # support linux/arm64
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    version_overrides:
+      - version_constraint: semver(">= 0.23.1")
+        # support darwin/arm64
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: semver(">= 0.20.0")
+        # support checksum
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64
+        checksum:
+          type: github_release
+          asset: checksum.txt
+          algorithm: sha256
+      - version_constraint: semver(">= 0.9.0")
+        # rename faas to function
+        asset: func_{{.OS}}_{{.Arch}}.gz
+        overrides:
+          - goos: windows
+            asset: func_{{.OS}}_{{.Arch}}.exe.gz
+        format: gz
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64
+        checksum:
+          enabled: false
+        files:
+          - name: func
+            src: func_{{.OS}}_{{.Arch}}
+      - version_constraint: "true"
+        asset: faas_{{.OS}}_{{.Arch}}.gz
+        overrides:
+          - goos: windows
+            asset: faas_{{.OS}}_{{.Arch}}.exe.gz
+        format: gz
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64
+        checksum:
+          enabled: false
+        files:
+          - name: faas
+            src: faas_{{.OS}}_{{.Arch}}

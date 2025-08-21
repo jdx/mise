@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: suzuki-shunsuke
+    repo_name: renovate-issue-action
+    description: Create, update, and close GitHub Issues with GitHub Actions according to Renovate Pull Requests
+    supported_envs:
+      - darwin
+      - linux
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.1")
+        asset: renovate-issue-action_{{.OS}}_{{.Arch}}.tar.gz
+        checksum:
+          type: github_release
+          asset: renovate-issue-action_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: renovate-issue-action_{{.OS}}_{{.Arch}}.tar.gz
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        checksum:
+          type: github_release
+          asset: renovate-issue-action_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/suzuki-shunsuke/renovate-issue-action/releases/download/{{.Version}}/renovate-issue-action_{{trimV .Version}}_checksums.txt.sig
+              - --certificate
+              - https://github.com/suzuki-shunsuke/renovate-issue-action/releases/download/{{.Version}}/renovate-issue-action_{{trimV .Version}}_checksums.txt.pem

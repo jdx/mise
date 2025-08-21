@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sharkdp
+    repo_name: vivid
+    asset: vivid-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    description: A themeable LS_COLORS generator with a rich filetype datebase
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+      windows: pc-windows-msvc
+    overrides:
+      - goos: linux
+        goarch: arm64
+        replacements:
+          linux: unknown-linux-gnu
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    rosetta2: true
+    files:
+      - name: vivid
+        src: vivid-{{.Version}}-{{.Arch}}-{{.OS}}/vivid
+    version_constraint: semver(">= 0.8.0")
+    version_overrides:
+      - version_constraint: semver("< 0.8.0")
+        overrides: []
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+      - version_constraint: "true"

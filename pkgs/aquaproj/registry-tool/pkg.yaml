@@ -1,0 +1,4 @@
+packages:
+  - name: aquaproj/registry-tool@v0.3.6
+  - name: aquaproj/registry-tool
+    version: v0.1.5

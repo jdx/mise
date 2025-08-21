@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: projectdiscovery
+    repo_name: katana
+    description: A next-generation crawling and spidering framework
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.2")
+        asset: katana_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: katana_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.1.0")
+        asset: katana_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: katana-{{.OS}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            checksum:
+              type: github_release
+              asset: katana-mac-checksums.txt
+              algorithm: sha256
+      - version_constraint: "true"
+        asset: katana_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: katana-{{.OS}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            checksum:
+              type: github_release
+              asset: katana-mac-checksums.txt
+              algorithm: sha256

@@ -1,0 +1,134 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubernetes
+    repo_name: minikube
+    description: Run Kubernetes locally
+    version_filter: not (Version matches "-(alpha|beta|rc)")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.10.0"
+        asset: minikube-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - amd64
+      - version_constraint: Version == "v0.12.1"
+        asset: minikube-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - amd64
+      - version_constraint: Version == "v1.17.1"
+        asset: minikube-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            goarch: arm64
+            checksum:
+              enabled: false
+      - version_constraint: semver("<= 0.6.0")
+        asset: minikube-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.9.0")
+        asset: minikube-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - amd64
+      - version_constraint: semver("<= 0.19.0")
+        asset: minikube-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - amd64
+        overrides:
+          - goos: linux
+            checksum:
+              enabled: false
+      - version_constraint: semver("<= 0.20.0")
+        asset: minikube-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+          file_format: raw
+        supported_envs:
+          - amd64
+        overrides:
+          - goos: linux
+            checksum:
+              enabled: false
+      - version_constraint: semver("<= 0.35.0")
+        asset: minikube-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - amd64
+        overrides:
+          - goos: windows
+            checksum:
+              enabled: false
+      - version_constraint: semver("<= 1.9.2")
+        asset: minikube-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - amd64
+      - version_constraint: semver("<= 1.17.0")
+        asset: minikube-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: minikube-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256

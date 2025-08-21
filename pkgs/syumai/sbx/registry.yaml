@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: syumai
+    repo_name: sbx
+    description: an easy-to-use command-line tool for running commands with macOS sandbox-exec policies using flag-based interface
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.1"
+        no_asset: true
+      - version_constraint: Version == "v0.0.2"
+        asset: sbx_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: sbx_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.0.4")
+        asset: sbx-{{.Arch}}-{{.OS}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sbx_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: sbx-{{.Arch}}-{{.OS}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sbx_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin

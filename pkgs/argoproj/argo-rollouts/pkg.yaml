@@ -1,0 +1,12 @@
+packages:
+  - name: argoproj/argo-rollouts@v1.8.3
+  - name: argoproj/argo-rollouts
+    version: v1.5.1
+  - name: argoproj/argo-rollouts
+    version: v1.3.3
+  - name: argoproj/argo-rollouts
+    version: v1.3.1
+  - name: argoproj/argo-rollouts
+    version: v1.1.1
+  - name: argoproj/argo-rollouts
+    version: v1.0.7

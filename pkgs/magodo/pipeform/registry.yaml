@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: magodo
+    repo_name: pipeform
+    description: Terraform runtime TUI
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version matches "\\b[0-9a-f]{40}\\b"
+        # To keep the compatibility
+        type: go_install
+      - version_constraint: Version == "v0.1.0"
+        asset: pipeform_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: pipeform
+            src: pipeform_{{.Version}}
+        checksum:
+          type: github_release
+          asset: pipeform_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: pipeform_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: pipeform_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256

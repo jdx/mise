@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Piturnah
+    repo_name: gex
+    description: "Git Explorer: cross-platform git workflow improvement tool inspired by Magit"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.5")
+        no_asset: true
+      - version_constraint: "true"
+        asset: gex-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

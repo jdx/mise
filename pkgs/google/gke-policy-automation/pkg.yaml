@@ -1,0 +1,4 @@
+packages:
+  - name: google/gke-policy-automation@v1.4.5
+  - name: google/gke-policy-automation
+    version: v1.3.2

@@ -1,0 +1,2 @@
+packages:
+  - name: psastras/sarif-rs/miri-sarif@miri-sarif-v0.8.0

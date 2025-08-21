@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: goark
+    repo_name: gnkf
+    description: Network Kanji Filter by Golang
+    asset: gnkf_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      amd64: 64bit
+      arm64: ARM64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    checksum:
+      type: github_release
+      asset: gnkf_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.7.5")
+    version_overrides:
+      - version_constraint: Version == "v0.7.4"
+        asset: gnkf_.{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        checksum:
+          enabled: false # checksum file was broken. https://github.com/aquaproj/aqua-registry/pull/10446#issuecomment-1455275091
+      - version_constraint: semver(">= 0.6.0")
+        replacements:
+          amd64: 64bit
+          arm64: ARM64
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+      - version_constraint: semver(">= 0.4.0")
+        overrides:
+          - goos: windows
+            format: zip
+            replacements:
+              arm64: arm64
+        replacements:
+          amd64: 64bit
+          arm64: ARM64
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: semver("< 0.4.0")
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: ARM64
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true

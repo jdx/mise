@@ -1,0 +1,4 @@
+packages:
+  - name: palantir/conjure-typescript@5.11.0
+  - name: palantir/conjure-typescript
+    version: 5.0.0

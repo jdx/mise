@@ -1,0 +1,2 @@
+packages:
+  - name: mitchellh/golicense@v0.2.0

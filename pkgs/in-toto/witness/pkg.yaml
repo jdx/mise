@@ -1,0 +1,8 @@
+packages:
+  - name: in-toto/witness@v0.9.2
+  - name: in-toto/witness
+    version: v0.6.0
+  - name: in-toto/witness
+    version: v0.1.13
+  - name: in-toto/witness
+    version: v0.1.11

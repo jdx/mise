@@ -1,0 +1,4 @@
+packages:
+  - name: harelba/q@v3.1.6
+  - name: harelba/q
+    version: 2.0.19

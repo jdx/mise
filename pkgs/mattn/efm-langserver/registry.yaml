@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mattn
+    repo_name: efm-langserver
+    asset: efm-langserver_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    description: General purpose Language Server
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: efm-langserver
+        src: efm-langserver_{{.Version}}_{{.OS}}_{{.Arch}}/efm-langserver
+    version_constraint: semver("!= 0.0.45")
+    version_overrides:
+      - version_constraint: semver("= 0.0.45")
+        no_asset: true

@@ -1,0 +1,6 @@
+packages:
+  - name: cbroglie/mustache@v1.4.0
+  - name: cbroglie/mustache
+    version: v1.3.1
+  - name: cbroglie/mustache
+    version: v1.0.1

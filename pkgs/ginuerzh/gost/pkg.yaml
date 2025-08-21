@@ -1,0 +1,22 @@
+packages:
+  - name: ginuerzh/gost@v2.12.0
+  - name: ginuerzh/gost
+    version: v2.11.5
+  - name: ginuerzh/gost
+    version: v2.11.2
+  - name: ginuerzh/gost
+    version: v2.11.1
+  - name: ginuerzh/gost
+    version: v2.8.1
+  - name: ginuerzh/gost
+    version: v2.4-dev
+  - name: ginuerzh/gost
+    version: v2.3
+  - name: ginuerzh/gost
+    version: v2.2
+  - name: ginuerzh/gost
+    version: "2.1"
+  - name: ginuerzh/gost
+    version: "2.0"
+  - name: ginuerzh/gost
+    version: "1.0"

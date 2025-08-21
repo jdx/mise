@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: owenrumney
+    repo_name: squealer
+    description: Telling tales on you for leaking secrets
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.1.20", "v1.2.3", "v1.2.7"]
+        no_asset: true
+      - version_constraint: semver("<= 0.2.19")
+        asset: squealer.{{.OS}}.{{.Arch}}.{{.Version}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.2.22")
+        no_asset: true
+      - version_constraint: semver("<= 0.2.28")
+        asset: squealer.{{.OS}}.{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: squealer_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.3.0")
+        no_asset: true
+      - version_constraint: semver("<= 1.0.0")
+        asset: squealer.{{.OS}}.{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: squealer_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: squealer.{{.OS}}.{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: squealer_checksums.txt
+          algorithm: sha256

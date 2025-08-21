@@ -1,0 +1,12 @@
+packages:
+  - name: nvarner/typst-lsp@v0.13.0
+  - name: nvarner/typst-lsp
+    version: v0.10.1
+  - name: nvarner/typst-lsp
+    version: v0.8.1
+  - name: nvarner/typst-lsp
+    version: v0.7.2
+  - name: nvarner/typst-lsp
+    version: v0.5.1
+  - name: nvarner/typst-lsp
+    version: v0.4.1

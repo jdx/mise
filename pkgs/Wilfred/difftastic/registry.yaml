@@ -1,0 +1,168 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Wilfred
+    repo_name: difftastic
+    description: a structural diff that understands syntax
+    files:
+      - name: difft
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.51.0"
+        no_asset: true
+      - version_constraint: Version == "0.36.0"
+        asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: difft
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "0.51.1"
+        asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: difft
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "0.52.0"
+        asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: difft
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "0.53.0"
+        asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: difft
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "0.56.0"
+        asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: difft
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.26.2")
+        asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: difft
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.50.0")
+        asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: difft
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.62.0")
+        asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: difft
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: difft-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: difft
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip

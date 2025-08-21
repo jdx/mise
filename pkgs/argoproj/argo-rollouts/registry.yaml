@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: argoproj
+    repo_name: argo-rollouts
+    description: Progressive Delivery for Kubernetes
+    files:
+      - name: kubectl-argo-rollouts
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.5.0")
+        no_asset: true
+      - version_constraint: semver("<= 1.0.7")
+        asset: kubectl-argo-rollouts-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.1.1")
+        asset: kubectl-argo-rollouts-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.3.1")
+        asset: kubectl-argo-rollouts-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+      - version_constraint: semver("<= 1.3.3")
+        asset: kubectl-argo-rollouts-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        checksum:
+          type: github_release
+          asset: argo-rollouts-checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.5.1")
+        asset: kubectl-argo-rollouts-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        checksum:
+          type: github_release
+          asset: argo-rollouts-checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: kubectl-argo-rollouts-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        checksum:
+          type: github_release
+          asset: argo-rollouts-checksums.txt
+          algorithm: sha256
+        slsa_provenance:
+          type: github_release
+          asset: argo-rollouts.intoto.jsonl

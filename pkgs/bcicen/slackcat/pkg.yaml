@@ -1,0 +1,6 @@
+packages:
+  - name: bcicen/slackcat@1.7.3
+  - name: bcicen/slackcat
+    version: v1.6
+  - name: bcicen/slackcat
+    version: v1.0

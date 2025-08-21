@@ -1,0 +1,2 @@
+packages:
+  - name: ipinfo/cli/randip@randip-1.1.0

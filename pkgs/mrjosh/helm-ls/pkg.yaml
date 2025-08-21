@@ -1,0 +1,6 @@
+packages:
+  - name: mrjosh/helm-ls@v0.5.0
+  - name: mrjosh/helm-ls
+    version: v0.0.5
+  - name: mrjosh/helm-ls
+    version: v0.0.3

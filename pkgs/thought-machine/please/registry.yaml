@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: thought-machine
+    repo_name: please
+    description: High-performance extensible build system for reproducible multi-language builds
+    supported_envs:
+      - darwin
+      - linux/amd64
+    asset: please_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    files:
+      - name: please
+        src: please/please
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256

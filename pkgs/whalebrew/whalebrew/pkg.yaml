@@ -1,0 +1,10 @@
+packages:
+  - name: whalebrew/whalebrew@0.5.0
+  - name: whalebrew/whalebrew
+    version: 0.3.1
+  - name: whalebrew/whalebrew
+    version: 0.2.5
+  - name: whalebrew/whalebrew
+    version: 0.2.4
+  - name: whalebrew/whalebrew
+    version: 0.1.0

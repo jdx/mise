@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mattn
+    repo_name: twty
+    asset: twty_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    description: command-line twitter client written in golang
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: twty
+        src: twty_{{.Version}}_{{.OS}}_{{.Arch}}/twty
+    version_constraint: semver(">= 0.0.13")
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64

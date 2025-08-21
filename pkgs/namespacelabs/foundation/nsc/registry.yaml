@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: namespacelabs/foundation/nsc
+    type: github_release
+    repo_owner: namespacelabs
+    repo_name: foundation
+    description: Open-source Kubernetes application platform that powers Namespace's developer-optimized compute platform
+    files:
+      - name: nsc
+      - name: docker-credential-nsc
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.158")
+        no_asset: true
+      - version_constraint: semver("<= 0.0.195")
+        asset: nsc_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: nsc
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: nsc_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: getporter/porter/porter
+    type: github_release
+    repo_owner: getporter
+    repo_name: porter
+    description: Porter enables you to package your application artifact, client tools, configuration and deployment logic together as an installer that you can distribute, and install with a single command
+    asset: porter-{{.OS}}-{{.Arch}}
+    format: raw
+    complete_windows_ext: true
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.0")
+        no_asset: true
+      - version_constraint: "true"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256

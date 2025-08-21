@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bjesus
+    repo_name: pipet
+    description: a swiss-army tool for scraping and extracting data from online assets, made for hackers
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: pipet-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: pipet
+            src: pipet-{{.OS}}-{{.Arch}}
+        overrides:
+          - goos: windows
+            format: zip

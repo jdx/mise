@@ -1,0 +1,4 @@
+packages:
+  - name: pulumi/kubespy@v0.6.3
+  - name: pulumi/kubespy
+    version: v0.6.0

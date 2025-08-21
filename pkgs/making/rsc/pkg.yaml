@@ -1,0 +1,4 @@
+packages:
+  - name: making/rsc@0.9.1
+  - name: making/rsc
+    version: 0.5.0

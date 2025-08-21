@@ -1,0 +1,4 @@
+packages:
+  - name: cnosuke/kushi@v0.7.0
+  - name: cnosuke/kushi
+    version: v0.6.1

@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: wfxr
+    repo_name: csview
+    description: Pretty and fast csv viewer for cli with cjk/emoji support
+    asset: csview-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: linux
+        goarch: amd64
+        replacements:
+          linux: unknown-linux-musl
+      - goos: linux
+        goarch: arm64
+        replacements:
+          arm64: aarch64
+          linux: unknown-linux-gnu
+      - goos: windows
+        format: zip
+    files:
+      - name: csview
+        src: csview-{{.Version}}-{{.Arch}}-{{.OS}}/csview
+    replacements:
+      amd64: x86_64
+      darwin: apple-darwin
+      windows: pc-windows-msvc
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    rosetta2: true

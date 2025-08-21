@@ -1,0 +1,4 @@
+packages:
+  - name: pfnet-research/git-ghost@v0.1.5
+  - name: pfnet-research/git-ghost
+    version: v0.1.4

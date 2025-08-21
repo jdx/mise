@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sharkdp
+    repo_name: hyperfine
+    description: A command-line benchmarking tool
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: hyperfine-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+      - goos: linux
+        goarch: arm64
+        replacements:
+          linux: unknown-linux-gnu
+    rosetta2: true
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+      windows: pc-windows-msvc
+      386: i686
+    files:
+      - name: hyperfine
+        src: hyperfine-{{.Version}}-{{.Arch}}-{{.OS}}/hyperfine

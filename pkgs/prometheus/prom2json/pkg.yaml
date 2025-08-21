@@ -1,0 +1,4 @@
+packages:
+  - name: prometheus/prom2json@v1.4.2
+  - name: prometheus/prom2json
+    version: v1.3.0

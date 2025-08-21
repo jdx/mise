@@ -1,0 +1,4 @@
+packages:
+  - name: sharkdp/vivid@v0.10.1
+  - name: sharkdp/vivid
+    version: v0.7.0

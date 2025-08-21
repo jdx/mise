@@ -1,0 +1,4 @@
+packages:
+  - name: authzed/zed@v0.30.2
+  - name: authzed/zed
+    version: v0.3.0

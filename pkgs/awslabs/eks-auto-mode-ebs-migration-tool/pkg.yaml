@@ -1,0 +1,2 @@
+packages:
+  - name: awslabs/eks-auto-mode-ebs-migration-tool@v0.4.0

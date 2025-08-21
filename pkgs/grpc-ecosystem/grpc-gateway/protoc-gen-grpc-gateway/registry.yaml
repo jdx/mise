@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway
+    type: github_release
+    repo_owner: grpc-ecosystem
+    repo_name: grpc-gateway
+    description: Generate golang code to reverse proxy Protocol Buffer definitions to RESTful HTTP/1
+    version_constraint: "false"
+    version_overrides:
+      # v2.14.0 SLSA provenance https://github.com/aquaproj/aqua-registry/pull/31943#issuecomment-2649535381
+      - version_constraint: semver("<= 2.13.0")
+        asset: protoc-gen-grpc-gateway-{{.Version}}-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - windows
+          - darwin
+          - linux/amd64
+        rosetta2: true
+        format: raw
+        replacements:
+          amd64: x86_64
+        files:
+          - name: protoc-gen-grpc-gateway
+        checksum:
+          type: github_release
+          asset: grpc-gateway_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: protoc-gen-grpc-gateway-{{.Version}}-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - windows
+          - darwin
+          - linux/amd64
+        rosetta2: true
+        format: raw
+        replacements:
+          amd64: x86_64
+        files:
+          - name: protoc-gen-grpc-gateway
+        checksum:
+          type: github_release
+          asset: grpc-gateway_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl

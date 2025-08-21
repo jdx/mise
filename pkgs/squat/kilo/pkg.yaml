@@ -1,0 +1,4 @@
+packages:
+  - name: squat/kilo@0.6.0
+  - name: squat/kilo
+    version: 0.2.0

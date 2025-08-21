@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mercari
+    repo_name: tfnotify
+    description: A CLI command to parse Terraform execution result and notify it to GitHub
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - linux/amd64
+    asset: tfnotify_{{.OS}}_{{.Arch}}.tar.gz
+    checksum:
+      type: github_release
+      asset: tfnotify_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

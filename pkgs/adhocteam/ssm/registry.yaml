@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: adhocteam
+    repo_name: ssm
+    description: AWS SSM Paramater Store CLI
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.3.0"
+        no_asset: true
+      - version_constraint: semver("<= 1.1.0")
+        asset: ssm-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha"
+          algorithm: sha256
+      - version_constraint: semver("<= 1.4.2")
+        asset: ssm-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+        # linux/amd64 doesn't match hash
+        overrides:
+          - goos: linux
+            goarch: amd64
+            checksum:
+              enabled: false
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha"
+          algorithm: sha256
+      - version_constraint: semver("<= 1.5.1")
+        asset: ssm-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin
+        # darwin/arm64 doesn't match hash
+        # https://github.com/adhocteam/ssm/pull/41
+        overrides:
+          - goos: darwin
+            goarch: arm64
+            checksum:
+              enabled: false
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha"
+          algorithm: sha256
+      - version_constraint: "true"
+        # https://github.com/adhocteam/ssm/pull/41
+        asset: ssm-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha"
+          algorithm: sha256

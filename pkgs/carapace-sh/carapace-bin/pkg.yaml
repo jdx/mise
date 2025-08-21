@@ -1,0 +1,20 @@
+packages:
+  - name: carapace-sh/carapace-bin@v1.4.1
+  - name: carapace-sh/carapace-bin
+    version: v1.0.7
+  - name: carapace-sh/carapace-bin
+    version: v0.22.0
+  - name: carapace-sh/carapace-bin
+    version: v0.18.1
+  - name: carapace-sh/carapace-bin
+    version: v0.6.3
+  - name: carapace-sh/carapace-bin
+    version: v0.5.1
+  - name: carapace-sh/carapace-bin
+    version: v0.4.11
+  - name: carapace-sh/carapace-bin
+    version: v0.4.9
+  - name: carapace-sh/carapace-bin
+    version: v0.1.12
+  - name: carapace-sh/carapace-bin
+    version: v0.1.1

@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: compose
+    repo_name: transporter
+    description: Sync data between persistence engines, like ETL only not stodgy
+    format: raw
+    complete_windows_ext: false
+    asset: transporter-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+    supported_envs:
+      - darwin
+      - amd64

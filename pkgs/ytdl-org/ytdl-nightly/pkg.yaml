@@ -1,0 +1,4 @@
+packages:
+  - name: ytdl-org/ytdl-nightly@2025.05.05
+  - name: ytdl-org/ytdl-nightly
+    version: 2024.03.28

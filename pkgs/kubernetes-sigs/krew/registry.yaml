@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubernetes-sigs
+    repo_name: krew
+    asset: krew-{{.OS}}_{{.Arch}}.tar.gz
+    description: Find and install kubectl plugins
+    files:
+      - name: krew
+        src: krew-{{.OS}}_{{.Arch}}
+    version_constraint: semver(">= 0.4.2")
+    version_overrides:
+      - version_constraint: "true"
+        asset: krew.tar.gz
+        files:
+          - name: krew
+            src: krew-{{.OS}}_{{.Arch}}
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256

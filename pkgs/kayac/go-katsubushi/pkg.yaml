@@ -1,0 +1,8 @@
+packages:
+  - name: kayac/go-katsubushi@v2.2.1
+  - name: kayac/go-katsubushi
+    version: 1.6.1
+  - name: kayac/go-katsubushi
+    version: v0.1.0
+  - name: kayac/go-katsubushi
+    version: v0.0.1

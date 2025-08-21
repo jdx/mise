@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: noperator
+    repo_name: jqfmt
+    description: like gofmt, but for jq
+    path: github.com/noperator/jqfmt/cmd/jqfmt

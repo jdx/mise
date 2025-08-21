@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubecfg
+    repo_name: kubecfg
+    description: A tool for managing complex enterprise Kubernetes environments as code
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.34.3")
+        asset: kubecfg_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: X64
+          darwin: macOS
+          linux: Linux
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: kubecfg_{{.OS}}_{{.Arch}}
+        format: raw
+        replacements:
+          darwin: macOS
+          linux: Linux
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: X64
+          - goos: darwin
+            replacements:
+              arm64: ARM64
+        supported_envs:
+          - linux/amd64
+          - darwin/arm64

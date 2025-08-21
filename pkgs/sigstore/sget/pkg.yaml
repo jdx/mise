@@ -1,0 +1,3 @@
+packages:
+  - name: sigstore/sget
+    version: d625ec53ce53d8654ab9d61ba00f6c2d05726e7a

@@ -1,0 +1,4 @@
+packages:
+  - name: comtrya/comtrya@v0.9.2
+  - name: comtrya/comtrya
+    version: v0.3.16

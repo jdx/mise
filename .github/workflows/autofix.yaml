@@ -1,0 +1,36 @@
+---
+name: autofix.ci
+on: pull_request
+permissions: {}
+jobs:
+  autofix:
+    runs-on: ubuntu-24.04
+    permissions: {}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: echo "AQUA_GLOBAL_CONFIG=${AQUA_GLOBAL_CONFIG:-}:${PWD}/aqua-all.yaml" >> "$GITHUB_ENV"
+      - uses: aquaproj/aqua-installer@d1fe50798dbadd4eb5b98957290ca175f6b4870f # v4.0.2
+        with:
+          aqua_version: v2.53.9
+          aqua_opts: -l -a
+          policy_allow: "true"
+
+      - name: Fix newlines
+        run: git ls-files | xargs nllint -f -s
+
+      - name: Configure NPM_CONFIG_PREFIX
+        run: echo NPM_CONFIG_PREFIX="$HOME/npm-global" >> "$GITHUB_ENV"
+      - run: echo "$NPM_CONFIG_PREFIX/bin" >> "$GITHUB_PATH"
+      - name: Install prettier
+        run: npm i -g prettier
+      - name: Format code by prettier
+        run: prettier -w .
+
+      - name: Fix registry.yaml
+        run: cmdx gr
+
+      - uses: autofix-ci/action@635ffb0c9798bd160680f18fd73371e355b85f27 # v1.3.2

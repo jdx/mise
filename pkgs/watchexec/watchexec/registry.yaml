@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: watchexec
+    repo_name: watchexec
+    description: Executes commands in response to file modifications
+    asset: watchexec-{{trimV .SemVer}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    format: tar.xz
+    replacements:
+      windows: pc-windows-msvc
+      darwin: apple-darwin
+      amd64: x86_64
+      arm64: aarch64
+      linux: unknown-linux-musl
+    overrides:
+      - goos: windows
+        format: zip
+      - goarch: arm64
+        replacements:
+          linux: unknown-linux-gnu
+    files:
+      - name: watchexec
+        src: watchexec-{{trimV .SemVer}}-{{.Arch}}-{{.OS}}/watchexec
+    checksum:
+      type: github_release
+      asset: SHA512SUMS
+      algorithm: sha512
+    version_constraint: semver(">= 1.21.1")
+    version_overrides:
+      - version_constraint: semver(">= 1.21.0")
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 1.20.6")
+        rosetta2: true
+      - version_constraint: semver(">= 1.18.0")
+        version_prefix: cli-
+      - version_constraint: semver("< 1.18.0")
+        version_prefix: cli-
+        rosetta2: true

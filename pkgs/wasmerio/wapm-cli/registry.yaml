@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: wasmerio
+    repo_name: wapm-cli
+    asset: wapm-cli-{{.OS}}-{{.Arch}}.tar.gz
+    description: WebAssembly Package Manager (CLI)
+    replacements:
+      arm64: aarch64
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: wapm
+        src: bin/wapm
+      - name: wax
+        src: bin/wax
+    overrides:
+      - goos: windows
+        files:
+          - name: wapm
+            src: bin/wapm.exe
+          - name: wax
+            src: bin/wax.cmd

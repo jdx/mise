@@ -1,0 +1,2 @@
+packages:
+  - name: bytecodealliance/wrpc/wit-bindgen-wrpc@v0.15.0

@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jckuester
+    repo_name: terradozer
+    description: Terraform destroy without configuration files
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    asset: terradozer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: terradozer
+        src: terradozer_{{trimV .Version}}_{{.OS}}_{{.Arch}}/terradozer
+    checksum:
+      type: github_release
+      asset: terradozer_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

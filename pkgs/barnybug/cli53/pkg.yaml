@@ -1,0 +1,10 @@
+packages:
+  - name: barnybug/cli53@v0.8.25
+  - name: barnybug/cli53
+    version: 0.8.23
+  - name: barnybug/cli53
+    version: 0.8.19
+  - name: barnybug/cli53
+    version: 0.8.10
+  - name: barnybug/cli53
+    version: 0.7.2

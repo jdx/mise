@@ -1,0 +1,9 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/aqua-generate-registry.json
+# aqua - Declarative CLI Version Manager
+# https://aquaproj.github.io/
+# Other than name is optional. All initial values are just examples.
+name: project-zot/zot
+version_filter: Version matches "^v[0-9]+.[0-9]+.[0-9]+$"
+# version_prefix: cli-
+all_assets_filter: (Asset matches "checksum") or ((Asset matches "^zot") and (not (Asset matches "-(debug|exporter|minimal)$")))

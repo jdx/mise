@@ -1,0 +1,74 @@
+name: Add a New Package
+description: Request to add a new package to the registry
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # :warning: Note
+
+        - [You don't need to create an issue before sending a pull request to add a new package](https://aquaproj.github.io/docs/products/aqua-registry/contributing#should-you-create-an-issue-before-sending-a-pull-request)
+        - [aqua doesn't support building packages from source except for `go install`, `go build`, and `cargo install`.](https://aquaproj.github.io/docs/reference/restriction/#aqua-doesnt-support-running-any-external-commands-to-install-tools)
+        - aqua doesn't install dependencies.
+        - aqua doesn't support running scripts while installing tools.
+        - aqua doesn't support setting environment variables and shell completions while installing tools.
+  - type: textarea
+    id: source-url
+    attributes:
+      label: Source URL
+      description: GitHub Repository, GitLab Repository, etc. If this tool is not open source, please fill in `Not Open Source`.
+    validations:
+      required: true
+  - type: textarea
+    id: homepage-url
+    attributes:
+      label: Homepage URL
+      description: The website of the tool
+    validations:
+      required: false
+  - type: textarea
+    id: command-names
+    attributes:
+      label: Command names
+    validations:
+      required: true
+  - type: textarea
+    id: how-to-confirm
+    attributes:
+      label: How to confirm after installation
+      value: |
+        > e.g. `gh version`
+
+        ```sh
+
+        ```
+    validations:
+      required: true
+  - type: textarea
+    id: how-to-install
+    attributes:
+      label: How to install
+      value: |
+        [aqua supports several install ways](https://aquaproj.github.io/docs/reference/registry-config/#package-types).
+
+        > e.g. https://suzuki-shunsuke.github.io/tfcmt/install
+
+        The tool's official installation guide: 
+
+        - [ ] Download pre-built binaries
+          - [ ] GitHub Releases
+          - [ ] Files in the GitHub repository
+          - [ ] URL: 
+        - [ ] Build from source
+          - [ ] go install: `go install `
+          - [ ] go build: `go build `
+          - [ ] cargo install `cargo install `
+    validations:
+      required: true
+  - type: textarea
+    id: note
+    attributes:
+      label: Note
+    validations:
+      required: false
