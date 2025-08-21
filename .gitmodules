@@ -1,3 +1,0 @@
-[submodule "test/plugins/vfox-npm"]
-	path = test/plugins/vfox-npm
-	url = https://github.com/jdx/vfox-npm.git
