@@ -89,7 +89,7 @@ mise env --redacted --values
 ```
 
 :::danger
-**Security Warning**: The `--redacted` and `--values` flags will display decrypted secrets in plain text. Use these flags carefully and never in contexts where output might be logged or exposed.
+mise, or other tools, may log secrets in CI systems. You'll want to configure your CI system to redact/mask these values.
 
 ### GitHub Actions Integration
 
