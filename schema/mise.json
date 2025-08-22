@@ -246,7 +246,7 @@
           "properties": {
             "baked_registry": {
               "default": true,
-              "description": "Use baked-in aqua registry (if compiled in).",
+              "description": "Use baked-in aqua registry.",
               "type": "boolean"
             },
             "cosign": {
