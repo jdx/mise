@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.8.20](https://github.com/jdx/mise/compare/v2025.8.19..v2025.8.20) - 2025-08-22
+
+### 🐛 Bug Fixes
+
+- use fish_add_path when activating mise for fish shell by [@roele](https://github.com/roele) in [#6074](https://github.com/jdx/mise/pull/6074)
+
 ## [2025.8.19](https://github.com/jdx/mise/compare/v2025.8.18..v2025.8.19) - 2025-08-22
 
 ### 📦 Registry
