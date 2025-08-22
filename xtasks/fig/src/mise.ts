@@ -915,6 +915,11 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--redacted",
+          description: "Only show redacted environment variables",
+          isRepeatable: false,
+        },
+        {
           name: ["-s", "--shell"],
           description: "Shell type to generate environment variables for",
           isRepeatable: false,
@@ -930,6 +935,11 @@ const completionSpec: Fig.Spec = {
               "pwsh",
             ],
           },
+        },
+        {
+          name: "--values",
+          description: "Only show values of environment variables",
+          isRepeatable: false,
         },
       ],
       args: {
