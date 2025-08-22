@@ -153,7 +153,7 @@ impl Env {
             });
 
         if let Some(keys) = redacted_keys {
-            res.retain(|k, _| keys.contains(k));
+            res.retain(|k, _| self.should_include_key(k, keys));
         }
 
         miseprintln!("{}", serde_json::to_string_pretty(&res)?);
