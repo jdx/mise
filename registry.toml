@@ -1886,7 +1886,7 @@ kubeconform.backends = [
 ]
 kubectl.description = "kubectl cli"
 kubectl.backends = [
-    "aqua:kubernetes/kubectl",
+    "aqua:kubernetes/kubernetes/kubectl",
     "asdf:asdf-community/asdf-kubectl"
 ]
 kubectl-convert.description = "A plugin for Kubernetes command-line tool kubectl, which allows you to convert manifests between different API versions. This can be particularly helpful to migrate manifests to a non-deprecated api version with newer Kubernetes release"
