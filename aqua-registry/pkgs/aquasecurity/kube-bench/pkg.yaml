@@ -1,5 +1,5 @@
 packages:
-  - name: aquasecurity/kube-bench@v0.11.2
+  - name: aquasecurity/kube-bench@v0.12.0
   - name: aquasecurity/kube-bench
     version: v0.6.13-rc2
   - name: aquasecurity/kube-bench

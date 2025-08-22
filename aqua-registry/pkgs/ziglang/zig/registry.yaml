@@ -16,7 +16,6 @@ packages:
           public_key: "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U"
         replacements:
           darwin: macos
-          386: i386
           arm64: aarch64
           amd64: x86_64
         files:
@@ -34,7 +33,6 @@ packages:
           public_key: "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U"
         replacements:
           darwin: macos
-          386: i386
           arm64: aarch64
           amd64: x86_64
         files:
@@ -52,7 +50,6 @@ packages:
           public_key: "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U"
         replacements:
           darwin: macos
-          386: i386
           arm64: aarch64
           amd64: x86_64
         files:

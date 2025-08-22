@@ -1,6 +1,16 @@
 # Changelog
 
+## [2025.8.18](https://github.com/jdx/mise/compare/v2025.8.17..v2025.8.18) - 2025-08-22
+
+### 🚀 Features
+
+- **(env)** add --redacted and --values flags to env command by [@jdx](https://github.com/jdx) in [#6103](https://github.com/jdx/mise/pull/6103)
+
 ## [2025.8.17](https://github.com/jdx/mise/compare/v2025.8.16..v2025.8.17) - 2025-08-22
+
+### 📦 Registry
+
+- remove asdf plugin for zoxide by [@risu729](https://github.com/risu729) in [#6100](https://github.com/jdx/mise/pull/6100)
 
 ### 🐛 Bug Fixes
 
