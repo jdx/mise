@@ -43,6 +43,7 @@ mise run render ::: lint-fix
 
 rm -rf aqua-registry
 git clone https://github.com/aquaproj/aqua-registry
+rm aqua-registry/.gitattributes
 
 mise up
 git status
