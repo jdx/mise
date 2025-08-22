@@ -1,5 +1,5 @@
 packages:
-  - name: jenkins-x/jx@v3.16.19
+  - name: jenkins-x/jx@v3.16.21
   - name: jenkins-x/jx
     version: v3.10.182
   - name: jenkins-x/jx
