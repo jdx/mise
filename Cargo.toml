@@ -188,6 +188,7 @@ cfg_aliases = "0.2"
 heck = "0.5"
 toml = "0.8"
 indexmap = "2"
+serde_yaml = "0.9"
 
 [dev-dependencies]
 ctor = "0.4"
