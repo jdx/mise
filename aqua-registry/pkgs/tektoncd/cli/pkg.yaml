@@ -1,5 +1,5 @@
 packages:
-  - name: tektoncd/cli@v0.41.1
+  - name: tektoncd/cli@v0.42.0
   - name: tektoncd/cli
     version: v0.34.0
   - name: tektoncd/cli

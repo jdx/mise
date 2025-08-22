@@ -1,2 +1,2 @@
 packages:
-  - name: digitalocean/doctl@v1.139.0
+  - name: digitalocean/doctl@v1.141.0

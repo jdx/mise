@@ -1,5 +1,5 @@
 packages:
-  - name: bytecodealliance/wasmtime@v36.0.0
+  - name: bytecodealliance/wasmtime@v36.0.1
   - name: bytecodealliance/wasmtime
     version: v27.0.0
   - name: bytecodealliance/wasmtime

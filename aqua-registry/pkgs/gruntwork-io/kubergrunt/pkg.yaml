@@ -1,5 +1,5 @@
 packages:
-  - name: gruntwork-io/kubergrunt@v0.18.1
+  - name: gruntwork-io/kubergrunt@v0.18.2
   - name: gruntwork-io/kubergrunt
     version: v0.6.12
   - name: gruntwork-io/kubergrunt

@@ -1,4 +1,4 @@
 packages:
-  - name: cloudfoundry/credhub-cli@2.9.48
+  - name: cloudfoundry/credhub-cli@2.9.49
   - name: cloudfoundry/credhub-cli
     version: 0.1.0

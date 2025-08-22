@@ -1,5 +1,5 @@
 packages:
-  - name: hexdigest/gowrap@v1.4.2
+  - name: hexdigest/gowrap@v1.4.3
   - name: hexdigest/gowrap
     version: v1.3.2
   - name: hexdigest/gowrap

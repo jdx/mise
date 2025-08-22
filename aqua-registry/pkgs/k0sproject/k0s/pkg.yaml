@@ -1,5 +1,5 @@
 packages:
-  - name: k0sproject/k0s@v1.33.3+k0s.0
+  - name: k0sproject/k0s@v1.33.4+k0s.0
   - name: k0sproject/k0s
     version: v1.31.7+k0s.0
   - name: k0sproject/k0s

@@ -1,10 +1,36 @@
 # Changelog
 
+## [2025.8.17](https://github.com/jdx/mise/compare/v2025.8.16..v2025.8.17) - 2025-08-22
+
+### 🐛 Bug Fixes
+
+- **(aqua)** remove mise-versions aqua registry by [@risu729](https://github.com/risu729) in [#6097](https://github.com/jdx/mise/pull/6097)
+
+### 📚 Documentation
+
+- fix invalid configuration by [@kamontat](https://github.com/kamontat) in [#6088](https://github.com/jdx/mise/pull/6088)
+
+### 📦️ Dependency Updates
+
+- update apple-actions/import-codesign-certs digest to 95e84a1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#6093](https://github.com/jdx/mise/pull/6093)
+- update taiki-e/install-action digest to 36fe651 by [@renovate[bot]](https://github.com/renovate[bot]) in [#6094](https://github.com/jdx/mise/pull/6094)
+
+### Chore
+
+- remove submodules option for actions/checkout by [@risu729](https://github.com/risu729) in [#6090](https://github.com/jdx/mise/pull/6090)
+- exclude aqua-registry from linguist stats by [@risu729](https://github.com/risu729) in [#6098](https://github.com/jdx/mise/pull/6098)
+
+### New Contributors
+
+- @kamontat made their first contribution in [#6088](https://github.com/jdx/mise/pull/6088)
+
 ## [2025.8.16](https://github.com/jdx/mise/compare/v2025.8.15..v2025.8.16) - 2025-08-21
 
 ### Chore
 
 - **(aqua-registry)** replace subtree logic with simpler `git clone` method by [@jdx](https://github.com/jdx) in [dd4947c](https://github.com/jdx/mise/commit/dd4947c49591ef3c0ac8372465bbfd1cde4ca946)
+- remove vfox-npm submodule by [@jdx](https://github.com/jdx) in [c22f95b](https://github.com/jdx/mise/commit/c22f95b4c30a4415ee08830e17fa8bd5a7a59eb7)
+- add vfox-npm by [@jdx](https://github.com/jdx) in [78c0972](https://github.com/jdx/mise/commit/78c0972a690eaf86eb6f5bbf2eabbe8a247890ea)
 
 ## [2025.8.15](https://github.com/jdx/mise/compare/v2025.8.14..v2025.8.15) - 2025-08-21
 
