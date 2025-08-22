@@ -1,2 +1,2 @@
 packages:
-  - name: crates.io/cargo-deb@3.5.1
+  - name: crates.io/cargo-deb@3.6.0

@@ -1,5 +1,16 @@
 # Changelog
 
+## [2025.8.19](https://github.com/jdx/mise/compare/v2025.8.18..v2025.8.19) - 2025-08-22
+
+### 📦 Registry
+
+- update kubectl aqua alias by [@malept](https://github.com/malept) in [#6107](https://github.com/jdx/mise/pull/6107)
+- remove asdf plugin for watchexec by [@risu729](https://github.com/risu729) in [#6106](https://github.com/jdx/mise/pull/6106)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** bake in aliased registries by [@risu729](https://github.com/risu729) in [#6105](https://github.com/jdx/mise/pull/6105)
+
 ## [2025.8.18](https://github.com/jdx/mise/compare/v2025.8.17..v2025.8.18) - 2025-08-22
 
 ### 🚀 Features

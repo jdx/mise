@@ -15,7 +15,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: asdf-vm/actions/setup@1902764435ca0dd2f3388eea723a4f92a4eb8302 # v4.0.0
-      - uses: jdx/mise-action@c0b8518a9f5e56c720e9545c993b77ff15dc7b27 # v3.0.2
+      - uses: jdx/mise-action@ca0c5fc9c8a8386dae8ba5d37608a083a307991c # v3.1.0
       - run: |
           set -euo pipefail
           n=$(find pkgs -name registry.yaml | wc -l)

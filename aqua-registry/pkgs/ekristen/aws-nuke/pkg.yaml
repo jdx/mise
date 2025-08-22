@@ -1,5 +1,5 @@
 packages:
-  - name: ekristen/aws-nuke@v3.56.2
+  - name: ekristen/aws-nuke@v3.56.4
   - name: ekristen/aws-nuke
     version: v3.0.0-beta.7
   - name: ekristen/aws-nuke
