@@ -338,23 +338,39 @@ fn ls(path: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
         .collect()
 }
 
-fn aqua_registries(d: &Path) -> Result<Vec<(String, String)>, std::io::Error> {
+fn aqua_registries(d: &Path) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
     let mut registries = vec![];
     for f in ls(d)? {
         if f.is_dir() {
             registries.extend(aqua_registries(&f)?);
         } else if f.file_name() == Some("registry.yaml".as_ref()) {
+            let registry_yaml = fs::read_to_string(&f)?;
             registries.push((
                 f.parent()
                     .unwrap()
                     .strip_prefix(registry_dir())
                     .unwrap()
-                    .to_string_lossy()
-                    .split(std::path::MAIN_SEPARATOR_STR)
+                    .iter()
+                    .map(|s| s.to_string_lossy().into_owned())
                     .collect::<Vec<_>>()
                     .join("/"),
-                fs::read_to_string(&f).unwrap(),
+                registry_yaml.clone(),
             ));
+            if registry_yaml.contains("aliases") {
+                let registry: serde_yaml::Value = serde_yaml::from_str(&registry_yaml)?;
+                if let Some(packages) = registry.get("packages").and_then(|p| p.as_sequence()) {
+                    for package in packages {
+                        if let Some(aliases) = package.get("aliases").and_then(|a| a.as_sequence())
+                        {
+                            for alias in aliases {
+                                if let Some(name) = alias.get("name").and_then(|n| n.as_str()) {
+                                    registries.push((name.to_string(), registry_yaml.clone()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     Ok(registries)
