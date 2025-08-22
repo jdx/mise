@@ -1,26 +1,22 @@
 use crate::backend::aqua;
 use crate::backend::aqua::{arch, os};
-use crate::duration::{DAILY, WEEKLY};
+use crate::duration::WEEKLY;
 use crate::env;
 use crate::git::{CloneOptions, Git};
 use crate::semver::split_version_prefix;
 use crate::{aqua::aqua_template, config::Settings};
-use crate::{dirs, file, hashmap, http};
+use crate::{dirs, file, hashmap};
 use expr::{Context, Program, Value};
-use eyre::{ContextCompat, Result, eyre};
+use eyre::{ContextCompat, Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use serde_derive::Deserialize;
+use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
 use std::sync::LazyLock;
-use std::{
-    cmp::PartialEq,
-    sync::atomic::{AtomicBool, Ordering},
-};
 use tokio::sync::Mutex;
-use url::Url;
 
 #[allow(clippy::invisible_characters)]
 pub static AQUA_STANDARD_REGISTRY_FILES: Lazy<HashMap<&'static str, &'static str>> =
@@ -33,6 +29,7 @@ pub static AQUA_REGISTRY: Lazy<AquaRegistry> = Lazy::new(|| {
     })
 });
 static AQUA_REGISTRY_PATH: Lazy<PathBuf> = Lazy::new(|| dirs::CACHE.join("aqua-registry"));
+static AQUA_DEFAULT_REGISTRY_URL: &str = "https://github.com/aquaproj/aqua-registry";
 
 #[derive(Default)]
 pub struct AquaRegistry {
@@ -195,15 +192,30 @@ impl AquaRegistry {
     pub fn standard() -> Result<Self> {
         let path = AQUA_REGISTRY_PATH.clone();
         let repo = Git::new(&path);
-        let mut repo_exists = repo.exists();
-        if repo_exists {
-            fetch_latest_repo(&repo)?;
-        } else if let Some(aqua_registry_url) = &Settings::get().aqua.registry_url {
-            info!("cloning aqua registry to {path:?}");
-            repo.clone(aqua_registry_url, CloneOptions::default())?;
-            repo_exists = true;
+        let settings = Settings::get();
+        let registry_url =
+            settings
+                .aqua
+                .registry_url
+                .as_deref()
+                .or(if settings.aqua.baked_registry {
+                    None
+                } else {
+                    Some(AQUA_DEFAULT_REGISTRY_URL)
+                });
+        if let Some(registry_url) = registry_url {
+            if repo.exists() {
+                // TODO: re-clone if remote url doesn't match
+                fetch_latest_repo(&repo)?;
+            } else {
+                info!("cloning aqua registry from {registry_url} to {path:?}");
+                repo.clone(registry_url, CloneOptions::default())?;
+            }
         }
-        Ok(Self { path, repo_exists })
+        Ok(Self {
+            path,
+            repo_exists: repo.exists(),
+        })
     }
 
     pub async fn package(&self, id: &str) -> Result<AquaPackage> {
@@ -215,7 +227,7 @@ impl AquaRegistry {
         let path_id = id.split('/').join(std::path::MAIN_SEPARATOR_STR);
         let path = self.path.join("pkgs").join(&path_id).join("registry.yaml");
         let mut pkg = self
-            .fetch_package_yaml(id, &path, &path_id)
+            .fetch_package_yaml(id, &path)
             .await?
             .packages
             .into_iter()
@@ -232,12 +244,7 @@ impl AquaRegistry {
         Ok(self.package(id).await?.with_version(versions))
     }
 
-    async fn fetch_package_yaml(
-        &self,
-        id: &str,
-        path: &PathBuf,
-        path_id: &str,
-    ) -> Result<RegistryYaml> {
+    async fn fetch_package_yaml(&self, id: &str, path: &PathBuf) -> Result<RegistryYaml> {
         let registry = if self.repo_exists {
             trace!("reading aqua-registry for {id} from repo at {path:?}");
             serde_yaml::from_reader(file::open(path)?)?
@@ -246,36 +253,8 @@ impl AquaRegistry {
         {
             trace!("reading baked-in aqua-registry for {id}");
             serde_yaml::from_str(AQUA_STANDARD_REGISTRY_FILES.get(id).unwrap())?
-        } else if !path.exists() || file::modified_duration(path)? > DAILY {
-            // Don't download if PREFER_OFFLINE is set
-            if path.exists() && env::PREFER_OFFLINE.load(std::sync::atomic::Ordering::Relaxed) {
-                // Use cached version even if it's old
-                trace!("using cached aqua-registry for {id} from {path:?} (PREFER_OFFLINE)");
-                return Ok(serde_yaml::from_reader(file::open(path)?)?);
-            }
-
-            static RATE_LIMITED: AtomicBool = AtomicBool::new(false);
-            if RATE_LIMITED.load(Ordering::Relaxed) {
-                warn!("aqua-registry rate limited, skipping {id}");
-                return Err(eyre!("aqua-registry rate limited"));
-            }
-            trace!("downloading aqua-registry for {id} to {path:?}");
-            let url =
-                format!("https://mise-versions.jdx.dev/aqua-registry/{path_id}/registry.yaml");
-            let url: Url = url.parse()?;
-            match http::HTTP_FETCH.download_file(url, path, None).await {
-                Ok(_) => {}
-                Err(e) if http::error_code(&e) == Some(429) => {
-                    warn!("aqua-registry rate limited, skipping {id}");
-                    RATE_LIMITED.store(true, Ordering::Relaxed);
-                    return Err(e);
-                }
-                Err(e) => return Err(e),
-            }
-            serde_yaml::from_reader(file::open(path)?)?
         } else {
-            trace!("reading cached aqua-registry for {id} from {path:?}");
-            serde_yaml::from_reader(file::open(path)?)?
+            bail!("no aqua-registry found for {id}");
         };
         Ok(registry)
     }
