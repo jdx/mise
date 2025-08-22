@@ -1,4 +1,4 @@
 packages:
-  - name: bitwarden/clients@cli-v2025.7.0
+  - name: bitwarden/clients@cli-v2025.8.0
   - name: bitwarden/clients
     version: cli-v2025.5.0

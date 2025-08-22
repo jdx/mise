@@ -1,5 +1,5 @@
 packages:
-  - name: devspace-sh/devspace@v6.3.16
+  - name: devspace-sh/devspace@v6.3.17
   - name: devspace-sh/devspace
     version: v5.10.0
   - name: devspace-sh/devspace

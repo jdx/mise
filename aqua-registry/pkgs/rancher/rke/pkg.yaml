@@ -1,5 +1,5 @@
 packages:
-  - name: rancher/rke@v1.8.5
+  - name: rancher/rke@v1.8.6
   - name: rancher/rke
     version: v1.6.0-rc6
   - name: rancher/rke

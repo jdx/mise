@@ -1,5 +1,5 @@
 packages:
-  - name: yoheimuta/protolint@v0.55.6
+  - name: yoheimuta/protolint@v0.56.3
   - name: yoheimuta/protolint
     version: v0.45.0
   - name: yoheimuta/protolint

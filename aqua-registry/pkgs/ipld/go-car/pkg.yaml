@@ -1,2 +1,2 @@
 packages:
-  - name: ipld/go-car@v2.14.3
+  - name: ipld/go-car@v2.15.0

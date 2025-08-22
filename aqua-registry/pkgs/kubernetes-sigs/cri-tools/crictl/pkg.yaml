@@ -1,2 +1,2 @@
 packages:
-  - name: kubernetes-sigs/cri-tools/crictl@v1.33.0
+  - name: kubernetes-sigs/cri-tools/crictl@v1.34.0

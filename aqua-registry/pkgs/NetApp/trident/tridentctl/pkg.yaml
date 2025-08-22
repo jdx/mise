@@ -1,2 +1,2 @@
 packages:
-  - name: NetApp/trident/tridentctl@v25.06.1
+  - name: NetApp/trident/tridentctl@v25.06.2
