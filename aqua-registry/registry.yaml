@@ -76940,7 +76940,7 @@ packages:
         supported_envs:
           - linux
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.12.3")
         asset: lnav-{{trimV .Version}}-{{.OS}}-musl-{{.Arch}}.{{.Format}}
         format: zip
         rosetta2: true
@@ -76956,6 +76956,42 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
+      - version_constraint: Version == "v0.12.4"
+        asset: lnav-{{trimV .Version}}-{{.OS}}-musl-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: lnav-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: lnav-{{trimV .Version}}-{{.OS}}-musl-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: lnav-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+          - goos: windows
+            asset: lnav-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+            files:
+              - name: lnav
+                src: lnav-{{trimV .Version}}/bin/lnav.exe
   - type: github_release
     repo_owner: tummychow
     repo_name: git-absorb
@@ -81941,7 +81977,6 @@ packages:
           public_key: "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U"
         replacements:
           darwin: macos
-          386: i386
           arm64: aarch64
           amd64: x86_64
         files:
@@ -81959,7 +81994,6 @@ packages:
           public_key: "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U"
         replacements:
           darwin: macos
-          386: i386
           arm64: aarch64
           amd64: x86_64
         files:
@@ -81977,7 +82011,6 @@ packages:
           public_key: "RWSGOq2NVecA2UPNdBUZykf1CCb147pkmdtYxgb3Ti+JO/wCYvhbAb/U"
         replacements:
           darwin: macos
-          386: i386
           arm64: aarch64
           amd64: x86_64
         files:

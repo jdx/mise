@@ -250,11 +250,13 @@ cmd env help="Exports env vars to activate mise a single time" {
     flag "-J --json" help="Output in JSON format"
     flag --json-extended help="Output in JSON format with additional information (source, tool)"
     flag "-D --dotenv" help="Output in dotenv format"
+    flag --redacted help="Only show redacted environment variables"
     flag "-s --shell" help="Shell type to generate environment variables for" {
         arg <SHELL> {
             choices bash elvish fish nu xonsh zsh pwsh
         }
     }
+    flag --values help="Only show values of environment variables"
     arg "[TOOL@VERSION]…" help="Tool(s) to use" required=#false var=#true
 }
 cmd exec help="Execute a command with tool(s) set" {
