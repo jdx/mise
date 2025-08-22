@@ -30,6 +30,7 @@ pub static AQUA_REGISTRY: Lazy<AquaRegistry> = Lazy::new(|| {
 });
 static AQUA_REGISTRY_PATH: Lazy<PathBuf> = Lazy::new(|| dirs::CACHE.join("aqua-registry"));
 static AQUA_DEFAULT_REGISTRY_URL: &str = "https://github.com/aquaproj/aqua-registry";
+
 #[derive(Default)]
 pub struct AquaRegistry {
     path: PathBuf,
