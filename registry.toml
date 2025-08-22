@@ -3551,11 +3551,7 @@ zola.backends = [
 ]
 zola.test = ["zola --version", "zola {{version}}"]
 zoxide.description = "A smarter cd command. Supports all major shells"
-zoxide.backends = [
-    "aqua:ajeetdsouza/zoxide",
-    "ubi:ajeetdsouza/zoxide",
-    "asdf:nyrst/asdf-zoxide"
-]
+zoxide.backends = ["aqua:ajeetdsouza/zoxide", "ubi:ajeetdsouza/zoxide"]
 zoxide.test = ["zoxide --version", "zoxide {{version}}"]
 zprint.description = "Executables, uberjar, and library to beautifully format Clojure and Clojurescript source code and s-expressions"
 zprint.backends = ["asdf:mise-plugins/mise-zprint"]
