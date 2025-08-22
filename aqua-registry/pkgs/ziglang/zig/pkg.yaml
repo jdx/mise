@@ -1,4 +1,4 @@
 packages:
-  - name: ziglang/zig@0.15.0
+  - name: ziglang/zig@0.15.1
   - name: ziglang/zig
     version: 0.14.0
