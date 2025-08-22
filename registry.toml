@@ -3399,7 +3399,6 @@ watchexec.description = "Executes commands in response to file modifications"
 watchexec.backends = [
     "aqua:watchexec/watchexec",
     "ubi:watchexec/watchexec",
-    "asdf:nyrst/asdf-watchexec",
     "cargo:watchexec-cli"
 ]
 watchexec.test = ["watchexec --version", "watchexec {{version}}"]
