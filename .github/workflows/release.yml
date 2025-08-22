@@ -63,7 +63,7 @@ jobs:
             runs-on: macos-latest
     steps:
       - if: matrix.os == 'macos'
-        uses: apple-actions/import-codesign-certs@65cfbc37e1464d733524cb555b724878f278b8c3 # v5
+        uses: apple-actions/import-codesign-certs@95e84a1a18f2bdbc5c6ab9b7f4429372e4b13a8b # v5
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
