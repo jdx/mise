@@ -1,4 +1,4 @@
 packages:
-  - name: chainguard-dev/melange@v0.30.6
+  - name: chainguard-dev/melange@v0.31.0
   - name: chainguard-dev/melange
     version: v0.2.0

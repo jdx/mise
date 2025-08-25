@@ -1,4 +1,4 @@
 packages:
-  - name: mitsuhiko/minijinja@2.11.0
+  - name: mitsuhiko/minijinja@2.12.0
   - name: mitsuhiko/minijinja
     version: 2.3.1

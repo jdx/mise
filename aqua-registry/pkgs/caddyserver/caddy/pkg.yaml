@@ -1,4 +1,4 @@
 packages:
-  - name: caddyserver/caddy@v2.10.0
+  - name: caddyserver/caddy@v2.10.2
   - name: caddyserver/caddy
     version: v2.5.2

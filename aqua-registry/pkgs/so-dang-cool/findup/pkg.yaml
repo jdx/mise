@@ -1,4 +1,4 @@
 packages:
-  - name: so-dang-cool/findup@v1.1.2
+  - name: so-dang-cool/findup@v2.0.0
   - name: so-dang-cool/findup
     version: v1.1.1
