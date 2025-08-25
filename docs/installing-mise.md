@@ -14,8 +14,11 @@ file, mise will automatically add itself to `PATH`.
 
 ```sh
 curl https://mise.run | sh
+```
 
-# or with options
+or with options
+
+```sh
 curl https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
 ```
 
