@@ -1,2 +1,2 @@
 packages:
-  - name: aws/aws-cli@2.28.15
+  - name: aws/aws-cli@2.28.16

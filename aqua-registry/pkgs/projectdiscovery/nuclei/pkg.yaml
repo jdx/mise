@@ -1,2 +1,2 @@
 packages:
-  - name: projectdiscovery/nuclei@v3.4.9
+  - name: projectdiscovery/nuclei@v3.4.10

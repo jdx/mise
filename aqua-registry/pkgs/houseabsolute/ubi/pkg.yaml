@@ -1,5 +1,5 @@
 packages:
-  - name: houseabsolute/ubi@v0.7.3
+  - name: houseabsolute/ubi@v0.7.4
   - name: houseabsolute/ubi
     version: v0.1.1
   - name: houseabsolute/ubi

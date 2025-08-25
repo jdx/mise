@@ -1,5 +1,5 @@
 packages:
-  - name: chainguard-dev/apko@v0.30.5
+  - name: chainguard-dev/apko@v0.30.6
   - name: chainguard-dev/apko
     version: v0.11.0
   - name: chainguard-dev/apko
