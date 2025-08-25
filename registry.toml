@@ -8,10 +8,10 @@
 1password.aliases = ["1password-cli", "op"]
 1password.description = "Password manager developed by AgileBits Inc"
 1password.backends = [
-    "aqua:1password/cli",
-    "asdf:mise-plugins/mise-1password-cli"
+    "asdf:mise-plugins/mise-1password-cli",
+    "aqua:1password/cli"
 ]
-# 1password.test = ["op --version", "{{version}}"] fails on CI for some reason
+1password.test = ["op --version", "{{version}}"]
 aapt2.description = "Android Asset Packaging Tool (aapt)"
 aapt2.backends = ["asdf:mise-plugins/mise-aapt2"]
 aapt2.test = ["aapt2 version 2>&1", "Android Asset Packaging Tool (aapt)"]
