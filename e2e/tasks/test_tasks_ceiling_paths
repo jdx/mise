@@ -5,8 +5,6 @@ set -euo pipefail
 # This tests that mise respects the ceiling paths configuration
 # which prevents traversing up the directory tree beyond specified paths
 
-mise_exe="${MISE_BIN:-mise}"
-
 # Create a test directory structure
 TEST_ROOT=$(pwd)
 
@@ -15,26 +13,25 @@ mkdir -p "$TEST_ROOT/parent/child/grandchild"
 
 # Create config files at different levels using heredoc
 mkdir -p "$TEST_ROOT/parent/mise-tasks"
-cat <<EOF > "$TEST_ROOT/parent/mise-tasks/task-parent"
+cat <<EOF >"$TEST_ROOT/parent/mise-tasks/task-parent"
 #!/usr/bin/env bash
 echo parent
 EOF
 chmod +x "$TEST_ROOT/parent/mise-tasks/task-parent"
 
 mkdir -p "$TEST_ROOT/parent/child/mise-tasks"
-cat <<EOF > "$TEST_ROOT/parent/child/mise-tasks/task-child"
+cat <<EOF >"$TEST_ROOT/parent/child/mise-tasks/task-child"
 #!/usr/bin/env bash
 echo child
 EOF
 chmod +x "$TEST_ROOT/parent/child/mise-tasks/task-child"
 
 mkdir -p "$TEST_ROOT/parent/child/grandchild/mise-tasks"
-cat <<EOF > "$TEST_ROOT/parent/child/grandchild/mise-tasks/task-grandchild"
+cat <<EOF >"$TEST_ROOT/parent/child/grandchild/mise-tasks/task-grandchild"
 #!/usr/bin/env bash
 echo grandchild
 EOF
 chmod +x "$TEST_ROOT/parent/child/grandchild/mise-tasks/task-grandchild"
-
 
 cd "$TEST_ROOT/parent/child/grandchild"
 

@@ -434,7 +434,7 @@ trusted. They can be separated with `:`.
 
 ### `MISE_CEILING_PATHS`
 
-This is a list of paths where mise will stop searching for 
+This is a list of paths where mise will stop searching for
 configuration files and file tasks. This is useful to stop
 mise searching for files in slow loading directories. They can be separated with `:`.
 

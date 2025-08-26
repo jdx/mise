@@ -489,11 +489,14 @@ pub async fn make_executable_async<P: AsRef<Path>>(_path: P) -> Result<()> {
     Ok(())
 }
 
-pub fn all_dirs<P: AsRef<Path>>(start_dir: P, ceiling_dirs: &HashSet<PathBuf>) -> Result<Vec<PathBuf>> {
+pub fn all_dirs<P: AsRef<Path>>(
+    start_dir: P,
+    ceiling_dirs: &HashSet<PathBuf>,
+) -> Result<Vec<PathBuf>> {
     Ok(start_dir
         .as_ref()
         .ancestors()
-        .map_while(|p|{
+        .map_while(|p| {
             if ceiling_dirs.contains(p) {
                 debug!("Reached ceiling directory: {}", p.display());
                 None
@@ -1106,13 +1109,13 @@ mod tests {
         assert!(should_strip);
     }
 
- #[test]
+    #[test]
     fn test_all_dirs_no_ceiling() {
         let start_dir = Path::new("/a/b/c");
         let ceiling_dirs = HashSet::new();
-        
+
         let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
-        
+
         assert_eq!(result.len(), 4);
         assert!(result.contains(&PathBuf::from("/a/b/c")));
         assert!(result.contains(&PathBuf::from("/a/b")));
@@ -1125,9 +1128,9 @@ mod tests {
         let start_dir = Path::new("/a/b/c");
         let mut ceiling_dirs = HashSet::new();
         ceiling_dirs.insert(PathBuf::from("/a"));
-        
+
         let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
-        
+
         assert_eq!(result.len(), 2);
         assert!(result.contains(&PathBuf::from("/a/b/c")));
         assert!(result.contains(&PathBuf::from("/a/b")));
@@ -1140,9 +1143,9 @@ mod tests {
         let start_dir = Path::new("/a/b/c");
         let mut ceiling_dirs = HashSet::new();
         ceiling_dirs.insert(PathBuf::from("/a/b/c"));
-        
+
         let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
-        
+
         assert_eq!(result.len(), 0);
     }
 
@@ -1152,9 +1155,9 @@ mod tests {
         let mut ceiling_dirs = HashSet::new();
         ceiling_dirs.insert(PathBuf::from("/a/b"));
         ceiling_dirs.insert(PathBuf::from("/a/b/c/d"));
-        
+
         let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
-        
+
         assert_eq!(result.len(), 1);
         assert!(result.contains(&PathBuf::from("/a/b/c/d/e")));
     }
@@ -1163,11 +1166,11 @@ mod tests {
     fn test_all_dirs_with_relative_path() {
         let start_dir = Path::new("a/b/c");
         let ceiling_dirs = HashSet::new();
-        
+
         let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
-        
+
         assert!(result.contains(&PathBuf::from("a/b/c")));
         assert!(result.contains(&PathBuf::from("a/b")));
         assert!(result.contains(&PathBuf::from("a")));
-    }    
+    }
 }
