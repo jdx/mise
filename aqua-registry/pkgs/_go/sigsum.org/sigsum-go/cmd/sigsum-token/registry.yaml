@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: _go/sigsum.org/sigsum-go#cmd/sigsum-token
+    type: go_install
+    description: |
+      One of Sigsum command line tools.
+      The sigsum-token tool is used to manage the Sigsum "submit tokens" that are used for domain based rate limiting
+    path: sigsum.org/sigsum-go/cmd/sigsum-token
+    go_version_path: sigsum.org/sigsum-go

@@ -1,0 +1,4 @@
+packages:
+  - name: knqyf263/cob@v0.0.8
+  - name: knqyf263/cob
+    version: v0.0.6

@@ -1,0 +1,4 @@
+packages:
+  - name: suzuki-shunsuke/tfaction-go@v0.2.3
+  - name: suzuki-shunsuke/tfaction-go
+    version: v0.1.4

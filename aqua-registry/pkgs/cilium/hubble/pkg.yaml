@@ -1,0 +1,10 @@
+packages:
+  - name: cilium/hubble@v1.18.0
+  - name: cilium/hubble
+    version: v1.16.2
+  - name: cilium/hubble
+    version: v0.8.2
+  - name: cilium/hubble
+    version: v0.7.1
+  - name: cilium/hubble
+    version: v0.6.1

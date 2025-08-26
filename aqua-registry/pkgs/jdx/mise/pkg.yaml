@@ -1,0 +1,8 @@
+packages:
+  - name: jdx/mise@v2025.8.18
+  - name: jdx/mise
+    version: v2024.0.0
+  - name: jdx/mise
+    version: v2023.12.9
+  - name: jdx/mise
+    version: v2023.8.0

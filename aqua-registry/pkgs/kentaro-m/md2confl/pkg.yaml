@@ -1,0 +1,4 @@
+packages:
+  - name: kentaro-m/md2confl@v0.4.2
+  - name: kentaro-m/md2confl
+    version: v0.3.0

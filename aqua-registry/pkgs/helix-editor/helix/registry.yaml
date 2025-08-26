@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: helix-editor
+    repo_name: helix
+    asset: helix-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.xz
+    description: A post-modern modal text editor
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      darwin: macos
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: hx
+        src: helix-{{.Version}}-{{.Arch}}-{{.OS}}/hx
+    version_constraint: semver(">= 22.08")
+    version_overrides:
+      - version_constraint: semver(">= 22.03")
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux
+          - amd64

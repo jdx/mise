@@ -1,0 +1,10 @@
+packages:
+  - name: lycheeverse/lychee@lychee-v0.20.0
+  - name: lycheeverse/lychee
+    version: v0.15.1
+  - name: lycheeverse/lychee
+    version: v0.8.0
+  - name: lycheeverse/lychee
+    version: v0.7.1
+  - name: lycheeverse/lychee
+    version: v0.5.1-alpha

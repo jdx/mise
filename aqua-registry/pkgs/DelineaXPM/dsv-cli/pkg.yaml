@@ -1,0 +1,14 @@
+packages:
+  - name: DelineaXPM/dsv-cli@v1.41.1
+  - name: DelineaXPM/dsv-cli
+    version: v1.39.8
+  - name: DelineaXPM/dsv-cli
+    version: v1.39.6
+  - name: DelineaXPM/dsv-cli
+    version: v1.39.1
+  - name: DelineaXPM/dsv-cli
+    version: 1.39.0
+  - name: DelineaXPM/dsv-cli
+    version: 1.32.0
+  - name: DelineaXPM/dsv-cli
+    version: 1.17.0

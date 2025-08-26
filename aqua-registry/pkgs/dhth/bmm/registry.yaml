@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dhth
+    repo_name: bmm
+    description: get to your bookmarks in a flash
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: bmm-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: dhth/bmm/.github/workflows/release.yml
+        supported_envs:
+          - linux/amd64
+          - darwin
+        files:
+          - name: bmm
+            src: "{{.AssetWithoutExt}}/bmm"

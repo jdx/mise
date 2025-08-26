@@ -1,0 +1,4 @@
+packages:
+  - name: jstemmer/go-junit-report@v2.1.0
+  - name: jstemmer/go-junit-report
+    version: v2.0.0

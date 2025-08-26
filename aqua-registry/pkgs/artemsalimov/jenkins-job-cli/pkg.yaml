@@ -1,0 +1,6 @@
+packages:
+  - name: artemsalimov/jenkins-job-cli@v1.1.2
+  - name: artemsalimov/jenkins-job-cli
+    version: v1.1.0
+  - name: artemsalimov/jenkins-job-cli
+    version: v1.0.1

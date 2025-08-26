@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloudspannerecosystem
+    repo_name: spool
+    description: A CLI tool to manage Cloud Spanner databases for testing
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.1")
+        no_asset: true
+      - version_constraint: "true"
+        asset: spool-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

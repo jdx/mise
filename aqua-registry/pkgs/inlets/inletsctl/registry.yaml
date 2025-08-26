@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: inlets
+    repo_name: inletsctl
+    description: Create inlets servers on the top cloud platforms
+    asset: inletsctl.tgz
+    overrides:
+      - goos: darwin
+        asset: inletsctl-darwin.tgz
+        files:
+          - name: inletsctl
+            src: inletsctl-darwin
+      - goarch: arm64
+        asset: inletsctl-arm64.tgz
+        files:
+          - name: inletsctl
+            src: inletsctl-arm64
+    checksum:
+      # The checksum in the checksum file is not the checksum of tarball but the checksum of the executable binary in tarball.
+      # aqua doesn't support such a case at the moment.
+      enabled: false

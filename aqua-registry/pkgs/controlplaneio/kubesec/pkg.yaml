@@ -1,0 +1,6 @@
+packages:
+  - name: controlplaneio/kubesec@v2.14.2
+  - name: controlplaneio/kubesec
+    version: v2.11.0
+  - name: controlplaneio/kubesec
+    version: v2.9.0

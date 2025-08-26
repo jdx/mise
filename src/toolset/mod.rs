@@ -47,6 +47,7 @@ pub use tool_version_options::{ToolVersionOptions, parse_tool_options};
 
 #[derive(Debug, Clone)]
 pub struct InstallOptions {
+    pub reason: String,
     pub force: bool,
     pub jobs: Option<usize>,
     pub raw: bool,
@@ -54,6 +55,7 @@ pub struct InstallOptions {
     pub missing_args_only: bool,
     pub auto_install_disable_tools: Option<Vec<String>>,
     pub resolve_options: ResolveOptions,
+    pub dry_run: bool,
 }
 
 impl Default for InstallOptions {
@@ -61,10 +63,12 @@ impl Default for InstallOptions {
         InstallOptions {
             jobs: Some(Settings::get().jobs),
             raw: Settings::get().raw,
+            reason: "install".to_string(),
             force: false,
             missing_args_only: true,
             auto_install_disable_tools: Settings::get().auto_install_disable_tools.clone(),
             resolve_options: Default::default(),
+            dry_run: false,
         }
     }
 }
@@ -209,8 +213,20 @@ impl Toolset {
             return Ok(vec![]);
         }
 
-        // Run pre-install hook
-        hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
+        // Initialize a header for the entire install session once (before batching)
+        let mpr = MultiProgressReport::get();
+        let header_reason = if opts.dry_run {
+            format!("{} (dry-run)", opts.reason)
+        } else {
+            opts.reason.clone()
+        };
+        mpr.init_header(opts.dry_run, &header_reason, versions.len());
+
+        // Skip hooks in dry-run mode
+        if !opts.dry_run {
+            // Run pre-install hook
+            hooks::run_one_hook(config, self, Hooks::Preinstall, None).await;
+        }
 
         self.init_request_options(&mut versions);
         show_python_install_hint(&versions);
@@ -230,6 +246,8 @@ impl Toolset {
                     successful_installations,
                     failed_installations,
                 }) => {
+                    // Count both successes and failures toward header progress
+                    mpr.header_inc(successful_installations.len() + failed_installations.len());
                     installed.extend(successful_installations);
                     return Err(Error::InstallFailed {
                         successful_installations: installed,
@@ -243,12 +261,15 @@ impl Toolset {
             leaf_deps = get_leaf_dependencies(&versions)?;
         }
 
-        // Reload config and resolve (ignoring errors like the original does)
-        trace!("install: reloading config");
-        *config = Config::reset().await?;
-        trace!("install: resolving");
-        if let Err(err) = self.resolve(config).await {
-            debug!("error resolving versions after install: {err:#}");
+        // Skip config reload and resolve in dry-run mode
+        if !opts.dry_run {
+            // Reload config and resolve (ignoring errors like the original does)
+            trace!("install: reloading config");
+            *config = Config::reset().await?;
+            trace!("install: resolving");
+            if let Err(err) = self.resolve(config).await {
+                debug!("error resolving versions after install: {err:#}");
+            }
         }
 
         // Debug logging for successful installations
@@ -276,9 +297,16 @@ impl Toolset {
             }
         }
 
-        // Run post-install hook (ignoring errors)
-        let _ = hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
+        // Skip hooks in dry-run mode
+        if !opts.dry_run {
+            // Run post-install hook (ignoring errors)
+            let _ = hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
+        }
 
+        // Finish the global header
+        if !opts.dry_run {
+            mpr.header_finish();
+        }
         Ok(installed)
     }
 
@@ -315,6 +343,8 @@ impl Toolset {
             }
         };
 
+        // Don't initialize header here - it's already done in install_all_versions
+
         // Track plugin installation errors to avoid early returns
         let mut plugin_errors = Vec::new();
 
@@ -323,19 +353,17 @@ impl Toolset {
             if let Some(plugin) = backend.plugin() {
                 if !plugin.is_installed() {
                     let mpr = MultiProgressReport::get();
-                    if let Err(e) =
-                        plugin
-                            .ensure_installed(config, &mpr, false)
-                            .await
-                            .or_else(|err| {
-                                if let Some(&Error::PluginNotInstalled(_)) =
-                                    err.downcast_ref::<Error>()
-                                {
-                                    Ok(())
-                                } else {
-                                    Err(err)
-                                }
-                            })
+                    if let Err(e) = plugin
+                        .ensure_installed(config, &mpr, false, opts.dry_run)
+                        .await
+                        .or_else(|err| {
+                            if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>()
+                            {
+                                Ok(())
+                            } else {
+                                Err(err)
+                            }
+                        })
                     {
                         // Collect plugin installation errors instead of returning early
                         let plugin_name = backend.ba().short.clone();
@@ -416,8 +444,9 @@ impl Toolset {
                         let ctx = InstallContext {
                             config: config.clone(),
                             ts: ts.clone(),
-                            pr: mpr.add(&tv.style()),
+                            pr: mpr.add_with_options(&tv.style(), opts.dry_run),
                             force: opts.force,
+                            dry_run: opts.dry_run,
                         };
                         let old_tv = tv.clone();
                         ba.install_version(ctx, tv)
@@ -427,6 +456,8 @@ impl Toolset {
                     .await;
 
                     results.push((tr, result));
+                    // Bump header for each completed tool
+                    MultiProgressReport::get().header_inc(1);
                 }
                 results
             });

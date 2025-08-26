@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gopasspw
+    repo_name: gopass
+    description: The slightly more awesome standard unix password manager for teams
+    asset: gopass-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: gopass_{{trimV .Version}}_SHA256SUMS
+      algorithm: sha256

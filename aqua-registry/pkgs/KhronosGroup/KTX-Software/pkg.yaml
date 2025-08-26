@@ -1,0 +1,10 @@
+packages:
+  - name: KhronosGroup/KTX-Software@v4.4.0
+  - name: KhronosGroup/KTX-Software
+    version: v4.3.0-beta1
+  - name: KhronosGroup/KTX-Software
+    version: v4.2.1
+  - name: KhronosGroup/KTX-Software
+    version: v4.1.0
+  - name: KhronosGroup/KTX-Software
+    version: v4.0.0

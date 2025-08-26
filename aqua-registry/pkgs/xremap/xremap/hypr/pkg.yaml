@@ -1,0 +1,4 @@
+packages:
+  - name: xremap/xremap/hypr@v0.9.0
+  - name: xremap/xremap/hypr
+    version: v0.7.13

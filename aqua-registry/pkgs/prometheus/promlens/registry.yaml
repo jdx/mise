@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: prometheus
+    repo_name: promlens
+    asset: promlens-{{trimV .Version}}.{{.OS}}-{{.Arch}}.tar.gz
+    description: PromLens – The query builder, analyzer, and explainer for PromQL
+    checksum:
+      type: github_release
+      asset: sha256sums.txt
+      algorithm: sha256
+    files:
+      - name: promlens
+        src: promlens-{{trimV .Version}}.{{.OS}}-{{.Arch}}/promlens

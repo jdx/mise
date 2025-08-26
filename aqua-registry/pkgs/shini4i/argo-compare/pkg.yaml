@@ -1,0 +1,4 @@
+packages:
+  - name: shini4i/argo-compare@v0.4.1
+  - name: shini4i/argo-compare
+    version: v0.2.0

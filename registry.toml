@@ -8,10 +8,10 @@
 1password.aliases = ["1password-cli", "op"]
 1password.description = "Password manager developed by AgileBits Inc"
 1password.backends = [
-    "aqua:1password/cli",
-    "asdf:mise-plugins/mise-1password-cli"
+    "asdf:mise-plugins/mise-1password-cli",
+    "aqua:1password/cli"
 ]
-# 1password.test = ["op --version", "{{version}}"] fails on CI for some reason
+1password.test = ["op --version", "{{version}}"]
 aapt2.description = "Android Asset Packaging Tool (aapt)"
 aapt2.backends = ["asdf:mise-plugins/mise-aapt2"]
 aapt2.test = ["aapt2 version 2>&1", "Android Asset Packaging Tool (aapt)"]
@@ -173,6 +173,8 @@ atlas.description = "A modern tool for managing database schemas"
 atlas.backends = ["aqua:ariga/atlas", "asdf:komi1230/asdf-atlas"]
 atmos.description = "Workflow automation tool for DevOps. Keep configuration DRY with hierarchical imports of configurations, inheritance, and WAY more. Native support for Terraform and Helmfile"
 atmos.backends = ["aqua:cloudposse/atmos", "asdf:cloudposse/asdf-atmos"]
+atmos.idiomatic_files = [".atmos-version"]
+atmos.test = ["atmos version", "Atmos {{version}}"]
 atuin.description = "✨ Magical shell history"
 atuin.backends = ["aqua:atuinsh/atuin", "ubi:atuinsh/atuin"]
 atuin.test = ["atuin --version", "atuin {{version}}"]
@@ -458,6 +460,9 @@ cfssl.backends = [
     "aqua:cloudflare/cfssl/cfssl",
     "asdf:mathew-fleisch/asdf-cfssl"
 ]
+cfssljson.description = "cfssljson: Takes the JSON output from Cloudflare's cfssl and multirootca programs and writes certificates, keys, CSRs, and bundles to disk."
+cfssljson.backends = ["aqua:cloudflare/cfssl/cfssljson"]
+cfssljson.test = ["cfssljson -version", "Version: {{version}}"]
 chamber.description = "CLI for managing secrets"
 chamber.backends = [
     "aqua:segmentio/chamber",
@@ -554,6 +559,16 @@ claude.aliases = ["claude-code"]
 claude.description = "Claude Code is an agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster by executing routine tasks, explaining complex code, and handling git workflows -- all through natural language commands"
 claude.backends = ["npm:@anthropic-ai/claude-code"]
 claude.test = ["claude --version", "{{version}} (Claude Code)"]
+claude-squad.description = "Manage multiple AI agents like Claude Code, Aider, Codex, and Amp. 10x your productivity"
+claude-squad.backends = [
+    "aqua:smtg-ai/claude-squad",
+    "ubi:smtg-ai/claude-squad"
+]
+claude-squad.test = [
+    "claude-squad version",
+    """claude-squad version {{version}}
+https://github.com/smtg-ai/claude-squad/releases/tag/v{{version}}"""
+]
 cli53.description = "Command line tool for Amazon Route 53"
 cli53.backends = ["aqua:barnybug/cli53"]
 cli53.test = ["cli53 --version", "cli53 version {{version}}"]
@@ -672,6 +687,15 @@ container-structure-test.description = "validate the structure of your container
 container-structure-test.backends = [
     "aqua:GoogleContainerTools/container-structure-test",
     "asdf:FeryET/asdf-container-structure-test"
+]
+container-use.description = "Development environments for coding agents. Enable multiple agents to work safely and independently with your preferred stack."
+container-use.backends = [
+    "aqua:dagger/container-use",
+    "ubi:dagger/container-use"
+]
+container-use.test = [
+    "container-use --version",
+    "container-use version {{version}}"
 ]
 cookiecutter.description = "Create projects swiftly from cookiecutters (project templates) with this command-line utility. Ideal for generating Python package projects and more"
 cookiecutter.backends = [
@@ -1862,7 +1886,7 @@ kubeconform.backends = [
 ]
 kubectl.description = "kubectl cli"
 kubectl.backends = [
-    "aqua:kubernetes/kubectl",
+    "aqua:kubernetes/kubernetes/kubectl",
     "asdf:asdf-community/asdf-kubectl"
 ]
 kubectl-convert.description = "A plugin for Kubernetes command-line tool kubectl, which allows you to convert manifests between different API versions. This can be particularly helpful to migrate manifests to a non-deprecated api version with newer Kubernetes release"
@@ -2347,6 +2371,7 @@ opentofu.backends = [
     "ubi:opentofu/opentofu[exe=tofu]",
     "asdf:virtualroot/asdf-opentofu"
 ]
+opentofu.idiomatic_files = [".opentofu-version"]
 opentofu.test = ["tofu --version", "OpenTofu v{{version}}"]
 operator-sdk.description = "SDK for building Kubernetes applications. Provides high level APIs, useful abstractions, and project scaffolding"
 operator-sdk.backends = [
@@ -2509,6 +2534,8 @@ pre-commit.backends = [
     "pipx:pre-commit"
 ]
 pre-commit.test = ["pre-commit --version", "pre-commit {{version}}"]
+prek.backends = ["aqua:j178/prek"]
+prek.test = ["prek --version", "prek {{version}}"]
 prettier.description = "Prettier is an opinionated code formatter. It enforces a consistent style by parsing your code and re-printing it with its own rules that take the maximum line length into account, wrapping code when necessary"
 prettier.backends = ["npm:prettier"]
 prettier.test = ["prettier --version", "{{version}}"]
@@ -3103,6 +3130,7 @@ terramate.backends = [
     "aqua:terramate-io/terramate",
     "asdf:martinlindner/asdf-terramate"
 ]
+terramate.idiomatic_files = [".terramate-version"]
 terrascan.description = "Detect compliance and security violations across Infrastructure as Code to mitigate risk before provisioning cloud native infrastructure"
 terrascan.backends = ["aqua:tenable/terrascan", "asdf:hpdobrica/asdf-terrascan"]
 tf-summarize.description = "A command-line utility to print the summary of the terraform plan"
@@ -3371,7 +3399,6 @@ watchexec.description = "Executes commands in response to file modifications"
 watchexec.backends = [
     "aqua:watchexec/watchexec",
     "ubi:watchexec/watchexec",
-    "asdf:nyrst/asdf-watchexec",
     "cargo:watchexec-cli"
 ]
 watchexec.test = ["watchexec --version", "watchexec {{version}}"]
@@ -3523,11 +3550,7 @@ zola.backends = [
 ]
 zola.test = ["zola --version", "zola {{version}}"]
 zoxide.description = "A smarter cd command. Supports all major shells"
-zoxide.backends = [
-    "aqua:ajeetdsouza/zoxide",
-    "ubi:ajeetdsouza/zoxide",
-    "asdf:nyrst/asdf-zoxide"
-]
+zoxide.backends = ["aqua:ajeetdsouza/zoxide", "ubi:ajeetdsouza/zoxide"]
 zoxide.test = ["zoxide --version", "zoxide {{version}}"]
 zprint.description = "Executables, uberjar, and library to beautifully format Clojure and Clojurescript source code and s-expressions"
 zprint.backends = ["asdf:mise-plugins/mise-zprint"]

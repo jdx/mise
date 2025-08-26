@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: babarot
+    repo_name: gist
+    aliases:
+      - name: b4b4r07/gist
+    asset: gist_{{.OS}}_{{.Arch}}.{{.Format}}
+    description: A simple gist editor for CLI
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      386: i386
+      amd64: x86_64
+    version_constraint: semver(">= 1.2.6")
+    supported_envs:
+      - darwin
+      - linux
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux/amd64
+    checksum:
+      type: github_release
+      asset: gist_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

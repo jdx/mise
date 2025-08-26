@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: nats-io
+    repo_name: natscli
+    description: The NATS Command Line Interface
+    asset: nats-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: zip
+    files:
+      - name: nats
+        src: nats-{{trimV .Version}}-{{.OS}}-{{.Arch}}/nats
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256
+    version_constraint: semver(">= 0.0.27")
+    version_overrides:
+      - version_constraint: semver(">= 0.0.23")
+        asset: nats-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+      - version_constraint: semver(">= 0.0.22")
+        asset: nats-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: semver("< 0.0.22")
+        asset: nats-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true

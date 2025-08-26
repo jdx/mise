@@ -1,5 +1,189 @@
 # Changelog
 
+## [2025.8.20](https://github.com/jdx/mise/compare/v2025.8.19..v2025.8.20) - 2025-08-22
+
+### 🐛 Bug Fixes
+
+- use fish_add_path when activating mise for fish shell by [@roele](https://github.com/roele) in [#6074](https://github.com/jdx/mise/pull/6074)
+
+## [2025.8.19](https://github.com/jdx/mise/compare/v2025.8.18..v2025.8.19) - 2025-08-22
+
+### 📦 Registry
+
+- update kubectl aqua alias by [@malept](https://github.com/malept) in [#6107](https://github.com/jdx/mise/pull/6107)
+- remove asdf plugin for watchexec by [@risu729](https://github.com/risu729) in [#6106](https://github.com/jdx/mise/pull/6106)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** bake in aliased registries by [@risu729](https://github.com/risu729) in [#6105](https://github.com/jdx/mise/pull/6105)
+
+## [2025.8.18](https://github.com/jdx/mise/compare/v2025.8.17..v2025.8.18) - 2025-08-22
+
+### 🚀 Features
+
+- **(env)** add --redacted and --values flags to env command by [@jdx](https://github.com/jdx) in [#6103](https://github.com/jdx/mise/pull/6103)
+
+## [2025.8.17](https://github.com/jdx/mise/compare/v2025.8.16..v2025.8.17) - 2025-08-22
+
+### 📦 Registry
+
+- remove asdf plugin for zoxide by [@risu729](https://github.com/risu729) in [#6100](https://github.com/jdx/mise/pull/6100)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** remove mise-versions aqua registry by [@risu729](https://github.com/risu729) in [#6097](https://github.com/jdx/mise/pull/6097)
+
+### 📚 Documentation
+
+- fix invalid configuration by [@kamontat](https://github.com/kamontat) in [#6088](https://github.com/jdx/mise/pull/6088)
+
+### 📦️ Dependency Updates
+
+- update apple-actions/import-codesign-certs digest to 95e84a1 by [@renovate[bot]](https://github.com/renovate[bot]) in [#6093](https://github.com/jdx/mise/pull/6093)
+- update taiki-e/install-action digest to 36fe651 by [@renovate[bot]](https://github.com/renovate[bot]) in [#6094](https://github.com/jdx/mise/pull/6094)
+
+### Chore
+
+- remove submodules option for actions/checkout by [@risu729](https://github.com/risu729) in [#6090](https://github.com/jdx/mise/pull/6090)
+- exclude aqua-registry from linguist stats by [@risu729](https://github.com/risu729) in [#6098](https://github.com/jdx/mise/pull/6098)
+
+### New Contributors
+
+- @kamontat made their first contribution in [#6088](https://github.com/jdx/mise/pull/6088)
+
+## [2025.8.16](https://github.com/jdx/mise/compare/v2025.8.15..v2025.8.16) - 2025-08-21
+
+### Chore
+
+- **(aqua-registry)** replace subtree logic with simpler `git clone` method by [@jdx](https://github.com/jdx) in [dd4947c](https://github.com/jdx/mise/commit/dd4947c49591ef3c0ac8372465bbfd1cde4ca946)
+- remove vfox-npm submodule by [@jdx](https://github.com/jdx) in [c22f95b](https://github.com/jdx/mise/commit/c22f95b4c30a4415ee08830e17fa8bd5a7a59eb7)
+- add vfox-npm by [@jdx](https://github.com/jdx) in [78c0972](https://github.com/jdx/mise/commit/78c0972a690eaf86eb6f5bbf2eabbe8a247890ea)
+
+## [2025.8.15](https://github.com/jdx/mise/compare/v2025.8.14..v2025.8.15) - 2025-08-21
+
+### Chore
+
+- **(release-plz)** get `git status` by [@jdx](https://github.com/jdx) in [#6083](https://github.com/jdx/mise/pull/6083)
+- add libbz2-dev to e2e test dependencies by [@jdx](https://github.com/jdx) in [#6080](https://github.com/jdx/mise/pull/6080)
+- replace submodule with subtree by [@risu729](https://github.com/risu729) in [#6082](https://github.com/jdx/mise/pull/6082)
+- fix aqua-registry subtree by [@jdx](https://github.com/jdx) in [522f7f5](https://github.com/jdx/mise/commit/522f7f591dbfa01e537c294647ffdc2a2357c32c)
+
+## [2025.8.14](https://github.com/jdx/mise/compare/v2025.8.13..v2025.8.14) - 2025-08-20
+
+### 🚀 Features
+
+- **(http)** auto-clean OS/arch suffixes from binary names by [@jdx](https://github.com/jdx) in [#6077](https://github.com/jdx/mise/pull/6077)
+- **(install)** add --dry-run flag to show what would be installed by [@jdx](https://github.com/jdx) in [#6078](https://github.com/jdx/mise/pull/6078)
+
+### 🐛 Bug Fixes
+
+- **(python)** patching sysconfig data fails for RC versions by [@roele](https://github.com/roele) in [#6069](https://github.com/jdx/mise/pull/6069)
+- **(schema)** add missing `settings` type by [@br3ndonland](https://github.com/br3ndonland) in [#6070](https://github.com/jdx/mise/pull/6070)
+
+### Chore
+
+- add liblzma-dev for e2e tests to avoid python-build warning by [@jdx](https://github.com/jdx) in [#6066](https://github.com/jdx/mise/pull/6066)
+
+## [2025.8.13](https://github.com/jdx/mise/compare/v2025.8.12..v2025.8.13) - 2025-08-18
+
+### 🐛 Bug Fixes
+
+- clean up install progress and error output by [@jdx](https://github.com/jdx) in [#6063](https://github.com/jdx/mise/pull/6063)
+- make header progress display at start of install by [@jdx](https://github.com/jdx) in [#6065](https://github.com/jdx/mise/pull/6065)
+
+### Chore
+
+- Upgrade ubi dependency by [@suprememoocow](https://github.com/suprememoocow) in [#6061](https://github.com/jdx/mise/pull/6061)
+- replace install_or_update_python_build by [@jdx](https://github.com/jdx) in [#6064](https://github.com/jdx/mise/pull/6064)
+
+### New Contributors
+
+- @suprememoocow made their first contribution in [#6061](https://github.com/jdx/mise/pull/6061)
+
+## [2025.8.12](https://github.com/jdx/mise/compare/v2025.8.11..v2025.8.12) - 2025-08-17
+
+### 📦 Registry
+
+- support tenv idiomatic files by [@risu729](https://github.com/risu729) in [#6050](https://github.com/jdx/mise/pull/6050)
+
+### 🚀 Features
+
+- respect PREFER_OFFLINE for aqua package metadata fetching by [@jdx](https://github.com/jdx) in [#6058](https://github.com/jdx/mise/pull/6058)
+
+### 📚 Documentation
+
+- fix backend_architecture docs by [@risu729](https://github.com/risu729) in [#6027](https://github.com/jdx/mise/pull/6027)
+
+### 📦️ Dependency Updates
+
+- update amannn/action-semantic-pull-request digest to e32d7e6 by [@renovate[bot]](https://github.com/renovate[bot]) in [#6031](https://github.com/jdx/mise/pull/6031)
+- update actions/checkout digest to 08eba0b by [@renovate[bot]](https://github.com/renovate[bot]) in [#6030](https://github.com/jdx/mise/pull/6030)
+- update actions/cache digest to 0400d5f by [@renovate[bot]](https://github.com/renovate[bot]) in [#5957](https://github.com/jdx/mise/pull/5957)
+
+### Chore
+
+- check for warnings in gha with rust stable by [@jdx](https://github.com/jdx) in [#6055](https://github.com/jdx/mise/pull/6055)
+
+## [2025.8.11](https://github.com/jdx/mise/compare/v2025.8.10..v2025.8.11) - 2025-08-17
+
+### 📦 Registry
+
+- add container-use ([aqua:dagger/container-use](https://github.com/dagger/container-use)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#6029](https://github.com/jdx/mise/pull/6029)
+- add prek ([aqua:j178/prek](https://github.com/j178/prek)) by [@HenryZhang-ZHY](https://github.com/HenryZhang-ZHY) in [#6023](https://github.com/jdx/mise/pull/6023)
+
+### 🚀 Features
+
+- **(task)** allow more #MISE comments patterns by [@risu729](https://github.com/risu729) in [#6011](https://github.com/jdx/mise/pull/6011)
+
+### 🐛 Bug Fixes
+
+- prevent panic with task tera errors by [@jdx](https://github.com/jdx) in [#6046](https://github.com/jdx/mise/pull/6046)
+
+### 📚 Documentation
+
+- **(settings)** use php as an example for `disable_default_registry` by [@risu729](https://github.com/risu729) in [#6025](https://github.com/jdx/mise/pull/6025)
+- Update ide-integration.md by [@jdx](https://github.com/jdx) in [#6035](https://github.com/jdx/mise/pull/6035)
+- Update ide-integration.md by [@jdx](https://github.com/jdx) in [#6040](https://github.com/jdx/mise/pull/6040)
+- added openSUSE zypper install instructions by [@lfromanini](https://github.com/lfromanini) in [#6037](https://github.com/jdx/mise/pull/6037)
+- update `contributing.md` for discussions by [@br3ndonland](https://github.com/br3ndonland) in [#6047](https://github.com/jdx/mise/pull/6047)
+
+### Chore
+
+- fix warnings by [@jdx](https://github.com/jdx) in [#6043](https://github.com/jdx/mise/pull/6043)
+- remove unused permissions in registry test by [@risu729](https://github.com/risu729) in [#6044](https://github.com/jdx/mise/pull/6044)
+- fix fish shell script in hk config by [@jdx](https://github.com/jdx) in [#6048](https://github.com/jdx/mise/pull/6048)
+
+### New Contributors
+
+- @br3ndonland made their first contribution in [#6047](https://github.com/jdx/mise/pull/6047)
+- @HenryZhang-ZHY made their first contribution in [#6023](https://github.com/jdx/mise/pull/6023)
+- @lfromanini made their first contribution in [#6037](https://github.com/jdx/mise/pull/6037)
+
+## [2025.8.10](https://github.com/jdx/mise/compare/v2025.8.9..v2025.8.10) - 2025-08-14
+
+### 📦 Registry
+
+- enable kubecolor test by [@risu729](https://github.com/risu729) in [#6008](https://github.com/jdx/mise/pull/6008)
+- fix os specific backends for usage by [@risu729](https://github.com/risu729) in [#6007](https://github.com/jdx/mise/pull/6007)
+- use aqua backend for restish by [@risu729](https://github.com/risu729) in [#5986](https://github.com/jdx/mise/pull/5986)
+- add cfssljson ([aqua:cloudflare/cfssl/cfssljson](https://github.com/cloudflare/cfssl/cfssljson)) by [@disintegrator](https://github.com/disintegrator) in [#6013](https://github.com/jdx/mise/pull/6013)
+- add claude-squad ([aqua:smtg-ai/claude-squad](https://github.com/smtg-ai/claude-squad)) by [@TyceHerrman](https://github.com/TyceHerrman) in [#5894](https://github.com/jdx/mise/pull/5894)
+
+### 🚀 Features
+
+- **(aqua)** make bin paths executable by [@risu729](https://github.com/risu729) in [#6010](https://github.com/jdx/mise/pull/6010)
+- added header bar during `mise install` by [@jdx](https://github.com/jdx) in [#6022](https://github.com/jdx/mise/pull/6022)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** improve warnings for packages without repo_owner and repo_name  (2nd attempt) by [@risu729](https://github.com/risu729) in [#6009](https://github.com/jdx/mise/pull/6009)
+- version prefix detection by [@risu729](https://github.com/risu729) in [#5943](https://github.com/jdx/mise/pull/5943)
+- respect MISE_DEFAULT_CONFIG_FILENAME by [@risu729](https://github.com/risu729) in [#5899](https://github.com/jdx/mise/pull/5899)
+
+### New Contributors
+
+- @disintegrator made their first contribution in [#6013](https://github.com/jdx/mise/pull/6013)
+
 ## [2025.8.9](https://github.com/jdx/mise/compare/v2025.8.8..v2025.8.9) - 2025-08-13
 
 ### 📦 Registry
@@ -17,6 +201,7 @@
 
 - **(aqua)** add executable permissions for zip-extracted binaries by [@itochan](https://github.com/itochan) in [#5998](https://github.com/jdx/mise/pull/5998)
 - **(core)** auto-repair corrupted pyenv cache by recloning on update failure by [@jdx](https://github.com/jdx) in [#6003](https://github.com/jdx/mise/pull/6003)
+- **(uv_venv)** fixes PATH ordering with `mise x` by [@jdx](https://github.com/jdx) in [#6005](https://github.com/jdx/mise/pull/6005)
 - duplicate versions and validation in `mise tool` by [@jdx](https://github.com/jdx) in [#6001](https://github.com/jdx/mise/pull/6001)
 
 ### 📚 Documentation
@@ -3742,7 +3927,7 @@
 - gitignore aqua-registry by [@jdx](https://github.com/jdx) in [1c38bca](https://github.com/jdx/mise/commit/1c38bca434cfc17792eb3053be2f4271a9e92fdd)
 - gitignore aqua-registry by [@jdx](https://github.com/jdx) in [644cb6d](https://github.com/jdx/mise/commit/644cb6dfa762d6360b5aaa7fce0502fe61ac1067)
 
-## [2024.11.28](https://github.com/jdx/mise/compare/v2023.12.0..v2024.11.28) - 2024-11-24
+## [2024.11.28] - 2024-11-24
 
 ### 🚀 Features
 
@@ -3764,52 +3949,5 @@
 ### Chore
 
 - clean up CHANGELOG by [@jdx](https://github.com/jdx) in [8ec0ca2](https://github.com/jdx/mise/commit/8ec0ca20fce57d07d769209fd9043a129daa86f1)
-
-## [2023.12.0] - 2023-12-01
-
-### New Contributors
-
-- @jdx made their first contribution
-- @dependabot[bot] made their first contribution
-- @benweint made their first contribution
-- @CharString made their first contribution
-- @Nezteb made their first contribution
-- @duckpuppy made their first contribution
-- @jguddas made their first contribution
-- @Jaxwood made their first contribution
-- @booniepepper made their first contribution
-- @fiadliel made their first contribution
-- @roele made their first contribution
-- @scottdotau made their first contribution
-- @xanderificnl made their first contribution
-- @dfang made their first contribution
-- @tsukimizake made their first contribution
-- @scop made their first contribution
-- @Sacro made their first contribution
-- @ProducerMatt made their first contribution
-- @splinter98 made their first contribution
-- @AlecRust made their first contribution
-- @pedorich-n made their first contribution
-- @knu made their first contribution
-- @smbl64 made their first contribution
-- @tombh made their first contribution
-- @luccahuguet made their first contribution
-- @andrewthauer made their first contribution
-- @KokaKiwi made their first contribution
-- @toadslop made their first contribution
-- @jonathanmorley made their first contribution
-- @chadac made their first contribution
-- @tomocrafter made their first contribution
-- @issmo made their first contribution
-- @jaybosamiya made their first contribution
-- @nrjais made their first contribution
-- @Alex23rodriguez made their first contribution
-- @gerbal made their first contribution
-- @chhe made their first contribution
-- @kianmeng made their first contribution
-- @cserino made their first contribution
-- @amoosbr made their first contribution
-- @eugenesvk made their first contribution
-- @delicb made their first contribution
 
 <!-- generated by git-cliff -->

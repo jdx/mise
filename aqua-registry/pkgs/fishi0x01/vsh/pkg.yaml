@@ -1,0 +1,4 @@
+packages:
+  - name: fishi0x01/vsh@v0.14.0
+  - name: fishi0x01/vsh
+    version: v0.9.0

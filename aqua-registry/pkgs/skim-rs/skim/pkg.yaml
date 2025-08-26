@@ -1,0 +1,6 @@
+packages:
+  - name: skim-rs/skim@v0.20.5
+  - name: skim-rs/skim
+    version: v0.9.4
+  - name: skim-rs/skim
+    version: v0.6.9

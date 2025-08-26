@@ -92,8 +92,16 @@ pub fn install_artifact(
             let dest = bin_dir.join(file_path.file_name().unwrap());
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
+        } else if let Some(bin_name) = opts.get("bin") {
+            // If bin is specified, rename the file to this name
+            let dest = install_path.join(bin_name);
+            file::copy(file_path, &dest)?;
+            file::make_executable(&dest)?;
         } else {
-            let dest = install_path.join(file_path.file_name().unwrap());
+            // Always auto-clean binary names by removing OS/arch suffixes
+            let original_name = file_path.file_name().unwrap().to_string_lossy();
+            let cleaned_name = clean_binary_name(&original_name, Some(&tv.ba().tool_name));
+            let dest = install_path.join(cleaned_name);
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
         }
@@ -166,11 +174,274 @@ pub fn verify_checksum_str(
     Ok(())
 }
 
+/// Cleans a binary name by removing OS/arch suffixes and version numbers.
+/// This is useful when downloading single binaries that have platform-specific names.
+/// Executable extensions (.exe, .bat, .sh, etc.) are preserved.
+///
+/// # Parameters
+/// - `name`: The binary name to clean
+/// - `tool_name`: Optional hint for the expected tool name. When provided:
+///   - Version removal is more aggressive, only keeping the result if it matches the tool name
+///   - Helps ensure the cleaned name matches the expected tool
+///     – When `None`, version removal is more conservative to avoid over-cleaning
+///
+/// # Examples
+/// - "docker-compose-linux-x86_64" -> "docker-compose"
+/// - "tool-darwin-arm64.exe" -> "tool.exe" (preserves extension)
+/// - "mytool-v1.2.3-windows-amd64" -> "mytool"
+/// - "app-2.0.0-linux-x64" -> "app" (with tool_name="app")
+/// - "script-darwin-arm64.sh" -> "script.sh" (preserves .sh extension)
+pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
+    // Common OS patterns to remove
+    let os_patterns = [
+        "linux", "darwin", "macos", "windows", "win", "freebsd", "openbsd", "netbsd", "android",
+    ];
+
+    // Common architecture patterns to remove (longer patterns first to avoid partial matches)
+    let arch_patterns = [
+        "x86_64", "aarch64", "ppc64le", "ppc64", "armv7", "armv6", "arm64", "amd64", "mipsel",
+        "riscv64", "s390x", "i686", "i386", "x64", "mips", "arm", "x86",
+    ];
+
+    // Extract extension if present (to preserve it)
+    let (name_without_ext, extension) = if let Some(pos) = name.rfind('.') {
+        let potential_ext = &name[pos + 1..];
+        // Common executable extensions to preserve
+        let executable_extensions = [
+            "exe", "bat", "cmd", "sh", "ps1", "app", "AppImage", "run", "bin",
+        ];
+        if executable_extensions.contains(&potential_ext) {
+            (&name[..pos], Some(&name[pos..]))
+        } else {
+            // Not an executable extension, treat it as part of the name
+            (name, None)
+        }
+    } else {
+        (name, None)
+    };
+
+    // Try to find and remove platform suffixes
+    let mut cleaned = name_without_ext.to_string();
+
+    // First try combined OS-arch patterns
+    for os in &os_patterns {
+        for arch in &arch_patterns {
+            // Try different separator combinations
+            let patterns = [
+                format!("-{os}-{arch}"),
+                format!("-{os}_{arch}"),
+                format!("_{os}-{arch}"),
+                format!("_{os}_{arch}"),
+                format!("-{arch}-{os}"), // Sometimes arch comes before OS
+                format!("_{arch}_{os}"),
+            ];
+
+            for pattern in &patterns {
+                if let Some(pos) = cleaned.rfind(pattern) {
+                    cleaned = cleaned[..pos].to_string();
+                    // Continue processing to also remove version numbers
+                    let result = clean_version_suffix(&cleaned, tool_name);
+                    // Add the extension back if we had one
+                    if let Some(ext) = extension {
+                        return format!("{}{}", result, ext);
+                    } else {
+                        return result;
+                    }
+                }
+            }
+        }
+    }
+
+    // Try just OS suffix (sometimes arch is omitted)
+    for os in &os_patterns {
+        let patterns = [format!("-{os}"), format!("_{os}")];
+        for pattern in &patterns {
+            if let Some(pos) = cleaned.rfind(pattern.as_str()) {
+                // Only remove if it's at the end or followed by more platform info
+                let after = &cleaned[pos + pattern.len()..];
+                if after.is_empty() || after.starts_with('-') || after.starts_with('_') {
+                    // Check if what comes before looks like a valid name
+                    let before = &cleaned[..pos];
+                    if !before.is_empty() {
+                        cleaned = before.to_string();
+                        let result = clean_version_suffix(&cleaned, tool_name);
+                        // Add the extension back if we had one
+                        if let Some(ext) = extension {
+                            return format!("{}{}", result, ext);
+                        } else {
+                            return result;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Try just arch suffix (sometimes OS is omitted)
+    for arch in &arch_patterns {
+        let patterns = [format!("-{arch}"), format!("_{arch}")];
+        for pattern in &patterns {
+            if let Some(pos) = cleaned.rfind(pattern.as_str()) {
+                // Only remove if it's at the end or followed by more platform info
+                let after = &cleaned[pos + pattern.len()..];
+                if after.is_empty() || after.starts_with('-') || after.starts_with('_') {
+                    // Check if what comes before looks like a valid name
+                    let before = &cleaned[..pos];
+                    if !before.is_empty() {
+                        cleaned = before.to_string();
+                        let result = clean_version_suffix(&cleaned, tool_name);
+                        // Add the extension back if we had one
+                        if let Some(ext) = extension {
+                            return format!("{}{}", result, ext);
+                        } else {
+                            return result;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Try to remove version suffixes as a final step
+    let cleaned = clean_version_suffix(&cleaned, tool_name);
+
+    // Add the extension back if we had one
+    if let Some(ext) = extension {
+        format!("{}{}", cleaned, ext)
+    } else {
+        cleaned
+    }
+}
+
+/// Remove version suffixes from binary names.
+///
+/// When `tool_name` is provided, aggressively removes version patterns but only
+/// if the result matches or relates to the tool name. This prevents accidentally
+/// removing too much from the name.
+///
+/// When `tool_name` is None, only removes clear version patterns at the end
+/// while ensuring we don't leave an empty or invalid result.
+fn clean_version_suffix(name: &str, tool_name: Option<&str>) -> String {
+    // Common version patterns to remove
+    // Matches: -v1.2.3, _v1.2.3, -1.2.3, _1.2.3, etc.
+    // Also handles pre-release versions like -v1.2.3-alpha, -2.0.0-rc1
+    let version_pattern = regex::Regex::new(r"[-_]v?\d+(\.\d+)*(-[a-zA-Z0-9]+(\.\d+)?)?$").unwrap();
+
+    if let Some(tool) = tool_name {
+        // If we have a tool name, only remove version if what remains matches the tool
+        if let Some(m) = version_pattern.find(name) {
+            let without_version = &name[..m.start()];
+            if without_version == tool
+                || tool.contains(without_version)
+                || without_version.contains(tool)
+            {
+                return without_version.to_string();
+            }
+        }
+    } else {
+        // No tool name hint, be more conservative
+        // Only remove if it looks like a clear version pattern at the end
+        if let Some(m) = version_pattern.find(name) {
+            let without_version = &name[..m.start()];
+            // Make sure we're not left with nothing or just a dash/underscore
+            if !without_version.is_empty()
+                && !without_version.ends_with('-')
+                && !without_version.ends_with('_')
+            {
+                return without_version.to_string();
+            }
+        }
+    }
+
+    name.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::toolset::ToolVersionOptions;
     use indexmap::IndexMap;
+
+    #[test]
+    fn test_clean_binary_name() {
+        // Test basic OS/arch removal
+        assert_eq!(
+            clean_binary_name("docker-compose-linux-x86_64", None),
+            "docker-compose"
+        );
+        assert_eq!(
+            clean_binary_name("docker-compose-linux-x86_64.exe", None),
+            "docker-compose.exe"
+        );
+        assert_eq!(clean_binary_name("tool-darwin-arm64", None), "tool");
+        assert_eq!(
+            clean_binary_name("mytool-v1.2.3-windows-amd64", None),
+            "mytool"
+        );
+
+        // Test different separators
+        assert_eq!(clean_binary_name("app_linux_amd64", None), "app");
+        assert_eq!(clean_binary_name("app-linux_x64", None), "app");
+        assert_eq!(clean_binary_name("app_darwin-arm64", None), "app");
+
+        // Test arch before OS
+        assert_eq!(clean_binary_name("tool-x86_64-linux", None), "tool");
+        assert_eq!(clean_binary_name("tool_amd64_windows", None), "tool");
+
+        // Test with tool name hint
+        assert_eq!(
+            clean_binary_name("docker-compose-linux-x86_64", Some("docker-compose")),
+            "docker-compose"
+        );
+        assert_eq!(
+            clean_binary_name("compose-linux-x86_64", Some("compose")),
+            "compose"
+        );
+
+        // Test single OS or arch suffix
+        assert_eq!(clean_binary_name("binary-linux", None), "binary");
+        assert_eq!(clean_binary_name("binary-x86_64", None), "binary");
+        assert_eq!(clean_binary_name("binary_arm64", None), "binary");
+
+        // Test version removal
+        assert_eq!(clean_binary_name("tool-v1.2.3", None), "tool");
+        assert_eq!(clean_binary_name("app-2.0.0", None), "app");
+        assert_eq!(clean_binary_name("binary_v3.2.1", None), "binary");
+        assert_eq!(clean_binary_name("tool-1.0.0-alpha", None), "tool");
+        assert_eq!(clean_binary_name("app-v2.0.0-rc1", None), "app");
+
+        // Test version removal with tool name hint
+        assert_eq!(
+            clean_binary_name("docker-compose-v2.29.1", Some("docker-compose")),
+            "docker-compose"
+        );
+        assert_eq!(
+            clean_binary_name("compose-2.29.1", Some("compose")),
+            "compose"
+        );
+
+        // Test no cleaning needed
+        assert_eq!(clean_binary_name("simple-tool", None), "simple-tool");
+
+        // Test that executable extensions are preserved
+        assert_eq!(clean_binary_name("app-linux-x64.exe", None), "app.exe");
+        assert_eq!(
+            clean_binary_name("tool-v1.2.3-windows.bat", None),
+            "tool.bat"
+        );
+        assert_eq!(
+            clean_binary_name("script-darwin-arm64.sh", None),
+            "script.sh"
+        );
+        assert_eq!(
+            clean_binary_name("app-linux.AppImage", None),
+            "app.AppImage"
+        );
+
+        // Test edge cases
+        assert_eq!(clean_binary_name("linux", None), "linux"); // Just OS name
+        assert_eq!(clean_binary_name("", None), "");
+    }
 
     #[test]
     fn test_verify_artifact_platform_specific() {

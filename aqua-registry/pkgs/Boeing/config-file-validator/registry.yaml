@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Boeing
+    repo_name: config-file-validator
+    description: Cross Platform tool to validate configuration files
+    asset: validator-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        goarch: amd64
+        format: zip
+      - goos: windows
+        goarch: arm64
+        type: go_install
+        path: github.com/Boeing/config-file-validator/cmd/validator
+    files:
+      - name: validator
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.md5"
+      algorithm: md5
+    version_constraint: semver(">= 1.5.0")
+    version_overrides:
+      - version_constraint: Version == "v1.4.0"
+        asset: validator-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          enabled: false
+        overrides:
+          - goos: windows
+            goarch: amd64
+            asset: validator-{{trimV .Version}}
+          - goos: linux
+            goarch: arm64
+            type: go_install
+            path: github.com/Boeing/config-file-validator/cmd/validator
+          - goos: windows
+            goarch: arm64
+            type: go_install
+            path: github.com/Boeing/config-file-validator/cmd/validator
+        files:
+          - name: validator
+        replacements:
+          darwin: macos
+        rosetta2: true
+      - version_constraint: Version == "v1.3.0"
+        asset: validator.{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          darwin: macos
+        rosetta2: true
+        checksum:
+          enabled: false
+        overrides:
+          - goos: windows
+            goarch: amd64
+            asset: validator
+          - goos: linux
+            goarch: arm64
+            type: go_install
+            path: github.com/Boeing/config-file-validator/cmd/validator
+          - goos: windows
+            goarch: arm64
+            type: go_install
+            path: github.com/Boeing/config-file-validator/cmd/validator
+      - version_constraint: semver(">= 1.0.1")
+        asset: validator.{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements: {}
+        checksum:
+          enabled: false
+        overrides:
+          - goos: windows
+            goarch: amd64
+            asset: validator
+          - goarch: arm64
+            type: go_install
+            path: github.com/Boeing/config-file-validator/cmd/validator
+          - goos: darwin
+            type: go_install
+            path: github.com/Boeing/config-file-validator/cmd/validator
+      - version_constraint: Version == "v1.0.0"
+        asset: validator.{{.OS}}-{{.Arch}}
+        format: raw
+        replacements: {}
+        rosetta2: true
+        checksum:
+          enabled: false
+        overrides:
+          - goos: windows
+            goarch: amd64
+            asset: validator
+          - goarch: arm64
+            type: go_build
+            files:
+              - name: validator
+                src: ./cmd/validator
+                dir: config-file-validator-{{trimV .Version}}
+          - goos: darwin
+            type: go_build
+            files:
+              - name: validator
+                src: ./cmd/validator
+                dir: config-file-validator-{{trimV .Version}}

@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jsonnet-bundler
+    repo_name: jsonnet-bundler
+    description: A jsonnet package manager
+    files:
+      - name: jb
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.4.0"
+        asset: jb-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "v0.5.1"
+        asset: jb-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.3.1")
+        asset: jb-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: jb-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true

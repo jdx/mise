@@ -279,7 +279,7 @@ impl VfoxBackend {
 
     async fn ensure_plugin_installed(&self, config: &Arc<Config>) -> eyre::Result<()> {
         self.plugin
-            .ensure_installed(config, &MultiProgressReport::get(), false)
+            .ensure_installed(config, &MultiProgressReport::get(), false, false)
             .await
     }
 }

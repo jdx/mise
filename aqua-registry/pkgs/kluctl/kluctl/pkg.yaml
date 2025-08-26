@@ -1,0 +1,10 @@
+packages:
+  - name: kluctl/kluctl@v2.27.0
+  - name: kluctl/kluctl
+    version: v2.7.9
+  - name: kluctl/kluctl
+    version: v2.7.8
+  - name: kluctl/kluctl
+    version: v2.7.1
+  - name: kluctl/kluctl
+    version: v2.6.2

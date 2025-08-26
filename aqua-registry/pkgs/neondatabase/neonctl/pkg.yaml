@@ -1,0 +1,4 @@
+packages:
+  - name: neondatabase/neonctl@v2.15.0
+  - name: neondatabase/neonctl
+    version: v1.27.4

@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ldez
+    repo_name: prm
+    asset: prm_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: Pull Request Manager for Maintainers
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: prm_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

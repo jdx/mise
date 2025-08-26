@@ -1,0 +1,181 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tstack
+    repo_name: lnav
+    description: Log file navigator
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.8.1")
+        asset: lnav-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: 64bit
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v0.8.2-alpha"
+        asset: lnav-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: 64bit
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v0.8.2"
+        asset: lnav-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: 64bit
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.8.3b")
+        asset: lnav-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: 64bit
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.8.5")
+        asset: lnav-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: 64bit
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v0.9.0"
+        asset: lnav-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: 64bit
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.11.0")
+        asset: lnav-{{trimV .Version}}-musl-64bit.{{.Format}}
+        format: zip
+        rosetta2: true
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        overrides:
+          - goos: darwin
+            asset: lnav-{{trimV .Version}}-os-x.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.11.1-test1")
+        asset: lnav-0.11.1-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            asset: lnav-0.11.1-{{.Arch}}-{{.OS}}-musl.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.11.2")
+        asset: lnav-{{trimV .Version}}-{{.Arch}}-{{.OS}}-musl.{{.Format}}
+        format: zip
+        rosetta2: true
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: lnav-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.12.0")
+        asset: lnav-{{trimV .Version}}-{{.OS}}-musl-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: lnav-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.12.3")
+        asset: lnav-{{trimV .Version}}-{{.OS}}-musl-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: lnav-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.12.4"
+        asset: lnav-{{trimV .Version}}-{{.OS}}-musl-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: lnav-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: lnav-{{trimV .Version}}-{{.OS}}-musl-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: lnav
+            src: lnav-{{trimV .Version}}/lnav
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: lnav-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+          - goos: windows
+            asset: lnav-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+            files:
+              - name: lnav
+                src: lnav-{{trimV .Version}}/bin/lnav.exe

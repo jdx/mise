@@ -1,0 +1,18 @@
+packages:
+  - name: yitsushi/totp-cli@v1.9.2
+  - name: yitsushi/totp-cli
+    version: v1.8.6
+  - name: yitsushi/totp-cli
+    version: v1.8.5
+  - name: yitsushi/totp-cli
+    version: v1.1.17
+  - name: yitsushi/totp-cli
+    version: v1.1.10
+  - name: yitsushi/totp-cli
+    version: v1.1.9
+  - name: yitsushi/totp-cli
+    version: v1.1.4
+  - name: yitsushi/totp-cli
+    version: v1.1.3
+  - name: yitsushi/totp-cli
+    version: 1.0.5

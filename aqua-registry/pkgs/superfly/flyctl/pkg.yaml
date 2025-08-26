@@ -1,0 +1,26 @@
+packages:
+  - name: superfly/flyctl@v0.3.171
+  - name: superfly/flyctl
+    version: v0.3.10
+  - name: superfly/flyctl
+    version: v0.2.127
+  - name: superfly/flyctl
+    version: v0.2.84
+  - name: superfly/flyctl
+    version: v0.2.80
+  - name: superfly/flyctl
+    version: v0.2.72
+  - name: superfly/flyctl
+    version: v0.1.144-pre-4
+  - name: superfly/flyctl
+    version: v0.0.517
+  - name: superfly/flyctl
+    version: v0.0.513
+  - name: superfly/flyctl
+    version: v0.0.243
+  - name: superfly/flyctl
+    version: v0.0.201
+  - name: superfly/flyctl
+    version: v0.0.175
+  - name: superfly/flyctl
+    version: v0.0.158

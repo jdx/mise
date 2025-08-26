@@ -1,0 +1,4 @@
+packages:
+  - name: babarot/stein@v0.3.4
+  - name: babarot/stein
+    version: v0.3.0

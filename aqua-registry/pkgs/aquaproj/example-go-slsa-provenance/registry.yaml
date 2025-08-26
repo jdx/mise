@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: aquaproj
+    repo_name: example-go-slsa-provenance
+    description: Example Go Application with SLSA Provenance
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.2")
+        asset: example-go-slsa-provenance_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: example-go-slsa-provenance_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+      - version_constraint: "true"
+        asset: example-go-slsa-provenance_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: example-go-slsa-provenance_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/aquaproj/example-go-slsa-provenance/releases/download/{{.Version}}/example-go-slsa-provenance_{{trimV .Version}}_checksums.txt.pem
+              - --certificate-identity-regexp
+              - "^https://github\\.com/aquaproj/example-go-slsa-provenance/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/aquaproj/example-go-slsa-provenance/releases/download/{{.Version}}/example-go-slsa-provenance_{{trimV .Version}}_checksums.txt.sig
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl

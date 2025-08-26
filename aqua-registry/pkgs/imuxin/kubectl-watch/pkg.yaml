@@ -1,0 +1,6 @@
+packages:
+  - name: imuxin/kubectl-watch@v0.2.4
+  - name: imuxin/kubectl-watch
+    version: v0.2.3
+  - name: imuxin/kubectl-watch
+    version: 0.1.5

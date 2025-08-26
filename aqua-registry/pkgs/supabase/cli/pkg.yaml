@@ -1,0 +1,10 @@
+packages:
+  - name: supabase/cli@v2.34.3
+  - name: supabase/cli
+    version: v1.126.0
+  - name: supabase/cli
+    version: v1.27.10
+  - name: supabase/cli
+    version: v1.19.0
+  - name: supabase/cli
+    version: v1.17.6

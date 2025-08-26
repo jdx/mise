@@ -250,11 +250,13 @@ cmd env help="Exports env vars to activate mise a single time" {
     flag "-J --json" help="Output in JSON format"
     flag --json-extended help="Output in JSON format with additional information (source, tool)"
     flag "-D --dotenv" help="Output in dotenv format"
+    flag --redacted help="Only show redacted environment variables"
     flag "-s --shell" help="Shell type to generate environment variables for" {
         arg <SHELL> {
             choices bash elvish fish nu xonsh zsh pwsh
         }
     }
+    flag --values help="Only show values of environment variables"
     arg "[TOOL@VERSION]…" help="Tool(s) to use" required=#false var=#true
 }
 cmd exec help="Execute a command with tool(s) set" {
@@ -441,6 +443,7 @@ cmd install help="Install a tool version" {
     alias i
     long_help "Install a tool version\n\nInstalls a tool version to `~/.local/share/mise/installs/<PLUGIN>/<VERSION>`\nInstalling alone will not activate the tools so they won't be in PATH.\nTo install and/or activate in one command, use `mise use` which will create a `mise.toml` file\nin the current directory to activate this tool when inside the directory.\nAlternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.\n\nTools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`"
     after_long_help "Examples:\n\n    $ mise install node@20.0.0  # install specific node version\n    $ mise install node@20      # install fuzzy node version\n    $ mise install node         # install version specified in mise.toml\n    $ mise install              # installs everything specified in mise.toml\n"
+    flag "-n --dry-run" help="Show what would be installed without actually installing"
     flag "-f --force" help="Force reinstall even if already installed"
     flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
         arg <JOBS>
@@ -1028,6 +1031,7 @@ cmd use help="Installs a tool and adds the version to mise.toml." {
         long_help "Save fuzzy version to config file\n\ne.g.: `mise use --fuzzy node@20` will save 20 as the version\nthis is the default behavior unless `MISE_PIN=1`"
     }
     flag "-g --global" help="Use the global config file (`~/.config/mise/config.toml`) instead of the local one"
+    flag "-n --dry-run" help="Perform a dry run, showing what would be installed and modified without making changes"
     flag "-e --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         arg <ENV>
     }

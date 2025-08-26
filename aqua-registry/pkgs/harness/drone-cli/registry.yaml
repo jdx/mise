@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: harness
+    repo_name: drone-cli
+    asset: drone_{{.OS}}_{{.Arch}}.tar.gz
+    description: Command Line Tools for Drone CI
+    files:
+      - name: drone
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: drone_checksums.txt
+      algorithm: sha256

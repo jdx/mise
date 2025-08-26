@@ -1,0 +1,4 @@
+packages:
+  - name: ctron/oidc-cli@v0.6.1
+  - name: ctron/oidc-cli
+    version: v0.5.1

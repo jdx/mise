@@ -1,0 +1,29 @@
+packages:
+  - name: aquasecurity/tfsec@v1.28.14
+    version: v1.26.2
+  - name: aquasecurity/tfsec
+    version: v1.24.4
+  - name: aquasecurity/tfsec
+    version: v1.23.2
+  - name: aquasecurity/tfsec
+    version: v1.20.2
+  - name: aquasecurity/tfsec
+    version: v1.18.0
+  - name: aquasecurity/tfsec
+    version: v1.16.1
+  - name: aquasecurity/tfsec
+    version: v1.0.0-rc.1
+  - name: aquasecurity/tfsec
+    version: v0.63.1
+  - name: aquasecurity/tfsec
+    version: v0.58.7
+  - name: aquasecurity/tfsec
+    version: v0.51.1
+  - name: aquasecurity/tfsec
+    version: v0.39.35
+  - name: aquasecurity/tfsec
+    version: v0.9.0
+  - name: aquasecurity/tfsec
+    version: v0.8.1
+  - name: aquasecurity/tfsec
+    version: v0.1.0

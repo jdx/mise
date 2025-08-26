@@ -223,6 +223,7 @@
       "type": "object"
     },
     "settings": {
+      "type": "object",
       "properties": {
         "activate_aggressive": {
           "description": "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.",
@@ -245,7 +246,7 @@
           "properties": {
             "baked_registry": {
               "default": true,
-              "description": "Use baked-in aqua registry (if compiled in).",
+              "description": "Use baked-in aqua registry.",
               "type": "boolean"
             },
             "cosign": {
@@ -363,7 +364,7 @@
           }
         },
         "disable_default_registry": {
-          "description": "Disable the default mapping of short tool names like `go` -> `vfox:version-fox/vfox-golang`. This parameter disables only for the backends `vfox` and `asdf`.",
+          "description": "Disable the default mapping of short tool names like `php` -> `asdf:mise-plugins/asdf-php`. This parameter disables only for the backends `vfox` and `asdf`.",
           "type": "boolean"
         },
         "disable_default_shorthands": {

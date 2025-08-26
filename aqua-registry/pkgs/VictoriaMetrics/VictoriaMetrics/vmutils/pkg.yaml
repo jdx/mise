@@ -1,0 +1,4 @@
+packages:
+  - name: VictoriaMetrics/VictoriaMetrics/vmutils@v1.124.0
+  - name: VictoriaMetrics/VictoriaMetrics/vmutils
+    version: v1.103.0

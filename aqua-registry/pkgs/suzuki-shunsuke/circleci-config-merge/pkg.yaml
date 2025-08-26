@@ -1,0 +1,14 @@
+packages:
+  - name: suzuki-shunsuke/circleci-config-merge@v1.1.6
+  - name: suzuki-shunsuke/circleci-config-merge
+    version: v1.1.4
+  - name: suzuki-shunsuke/circleci-config-merge
+    version: v1.1.4-12
+  - name: suzuki-shunsuke/circleci-config-merge
+    version: v1.1.4-10
+  - name: suzuki-shunsuke/circleci-config-merge
+    version: v1.1.4-4
+  - name: suzuki-shunsuke/circleci-config-merge
+    version: v1.1.3
+  - name: suzuki-shunsuke/circleci-config-merge
+    version: v1.1.1

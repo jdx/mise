@@ -1,0 +1,9 @@
+---
+# aqua - Declarative CLI Version Manager
+# https://aquaproj.github.io/
+registries:
+  - name: standard
+    type: local
+    path: ../registry.yaml
+packages:
+  - import: ../pkgs/suzuki-shunsuke/ci-info/pkg.yaml

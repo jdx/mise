@@ -1,0 +1,425 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: fastfetch-cli
+    repo_name: fastfetch
+    description: An actively maintained, feature-rich and performance oriented, neofetch like system information tool
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["1.10.2", "2.1.2", "2.7.0"]
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+        overrides:
+          - goos: windows
+            goarch: amd64
+            format: zip
+            replacements:
+              windows: Win64
+            files:
+              - name: fastfetch
+          - goos: windows
+            goarch: arm64
+            format: zip
+            replacements:
+              windows: WinArm64
+            files:
+              - name: fastfetch
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version in ["2.0.2", "2.0.3", "2.2.0", "2.3.2", "2.7.1"]
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+          windows: Win64
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "2.8.2"
+        asset: fastfetch-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+          - goos: darwin
+            asset: fastfetch-{{.Version}}-{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+      - version_constraint: Version == "2.8.3"
+        asset: fastfetch-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+          - goos: darwin
+            asset: fastfetch-{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+      - version_constraint: Version == "1.2.1"
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/bin/fastfetch"
+        format: tar.zst
+        replacements:
+          linux: Linux
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "1.8.0"
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+        overrides:
+          - goos: windows
+            format: raw
+            asset: fastfetch
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "1.8.1"
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+        overrides:
+          - goos: windows
+            format: zip
+            asset: fastfetch-{{.OS}}.{{.Format}}
+            files:
+              - name: fastfetch
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "1.8.2"
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+          windows: Win7
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version in ["2.8.5", "2.8.7", "2.9.0", "2.13.0"]
+        asset: fastfetch-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: fastfetch-{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+      - version_constraint: semver("<= 1.2.0")
+        asset: fastfetch
+        format: raw
+        files:
+          - name: fastfetch
+            src: fastfetch-{{.OS}}-{{.Arch}}/usr/bin/fastfetch
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.7.0")
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          linux: Linux
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.7.5")
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.9.1")
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.12.2")
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+          windows: Win64
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.0.5")
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+        overrides:
+          - goos: windows
+            goarch: amd64
+            format: zip
+            replacements:
+              windows: Win64
+            files:
+              - name: fastfetch
+          - goos: windows
+            goarch: arm64
+            format: zip
+            files:
+              - name: fastfetch
+            replacements:
+              windows: WinArm64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.1.1")
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+          windows: Win64
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.6.0")
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+        overrides:
+          - goos: windows
+            goarch: amd64
+            format: zip
+            files:
+              - name: fastfetch
+            replacements:
+              windows: Win64
+          - goos: windows
+            goarch: arm64
+            format: zip
+            files:
+              - name: fastfetch
+            replacements:
+              windows: WinArm64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.6.3")
+        asset: fastfetch-{{.Version}}-{{.OS}}.{{.Format}}
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        format: tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+          windows: Win64
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.9.2")
+        asset: fastfetch-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        replacements:
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: fastfetch-{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+      - version_constraint: semver("<= 2.11.4")
+        asset: fastfetch-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: fastfetch-{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+      - version_constraint: semver("<= 2.40.0")
+        asset: fastfetch-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        replacements:
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: fastfetch-{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+      - version_constraint: semver("<= 2.45.0")
+        asset: fastfetch-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: fastfetch-{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+        replacements:
+          darwin: macos
+      - version_constraint: "true"
+        asset: fastfetch-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: fastfetch
+            src: "{{.AssetWithoutExt}}/usr/bin/fastfetch"
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fastfetch
+        replacements:
+          arm64: aarch64
+          darwin: macos

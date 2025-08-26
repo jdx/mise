@@ -1,0 +1,4 @@
+packages:
+  - name: emirozer/kubectl-doctor@0.3.1
+  - name: emirozer/kubectl-doctor
+    version: 0.3.0

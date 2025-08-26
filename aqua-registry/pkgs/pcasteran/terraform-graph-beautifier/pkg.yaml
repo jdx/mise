@@ -1,0 +1,4 @@
+packages:
+  - name: pcasteran/terraform-graph-beautifier@v0.3.4
+  - name: pcasteran/terraform-graph-beautifier
+    version: v0.2.0

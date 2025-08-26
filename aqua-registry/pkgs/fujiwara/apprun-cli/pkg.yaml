@@ -1,0 +1,6 @@
+packages:
+  - name: fujiwara/apprun-cli@v0.3.2
+  - name: fujiwara/apprun-cli
+    version: v0.3.0
+  - name: fujiwara/apprun-cli
+    version: v0.1.0

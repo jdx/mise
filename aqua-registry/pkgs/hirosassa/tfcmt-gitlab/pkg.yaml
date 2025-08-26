@@ -1,0 +1,4 @@
+packages:
+  - name: hirosassa/tfcmt-gitlab@v0.2.2
+  - name: hirosassa/tfcmt-gitlab
+    version: v0.1.4

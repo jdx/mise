@@ -1,0 +1,8 @@
+packages:
+  - name: cloudflare/cfssl/cfssl@v1.6.5
+  - name: cloudflare/cfssl/cfssl
+    version: v1.6.3
+  - name: cloudflare/cfssl/cfssl
+    version: v1.6.1
+  - name: cloudflare/cfssl/cfssl
+    version: 1.2.0

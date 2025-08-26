@@ -1,0 +1,16 @@
+packages:
+  - name: denisidoro/navi@v2.25.0-beta1
+  - name: denisidoro/navi
+    version: v2.24.0
+  - name: denisidoro/navi
+    version: v2.20.1
+  - name: denisidoro/navi
+    version: v2.19.0
+  - name: denisidoro/navi
+    version: v2.15.1
+  - name: denisidoro/navi
+    version: v2.15.0
+  - name: denisidoro/navi
+    version: v2.14.0
+  - name: denisidoro/navi
+    version: v2.1.1

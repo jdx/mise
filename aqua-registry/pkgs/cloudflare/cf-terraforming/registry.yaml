@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloudflare
+    repo_name: cf-terraforming
+    description: A command line utility to facilitate terraforming your existing Cloudflare resources
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.19.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.4.0")
+        asset: cf-terraforming_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: cf-terraforming_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

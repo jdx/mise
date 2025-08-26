@@ -1,0 +1,4 @@
+packages:
+  - name: tohjustin/kube-lineage@v0.5.0
+  - name: tohjustin/kube-lineage
+    version: v0.1.0

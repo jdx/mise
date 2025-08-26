@@ -34,12 +34,12 @@ impl log::Log for Logger {
         }
         let term_level = *self.term_level.lock().unwrap();
         if record.level() <= term_level {
-            ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
-                let out = self.render(record, term_level);
-                if !out.is_empty() {
-                    eprintln!("{}", self.render(record, term_level));
-                }
-            });
+            let out = self.render(record, term_level);
+            if !out.is_empty() {
+                ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
+                    eprintln!("{out}");
+                });
+            }
         }
     }
 

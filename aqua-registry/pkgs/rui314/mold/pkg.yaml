@@ -1,0 +1,4 @@
+packages:
+  - name: rui314/mold@v2.40.4
+  - name: rui314/mold
+    version: v1.5.1

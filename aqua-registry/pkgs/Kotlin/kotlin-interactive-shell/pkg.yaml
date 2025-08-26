@@ -1,0 +1,6 @@
+packages:
+  - name: Kotlin/kotlin-interactive-shell@v0.5.2
+  - name: Kotlin/kotlin-interactive-shell
+    version: v0.3.3
+  - name: Kotlin/kotlin-interactive-shell
+    version: v0.3.2

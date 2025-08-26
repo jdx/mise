@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: pamburus
+    repo_name: hl
+    description: A fast and powerful log viewer and processor that translates JSON or logfmt logs into a pretty human-readable format
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.29.0"
+        no_asset: true
+      - version_constraint: Version == "v0.6.2"
+        asset: hl-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.6.7")
+        asset: hl-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.8.14")
+        asset: hl-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.10.5")
+        asset: hl-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            asset: hl-{{.Arch}}-{{.OS}}-gnu.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.15.2")
+        asset: hl-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            asset: hl-{{.Arch}}-{{.OS}}-gnu.{{.Format}}
+          - goos: darwin
+            goarch: arm64
+            asset: hl-{{.Arch}}-{{.OS}}.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: hl-{{.OS}}-{{.Arch}}-gnu.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: hl-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: hl-{{.OS}}.{{.Format}}

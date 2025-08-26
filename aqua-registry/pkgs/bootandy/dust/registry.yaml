@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bootandy
+    repo_name: dust
+    description: A more intuitive version of du in rust
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    asset: dust-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+      windows: pc-windows-msvc
+      386: i686
+    files:
+      - name: dust
+        src: dust-{{.Version}}-{{.Arch}}-{{.OS}}/dust

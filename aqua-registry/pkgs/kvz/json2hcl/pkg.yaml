@@ -1,0 +1,6 @@
+packages:
+  - name: kvz/json2hcl@v0.2.0
+  - name: kvz/json2hcl
+    version: v0.0.6
+  - name: kvz/json2hcl
+    version: v0.0.5

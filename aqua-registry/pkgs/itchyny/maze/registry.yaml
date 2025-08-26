@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: itchyny
+    repo_name: maze
+    description: A maze command written in Go
+    asset: maze_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: maze
+        src: maze_{{.Version}}_{{.OS}}_{{.Arch}}/maze
+    complete_windows_ext: false
+    version_constraint: semver(">= 0.0.8")
+    version_overrides:
+      - version_constraint: semver(">= 0.0.4")
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver("< 0.0.4")
+        asset: maze_{{.OS}}_{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        files:
+          - name: maze
+            src: maze_{{.OS}}_{{.Arch}}/maze
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: maze
+        complete_windows_ext: true

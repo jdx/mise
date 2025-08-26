@@ -1,0 +1,4 @@
+packages:
+  - name: Automattic/harper/harper-cli@v0.59.0
+  - name: Automattic/harper/harper-cli
+    version: v0.13.0

@@ -1,0 +1,8 @@
+packages:
+  - name: psastras/sarif-rs/clippy-sarif@clippy-sarif-v0.8.0
+  - name: psastras/sarif-rs/clippy-sarif
+    version: clippy-sarif-v0.6.2
+  - name: psastras/sarif-rs/clippy-sarif
+    version: clippy-sarif-v0.4.2
+  - name: psastras/sarif-rs/clippy-sarif
+    version: clippy-sarif-v0.2.23

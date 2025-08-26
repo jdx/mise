@@ -915,6 +915,11 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--redacted",
+          description: "Only show redacted environment variables",
+          isRepeatable: false,
+        },
+        {
           name: ["-s", "--shell"],
           description: "Shell type to generate environment variables for",
           isRepeatable: false,
@@ -930,6 +935,11 @@ const completionSpec: Fig.Spec = {
               "pwsh",
             ],
           },
+        },
+        {
+          name: "--values",
+          description: "Only show values of environment variables",
+          isRepeatable: false,
         },
       ],
       args: {
@@ -1332,6 +1342,12 @@ const completionSpec: Fig.Spec = {
       name: ["install", "i"],
       description: "Install a tool version",
       options: [
+        {
+          name: ["-n", "--dry-run"],
+          description:
+            "Show what would be installed without actually installing",
+          isRepeatable: false,
+        },
         {
           name: ["-f", "--force"],
           description: "Force reinstall even if already installed",
@@ -3009,6 +3025,12 @@ const completionSpec: Fig.Spec = {
           name: ["-g", "--global"],
           description:
             "Use the global config file (`~/.config/mise/config.toml`) instead of the local one",
+          isRepeatable: false,
+        },
+        {
+          name: ["-n", "--dry-run"],
+          description:
+            "Perform a dry run, showing what would be installed and modified without making changes",
           isRepeatable: false,
         },
         {

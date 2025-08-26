@@ -1,0 +1,2 @@
+packages:
+  - name: ipinfo/cli/range2cidr@range2cidr-1.3.0

@@ -1,0 +1,26 @@
+packages:
+  - name: dandavison/delta@0.18.2
+  - name: dandavison/delta
+    version: 0.16.4
+  - name: dandavison/delta
+    version: 0.15.0
+  - name: dandavison/delta
+    version: 0.4.1
+  - name: dandavison/delta
+    version: 0.3.0
+  - name: dandavison/delta
+    version: 0.1.0
+  - name: dandavison/delta
+    version: 0.0.16
+  - name: dandavison/delta
+    version: 0.0.10
+  - name: dandavison/delta
+    version: 0.0.8
+  - name: dandavison/delta
+    version: 0.0.7
+  - name: dandavison/delta
+    version: 0.0.6
+  - name: dandavison/delta
+    version: 0.0.5
+  - name: dandavison/delta
+    version: 0.0.1

@@ -1,0 +1,2 @@
+packages:
+  - name: pypa/pipx@1.7.1

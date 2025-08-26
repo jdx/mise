@@ -1,0 +1,4 @@
+packages:
+  - name: xwjdsh/manssh@v0.5.3
+  - name: xwjdsh/manssh
+    version: v0.5.1

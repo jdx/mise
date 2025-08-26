@@ -1,0 +1,12 @@
+---
+# aqua Policy
+# https://aquaproj.github.io/docs/guides/policy-as-code
+registries:
+  - type: standard
+    ref: semver(">= 3.0.0")
+  - type: local
+    name: local
+    path: registry.yaml
+packages:
+  - registry: standard
+  - registry: local

@@ -14,8 +14,11 @@ file, mise will automatically add itself to `PATH`.
 
 ```sh
 curl https://mise.run | sh
+```
 
-# or with options
+or with options
+
+```sh
 curl https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
 ```
 
@@ -220,6 +223,14 @@ systems.
 yum install -y yum-utils
 yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 yum install -y mise
+```
+
+### zypper
+
+```sh
+sudo wget https://mise.jdx.dev/rpm/mise.repo -O /etc/zypp/repos.d/mise.repo
+sudo zypper refresh
+sudo zypper install mise
 ```
 
 ### Windows - Scoop

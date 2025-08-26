@@ -1,0 +1,8 @@
+packages:
+  - name: kastenhq/kubestr@v0.4.49
+  - name: kastenhq/kubestr
+    version: v0.4.29
+  - name: kastenhq/kubestr
+    version: v0.4.23
+  - name: kastenhq/kubestr
+    version: v0.4.18

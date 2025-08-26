@@ -1,0 +1,8 @@
+packages:
+  - name: kreuzwerker/awsu@v2.3.11
+  - name: kreuzwerker/awsu
+    version: v2.3.10
+  - name: kreuzwerker/awsu
+    version: v2.3.9
+  - name: kreuzwerker/awsu
+    version: 2.3.2

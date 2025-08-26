@@ -1,0 +1,6 @@
+packages:
+  - name: containrrr/shoutrrr@v0.8.0
+  - name: containrrr/shoutrrr
+    version: v0.7.1
+  - name: containrrr/shoutrrr
+    version: v0.6.1

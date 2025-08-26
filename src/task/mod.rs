@@ -1,3 +1,4 @@
+use crate::cli::version::VERSION;
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
@@ -164,12 +165,28 @@ impl Task {
         let info = file::read_to_string(path)?
             .lines()
             .filter_map(|line| {
-                regex!(r"^(#|//) mise ([a-z_]+=.+)$")
+                debug_assert!(
+                    !VERSION.starts_with("2026.3"),
+                    "remove old syntax `# mise`"
+                );
+                if let Some(captures) =
+                    regex!(r"^(?:#|//|::)(?:MISE| ?\[MISE\]) ([a-z_]+=.+)$").captures(line)
+                {
+                    Some(captures)
+                } else if let Some(captures) = regex!(r"^(?:#|//) mise ([a-z_]+=.+)$")
                     .captures(line)
-                    .or_else(|| regex!(r"^(#|//|::)MISE ([a-z_]+=.+)$").captures(line))
+                {
+                    deprecated!(
+                        "file_task_headers_old_syntax",
+                        "The `# mise ...` syntax for task headers is deprecated and will be removed in mise 2026.3.0. Use the new `#MISE ...` syntax instead."
+                    );
+                    Some(captures)
+                } else {
+                    None
+                }
             })
             .map(|captures| captures.extract().1)
-            .map(|[_, toml]| {
+            .map(|[toml]| {
                 toml.parse::<toml::Value>()
                     .map_err(|e| eyre::eyre!("failed to parse task header TOML '{}': {}", toml, e))
             })
@@ -807,6 +824,34 @@ mod tests {
         for (root, path) in test_cases {
             assert!(name_from_path(root, path).is_err())
         }
+    }
+
+    #[tokio::test]
+    async fn test_from_path_toml_headers() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempdir().unwrap();
+        let task_path = temp_dir.path().join("test_task");
+
+        fs::write(
+            &task_path,
+            r#"#!/bin/bash
+#MISE description="Build the CLI"
+# MISE alias="b"
+# [MISE] sources=["Cargo.toml", "src/**/*.rs"]
+echo "hello world"
+"#,
+        )
+        .unwrap();
+
+        let result = Task::from_path(&config, &task_path, temp_dir.path(), temp_dir.path()).await;
+        let mut expected = Task::new(&task_path, temp_dir.path(), temp_dir.path()).unwrap();
+        expected.description = "Build the CLI".to_string();
+        expected.aliases = vec!["b".to_string()];
+        expected.sources = vec!["Cargo.toml".to_string(), "src/**/*.rs".to_string()];
+        assert_eq!(result.unwrap(), expected);
     }
 
     #[tokio::test]

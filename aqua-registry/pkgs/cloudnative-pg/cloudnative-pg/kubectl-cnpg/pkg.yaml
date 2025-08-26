@@ -1,0 +1,2 @@
+packages:
+  - name: cloudnative-pg/cloudnative-pg/kubectl-cnpg@v1.27.0

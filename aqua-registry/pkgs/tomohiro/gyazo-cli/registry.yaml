@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tomohiro
+    repo_name: gyazo-cli
+    description: Gyazo command-line uploader
+    asset: gyazo-cli_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    files:
+      - name: gyazo-cli
+        src: gyazo-cli_{{.Version}}_{{.OS}}_{{.Arch}}/gyazo-cli
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: "{{.Version}}_SHA256SUMS"
+      algorithm: sha256
+    version_constraint: semver(">= 1.0.0")
+    version_overrides:
+      - version_constraint: semver("< 1.0.0")
+        asset: gyazo_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: gyazo

@@ -1,0 +1,2 @@
+packages:
+  - name: self-actuated/actuated-cli@v0.2.11

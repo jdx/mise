@@ -117,6 +117,47 @@ SECRET = { value = "my_secret", redact = true }
 _.file = { path = ".env.json", redact = true }
 ```
 
+You can also use the `redactions` array to mark multiple environment variables as sensitive:
+
+```toml
+redactions = ["SECRET_*", "*_TOKEN", "PASSWORD"]
+[env]
+SECRET_KEY = "sensitive_value"
+API_TOKEN = "token_123"
+PASSWORD = "my_password"
+```
+
+### Viewing Redacted Environment Variables
+
+The `mise env` command provides flags to work with redacted variables:
+
+```bash
+# Show only redacted environment variables
+mise env --redacted
+
+# Show only values (useful for piping)
+mise env --values
+
+# Show only values of redacted variables
+mise env --redacted --values
+```
+
+:::danger
+Because mise may output sensitive values that could show up in CI logs you'll need to be configure your CI setup
+to know which values are sensitive.
+
+For example, when using GitHub Actions, you should use `::add-mask::` to prevent secrets from appearing in logs:
+
+```bash
+# In a GitHub Actions workflow
+for value in $(mise env --redacted --values); do
+  echo "::add-mask::$value"
+done
+```
+
+Note: If you're using [mise-action](https://github.com/jdx/mise-action), it will automatically redact values marked with `redact = true` or matching patterns in the `redactions` array.
+:::
+
 ## `env._` directives
 
 `env._.*` define special behavior for setting environment variables. (e.g.: reading env vars

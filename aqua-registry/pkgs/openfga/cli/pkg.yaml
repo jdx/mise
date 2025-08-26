@@ -1,0 +1,6 @@
+packages:
+  - name: openfga/cli@v0.7.4
+  - name: openfga/cli
+    version: v0.4.0
+  - name: openfga/cli
+    version: v0.1.0-beta1

@@ -1,0 +1,10 @@
+packages:
+  - name: alcideio/rbac-tool@v1.20.0
+  - name: alcideio/rbac-tool
+    version: v1.1.4
+  - name: alcideio/rbac-tool
+    version: v1.1.0
+  - name: alcideio/rbac-tool
+    version: v0.10.1
+  - name: alcideio/rbac-tool
+    version: v0.6.2

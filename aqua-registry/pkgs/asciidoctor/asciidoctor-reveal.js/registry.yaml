@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: asciidoctor
+    repo_name: asciidoctor-reveal.js
+    description: "A reveal.js converter for Asciidoctor and Asciidoctor.js. Write your slides in AsciiDoc"
+    files:
+      - name: asciidoctor-revealjs
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 3.0.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: asciidoctor-revealjs-{{.OS}}
+        format: raw
+        files:
+          - name: asciidoctor-revealjs
+            src: asciidoctor-reveal.js
+        replacements:
+          darwin: macos
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

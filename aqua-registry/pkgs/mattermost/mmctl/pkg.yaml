@@ -1,0 +1,2 @@
+packages:
+  - name: mattermost/mmctl@v7.10.5

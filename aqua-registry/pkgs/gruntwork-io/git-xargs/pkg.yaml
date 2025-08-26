@@ -1,0 +1,6 @@
+packages:
+  - name: gruntwork-io/git-xargs@v0.1.16
+  - name: gruntwork-io/git-xargs
+    version: v0.1.6
+  - name: gruntwork-io/git-xargs
+    version: v0.0.1

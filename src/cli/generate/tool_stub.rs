@@ -188,11 +188,12 @@ impl ToolStub {
                 }
                 doc["size"] = size_item;
 
-                if self.bin.is_none() && bin_path.is_some() {
-                    let detected_bin = bin_path.as_ref().unwrap();
-                    // Only set bin if it's different from the stub filename
-                    if detected_bin != stub_filename {
-                        doc["bin"] = toml_edit::value(detected_bin);
+                if self.bin.is_none() {
+                    if let Some(detected_bin) = bin_path.as_ref() {
+                        // Only set bin if it's different from the stub filename
+                        if detected_bin != stub_filename {
+                            doc["bin"] = toml_edit::value(detected_bin);
+                        }
                     }
                 }
             }
@@ -257,13 +258,11 @@ impl ToolStub {
                     }
 
                     // Set bin path if not explicitly provided and we detected one different from stub filename
-                    if !explicit_platform_bins.contains_key(&platform)
-                        && self.bin.is_none()
-                        && bin_path.is_some()
-                    {
-                        let detected_bin = bin_path.as_ref().unwrap();
-                        if detected_bin != stub_filename {
-                            platform_table["bin"] = toml_edit::value(detected_bin);
+                    if !explicit_platform_bins.contains_key(&platform) && self.bin.is_none() {
+                        if let Some(detected_bin) = bin_path.as_ref() {
+                            if detected_bin != stub_filename {
+                                platform_table["bin"] = toml_edit::value(detected_bin);
+                            }
                         }
                     }
                 }

@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: uzimaru0000
+    repo_name: tv
+    description: Format json into table view
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: tv-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: tv
+            src: "{{.AssetWithoutExt}}/tv"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-gnu
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

@@ -1,0 +1,12 @@
+packages:
+  - name: FairwindsOps/rbac-lookup@v0.10.3
+  - name: FairwindsOps/rbac-lookup
+    version: v0.8.2
+  - name: FairwindsOps/rbac-lookup
+    version: v0.7.1
+  - name: FairwindsOps/rbac-lookup
+    version: v0.6.5
+  - name: FairwindsOps/rbac-lookup
+    version: v0.6.2
+  - name: FairwindsOps/rbac-lookup
+    version: v0.3.2

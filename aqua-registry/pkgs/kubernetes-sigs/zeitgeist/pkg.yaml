@@ -1,0 +1,12 @@
+packages:
+  - name: kubernetes-sigs/zeitgeist@v0.5.4
+  - name: kubernetes-sigs/zeitgeist
+    version: v0.4.1
+  - name: kubernetes-sigs/zeitgeist
+    version: v0.3.5
+  - name: kubernetes-sigs/zeitgeist
+    version: v0.3.4
+  - name: kubernetes-sigs/zeitgeist
+    version: v0.0.2
+  - name: kubernetes-sigs/zeitgeist
+    version: v0.0.17

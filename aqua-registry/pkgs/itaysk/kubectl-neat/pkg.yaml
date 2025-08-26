@@ -1,0 +1,6 @@
+packages:
+  - name: itaysk/kubectl-neat@v2.0.4
+  - name: itaysk/kubectl-neat
+    version: v2.0.2
+  - name: itaysk/kubectl-neat
+    version: v1.0.0

@@ -1,0 +1,4 @@
+packages:
+  - name: aquaproj/example-go-slsa-provenance@v0.1.3
+  - name: aquaproj/example-go-slsa-provenance
+    version: v0.1.2
