@@ -366,16 +366,17 @@ impl EnvResults {
                 .or_else(|| dirs::CWD.clone())
                 .unwrap_or_default();
             let paths = paths.map(|(p, _)| p).collect_vec();
-            let paths = paths
+            let mut paths = paths
                 .iter()
                 .rev()
                 .flat_map(|path| env::split_paths(path))
                 .map(|s| normalize_path(&config_root, s))
                 .collect::<Vec<_>>();
-            r.env_paths.extend(paths);
+            // r.env_paths is already reversed and paths should prepend r.env_paths
+            paths.reverse();
+            paths.extend(r.env_paths);
+            r.env_paths = paths;
         }
-
-        r.env_paths.reverse();
 
         Ok(r)
     }
