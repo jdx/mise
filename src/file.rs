@@ -493,14 +493,26 @@ pub fn all_dirs<P: AsRef<Path>>(
     start_dir: P,
     ceiling_dirs: &HashSet<PathBuf>,
 ) -> Result<Vec<PathBuf>> {
+    trace!(
+        "file::all_dirs Collecting all ancestors of {} until ceiling {:?}",
+        display_path(&start_dir),
+        ceiling_dirs
+    );
     Ok(start_dir
         .as_ref()
         .ancestors()
         .map_while(|p| {
             if ceiling_dirs.contains(p) {
-                debug!("Reached ceiling directory: {}", p.display());
+                debug!(
+                    "file::all_dirs Reached ceiling directory: {}",
+                    display_path(p)
+                );
                 None
             } else {
+                trace!(
+                    "file::all_dirs Adding ancestor directory: {}",
+                    display_path(p)
+                );
                 Some(p.to_path_buf())
             }
         })
