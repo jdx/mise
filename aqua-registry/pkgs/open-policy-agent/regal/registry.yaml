@@ -1,10 +1,11 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
 packages:
   - type: github_release
-    repo_owner: StyraOSS
+    repo_owner: open-policy-agent
     repo_name: regal
     aliases:
       - name: StyraInc/regal
+      - name: StyraOSS/regal
     description: Regal is a linter for Rego, with the goal of making your Rego magnificent
     version_constraint: "false"
     version_overrides:

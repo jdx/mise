@@ -1,5 +1,5 @@
 packages:
-  - name: rust-lang/rust-analyzer@2025-08-11
+  - name: rust-lang/rust-analyzer@2025-08-25
   - name: rust-lang/rust-analyzer
     version: 2024-10-28
   - name: rust-lang/rust-analyzer

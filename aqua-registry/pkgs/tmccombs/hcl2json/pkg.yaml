@@ -1,5 +1,5 @@
 packages:
-  - name: tmccombs/hcl2json@v0.6.7
+  - name: tmccombs/hcl2json@v0.6.8
   - name: tmccombs/hcl2json
     version: v0.6.6
   - name: tmccombs/hcl2json

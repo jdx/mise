@@ -1,4 +1,4 @@
 packages:
-  - name: github/copilot-language-server-release@1.362.0
+  - name: github/copilot-language-server-release@1.363.0
   - name: github/copilot-language-server-release
     version: 1.276.0

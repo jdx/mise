@@ -1,5 +1,5 @@
 packages:
-  - name: kubewarden/kwctl@v1.27.3
+  - name: kubewarden/kwctl@v1.28.0
   - name: kubewarden/kwctl
     version: v1.7.0-rc2
   - name: kubewarden/kwctl

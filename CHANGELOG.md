@@ -1,5 +1,27 @@
 # Changelog
 
+## [2025.8.21](https://github.com/jdx/mise/compare/v2025.8.20..v2025.8.21) - 2025-08-27
+
+### 📦 Registry
+
+- prefer 1password asdf plugin for ls-remote by [@risu729](https://github.com/risu729) in [#6116](https://github.com/jdx/mise/pull/6116)
+
+### 🚀 Features
+
+- allow use of templates in task confirmation by [@roele](https://github.com/roele) in [#6129](https://github.com/jdx/mise/pull/6129)
+
+### 🐛 Bug Fixes
+
+- task confirmation does not handle SIGINT appropriately by [@roele](https://github.com/roele) in [#6126](https://github.com/jdx/mise/pull/6126)
+
+### 📚 Documentation
+
+- Split run command so that copy button is useful by [@anujdeshpande](https://github.com/anujdeshpande) in [#6099](https://github.com/jdx/mise/pull/6099)
+
+### New Contributors
+
+- @anujdeshpande made their first contribution in [#6099](https://github.com/jdx/mise/pull/6099)
+
 ## [2025.8.20](https://github.com/jdx/mise/compare/v2025.8.19..v2025.8.20) - 2025-08-22
 
 ### 🐛 Bug Fixes

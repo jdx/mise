@@ -1,5 +1,5 @@
 packages:
-  - name: nextest-rs/nextest/cargo-nextest@cargo-nextest-0.9.102
+  - name: nextest-rs/nextest/cargo-nextest@cargo-nextest-0.9.103
   - name: nextest-rs/nextest/cargo-nextest
     version: cargo-nextest-0.9.84
   - name: nextest-rs/nextest/cargo-nextest

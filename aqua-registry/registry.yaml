@@ -6102,27 +6102,6 @@ packages:
       - name: go-timeout
         src: timeout_{{.Version}}_{{.OS}}_{{.Arch}}/go-timeout
   - type: github_release
-    repo_owner: StyraOSS
-    repo_name: regal
-    aliases:
-      - name: StyraInc/regal
-    description: Regal is a linter for Rego, with the goal of making your Rego magnificent
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: "true"
-        asset: regal_{{.OS}}_{{.Arch}}
-        format: raw
-        windows_arm_emulation: true
-        replacements:
-          amd64: x86_64
-          darwin: Darwin
-          linux: Linux
-          windows: Windows
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-  - type: github_release
     repo_owner: SuperCuber
     repo_name: dotter
     description: A dotfile manager and templater written in rust
@@ -10979,6 +10958,144 @@ packages:
         rosetta2: true
   - type: http
     repo_owner: apache
+    repo_name: jena
+    description: A free and open source Java framework for building Semantic Web and Linked Data applications (CLI tools)
+    version_source: github_tag
+    version_prefix: jena-
+    files:
+      - name: arq
+        src: apache-jena-{{.SemVer}}/bin/arq
+      - name: infer
+        src: apache-jena-{{.SemVer}}/bin/infer
+      - name: iri
+        src: apache-jena-{{.SemVer}}/bin/iri
+      - name: juuid
+        src: apache-jena-{{.SemVer}}/bin/juuid
+      - name: nquads
+        src: apache-jena-{{.SemVer}}/bin/nquads
+      - name: ntriples
+        src: apache-jena-{{.SemVer}}/bin/ntriples
+      - name: qparse
+        src: apache-jena-{{.SemVer}}/bin/qparse
+      - name: rdfcat
+        src: apache-jena-{{.SemVer}}/bin/rdfcat
+      - name: rdfcompare
+        src: apache-jena-{{.SemVer}}/bin/rdfcompare
+      - name: rdfcopy
+        src: apache-jena-{{.SemVer}}/bin/rdfcopy
+      - name: rdfdiff
+        src: apache-jena-{{.SemVer}}/bin/rdfdiff
+      - name: rdfparse
+        src: apache-jena-{{.SemVer}}/bin/rdfparse
+      - name: rdfxml
+        src: apache-jena-{{.SemVer}}/bin/rdfxml
+      - name: riot
+        src: apache-jena-{{.SemVer}}/bin/riot
+      - name: rset
+        src: apache-jena-{{.SemVer}}/bin/rset
+      - name: rsparql
+        src: apache-jena-{{.SemVer}}/bin/rsparql
+      - name: rupdate
+        src: apache-jena-{{.SemVer}}/bin/rupdate
+      - name: schemagen
+        src: apache-jena-{{.SemVer}}/bin/schemagen
+      - name: shacl
+        src: apache-jena-{{.SemVer}}/bin/shacl
+      - name: sparql
+        src: apache-jena-{{.SemVer}}/bin/sparql
+      - name: tdb2.tdbbackup
+        src: apache-jena-{{.SemVer}}/bin/tdb2.tdbbackup
+      - name: tdb2.tdbcompact
+        src: apache-jena-{{.SemVer}}/bin/tdb2.tdbcompact
+      - name: tdb2.tdbdump
+        src: apache-jena-{{.SemVer}}/bin/tdb2.tdbdump
+      - name: tdb2.tdbloader
+        src: apache-jena-{{.SemVer}}/bin/tdb2.tdbloader
+      - name: tdb2.tdbquery
+        src: apache-jena-{{.SemVer}}/bin/tdb2.tdbquery
+      - name: tdb2.tdbstats
+        src: apache-jena-{{.SemVer}}/bin/tdb2.tdbstats
+      - name: tdb2.tdbupdate
+        src: apache-jena-{{.SemVer}}/bin/tdb2.tdbupdate
+      - name: tdbbackup
+        src: apache-jena-{{.SemVer}}/bin/tdbbackup
+      - name: tdbdump
+        src: apache-jena-{{.SemVer}}/bin/tdbdump
+    overrides:
+      - goos: windows
+        files:
+          - name: arq
+            src: apache-jena-{{.SemVer}}/bat/arq.bat
+          - name: infer
+            src: apache-jena-{{.SemVer}}/bat/infer.bat
+          - name: iri
+            src: apache-jena-{{.SemVer}}/bat/iri.bat
+          - name: juuid
+            src: apache-jena-{{.SemVer}}/bat/juuid.bat
+          - name: nquads
+            src: apache-jena-{{.SemVer}}/bat/nquads.bat
+          - name: ntriples
+            src: apache-jena-{{.SemVer}}/bat/ntriples.bat
+          - name: qparse
+            src: apache-jena-{{.SemVer}}/bat/qparse.bat
+          - name: rdfcat
+            src: apache-jena-{{.SemVer}}/bat/rdfcat.bat
+          - name: rdfcompare
+            src: apache-jena-{{.SemVer}}/bat/rdfcompare.bat
+          - name: rdfcopy
+            src: apache-jena-{{.SemVer}}/bat/rdfcopy.bat
+          - name: rdfdiff
+            src: apache-jena-{{.SemVer}}/bat/rdfdiff.bat
+          - name: rdfparse
+            src: apache-jena-{{.SemVer}}/bat/rdfparse.bat
+          - name: rdfxml
+            src: apache-jena-{{.SemVer}}/bat/rdfxml.bat
+          - name: riot
+            src: apache-jena-{{.SemVer}}/bat/riot.bat
+          - name: rset
+            src: apache-jena-{{.SemVer}}/bat/rset.bat
+          - name: rsparql
+            src: apache-jena-{{.SemVer}}/bat/rsparql.bat
+          - name: rupdate
+            src: apache-jena-{{.SemVer}}/bat/rupdate.bat
+          - name: schemagen
+            src: apache-jena-{{.SemVer}}/bat/schemagen.bat
+          - name: shacl
+            src: apache-jena-{{.SemVer}}/bat/shacl.bat
+          - name: sparql
+            src: apache-jena-{{.SemVer}}/bat/sparql.bat
+          - name: tdb2.tdbbackup
+            src: apache-jena-{{.SemVer}}/bat/tdb2_tdbbackup.bat
+          - name: tdb2.tdbcompact
+            src: apache-jena-{{.SemVer}}/bat/tdb2_tdbcompact.bat
+          - name: tdb2.tdbdump
+            src: apache-jena-{{.SemVer}}/bat/tdb2_tdbdump.bat
+          - name: tdb2.tdbloader
+            src: apache-jena-{{.SemVer}}/bat/tdb2_tdbloader.bat
+          - name: tdb2.tdbquery
+            src: apache-jena-{{.SemVer}}/bat/tdb2_tdbquery.bat
+          - name: tdb2.tdbstats
+            src: apache-jena-{{.SemVer}}/bat/tdb2_tdbstats.bat
+          - name: tdb2.tdbupdate
+            src: apache-jena-{{.SemVer}}/bat/tdb2_tdbupdate.bat
+          - name: tdbbackup
+            src: apache-jena-{{.SemVer}}/bat/tdbbackup.bat
+          - name: tdbdump
+            src: apache-jena-{{.SemVer}}/bat/tdbdump.bat
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        url: https://archive.apache.org/dist/jena/binaries/apache-jena-{{.SemVer}}.tar.gz
+        format: tgz
+        checksum:
+          type: http
+          url: https://archive.apache.org/dist/jena/binaries/apache-jena-{{.SemVer}}.tar.gz.sha512
+          file_format: regexp
+          algorithm: sha512
+          pattern:
+            checksum: ^(\b[A-Fa-f0-9]{128}\b)
+  - type: http
+    repo_owner: apache
     repo_name: maven
     description: Apache Maven core
     version_prefix: maven-
@@ -14421,6 +14538,234 @@ packages:
         overrides:
           - goos: windows
             format: zip
+  - type: github_release
+    repo_owner: axodotdev
+    repo_name: cargo-dist
+    description: shippable application packaging
+    files:
+      - name: dist
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.4-prerelease.1")
+        asset: cargo-dist-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: cargo-dist
+            src: "{{.AssetWithoutExt}}/cargo-dist"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: cargo-dist
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.0.6-prerelease.7")
+        asset: cargo-dist-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: cargo-dist
+            src: "{{.AssetWithoutExt}}/cargo-dist"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            files:
+              - name: cargo-dist
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.1.0-prerelease.2")
+        asset: cargo-dist-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: cargo-dist
+            src: "{{.AssetWithoutExt}}/cargo-dist"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            files:
+              - name: cargo-dist
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.4.0-prerelease.2")
+        asset: cargo-dist-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: cargo-dist
+            src: "{{.AssetWithoutExt}}/cargo-dist"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            files:
+              - name: cargo-dist
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.6.0-prerelease.2")
+        asset: cargo-dist-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: cargo-dist
+            src: "{{.AssetWithoutExt}}/cargo-dist"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            files:
+              - name: cargo-dist
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.23.0")
+        asset: cargo-dist-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: cargo-dist
+            src: "{{.AssetWithoutExt}}/cargo-dist"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: cargo-dist
+      - version_constraint: Version == "v0.28.1-prerelease.1"
+        asset: cargo-dist-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: dist
+            src: "{{.AssetWithoutExt}}/dist"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            files:
+              - name: dist
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver(">= 1.0.0-rc.1")
+        asset: dist-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: dist
+            src: "{{.AssetWithoutExt}}/dist"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: dist
+      - version_constraint: "true"
+        asset: cargo-dist-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: dist
+            src: "{{.AssetWithoutExt}}/dist"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: dist
   - type: github_release
     repo_owner: ayoisaiah
     repo_name: f2
@@ -23437,6 +23782,15 @@ packages:
         format: raw
         supported_envs:
           - linux/amd64
+  - type: github_release
+    repo_owner: containers
+    repo_name: kubernetes-mcp-server
+    description: Model Context Protocol (MCP) server for Kubernetes and OpenShift
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: kubernetes-mcp-server-{{.OS}}-{{.Arch}}
+        format: raw
   - type: github_release
     repo_owner: containrrr
     repo_name: shoutrrr
@@ -38458,6 +38812,14 @@ packages:
           asset: terraform-ls_{{trimV .Version}}_SHA256SUMS
           algorithm: sha256
       - version_constraint: "true"
+  - type: go_install
+    repo_owner: hashicorp
+    repo_name: terraform-mcp-server
+    description: The Terraform MCP Server provides seamless integration with Terraform ecosystem, enabling advanced automation and interaction capabilities for Infrastructure as Code (IaC) development
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        path: github.com/hashicorp/terraform-mcp-server/cmd/terraform-mcp-server
   - type: github_release
     repo_owner: hashicorp
     repo_name: terraform-plugin-docs
@@ -38801,36 +39163,81 @@ packages:
   - type: github_release
     repo_owner: helix-editor
     repo_name: helix
-    asset: helix-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-    format: tar.xz
     description: A post-modern modal text editor
-    replacements:
-      amd64: x86_64
-      arm64: aarch64
-      darwin: macos
-    overrides:
-      - goos: windows
-        format: zip
-    supported_envs:
-      - darwin
-      - linux
-      - amd64
     files:
       - name: hx
-        src: helix-{{.Version}}-{{.Arch}}-{{.OS}}/hx
-    version_constraint: semver(">= 22.08")
+    version_constraint: "false"
     version_overrides:
-      - version_constraint: semver(">= 22.03")
+      - version_constraint: semver("<= 0.6.0")
+        asset: helix-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
         rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: hx
+            src: "{{.AssetWithoutExt}}/hx"
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 22.5.0")
+        asset: helix-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: hx
+            src: "{{.AssetWithoutExt}}/hx"
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
         supported_envs:
           - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 22.8.1")
+        asset: helix-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: hx
+            src: "{{.AssetWithoutExt}}/hx"
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
           - amd64
       - version_constraint: "true"
-        rosetta2: true
-        supported_envs:
-          - darwin
-          - linux
-          - amd64
+        asset: helix-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: hx
+            src: "{{.AssetWithoutExt}}/hx"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            replacements: {}
   - type: github_release
     repo_owner: hellux
     repo_name: jotdown
@@ -58209,6 +58616,28 @@ packages:
           asset: "{{.Asset}}.sha256"
           algorithm: sha256
   - type: github_release
+    repo_owner: open-policy-agent
+    repo_name: regal
+    aliases:
+      - name: StyraInc/regal
+      - name: StyraOSS/regal
+    description: Regal is a linter for Rego, with the goal of making your Rego magnificent
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: regal_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+  - type: github_release
     repo_owner: openclarity
     repo_name: kubeclarity
     description: KubeClarity is a tool for detection and management of Software Bill Of Materials (SBOM) and vulnerabilities of container images and filesystems
@@ -59248,30 +59677,162 @@ packages:
   - type: github_release
     repo_owner: orhun
     repo_name: git-cliff
-    asset: git-cliff-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
-    format: tar.gz
     description: A highly customizable Changelog Generator that follows Conventional Commit specifications
-    replacements:
-      amd64: x86_64
-      darwin: apple-darwin
-      linux: unknown-linux-musl
-      windows: pc-windows-msvc
-    overrides:
-      - goos: windows
-        format: zip
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.1"
+        no_asset: true
+      - version_constraint: Version == "v0.1.0-beta.2"
+        asset: git-cliff-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: git-cliff
+            src: git-cliff-{{trimV .Version}}/git-cliff
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
         checksum:
-          enabled: false
-    supported_envs:
-      - darwin
-      - amd64
-    rosetta2: true
-    files:
-      - name: git-cliff
-        src: git-cliff-{{trimV .Version}}/git-cliff
-    checksum:
-      type: github_release
-      asset: "{{.Asset}}.sha512"
-      algorithm: sha512
+          type: github_release
+          asset: "{{.Asset}}.sha512"
+          algorithm: sha512
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.1.0-beta.3"
+        asset: git-cliff-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: git-cliff
+            src: git-cliff-{{trimV .Version}}/git-cliff
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha512"
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip
+            asset: git-cliff--{{.Arch}}-{{.OS}}.{{.Format}}
+            files:
+              - name: git-cliff
+                src: git-cliff-/git-cliff.exe
+            checksum:
+              enabled: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.1.0-rc.2"
+        asset: git-cliff-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: git-cliff
+            src: git-cliff-{{trimV .Version}}/git-cliff
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-gnu
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha512"
+          algorithm: sha512
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.1.0-rc.1")
+        asset: git-cliff-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: git-cliff
+            src: git-cliff-{{trimV .Version}}/git-cliff
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha512"
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip
+            checksum:
+              enabled: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.1.0-rc.5")
+        asset: git-cliff-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: git-cliff
+            src: git-cliff-{{trimV .Version}}/git-cliff
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha512"
+          algorithm: sha512
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.0.0")
+        asset: git-cliff-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: git-cliff
+            src: git-cliff-{{trimV .Version}}/git-cliff
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha512"
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip
+            checksum:
+              enabled: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: git-cliff-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: git-cliff
+            src: git-cliff-{{trimV .Version}}/git-cliff
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha512"
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip
+            checksum:
+              enabled: false
   - type: github_release
     repo_owner: orisano
     repo_name: dlayer
@@ -63820,6 +64381,62 @@ packages:
       - version_constraint: semver("< 0.3.9")
         rosetta2: true
       - version_constraint: "true"
+  - type: github_release
+    repo_owner: release-plz
+    repo_name: release-plz
+    description: Publish Rust crates from CI with a Release PR
+    version_prefix: release-plz-
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["release-plz-v0.3.35", "release-plz-v0.3.54", "release-plz-v0.3.109"]
+        no_asset: true
+      - version_constraint: Version in ["release-plz-v0.3.2", "release-plz-v0.3.26"]
+        asset: release-plz-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.2.44")
+        no_asset: true
+      - version_constraint: semver("<= 0.3.19")
+        asset: release-plz-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 0.3.45")
+        asset: release-plz-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+      - version_constraint: semver("<= 0.3.47")
+        no_asset: true
+      - version_constraint: "true"
+        asset: release-plz-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
   - type: github_release
     repo_owner: replicatedhq
     repo_name: kots
@@ -82066,12 +82683,27 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.14.0")
         url: https://builds.zigtools.org/zls-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
         windows_arm_emulation: true
         minisign:
           type: http
           url: https://builds.zigtools.org/zls-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}.minisig
+          public_key: "RWR+9B91GBZ0zOjh6Lr17+zKf5BoSuFvrx2xSeDE57uIYvnKBGmMjOex"
+        replacements:
+          darwin: macos
+          arm64: aarch64
+          amd64: x86_64
+        format: tar.xz
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        url: https://builds.zigtools.org/zls-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}
+        windows_arm_emulation: true
+        minisign:
+          type: http
+          url: https://builds.zigtools.org/zls-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}.minisig
           public_key: "RWR+9B91GBZ0zOjh6Lr17+zKf5BoSuFvrx2xSeDE57uIYvnKBGmMjOex"
         replacements:
           darwin: macos

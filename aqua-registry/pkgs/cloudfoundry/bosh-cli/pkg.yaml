@@ -1,2 +1,2 @@
 packages:
-  - name: cloudfoundry/bosh-cli@v7.9.9
+  - name: cloudfoundry/bosh-cli@v7.9.10

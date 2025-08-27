@@ -1,0 +1,8 @@
+packages:
+  - name: release-plz/release-plz@release-plz-v0.3.141
+  - name: release-plz/release-plz
+    version: release-plz-v0.3.45
+  - name: release-plz/release-plz
+    version: release-plz-v0.3.19
+  - name: release-plz/release-plz
+    version: release-plz-v0.3.2

@@ -1,4 +1,4 @@
 packages:
-  - name: fioncat/otree@v0.5.1
+  - name: fioncat/otree@v0.6.1
   - name: fioncat/otree
     version: v0.3.0

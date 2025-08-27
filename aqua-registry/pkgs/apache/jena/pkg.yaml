@@ -1,0 +1,4 @@
+packages:
+  - name: apache/jena@jena-5.5.0
+  - name: apache/jena
+    version: jena-3.17.0

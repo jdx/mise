@@ -1,5 +1,5 @@
 packages:
-  - name: sharkdp/fd@v10.2.0
+  - name: sharkdp/fd@v10.3.0
   - name: sharkdp/fd
     version: v10.0.0
   - name: sharkdp/fd

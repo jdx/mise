@@ -1,5 +1,5 @@
 packages:
-  - name: cargo-bins/cargo-binstall@v1.15.0
+  - name: cargo-bins/cargo-binstall@v1.15.1
   - name: cargo-bins/cargo-binstall
     version: v1.3.1
   - name: cargo-bins/cargo-binstall
