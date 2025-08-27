@@ -5,6 +5,7 @@ assert "mise task info build" 'Task: build
 Description:
 Source: ~/workdir/mise-tasks/build.sh
 File: ~/workdir/mise-tasks/build.sh
+Outputs: ~/.local/state/mise/task-auto-outputs/587b8d5e2f198db1
 
 Usage Spec:
   name build
@@ -39,7 +40,9 @@ assert_json "mise task info lint --json" "$(
   "hide": false,
   "raw": false,
   "sources": [],
-  "outputs": [],
+  "outputs": {
+    "auto": true
+  },
   "shell": null,
   "quiet": false,
   "silent": false,

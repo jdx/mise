@@ -45,6 +45,7 @@ assert "mise task hello:all" 'Task: hello:all
 Description: Hello from all
 Source: ~/workdir/mise.toml
 Depends on: hello:*
+Outputs: ~/.local/state/mise/task-auto-outputs/c3c041fc0ff1ea6e
 
 Usage Spec:
   name hello:all
