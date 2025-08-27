@@ -436,7 +436,7 @@ trusted. They can be separated with `:`.
 
 This is a list of paths where mise will stop searching for
 configuration files and file tasks. This is useful to stop
-mise searching for files in slow loading directories. They can be separated with `:`.
+mise searching for files in slow loading directories. They are separated according to platform conventions for the PATH environment variable. On most Unix platforms, the separator is `:` and on Windows it is `;`.
 
 ### `MISE_LOG_LEVEL=trace|debug|info|warn|error`
 

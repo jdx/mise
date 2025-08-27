@@ -161,9 +161,8 @@ pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
     var("MISE_CEILING_PATHS")
         .ok()
         .map(|v| {
-            v.split(':')
-                .filter(|p| !p.is_empty())
-                .map(PathBuf::from)
+            split_paths(&v)
+                .filter(|p| !p.as_os_str().is_empty())
                 .map(replace_path)
                 .collect()
         })
