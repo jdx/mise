@@ -1,2 +1,2 @@
 packages:
-  - name: knative/client@knative-v1.19.1
+  - name: knative/client@knative-v1.19.2

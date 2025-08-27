@@ -1,7 +1,7 @@
 packages:
-  - name: zigtools/zls@0.14.0
+  - name: zigtools/zls@0.15.0
   - name: zigtools/zls
-    version: 0.15.0-dev.129+bb6d6473
+    version: 0.14.0
   - name: zigtools/zls
     version: 0.13.0
   - name: zigtools/zls

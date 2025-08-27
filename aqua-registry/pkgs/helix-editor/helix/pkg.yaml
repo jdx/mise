@@ -1,6 +1,8 @@
 packages:
   - name: helix-editor/helix@25.07.1
   - name: helix-editor/helix
+    version: 22.08.1
+  - name: helix-editor/helix
     version: "22.05"
   - name: helix-editor/helix
     version: v0.6.0

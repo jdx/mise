@@ -1,4 +1,4 @@
 packages:
-  - name: kanisterio/kanister@0.114.0
+  - name: kanisterio/kanister@0.115.0
   - name: kanisterio/kanister
     version: 0.83.0

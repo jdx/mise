@@ -1,5 +1,5 @@
 packages:
-  - name: pressly/goose@v3.24.3
+  - name: pressly/goose@v3.25.0
   - name: pressly/goose
     version: v2.7.0-rc5
   - name: pressly/goose

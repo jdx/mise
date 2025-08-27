@@ -1,2 +1,14 @@
 packages:
   - name: orhun/git-cliff@v2.10.0
+  - name: orhun/git-cliff
+    version: v1.0.0
+  - name: orhun/git-cliff
+    version: v0.1.0-rc.5
+  - name: orhun/git-cliff
+    version: v0.1.0-rc.2
+  - name: orhun/git-cliff
+    version: v0.1.0-rc.1
+  - name: orhun/git-cliff
+    version: v0.1.0-beta.3
+  - name: orhun/git-cliff
+    version: v0.1.0-beta.2

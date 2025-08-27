@@ -1,4 +1,4 @@
 packages:
-  - name: telepresenceio/telepresence@v2.23.6
+  - name: telepresenceio/telepresence@v2.24.0
   - name: telepresenceio/telepresence
     version: v2.14.4

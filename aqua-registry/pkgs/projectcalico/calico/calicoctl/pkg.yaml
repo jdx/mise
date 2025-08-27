@@ -1,4 +1,4 @@
 packages:
-  - name: projectcalico/calico/calicoctl@v3.30.2
+  - name: projectcalico/calico/calicoctl@v3.30.3
   - name: projectcalico/calico/calicoctl
     version: v3.21.6

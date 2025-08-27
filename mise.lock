@@ -27,21 +27,21 @@ size = 4758557
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"
 
 [tools.bun]
-version = "1.2.20"
+version = "1.2.21"
 backend = "core:bun"
 
 [tools.bun.platforms.linux-x64]
-checksum = "blake3:b16555642ccb461c9d0f280b1a8c664f8c8421925c210ec40e8e7427d3286679"
-size = 38849822
+checksum = "blake3:cf519ce71d7c518e211001f428ae34c2ec2a4f0484787bdf28baf7f372c94860"
+size = 39128668
 
 [tools.cargo-binstall]
-version = "1.14.4"
+version = "1.15.1"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "blake3:b2a4a55c83830ef20d2024c5d7394df9571fecd06c24e5f99568899dc507ace0"
-size = 6715267
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.14.4/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+checksum = "blake3:88fb96688c2d3761b509caf9bf523681b59b0faec3b9bde1d1b54c92152eb5b0"
+size = 6760342
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.1/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.7"
@@ -96,13 +96,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [tools.hk]
-version = "1.10.1"
+version = "1.10.6"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:ff16f432d4ad7ab23bdfdb5833f570aaaf29b6cf5034e367a39aa217ca647ca4"
-size = 6825051
-url = "https://github.com/jdx/hk/releases/download/v1.10.1/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "blake3:97e03b33b91890feea0cc057d2203788c84a444882a901b409ca4bd5783a3168"
+size = 6858515
+url = "https://github.com/jdx/hk/releases/download/v1.10.6/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [tools.jq]
 version = "1.8.1"

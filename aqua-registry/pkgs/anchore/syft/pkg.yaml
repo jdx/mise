@@ -1,5 +1,5 @@
 packages:
-  - name: anchore/syft@v1.31.0
+  - name: anchore/syft@v1.32.0
   - name: anchore/syft
     version: v0.103.1
   - name: anchore/syft

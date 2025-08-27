@@ -1,5 +1,5 @@
 packages:
-  - name: oven-sh/bun@bun-v1.2.20
+  - name: oven-sh/bun@bun-v1.2.21
   - name: oven-sh/bun
     version: bun-v1.0.36
   - name: oven-sh/bun

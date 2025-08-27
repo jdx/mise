@@ -1,5 +1,5 @@
 packages:
-  - name: mfridman/tparse@v0.17.0
+  - name: mfridman/tparse@v0.18.0
   - name: mfridman/tparse
     version: v0.11.1
   - name: mfridman/tparse
