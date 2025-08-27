@@ -12,7 +12,7 @@ pub enum TaskOutputs {
 
 impl Default for TaskOutputs {
     fn default() -> Self {
-        TaskOutputs::Files(vec![])
+        TaskOutputs::Auto
     }
 }
 
