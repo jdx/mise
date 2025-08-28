@@ -7,8 +7,6 @@ use eyre::Result;
 
 pub async fn run() {
     tokio::join!(
-        task(|| rename_plugin("nodejs", "node")),
-        task(|| rename_plugin("golang", "go")),
         task(migrate_trusted_configs),
         task(migrate_tracked_configs),
         task(|| remove_deprecated_plugin("node", "rtx-nodejs")),
@@ -41,12 +39,6 @@ fn move_subdirs(from: &Path, to: &Path) -> Result<()> {
         file::remove_all(from)?;
     }
 
-    Ok(())
-}
-
-fn rename_plugin(from: &str, to: &str) -> Result<()> {
-    move_subdirs(&INSTALLS.join(from), &INSTALLS.join(to))?;
-    move_subdirs(&PLUGINS.join(from), &PLUGINS.join(to))?;
     Ok(())
 }
 
