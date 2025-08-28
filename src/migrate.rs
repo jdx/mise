@@ -23,25 +23,6 @@ async fn task(job: impl FnOnce() -> Result<()> + Send + 'static) {
     }
 }
 
-fn move_subdirs(from: &Path, to: &Path) -> Result<()> {
-    if from.exists() {
-        eprintln!("migrating {} to {}", from.display(), to.display());
-        file::create_dir_all(to)?;
-        for f in from.read_dir()? {
-            let f = f?.file_name();
-            let from_file = from.join(&f);
-            let to_file = to.join(&f);
-            if !to_file.exists() {
-                eprintln!("moving {} to {}", from_file.display(), to_file.display());
-                file::rename(from_file, to_file)?;
-            }
-        }
-        file::remove_all(from)?;
-    }
-
-    Ok(())
-}
-
 fn migrate_tracked_configs() -> Result<()> {
     move_dirs(&DATA.join("tracked_config_files"), &TRACKED_CONFIGS)?;
     move_dirs(&DATA.join("tracked-config-files"), &TRACKED_CONFIGS)?;
