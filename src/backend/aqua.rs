@@ -338,12 +338,8 @@ impl AquaBackend {
         let asset = asset_strs
             .iter()
             .find_map(|expected| {
-                gh_release.assets.iter().find_map(|a| {
-                    if a.name == *expected || a.name.to_lowercase() == expected.to_lowercase() {
-                        Some(a)
-                    } else {
-                        None
-                    }
+                gh_release.assets.iter().find(|a| {
+                    a.name == *expected || a.name.to_lowercase() == expected.to_lowercase()
                 })
             })
             .wrap_err_with(|| {
