@@ -4,16 +4,11 @@ use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-#[derive(Debug, Clone, Eq, PartialEq, strum::EnumIs)]
+#[derive(Debug, Clone, Eq, PartialEq, strum::EnumIs, Default)]
 pub enum TaskOutputs {
     Files(Vec<String>),
+    #[default]
     Auto,
-}
-
-impl Default for TaskOutputs {
-    fn default() -> Self {
-        TaskOutputs::Files(vec![])
-    }
 }
 
 impl TaskOutputs {
