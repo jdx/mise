@@ -334,16 +334,13 @@ impl AquaBackend {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let gh_release = github::get_release(&gh_id, v).await?;
 
-        // Convert expected asset names to lowercase once for case-insensitive matching
-        let asset_strs_lower: IndexSet<String> =
-            asset_strs.iter().map(|s| s.to_lowercase()).collect();
-
-        let asset = gh_release
-            .assets
+        // Prioritize order of asset_strs
+        let asset = asset_strs
             .iter()
-            .find(|a| {
-                // First try exact match, then case-insensitive
-                asset_strs.contains(&a.name) || asset_strs_lower.contains(&a.name.to_lowercase())
+            .find_map(|expected| {
+                gh_release.assets.iter().find(|a| {
+                    a.name == *expected || a.name.to_lowercase() == expected.to_lowercase()
+                })
             })
             .wrap_err_with(|| {
                 format!(

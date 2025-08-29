@@ -1,5 +1,5 @@
 packages:
-  - name: eksctl-io/eksctl@v0.212.0
+  - name: eksctl-io/eksctl@v0.214.0
   - name: eksctl-io/eksctl
     version: v0.64.0
   - name: eksctl-io/eksctl

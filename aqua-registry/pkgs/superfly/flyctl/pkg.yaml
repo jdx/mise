@@ -1,5 +1,5 @@
 packages:
-  - name: superfly/flyctl@v0.3.171
+  - name: superfly/flyctl@v0.3.172
   - name: superfly/flyctl
     version: v0.3.10
   - name: superfly/flyctl

@@ -454,8 +454,8 @@ impl Run {
             return Ok(());
         }
         if let Some(message) = &task.confirm {
-            if !Settings::get().yes && !ui::confirm(message).unwrap_or(true) {
-                return Err(eyre!("task cancelled"));
+            if !Settings::get().yes && !ui::confirm(message).unwrap_or(false) {
+                return Err(eyre!("aborted by user"));
             }
         }
 

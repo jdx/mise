@@ -1,0 +1,18 @@
+packages:
+  - name: axodotdev/cargo-dist@v0.30.0-prerelease.1
+  - name: axodotdev/cargo-dist
+    version: v1.0.0-rc.1
+  - name: axodotdev/cargo-dist
+    version: v0.28.1-prerelease.1
+  - name: axodotdev/cargo-dist
+    version: v0.23.0
+  - name: axodotdev/cargo-dist
+    version: v0.6.0-prerelease.2
+  - name: axodotdev/cargo-dist
+    version: v0.4.0-prerelease.2
+  - name: axodotdev/cargo-dist
+    version: v0.1.0-prerelease.2
+  - name: axodotdev/cargo-dist
+    version: v0.0.6-prerelease.7
+  - name: axodotdev/cargo-dist
+    version: v0.0.4-prerelease.1

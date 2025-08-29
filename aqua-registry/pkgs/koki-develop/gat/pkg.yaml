@@ -1,4 +1,4 @@
 packages:
-  - name: koki-develop/gat@v0.25.0
+  - name: koki-develop/gat@v0.25.2
   - name: koki-develop/gat
     version: v0.20.0

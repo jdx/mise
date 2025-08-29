@@ -1,5 +1,5 @@
 packages:
-  - name: deviceinsight/kafkactl@v5.11.1
+  - name: deviceinsight/kafkactl@v5.12.1
   - name: deviceinsight/kafkactl
     version: v5.0.5
   - name: deviceinsight/kafkactl

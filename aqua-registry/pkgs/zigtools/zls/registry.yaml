@@ -46,12 +46,27 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.14.0")
         url: https://builds.zigtools.org/zls-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
         windows_arm_emulation: true
         minisign:
           type: http
           url: https://builds.zigtools.org/zls-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}.minisig
+          public_key: "RWR+9B91GBZ0zOjh6Lr17+zKf5BoSuFvrx2xSeDE57uIYvnKBGmMjOex"
+        replacements:
+          darwin: macos
+          arm64: aarch64
+          amd64: x86_64
+        format: tar.xz
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        url: https://builds.zigtools.org/zls-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}
+        windows_arm_emulation: true
+        minisign:
+          type: http
+          url: https://builds.zigtools.org/zls-{{.Arch}}-{{.OS}}-{{.Version}}.{{.Format}}.minisig
           public_key: "RWR+9B91GBZ0zOjh6Lr17+zKf5BoSuFvrx2xSeDE57uIYvnKBGmMjOex"
         replacements:
           darwin: macos

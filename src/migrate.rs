@@ -7,8 +7,6 @@ use eyre::Result;
 
 pub async fn run() {
     tokio::join!(
-        task(|| rename_plugin("nodejs", "node")),
-        task(|| rename_plugin("golang", "go")),
         task(migrate_trusted_configs),
         task(migrate_tracked_configs),
         task(|| remove_deprecated_plugin("node", "rtx-nodejs")),
@@ -23,31 +21,6 @@ async fn task(job: impl FnOnce() -> Result<()> + Send + 'static) {
     if let Err(err) = job() {
         eprintln!("[WARN] migrate: {err}");
     }
-}
-
-fn move_subdirs(from: &Path, to: &Path) -> Result<()> {
-    if from.exists() {
-        eprintln!("migrating {} to {}", from.display(), to.display());
-        file::create_dir_all(to)?;
-        for f in from.read_dir()? {
-            let f = f?.file_name();
-            let from_file = from.join(&f);
-            let to_file = to.join(&f);
-            if !to_file.exists() {
-                eprintln!("moving {} to {}", from_file.display(), to_file.display());
-                file::rename(from_file, to_file)?;
-            }
-        }
-        file::remove_all(from)?;
-    }
-
-    Ok(())
-}
-
-fn rename_plugin(from: &str, to: &str) -> Result<()> {
-    move_subdirs(&INSTALLS.join(from), &INSTALLS.join(to))?;
-    move_subdirs(&PLUGINS.join(from), &PLUGINS.join(to))?;
-    Ok(())
 }
 
 fn migrate_tracked_configs() -> Result<()> {

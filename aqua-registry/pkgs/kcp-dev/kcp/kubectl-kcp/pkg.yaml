@@ -1,5 +1,5 @@
 packages:
-  - name: kcp-dev/kcp/kubectl-kcp@v0.28.0
+  - name: kcp-dev/kcp/kubectl-kcp@v0.28.1
   - name: kcp-dev/kcp/kubectl-kcp
     version: v0.24.0
   - name: kcp-dev/kcp/kubectl-kcp
