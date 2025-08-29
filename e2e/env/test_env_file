@@ -17,12 +17,14 @@ assert "mise env" # does not error
 
 cat <<EOF >mise.toml
 [env]
-_.file = ['a', 'b.json']
+_.file = ['a', { path = 'b.json', tools = true }, { path = ['c.json'], redact = true }]
 EOF
 echo 'export A=1' >a
 echo '{"B": 2}' >b.json
+echo '{"C": 3}' >c.json
 assert "mise env | grep -v PATH" "export A=1
-export B=2"
+export B=2
+export C=3"
 
 cat <<EOF >mise.toml
 [env]
