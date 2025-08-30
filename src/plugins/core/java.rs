@@ -484,6 +484,8 @@ impl Backend for JavaPlugin {
 fn os() -> &'static str {
     if cfg!(target_os = "macos") {
         "macosx"
+    } else if OS.as_str() == "freebsd" {
+        "linux"
     } else {
         &OS
     }
