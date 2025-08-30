@@ -1,5 +1,5 @@
 packages:
-  - name: stripe/stripe-cli@v1.29.0
+  - name: stripe/stripe-cli@v1.30.0
   - name: stripe/stripe-cli
     version: v1.13.2
   - name: stripe/stripe-cli

@@ -1,4 +1,4 @@
 packages:
-  - name: antonmedv/fx@39.0.2
+  - name: antonmedv/fx@39.0.3
   - name: antonmedv/fx
     version: 20.0.0

@@ -1,5 +1,13 @@
 # Changelog
 
+## [2025.8.22](https://github.com/jdx/mise/compare/v2025.8.21..v2025.8.22) - 2025-08-30
+
+### 🐛 Bug Fixes
+
+- **(aqua)** respect order of asset_strs by [@risu729](https://github.com/risu729) in [#6143](https://github.com/jdx/mise/pull/6143)
+- **(sync)** create uv_versions_path dir if it doesn't exist by [@risu729](https://github.com/risu729) in [#6142](https://github.com/jdx/mise/pull/6142)
+- remove nodejs/golang alias migrate code by [@risu729](https://github.com/risu729) in [#6141](https://github.com/jdx/mise/pull/6141)
+
 ## [2025.8.21](https://github.com/jdx/mise/compare/v2025.8.20..v2025.8.21) - 2025-08-27
 
 ### 📦 Registry

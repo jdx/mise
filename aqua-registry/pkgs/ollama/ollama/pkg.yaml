@@ -1,5 +1,5 @@
 packages:
-  - name: ollama/ollama@v0.11.7
+  - name: ollama/ollama@v0.11.8
   - name: ollama/ollama
     version: v0.5.7
   - name: ollama/ollama

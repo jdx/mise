@@ -1,4 +1,4 @@
 packages:
-  - name: metalbear-co/mirrord@3.159.0
+  - name: metalbear-co/mirrord@3.159.1
   - name: metalbear-co/mirrord
     version: 2.2.0

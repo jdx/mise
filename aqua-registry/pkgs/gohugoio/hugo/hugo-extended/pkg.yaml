@@ -1,5 +1,5 @@
 packages:
-  - name: gohugoio/hugo/hugo-extended@v0.148.2
+  - name: gohugoio/hugo/hugo-extended@v0.149.0
   - name: gohugoio/hugo/hugo-extended
     version: v0.102.3
   - name: gohugoio/hugo/hugo-extended

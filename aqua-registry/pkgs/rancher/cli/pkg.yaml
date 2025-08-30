@@ -1,2 +1,2 @@
 packages:
-  - name: rancher/cli@v2.12.0
+  - name: rancher/cli@v2.12.1

@@ -1,5 +1,5 @@
 packages:
-  - name: sourcemeta/jsonschema@v11.5.0
+  - name: sourcemeta/jsonschema@v11.5.1
   - name: sourcemeta/jsonschema
     version: v9.3.2
   - name: sourcemeta/jsonschema

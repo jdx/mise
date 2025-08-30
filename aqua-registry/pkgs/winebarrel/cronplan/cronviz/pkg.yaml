@@ -1,4 +1,4 @@
 packages:
-  - name: winebarrel/cronplan/cronviz@v1.10.5
+  - name: winebarrel/cronplan/cronviz@v2.0.2
   - name: winebarrel/cronplan/cronviz
     version: v1.5.0

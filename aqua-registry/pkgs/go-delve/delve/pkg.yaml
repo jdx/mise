@@ -1,2 +1,2 @@
 packages:
-  - name: go-delve/delve@v1.25.1
+  - name: go-delve/delve@v1.25.2

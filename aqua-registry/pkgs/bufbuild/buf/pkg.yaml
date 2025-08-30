@@ -1,5 +1,5 @@
 packages:
-  - name: bufbuild/buf@v1.56.0
+  - name: bufbuild/buf@v1.57.0
   - name: bufbuild/buf
     version: v0.53.0
   - name: bufbuild/buf

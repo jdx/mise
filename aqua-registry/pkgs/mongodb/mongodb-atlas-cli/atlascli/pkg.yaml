@@ -1,2 +1,2 @@
 packages:
-  - name: mongodb/mongodb-atlas-cli/atlascli@atlascli/v1.46.3
+  - name: mongodb/mongodb-atlas-cli/atlascli@atlascli/v1.46.4

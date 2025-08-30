@@ -1,4 +1,4 @@
 packages:
-  - name: kubernetes/kubernetes/kube-log-runner@v1.33.4
+  - name: kubernetes/kubernetes/kube-log-runner@v1.34.0
   - name: kubernetes/kubernetes/kube-log-runner
     version: v1.25.4

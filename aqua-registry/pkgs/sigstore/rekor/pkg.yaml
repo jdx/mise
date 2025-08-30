@@ -1,5 +1,5 @@
 packages:
-  - name: sigstore/rekor@v1.4.0
+  - name: sigstore/rekor@v1.4.1
   - name: sigstore/rekor
     version: v0.4.0
   - name: sigstore/rekor

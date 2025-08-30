@@ -1,5 +1,5 @@
 packages:
-  - name: redpanda-data/connect@v4.62.0
+  - name: redpanda-data/connect@v4.63.0
   - name: redpanda-data/connect
     version: v4.27.0
   - name: redpanda-data/connect
