@@ -1,2 +1,2 @@
 packages:
-  - name: grafana/k6@v1.2.2
+  - name: grafana/k6@v1.2.3

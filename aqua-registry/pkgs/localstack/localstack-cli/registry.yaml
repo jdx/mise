@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: localstack
+    repo_name: localstack-cli
+    description: The LocalStack CLI packaged using pyinstaller
+    files:
+      - name: localstack
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v2.3.2.post0"
+        asset: localstack-cli-2.3.2-{{.OS}}-{{.Arch}}-onefile.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: localstack
+        checksum:
+          type: github_release
+          asset: localstack-cli-2.3.2-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v3.0.2.post0"
+        asset: localstack-cli-3.0.2-{{.OS}}-{{.Arch}}-onefile.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: localstack
+        checksum:
+          type: github_release
+          asset: localstack-cli-3.0.2-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 2.0.1")
+        no_asset: true
+      - version_constraint: "true"
+        asset: localstack-cli-{{trimV .Version}}-{{.OS}}-{{.Arch}}-onefile.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: localstack
+        checksum:
+          type: github_release
+          asset: localstack-cli-{{trimV .Version}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

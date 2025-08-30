@@ -1,4 +1,4 @@
 packages:
-  - name: winebarrel/cronplan/cronmatch@v1.10.5
+  - name: winebarrel/cronplan/cronmatch@v2.0.2
   - name: winebarrel/cronplan/cronmatch
     version: v1.2.0

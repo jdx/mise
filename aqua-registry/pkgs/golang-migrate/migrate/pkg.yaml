@@ -1,4 +1,4 @@
 packages:
-  - name: golang-migrate/migrate@v4.18.3
+  - name: golang-migrate/migrate@v4.19.0
   - name: golang-migrate/migrate
     version: v4.14.1

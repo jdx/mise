@@ -1,5 +1,5 @@
 packages:
-  - name: k3s-io/k3s@v1.33.3+k3s1
+  - name: k3s-io/k3s@v1.33.4+k3s1
   - name: k3s-io/k3s
     version: v1.23.8+k3s1
   - name: k3s-io/k3s

@@ -1,4 +1,4 @@
 packages:
-  - name: CQLabs/homebrew-dcm@1.31.1
+  - name: CQLabs/homebrew-dcm@1.31.3
   - name: CQLabs/homebrew-dcm
     version: 1.0.0

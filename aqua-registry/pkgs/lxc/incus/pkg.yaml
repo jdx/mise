@@ -1,5 +1,5 @@
 packages:
-  - name: lxc/incus@v6.15.0
+  - name: lxc/incus@v6.16.0
   - name: lxc/incus
     version: v0.6.0
   - name: lxc/incus

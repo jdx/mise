@@ -1,5 +1,5 @@
 packages:
-  - name: astral-sh/ruff@0.12.10
+  - name: astral-sh/ruff@0.12.11
   - name: astral-sh/ruff
     version: v0.4.10
   - name: astral-sh/ruff

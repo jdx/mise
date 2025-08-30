@@ -51182,6 +51182,55 @@ packages:
           arm64: aarch64
           darwin: macos
   - type: github_release
+    repo_owner: localstack
+    repo_name: localstack-cli
+    description: The LocalStack CLI packaged using pyinstaller
+    files:
+      - name: localstack
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v2.3.2.post0"
+        asset: localstack-cli-2.3.2-{{.OS}}-{{.Arch}}-onefile.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: localstack
+        checksum:
+          type: github_release
+          asset: localstack-cli-2.3.2-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v3.0.2.post0"
+        asset: localstack-cli-3.0.2-{{.OS}}-{{.Arch}}-onefile.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: localstack
+        checksum:
+          type: github_release
+          asset: localstack-cli-3.0.2-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 2.0.1")
+        no_asset: true
+      - version_constraint: "true"
+        asset: localstack-cli-{{trimV .Version}}-{{.OS}}-{{.Arch}}-onefile.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: localstack
+        checksum:
+          type: github_release
+          asset: localstack-cli-{{trimV .Version}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: loeffel-io
     repo_name: ls-lint
     description: An extremely fast directory and filename linter - Bring some structure to your project filesystem
@@ -58637,6 +58686,43 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: openai
+    repo_name: codex
+    description: Lightweight coding agent that runs in your terminal
+    version_prefix: rust-
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.19.0")
+        asset: codex-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: codex
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: codex-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: codex
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            asset: codex-{{.Arch}}-{{.OS}}.exe.{{.Format}}
   - type: github_release
     repo_owner: openclarity
     repo_name: kubeclarity

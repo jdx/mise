@@ -1,5 +1,5 @@
 packages:
-  - name: SuperCuber/dotter@v0.13.3
+  - name: SuperCuber/dotter@v0.13.4
   - name: SuperCuber/dotter
     version: v0.13.0
   - name: SuperCuber/dotter

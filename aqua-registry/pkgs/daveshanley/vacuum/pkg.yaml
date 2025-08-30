@@ -1,5 +1,5 @@
 packages:
-  - name: daveshanley/vacuum@v0.17.9
+  - name: daveshanley/vacuum@v0.17.10
   - name: daveshanley/vacuum
     version: v0.8.7
   - name: daveshanley/vacuum

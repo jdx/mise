@@ -1,5 +1,5 @@
 packages:
-  - name: qdrant/qdrant@v1.15.3
+  - name: qdrant/qdrant@v1.15.4
   - name: qdrant/qdrant
     version: v1.8.0
   - name: qdrant/qdrant
