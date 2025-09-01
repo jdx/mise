@@ -65,7 +65,7 @@ impl Shell for Pwsh {
                         }}
                         _reset_output_encoding
                         # Pass down exit code from mise after _mise_hook
-                        if ($PSVersionTable.PSVersion.Major -gt 7) {{
+                        if ($PSVersionTable.PSVersion.Major -ge 7) {{
                             pwsh -NoProfile -Command exit $status
                         }} else {{
                             powershell -NoProfile -Command exit $status
@@ -87,7 +87,7 @@ impl Shell for Pwsh {
             function __enable_mise_chpwd{{
                 if ($PSVersionTable.PSVersion.Major -lt 7) {{
                     if ($env:MISE_PWSH_CHPWD_WARNING -ne '0') {{
-                        Write-Warning 'mise: chpwd functionality requires PowerShell version 7 or higher. Your current version is $($PSVersionTable.PSVersion). You can add `$env:MISE_PWSH_CHPWD_WARNING=0` to your environment to disable this warning.'
+                        Write-Warning "mise: chpwd functionality requires PowerShell version 7 or higher. Your current version is $($PSVersionTable.PSVersion). You can add `$env:MISE_PWSH_CHPWD_WARNING=0` to your environment to disable this warning."
                     }}
                     return
                 }}
