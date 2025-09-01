@@ -53,7 +53,7 @@ impl Shell for Pwsh {
                 if ($arguments.Length -gt 1) {{
                     $remainingArgs = $arguments[1..($arguments.Length - 1)]
                 }} else {{
-                   $remainingArgs = @()
+                    $remainingArgs = @()
                 }}
 
                 switch ($command) {{
