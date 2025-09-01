@@ -50,7 +50,7 @@ impl Shell for Pwsh {
                 }}
 
                 $command = $arguments[0]
-                $remainingArgs = $arguments[1..($arguments.Length)]
+                $remainingArgs = $arguments[1..$($arguments.Length - 1)]
 
                 switch ($command) {{
                     {{ $_ -in 'deactivate', 'shell', 'sh' }} {{
