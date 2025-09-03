@@ -579,11 +579,11 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["set", "add", "create"],
-          description: "Add/update an alias for a plugin",
+          description: "Add/update an alias for a backend/plugin",
           args: [
             {
               name: "plugin",
-              description: "The plugin to set the alias for",
+              description: "The backend/plugin to set the alias for",
               generators: pluginGenerator,
               debounce: true,
             },
@@ -596,22 +596,24 @@ const completionSpec: Fig.Spec = {
             {
               name: "value",
               description: "The value to set the alias to",
+              isOptional: true,
             },
           ],
         },
         {
           name: ["unset", "rm", "remove", "delete", "del"],
-          description: "Clears an alias for a plugin",
+          description: "Clears an alias for a backend/plugin",
           args: [
             {
               name: "plugin",
-              description: "The plugin to remove the alias from",
+              description: "The backend/plugin to remove the alias from",
               generators: pluginGenerator,
               debounce: true,
             },
             {
               name: "alias",
               description: "The alias to remove",
+              isOptional: true,
               generators: aliasGenerator,
               debounce: true,
             },

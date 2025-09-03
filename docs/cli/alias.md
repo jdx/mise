@@ -21,4 +21,4 @@ Don't show table header
 - [`mise alias get <PLUGIN> <ALIAS>`](/cli/alias/get.md)
 - [`mise alias ls [--no-header] [TOOL]`](/cli/alias/ls.md)
 - [`mise alias set <ARGS>…`](/cli/alias/set.md)
-- [`mise alias unset <PLUGIN> <ALIAS>`](/cli/alias/unset.md)
+- [`mise alias unset <PLUGIN> [ALIAS]`](/cli/alias/unset.md)
