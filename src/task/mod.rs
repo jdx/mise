@@ -58,9 +58,11 @@ where
         // - "{{" for expressions
         // - "{%" for statements
         if pattern.contains("{#") || pattern.contains("{{") || pattern.contains("{%") {
-            trace!("config::load::resolve_task_sources including tera template string in resolved task sources: {pattern}");
-                resolved.push(pattern);
-            continue
+            trace!(
+                "config::load::resolve_task_sources including tera template string in resolved task sources: {pattern}"
+            );
+            resolved.push(pattern);
+            continue;
         }
 
         match glob::glob_with(
@@ -72,7 +74,9 @@ where
             },
         ) {
             Err(error) => {
-                warn!("config::load::resolve_task_sources including '{pattern}' in resolved task sources, ignoring glob parsing error: {error:#?}");
+                warn!(
+                    "config::load::resolve_task_sources including '{pattern}' in resolved task sources, ignoring glob parsing error: {error:#?}"
+                );
                 resolved.push(pattern);
             }
             Ok(expanded) => {
@@ -80,13 +84,17 @@ where
                     match path {
                         Ok(path) => {
                             let source = path.display();
-                            trace!("config::load::resolve_task_sources resolved source from pattern '{pattern}': {source}");
+                            trace!(
+                                "config::load::resolve_task_sources resolved source from pattern '{pattern}': {source}"
+                            );
                             resolved.push(source.to_string());
-                        },
-                         Err(error) => {
+                        }
+                        Err(error) => {
                             let source = error.path().display();
-                            warn!("config::load::resolve_task_sources including '{source}' in resolved task sources despite: {:#?}", error.error());
-
+                            warn!(
+                                "config::load::resolve_task_sources including '{source}' in resolved task sources despite: {:#?}",
+                                error.error()
+                            );
                         }
                     }
                 }
