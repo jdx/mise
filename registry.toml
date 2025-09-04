@@ -103,10 +103,12 @@ android-sdk.backends = ["asdf:mise-plugins/mise-android-sdk"]
 android-sdk.depends = ["java", "yq"]
 ansible.description = "ansible python package contains the core runtime and CLI tools, such as ansible and ansible-playbook and extra modules, plugins, and roles"
 ansible.backends = ["pipx:ansible[uvx=false,pipx_args=--include-deps]"]
+ansible.depends = ["pipx"]
 ansible.test = ['ansible --version', 'ansible']
 ansible-core.aliases = ["ansible-base"]
 ansible-core.description = "ansible-core python package contains the core runtime and CLI tools, such as ansible and ansible-playbook"
 ansible-core.backends = ["pipx:ansible-core"]
+ansible-core.depends = ["pipx"]
 ansible-core.test = ['ansible --version', 'ansible [core {{version}}]']
 ant.description = "Apache Ant is a Java library and command-line tool whose mission is to drive processes described in build files as targets and extension points dependent upon each other"
 ant.backends = ["asdf:mise-plugins/mise-ant"]
