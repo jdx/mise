@@ -43,6 +43,60 @@ pub use deps::Deps;
 use task_dep::TaskDep;
 use task_sources::TaskOutputs;
 
+#[inline(always)]
+fn resolve_sources<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    let mut sources = <Vec<String> as serde::de::Deserialize>::deserialize(deserializer)?;
+
+    let mut resolved = Vec::with_capacity(sources.len());
+
+    for pattern in sources.drain(..) {
+        // pattern is considered a tera template string if it contains opening tags:
+        // - "{#" for comments
+        // - "{{" for expressions
+        // - "{%" for statements
+        if pattern.contains("{#") || pattern.contains("{{") || pattern.contains("{%") {
+            trace!("config::load::resolve_task_sources including tera template string in resolved task sources: {pattern}");
+                resolved.push(pattern);
+            continue
+        }
+
+        match glob::glob_with(
+            &pattern,
+            glob::MatchOptions {
+                case_sensitive: false,
+                require_literal_separator: false,
+                require_literal_leading_dot: false,
+            },
+        ) {
+            Err(error) => {
+                warn!("config::load::resolve_task_sources including '{pattern}' in resolved task sources, ignoring glob parsing error: {error:#?}");
+                resolved.push(pattern);
+            }
+            Ok(expanded) => {
+                for path in expanded {
+                    match path {
+                        Ok(path) => {
+                            let source = path.display();
+                            trace!("config::load::resolve_task_sources resolved source from pattern '{pattern}': {source}");
+                            resolved.push(source.to_string());
+                        },
+                         Err(error) => {
+                            let source = error.path().display();
+                            warn!("config::load::resolve_task_sources including '{source}' in resolved task sources despite: {:#?}", error.error());
+
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(resolved)
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Task {
@@ -78,7 +132,7 @@ pub struct Task {
     pub global: bool,
     #[serde(default)]
     pub raw: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "resolve_sources")]
     pub sources: Vec<String>,
     #[serde(default)]
     pub outputs: TaskOutputs,
@@ -492,6 +546,7 @@ impl Task {
         let ts = config.get_toolset().await?;
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         tera_ctx.insert("config_root", &self.config_root);
+        tera_ctx.insert("task", &serde_json::json!({"sources": &self.sources }));
         Ok(tera_ctx)
     }
 
