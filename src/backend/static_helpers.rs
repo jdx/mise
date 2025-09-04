@@ -7,6 +7,59 @@ use crate::ui::progress_report::SingleReport;
 use eyre::{Result, bail};
 use std::path::Path;
 
+/// Helper to try both prefixed and non-prefixed tags for a resolver function
+pub async fn try_with_v_prefix<F, Fut, T>(
+    version: &str,
+    version_prefix: Option<&str>,
+    resolver: F,
+) -> Result<T>
+where
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let mut errors = vec![];
+
+    // Generate candidates based on version prefix configuration
+    let candidates = if let Some(prefix) = version_prefix {
+        // If a custom prefix is configured, try both prefixed and non-prefixed versions
+        if version.starts_with(prefix) {
+            vec![
+                version.to_string(),
+                version.trim_start_matches(prefix).to_string(),
+            ]
+        } else {
+            vec![format!("{}{}", prefix, version), version.to_string()]
+        }
+    } else {
+        // Fall back to 'v' prefix logic
+        if version.starts_with('v') {
+            vec![
+                version.to_string(),
+                version.trim_start_matches('v').to_string(),
+            ]
+        } else {
+            vec![format!("v{version}"), version.to_string()]
+        }
+    };
+
+    for candidate in candidates {
+        match resolver(candidate.clone()).await {
+            Ok(res) => return Ok(res),
+            Err(e) => {
+                let is_404 = crate::http::error_code(&e) == Some(404);
+                if is_404 {
+                    errors.push(e);
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+    Err(errors
+        .pop()
+        .unwrap_or_else(|| eyre::eyre!("No matching release found for {version}")))
+}
+
 /// Returns all possible aliases for the current platform (os, arch),
 /// with the preferred spelling first (macos/x64, linux/x64, etc).
 pub fn platform_aliases() -> Vec<(String, String)> {
