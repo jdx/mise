@@ -1,5 +1,5 @@
 packages:
-  - name: linuxkit/linuxkit@v1.7.1
+  - name: linuxkit/linuxkit@v1.8.1
   - name: linuxkit/linuxkit
     version: v0.8
   - name: linuxkit/linuxkit

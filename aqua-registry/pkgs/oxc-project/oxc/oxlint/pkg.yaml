@@ -1,5 +1,5 @@
 packages:
-  - name: oxc-project/oxc/oxlint@oxlint_v1.13.0
+  - name: oxc-project/oxc/oxlint@oxlint_v1.14.0
   - name: oxc-project/oxc/oxlint
     version: oxlint_v0.2.2
   - name: oxc-project/oxc/oxlint

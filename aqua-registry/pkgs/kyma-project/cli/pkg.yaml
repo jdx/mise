@@ -1,5 +1,5 @@
 packages:
-  - name: kyma-project/cli@3.0.1
+  - name: kyma-project/cli@3.1.0
   - name: kyma-project/cli
     version: 2.7.0
   - name: kyma-project/cli

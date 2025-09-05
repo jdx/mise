@@ -1,5 +1,5 @@
 packages:
-  - name: goreleaser/goreleaser@v2.11.2
+  - name: goreleaser/goreleaser@v2.12.0
   - name: goreleaser/goreleaser
     version: v2.6.1
   - name: goreleaser/goreleaser

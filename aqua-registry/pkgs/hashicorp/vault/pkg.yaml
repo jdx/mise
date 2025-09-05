@@ -1,2 +1,2 @@
 packages:
-  - name: hashicorp/vault@v1.20.2
+  - name: hashicorp/vault@v1.20.3

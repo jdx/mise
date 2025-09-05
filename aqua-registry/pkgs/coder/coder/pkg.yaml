@@ -1,5 +1,5 @@
 packages:
-  - name: coder/coder@v2.25.1
+  - name: coder/coder@v2.26.0
   - name: coder/coder
     version: v0.5.9
   - name: coder/coder

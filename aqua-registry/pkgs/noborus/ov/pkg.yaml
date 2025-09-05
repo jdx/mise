@@ -1,5 +1,5 @@
 packages:
-  - name: noborus/ov@v0.42.1
+  - name: noborus/ov@v0.43.0
   - name: noborus/ov
     version: v0.9.2
   - name: noborus/ov

@@ -1,5 +1,5 @@
 packages:
-  - name: mgechev/revive@v1.11.0
+  - name: mgechev/revive@v1.12.0
   - name: mgechev/revive
     version: v1.3.2
   - name: mgechev/revive

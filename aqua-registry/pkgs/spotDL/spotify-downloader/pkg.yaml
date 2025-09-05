@@ -1,5 +1,5 @@
 packages:
-  - name: spotDL/spotify-downloader@v4.4.1
+  - name: spotDL/spotify-downloader@v4.4.2
   - name: spotDL/spotify-downloader
     version: v4.2.5
   - name: spotDL/spotify-downloader

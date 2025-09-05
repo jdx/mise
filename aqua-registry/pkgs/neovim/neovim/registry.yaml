@@ -8,90 +8,59 @@ packages:
       - name: nvim
     version_constraint: "false"
     version_overrides:
-      - version_constraint: semver("<= 0.1.7")
+      - version_constraint: semver("<= 0.1.7") or Version == "v0.2.1"
         no_asset: true
       - version_constraint: Version == "v0.2.0"
         asset: nvim-{{.OS}}.{{.Format}}
-        format: zip
+        format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: nvim
-            src: Neovim/bin/nvim.exe
         replacements:
           darwin: macos
           windows: win64
+        files:
+          - name: nvim
+            src: nvim-osx64/bin/nvim
         overrides:
-          - goos: darwin
-            format: tar.gz
+          - goos: windows
+            format: zip
             files:
               - name: nvim
-                src: nvim-osx64/bin/nvim
+                src: Neovim/bin/nvim.exe
         supported_envs:
           - darwin
           - windows
-      - version_constraint: Version == "v0.2.1"
-        no_asset: true
       - version_constraint: semver("<= 0.3.1")
         asset: nvim-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: nvim
-            src: nvim-{{.OS}}/bin/nvim
         replacements:
           darwin: macos
           windows: win64
+        files:
+          - name: nvim
+            src: nvim-osx64/bin/nvim
         overrides:
           - goos: windows
             format: zip
             files:
               - name: nvim
                 src: Neovim/bin/nvim.exe
-          - goos: darwin
-            files:
-              - name: nvim
-                src: nvim-osx64/bin/nvim
         supported_envs:
           - darwin
           - windows
-      - version_constraint: semver("<= 0.3.5")
+      - version_constraint: Version in ["v0.3.6", "v0.4.0"]
         asset: nvim-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
+        replacements:
+          linux: linux64
+          darwin: macos
         files:
           - name: nvim
-            src: nvim-{{.OS}}/bin/nvim
-        replacements:
-          darwin: macos
-          windows: win64
-          linux: linux64
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: nvim
-                src: Neovim/bin/nvim.exe
-          - goos: darwin
-            files:
-              - name: nvim
-                src: nvim-osx64/bin/nvim
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: Version == "v0.3.6"
-        asset: nvim-{{.OS}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        files:
-          - name: nvim
-            src: nvim-{{.OS}}/bin/nvim
-        replacements:
-          darwin: macos
-          linux: linux64
+            src: "{{.AssetWithoutExt}}/bin/nvim"
         overrides:
           - goos: darwin
             files:
@@ -100,88 +69,101 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
-      - version_constraint: semver("<= 0.3.8")
-        asset: nvim-{{.OS}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        files:
-          - name: nvim
-            src: nvim-{{.OS}}/bin/nvim
-        replacements:
-          darwin: macos
-          windows: win64
-          linux: linux64
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: nvim
-                src: Neovim/bin/nvim.exe
-          - goos: darwin
-            files:
-              - name: nvim
-                src: nvim-osx64/bin/nvim
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: Version == "v0.4.0"
-        asset: nvim-{{.OS}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        files:
-          - name: nvim
-            src: nvim-{{.OS}}/bin/nvim
-        replacements:
-          darwin: macos
-          linux: linux64
-        supported_envs:
-          - linux/amd64
-          - darwin
-        overrides:
-          - goos: darwin
-            files:
-              - name: nvim
-                src: nvim-osx64/bin/nvim
       - version_constraint: semver("<= 0.4.4")
         asset: nvim-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: nvim
-            src: nvim-{{.OS}}/bin/nvim
         replacements:
+          linux: linux64
           darwin: macos
           windows: win64
-          linux: linux64
+        files:
+          - name: nvim
+            src: "{{.AssetWithoutExt}}/bin/nvim"
         overrides:
+          - goos: darwin
+            files:
+              - name: nvim
+                src: nvim-osx64/bin/nvim
           - goos: windows
             format: zip
             files:
               - name: nvim
                 src: Neovim/bin/nvim.exe
-          - goos: darwin
-            files:
-              - name: nvim
-                src: nvim-osx64/bin/nvim
         supported_envs:
+          - linux/amd64
           - darwin
           - windows
-          - amd64
-      - version_constraint: semver("<= 0.9.5")
+      - version_constraint: semver("<= 0.6.1")
         asset: nvim-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
+        replacements:
+          linux: linux64
+          darwin: macos
+          windows: win64
         files:
           - name: nvim
             src: "{{.AssetWithoutExt}}/bin/nvim"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            files:
+              - name: nvim
+                src: nvim-osx64/bin/nvim
+          - goos: windows
+            format: zip
+            files:
+              - name: nvim
+                src: Neovim/bin/nvim.exe
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: Version == "v0.7.0"
+        asset: nvim-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
         replacements:
+          linux: linux64
           darwin: macos
           windows: win64
+        files:
+          - name: nvim
+            src: "{{.AssetWithoutExt}}/bin/nvim"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            files:
+              - name: nvim
+                src: nvim-osx64/bin/nvim
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 0.8.3")
+        asset: nvim-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
           linux: linux64
+          darwin: macos
+          windows: win64
+        files:
+          - name: nvim
+            src: "{{.AssetWithoutExt}}/bin/nvim"
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256sum"
@@ -190,20 +172,43 @@ packages:
           - goos: windows
             format: zip
         supported_envs:
+          - linux/amd64
           - darwin
           - windows
-          - amd64
+      - version_constraint: semver("<= 0.9.5")
+        asset: nvim-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          linux: linux64
+          darwin: macos
+          windows: win64
+        files:
+          - name: nvim
+            src: "{{.AssetWithoutExt}}/bin/nvim"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
       - version_constraint: semver("<= 0.10.3")
         asset: nvim-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        replacements:
+          linux: linux64
+          darwin: macos
+          windows: win64
         files:
           - name: nvim
             src: "{{.AssetWithoutExt}}/bin/nvim"
-        replacements:
-          darwin: macos
-          windows: win64
-          linux: linux64
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256sum"
@@ -216,86 +221,61 @@ packages:
           - goos: windows
             format: zip
         supported_envs:
+          - linux/amd64
           - darwin
           - windows
-          - amd64
       - version_constraint: Version == "v0.10.4"
         asset: nvim-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
         files:
           - name: nvim
             src: "{{.AssetWithoutExt}}/bin/nvim"
-        replacements:
-          darwin: macos
-          windows: win64
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256sum"
           algorithm: sha256
         overrides:
-          - goos: darwin
-            replacements:
-              amd64: x86_64
-          - goos: linux
-            replacements:
-              amd64: x86_64
           - goos: windows
             asset: nvim-{{.OS}}.{{.Format}}
             format: zip
-        supported_envs:
-          - darwin
-          - linux
-          - windows
+            replacements:
+              amd64: amd64
       - version_constraint: semver("<= 0.11.2")
         asset: nvim-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
         files:
           - name: nvim
             src: "{{.AssetWithoutExt}}/bin/nvim"
-        replacements:
-          darwin: macos
-          windows: win64
         checksum:
           type: github_release
           asset: shasum.txt
           algorithm: sha256
         overrides:
-          - goos: darwin
-            replacements:
-              amd64: x86_64
-          - goos: linux
-            replacements:
-              amd64: x86_64
           - goos: windows
             asset: nvim-{{.OS}}.{{.Format}}
             format: zip
-        supported_envs:
-          - darwin
-          - linux
-          - windows
       - version_constraint: "true"
         asset: nvim-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
         files:
           - name: nvim
             src: "{{.AssetWithoutExt}}/bin/nvim"
-        replacements:
-          darwin: macos
-          windows: win64
         overrides:
-          - goos: darwin
-            replacements:
-              amd64: x86_64
-          - goos: linux
-            replacements:
-              amd64: x86_64
           - goos: windows
             asset: nvim-{{.OS}}.{{.Format}}
             format: zip
-        supported_envs:
-          - darwin
-          - linux
-          - windows

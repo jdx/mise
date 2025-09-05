@@ -1,5 +1,5 @@
 packages:
-  - name: sqlc-dev/sqlc@v1.29.0
+  - name: sqlc-dev/sqlc@v1.30.0
   - name: sqlc-dev/sqlc
     version: v1.24.0
   - name: sqlc-dev/sqlc

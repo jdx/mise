@@ -1,5 +1,5 @@
 packages:
-  - name: keisku/kubectl-explore@v0.12.0
+  - name: keisku/kubectl-explore@v0.14.0
   - name: keisku/kubectl-explore
     version: v0.3.1
   - name: keisku/kubectl-explore

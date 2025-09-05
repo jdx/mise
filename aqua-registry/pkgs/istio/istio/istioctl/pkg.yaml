@@ -1,2 +1,2 @@
 packages:
-  - name: istio/istio/istioctl@1.27.0
+  - name: istio/istio/istioctl@1.27.1

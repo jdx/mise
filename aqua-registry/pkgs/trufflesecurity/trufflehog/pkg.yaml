@@ -1,4 +1,4 @@
 packages:
-  - name: trufflesecurity/trufflehog@v3.90.5
+  - name: trufflesecurity/trufflehog@v3.90.6
   - name: trufflesecurity/trufflehog
     version: v3.63.1

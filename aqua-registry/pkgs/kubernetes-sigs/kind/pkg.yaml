@@ -1,5 +1,5 @@
 packages:
-  - name: kubernetes-sigs/kind@v0.29.0
+  - name: kubernetes-sigs/kind@v0.30.0
   - name: kubernetes-sigs/kind
     version: v0.11.1
   - name: kubernetes-sigs/kind

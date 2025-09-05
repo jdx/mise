@@ -1,5 +1,5 @@
 packages:
-  - name: cloudposse/atmos@v1.188.0
+  - name: cloudposse/atmos@v1.189.0
   - name: cloudposse/atmos
     version: v1.18.0
   - name: cloudposse/atmos

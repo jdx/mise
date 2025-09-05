@@ -1,2 +1,2 @@
 packages:
-  - name: getsentry/sentry-cli@2.52.0
+  - name: getsentry/sentry-cli@2.53.0

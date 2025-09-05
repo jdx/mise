@@ -1,4 +1,4 @@
 packages:
-  - name: nushell/nushell@0.106.1
+  - name: nushell/nushell@0.107.0
   - name: nushell/nushell
     version: 0.70.0

@@ -1,5 +1,5 @@
 packages:
-  - name: mvdan/gofumpt@v0.8.0
+  - name: mvdan/gofumpt@v0.9.0
   - name: mvdan/gofumpt
     version: v0.4.0
   - name: mvdan/gofumpt

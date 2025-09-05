@@ -1,2 +1,2 @@
 packages:
-  - name: tauri-apps/tauri/cargo-tauri@tauri-cli-v2.8.3
+  - name: tauri-apps/tauri/cargo-tauri@tauri-cli-v2.8.4

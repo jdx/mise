@@ -1,5 +1,5 @@
 packages:
-  - name: jwilder/dockerize@v0.9.5
+  - name: jwilder/dockerize@v0.9.6
   - name: jwilder/dockerize
     version: v0.6.1
   - name: jwilder/dockerize

@@ -1,4 +1,4 @@
 packages:
-  - name: gruntwork-io/boilerplate@v0.9.0
+  - name: gruntwork-io/boilerplate@v0.10.0
   - name: gruntwork-io/boilerplate
     version: v0.4.2

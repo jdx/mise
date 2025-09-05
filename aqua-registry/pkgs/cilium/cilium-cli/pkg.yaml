@@ -1,5 +1,5 @@
 packages:
-  - name: cilium/cilium-cli@v0.18.6
+  - name: cilium/cilium-cli@v0.18.7
   - name: cilium/cilium-cli
     version: v0.16.4
   - name: cilium/cilium-cli

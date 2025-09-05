@@ -1,5 +1,5 @@
 packages:
-  - name: kubernetes/kubernetes/kubelet@v1.33.4
+  - name: kubernetes/kubernetes/kubelet@v1.34.0
   - name: kubernetes/kubernetes/kubelet
     version: v1.25.4
   - name: kubernetes/kubernetes/kubelet
