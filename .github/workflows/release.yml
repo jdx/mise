@@ -272,11 +272,7 @@ jobs:
         if: startsWith(github.event.ref, 'refs/tags/v')
         run: |
           VERSION="$(./scripts/get-version.sh)"
-          # Extract full release notes from git tag message (including subject and body)
-          # Use %(contents) to get the full message, then skip the PGP signature if present
-          git tag -l --format='%(contents)' "$VERSION" | sed '/-----BEGIN PGP SIGNATURE-----/,$d' > /tmp/release-notes.txt
-          # Create draft release with all assets in a single command
-          # Use --notes-file to safely handle special characters and multi-line content
+          mise x -- git cliff --strip all --latest >/tmp/release-notes.txt
           gh release create "$VERSION" \
             --title "$VERSION" \
             --notes-file /tmp/release-notes.txt \
