@@ -1,5 +1,5 @@
 packages:
-  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics@v1.124.0
+  - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics@v1.125.1
   - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics
     version: v1.110.0
   - name: VictoriaMetrics/VictoriaMetrics/victoria-metrics

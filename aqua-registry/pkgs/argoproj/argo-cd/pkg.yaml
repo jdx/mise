@@ -1,5 +1,5 @@
 packages:
-  - name: argoproj/argo-cd@v3.1.1
+  - name: argoproj/argo-cd@v3.1.3
   - name: argoproj/argo-cd
     version: v2.7.0-rc1
   - name: argoproj/argo-cd

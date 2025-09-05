@@ -36887,6 +36887,11 @@ packages:
     repo_owner: google
     repo_name: go-licenses
     description: A lightweight tool to report on the licenses used by a Go package and its dependencies. Highlight! Versioned external URL to licenses can be found at the same time
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver(">= 2.0.0")
+        path: github.com/google/go-licenses/v{{(semver .Version).Major}}
+      - version_constraint: "true"
   - type: github_release
     repo_owner: google
     repo_name: jsonnet
@@ -38434,6 +38439,8 @@ packages:
     description: Dockerfile linter, validate inline bash, written in Haskell
     version_constraint: "false"
     version_overrides:
+      - version_constraint: Version == "v1.0"
+        no_asset: true
       - version_constraint: Version == "v2.7.0"
         asset: hadolint-{{.OS}}-{{.Arch}}
         format: raw
@@ -38445,8 +38452,16 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
-      - version_constraint: semver("<= 1.0")
-        no_asset: true
+      - version_constraint: Version == "v2.10.0"
+        asset: hadolint-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
       - version_constraint: semver("<= 1.2.2")
         asset: hadolint_{{.OS}}_{{.Arch}}
         format: raw
@@ -38470,7 +38485,7 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: Version == "v2.10.0"
+      - version_constraint: semver("<= 2.12.1-beta")
         asset: hadolint-{{.OS}}-{{.Arch}}
         format: raw
         rosetta2: true
@@ -38480,16 +38495,17 @@ packages:
           darwin: Darwin
           linux: Linux
           windows: Windows
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
       - version_constraint: "true"
         asset: hadolint-{{.OS}}-{{.Arch}}
         format: raw
-        rosetta2: true
         windows_arm_emulation: true
         replacements:
           amd64: x86_64
-          darwin: Darwin
-          linux: Linux
-          windows: Windows
+          darwin: macos
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256"
@@ -42260,14 +42276,14 @@ packages:
         asset: pre-commit-rs-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        files:
+          - name: prek
+            src: "{{.AssetWithoutExt}}/pre-commit"
         replacements:
           amd64: x86_64
           darwin: apple-darwin
           linux: unknown-linux-gnu
           windows: pc-windows-msvc
-        files:
-          - name: prek
-            src: "{{.AssetWithoutExt}}/pre-commit"
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256"
@@ -42289,14 +42305,14 @@ packages:
         asset: prefligit-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        files:
+          - name: prek
+            src: "{{.AssetWithoutExt}}/prefligit"
         replacements:
           amd64: x86_64
           darwin: apple-darwin
           linux: unknown-linux-gnu
           windows: pc-windows-msvc
-        files:
-          - name: prek
-            src: "{{.AssetWithoutExt}}/prefligit"
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256"
@@ -42314,18 +42330,18 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.0.28")
         asset: prek-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        files:
+          - name: prek
+            src: "{{.AssetWithoutExt}}/prek"
         replacements:
           amd64: x86_64
           darwin: apple-darwin
           linux: unknown-linux-gnu
           windows: pc-windows-msvc
-        files:
-          - name: prek
-            src: "{{.AssetWithoutExt}}/prek"
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256"
@@ -42342,6 +42358,27 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: "true"
+        asset: prek-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: prek
+            src: "{{.AssetWithoutExt}}/prek"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: prek
   - type: github_release
     repo_owner: jacek-kurlit
     repo_name: pik
@@ -51182,6 +51219,55 @@ packages:
           arm64: aarch64
           darwin: macos
   - type: github_release
+    repo_owner: localstack
+    repo_name: localstack-cli
+    description: The LocalStack CLI packaged using pyinstaller
+    files:
+      - name: localstack
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v2.3.2.post0"
+        asset: localstack-cli-2.3.2-{{.OS}}-{{.Arch}}-onefile.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: localstack
+        checksum:
+          type: github_release
+          asset: localstack-cli-2.3.2-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v3.0.2.post0"
+        asset: localstack-cli-3.0.2-{{.OS}}-{{.Arch}}-onefile.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: localstack
+        checksum:
+          type: github_release
+          asset: localstack-cli-3.0.2-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 2.0.1")
+        no_asset: true
+      - version_constraint: "true"
+        asset: localstack-cli-{{trimV .Version}}-{{.OS}}-{{.Arch}}-onefile.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: localstack
+        checksum:
+          type: github_release
+          asset: localstack-cli-{{trimV .Version}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: loeffel-io
     repo_name: ls-lint
     description: An extremely fast directory and filename linter - Bring some structure to your project filesystem
@@ -56564,90 +56650,59 @@ packages:
       - name: nvim
     version_constraint: "false"
     version_overrides:
-      - version_constraint: semver("<= 0.1.7")
+      - version_constraint: semver("<= 0.1.7") or Version == "v0.2.1"
         no_asset: true
       - version_constraint: Version == "v0.2.0"
         asset: nvim-{{.OS}}.{{.Format}}
-        format: zip
+        format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: nvim
-            src: Neovim/bin/nvim.exe
         replacements:
           darwin: macos
           windows: win64
+        files:
+          - name: nvim
+            src: nvim-osx64/bin/nvim
         overrides:
-          - goos: darwin
-            format: tar.gz
+          - goos: windows
+            format: zip
             files:
               - name: nvim
-                src: nvim-osx64/bin/nvim
+                src: Neovim/bin/nvim.exe
         supported_envs:
           - darwin
           - windows
-      - version_constraint: Version == "v0.2.1"
-        no_asset: true
       - version_constraint: semver("<= 0.3.1")
         asset: nvim-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: nvim
-            src: nvim-{{.OS}}/bin/nvim
         replacements:
           darwin: macos
           windows: win64
+        files:
+          - name: nvim
+            src: nvim-osx64/bin/nvim
         overrides:
           - goos: windows
             format: zip
             files:
               - name: nvim
                 src: Neovim/bin/nvim.exe
-          - goos: darwin
-            files:
-              - name: nvim
-                src: nvim-osx64/bin/nvim
         supported_envs:
           - darwin
           - windows
-      - version_constraint: semver("<= 0.3.5")
+      - version_constraint: Version in ["v0.3.6", "v0.4.0"]
         asset: nvim-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
+        replacements:
+          linux: linux64
+          darwin: macos
         files:
           - name: nvim
-            src: nvim-{{.OS}}/bin/nvim
-        replacements:
-          darwin: macos
-          windows: win64
-          linux: linux64
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: nvim
-                src: Neovim/bin/nvim.exe
-          - goos: darwin
-            files:
-              - name: nvim
-                src: nvim-osx64/bin/nvim
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: Version == "v0.3.6"
-        asset: nvim-{{.OS}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        files:
-          - name: nvim
-            src: nvim-{{.OS}}/bin/nvim
-        replacements:
-          darwin: macos
-          linux: linux64
+            src: "{{.AssetWithoutExt}}/bin/nvim"
         overrides:
           - goos: darwin
             files:
@@ -56656,88 +56711,101 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
-      - version_constraint: semver("<= 0.3.8")
-        asset: nvim-{{.OS}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        files:
-          - name: nvim
-            src: nvim-{{.OS}}/bin/nvim
-        replacements:
-          darwin: macos
-          windows: win64
-          linux: linux64
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: nvim
-                src: Neovim/bin/nvim.exe
-          - goos: darwin
-            files:
-              - name: nvim
-                src: nvim-osx64/bin/nvim
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: Version == "v0.4.0"
-        asset: nvim-{{.OS}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        files:
-          - name: nvim
-            src: nvim-{{.OS}}/bin/nvim
-        replacements:
-          darwin: macos
-          linux: linux64
-        supported_envs:
-          - linux/amd64
-          - darwin
-        overrides:
-          - goos: darwin
-            files:
-              - name: nvim
-                src: nvim-osx64/bin/nvim
       - version_constraint: semver("<= 0.4.4")
         asset: nvim-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: nvim
-            src: nvim-{{.OS}}/bin/nvim
         replacements:
+          linux: linux64
           darwin: macos
           windows: win64
-          linux: linux64
+        files:
+          - name: nvim
+            src: "{{.AssetWithoutExt}}/bin/nvim"
         overrides:
+          - goos: darwin
+            files:
+              - name: nvim
+                src: nvim-osx64/bin/nvim
           - goos: windows
             format: zip
             files:
               - name: nvim
                 src: Neovim/bin/nvim.exe
-          - goos: darwin
-            files:
-              - name: nvim
-                src: nvim-osx64/bin/nvim
         supported_envs:
+          - linux/amd64
           - darwin
           - windows
-          - amd64
-      - version_constraint: semver("<= 0.9.5")
+      - version_constraint: semver("<= 0.6.1")
         asset: nvim-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
+        replacements:
+          linux: linux64
+          darwin: macos
+          windows: win64
         files:
           - name: nvim
             src: "{{.AssetWithoutExt}}/bin/nvim"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            files:
+              - name: nvim
+                src: nvim-osx64/bin/nvim
+          - goos: windows
+            format: zip
+            files:
+              - name: nvim
+                src: Neovim/bin/nvim.exe
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: Version == "v0.7.0"
+        asset: nvim-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
         replacements:
+          linux: linux64
           darwin: macos
           windows: win64
+        files:
+          - name: nvim
+            src: "{{.AssetWithoutExt}}/bin/nvim"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            files:
+              - name: nvim
+                src: nvim-osx64/bin/nvim
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 0.8.3")
+        asset: nvim-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
           linux: linux64
+          darwin: macos
+          windows: win64
+        files:
+          - name: nvim
+            src: "{{.AssetWithoutExt}}/bin/nvim"
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256sum"
@@ -56746,20 +56814,43 @@ packages:
           - goos: windows
             format: zip
         supported_envs:
+          - linux/amd64
           - darwin
           - windows
-          - amd64
+      - version_constraint: semver("<= 0.9.5")
+        asset: nvim-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          linux: linux64
+          darwin: macos
+          windows: win64
+        files:
+          - name: nvim
+            src: "{{.AssetWithoutExt}}/bin/nvim"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
       - version_constraint: semver("<= 0.10.3")
         asset: nvim-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        replacements:
+          linux: linux64
+          darwin: macos
+          windows: win64
         files:
           - name: nvim
             src: "{{.AssetWithoutExt}}/bin/nvim"
-        replacements:
-          darwin: macos
-          windows: win64
-          linux: linux64
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256sum"
@@ -56772,89 +56863,64 @@ packages:
           - goos: windows
             format: zip
         supported_envs:
+          - linux/amd64
           - darwin
           - windows
-          - amd64
       - version_constraint: Version == "v0.10.4"
         asset: nvim-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
         files:
           - name: nvim
             src: "{{.AssetWithoutExt}}/bin/nvim"
-        replacements:
-          darwin: macos
-          windows: win64
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256sum"
           algorithm: sha256
         overrides:
-          - goos: darwin
-            replacements:
-              amd64: x86_64
-          - goos: linux
-            replacements:
-              amd64: x86_64
           - goos: windows
             asset: nvim-{{.OS}}.{{.Format}}
             format: zip
-        supported_envs:
-          - darwin
-          - linux
-          - windows
+            replacements:
+              amd64: amd64
       - version_constraint: semver("<= 0.11.2")
         asset: nvim-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
         files:
           - name: nvim
             src: "{{.AssetWithoutExt}}/bin/nvim"
-        replacements:
-          darwin: macos
-          windows: win64
         checksum:
           type: github_release
           asset: shasum.txt
           algorithm: sha256
         overrides:
-          - goos: darwin
-            replacements:
-              amd64: x86_64
-          - goos: linux
-            replacements:
-              amd64: x86_64
           - goos: windows
             asset: nvim-{{.OS}}.{{.Format}}
             format: zip
-        supported_envs:
-          - darwin
-          - linux
-          - windows
       - version_constraint: "true"
         asset: nvim-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
         files:
           - name: nvim
             src: "{{.AssetWithoutExt}}/bin/nvim"
-        replacements:
-          darwin: macos
-          windows: win64
         overrides:
-          - goos: darwin
-            replacements:
-              amd64: x86_64
-          - goos: linux
-            replacements:
-              amd64: x86_64
           - goos: windows
             asset: nvim-{{.OS}}.{{.Format}}
             format: zip
-        supported_envs:
-          - darwin
-          - linux
-          - windows
   - type: github_release
     repo_owner: neovim
     repo_name: neovim-releases
@@ -58638,6 +58704,43 @@ packages:
           asset: checksums.txt
           algorithm: sha256
   - type: github_release
+    repo_owner: openai
+    repo_name: codex
+    description: Lightweight coding agent that runs in your terminal
+    version_prefix: rust-
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.19.0")
+        asset: codex-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: codex
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: codex-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: codex
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            asset: codex-{{.Arch}}-{{.OS}}.exe.{{.Format}}
+  - type: github_release
     repo_owner: openclarity
     repo_name: kubeclarity
     description: KubeClarity is a tool for detection and management of Software Bill Of Materials (SBOM) and vulnerabilities of container images and filesystems
@@ -60235,6 +60338,9 @@ packages:
     aliases:
       - name: Jarred-Sumner/bun
     description: Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one
+    files:
+      - name: bun
+      - name: bunx
     version_prefix: bun-v
     version_constraint: "false"
     version_overrides:
@@ -60250,6 +60356,9 @@ packages:
         files:
           - name: bun
             src: "{{.AssetWithoutExt}}/bun"
+          - name: bunx
+            src: "{{.AssetWithoutExt}}/bun"
+            link: bunx
       - version_constraint: semver("<= 1.0.36")
         asset: bun-{{.OS}}-{{.Arch}}.{{.Format}}
         format: zip
@@ -60262,6 +60371,9 @@ packages:
         files:
           - name: bun
             src: "{{.AssetWithoutExt}}/bun"
+          - name: bunx
+            src: "{{.AssetWithoutExt}}/bun"
+            link: bunx
       - version_constraint: "true"
         asset: bun-{{.OS}}-{{.Arch}}.{{.Format}}
         format: zip
@@ -60269,6 +60381,9 @@ packages:
         files:
           - name: bun
             src: "{{.AssetWithoutExt}}/bun"
+          - name: bunx
+            src: "{{.AssetWithoutExt}}/bun"
+            link: bunx
         overrides:
           - goos: linux
             asset: bun-{{.OS}}-{{.Arch}}.{{.Format}}
@@ -64135,6 +64250,8 @@ packages:
     repo_owner: realm
     repo_name: SwiftLint
     description: A tool to enforce Swift style and conventions
+    files:
+      - name: swiftlint
     version_constraint: "false"
     version_overrides:
       - version_constraint: semver("<= 0.40.0")
@@ -64144,16 +64261,27 @@ packages:
           - name: swiftlint
         supported_envs:
           - darwin
-      - version_constraint: "true"
-        asset: portable_swiftlint.{{.Format}}
+      - version_constraint: semver("<= 0.59.1")
+        asset: swiftlint_linux.{{.Format}}
         format: zip
         files:
           - name: swiftlint
         overrides:
-          - goos: linux
-            asset: swiftlint_linux.{{.Format}}
+          - goos: darwin
+            asset: portable_swiftlint.{{.Format}}
         supported_envs:
           - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: swiftlint_linux_{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: swiftlint
+        overrides:
+          - goos: darwin
+            asset: portable_swiftlint.{{.Format}}
+        supported_envs:
+          - linux
           - darwin
   - type: github_release
     repo_owner: rebuy-de
@@ -65340,6 +65468,11 @@ packages:
         overrides:
           - goos: windows
             format: zip
+  - type: go_install
+    repo_owner: rubenv
+    repo_name: sql-migrate
+    description: SQL schema migration tool for Go
+    path: github.com/rubenv/sql-migrate/sql-migrate
   - type: github_release
     repo_owner: rui314
     repo_name: mold
@@ -73355,6 +73488,37 @@ packages:
         slsa_provenance:
           type: github_release
           asset: multiple.intoto.jsonl
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
+    repo_owner: suzuki-shunsuke
+    repo_name: ghtkn
+    description: A CLI to create GitHub App User Access Token for secure local development
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: ghtkn_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: ghtkn_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/suzuki-shunsuke/ghtkn/releases/download/{{.Version}}/ghtkn_checksums.txt.pem
+              - --certificate-identity-regexp
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.+$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/suzuki-shunsuke/ghtkn/releases/download/{{.Version}}/ghtkn_checksums.txt.sig
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
         overrides:
           - goos: windows
             format: zip

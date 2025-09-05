@@ -1,5 +1,5 @@
 packages:
-  - name: WebAssembly/binaryen@version_123
+  - name: WebAssembly/binaryen@version_124
   - name: WebAssembly/binaryen
     version: version_108
   - name: WebAssembly/binaryen

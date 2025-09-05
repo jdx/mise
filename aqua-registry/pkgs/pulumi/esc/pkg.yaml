@@ -1,5 +1,5 @@
 packages:
-  - name: pulumi/esc@v0.17.0
+  - name: pulumi/esc@v0.18.0
   - name: pulumi/esc
     version: v0.5.0
   - name: pulumi/esc

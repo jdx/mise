@@ -1,5 +1,5 @@
 packages:
-  - name: mvisonneau/s5@v0.1.15
+  - name: mvisonneau/s5@v0.2.0
   - name: mvisonneau/s5
     version: v0.1.10
   - name: mvisonneau/s5

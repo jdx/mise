@@ -1,5 +1,5 @@
 packages:
-  - name: crazy-max/diun@v4.29.0
+  - name: crazy-max/diun@v4.30.0
   - name: crazy-max/diun
     version: v4.23.0
   - name: crazy-max/diun

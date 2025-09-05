@@ -1,5 +1,32 @@
 # Changelog
 
+## [2025.9.0](https://github.com/jdx/mise/compare/v2025.8.21..v2025.9.0) - 2025-09-05
+
+### 🚀 Features
+
+- allow set/unset backend aliases by [@roele](https://github.com/roele) in [#6172](https://github.com/jdx/mise/pull/6172)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** respect order of asset_strs by [@risu729](https://github.com/risu729) in [#6143](https://github.com/jdx/mise/pull/6143)
+- **(java)** treat freebsd as linux (assuming linux compatability) by [@roele](https://github.com/roele) in [#6161](https://github.com/jdx/mise/pull/6161)
+- **(nushell/windows)** Fix $env.PATH getting converted to a string by [@zackyancey](https://github.com/zackyancey) in [#6157](https://github.com/jdx/mise/pull/6157)
+- **(sync)** create uv_versions_path dir if it doesn't exist by [@risu729](https://github.com/risu729) in [#6142](https://github.com/jdx/mise/pull/6142)
+- **(ubi)** show relevent error messages for v-prefixed tags by [@risu729](https://github.com/risu729) in [#6183](https://github.com/jdx/mise/pull/6183)
+- remove nodejs/golang alias migrate code by [@risu729](https://github.com/risu729) in [#6141](https://github.com/jdx/mise/pull/6141)
+
+### 📚 Documentation
+
+- **(task)** remove word "additional" to avoid confusions by [@risu729](https://github.com/risu729) in [#6159](https://github.com/jdx/mise/pull/6159)
+
+### Chore
+
+- update Cargo.lock by [@risu729](https://github.com/risu729) in [#6184](https://github.com/jdx/mise/pull/6184)
+
+### New Contributors
+
+- @zackyancey made their first contribution in [#6157](https://github.com/jdx/mise/pull/6157)
+
 ## [2025.8.21](https://github.com/jdx/mise/compare/v2025.8.20..v2025.8.21) - 2025-08-27
 
 ### 📦 Registry

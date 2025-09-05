@@ -1,5 +1,5 @@
 packages:
-  - name: matryer/moq@v0.5.3
+  - name: matryer/moq@v0.6.0
   - name: matryer/moq
     version: v0.3.2
   - name: matryer/moq

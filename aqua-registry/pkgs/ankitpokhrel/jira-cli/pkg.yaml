@@ -1,4 +1,4 @@
 packages:
-  - name: ankitpokhrel/jira-cli@v1.6.0
+  - name: ankitpokhrel/jira-cli@v1.7.0
   - name: ankitpokhrel/jira-cli
     version: v1.4.0

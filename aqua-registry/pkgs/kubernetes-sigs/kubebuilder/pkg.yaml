@@ -1,2 +1,2 @@
 packages:
-  - name: kubernetes-sigs/kubebuilder@v4.7.1
+  - name: kubernetes-sigs/kubebuilder@v4.8.0

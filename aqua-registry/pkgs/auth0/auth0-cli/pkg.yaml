@@ -1,5 +1,5 @@
 packages:
-  - name: auth0/auth0-cli@v1.17.1
+  - name: auth0/auth0-cli@v1.18.0
   - name: auth0/auth0-cli
     version: v0.11.8
   - name: auth0/auth0-cli

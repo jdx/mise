@@ -1,5 +1,5 @@
 packages:
-  - name: vektra/mockery@v3.5.3
+  - name: vektra/mockery@v3.5.4
   - name: vektra/mockery
     version: v2.10.1
   - name: vektra/mockery

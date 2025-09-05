@@ -1,5 +1,5 @@
 packages:
-  - name: eza-community/eza@v0.23.0
+  - name: eza-community/eza@v0.23.1
   - name: eza-community/eza
     version: v0.14.1
   - name: eza-community/eza

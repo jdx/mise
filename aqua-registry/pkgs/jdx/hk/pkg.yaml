@@ -1,4 +1,4 @@
 packages:
-  - name: jdx/hk@v1.10.6
+  - name: jdx/hk@v1.10.7
   - name: jdx/hk
     version: v0.1.9

@@ -1,5 +1,5 @@
 packages:
-  - name: bytecodealliance/wasm-tools@v1.238.0
+  - name: bytecodealliance/wasm-tools@v1.238.1
   - name: bytecodealliance/wasm-tools
     version: v1.202.0
   - name: bytecodealliance/wasm-tools

@@ -1,5 +1,5 @@
 packages:
-  - name: spacelift-io/spacectl@v1.15.0
+  - name: spacelift-io/spacectl@v1.15.1
   - name: spacelift-io/spacectl
     version: v0.8.1
   - name: spacelift-io/spacectl

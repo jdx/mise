@@ -1,4 +1,4 @@
 packages:
-  - name: Canop/dysk@v3.0.0
+  - name: Canop/dysk@v3.1.0
   - name: Canop/dysk
     version: v2.10.0

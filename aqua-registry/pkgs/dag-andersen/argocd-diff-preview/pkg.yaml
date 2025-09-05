@@ -1,5 +1,5 @@
 packages:
-  - name: dag-andersen/argocd-diff-preview@v0.1.15
+  - name: dag-andersen/argocd-diff-preview@v0.1.16
   - name: dag-andersen/argocd-diff-preview
     version: v0.0.35
   - name: dag-andersen/argocd-diff-preview

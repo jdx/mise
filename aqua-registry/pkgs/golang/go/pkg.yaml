@@ -1,2 +1,2 @@
 packages:
-  - name: golang/go@go1.25.0
+  - name: golang/go@go1.25.1

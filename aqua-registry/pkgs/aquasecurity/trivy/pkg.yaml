@@ -1,5 +1,5 @@
 packages:
-  - name: aquasecurity/trivy@v0.65.0
+  - name: aquasecurity/trivy@v0.66.0
   - name: aquasecurity/trivy
     version: v0.35.0
   - name: aquasecurity/trivy

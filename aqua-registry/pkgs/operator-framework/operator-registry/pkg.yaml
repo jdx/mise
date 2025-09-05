@@ -1,5 +1,5 @@
 packages:
-  - name: operator-framework/operator-registry@v1.56.0
+  - name: operator-framework/operator-registry@v1.57.0
   - name: operator-framework/operator-registry
     version: v1.19.5
   - name: operator-framework/operator-registry

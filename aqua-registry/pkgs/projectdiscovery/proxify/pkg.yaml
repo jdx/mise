@@ -1,5 +1,5 @@
 packages:
-  - name: projectdiscovery/proxify@v0.0.15
+  - name: projectdiscovery/proxify@v0.0.16
   - name: projectdiscovery/proxify
     version: v0.0.6
   - name: projectdiscovery/proxify

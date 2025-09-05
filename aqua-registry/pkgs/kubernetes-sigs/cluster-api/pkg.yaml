@@ -1,5 +1,5 @@
 packages:
-  - name: kubernetes-sigs/cluster-api@v1.11.0
+  - name: kubernetes-sigs/cluster-api@v1.11.1
   - name: kubernetes-sigs/cluster-api
     version: v1.0.5
   - name: kubernetes-sigs/cluster-api

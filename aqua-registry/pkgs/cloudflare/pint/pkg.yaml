@@ -1,5 +1,5 @@
 packages:
-  - name: cloudflare/pint@v0.74.6
+  - name: cloudflare/pint@v0.74.8
   - name: cloudflare/pint
     version: v0.31.0
   - name: cloudflare/pint

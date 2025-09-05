@@ -10,14 +10,14 @@ packages:
         asset: pre-commit-rs-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        files:
+          - name: prek
+            src: "{{.AssetWithoutExt}}/pre-commit"
         replacements:
           amd64: x86_64
           darwin: apple-darwin
           linux: unknown-linux-gnu
           windows: pc-windows-msvc
-        files:
-          - name: prek
-            src: "{{.AssetWithoutExt}}/pre-commit"
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256"
@@ -39,14 +39,14 @@ packages:
         asset: prefligit-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        files:
+          - name: prek
+            src: "{{.AssetWithoutExt}}/prefligit"
         replacements:
           amd64: x86_64
           darwin: apple-darwin
           linux: unknown-linux-gnu
           windows: pc-windows-msvc
-        files:
-          - name: prek
-            src: "{{.AssetWithoutExt}}/prefligit"
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256"
@@ -64,18 +64,18 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.0.28")
         asset: prek-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
+        files:
+          - name: prek
+            src: "{{.AssetWithoutExt}}/prek"
         replacements:
           amd64: x86_64
           darwin: apple-darwin
           linux: unknown-linux-gnu
           windows: pc-windows-msvc
-        files:
-          - name: prek
-            src: "{{.AssetWithoutExt}}/prek"
         checksum:
           type: github_release
           asset: "{{.Asset}}.sha256"
@@ -92,3 +92,24 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: "true"
+        asset: prek-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: prek
+            src: "{{.AssetWithoutExt}}/prek"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: prek

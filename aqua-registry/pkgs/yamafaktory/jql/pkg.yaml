@@ -1,5 +1,5 @@
 packages:
-  - name: yamafaktory/jql@jql-v8.0.7
+  - name: yamafaktory/jql@jql-v8.0.8
   - name: yamafaktory/jql
     version: jql-v6.0.7
   - name: yamafaktory/jql

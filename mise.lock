@@ -35,20 +35,20 @@ checksum = "blake3:cf519ce71d7c518e211001f428ae34c2ec2a4f0484787bdf28baf7f372c94
 size = 39128668
 
 [tools.cargo-binstall]
-version = "1.15.1"
+version = "1.15.3"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "blake3:88fb96688c2d3761b509caf9bf523681b59b0faec3b9bde1d1b54c92152eb5b0"
-size = 6760342
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.1/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+checksum = "blake3:b6100a915a4531a7ea7e1d1d87a9e70ce4afc980d7e3bd420521a90b29bdc7de"
+size = 6772799
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.3/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [tools."cargo:cargo-edit"]
 version = "0.13.7"
 backend = "cargo:cargo-edit"
 
 [tools."cargo:cargo-insta"]
-version = "1.43.1"
+version = "1.43.2"
 backend = "cargo:cargo-insta"
 
 [tools."cargo:cargo-release"]
@@ -96,13 +96,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [tools.hk]
-version = "1.10.6"
+version = "1.10.7"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:97e03b33b91890feea0cc057d2203788c84a444882a901b409ca4bd5783a3168"
-size = 6858515
-url = "https://github.com/jdx/hk/releases/download/v1.10.6/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "blake3:426758a535d7e359bcd1e9f2f598a8aa01e518587a8141fc3b33f17617dfdfae"
+size = 6873815
+url = "https://github.com/jdx/hk/releases/download/v1.10.7/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [tools.jq]
 version = "1.8.1"
@@ -131,13 +131,13 @@ version = "0.24.2"
 backend = "pipx:toml-sort"
 
 [tools.pkl]
-version = "0.29.0"
+version = "0.29.1"
 backend = "aqua:apple/pkl"
 
 [tools.pkl.platforms.linux-x64]
-checksum = "blake3:954ab61f352db192105bc3dd6daef7bd27aa847b1ea0a8f469f1f05881644864"
-size = 103994096
-url = "https://github.com/apple/pkl/releases/download/0.29.0/pkl-linux-amd64"
+checksum = "blake3:8b26122653f2b25453211286c68f96eb53373763dc743bf8ff6c2c80917848e2"
+size = 103994144
+url = "https://github.com/apple/pkl/releases/download/0.29.1/pkl-linux-amd64"
 
 [tools.pre-commit]
 version = "4.3.0"
