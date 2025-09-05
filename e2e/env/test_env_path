@@ -14,3 +14,14 @@ _.path = ['a', 'b']
 EOF
 assert "mise dr path" "$PWD/a
 $PWD/b"
+
+mkdir -p sub_dir
+cd sub_dir
+cat <<'EOF' >mise.toml
+[env]
+_.path = ['c', 'd']
+EOF
+assert "mise dr path" "$PWD/c
+$PWD/d
+${PWD%/*}/a
+${PWD%/*}/b"
