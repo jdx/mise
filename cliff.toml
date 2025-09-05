@@ -48,7 +48,7 @@ body = """
     {% endif %}\
 {% endfor %}
 
-{% endif -%}
+{% endif %}
 {% macro commit(commit) -%}
 {% if commit.scope %}**({{commit.scope}})** {% endif -%}
 {% if commit.breaking %}**breaking** {% endif -%}
