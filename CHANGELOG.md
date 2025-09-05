@@ -1,5 +1,27 @@
 # Changelog
 
+## [2025.9.2](https://github.com/jdx/mise/compare/v2025.9.1..v2025.9.2) - 2025-09-05
+
+### 🐛 Bug Fixes
+
+- **(ci)** set required environment variables for npm publishing by [@jdx](https://github.com/jdx) in [#6189](https://github.com/jdx/mise/pull/6189)
+- **(release)** clean up extra newlines in release notes formatting by [@jdx](https://github.com/jdx) in [#6190](https://github.com/jdx/mise/pull/6190)
+- **(release)** add proper newline after New Contributors section in cliff template by [@jdx](https://github.com/jdx) in [#6194](https://github.com/jdx/mise/pull/6194)
+- **(release)** fix changelog formatting to remove extra blank lines by [@jdx](https://github.com/jdx) in [#6195](https://github.com/jdx/mise/pull/6195)
+- **(release)** restore proper newline after New Contributors section by [@jdx](https://github.com/jdx) in [#6196](https://github.com/jdx/mise/pull/6196)
+
+### 🚜 Refactor
+
+- **(ci)** split release workflow into separate specialized workflows by [@jdx](https://github.com/jdx) in [#6193](https://github.com/jdx/mise/pull/6193)
+
+### Chore
+
+- **(release)** require GitHub Actions environment for release-plz script by [@jdx](https://github.com/jdx) in [#6191](https://github.com/jdx/mise/pull/6191)
+
+### New Contributors
+
+- @jdx made their first contribution in [#6196](https://github.com/jdx/mise/pull/6196)
+
 ## [2025.9.1](https://github.com/jdx/mise/compare/v2025.9.0..v2025.9.1) - 2025-09-05
 
 ### 🐛 Bug Fixes
