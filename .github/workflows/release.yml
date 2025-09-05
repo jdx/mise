@@ -247,10 +247,6 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: "22.x"
-          registry-url: "https://registry.npmjs.org"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { path: artifacts }
       - run: ls -R artifacts
@@ -292,32 +288,6 @@ jobs:
       - name: Publish Release Assets to CDN
         if: startsWith(github.event.ref, 'refs/tags/v')
         run: mise x -- scripts/publish-release.sh
-        env:
-          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
-          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-      - name: Publish npm @jdxcode/mise
-        if: startsWith(github.event.ref, 'refs/tags/v')
-        run: |
-          if [[ ${DRY_RUN:-0} != 1 ]]; then
-            MISE_VERSION="$(./scripts/get-version.sh)"
-            export MISE_VERSION
-            export RELEASE_DIR="releases"
-            NPM_PREFIX=@jdxcode/mise ./scripts/release-npm.sh
-          fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Deploy Cloudflare Worker
-        if: startsWith(github.event.ref, 'refs/tags/v')
-        run: mise x -- scripts/deploy-worker.sh
-        env:
-          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
-          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-      - name: Update Redirect
-        if: startsWith(github.event.ref, 'refs/tags/v')
-        run: mise x -- scripts/update-redirect.sh "$(./scripts/get-version.sh)"
-        continue-on-error: true
         env:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
