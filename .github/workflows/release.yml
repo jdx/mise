@@ -272,19 +272,57 @@ jobs:
       - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
       - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
       - run: mise x -- scripts/release.sh
+      - name: Create Draft GitHub Release
+        if: startsWith(github.event.ref, 'refs/tags/v')
+        run: |
+          VERSION="$(./scripts/get-version.sh)"
+          # Extract full release notes from git tag message (including subject and body)
+          # Use %(contents) to get the full message, then skip the PGP signature if present
+          git tag -l --format='%(contents)' "$VERSION" | sed '/-----BEGIN PGP SIGNATURE-----/,$d' > /tmp/release-notes.txt
+          # Create draft release with all assets in a single command
+          # Use --notes-file to safely handle special characters and multi-line content
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes-file /tmp/release-notes.txt \
+            --verify-tag \
+            --draft \
+            releases/$VERSION/*
+        env:
+          GH_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+      - name: Publish Release Assets to CDN
+        if: startsWith(github.event.ref, 'refs/tags/v')
+        run: mise x -- scripts/publish-release.sh
         env:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+      - name: Publish npm @jdxcode/mise
+        if: startsWith(github.event.ref, 'refs/tags/v')
+        run: |
+          if [[ ${DRY_RUN:-0} != 1 ]]; then
+            NPM_PREFIX=@jdxcode/mise ./scripts/release-npm.sh
+          fi
+        env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: GitHub Release Assets
-        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2
+      - name: Deploy Cloudflare Worker
         if: startsWith(github.event.ref, 'refs/tags/v')
-        with:
-          fail_on_unmatched_files: true
-          draft: false
-          files: releases/${{github.ref_name}}/*
-          generate_release_notes: true
-          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
-      - run: gh release edit --draft=false "$(./scripts/get-version.sh)"
+        run: mise x -- scripts/deploy-worker.sh
+        env:
+          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+      - name: Update Redirect
         if: startsWith(github.event.ref, 'refs/tags/v')
+        run: mise x -- scripts/update-redirect.sh "$(./scripts/get-version.sh)"
+        continue-on-error: true
+        env:
+          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+      - name: Publish GitHub Release
+        if: startsWith(github.event.ref, 'refs/tags/v')
+        run: |
+          VERSION="$(./scripts/get-version.sh)"
+          gh release edit "$VERSION" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
