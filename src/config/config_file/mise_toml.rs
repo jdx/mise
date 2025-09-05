@@ -153,6 +153,18 @@ impl MiseToml {
         Ok(self.doc.lock().unwrap())
     }
 
+    pub fn set_backend_alias(&mut self, fa: &BackendArg, to: &str) -> eyre::Result<()> {
+        self.doc_mut()?
+            .get_mut()
+            .unwrap()
+            .entry("alias")
+            .or_insert_with(table)
+            .as_table_like_mut()
+            .unwrap()
+            .insert(&fa.short, value(to));
+        Ok(())
+    }
+
     pub fn set_alias(&mut self, fa: &BackendArg, from: &str, to: &str) -> eyre::Result<()> {
         self.alias
             .entry(fa.short.to_string())
@@ -175,6 +187,18 @@ impl MiseToml {
             .as_table_like_mut()
             .unwrap()
             .insert(from, value(to));
+        Ok(())
+    }
+
+    pub fn remove_backend_alias(&mut self, fa: &BackendArg) -> eyre::Result<()> {
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        if let Some(aliases) = doc.get_mut("alias").and_then(|v| v.as_table_mut()) {
+            aliases.remove(&fa.short);
+            if aliases.is_empty() {
+                doc.as_table_mut().remove("alias");
+            }
+        }
         Ok(())
     }
 

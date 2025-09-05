@@ -63,7 +63,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise alias get <PLUGIN> <ALIAS>`](/cli/alias/get.md)
 - [`mise alias ls [--no-header] [TOOL]`](/cli/alias/ls.md)
 - [`mise alias set <ARGS>…`](/cli/alias/set.md)
-- [`mise alias unset <PLUGIN> <ALIAS>`](/cli/alias/unset.md)
+- [`mise alias unset <PLUGIN> [ALIAS]`](/cli/alias/unset.md)
 - [`mise backends <SUBCOMMAND>`](/cli/backends.md)
 - [`mise backends ls`](/cli/backends/ls.md)
 - [`mise bin-paths [TOOL@VERSION]…`](/cli/bin-paths.md)

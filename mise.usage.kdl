@@ -95,20 +95,20 @@ cmd alias help="Manage version aliases." {
         flag --no-header help="Don't show table header"
         arg "[TOOL]" help="Show aliases for <TOOL>" required=#false
     }
-    cmd set help="Add/update an alias for a plugin" {
+    cmd set help="Add/update an alias for a backend/plugin" {
         alias add create
-        long_help "Add/update an alias for a plugin\n\nThis modifies the contents of ~/.config/mise/config.toml"
-        after_long_help "Examples:\n\n    $ mise alias set node lts-jod 22.0.0\n"
-        arg <PLUGIN> help="The plugin to set the alias for"
+        long_help "Add/update an alias for a backend/plugin\n\nThis modifies the contents of ~/.config/mise/config.toml"
+        after_long_help "Examples:\n\n    $ mise alias set maven asdf:mise-plugins/mise-maven\n    $ mise alias set node lts-jod 22.0.0\n"
+        arg <PLUGIN> help="The backend/plugin to set the alias for"
         arg <ALIAS> help="The alias to set"
-        arg <VALUE> help="The value to set the alias to"
+        arg "[VALUE]" help="The value to set the alias to" required=#false
     }
-    cmd unset help="Clears an alias for a plugin" {
+    cmd unset help="Clears an alias for a backend/plugin" {
         alias rm remove delete del
-        long_help "Clears an alias for a plugin\n\nThis modifies the contents of ~/.config/mise/config.toml"
-        after_long_help "Examples:\n\n    $ mise alias unset node lts-jod\n"
-        arg <PLUGIN> help="The plugin to remove the alias from"
-        arg <ALIAS> help="The alias to remove"
+        long_help "Clears an alias for a backend/plugin\n\nThis modifies the contents of ~/.config/mise/config.toml"
+        after_long_help "Examples:\n\n    $ mise alias unset maven\n    $ mise alias unset node lts-jod\n"
+        arg <PLUGIN> help="The backend/plugin to remove the alias from"
+        arg "[ALIAS]" help="The alias to remove" required=#false
     }
 }
 cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf\" internally" {
