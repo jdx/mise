@@ -134,7 +134,13 @@ pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &s
             .or_else(|| k.strip_prefix("platform_"))
         {
             if let Some(platform_part) = rest.strip_suffix(&format!("_{}", key_type)) {
-                let platform_key = platform_part.replace('_', "-");
+                // Only convert the OS/arch separator underscore to a dash, preserving
+                // underscores inside architecture names like x86_64
+                let platform_key = if let Some((os_part, rest)) = platform_part.split_once('_') {
+                    format!("{os_part}-{rest}")
+                } else {
+                    platform_part.to_string()
+                };
                 set.insert(platform_key);
             }
         }
@@ -526,6 +532,39 @@ mod tests {
         // Test edge cases
         assert_eq!(clean_binary_name("linux", None), "linux"); // Just OS name
         assert_eq!(clean_binary_name("", None), "");
+    }
+
+    #[test]
+    fn test_list_available_platforms_with_key_flat_preserves_arch_underscore() {
+        let mut opts = IndexMap::new();
+        // Flat keys with os_arch_keytype naming
+        opts.insert(
+            "platforms_macos_x86_64_url".to_string(),
+            "https://example.com/macos-x86_64.tar.gz".to_string(),
+        );
+        opts.insert(
+            "platforms_linux_x64_url".to_string(),
+            "https://example.com/linux-x64.tar.gz".to_string(),
+        );
+        // Different prefix variant also supported
+        opts.insert(
+            "platform_windows_arm64_url".to_string(),
+            "https://example.com/windows-arm64.zip".to_string(),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        let platforms = list_available_platforms_with_key(&tool_opts, "url");
+
+        // Should convert only the OS/arch separator underscore to dash
+        assert!(platforms.contains(&"macos-x86_64".to_string()));
+        assert!(!platforms.contains(&"macos-x86-64".to_string()));
+
+        assert!(platforms.contains(&"linux-x64".to_string()));
+        assert!(platforms.contains(&"windows-arm64".to_string()));
     }
 
     #[test]
