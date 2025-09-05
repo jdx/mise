@@ -300,6 +300,9 @@ jobs:
         if: startsWith(github.event.ref, 'refs/tags/v')
         run: |
           if [[ ${DRY_RUN:-0} != 1 ]]; then
+            MISE_VERSION="$(./scripts/get-version.sh)"
+            export MISE_VERSION
+            export RELEASE_DIR="releases"
             NPM_PREFIX=@jdxcode/mise ./scripts/release-npm.sh
           fi
         env:
