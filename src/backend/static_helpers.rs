@@ -5,7 +5,18 @@ use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
 use eyre::{Result, bail};
+use indexmap::IndexSet;
 use std::path::Path;
+
+// Shared OS/arch patterns used across helpers
+const OS_PATTERNS: &[&str] = &[
+    "linux", "darwin", "macos", "windows", "win", "freebsd", "openbsd", "netbsd", "android",
+];
+// Longer arch patterns first to avoid partial matches
+const ARCH_PATTERNS: &[&str] = &[
+    "x86_64", "aarch64", "ppc64le", "ppc64", "armv7", "armv6", "arm64", "amd64", "mipsel",
+    "riscv64", "s390x", "i686", "i386", "x64", "mips", "arm", "x86",
+];
 
 /// Helper to try both prefixed and non-prefixed tags for a resolver function
 pub async fn try_with_v_prefix<F, Fut, T>(
@@ -110,6 +121,38 @@ pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<
         }
     }
     None
+}
+
+/// Lists platform keys (e.g. "macos-x64") for which a given key_type exists (e.g. "url").
+pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &str) -> Vec<String> {
+    let mut set = IndexSet::new();
+
+    // Gather from flat keys
+    for (k, _) in opts.iter() {
+        if let Some(rest) = k
+            .strip_prefix("platforms_")
+            .or_else(|| k.strip_prefix("platform_"))
+        {
+            if let Some(platform_part) = rest.strip_suffix(&format!("_{}", key_type)) {
+                let platform_key = platform_part.replace('_', "-");
+                set.insert(platform_key);
+            }
+        }
+    }
+
+    // Probe nested keys using shared patterns
+    for os in OS_PATTERNS {
+        for arch in ARCH_PATTERNS {
+            for prefix in ["platforms", "platform"] {
+                let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
+                if opts.contains_key(&nested_key) {
+                    set.insert(format!("{os}-{arch}"));
+                }
+            }
+        }
+    }
+
+    set.into_iter().collect()
 }
 
 pub fn template_string(template: &str, tv: &ToolVersion) -> String {
@@ -245,17 +288,6 @@ pub fn verify_checksum_str(
 /// - "app-2.0.0-linux-x64" -> "app" (with tool_name="app")
 /// - "script-darwin-arm64.sh" -> "script.sh" (preserves .sh extension)
 pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
-    // Common OS patterns to remove
-    let os_patterns = [
-        "linux", "darwin", "macos", "windows", "win", "freebsd", "openbsd", "netbsd", "android",
-    ];
-
-    // Common architecture patterns to remove (longer patterns first to avoid partial matches)
-    let arch_patterns = [
-        "x86_64", "aarch64", "ppc64le", "ppc64", "armv7", "armv6", "arm64", "amd64", "mipsel",
-        "riscv64", "s390x", "i686", "i386", "x64", "mips", "arm", "x86",
-    ];
-
     // Extract extension if present (to preserve it)
     let (name_without_ext, extension) = if let Some(pos) = name.rfind('.') {
         let potential_ext = &name[pos + 1..];
@@ -277,8 +309,8 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     let mut cleaned = name_without_ext.to_string();
 
     // First try combined OS-arch patterns
-    for os in &os_patterns {
-        for arch in &arch_patterns {
+    for os in OS_PATTERNS {
+        for arch in ARCH_PATTERNS {
             // Try different separator combinations
             let patterns = [
                 format!("-{os}-{arch}"),
@@ -306,7 +338,7 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     }
 
     // Try just OS suffix (sometimes arch is omitted)
-    for os in &os_patterns {
+    for os in OS_PATTERNS {
         let patterns = [format!("-{os}"), format!("_{os}")];
         for pattern in &patterns {
             if let Some(pos) = cleaned.rfind(pattern.as_str()) {
@@ -331,7 +363,7 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     }
 
     // Try just arch suffix (sometimes OS is omitted)
-    for arch in &arch_patterns {
+    for arch in ARCH_PATTERNS {
         let patterns = [format!("-{arch}"), format!("_{arch}")];
         for pattern in &patterns {
             if let Some(pos) = cleaned.rfind(pattern.as_str()) {

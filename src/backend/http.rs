@@ -1,7 +1,8 @@
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::backend::static_helpers::{
-    clean_binary_name, get_filename_from_url, lookup_platform_key, template_string, verify_artifact,
+    clean_binary_name, get_filename_from_url, list_available_platforms_with_key,
+    lookup_platform_key, template_string, verify_artifact,
 };
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -306,7 +307,18 @@ impl Backend for HttpBackend {
         // Use the new helper to get platform-specific URL first, then fall back to general URL
         let url_template = lookup_platform_key(&opts, "url")
             .or_else(|| opts.get("url").cloned())
-            .ok_or_else(|| eyre::eyre!("Http backend requires 'url' option"))?;
+            .ok_or_else(|| {
+                let platform_key = self.get_platform_key();
+                let available = list_available_platforms_with_key(&opts, "url");
+                if !available.is_empty() {
+                    let list = available.join(", ");
+                    eyre::eyre!(
+                        "No URL configured for platform {platform_key}. Available platforms: {list}. Provide 'url' or add 'platforms.{platform_key}.url'"
+                    )
+                } else {
+                    eyre::eyre!("Http backend requires 'url' option")
+                }
+            })?;
 
         // Template the URL with actual values
         let url = template_string(&url_template, &tv);
