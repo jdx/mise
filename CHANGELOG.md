@@ -1,5 +1,16 @@
 # Changelog
 
+## [2025.9.1](https://github.com/jdx/mise/compare/v2025.9.0..v2025.9.1) - 2025-09-05
+
+### 🐛 Bug Fixes
+
+- python nested venv path order by [@elvismacak](https://github.com/elvismacak) in [#6124](https://github.com/jdx/mise/pull/6124)
+- resolve immutable release workflow and VERSION file timing issues by [@jdx](https://github.com/jdx) in [#6187](https://github.com/jdx/mise/pull/6187)
+
+### New Contributors
+
+- @elvismacak made their first contribution in [#6124](https://github.com/jdx/mise/pull/6124)
+
 ## [2025.9.0](https://github.com/jdx/mise/compare/v2025.8.21..v2025.9.0) - 2025-09-05
 
 ### 🚀 Features
@@ -14,6 +25,7 @@
 - **(sync)** create uv_versions_path dir if it doesn't exist by [@risu729](https://github.com/risu729) in [#6142](https://github.com/jdx/mise/pull/6142)
 - **(ubi)** show relevent error messages for v-prefixed tags by [@risu729](https://github.com/risu729) in [#6183](https://github.com/jdx/mise/pull/6183)
 - remove nodejs/golang alias migrate code by [@risu729](https://github.com/risu729) in [#6141](https://github.com/jdx/mise/pull/6141)
+- mise activate not working on powershell v5 by [@L0RD-ZER0](https://github.com/L0RD-ZER0) in [#6168](https://github.com/jdx/mise/pull/6168)
 
 ### 📚 Documentation
 

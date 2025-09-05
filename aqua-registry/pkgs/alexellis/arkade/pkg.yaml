@@ -1,5 +1,5 @@
 packages:
-  - name: alexellis/arkade@0.11.44
+  - name: alexellis/arkade@0.11.45
   - name: alexellis/arkade
     version: 0.8.12
   - name: alexellis/arkade
