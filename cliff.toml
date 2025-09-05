@@ -29,25 +29,24 @@ body = """
     | filter(attribute="scope")
     | sort(attribute="scope") -%}
         {% if commit.scope -%}
-        - {{self::commit(commit=commit)}}\
+    - {{self::commit(commit=commit)}}\
         {% endif -%}
     {% endfor -%}
     {% for commit in commits -%}
         {% if commit.scope -%}
         {% else -%}
-          - {{self::commit(commit=commit)}}\
+    - {{self::commit(commit=commit)}}\
         {% endif -%}
     {% endfor -%}
 {% endfor %}
-{% if github.contributors | filter(attribute="is_first_time", value=true) | length != 0 -%}
+{% if github.contributors | filter(attribute="is_first_time", value=true) | length != 0 %}
 ### New Contributors
 {% for contributor in github.contributors | filter(attribute="is_first_time", value=true) %}
   - @{{ contributor.username }} made their first contribution
     {%- if contributor.pr_number %} in \
       [#{{ contributor.pr_number }}]($REPO/pull/{{ contributor.pr_number }})\
     {% endif %}\
-{% endfor %}
-
+{% endfor -%}
 {% endif -%}
 {% macro commit(commit) -%}
 {% if commit.scope %}**({{commit.scope}})** {% endif -%}
