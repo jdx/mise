@@ -59,6 +59,10 @@ impl ToolVersionOptions {
         self.get_nested_value_exists(key)
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.opts.iter()
+    }
+
     // Check if a nested value exists without returning a reference
     fn get_nested_value_exists(&self, key: &str) -> bool {
         // Split the key by dots to navigate nested structure
