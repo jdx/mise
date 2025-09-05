@@ -46,7 +46,8 @@ body = """
     {%- if contributor.pr_number %} in \
       [#{{ contributor.pr_number }}]($REPO/pull/{{ contributor.pr_number }})\
     {% endif %}\
-{% endfor -%}
+{% endfor %}
+
 {% endif -%}
 {% macro commit(commit) -%}
 {% if commit.scope %}**({{commit.scope}})** {% endif -%}
