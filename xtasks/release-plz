@@ -2,6 +2,13 @@
 #MISE description="Release with release-plz"
 set -euxo pipefail
 
+# Ensure this script is only run in GitHub Actions
+if [[ -z ${GITHUB_ACTIONS:-} ]]; then
+	echo "Error: This script must be run in GitHub Actions"
+	echo "The release-plz script should only be executed in the CI/CD pipeline"
+	exit 1
+fi
+
 git config user.name mise-en-dev
 git config user.email release@mise.jdx.dev
 
