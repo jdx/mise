@@ -85,6 +85,10 @@ pub struct Run {
     #[clap(allow_hyphen_values = true, hide = true, last = true)]
     pub args_last: Vec<String>,
 
+    /// Do not use cache on remote tasks
+    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
+    pub no_cache: bool,
+
     /// Change to this directory before executing the command
     #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
     pub cd: Option<PathBuf>,
@@ -150,6 +154,15 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment)]
     pub raw: bool,
 
+    /// Don't show any output except for errors
+    #[clap(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
+    pub silent: bool,
+
+    /// Timeout for the task to complete
+    /// e.g.: 30s, 5m
+    #[clap(long, verbatim_doc_comment)]
+    pub timeout: Option<String>,
+
     /// Shows elapsed time after each task completes
     ///
     /// Default to always show with `MISE_TASK_TIMINGS=1`
@@ -165,10 +178,6 @@ pub struct Run {
     /// Don't show extra output
     #[clap(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
     pub quiet: bool,
-
-    /// Don't show any output except for errors
-    #[clap(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
-    pub silent: bool,
 
     #[clap(skip)]
     pub is_linear: bool,
@@ -199,15 +208,6 @@ pub struct Run {
 
     #[clap(skip)]
     pub timed_outputs: Arc<std::sync::Mutex<IndexMap<String, (SystemTime, String)>>>,
-
-    // Do not use cache on remote tasks
-    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
-    pub no_cache: bool,
-
-    /// Timeout for the task to complete
-    /// e.g.: 30s, 5m
-    #[clap(long, verbatim_doc_comment)]
-    pub timeout: Option<String>,
 }
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
@@ -460,12 +460,6 @@ impl Run {
     }
 
     async fn run_task(&self, task: &Task, config: &Arc<Config>) -> Result<()> {
-        // TODO: Implement individual task timeouts
-        // Currently task.timeout is parsed but not enforced
-        self.run_task_impl(task, config).await
-    }
-
-    async fn run_task_impl(&self, task: &Task, config: &Arc<Config>) -> Result<()> {
         let prefix = task.estyled_prefix();
         if Settings::get().task_skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
