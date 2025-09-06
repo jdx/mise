@@ -276,6 +276,10 @@
             "usage": {
               "description": "Specify usage (https://usage.jdx.dev/) specs for the task",
               "type": "string"
+            },
+            "timeout": {
+              "description": "Timeout for the task to complete (e.g. 30s, 5m, 1h)",
+              "type": "string"
             }
           },
           "type": "object"
