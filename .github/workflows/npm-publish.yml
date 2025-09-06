@@ -52,9 +52,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@11056ad2a9a61d2ddfc39e32a5d6ce4f21ba36f0 # v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: '22'
+          node-version: '24.x'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Publish npm packages
