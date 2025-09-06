@@ -22,7 +22,7 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::{ctrlc, prompt, style, time};
-use crate::{dirs, env, exit, file, ui};
+use crate::{dirs, duration, env, exit, file, ui};
 use clap::{CommandFactory, ValueHint};
 use console::Term;
 use demand::{DemandOption, Select};
@@ -203,6 +203,11 @@ pub struct Run {
     // Do not use cache on remote tasks
     #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
     pub no_cache: bool,
+
+    /// Timeout for the task to complete
+    /// e.g.: 30s, 5m
+    #[clap(long, verbatim_doc_comment)]
+    pub timeout: Option<String>,
 }
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
@@ -227,7 +232,22 @@ impl Run {
             .collect_vec();
         let task_list = get_task_lists(&config, &args, true).await?;
         time!("run get_task_lists");
-        self.parallelize_tasks(config, task_list).await?;
+
+        // Apply global timeout for entire run if configured
+        let timeout = if let Some(timeout_str) = &self.timeout {
+            Some(duration::parse_duration(timeout_str)?)
+        } else {
+            Settings::get().task_timeout_duration()
+        };
+
+        if let Some(timeout) = timeout {
+            tokio::time::timeout(timeout, self.parallelize_tasks(config, task_list))
+                .await
+                .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
+        } else {
+            self.parallelize_tasks(config, task_list).await?
+        }
+
         time!("run done");
         Ok(())
     }
@@ -440,6 +460,12 @@ impl Run {
     }
 
     async fn run_task(&self, task: &Task, config: &Arc<Config>) -> Result<()> {
+        // TODO: Implement individual task timeouts
+        // Currently task.timeout is parsed but not enforced
+        self.run_task_impl(task, config).await
+    }
+
+    async fn run_task_impl(&self, task: &Task, config: &Arc<Config>) -> Result<()> {
         let prefix = task.estyled_prefix();
         if Settings::get().task_skip.contains(&task.name) {
             if !self.quiet(Some(task)) {

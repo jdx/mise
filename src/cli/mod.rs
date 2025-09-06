@@ -392,6 +392,7 @@ impl Cli {
                         task_prs: Default::default(),
                         timed_outputs: Default::default(),
                         no_cache: Default::default(),
+                        timeout: None,
                     }));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(
