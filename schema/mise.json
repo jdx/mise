@@ -977,7 +977,7 @@
           "type": "string"
         },
         "url_replacements": {
-          "description": "Map of URL patterns to replacement URLs applied to all requests. Example: {\"github.com\": \"github.example.com\", \"regex:^https://example\\\\.com/(.*)$\": \"https://mirror.com/$1\"}",
+          "description": "Map of URL patterns to replacement URLs applied to all requests.",
           "type": "object",
           "additionalProperties": {
             "type": "string"

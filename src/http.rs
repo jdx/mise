@@ -3,7 +3,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use eyre::{Report, Result, bail, ensure};
-use regex;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use std::sync::LazyLock as Lazy;
