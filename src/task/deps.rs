@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::mpsc;
+use tokio::sync::Notify;
 
 #[derive(Debug, Clone)]
 pub struct Deps {
@@ -15,9 +16,10 @@ pub struct Deps {
     sent: HashSet<(String, Vec<String>)>, // tasks+args that have already started so should not run again
     removed: HashSet<(String, Vec<String>)>, // tasks+args that have already finished to track if we are in an infinitve loop
     tx: mpsc::UnboundedSender<Option<Task>>,
+    pub completed: Notify,
 }
 
-fn task_key(task: &Task) -> (String, Vec<String>) {
+pub fn task_key(task: &Task) -> (String, Vec<String>) {
     (task.name.clone(), task.args.clone())
 }
 
@@ -69,6 +71,7 @@ impl Deps {
             tx,
             sent,
             removed,
+            completed: Notify::new(),
         })
     }
 
@@ -123,6 +126,7 @@ impl Deps {
             let key = (task.name.clone(), task.args.clone());
             self.removed.insert(key);
             self.emit_leaves();
+            self.completed.notify_waiters();
         }
     }
 
@@ -154,6 +158,58 @@ impl Deps {
                 graph.remove_node(idx);
             }
         }
+    }
+
+    /// Add new tasks (and their dependencies) to the graph and emit any new leaves
+    pub async fn add(&mut self, config: &Arc<Config>, tasks: Vec<Task>) -> eyre::Result<()> {
+        // Build a dependency subgraph for the incoming tasks similar to new()
+        let mut indexes = HashMap::new();
+        let mut stack: Vec<Task> = vec![];
+        let mut seen: HashSet<Task> = HashSet::new();
+
+        let mut add_idx = |task: &Task, graph: &mut DiGraph<Task, ()>| {
+            *indexes
+                .entry(task_key(task))
+                .or_insert_with(|| graph.add_node(task.clone()))
+        };
+
+        for t in &tasks {
+            // Skip if task already exists in graph
+            if self.node_idx(t).is_none() {
+                stack.push(t.clone());
+                add_idx(t, &mut self.graph);
+            }
+        }
+
+        let all_tasks_to_run = resolve_depends(config, tasks).await?;
+        while let Some(a) = stack.pop() {
+            if seen.contains(&a) {
+                continue;
+            }
+            let a_idx = add_idx(&a, &mut self.graph);
+            let (pre, post) = a.resolve_depends(config, &all_tasks_to_run).await?;
+            for b in pre {
+                let b_idx = add_idx(&b, &mut self.graph);
+                self.graph.update_edge(a_idx, b_idx, ());
+                if self.node_idx(&b).is_none() {
+                    stack.push(b.clone());
+                }
+            }
+            for b in post {
+                let b_idx = add_idx(&b, &mut self.graph);
+                self.graph.update_edge(b_idx, a_idx, ());
+                if self.node_idx(&b).is_none() {
+                    stack.push(b.clone());
+                }
+            }
+            seen.insert(a);
+        }
+        self.emit_leaves();
+        Ok(())
+    }
+
+    pub fn is_removed_key(&self, key: &(String, Vec<String>)) -> bool {
+        self.removed.contains(key)
     }
 }
 

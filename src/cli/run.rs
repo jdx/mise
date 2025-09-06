@@ -337,7 +337,7 @@ impl Run {
                 trace!("running task: {task}");
                 jset.lock().await.spawn(async move {
                     let _permit = permit;
-                    let result = this_.run_task(&task, &config).await;
+                    let result = this_.run_task_with_inject(&task, &config, tasks.clone()).await;
                     if let Err(err) = &result {
                         let status = Error::get_exit_status(err);
                         if !this_.is_stopping() && status.is_none() {
@@ -513,13 +513,13 @@ impl Run {
             self.parse_usage_spec_and_init_env(config, task, &mut env, get_args)
                 .await?;
 
-            for (script, args) in rendered_run_scripts {
-                self.exec_script(&script, &args, task, &env, &prefix)
-                    .await?;
-            }
+            self.exec_task_run_entries(config, task, &env, &prefix, rendered_run_scripts)
+                .await?;
         }
 
-        if self.task_timings() && (task.file.as_ref().is_some() || !task.run().is_empty()) {
+        if self.task_timings()
+            && (task.file.as_ref().is_some() || !task.run_script_strings().is_empty())
+        {
             self.eprint(
                 task,
                 &prefix,
@@ -530,6 +530,88 @@ impl Run {
         self.save_checksum(task)?;
 
         Ok(())
+    }
+
+    async fn exec_task_run_entries(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        env: &BTreeMap<String, String>,
+        prefix: &str,
+        rendered_scripts: Vec<(String, Vec<String>)>,
+    ) -> Result<()> {
+        use crate::task::RunEntry;
+        let mut script_iter = rendered_scripts.into_iter();
+        for entry in task.run() {
+            match entry {
+                RunEntry::Script(_) => {
+                    if let Some((script, args)) = script_iter.next() {
+                        self.exec_script(&script, &args, task, env, prefix).await?;
+                    }
+                }
+                RunEntry::SingleTask { task: spec } => {
+                    self.exec_single_task_spec(config, spec).await?;
+                }
+                RunEntry::TaskGroup { tasks } => {
+                    self.exec_task_group_specs(config, tasks)
+                        .await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn exec_single_task_spec(
+        &self,
+        config: &Arc<Config>,
+        spec: &str,
+    ) -> Result<()> {
+        let mise_bin = env::MISE_BIN.display().to_string();
+        #[cfg(unix)]
+        let cmd = format!("{} run {}", shell_words::quote(&mise_bin), spec);
+        #[cfg(windows)]
+        let cmd = format!("{} run {}", mise_bin, spec);
+        // Execute as a shell script so output/prefix handling remains consistent
+        let args: Vec<String> = vec![];
+        // Build a fake task prefix using the parent task's, we already have it from call site
+        // but exec_script requires a real Task; it's fine to reuse current task
+        // We need env/prefix from outer call so this function is only used inside exec_task_run_entries
+        // Therefore, just return the command string to caller in future refactors if needed
+        // For now just spawn with current settings
+        let dummy_task = Task::default();
+        let prefix = dummy_task.estyled_prefix();
+        let env_map: BTreeMap<String, String> = Default::default();
+        self.exec_script(&cmd, &args, &dummy_task, &env_map, &prefix).await
+    }
+
+    async fn exec_task_group_specs(
+        &self,
+        config: &Arc<Config>,
+        specs: &[String],
+    ) -> Result<()> {
+        let mise_bin = env::MISE_BIN.display().to_string();
+        #[cfg(unix)]
+        let cmd = {
+            let parts = specs
+                .iter()
+                .map(|s| format!("({} run {}) &", shell_words::quote(&mise_bin), s))
+                .collect::<String>();
+            format!("{} wait", parts)
+        };
+        #[cfg(windows)]
+        let cmd = {
+            // Fallback to sequential on Windows
+            specs
+                .iter()
+                .map(|s| format!("{} run {}", mise_bin, s))
+                .collect::<Vec<_>>()
+                .join(" & ")
+        };
+        let args: Vec<String> = vec![];
+        let dummy_task = Task::default();
+        let prefix = dummy_task.estyled_prefix();
+        let env_map: BTreeMap<String, String> = Default::default();
+        self.exec_script(&cmd, &args, &dummy_task, &env_map, &prefix).await
     }
 
     async fn exec_script(
@@ -1070,6 +1152,13 @@ impl Run {
 
         Ok(())
     }
+}
+
+fn split_task_spec(spec: &str) -> (&str, Vec<String>) {
+    let mut parts = spec.split_whitespace();
+    let name = parts.next().unwrap_or("");
+    let args = parts.map(|s| s.to_string()).collect_vec();
+    (name, args)
 }
 
 fn is_glob_pattern(path: &str) -> bool {

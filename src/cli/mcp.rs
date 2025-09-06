@@ -209,7 +209,7 @@ impl ServerHandler for MiseServer {
                         "quiet": task.quiet,
                         "silent": task.silent,
                         "tools": task.tools.clone(),
-                        "run": task.run.clone(),
+                        "run": task.run_script_strings(),
                         "usage": task.usage.clone(),
                     })
                 }).collect();
