@@ -27,6 +27,11 @@ pub struct NodePlugin {
     ba: Arc<BackendArg>,
 }
 
+enum FetchOutcome {
+    Downloaded,
+    NotFound,
+}
+
 impl NodePlugin {
     pub fn new() -> Self {
         Self {
@@ -34,13 +39,15 @@ impl NodePlugin {
         }
     }
 
-    async fn install_precompiled(
+    async fn fetch_binary(
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
         opts: &BuildOpts,
-    ) -> Result<()> {
-        let settings = Settings::get();
+        extract: impl FnOnce() -> Result<()>,
+    ) -> Result<FetchOutcome> {
+        debug!("{:?}: we will fetch a precompiled version", self);
+
         match self
             .fetch_tarball(
                 ctx,
@@ -52,54 +59,30 @@ impl NodePlugin {
             )
             .await
         {
-            Err(e)
-                if settings.node.compile != Some(false)
-                    && matches!(http::error_code(&e), Some(404)) =>
-            {
-                debug!("precompiled node not found");
-                return self.install_compiled(ctx, tv, opts).await;
+            Ok(()) => {
+                debug!("{:?}: successfully downloaded node archive", self);
             }
-            e => e,
-        }?;
+            Err(e) if matches!(http::error_code(&e), Some(404)) => {
+                debug!("{:?}: precompiled node archive not found {e}", self);
+                return Ok(FetchOutcome::NotFound);
+            }
+            Err(e) => return Err(e),
+        };
+
         let tarball_name = &opts.binary_tarball_name;
         ctx.pr.set_message(format!("extract {tarball_name}"));
-        file::remove_all(&opts.install_path)?;
-        file::untar(
-            &opts.binary_tarball_path,
-            &opts.install_path,
-            &TarOptions {
-                format: TarFormat::TarGz,
-                strip_components: 1,
-                pr: Some(&ctx.pr),
-            },
-        )?;
-        Ok(())
+        debug!("{:?}: extracting precompiled node", self);
+
+        if let Err(e) = extract() {
+            debug!("{:?}: extraction failed: {e}", self);
+            return Err(e);
+        }
+
+        debug!("{:?}: precompiled node extraction was successful", self);
+        Ok(FetchOutcome::Downloaded)
     }
 
-    async fn install_windows(
-        &self,
-        ctx: &InstallContext,
-        tv: &mut ToolVersion,
-        opts: &BuildOpts,
-    ) -> Result<()> {
-        match self
-            .fetch_tarball(
-                ctx,
-                tv,
-                &ctx.pr,
-                &opts.binary_tarball_url,
-                &opts.binary_tarball_path,
-                &opts.version,
-            )
-            .await
-        {
-            Err(e) if matches!(http::error_code(&e), Some(404)) => {
-                bail!("precompiled node not found {e}");
-            }
-            e => e,
-        }?;
-        let tarball_name = &opts.binary_tarball_name;
-        ctx.pr.set_message(format!("extract {tarball_name}"));
+    fn extract_zip(&self, opts: &BuildOpts, _ctx: &InstallContext) -> Result<()> {
         let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap())?;
         file::unzip(
             &opts.binary_tarball_path,
@@ -114,12 +97,60 @@ impl NodePlugin {
         Ok(())
     }
 
-    async fn install_compiled(
+    async fn install_precompiled(
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
         opts: &BuildOpts,
     ) -> Result<()> {
+        match self
+            .fetch_binary(ctx, tv, opts, || {
+                file::untar(
+                    &opts.binary_tarball_path,
+                    &opts.install_path,
+                    &TarOptions {
+                        format: TarFormat::TarGz,
+                        strip_components: 1,
+                        pr: Some(&ctx.pr),
+                    },
+                )?;
+                Ok(())
+            })
+            .await?
+        {
+            FetchOutcome::Downloaded => Ok(()),
+            FetchOutcome::NotFound => {
+                if Settings::get().node.compile != Some(false) {
+                    self.install_compiling(ctx, tv, opts).await
+                } else {
+                    bail!("precompiled node archive not found and compilation is disabled")
+                }
+            }
+        }
+    }
+
+    async fn install_windows(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        opts: &BuildOpts,
+    ) -> Result<()> {
+        match self
+            .fetch_binary(ctx, tv, opts, || self.extract_zip(opts, ctx))
+            .await?
+        {
+            FetchOutcome::Downloaded => Ok(()),
+            FetchOutcome::NotFound => bail!("precompiled node archive not found (404)"),
+        }
+    }
+
+    async fn install_compiling(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        opts: &BuildOpts,
+    ) -> Result<()> {
+        debug!("{:?}: we will fetch the source and compile", self);
         let tarball_name = &opts.source_tarball_name;
         self.fetch_tarball(
             ctx,
@@ -454,10 +485,11 @@ impl Backend for NodePlugin {
         if cfg!(windows) {
             self.install_windows(ctx, &mut tv, &opts).await?;
         } else if settings.node.compile == Some(true) {
-            self.install_compiled(ctx, &mut tv, &opts).await?;
+            self.install_compiling(ctx, &mut tv, &opts).await?;
         } else {
             self.install_precompiled(ctx, &mut tv, &opts).await?;
         }
+        debug!("{:?}: checking installation is working as expected", self);
         self.test_node(&ctx.config, &tv, &ctx.pr).await?;
         if !cfg!(windows) {
             self.install_npm_shim(&tv)?;
