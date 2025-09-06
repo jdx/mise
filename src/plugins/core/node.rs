@@ -82,25 +82,6 @@ impl NodePlugin {
         Ok(FetchOutcome::Downloaded)
     }
 
-    fn extract_tarball(
-        &self,
-        tarball_path: &Path,
-        dest_path: &Path,
-        ctx: &InstallContext,
-        strip_components: usize,
-    ) -> Result<()> {
-        file::untar(
-            tarball_path,
-            dest_path,
-            &TarOptions {
-                format: TarFormat::TarGz,
-                strip_components,
-                pr: Some(&ctx.pr),
-            },
-        )?;
-        Ok(())
-    }
-
     fn extract_zip(&self, opts: &BuildOpts, _ctx: &InstallContext) -> Result<()> {
         let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap())?;
         file::unzip(
@@ -124,16 +105,16 @@ impl NodePlugin {
     ) -> Result<()> {
         match self
             .fetch_binary(ctx, tv, opts, || {
-                file::remove_all(&opts.install_path).map_err(|e| {
-                    debug!("{:?}: Failed to remove {:?}: {e}", self, &opts.install_path);
-                    e
-                })?;
-                self.extract_tarball(
+                file::untar(
                     &opts.binary_tarball_path,
                     &opts.install_path,
-                    ctx,
-                    1, // strip_components for binary tarball
-                )
+                    &TarOptions {
+                        format: TarFormat::TarGz,
+                        strip_components: 1,
+                        pr: Some(&ctx.pr),
+                    },
+                )?;
+                Ok(())
             })
             .await?
         {
@@ -181,15 +162,15 @@ impl NodePlugin {
         )
         .await?;
         ctx.pr.set_message(format!("extract {tarball_name}"));
-        file::remove_all(&opts.build_dir).map_err(|e| {
-            debug!("{:?}: Failed to remove {:?}: {e}", self, &opts.build_dir);
-            e
-        })?;
-        self.extract_tarball(
+        file::remove_all(&opts.build_dir)?;
+        file::untar(
             &opts.source_tarball_path,
             opts.build_dir.parent().unwrap(),
-            ctx,
-            0, // strip_components for source tarball
+            &TarOptions {
+                format: TarFormat::TarGz,
+                pr: Some(&ctx.pr),
+                ..Default::default()
+            },
         )?;
         self.exec_configure(ctx, opts)?;
         self.exec_make(ctx, opts)?;
