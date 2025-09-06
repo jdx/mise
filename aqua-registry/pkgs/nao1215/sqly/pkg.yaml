@@ -1,5 +1,5 @@
 packages:
-  - name: nao1215/sqly@v0.12.0
+  - name: nao1215/sqly@v0.12.1
   - name: nao1215/sqly
     version: v0.8.0
   - name: nao1215/sqly

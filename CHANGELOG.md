@@ -1,10 +1,18 @@
 # Changelog
 
+## [2025.9.4](https://github.com/jdx/mise/compare/v2025.9.3..v2025.9.4) - 2025-09-06
+
+### Chore
+
+- fix git-cliff on release by @jdx in [3c388f2](https://github.com/jdx/mise/commit/3c388f28e6cce6084f86e1805ace3aede594405b)
+
 ## [2025.9.3](https://github.com/jdx/mise/compare/v2025.9.2..v2025.9.3) - 2025-09-06
 
 ### 🚀 Features
 
 - **(backend)** improve http error when platform url missing; list available platforms by @jdx in [#6200](https://github.com/jdx/mise/pull/6200)
+- **(cli)** support scoped packages for all backend types by @earlgray283 in [#6213](https://github.com/jdx/mise/pull/6213)
+- **(http)** add URL replacement feature for HTTP requests by @ThomasSteinbach in [#6207](https://github.com/jdx/mise/pull/6207)
 
 ### 🐛 Bug Fixes
 
@@ -26,6 +34,8 @@
 
 ### New Contributors
 
+- @ThomasSteinbach made their first contribution in [#6207](https://github.com/jdx/mise/pull/6207)
+- @earlgray283 made their first contribution in [#6213](https://github.com/jdx/mise/pull/6213)
 - @karim-elkholy made their first contribution in [#6210](https://github.com/jdx/mise/pull/6210)
 - @Hazer made their first contribution in [#5972](https://github.com/jdx/mise/pull/5972)
 

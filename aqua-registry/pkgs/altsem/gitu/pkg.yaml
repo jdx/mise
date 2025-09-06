@@ -1,5 +1,5 @@
 packages:
-  - name: altsem/gitu@v0.34.0
+  - name: altsem/gitu@v0.35.0
   - name: altsem/gitu
     version: v0.29.0
   - name: altsem/gitu
