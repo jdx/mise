@@ -59,30 +59,30 @@ pub fn config_root(path: &Path) -> PathBuf {
         if great_grandparent == ".config" {
             let out = great_great_grandparent_path();
             CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-            return out;
+            out
         } else {
             let out = great_grandparent_path();
             CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-            return out;
+            out
         }
     } else if is_mise_dir(parent) && is_config_filename(filename) {
         if grandparent == ".config" {
             let out = great_grandparent_path();
             CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-            return out;
+            out
         } else {
             let out = grandparent_path();
             CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-            return out;
+            out
         }
     } else if parent == ".config" {
         let out = grandparent_path();
         CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-        return out;
+        out
     } else {
         let out = parent_path();
         CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-        return out;
+        out
     }
 }
 
