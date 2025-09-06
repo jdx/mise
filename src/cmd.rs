@@ -4,9 +4,10 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
-use std::sync::mpsc::channel;
+use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
+use std::time::Duration;
 
 use color_eyre::Result;
 use duct::{Expression, IntoExecutablePath};
@@ -106,6 +107,7 @@ pub struct CmdLineRunner<'a> {
     pass_signals: bool,
     on_stdout: Option<Box<dyn Fn(String) + Send + 'a>>,
     on_stderr: Option<Box<dyn Fn(String) + Send + 'a>>,
+    timeout: Option<Duration>,
 }
 
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
@@ -129,6 +131,7 @@ impl<'a> CmdLineRunner<'a> {
             pass_signals: false,
             on_stdout: None,
             on_stderr: None,
+            timeout: None,
         }
     }
 
@@ -297,6 +300,11 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
+    pub fn timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
     #[allow(clippy::readonly_write_lock)]
     pub fn execute(mut self) -> Result<()> {
         static RAW_LOCK: RwLock<()> = RwLock::new(());
@@ -374,41 +382,96 @@ impl<'a> CmdLineRunner<'a> {
 
         let mut combined_output = vec![];
         let mut status = None;
-        for line in rx {
-            match line {
-                ChildProcessOutput::Stdout(line) => {
-                    let line = self
-                        .redactions
-                        .iter()
-                        .fold(line, |acc, r| acc.replace(r, "[redacted]"));
-                    self.on_stdout(line.clone());
-                    combined_output.push(line);
-                }
-                ChildProcessOutput::Stderr(line) => {
-                    let line = self
-                        .redactions
-                        .iter()
-                        .fold(line, |acc, r| acc.replace(r, "[redacted]"));
-                    self.on_stderr(line.clone());
-                    combined_output.push(line);
-                }
-                ChildProcessOutput::ExitStatus(s) => {
-                    RUNNING_PIDS.lock().unwrap().remove(&id);
-                    status = Some(s);
-                }
-                #[cfg(not(any(test, windows)))]
-                ChildProcessOutput::Signal(sig) => {
-                    if sig != SIGINT {
-                        debug!("Received signal {sig}, {id}");
-                        let pid = nix::unistd::Pid::from_raw(id as i32);
-                        let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
-                        nix::sys::signal::kill(pid, sig)?;
+
+        let recv_fn = |rx: &std::sync::mpsc::Receiver<ChildProcessOutput>| -> Result<Option<ChildProcessOutput>> {
+            if let Some(timeout) = self.timeout {
+                match rx.recv_timeout(timeout) {
+                    Ok(msg) => Ok(Some(msg)),
+                    Err(RecvTimeoutError::Timeout) => {
+                        // Kill the process on timeout
+                        RUNNING_PIDS.lock().unwrap().remove(&id);
+                        #[cfg(unix)]
+                        {
+                            let pid = nix::unistd::Pid::from_raw(id as i32);
+                            let _ = nix::sys::signal::kill(pid, nix::sys::signal::SIGTERM);
+                            thread::sleep(Duration::from_millis(100));
+                            let _ = nix::sys::signal::kill(pid, nix::sys::signal::SIGKILL);
+                        }
+                        #[cfg(windows)]
+                        {
+                            use std::os::windows::process::CommandExt;
+                            let _ = std::process::Command::new("taskkill")
+                                .args(["/F", "/PID", &id.to_string()])
+                                .output();
+                        }
+                        Err(eyre::eyre!("Task timed out after {:?}", timeout))
                     }
+                    Err(RecvTimeoutError::Disconnected) => Ok(None),
+                }
+            } else {
+                match rx.recv() {
+                    Ok(msg) => Ok(Some(msg)),
+                    Err(_) => Ok(None),
                 }
             }
+        };
+
+        loop {
+            match recv_fn(&rx)? {
+                Some(line) => match line {
+                    ChildProcessOutput::Stdout(line) => {
+                        let line = self
+                            .redactions
+                            .iter()
+                            .fold(line, |acc, r| acc.replace(r, "[redacted]"));
+                        self.on_stdout(line.clone());
+                        combined_output.push(line);
+                    }
+                    ChildProcessOutput::Stderr(line) => {
+                        let line = self
+                            .redactions
+                            .iter()
+                            .fold(line, |acc, r| acc.replace(r, "[redacted]"));
+                        self.on_stderr(line.clone());
+                        combined_output.push(line);
+                    }
+                    ChildProcessOutput::ExitStatus(s) => {
+                        RUNNING_PIDS.lock().unwrap().remove(&id);
+                        status = Some(s);
+                        break;
+                    }
+                    #[cfg(not(any(test, windows)))]
+                    ChildProcessOutput::Signal(sig) => {
+                        if sig != SIGINT {
+                            debug!("Received signal {sig}, {id}");
+                            let pid = nix::unistd::Pid::from_raw(id as i32);
+                            let sig = nix::sys::signal::Signal::try_from(sig).unwrap();
+                            nix::sys::signal::kill(pid, sig)?;
+                        }
+                    }
+                },
+                None => break,
+            }
         }
+
         RUNNING_PIDS.lock().unwrap().remove(&id);
-        let status = status.unwrap();
+        let status = match status {
+            Some(s) => s,
+            None => {
+                // If we don't have a status, the process was likely killed due to timeout
+                // Create a failed exit status
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    ExitStatus::from_raw(1)
+                }
+                #[cfg(windows)]
+                {
+                    // On Windows, we can't easily create an ExitStatus, so we'll just error out
+                    return Err(eyre::eyre!("Process terminated without exit status"));
+                }
+            }
+        };
 
         if !status.success() {
             self.on_error(combined_output.join("\n"), status)?;
