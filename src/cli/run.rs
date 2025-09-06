@@ -555,7 +555,7 @@ impl Run {
                 }
             }
         }
-        if this.timings() && num_tasks > 1 && *env::MISE_TASK_LEVEL == 0 {
+        if this.timings() && num_tasks > 1 {
             let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
             eprintln!("{}", style::edim(msg));
         };
@@ -621,12 +621,6 @@ impl Run {
         let mut env = task.render_env(config, &ts).await?;
         let output = self.output(Some(task));
         env.insert("MISE_TASK_OUTPUT".into(), output.to_string());
-        if output == TaskOutput::Prefix {
-            env.insert(
-                "MISE_TASK_LEVEL".into(),
-                (*env::MISE_TASK_LEVEL + 1).to_string(),
-            );
-        }
         if !self.timings {
             env.insert("MISE_TASK_TIMINGS".to_string(), "0".to_string());
         }
