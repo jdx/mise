@@ -6,8 +6,8 @@ use crate::config::Config;
 use crate::env_diff::EnvMap;
 use indexmap::IndexMap;
 
-use super::EnvResults;
 use super::normalize::normalize_env_path;
+use super::{EnvResults, ExecutionMode};
 
 pub struct ExecCtx<'a> {
     pub config: &'a Arc<Config>,
@@ -20,6 +20,7 @@ pub struct ExecCtx<'a> {
     pub paths: &'a mut Vec<(PathBuf, PathBuf)>,
     pub redact: bool,
     pub vars_mode: bool,
+    pub execution_mode: ExecutionMode,
 }
 
 pub async fn handle_val(exec: &mut ExecCtx<'_>, k: String, v: String) -> eyre::Result<()> {
@@ -116,6 +117,7 @@ pub async fn handle_venv(
         python,
         uv_create_args,
         python_create_args,
+        exec.execution_mode,
     )
     .await
 }

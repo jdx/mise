@@ -19,6 +19,7 @@ mod engine;
 mod file;
 mod module;
 mod normalize;
+mod parsers;
 mod path;
 mod source;
 mod template;
@@ -145,6 +146,13 @@ impl Default for ToolsFilter {
 pub struct EnvResolveOptions {
     pub vars: bool,
     pub tools: ToolsFilter,
+    pub execution_mode: ExecutionMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionMode {
+    Apply,
+    DryRun,
 }
 
 impl EnvResults {
@@ -234,6 +242,7 @@ impl EnvResults {
                 paths: &mut paths,
                 redact,
                 vars_mode: resolve_opts.vars,
+                execution_mode: resolve_opts.execution_mode,
             };
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {

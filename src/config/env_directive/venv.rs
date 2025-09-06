@@ -2,7 +2,7 @@ use crate::Result;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::trust_check;
-use crate::config::env_directive::EnvResults;
+use crate::config::env_directive::{EnvResults, ExecutionMode};
 use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::file::{display_path, which_non_pristine};
@@ -32,6 +32,7 @@ impl EnvResults {
         python: Option<String>,
         uv_create_args: Option<Vec<String>>,
         python_create_args: Option<Vec<String>>,
+        execution_mode: ExecutionMode,
     ) -> Result<()> {
         trace!("python venv: {} create={create}", display_path(&path));
         trust_check(source)?;
@@ -39,89 +40,93 @@ impl EnvResults {
         let venv = normalize_path(config_root, venv.into());
         let venv_lock = LockFile::new(&venv).lock()?;
         if !venv.exists() && create {
-            // TODO: the toolset stuff doesn't feel like it's in the right place here
-            // TODO: in fact this should probably be moved to execute at the same time as src/uv.rs runs in ts.env() instead of config.env()
-            let ts = Box::pin(ToolsetBuilder::new().build(config)).await?;
-            let ba = BackendArg::from("python");
-            let tv = ts.versions.get(&ba).and_then(|tv| {
-                // if a python version is specified, check if that version is installed
-                // otherwise use the first since that's what `python3` will refer to
-                if let Some(v) = &python {
-                    tv.versions.iter().find(|t| t.version.starts_with(v))
-                } else {
-                    tv.versions.first()
-                }
-            });
-            let python_path = tv.map(|tv| {
-                plugins::core::python::python_path(tv)
-                    .to_string_lossy()
-                    .to_string()
-            });
-            let installed = if let Some(tv) = tv {
-                let backend = backend::get(&ba).unwrap();
-                backend.is_version_installed(config, tv, false)
+            if matches!(execution_mode, ExecutionMode::DryRun) {
+                info!("dry-run: would create venv at: {}", display_path(&venv));
             } else {
-                // if no version is specified, we're assuming python3 is provided outside of mise so return "true" here
-                true
-            };
-            if !installed {
-                warn!(
-                    "no venv found at: {p}\n\n\
+                // TODO: the toolset stuff doesn't feel like it's in the right place here
+                // TODO: in fact this should probably be moved to execute at the same time as src/uv.rs runs in ts.env() instead of config.env()
+                let ts = Box::pin(ToolsetBuilder::new().build(config)).await?;
+                let ba = BackendArg::from("python");
+                let tv = ts.versions.get(&ba).and_then(|tv| {
+                    // if a python version is specified, check if that version is installed
+                    // otherwise use the first since that's what `python3` will refer to
+                    if let Some(v) = &python {
+                        tv.versions.iter().find(|t| t.version.starts_with(v))
+                    } else {
+                        tv.versions.first()
+                    }
+                });
+                let python_path = tv.map(|tv| {
+                    plugins::core::python::python_path(tv)
+                        .to_string_lossy()
+                        .to_string()
+                });
+                let installed = if let Some(tv) = tv {
+                    let backend = backend::get(&ba).unwrap();
+                    backend.is_version_installed(config, tv, false)
+                } else {
+                    // if no version is specified, we're assuming python3 is provided outside of mise so return "true" here
+                    true
+                };
+                if !installed {
+                    warn!(
+                        "no venv found at: {p}\n\n\
                     mise will automatically create the venv once all requested python versions are installed.\n\
                     To install the missing python versions and create the venv, please run:\n\
                     mise install",
-                    p = display_path(&venv)
-                );
-            } else {
-                let uv_bin = ts
-                    .which_bin(config, "uv")
-                    .await
-                    .or_else(|| which_non_pristine("uv"));
-                let use_uv = !Settings::get().python.venv_stdlib && uv_bin.is_some();
-                let cmd = if use_uv {
-                    info!("creating venv with uv at: {}", display_path(&venv));
-                    let extra = Settings::get()
-                        .python
-                        .uv_venv_create_args
-                        .clone()
-                        .or(uv_create_args)
-                        .unwrap_or_default();
-                    let mut cmd =
-                        CmdLineRunner::new(uv_bin.unwrap()).args(["venv", &venv.to_string_lossy()]);
-
-                    cmd = match (python_path, python) {
-                        // The selected mise managed python tool path from env._.python.venv.python or first in list
-                        (Some(python_path), _) => cmd.args(["--python", &python_path]),
-                        // User specified in env._.python.venv.python but it's not in mise tools, so pass version number to uv
-                        (_, Some(python)) => cmd.args(["--python", &python]),
-                        // Default to whatever uv wants to use
-                        _ => cmd,
-                    };
-                    cmd.args(extra)
+                        p = display_path(&venv)
+                    );
                 } else {
-                    info!("creating venv with stdlib at: {}", display_path(&venv));
-                    let extra = Settings::get()
-                        .python
-                        .venv_create_args
-                        .clone()
-                        .or(python_create_args)
-                        .unwrap_or_default();
+                    let uv_bin = ts
+                        .which_bin(config, "uv")
+                        .await
+                        .or_else(|| which_non_pristine("uv"));
+                    let use_uv = !Settings::get().python.venv_stdlib && uv_bin.is_some();
+                    let cmd = if use_uv {
+                        info!("creating venv with uv at: {}", display_path(&venv));
+                        let extra = Settings::get()
+                            .python
+                            .uv_venv_create_args
+                            .clone()
+                            .or(uv_create_args)
+                            .unwrap_or_default();
+                        let mut cmd = CmdLineRunner::new(uv_bin.unwrap())
+                            .args(["venv", &venv.to_string_lossy()]);
 
-                    let bin = match (python_path, python) {
-                        // The selected mise managed python tool path from env._.python.venv.python or first in list
-                        (Some(python_path), _) => python_path,
-                        // User specified in env._.python.venv.python but it's not in mise tools, so try to find it on path
-                        (_, Some(python)) => format!("python{python}"),
-                        // Default to whatever python3 points to on path
-                        _ => "python3".to_string(),
-                    };
+                        cmd = match (python_path, python) {
+                            // The selected mise managed python tool path from env._.python.venv.python or first in list
+                            (Some(python_path), _) => cmd.args(["--python", &python_path]),
+                            // User specified in env._.python.venv.python but it's not in mise tools, so pass version number to uv
+                            (_, Some(python)) => cmd.args(["--python", &python]),
+                            // Default to whatever uv wants to use
+                            _ => cmd,
+                        };
+                        cmd.args(extra)
+                    } else {
+                        info!("creating venv with stdlib at: {}", display_path(&venv));
+                        let extra = Settings::get()
+                            .python
+                            .venv_create_args
+                            .clone()
+                            .or(python_create_args)
+                            .unwrap_or_default();
 
-                    CmdLineRunner::new(bin)
-                        .args(["-m", "venv", &venv.to_string_lossy()])
-                        .args(extra)
+                        let bin = match (python_path, python) {
+                            // The selected mise managed python tool path from env._.python.venv.python or first in list
+                            (Some(python_path), _) => python_path,
+                            // User specified in env._.python.venv.python but it's not in mise tools, so try to find it on path
+                            (_, Some(python)) => format!("python{python}"),
+                            // Default to whatever python3 points to on path
+                            _ => "python3".to_string(),
+                        };
+
+                        CmdLineRunner::new(bin)
+                            .args(["-m", "venv", &venv.to_string_lossy()])
+                            .args(extra)
+                    }
+                    .envs(env_vars);
+                    cmd.execute()?;
                 }
-                .envs(env_vars);
-                cmd.execute()?;
             }
         }
         drop(venv_lock);
@@ -153,7 +158,7 @@ python -m venv {p}",
 mod tests {
     use super::*;
     use crate::config::env_directive::{
-        EnvDirective, EnvDirectiveOptions, EnvResolveOptions, ToolsFilter,
+        EnvDirective, EnvDirectiveOptions, EnvResolveOptions, ExecutionMode, ToolsFilter,
     };
     use crate::tera::BASE_CONTEXT;
     use crate::test::replace_path;
@@ -200,6 +205,7 @@ mod tests {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::ToolsOnly,
+                execution_mode: ExecutionMode::Apply,
             },
         )
         .await
