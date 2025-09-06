@@ -1,5 +1,13 @@
 # Changelog
 
+## [2025.9.5](https://github.com/jdx/mise/compare/v2025.9.4..v2025.9.5) - 2025-09-06
+
+### Chore
+
+- fix npm publish action by @jdx in [14f4b09](https://github.com/jdx/mise/commit/14f4b09982cfa09139f172f302939f46d2cb0872)
+- fix cloudflare release action by @jdx in [00afa25](https://github.com/jdx/mise/commit/00afa2563d4368963bcacce11ebddbe05f45b4d7)
+- fix git-cliff for release notes by @jdx in [15a9aed](https://github.com/jdx/mise/commit/15a9aede95c8ad953842c206df3b6c9a3960100f)
+
 ## [2025.9.4](https://github.com/jdx/mise/compare/v2025.9.3..v2025.9.4) - 2025-09-06
 
 ### Chore
