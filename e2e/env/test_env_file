@@ -17,7 +17,7 @@ assert "mise env" # does not error
 
 cat <<EOF >mise.toml
 [env]
-_.file = ['a', 'b.json']
+_.file = ['a', { path = 'b.json', tools = true }]
 EOF
 echo 'export A=1' >a
 echo '{"B": 2}' >b.json
