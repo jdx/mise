@@ -17,8 +17,8 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value}
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::config_file::toml::deserialize_arr;
 use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
+use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap};
@@ -32,7 +32,7 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions
 use crate::watch_files::WatchFile;
 use crate::{dirs, file};
 
-use super::{ConfigFileType, config_root};
+use super::ConfigFileType;
 
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
@@ -104,7 +104,10 @@ impl EnvList {
 impl MiseToml {
     pub fn init(path: &Path) -> Self {
         let mut context = BASE_CONTEXT.clone();
-        context.insert("config_root", config_root(path).to_str().unwrap());
+        context.insert(
+            "config_root",
+            config_root::config_root(path).to_str().unwrap(),
+        );
         Self {
             path: path.to_path_buf(),
             context,

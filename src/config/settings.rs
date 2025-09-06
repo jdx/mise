@@ -335,6 +335,8 @@ impl Settings {
     pub fn reset(cli_settings: Option<SettingsPartial>) {
         *CLI_SETTINGS.lock().unwrap() = cli_settings;
         *BASE_SETTINGS.write().unwrap() = None;
+        // Clear caches that depend on settings and environment
+        crate::config::config_file::config_root::reset();
     }
 
     pub fn ensure_experimental(&self, what: &str) -> Result<()> {

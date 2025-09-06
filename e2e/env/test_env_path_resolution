@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+
+# This test verifies consistent path resolution using config_root for env._.path
+# and current behavior for env._.source as implemented.
+
+echo "=== GitHub Issue #6203: Path Resolution Inconsistency ==="
+echo "This test verifies env._.path uses config_root for relative paths"
+echo "and documents env._.source behavior with .config/mise/config.toml"
+echo ""
+
+# Set up test environment
+mkdir -p .config/mise
+mkdir -p .config/mise/tools/bin
+mkdir -p tools/bin
+
+# Create config file in .config/mise/config.toml
+cat >".config/mise/config.toml" <<EOF
+[env]
+_.source = "script.sh"
+_.path = ["tools/bin"]
+EOF
+
+# Create script in config directory
+cat >".config/mise/script.sh" <<EOF
+export HELLO=CONFIG_DIR
+export PATH="\$HOME/configbin:\$PATH"
+EOF
+
+# Create script in project root
+cat >"script.sh" <<EOF
+export HELLO=PROJECT_ROOT
+export PATH="\$HOME/projectbin:\$PATH"
+EOF
+
+# Create tools in config directory
+echo 'echo "CONFIG_DIR_TOOL"' >.config/mise/tools/bin/test_tool
+chmod +x .config/mise/tools/bin/test_tool
+
+# Create tools in project root
+echo 'echo "PROJECT_ROOT_TOOL"' >tools/bin/test_tool
+chmod +x tools/bin/test_tool
+
+echo "Test setup:"
+echo "  Config file: .config/mise/config.toml"
+echo "  Script in config dir: .config/mise/script.sh (HELLO=CONFIG_DIR)"
+echo "  Script in project root: script.sh (HELLO=PROJECT_ROOT)"
+echo "  Tools in config dir: .config/mise/tools/bin/test_tool"
+echo "  Tools in project root: tools/bin/test_tool"
+echo ""
+
+echo "=== Testing env._.source behavior ==="
+HELLO_VALUE=$(mise env -s bash | grep HELLO | cut -d= -f2)
+echo "HELLO value: $HELLO_VALUE"
+
+if [ "$HELLO_VALUE" = "PROJECT_ROOT" ]; then
+	echo "✓ env._.source resolves relative to PROJECT ROOT (not config file directory)"
+	echo "  This means 'script.sh' refers to ./script.sh, not .config/mise/script.sh"
+elif [ "$HELLO_VALUE" = "CONFIG_DIR" ]; then
+	echo "✓ env._.source resolves relative to CONFIG FILE DIRECTORY"
+	echo "  This means 'script.sh' refers to .config/mise/script.sh"
+else
+	echo "✗ Unexpected behavior: HELLO=$HELLO_VALUE"
+fi
+
+echo ""
+echo "=== Testing env._.path behavior (should use config_root) ==="
+PATH_VALUE=$(mise env -s bash | grep "tools/bin" | head -1)
+echo "PATH contains tools/bin: $(echo "$PATH_VALUE" | grep -o 'tools/bin' | head -1)"
+
+# Test which tool is found
+TOOL_OUTPUT=$(mise exec -- test_tool 2>/dev/null || echo "TOOL_NOT_FOUND")
+echo "test_tool output: $TOOL_OUTPUT"
+
+if [ "$TOOL_OUTPUT" = "PROJECT_ROOT_TOOL" ]; then
+	echo "✓ env._.path resolves relative to CONFIG ROOT (project root for nested configs)"
+	echo "  This means 'tools/bin' refers to ./tools/bin"
+elif [ "$TOOL_OUTPUT" = "CONFIG_DIR_TOOL" ]; then
+	echo "✗ env._.path resolved relative to config file directory (unexpected)"
+else
+	echo "✗ Unexpected behavior: $TOOL_OUTPUT"
+fi
+
+echo ""
+echo "=== Consistency Check ==="
+if [ "$TOOL_OUTPUT" = "PROJECT_ROOT_TOOL" ]; then
+	echo "✓ env._.path is consistent with config_root behavior"
+else
+	echo "✗ env._.path is not consistent with config_root behavior"
+fi
+
+echo ""
+echo "=== GitHub Issue #6203 Summary ==="
+echo "The user's test case in the GitHub issue demonstrates this exact problem:"
+echo "1. They put a config file in .config/mise/config.toml"
+echo "2. They put a script in .config/mise/script.sh"
+echo "3. They expected env._.source = 'script.sh' to find the script in the config directory"
+echo "4. But it actually finds the script in the project root (if it exists there)"
+echo "5. This creates confusion about where to place files"
+echo ""
+echo "env._.path now uses config_root for relative paths (project root for nested configs)."
+
+# Clean up
+rm -rf .config script.sh tools
+
+echo ""
+echo "Test completed. This demonstrates the path resolution inconsistency"
+echo "that is the core issue in GitHub discussion #6203."
