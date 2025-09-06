@@ -155,7 +155,7 @@ fn parse_input(s: &str) -> (&str, Option<&str>) {
         return (s, None);
     };
 
-    if left.ends_with(":") {
+    if left.ends_with(':') {
         // Backend format: try to find version in the remaining part
         return right
             .split_once('@')
