@@ -1425,7 +1425,7 @@ impl<'de> de::Deserialize<'de> for Tasks {
                                 E: de::Error,
                             {
                                 Ok(TaskDef(Task {
-                                    run: vec![v.to_string()],
+                                    run: vec![crate::task::RunEntry::Script(v.to_string())],
                                     ..Default::default()
                                 }))
                             }
@@ -1435,7 +1435,7 @@ impl<'de> de::Deserialize<'de> for Tasks {
                                 S: de::SeqAccess<'de>,
                             {
                                 let mut run = vec![];
-                                while let Some(s) = seq.next_element::<String>()? {
+                                while let Some(s) = seq.next_element::<crate::task::RunEntry>()? {
                                     run.push(s);
                                 }
                                 Ok(TaskDef(Task {

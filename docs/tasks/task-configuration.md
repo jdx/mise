@@ -9,10 +9,22 @@ All examples are in toml-task format instead of file, however they apply in both
 
 ### `run`
 
-- **Type**: `string | string[]`
+- **Type**: `string | (string | { task: string } | { tasks: string[] })[]`
 
-The command to run. This is the only required property for a task. Note that tasks can be defined in
-`mise.toml` in various ways in order to simplify the config, e.g.: these are all equal:
+The command(s) to run. This is the only required property for a task.
+
+You can now mix scripts with task references:
+
+```toml
+[tasks.grouped]
+run = [
+  { task = "t1" },          # run t1 (with its dependencies)
+  { tasks = ["t2", "t3"] }, # run t2 and t3 in parallel (with their dependencies)
+  "echo end",               # then run a script
+]
+```
+
+Simple forms still work and are equivalent:
 
 ```toml
 tasks.a = "echo hello"
@@ -26,7 +38,9 @@ run = ["echo hello"]
 
 ### `run_windows`
 
-An alternative script to run when `mise run` is executed on windows:
+- **Type**: `string | (string | { task: string } | { tasks: string[] })[]`
+
+Windows-specific variant of `run` supporting the same structured syntax:
 
 ```toml
 [tasks.build]

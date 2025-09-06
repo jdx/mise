@@ -4,6 +4,55 @@
   "title": "mise-task-schema",
   "type": "object",
   "$defs": {
+    "run_step": {
+      "oneOf": [
+        {
+          "description": "script to run",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "task": {
+              "description": "single task name (with optional args) to run",
+              "type": "string"
+            }
+          },
+          "required": ["task"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "tasks": {
+              "description": "parallel task group to run",
+              "items": {
+                "description": "task name and args",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": ["tasks"],
+          "type": "object"
+        }
+      ]
+    },
+    "run_field": {
+      "oneOf": [
+        {
+          "description": "script to run",
+          "type": "string"
+        },
+        {
+          "description": "list of steps mixing scripts and task references",
+          "items": {
+            "$ref": "#/$defs/run_step"
+          },
+          "type": "array"
+        }
+      ]
+    },
     "task": {
       "oneOf": [
         {

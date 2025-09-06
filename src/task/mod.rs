@@ -15,6 +15,7 @@ use globset::GlobBuilder;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use petgraph::prelude::*;
+use serde::de;
 use serde_derive::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -42,6 +43,34 @@ use crate::ui::style;
 pub use deps::Deps;
 use task_dep::TaskDep;
 use task_sources::TaskOutputs;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[serde(untagged)]
+pub enum RunEntry {
+    /// Shell script entry
+    Script(String),
+    /// Run a single task with optional args
+    SingleTask { task: String },
+    /// Run multiple tasks in parallel
+    TaskGroup { tasks: Vec<String> },
+}
+
+impl std::str::FromStr for RunEntry {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(RunEntry::Script(s.to_string()))
+    }
+}
+
+impl Display for RunEntry {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            RunEntry::Script(s) => write!(f, "{}", s),
+            RunEntry::SingleTask { task } => write!(f, "task: {task}"),
+            RunEntry::TaskGroup { tasks } => write!(f, "tasks: {}", tasks.join(", ")),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -96,11 +125,11 @@ pub struct Task {
     pub timeout: Option<String>,
 
     // normal type
-    #[serde(default, deserialize_with = "deserialize_arr")]
-    pub run: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_run_entries")]
+    pub run: Vec<RunEntry>,
 
-    #[serde(default, deserialize_with = "deserialize_arr")]
-    pub run_windows: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_run_entries")]
+    pub run_windows: Vec<RunEntry>,
 
     // command type
     // pub command: Option<String>,
@@ -283,12 +312,23 @@ impl Task {
         format!("[{}]", self.display_name)
     }
 
-    pub fn run(&self) -> &Vec<String> {
+    pub fn run(&self) -> &Vec<RunEntry> {
         if cfg!(windows) && !self.run_windows.is_empty() {
             &self.run_windows
         } else {
             &self.run
         }
+    }
+
+    /// Returns only the script strings from the run entries (without rendering)
+    pub fn run_script_strings(&self) -> Vec<String> {
+        self.run()
+            .iter()
+            .filter_map(|e| match e {
+                RunEntry::Script(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
     pub fn all_depends(&self, tasks: &BTreeMap<String, &Task>) -> Result<Vec<Task>> {
@@ -379,8 +419,9 @@ impl Task {
                 .unwrap_or_default();
             (spec, vec![])
         } else {
+            let scripts_only = self.run_script_strings();
             let (scripts, spec) = TaskScriptParser::new(cwd)
-                .parse_run_scripts(config, self, self.run(), env)
+                .parse_run_scripts(config, self, &scripts_only, env)
                 .await?;
             (spec, scripts)
         };
@@ -401,8 +442,9 @@ impl Task {
                 })
                 .unwrap_or_default()
         } else {
+            let scripts_only = self.run_script_strings();
             TaskScriptParser::new(dir)
-                .parse_run_scripts_for_spec_only(config, self, self.run())
+                .parse_run_scripts_for_spec_only(config, self, &scripts_only)
                 .await?
         };
         self.populate_spec_metadata(&mut spec);
@@ -418,8 +460,9 @@ impl Task {
     ) -> Result<Vec<(String, Vec<String>)>> {
         let (spec, scripts) = self.parse_usage_spec(config, cwd.clone(), env).await?;
         if has_any_args_defined(&spec) {
+            let scripts_only = self.run_script_strings();
             let scripts = TaskScriptParser::new(cwd)
-                .parse_run_scripts_with_args(config, self, self.run(), env, args, &spec)
+                .parse_run_scripts_with_args(config, self, &scripts_only, env, args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
@@ -428,7 +471,7 @@ impl Task {
                 .enumerate()
                 .map(|(i, script)| {
                     // only pass args to the last script if no formal args are defined
-                    match i == self.run().len() - 1 {
+                    match i == self.run_script_strings().len() - 1 {
                         true => (script.clone(), args.iter().cloned().collect_vec()),
                         false => (script.clone(), vec![]),
                     }
@@ -686,13 +729,58 @@ impl Default for Task {
     }
 }
 
+pub fn deserialize_run_entries<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<RunEntry>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    struct RunEntriesVisitor;
+    impl<'de> de::Visitor<'de> for RunEntriesVisitor {
+        type Value = Vec<RunEntry>;
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+            formatter.write_str("string | object | array of string/object")
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(vec![RunEntry::Script(v.to_string())])
+        }
+
+        fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            let entry: RunEntry =
+                de::Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))?;
+            Ok(vec![entry])
+        }
+
+        fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
+        where
+            S: de::SeqAccess<'de>,
+        {
+            let mut v = vec![];
+            while let Some(entry) = seq.next_element::<RunEntry>()? {
+                v.push(entry);
+            }
+            Ok(v)
+        }
+    }
+
+    deserializer.deserialize_any(RunEntriesVisitor)
+}
+
 impl Display for Task {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let cmd = if let Some(command) = self.run().first() {
-            Some(command.to_string())
-        } else {
-            self.file.as_ref().map(display_path)
-        };
+        let cmd = self
+            .run()
+            .iter()
+            .map(|e| e.to_string())
+            .next()
+            .or_else(|| self.file.as_ref().map(display_path));
 
         if let Some(cmd) = cmd {
             let cmd = cmd.lines().next().unwrap_or_default();
