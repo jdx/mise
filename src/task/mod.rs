@@ -8,7 +8,7 @@ use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
-use console::{Color, truncate_str};
+use console::{Color, measure_text_width, truncate_str};
 use either::Either;
 use eyre::{Result, eyre};
 use globset::GlobBuilder;
@@ -777,7 +777,13 @@ impl Display for Task {
 
         if let Some(cmd) = cmd {
             let cmd = cmd.lines().next().unwrap_or_default();
-            write!(f, "{} {}", self.prefix(), truncate_str(cmd, 60, "…"))
+            let prefix = self.prefix();
+            let prefix_len = measure_text_width(&prefix);
+            // Ensure we have at least 20 characters for the command, even with very long prefixes
+            let available_width = (*env::TERM_WIDTH).saturating_sub(prefix_len + 4); // 4 chars buffer for spacing and ellipsis
+            let max_width = available_width.max(20); // Always show at least 20 chars of command
+            let truncated_cmd = truncate_str(cmd, max_width, "…");
+            write!(f, "{} {}", prefix, truncated_cmd)
         } else {
             write!(f, "{}", self.prefix())
         }
