@@ -15,8 +15,8 @@ use globset::GlobBuilder;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use petgraph::prelude::*;
-use serde_derive::{Deserialize, Serialize};
 use serde::de;
+use serde_derive::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -59,6 +59,16 @@ impl std::str::FromStr for RunEntry {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(RunEntry::Script(s.to_string()))
+    }
+}
+
+impl Display for RunEntry {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            RunEntry::Script(s) => write!(f, "{}", s),
+            RunEntry::SingleTask { task } => write!(f, "task: {task}"),
+            RunEntry::TaskGroup { tasks } => write!(f, "tasks: {}", tasks.join(", ")),
+        }
     }
 }
 
@@ -716,7 +726,9 @@ impl Default for Task {
     }
 }
 
-pub fn deserialize_run_entries<'de, D>(deserializer: D) -> std::result::Result<Vec<RunEntry>, D::Error>
+pub fn deserialize_run_entries<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<RunEntry>, D::Error>
 where
     D: de::Deserializer<'de>,
 {
@@ -738,7 +750,8 @@ where
         where
             M: de::MapAccess<'de>,
         {
-            let entry: RunEntry = de::Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))?;
+            let entry: RunEntry =
+                de::Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))?;
             Ok(vec![entry])
         }
 
@@ -762,10 +775,8 @@ impl Display for Task {
         let cmd = self
             .run()
             .iter()
-            .find_map(|e| match e {
-                RunEntry::Script(s) => Some(s.clone()),
-                _ => None,
-            })
+            .map(|e| e.to_string())
+            .next()
             .or_else(|| self.file.as_ref().map(display_path));
 
         if let Some(cmd) = cmd {

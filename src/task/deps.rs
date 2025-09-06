@@ -8,7 +8,6 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::mpsc;
-use tokio::sync::Notify;
 
 #[derive(Debug, Clone)]
 pub struct Deps {
@@ -16,7 +15,7 @@ pub struct Deps {
     sent: HashSet<(String, Vec<String>)>, // tasks+args that have already started so should not run again
     removed: HashSet<(String, Vec<String>)>, // tasks+args that have already finished to track if we are in an infinitve loop
     tx: mpsc::UnboundedSender<Option<Task>>,
-    pub completed: Notify,
+    // not clone, notify waiters via tx None
 }
 
 pub fn task_key(task: &Task) -> (String, Vec<String>) {
@@ -71,7 +70,6 @@ impl Deps {
             tx,
             sent,
             removed,
-            completed: Notify::new(),
         })
     }
 
@@ -126,7 +124,6 @@ impl Deps {
             let key = (task.name.clone(), task.args.clone());
             self.removed.insert(key);
             self.emit_leaves();
-            self.completed.notify_waiters();
         }
     }
 
@@ -206,10 +203,6 @@ impl Deps {
         }
         self.emit_leaves();
         Ok(())
-    }
-
-    pub fn is_removed_key(&self, key: &(String, Vec<String>)) -> bool {
-        self.removed.contains(key)
     }
 }
 

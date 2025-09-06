@@ -82,9 +82,9 @@ impl TasksInfo {
         if let Some(file) = &task.file {
             info::inline_section("File", display_path(file))?;
         }
-        let run_scripts = task.run_script_strings();
-        if !run_scripts.is_empty() {
-            info::section("Run", run_scripts.join("\n"))?;
+        let run = task.run();
+        if !run.is_empty() {
+            info::section("Run", run.iter().map(|e| e.to_string()).join("\n"))?;
         }
         if !task.env.is_empty() {
             let env_display = task
