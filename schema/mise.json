@@ -954,6 +954,10 @@
           "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
           "type": "boolean"
         },
+        "task_timeout": {
+          "description": "Default timeout for tasks. Can be overridden by individual tasks. Format: 30s, 5m, 1h",
+          "type": "string"
+        },
         "trace": {
           "description": "Sets log level to trace",
           "type": "boolean"
