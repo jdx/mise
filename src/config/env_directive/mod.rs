@@ -3,7 +3,6 @@ use crate::dirs;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::tera::{get_tera, tera_exec};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -15,11 +14,17 @@ use std::{cmp::PartialEq, sync::Arc};
 
 use super::Config;
 
+mod directives;
+mod engine;
 mod file;
 mod module;
+mod normalize;
 mod path;
 mod source;
+mod template;
 mod venv;
+
+use normalize::normalize_env_path;
 
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct EnvDirectiveOptions {
@@ -143,6 +148,27 @@ pub struct EnvResolveOptions {
 }
 
 impl EnvResults {
+    fn apply_kv(
+        &mut self,
+        env: &mut IndexMap<String, (String, Option<PathBuf>)>,
+        key: String,
+        value: String,
+        source: PathBuf,
+        redact: bool,
+        vars_mode: bool,
+    ) {
+        if vars_mode {
+            self.vars.insert(key, (value, source));
+            return;
+        }
+
+        self.env_remove.remove(&key);
+        if redact {
+            self.redactions.push(key.clone());
+        }
+        env.insert(key, (value, Some(source)));
+    }
+
     pub async fn resolve(
         config: &Arc<Config>,
         mut ctx: tera::Context,
@@ -165,53 +191,9 @@ impl EnvResults {
             redactions: Vec::new(),
             tool_add_paths: Vec::new(),
         };
-        let normalize_path = |config_root: &Path, p: PathBuf| {
-            let p = p.strip_prefix("./").unwrap_or(&p);
-            match p.strip_prefix("~/") {
-                Ok(p) => dirs::HOME.join(p),
-                _ if p.is_relative() => config_root.join(p),
-                _ => p.to_path_buf(),
-            }
-        };
         let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
-        let last_python_venv = input.iter().rev().find_map(|(d, _)| match d {
-            EnvDirective::PythonVenv { .. } => Some(d),
-            _ => None,
-        });
-        let input = input
-            .iter()
-            .fold(Vec::new(), |mut acc, (directive, source)| {
-                // Filter directives based on tools setting
-                let should_include = match &resolve_opts.tools {
-                    ToolsFilter::ToolsOnly => directive.options().tools,
-                    ToolsFilter::NonToolsOnly => !directive.options().tools,
-                    ToolsFilter::Both => true,
-                };
-
-                if !should_include {
-                    return acc;
-                }
-
-                if let Some(d) = &last_python_venv {
-                    if matches!(directive, EnvDirective::PythonVenv { .. }) && **d != *directive {
-                        // skip venv directives if it's not the last one
-                        return acc;
-                    }
-                }
-                acc.push((directive.clone(), source.clone()));
-                acc
-            });
+        let input = engine::DirectivePlanner::plan(&input, &resolve_opts);
         for (directive, source) in input {
-            let mut tera = get_tera(source.parent());
-            tera.register_function(
-                "exec",
-                tera_exec(
-                    source.parent().map(|d| d.to_path_buf()),
-                    env.iter()
-                        .map(|(k, (v, _))| (k.clone(), v.clone()))
-                        .collect(),
-                ),
-            );
             // trace!(
             //     "resolve: directive: {:?}, source: {:?}",
             //     &directive,
@@ -226,6 +208,8 @@ impl EnvResults {
                 .collect::<EnvMap>();
             ctx.insert("env", &env_vars);
 
+            let mut tera = template::build_tera_for_source(&source, &env_vars);
+
             let mut vars: EnvMap = if let Some(Value::Object(existing_vars)) = ctx.get("vars") {
                 existing_vars
                     .iter()
@@ -239,82 +223,36 @@ impl EnvResults {
 
             ctx.insert("vars", &vars);
             let redact = directive.options().redact;
+            let mut exec = directives::ExecCtx {
+                config,
+                r: &mut r,
+                ctx: &mut ctx,
+                tera: &mut tera,
+                source: &source,
+                config_root: &config_root,
+                env: &mut env,
+                paths: &mut paths,
+                redact,
+                vars_mode: resolve_opts.vars,
+            };
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
-                    let v = r.parse_template(&ctx, &mut tera, &source, &v)?;
-                    if resolve_opts.vars {
-                        r.vars.insert(k, (v, source.clone()));
-                    } else {
-                        r.env_remove.remove(&k);
-                        // trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
-                        if redact {
-                            r.redactions.push(k.clone());
-                        }
-                        env.insert(k, (v, Some(source.clone())));
-                    }
+                    directives::handle_val(&mut exec, k, v).await?;
                 }
                 EnvDirective::Rm(k, _opts) => {
-                    env.shift_remove(&k);
-                    r.env_remove.insert(k);
+                    directives::handle_rm(&mut exec, k);
                 }
                 EnvDirective::Path(input_str, _opts) => {
-                    let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str).await?;
-                    paths.push((path.clone(), source.clone()));
+                    directives::handle_path(&mut exec, input_str).await?;
                     // Don't modify PATH in env - just add to env_paths
                     // This allows consumers to control PATH ordering
                 }
                 EnvDirective::File(input, _opts) => {
-                    let files = Self::file(
-                        config,
-                        &mut ctx,
-                        &mut tera,
-                        &mut r,
-                        normalize_path,
-                        &source,
-                        &config_root,
-                        input,
-                    )
-                    .await?;
-                    for (f, new_env) in files {
-                        r.env_files.push(f.clone());
-                        for (k, v) in new_env {
-                            if resolve_opts.vars {
-                                r.vars.insert(k, (v, f.clone()));
-                            } else {
-                                if redact {
-                                    r.redactions.push(k.clone());
-                                }
-                                env.insert(k, (v, Some(f.clone())));
-                            }
-                        }
-                    }
+                    directives::handle_file(&mut exec, input).await?;
                 }
                 EnvDirective::Source(input, _opts) => {
-                    let files = Self::source(
-                        &mut ctx,
-                        &mut tera,
-                        &mut paths,
-                        &mut r,
-                        normalize_path,
-                        &source,
-                        &config_root,
-                        &env_vars,
-                        input,
-                    )?;
-                    for (f, new_env) in files {
-                        r.env_scripts.push(f.clone());
-                        for (k, v) in new_env {
-                            if resolve_opts.vars {
-                                r.vars.insert(k, (v, f.clone()));
-                            } else {
-                                if redact {
-                                    r.redactions.push(k.clone());
-                                }
-                                env.insert(k, (v, Some(f.clone())));
-                            }
-                        }
-                    }
+                    directives::handle_source(&mut exec, &env_vars, input)?;
                 }
                 EnvDirective::PythonVenv {
                     path,
@@ -324,15 +262,8 @@ impl EnvResults {
                     python_create_args,
                     options: _opts,
                 } => {
-                    Self::venv(
-                        config,
-                        &mut ctx,
-                        &mut tera,
-                        &mut env,
-                        &mut r,
-                        normalize_path,
-                        &source,
-                        &config_root,
+                    directives::handle_venv(
+                        &mut exec,
                         env_vars,
                         path,
                         create,
@@ -343,7 +274,7 @@ impl EnvResults {
                     .await?;
                 }
                 EnvDirective::Module(name, value, _opts) => {
-                    Self::module(&mut r, source, name, &value, redact).await?;
+                    directives::handle_module(&mut exec, name, value).await?;
                 }
             };
         }
@@ -368,7 +299,7 @@ impl EnvResults {
                 .iter()
                 .rev()
                 .flat_map(|path| env::split_paths(path))
-                .map(|s| normalize_path(&config_root, s))
+                .map(|s| normalize_env_path(&config_root, s))
                 .collect::<Vec<_>>();
             // r.env_paths is already reversed and paths should prepend r.env_paths
             paths.reverse();
