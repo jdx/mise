@@ -34,8 +34,8 @@ use itertools::Itertools;
 #[cfg(unix)]
 use nix::sys::signal::SIGTERM;
 use tokio::{
-    sync::{Mutex, Semaphore},
-    task::{JoinHandle, JoinSet},
+    sync::{Mutex, Semaphore, mpsc, oneshot},
+    task::JoinSet,
 };
 use xx::regex;
 
@@ -316,66 +316,192 @@ impl Run {
         .await?;
 
         let timer = std::time::Instant::now();
-        let this_ = this.clone();
         let jset = Arc::new(Mutex::new(JoinSet::new()));
-        let jset_ = jset.clone();
         let config = config.clone();
 
-        let handle: JoinHandle<Result<()>> = tokio::task::spawn(async move {
-            let tasks = Arc::new(Mutex::new(tasks));
-            let semaphore = Arc::new(Semaphore::new(this_.jobs()));
-            let mut rx = tasks.lock().await.subscribe();
-            while let Some(Some(task)) = rx.recv().await {
-                if this_.is_stopping() {
-                    break;
-                }
-                let jset = jset_.clone();
-                let this_ = this_.clone();
-                let permit = semaphore.clone().acquire_owned().await?;
-                let tasks = tasks.clone();
-                let config = config.clone();
-                trace!("running task: {task}");
-                jset.lock().await.spawn(async move {
-                    let _permit = permit;
-                    let result = this_.run_task_with_inject(&task, &config, tasks.clone()).await;
-                    if let Err(err) = &result {
-                        let status = Error::get_exit_status(err);
-                        if !this_.is_stopping() && status.is_none() {
-                            // only show this if it's the first failure, or we haven't killed all the remaining tasks
-                            // otherwise we'll get unhelpful error messages about being killed by mise which we expect
-                            let prefix = task.estyled_prefix();
-                            if Settings::get().verbose {
-                                this_.eprint(
-                                    &task,
-                                    &prefix,
-                                    &format!("{} {err:?}", style::ered("ERROR")),
-                                );
-                            } else {
-                                // Show the full error chain
-                                this_.eprint(
-                                    &task,
-                                    &prefix,
-                                    &format!("{} {err}", style::ered("ERROR")),
-                                );
-                                let mut current_err = err.source();
-                                while let Some(e) = current_err {
-                                    this_.eprint(
-                                        &task,
-                                        &prefix,
-                                        &format!("{} {e}", style::ered("ERROR")),
-                                    );
-                                    current_err = e.source();
-                                }
-                            };
+        type SchedMsg = (Task, Arc<Mutex<Deps>>);
+        let (sched_tx, mut sched_rx) = mpsc::unbounded_channel::<SchedMsg>();
+        let sched_tx = Arc::new(sched_tx);
+        let in_flight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (main_done_tx, main_done_rx) = tokio::sync::watch::channel(false);
+
+        // Pump initial deps leaves into scheduler
+        let main_deps = Arc::new(Mutex::new(tasks));
+        {
+            let sched_tx = sched_tx.clone();
+            let main_deps_clone = main_deps.clone();
+            // forward initial leaves synchronously
+            {
+                let mut rx = main_deps_clone.lock().await.subscribe();
+                loop {
+                    match rx.try_recv() {
+                        Ok(Some(task)) => {
+                            trace!(
+                                "main deps initial leaf: {} {}",
+                                task.name,
+                                task.args.join(" ")
+                            );
+                            let _ = sched_tx.send((task, main_deps_clone.clone()));
                         }
-                        this_.add_failed_task(task.clone(), status);
+                        Ok(None) => {
+                            trace!("main deps initial done");
+                            break;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                            break;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                            break;
+                        }
                     }
-                    tasks.lock().await.remove(&task);
-                    result
-                });
+                }
             }
-            Ok(())
-        });
+            // then forward remaining leaves asynchronously
+            tokio::spawn(async move {
+                let mut rx = main_deps_clone.lock().await.subscribe();
+                while let Some(msg) = rx.recv().await {
+                    match msg {
+                        Some(task) => {
+                            trace!(
+                                "main deps leaf scheduled: {} {}",
+                                task.name,
+                                task.args.join(" ")
+                            );
+                            let _ = sched_tx.send((task, main_deps_clone.clone()));
+                        }
+                        None => {
+                            trace!("main deps completed");
+                            let _ = main_done_tx.send(true);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Inline scheduler loop; drains ready tasks and exits when main deps done and in-flight is zero
+        let semaphore = Arc::new(Semaphore::new(this.jobs()));
+        let mut main_done_rx = main_done_rx.clone();
+        loop {
+            // Drain ready tasks without awaiting
+            let mut drained_any = false;
+            loop {
+                match sched_rx.try_recv() {
+                    Ok((task, deps_for_remove)) => {
+                        drained_any = true;
+                        trace!("scheduler received: {} {}", task.name, task.args.join(" "));
+                        if this.is_stopping() {
+                            break;
+                        }
+                        let jset = jset.clone();
+                        let this_ = this.clone();
+                        let permit = semaphore.clone().acquire_owned().await?;
+                        let config = config.clone();
+                        let sched_tx = sched_tx.clone();
+                        in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        let in_flight_c = in_flight.clone();
+                        trace!("running task: {task}");
+                        jset.lock().await.spawn(async move {
+                            let _permit = permit;
+                            let result =
+                                this_.run_task_sched(&task, &config, sched_tx.clone()).await;
+                            if let Err(err) = &result {
+                                let status = Error::get_exit_status(err);
+                                if !this_.is_stopping() && status.is_none() {
+                                    let prefix = task.estyled_prefix();
+                                    if Settings::get().verbose {
+                                        this_.eprint(
+                                            &task,
+                                            &prefix,
+                                            &format!("{} {err:?}", style::ered("ERROR")),
+                                        );
+                                    } else {
+                                        this_.eprint(
+                                            &task,
+                                            &prefix,
+                                            &format!("{} {err}", style::ered("ERROR")),
+                                        );
+                                        let mut current_err = err.source();
+                                        while let Some(e) = current_err {
+                                            this_.eprint(
+                                                &task,
+                                                &prefix,
+                                                &format!("{} {e}", style::ered("ERROR")),
+                                            );
+                                            current_err = e.source();
+                                        }
+                                    };
+                                }
+                                this_.add_failed_task(task.clone(), status);
+                            }
+                            deps_for_remove.lock().await.remove(&task);
+                            trace!("deps removed: {} {}", task.name, task.args.join(" "));
+                            in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                            result
+                        });
+                    }
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
+                }
+            }
+
+            // Exit if main deps finished and nothing is running/queued
+            if *main_done_rx.borrow()
+                && in_flight.load(std::sync::atomic::Ordering::SeqCst) == 0
+                && !drained_any
+            {
+                trace!("scheduler drain complete; exiting loop");
+                break;
+            }
+
+            // Await either new work or main_done change
+            tokio::select! {
+                m = sched_rx.recv() => {
+                    if let Some((task, deps_for_remove)) = m {
+                        trace!("scheduler received: {} {}", task.name, task.args.join(" "));
+                        if this.is_stopping() { break; }
+                        let jset = jset.clone();
+                        let this_ = this.clone();
+                        let permit = semaphore.clone().acquire_owned().await?;
+                        let config = config.clone();
+                        let sched_tx = sched_tx.clone();
+                        in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        let in_flight_c = in_flight.clone();
+                        trace!("running task: {task}");
+                        jset.lock().await.spawn(async move {
+                            let _permit = permit;
+                            let result = this_.run_task_sched(&task, &config, sched_tx.clone()).await;
+                            if let Err(err) = &result {
+                                let status = Error::get_exit_status(err);
+                                if !this_.is_stopping() && status.is_none() {
+                                    let prefix = task.estyled_prefix();
+                                    if Settings::get().verbose {
+                                        this_.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
+                                    } else {
+                                        this_.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
+                                        let mut current_err = err.source();
+                                        while let Some(e) = current_err {
+                                            this_.eprint(&task, &prefix, &format!("{} {e}", style::ered("ERROR")));
+                                            current_err = e.source();
+                                        }
+                                    };
+                                }
+                                this_.add_failed_task(task.clone(), status);
+                            }
+                            deps_for_remove.lock().await.remove(&task);
+                            trace!("deps removed: {} {}", task.name, task.args.join(" "));
+                            in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                            result
+                        });
+                    } else {
+                        // channel closed; rely on main_done/in_flight to exit soon
+                    }
+                }
+                _ = main_done_rx.changed() => {
+                    trace!("main_done changed: {}", *main_done_rx.borrow());
+                }
+            }
+        }
 
         while let Some(result) = jset.lock().await.join_next().await {
             if result.is_ok() || this.continue_on_error {
@@ -387,7 +513,7 @@ impl Run {
             CmdLineRunner::kill_all();
             break;
         }
-        handle.await??;
+        // scheduler loop done
 
         if this.output(None) == TaskOutput::KeepOrder {
             // TODO: display these as tasks complete in order somehow rather than waiting until everything is done
@@ -439,7 +565,12 @@ impl Run {
         }
     }
 
-    async fn run_task(&self, task: &Task, config: &Arc<Config>) -> Result<()> {
+    async fn run_task_sched(
+        &self,
+        task: &Task,
+        config: &Arc<Config>,
+        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+    ) -> Result<()> {
         let prefix = task.estyled_prefix();
         if Settings::get().task_skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
@@ -513,7 +644,7 @@ impl Run {
             self.parse_usage_spec_and_init_env(config, task, &mut env, get_args)
                 .await?;
 
-            self.exec_task_run_entries(config, task, &env, &prefix, rendered_run_scripts)
+            self.exec_task_run_entries(config, task, &env, &prefix, rendered_run_scripts, sched_tx)
                 .await?;
         }
 
@@ -539,6 +670,7 @@ impl Run {
         env: &BTreeMap<String, String>,
         prefix: &str,
         rendered_scripts: Vec<(String, Vec<String>)>,
+        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
     ) -> Result<()> {
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
@@ -550,10 +682,11 @@ impl Run {
                     }
                 }
                 RunEntry::SingleTask { task: spec } => {
-                    self.exec_single_task_spec(config, spec).await?;
+                    self.inject_and_wait(config, &[spec.to_string()], sched_tx.clone())
+                        .await?;
                 }
                 RunEntry::TaskGroup { tasks } => {
-                    self.exec_task_group_specs(config, tasks)
+                    self.inject_and_wait(config, tasks, sched_tx.clone())
                         .await?;
                 }
             }
@@ -561,57 +694,86 @@ impl Run {
         Ok(())
     }
 
-    async fn exec_single_task_spec(
-        &self,
-        config: &Arc<Config>,
-        spec: &str,
-    ) -> Result<()> {
-        let mise_bin = env::MISE_BIN.display().to_string();
-        #[cfg(unix)]
-        let cmd = format!("{} run {}", shell_words::quote(&mise_bin), spec);
-        #[cfg(windows)]
-        let cmd = format!("{} run {}", mise_bin, spec);
-        // Execute as a shell script so output/prefix handling remains consistent
-        let args: Vec<String> = vec![];
-        // Build a fake task prefix using the parent task's, we already have it from call site
-        // but exec_script requires a real Task; it's fine to reuse current task
-        // We need env/prefix from outer call so this function is only used inside exec_task_run_entries
-        // Therefore, just return the command string to caller in future refactors if needed
-        // For now just spawn with current settings
-        let dummy_task = Task::default();
-        let prefix = dummy_task.estyled_prefix();
-        let env_map: BTreeMap<String, String> = Default::default();
-        self.exec_script(&cmd, &args, &dummy_task, &env_map, &prefix).await
-    }
-
-    async fn exec_task_group_specs(
+    async fn inject_and_wait(
         &self,
         config: &Arc<Config>,
         specs: &[String],
+        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
     ) -> Result<()> {
-        let mise_bin = env::MISE_BIN.display().to_string();
-        #[cfg(unix)]
-        let cmd = {
-            let parts = specs
-                .iter()
-                .map(|s| format!("({} run {}) &", shell_words::quote(&mise_bin), s))
-                .collect::<String>();
-            format!("{} wait", parts)
-        };
-        #[cfg(windows)]
-        let cmd = {
-            // Fallback to sequential on Windows
-            specs
-                .iter()
-                .map(|s| format!("{} run {}", mise_bin, s))
-                .collect::<Vec<_>>()
-                .join(" & ")
-        };
-        let args: Vec<String> = vec![];
-        let dummy_task = Task::default();
-        let prefix = dummy_task.estyled_prefix();
-        let env_map: BTreeMap<String, String> = Default::default();
-        self.exec_script(&cmd, &args, &dummy_task, &env_map, &prefix).await
+        trace!("inject start: {}", specs.join(", "));
+        // Build tasks list from specs
+        let tasks_map = config.tasks_with_aliases().await?;
+        let mut to_run: Vec<Task> = vec![];
+        for spec in specs {
+            let (name, args) = split_task_spec(spec);
+            let matches = tasks_map.get_matching(name)?;
+            ensure!(!matches.is_empty(), "task not found: {}", name);
+            for t in matches {
+                let mut t = (*t).clone();
+                t.args = args.clone();
+                to_run.push(t);
+            }
+        }
+        let sub_deps = Deps::new(config, to_run).await?;
+        let sub_deps = Arc::new(Mutex::new(sub_deps));
+
+        // Pump subgraph into scheduler and signal completion via oneshot when done
+        let (done_tx, done_rx) = oneshot::channel::<()>();
+        {
+            let sub_deps_clone = sub_deps.clone();
+            let sched_tx = sched_tx.clone();
+            // forward initial leaves synchronously
+            {
+                let mut rx = sub_deps_clone.lock().await.subscribe();
+                let mut any = false;
+                loop {
+                    match rx.try_recv() {
+                        Ok(Some(task)) => {
+                            any = true;
+                            trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
+                            let _ = sched_tx.send((task, sub_deps_clone.clone()));
+                        }
+                        Ok(None) => {
+                            trace!("inject initial done");
+                            break;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                            break;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                            break;
+                        }
+                    }
+                }
+                if !any {
+                    trace!("inject had no initial leaves");
+                }
+            }
+            // then forward remaining leaves asynchronously
+            tokio::spawn(async move {
+                let mut rx = sub_deps_clone.lock().await.subscribe();
+                while let Some(msg) = rx.recv().await {
+                    match msg {
+                        Some(task) => {
+                            trace!(
+                                "inject leaf scheduled: {} {}",
+                                task.name,
+                                task.args.join(" ")
+                            );
+                            let _ = sched_tx.send((task, sub_deps_clone.clone()));
+                        }
+                        None => {
+                            let _ = done_tx.send(());
+                            trace!("inject complete");
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        done_rx.await.map_err(|e| eyre!(e))?;
+        Ok(())
     }
 
     async fn exec_script(
