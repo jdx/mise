@@ -115,6 +115,22 @@ else
 	echo "✓ Tasks started concurrently (within ${start_spread_ms}ms)"
 fi
 
+# Critical check: Ensure all tasks start before any task completes
+# This is essential for true parallel execution
+echo "Checking that all tasks start before any complete..."
+last_start_time=${start_times[5]}
+first_end_time=${end_times[0]}
+
+if [ "$last_start_time" -gt "$first_end_time" ]; then
+	echo "ERROR: Some tasks completed before all tasks started!"
+	echo "Last task started at: $last_start_time"
+	echo "First task completed at: $first_end_time"
+	echo "This indicates sequential execution, not parallel execution."
+	exit 1
+else
+	echo "✓ All tasks started before any completed - confirming parallel execution"
+fi
+
 # Check total execution time
 # If running sequentially: 6 tasks * 2 seconds = ~12 seconds
 # If running in parallel: ~2-3 seconds (plus overhead)
