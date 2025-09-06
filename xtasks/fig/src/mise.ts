@@ -1873,6 +1873,11 @@ const completionSpec: Fig.Spec = {
       description: "Run task(s)",
       options: [
         {
+          name: "--no-cache",
+          description: "Do not use cache on remote tasks",
+          isRepeatable: false,
+        },
+        {
           name: ["-C", "--cd"],
           description: "Change to this directory before executing the command",
           isRepeatable: false,
@@ -1931,6 +1936,19 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: ["-S", "--silent"],
+          description: "Don't show any output except for errors",
+          isRepeatable: false,
+        },
+        {
+          name: "--timeout",
+          description: "Timeout for the task to complete\ne.g.: 30s, 5m",
+          isRepeatable: false,
+          args: {
+            name: "timeout",
+          },
+        },
+        {
           name: "--no-timings",
           description: "Hides elapsed time after each task completes",
           isRepeatable: false,
@@ -1941,11 +1959,6 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: ["-S", "--silent"],
-          description: "Don't show any output except for errors",
-          isRepeatable: false,
-        },
-        {
           name: ["-o", "--output"],
           description:
             "Change how tasks information is output when running tasks",
@@ -1953,10 +1966,6 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "output",
           },
-        },
-        {
-          name: "--no-cache",
-          isRepeatable: false,
         },
       ],
       generateSpec: usageGenerateSpec(["mise tasks --usage"]),
@@ -2555,6 +2564,11 @@ const completionSpec: Fig.Spec = {
           description: "Run task(s)",
           options: [
             {
+              name: "--no-cache",
+              description: "Do not use cache on remote tasks",
+              isRepeatable: false,
+            },
+            {
               name: ["-C", "--cd"],
               description:
                 "Change to this directory before executing the command",
@@ -2615,6 +2629,19 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: ["-S", "--silent"],
+              description: "Don't show any output except for errors",
+              isRepeatable: false,
+            },
+            {
+              name: "--timeout",
+              description: "Timeout for the task to complete\ne.g.: 30s, 5m",
+              isRepeatable: false,
+              args: {
+                name: "timeout",
+              },
+            },
+            {
               name: "--no-timings",
               description: "Hides elapsed time after each task completes",
               isRepeatable: false,
@@ -2625,11 +2652,6 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
-              name: ["-S", "--silent"],
-              description: "Don't show any output except for errors",
-              isRepeatable: false,
-            },
-            {
               name: ["-o", "--output"],
               description:
                 "Change how tasks information is output when running tasks",
@@ -2637,10 +2659,6 @@ const completionSpec: Fig.Spec = {
               args: {
                 name: "output",
               },
-            },
-            {
-              name: "--no-cache",
-              isRepeatable: false,
             },
           ],
           args: [

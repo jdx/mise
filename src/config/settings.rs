@@ -413,6 +413,12 @@ impl Settings {
         duration::parse_duration(&self.http_timeout).unwrap()
     }
 
+    pub fn task_timeout_duration(&self) -> Option<Duration> {
+        self.task_timeout
+            .as_ref()
+            .and_then(|s| duration::parse_duration(s).ok())
+    }
+
     pub fn log_level(&self) -> log::LevelFilter {
         self.log_level.parse().unwrap_or(log::LevelFilter::Info)
     }

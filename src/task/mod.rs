@@ -121,6 +121,8 @@ pub struct Task {
     pub tools: IndexMap<String, String>,
     #[serde(default)]
     pub usage: String,
+    #[serde(default)]
+    pub timeout: Option<String>,
 
     // normal type
     #[serde(default, deserialize_with = "deserialize_run_entries")]
@@ -722,6 +724,7 @@ impl Default for Task {
             quiet: false,
             tools: Default::default(),
             usage: "".to_string(),
+            timeout: None,
         }
     }
 }
