@@ -500,15 +500,8 @@ impl Task {
             ]
         });
         let idx = self.display_name.chars().map(|c| c as usize).sum::<usize>() % COLORS.len();
-        let prefix = style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string();
-        if *env::MISE_TASK_LEVEL > 0 {
-            format!(
-                "MISE_TASK_UNNEST:{}:MISE_TASK_UNNEST {prefix}",
-                *env::MISE_TASK_LEVEL
-            )
-        } else {
-            prefix
-        }
+
+        style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string()
     }
 
     pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
