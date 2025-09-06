@@ -38,9 +38,7 @@ jobs:
           ~/.local/bin/mise --version
 
       - name: Install mise tools
-        run: |
-          mise install --yes
-          mise which cargo
+        run: mise install
 
       - name: Deploy Cloudflare Worker
         run: mise x -- scripts/deploy-worker.sh
