@@ -93,33 +93,7 @@ pub fn handle_source(exec: &mut ExecCtx<'_>, env_vars: &EnvMap, input: String) -
     Ok(())
 }
 
-pub async fn handle_venv(
-    exec: &mut ExecCtx<'_>,
-    env_vars: EnvMap,
-    path: String,
-    create: bool,
-    python: Option<String>,
-    uv_create_args: Option<Vec<String>>,
-    python_create_args: Option<Vec<String>>,
-) -> Result<()> {
-    EnvResults::venv(
-        exec.config,
-        exec.ctx,
-        exec.tera,
-        exec.env,
-        exec.r,
-        normalize_env_path,
-        exec.source,
-        exec.config_root,
-        env_vars,
-        path,
-        create,
-        python,
-        uv_create_args,
-        python_create_args,
-    )
-    .await
-}
+// venv handling is inlined in mod.rs
 
 pub async fn handle_module(exec: &mut ExecCtx<'_>, name: String, value: toml::Value) -> Result<()> {
     EnvResults::module(exec.r, exec.source.to_path_buf(), name, &value, exec.redact).await

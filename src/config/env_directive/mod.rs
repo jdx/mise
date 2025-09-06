@@ -262,8 +262,15 @@ impl EnvResults {
                     python_create_args,
                     options: _opts,
                 } => {
-                    directives::handle_venv(
-                        &mut exec,
+                    EnvResults::venv(
+                        exec.config,
+                        exec.ctx,
+                        exec.tera,
+                        exec.env,
+                        exec.r,
+                        normalize_env_path,
+                        exec.source,
+                        exec.config_root,
                         env_vars,
                         path,
                         create,
