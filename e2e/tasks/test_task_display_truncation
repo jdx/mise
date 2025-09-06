@@ -31,9 +31,9 @@ assert_succeed "mise run medium-length-task-name"
 # Verify the task runs successfully (main functionality not affected)
 output=$(mise run short 2>&1)
 if [[ $output == *"short task"* ]]; then
-  ok "[task execution] short task runs correctly"
+	ok "[task execution] short task runs correctly"
 else
-  fail "[task execution] expected 'short task' in output, got: $output"
+	fail "[task execution] expected 'short task' in output, got: $output"
 fi
 
 echo "Task display truncation test completed successfully"
