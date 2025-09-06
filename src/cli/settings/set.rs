@@ -1,7 +1,7 @@
 use eyre::{Result, bail, eyre};
 use toml_edit::DocumentMut;
 
-use crate::config::settings::{SETTINGS_META, SettingsFile, SettingsType};
+use crate::config::settings::{SETTINGS_META, SettingsFile, SettingsType, parse_url_replacements};
 use crate::toml::dedup_toml_array;
 use crate::{config, duration, file};
 
@@ -43,6 +43,7 @@ pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
         SettingsType::ListString => parse_list_by_comma(value)?,
         SettingsType::ListPath => parse_list_by_colon(value)?,
         SettingsType::SetString => parse_set_by_comma(value)?,
+        SettingsType::IndexMap => parse_indexmap_by_json(value)?,
     };
 
     let path = if local {
@@ -131,6 +132,18 @@ fn parse_i64(value: &str) -> Result<toml_edit::Value> {
 fn parse_duration(value: &str) -> Result<toml_edit::Value> {
     duration::parse_duration(value)?;
     Ok(value.into())
+}
+
+fn parse_indexmap_by_json(value: &str) -> Result<toml_edit::Value> {
+    let index_map = parse_url_replacements(value)
+        .map_err(|e| eyre!("Failed to parse JSON for IndexMap: {}", e))?;
+    Ok(toml_edit::Value::InlineTable({
+        let mut table = toml_edit::InlineTable::new();
+        for (k, v) in index_map {
+            table.insert(&k, toml_edit::Value::String(toml_edit::Formatted::new(v)));
+        }
+        table
+    }))
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

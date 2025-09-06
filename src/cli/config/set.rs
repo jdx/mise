@@ -95,6 +95,7 @@ impl ConfigSet {
                         SettingsType::ListString => TomlValueTypes::List,
                         SettingsType::ListPath => TomlValueTypes::List,
                         SettingsType::SetString => TomlValueTypes::Set,
+                        SettingsType::IndexMap => TomlValueTypes::String,
                     },
                     None => match self.value.as_str() {
                         "true" | "false" => TomlValueTypes::Bool,

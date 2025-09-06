@@ -195,6 +195,7 @@ pub struct Settings {"#
                 "ListString" => "Vec<String>",
                 "ListPath" => "Vec<PathBuf>",
                 "SetString" => "BTreeSet<String>",
+                "IndexMap<String, String>" => "IndexMap<String, String>",
                 t => panic!("Unknown type: {t}"),
             }));
         if let Some(type_) = type_ {
@@ -276,9 +277,15 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
     for (name, props) in &settings {
         let props = props.as_table().unwrap();
         if let Some(type_) = props.get("type").map(|v| v.as_str().unwrap()) {
+            // We could shadow the 'type_' variable, but its a best practice to avoid shadowing.
+            // Thus, we introduce 'meta_type' here.
+            let meta_type = match type_ {
+                "IndexMap<String, String>" => "IndexMap",
+                other => other,
+            };
             lines.push(format!(
                 r#"    "{name}" => SettingsMeta {{
-        type_: SettingsType::{type_},"#,
+        type_: SettingsType::{meta_type},"#,
             ));
             if let Some(description) = props.get("description") {
                 let description = description.as_str().unwrap().to_string();
@@ -293,9 +300,15 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
         for (key, props) in props.as_table().unwrap() {
             let props = props.as_table().unwrap();
             if let Some(type_) = props.get("type").map(|v| v.as_str().unwrap()) {
+                // We could shadow the 'type_' variable, but its a best practice to avoid shadowing.
+                // Thus, we introduce 'meta_type' here.
+                let meta_type = match type_ {
+                    "IndexMap<String, String>" => "IndexMap",
+                    other => other,
+                };
                 lines.push(format!(
                     r#"    "{name}.{key}" => SettingsMeta {{
-        type_: SettingsType::{type_},"#,
+        type_: SettingsType::{meta_type},"#,
                 ));
             }
             if let Some(description) = props.get("description") {

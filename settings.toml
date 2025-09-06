@@ -1181,6 +1181,19 @@ type = "String"
 default = "sh -c -o errexit"
 description = "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh."
 
+[url_replacements]
+env = "MISE_URL_REPLACEMENTS"
+type = "IndexMap<String, String>"
+optional = true
+parse_env = "parse_url_replacements"
+description = "Map of URL patterns to replacement URLs applied to all requests."
+docs = '''
+Map of URL patterns to replacement URLs. This feature supports both simple hostname replacements
+and advanced regex-based URL transformations for download mirroring and custom registries.
+
+See [URL Replacements](/url-replacements.html) for more information.
+'''
+
 [use_file_shell_for_executable_tasks]
 env = "MISE_USE_FILE_SHELL_FOR_EXECUTABLE_TASKS"
 type = "Bool"

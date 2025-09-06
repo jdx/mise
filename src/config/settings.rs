@@ -39,6 +39,7 @@ pub enum SettingsType {
     ListString,
     ListPath,
     SetString,
+    IndexMap,
 }
 
 pub struct SettingsMeta {
@@ -535,4 +536,10 @@ where
         // collect into HashSet to remove duplicates
         .collect::<Result<BTreeSet<_>, _>>()
         .map(|set| set.into_iter().collect())
+}
+
+/// Parse URL replacements from JSON string format
+/// Expected format: {"source_domain": "replacement_domain", ...}
+pub fn parse_url_replacements(input: &str) -> Result<IndexMap<String, String>, serde_json::Error> {
+    serde_json::from_str(input)
 }
