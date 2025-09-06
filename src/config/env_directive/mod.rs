@@ -174,7 +174,6 @@ impl EnvResults {
             return;
         }
 
-        self.env_remove.remove(&key);
         if redact {
             self.redactions.push(key.clone());
         }
@@ -253,6 +252,7 @@ impl EnvResults {
                     let v = exec
                         .r
                         .parse_template(exec.ctx, exec.tera, exec.source, &v)?;
+                    exec.r.env_remove.remove(&k);
                     exec.r.apply_kv(
                         exec.env,
                         k,
