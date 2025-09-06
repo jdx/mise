@@ -976,6 +976,13 @@
           "description": "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh.",
           "type": "string"
         },
+        "url_replacements": {
+          "description": "Map of URL patterns to replacement URLs applied to all requests. Example: {\"github.com\": \"github.example.com\", \"regex:^https://example\\\\.com/(.*)$\": \"https://mirror.com/$1\"}",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "use_file_shell_for_executable_tasks": {
           "default": false,
           "description": "Determines whether to use a specified shell for executing tasks in the tasks directory. When set to true, the shell defined in the file will be used, or the default shell specified by `windows_default_file_shell_args` or `unix_default_file_shell_args` will be applied. If set to false, tasks will be executed directly as programs.",

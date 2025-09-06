@@ -12,6 +12,9 @@ type Element = {
   items?: {
     type: string;
   };
+  additionalProperties?: {
+    type: string;
+  };
 };
 
 type Props = {
@@ -44,6 +47,7 @@ function buildElement(key: string, props: Props): Element {
     .with("ListString", () => "string[]")
     .with("ListPath", () => "string[]")
     .with("SetString", () => "string[]")
+    .with("IndexMap<String, String>", () => "object")
     .otherwise(() => {
       throw new Error(`Unknown type: ${type}`);
     });
@@ -69,6 +73,13 @@ function buildElement(key: string, props: Props): Element {
   if (type === "string[]") {
     ele.type = "array";
     ele.items = {
+      type: "string",
+    };
+  }
+
+  if (type === "object") {
+    ele.type = "object";
+    ele.additionalProperties = {
       type: "string",
     };
   }
