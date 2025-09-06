@@ -151,27 +151,29 @@ impl Display for ToolArg {
 }
 
 fn parse_input(s: &str) -> (&str, Option<&str>) {
-    let (backend, version) = s
-        .split_once('@')
-        .map(|(f, v)| (f, if v.is_empty() { None } else { Some(v) }))
-        .unwrap_or((s, None));
+    let Some((left, right)) = s.split_once('@') else {
+        return (s, None);
+    };
 
-    // special case for packages with npm scopes like "npm:@antfu/ni"
-    if backend == "npm:" {
-        if let Some(v) = version {
-            return if let Some(i) = v.find('@') {
-                let ver = &v[i + 1..];
+    if left.ends_with(':') {
+        // Backend format: try to find version in the remaining part
+        return right
+            .split_once('@')
+            .map(|(tool, version)| {
                 (
-                    &s[..backend.len() + i + 1],
-                    if ver.is_empty() { None } else { Some(ver) },
+                    &s[..left.len() + tool.len() + 1],
+                    if version.is_empty() {
+                        None
+                    } else {
+                        Some(version)
+                    },
                 )
-            } else {
-                (&s[..backend.len() + v.len() + 1], None)
-            };
-        }
+            })
+            .unwrap_or((s, None));
     }
 
-    (backend, version)
+    // Simple "tool@version" format
+    (left, if right.is_empty() { None } else { Some(right) })
 }
 
 #[cfg(test)]
