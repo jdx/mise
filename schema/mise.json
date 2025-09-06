@@ -950,6 +950,10 @@
             "type": "string"
           }
         },
+        "task_timeout": {
+          "description": "Default timeout for tasks. Can be overridden by individual tasks.",
+          "type": "string"
+        },
         "task_timings": {
           "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
           "type": "boolean"
