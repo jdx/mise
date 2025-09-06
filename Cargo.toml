@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/vfox"]
+members = ["crates/vfox", "crates/mise-windows-stub"]
 
 [package]
 name = "mise"
