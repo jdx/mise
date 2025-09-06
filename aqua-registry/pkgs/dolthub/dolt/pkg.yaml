@@ -1,5 +1,5 @@
 packages:
-  - name: dolthub/dolt@v1.59.2
+  - name: dolthub/dolt@v1.59.4
   - name: dolthub/dolt
     version: v0.40.15
   - name: dolthub/dolt

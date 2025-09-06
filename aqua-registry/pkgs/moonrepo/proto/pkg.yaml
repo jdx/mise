@@ -1,5 +1,5 @@
 packages:
-  - name: moonrepo/proto@v0.52.3
+  - name: moonrepo/proto@v0.52.4
   - name: moonrepo/proto
     version: v0.24.2
   - name: moonrepo/proto
