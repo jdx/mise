@@ -20,89 +20,6 @@ struct Env<V> {
     env: IndexMap<String, V>,
 }
 
-fn parse_json_env(raw: &str) -> eyre::Result<EnvMap> {
-    let v: serde_json::Value = serde_json::from_str(raw)?;
-    let mut out = EnvMap::new();
-    if let serde_json::Value::Object(map) = v {
-        for (k, v) in map {
-            if k == "sops" {
-                continue;
-            }
-            let s = match v {
-                serde_json::Value::String(s) => s,
-                serde_json::Value::Number(n) => n.to_string(),
-                serde_json::Value::Bool(b) => b.to_string(),
-                _ => bail!("unsupported json value: {v:?}"),
-            };
-            out.insert(k, s);
-        }
-    }
-    Ok(out)
-}
-
-fn parse_yaml_env(raw: &str) -> eyre::Result<EnvMap> {
-    let v: serde_yaml::Value = serde_yaml::from_str(raw)?;
-    let mut out = EnvMap::new();
-    if let serde_yaml::Value::Mapping(map) = v {
-        for (k, v) in map {
-            let k = match k {
-                serde_yaml::Value::String(s) => s,
-                _ => continue,
-            };
-            if k == "sops" {
-                continue;
-            }
-            let s = match v {
-                serde_yaml::Value::String(s) => s,
-                serde_yaml::Value::Number(n) => n.to_string(),
-                serde_yaml::Value::Bool(b) => b.to_string(),
-                _ => bail!("unsupported yaml value: {v:?}"),
-            };
-            out.insert(k, s);
-        }
-    }
-    Ok(out)
-}
-
-fn parse_toml_env(raw: &str) -> eyre::Result<EnvMap> {
-    let v: toml::Value = toml::from_str(raw)?;
-    let mut out = EnvMap::new();
-    if let toml::Value::Table(map) = v {
-        for (k, v) in map {
-            if k == "sops" {
-                continue;
-            }
-            let s = match v {
-                toml::Value::String(s) => s,
-                toml::Value::Integer(n) => n.to_string(),
-                toml::Value::Boolean(b) => b.to_string(),
-                _ => bail!("unsupported toml value: {v:?}"),
-            };
-            out.insert(k, s);
-        }
-    }
-    Ok(out)
-}
-
-fn parse_dotenv_env(raw: &str) -> eyre::Result<EnvMap> {
-    let mut out = EnvMap::new();
-    let iter = dotenvy::from_read_iter(raw.as_bytes());
-    for item in iter {
-        let (k, v) = item?;
-        out.insert(k, v);
-    }
-    Ok(out)
-}
-
-fn parse_env_by_ext(ext: &str, raw: &str) -> eyre::Result<EnvMap> {
-    match ext {
-        "json" => parse_json_env(raw),
-        "yaml" | "yml" => parse_yaml_env(raw),
-        "toml" => parse_toml_env(raw),
-        _ => parse_dotenv_env(raw),
-    }
-}
-
 impl EnvResults {
     #[allow(clippy::too_many_arguments)]
     pub async fn file(
@@ -151,7 +68,20 @@ impl EnvResults {
                     return Ok(EnvMap::new());
                 }
             }
-            parse_env_by_ext("json", &serde_json::to_string(&f.env).unwrap_or_default())
+            f.env
+                .into_iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k,
+                        match v {
+                            serde_json::Value::String(s) => s,
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            _ => bail!("unsupported json value: {v:?}"),
+                        },
+                    ))
+                })
+                .collect()
         } else {
             Ok(EnvMap::new())
         }
@@ -174,17 +104,45 @@ impl EnvResults {
                     return Ok(EnvMap::new());
                 }
             }
-            parse_env_by_ext("yaml", &serde_yaml::to_string(&f.env).unwrap_or_default())
+            f.env
+                .into_iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k,
+                        match v {
+                            serde_yaml::Value::String(s) => s,
+                            serde_yaml::Value::Number(n) => n.to_string(),
+                            serde_yaml::Value::Bool(b) => b.to_string(),
+                            _ => bail!("unsupported yaml value: {v:?}"),
+                        },
+                    ))
+                })
+                .collect()
         } else {
             Ok(EnvMap::new())
         }
     }
 
     async fn toml(p: &Path) -> Result<EnvMap> {
-        let _errfn = || eyre!("failed to parse toml file: {}", display_path(p));
+        let errfn = || eyre!("failed to parse toml file: {}", display_path(p));
         // sops does not support toml yet, so no need to parse sops
         if let Ok(raw) = file::read_to_string(p) {
-            parse_env_by_ext("toml", &raw)
+            toml::from_str::<Env<toml::Value>>(&raw)
+                .wrap_err_with(errfn)?
+                .env
+                .into_iter()
+                .map(|(k, v)| {
+                    Ok((
+                        k,
+                        match v {
+                            toml::Value::String(s) => s,
+                            toml::Value::Integer(n) => n.to_string(),
+                            toml::Value::Boolean(b) => b.to_string(),
+                            _ => bail!("unsupported toml value: {v:?}"),
+                        },
+                    ))
+                })
+                .collect()
         } else {
             Ok(EnvMap::new())
         }
@@ -192,7 +150,13 @@ impl EnvResults {
 
     async fn dotenv(p: &Path) -> Result<EnvMap> {
         if let Ok(raw) = file::read_to_string(p) {
-            parse_dotenv_env(&raw)
+            let mut out = EnvMap::new();
+            let iter = dotenvy::from_read_iter(raw.as_bytes());
+            for item in iter {
+                let (k, v) = item?;
+                out.insert(k, v);
+            }
+            Ok(out)
         } else {
             Ok(EnvMap::new())
         }
