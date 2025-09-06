@@ -67,8 +67,8 @@ echo "Testing parallel task execution..."
 # Record start time for overall execution time measurement
 start_time=$(date +%s)
 
-# Run the tasks
-mise run run-all
+# Run the tasks and capture output
+task_output=$(mise run run-all)
 
 # Record end time
 end_time=$(date +%s)
@@ -143,9 +143,9 @@ else
 	echo "✓ Total execution time acceptable (${total_time}s) - suggests parallel execution"
 fi
 
-# Verify all tasks completed successfully
+# Verify all tasks completed successfully using the captured output
 for i in {1..6}; do
-	if ! grep -q "process${i} complete" <<<"$(mise run run-all)"; then
+	if ! grep -q "process${i} complete" <<<"$task_output"; then
 		echo "ERROR: process${i} did not complete successfully"
 		exit 1
 	fi
