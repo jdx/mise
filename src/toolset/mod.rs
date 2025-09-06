@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::cli::args::BackendArg;
 use crate::config::Config;
-use crate::config::env_directive::{EnvResolveOptions, EnvResults, ExecutionMode, ToolsFilter};
+use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::env::{PATH_KEY, TERM_WIDTH};
 use crate::env_diff::EnvMap;
@@ -949,7 +949,6 @@ impl Toolset {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::ToolsOnly,
-                execution_mode: ExecutionMode::Apply,
             },
         )
         .await?;

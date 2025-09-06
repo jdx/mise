@@ -1,7 +1,7 @@
 use crate::cli::version::VERSION;
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
-use crate::config::env_directive::{EnvResolveOptions, EnvResults, ExecutionMode, ToolsFilter};
+use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
 use crate::path_env::PathEnv;
 use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
@@ -581,7 +581,6 @@ impl Task {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::Both,
-                execution_mode: ExecutionMode::Apply,
             },
         )
         .await?;
