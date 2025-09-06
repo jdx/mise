@@ -14,7 +14,6 @@ use std::{cmp::PartialEq, sync::Arc};
 
 use super::Config;
 
-mod directives;
 mod engine;
 mod file;
 mod module;
@@ -30,6 +29,19 @@ use normalize::normalize_env_path;
 pub struct EnvDirectiveOptions {
     pub(crate) tools: bool,
     pub(crate) redact: bool,
+}
+
+pub struct ExecCtx<'a> {
+    pub config: &'a Arc<Config>,
+    pub r: &'a mut EnvResults,
+    pub ctx: &'a mut tera::Context,
+    pub tera: &'a mut tera::Tera,
+    pub source: &'a Path,
+    pub config_root: &'a Path,
+    pub env: &'a mut IndexMap<String, (String, Option<PathBuf>)>,
+    pub paths: &'a mut Vec<(PathBuf, PathBuf)>,
+    pub redact: bool,
+    pub vars_mode: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -223,7 +235,7 @@ impl EnvResults {
 
             ctx.insert("vars", &vars);
             let redact = directive.options().redact;
-            let mut exec = directives::ExecCtx {
+            let exec = ExecCtx {
                 config,
                 r: &mut r,
                 ctx: &mut ctx,
@@ -238,21 +250,69 @@ impl EnvResults {
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
-                    directives::handle_val(&mut exec, k, v).await?;
+                    let v = exec
+                        .r
+                        .parse_template(exec.ctx, exec.tera, exec.source, &v)?;
+                    exec.r.apply_kv(
+                        exec.env,
+                        k,
+                        v,
+                        exec.source.to_path_buf(),
+                        exec.redact,
+                        exec.vars_mode,
+                    );
                 }
                 EnvDirective::Rm(k, _opts) => {
-                    directives::handle_rm(&mut exec, k);
+                    exec.env.shift_remove(&k);
+                    exec.r.env_remove.insert(k);
                 }
                 EnvDirective::Path(input_str, _opts) => {
-                    directives::handle_path(&mut exec, input_str).await?;
+                    let path =
+                        EnvResults::path(exec.ctx, exec.tera, exec.r, exec.source, input_str)
+                            .await?;
+                    exec.paths.push((path.clone(), exec.source.to_path_buf()));
                     // Don't modify PATH in env - just add to env_paths
                     // This allows consumers to control PATH ordering
                 }
                 EnvDirective::File(input, _opts) => {
-                    directives::handle_file(&mut exec, input).await?;
+                    let files = EnvResults::file(
+                        exec.config,
+                        exec.ctx,
+                        exec.tera,
+                        exec.r,
+                        normalize_env_path,
+                        exec.source,
+                        exec.config_root,
+                        input,
+                    )
+                    .await?;
+                    for (f, new_env) in files {
+                        exec.r.env_files.push(f.clone());
+                        for (k, v) in new_env {
+                            exec.r
+                                .apply_kv(exec.env, k, v, f.clone(), exec.redact, exec.vars_mode);
+                        }
+                    }
                 }
                 EnvDirective::Source(input, _opts) => {
-                    directives::handle_source(&mut exec, &env_vars, input)?;
+                    let files = EnvResults::source(
+                        exec.ctx,
+                        exec.tera,
+                        exec.paths,
+                        exec.r,
+                        normalize_env_path,
+                        exec.source,
+                        exec.config_root,
+                        &env_vars,
+                        input,
+                    )?;
+                    for (f, new_env) in files {
+                        exec.r.env_scripts.push(f.clone());
+                        for (k, v) in new_env {
+                            exec.r
+                                .apply_kv(exec.env, k, v, f.clone(), exec.redact, exec.vars_mode);
+                        }
+                    }
                 }
                 EnvDirective::PythonVenv {
                     path,
@@ -281,7 +341,8 @@ impl EnvResults {
                     .await?;
                 }
                 EnvDirective::Module(name, value, _opts) => {
-                    directives::handle_module(&mut exec, name, value).await?;
+                    Self::module(exec.r, exec.source.to_path_buf(), name, &value, exec.redact)
+                        .await?;
                 }
             };
         }
