@@ -70,26 +70,10 @@ pub fn parse_toml_env(raw: &str) -> eyre::Result<EnvMap> {
 
 pub fn parse_dotenv_env(raw: &str) -> eyre::Result<EnvMap> {
     let mut out = EnvMap::new();
-    for line in raw.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let line = if let Some(rest) = line.strip_prefix("export ") {
-            rest.trim()
-        } else {
-            line
-        };
-        if let Some(eq) = line.find('=') {
-            let key = line[..eq].trim().to_string();
-            let mut val = line[eq + 1..].trim().to_string();
-            if (val.starts_with('"') && val.ends_with('"'))
-                || (val.starts_with('\'') && val.ends_with('\''))
-            {
-                val = val[1..val.len() - 1].to_string();
-            }
-            out.insert(key, val);
-        }
+    let iter = dotenvy::from_read_iter(raw.as_bytes());
+    for item in iter {
+        let (k, v) = item?;
+        out.insert(k, v);
     }
     Ok(out)
 }
