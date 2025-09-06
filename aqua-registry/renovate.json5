@@ -1,12 +1,12 @@
 {
   extends: [
-    "github>suzuki-shunsuke/renovate-config#3.2.2",
+    "github>suzuki-shunsuke/renovate-config#3.3.0",
     "github>aquaproj/aqua-renovate-config#2.8.2",
-    "github>suzuki-shunsuke/renovate-config:nolimit#3.2.2",
+    "github>suzuki-shunsuke/renovate-config:nolimit#3.3.0",
     "github>aquaproj/aqua-renovate-config:file#2.8.2(CONTRIBUTING\\.md)",
     "github>aquaproj/aqua-renovate-config:file#2.8.2(aqua/.*.yaml)",
     "github>aquaproj/aqua-renovate-config:installer-script#2.8.2(docker/Dockerfile)",
-    "github>suzuki-shunsuke/renovate-config:action-go-version#3.2.2",
+    "github>suzuki-shunsuke/renovate-config:action-go-version#3.3.0",
     "github>lintnet/renovate-config#0.1.2",
   ],
   packageRules: [

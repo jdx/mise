@@ -1,15 +1,33 @@
 # Changelog
 
-## [2025.9.2](https://github.com/jdx/mise/compare/v2025.9.2..2025.9.2) - 2025-09-05
+## [2025.9.3](https://github.com/jdx/mise/compare/v2025.9.2..v2025.9.3) - 2025-09-06
+
+### 🚀 Features
+
+- **(backend)** improve http error when platform url missing; list available platforms by @jdx in [#6200](https://github.com/jdx/mise/pull/6200)
+
+### 🐛 Bug Fixes
+
+- **(backend)** preserve arch underscores in platform keys by @jdx in [#6202](https://github.com/jdx/mise/pull/6202)
+- **(task)** resolve hanging issue with multiple depends_post by @jdx in [#6206](https://github.com/jdx/mise/pull/6206)
+- couldn't download node binary in Alpine, even if it exists in the mirror url by @Hazer in [#5972](https://github.com/jdx/mise/pull/5972)
+- **breaking** use config_root for env._.path by @jdx in [#6204](https://github.com/jdx/mise/pull/6204)
+- bugfix for paths that include spaces by @karim-elkholy in [#6210](https://github.com/jdx/mise/pull/6210)
 
 ### 📚 Documentation
 
 - improve release notes generation by @jdx in [#6197](https://github.com/jdx/mise/pull/6197)
-- fix release changelog contributor reporting by jdx in [689ceb4](https://github.com/jdx/mise/commit/689ceb4f96ed65127be7353e00824c37494d980a)
+- fix release changelog contributor reporting by @jdx in [#6201](https://github.com/jdx/mise/pull/6201)
+
+### Chore
+
+- use fine-grained gh token by @jdx in [#6208](https://github.com/jdx/mise/pull/6208)
+- use settings.local.json for claude config by @jdx in [fd0fba9](https://github.com/jdx/mise/commit/fd0fba9fadb5ea36371283dbcda9a4f6264f96cd)
 
 ### New Contributors
 
-- @jdx made their first contribution in [#6197](https://github.com/jdx/mise/pull/6197)
+- @karim-elkholy made their first contribution in [#6210](https://github.com/jdx/mise/pull/6210)
+- @Hazer made their first contribution in [#5972](https://github.com/jdx/mise/pull/5972)
 
 ## [2025.9.2](https://github.com/jdx/mise/compare/v2025.9.1..v2025.9.2) - 2025-09-05
 

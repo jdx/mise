@@ -1,5 +1,5 @@
 packages:
-  - name: release-plz/release-plz@release-plz-v0.3.142
+  - name: release-plz/release-plz@release-plz-v0.3.143
   - name: release-plz/release-plz
     version: release-plz-v0.3.45
   - name: release-plz/release-plz

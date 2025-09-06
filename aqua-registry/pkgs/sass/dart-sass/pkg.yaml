@@ -1,5 +1,5 @@
 packages:
-  - name: sass/dart-sass@1.92.0
+  - name: sass/dart-sass@1.92.1
   - name: sass/dart-sass
     version: 1.86.0
   - name: sass/dart-sass

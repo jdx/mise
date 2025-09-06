@@ -1,5 +1,5 @@
 packages:
-  - name: hatoo/oha@v1.9.0
+  - name: hatoo/oha@v1.10.0
   - name: hatoo/oha
     version: v0.5.4
   - name: hatoo/oha

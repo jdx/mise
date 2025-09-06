@@ -1,5 +1,5 @@
 packages:
-  - name: git-town/git-town@v21.4.3
+  - name: git-town/git-town@v21.5.0
   - name: git-town/git-town
     version: v10.0.2
   - name: git-town/git-town

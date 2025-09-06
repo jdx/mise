@@ -1,5 +1,5 @@
 packages:
-  - name: viaduct-ai/kustomize-sops@v4.3.3
+  - name: viaduct-ai/kustomize-sops@v4.4.0
   - name: viaduct-ai/kustomize-sops
     version: v3.0.1
   - name: viaduct-ai/kustomize-sops
