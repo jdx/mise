@@ -3,6 +3,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use eyre::{Report, Result, bail, ensure};
+use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use std::sync::LazyLock as Lazy;
@@ -334,7 +335,7 @@ pub fn apply_url_replacements(url: &mut Url) {
         for (pattern, replacement) in replacements {
             if let Some(pattern_without_prefix) = pattern.strip_prefix("regex:") {
                 // Regex replacement
-                if let Ok(regex) = regex::Regex::new(pattern_without_prefix) {
+                if let Ok(regex) = Regex::new(pattern_without_prefix) {
                     let new_url_string = regex.replace(&url_string, replacement.as_str());
                     // Only proceed if the URL actually changed
                     if new_url_string != url_string {
