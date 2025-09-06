@@ -1313,8 +1313,8 @@ Full regex syntax documentation: <https://docs.rs/regex/latest/regex/#syntax>
 
 ### Precedence and Matching
 
-- Regex patterns (keys starting with `regex:`) are processed first, in the order they appear
-- Simple hostname replacements are processed second
+- URL replacements are processed in the order they appear in the configuration (IndexMap insertion order)
+- Both regex patterns (keys starting with `regex:`) and simple string replacements are processed in this same order
 - The first matching pattern is used; subsequent patterns are ignored for that URL
 - If no patterns match, the original URL is used unchanged
 
