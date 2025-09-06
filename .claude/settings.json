@@ -1,5 +1,5 @@
 {
   "permissions": {
-    "additionalDirectories": ["/tmp"]
+    "additionalDirectories": ["/tmp", "/private/tmp"]
   }
 }

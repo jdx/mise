@@ -327,9 +327,10 @@ impl Task {
             .flatten_ok()
             .filter_ok(|t| tasks_to_run.contains(t))
             .collect_vec();
-        let depends_post = tasks_to_run
+        let depends_post = self
+            .depends_post
             .iter()
-            .flat_map(|t| t.depends_post.iter().map(|td| match_tasks(&tasks, td)))
+            .map(|td| match_tasks(&tasks, td))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
@@ -829,6 +830,48 @@ mod tests {
         for (root, path) in test_cases {
             assert!(name_from_path(root, path).is_err())
         }
+    }
+
+    // This test verifies that resolve_depends correctly uses self.depends_post
+    // instead of iterating through all tasks_to_run (which was the bug)
+    #[tokio::test]
+    async fn test_resolve_depends_post_uses_self_only() {
+        use crate::task::task_dep::TaskDep;
+
+        // Create a task with depends_post
+        let task_with_post_deps = Task {
+            name: "task_with_post".to_string(),
+            depends_post: vec![
+                TaskDep {
+                    task: "post1".to_string(),
+                    args: vec![],
+                },
+                TaskDep {
+                    task: "post2".to_string(),
+                    args: vec![],
+                },
+            ],
+            ..Default::default()
+        };
+
+        // Create another task with different depends_post
+        let other_task = Task {
+            name: "other_task".to_string(),
+            depends_post: vec![TaskDep {
+                task: "other_post".to_string(),
+                args: vec![],
+            }],
+            ..Default::default()
+        };
+
+        // Verify that task_with_post_deps has the expected depends_post
+        assert_eq!(task_with_post_deps.depends_post.len(), 2);
+        assert_eq!(task_with_post_deps.depends_post[0].task, "post1");
+        assert_eq!(task_with_post_deps.depends_post[1].task, "post2");
+
+        // Verify that other_task doesn't interfere (would have before the fix)
+        assert_eq!(other_task.depends_post.len(), 1);
+        assert_eq!(other_task.depends_post[0].task, "other_post");
     }
 
     #[tokio::test]

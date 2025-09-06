@@ -13,9 +13,9 @@ env:
   CARGO_TERM_COLOR: always
   DRY_RUN: ${{ startsWith(github.event.ref, 'refs/tags/v') && '0' || '1' }}
   RUST_BACKTRACE: 1
-  GITHUB_API_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
-  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
-  GH_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_API_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  GH_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
   build-tarball:
@@ -280,7 +280,7 @@ jobs:
             --draft \
             releases/$VERSION/*
         env:
-          GH_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
       - name: Publish Release Assets to CDN
         if: startsWith(github.event.ref, 'refs/tags/v')
         run: mise x -- scripts/publish-release.sh
@@ -294,4 +294,4 @@ jobs:
           VERSION="$(./scripts/get-version.sh)"
           gh release edit "$VERSION" --draft=false
         env:
-          GH_TOKEN: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}

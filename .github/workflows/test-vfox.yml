@@ -17,7 +17,7 @@ env:
   MISE_EXPERIMENTAL: 1
   MISE_LOCKFILE: 1
   RUST_BACKTRACE: 1
-  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
   "test-vfox":
