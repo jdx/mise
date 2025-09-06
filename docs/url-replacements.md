@@ -7,7 +7,6 @@ In some environments — such as enterprises or DMZs — these URLs may not be d
 
 URL replacements allow you to modify or redirect any URL that mise attempts to access, making it possible to use internal proxies, mirrors, or alternative sources as needed.
 
-
 ## Configuration Examples
 
 Environment variable (JSON format):
@@ -48,7 +47,7 @@ url_replacements = {
 ## Simple Hostname Replacement
 
 For simple hostname-based mirroring, the key is the original hostname/domain to replace,
-and the value is the replacement string. The replacement happens by searching and replacing 
+and the value is the replacement string. The replacement happens by searching and replacing
 the pattern anywhere in the full URL string (including protocol, hostname, path, and query parameters).
 
 Examples:
@@ -65,7 +64,7 @@ The value can use capture groups from the regex pattern.
 
 ### Regex Examples
 
-**1. Protocol Conversion (HTTP to HTTPS)**
+#### 1. Protocol Conversion (HTTP to HTTPS)
 ```toml
 [settings]
 url_replacements = { 
@@ -74,7 +73,7 @@ url_replacements = {
 ```
 This converts any HTTP URL to HTTPS by capturing everything after "http://" and replacing it with "https://".
 
-**2. GitHub Release Mirroring with Path Restructuring**
+#### 2. GitHub Release Mirroring with Path Restructuring
 ```toml
 [settings]
 url_replacements = { 
@@ -85,7 +84,7 @@ url_replacements = {
 Transforms `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz`
 to `https://hub.corp.com/artifactory/github/owner/repo/v1.0.0/file.tar.gz`
 
-**3. Subdomain to Path Conversion**
+#### 3. Subdomain to Path Conversion
 ```toml
 [settings]
 url_replacements = { 
@@ -95,7 +94,7 @@ url_replacements = {
 ```
 Converts subdomain-based URLs to path-based URLs on a unified CDN.
 
-**4. Multiple Replacement Patterns (processed in order)**
+#### 4. Multiple Replacement Patterns (processed in order)
 ```toml
 [settings]
 url_replacements = { 
@@ -106,7 +105,7 @@ url_replacements = {
   "releases.hashicorp.com" = "hashicorp-mirror.internal.com"
 }
 ```
-First regex catches Microsoft repositories specifically, second catches all other GitHub URLs, 
+First regex catches Microsoft repositories specifically, second catches all other GitHub URLs,
 and the simple replacement handles HashiCorp.
 
 ## Use Cases
