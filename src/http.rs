@@ -341,7 +341,7 @@ pub fn apply_url_replacements(url: &mut Url) {
                     if new_url_string != url_string {
                         if let Ok(new_url) = new_url_string.parse() {
                             *url = new_url;
-                            debug!(
+                            trace!(
                                 "Replaced URL using regex '{}': {} -> {}",
                                 pattern_without_prefix,
                                 url_string,
@@ -364,7 +364,7 @@ pub fn apply_url_replacements(url: &mut Url) {
                     if new_url_string != url_string {
                         if let Ok(new_url) = new_url_string.parse() {
                             *url = new_url;
-                            debug!(
+                            trace!(
                                 "Replaced URL using string replacement '{}': {} -> {}",
                                 pattern,
                                 url_string,
