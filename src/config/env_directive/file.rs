@@ -149,16 +149,14 @@ impl EnvResults {
     }
 
     async fn dotenv(p: &Path) -> Result<EnvMap> {
-        if let Ok(raw) = file::read_to_string(p) {
-            let mut out = EnvMap::new();
-            let iter = dotenvy::from_read_iter(raw.as_bytes());
-            for item in iter {
-                let (k, v) = item?;
-                out.insert(k, v);
+        let errfn = || eyre!("failed to parse dotenv file: {}", display_path(p));
+        let mut env = EnvMap::new();
+        if let Ok(dotenv) = dotenvy::from_path_iter(p) {
+            for item in dotenv {
+                let (k, v) = item.wrap_err_with(errfn)?;
+                env.insert(k, v);
             }
-            Ok(out)
-        } else {
-            Ok(EnvMap::new())
         }
+        Ok(env)
     }
 }
