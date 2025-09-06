@@ -55,35 +55,25 @@ pub fn config_root(path: &Path) -> PathBuf {
     let is_config_filename = |f: &str| {
         f == "config.toml" || f == "config.local.toml" || regex!(r"config\..+\.toml").is_match(f)
     };
-    if parent == "conf.d" && is_mise_dir(grandparent) {
+    let out = if parent == "conf.d" && is_mise_dir(grandparent) {
         if great_grandparent == ".config" {
-            let out = great_great_grandparent_path();
-            CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-            out
+            great_great_grandparent_path()
         } else {
-            let out = great_grandparent_path();
-            CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-            out
+            great_grandparent_path()
         }
     } else if is_mise_dir(parent) && is_config_filename(filename) {
         if grandparent == ".config" {
-            let out = great_grandparent_path();
-            CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-            out
+            great_grandparent_path()
         } else {
-            let out = grandparent_path();
-            CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-            out
+            grandparent_path()
         }
     } else if parent == ".config" {
-        let out = grandparent_path();
-        CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-        out
+        grandparent_path()
     } else {
-        let out = parent_path();
-        CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
-        out
-    }
+        parent_path()
+    };
+    CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
+    out
 }
 
 #[cfg(test)]
