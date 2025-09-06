@@ -19,7 +19,6 @@ mod engine;
 mod file;
 mod module;
 mod normalize;
-mod parsers;
 mod path;
 mod source;
 mod template;
