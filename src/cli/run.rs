@@ -200,7 +200,7 @@ pub struct Run {
     #[clap(skip)]
     pub timed_outputs: Arc<std::sync::Mutex<IndexMap<String, (SystemTime, String)>>>,
 
-    /// Do not use cache for remote tasks
+    // Do not use cache for remote tasks
     #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
     pub no_cache: bool,
 }
