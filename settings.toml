@@ -1198,15 +1198,16 @@ Environment variable (JSON format):
 # Simple hostname replacement
 export MISE_URL_REPLACEMENTS='
 {
-  "github.com": "myregistry.net", 
-  "releases.hashicorp.com": "mirror.example.com"
+  "github.com": "nexus.mycompany.net", 
+  "releases.hashicorp.com": "artifactory.xmpl.com"
 }'
 
 # Regex pattern (note the escaped backslashes in JSON)
 export MISE_URL_REPLACEMENTS='
 {
+  "regex:^http://(.+)" = "https://$1",
   "regex:https://github\.com/([^/]+)/([^/]+)/releases/download/(.+)":
-  "https://mirror.corp.com/github/$1/$2/$3"
+  "https://hub.corp.com/artifactory/github/$1/$2/$3"
 }'
 ```
 
@@ -1215,15 +1216,15 @@ In mise.toml:
 [settings]
 # Simple hostname replacement
 url_replacements = { 
-  "github.com" = "myregistry.net", 
-  "releases.hashicorp.com" = "mirror.example.com" 
+  "github.com" = "nexus.mycompany.net", 
+  "releases.hashicorp.com" = "artifactory.xmpl.com" 
 }
 
 # Regex patterns
-url_replacements = { 
+url_replacements = {
   "regex:^http://(.+)" = "https://$1",
   "regex:https://github\\.com/([^/]+)/([^/]+)/releases/download/(.+)" = 
-    "https://mirror.corp.com/github/$1/$2/$3"
+    "https://hub.corp.com/artifactory/github/$1/$2/$3"
 }
 ```
 
@@ -1234,8 +1235,8 @@ and the value is the replacement string. The replacement happens by searching an
 the pattern anywhere in the full URL string (including protocol, hostname, path, and query parameters).
 
 Examples:
-- `github.com` -> `myregistry.net` replaces GitHub hostnames
-- `https://github.com` -> `https://myregistry.net` with protocol excludes e.g. 'api.github.com'
+- `github.com` -> `nexus.mycompany.net` replaces GitHub hostnames
+- `https://github.com` -> `https://nexus.mycompany.net` with protocol excludes e.g. 'api.github.com'
 - `https://github.com` -> `https://proxy.corp.com/github-mirror` replaces GitHub with corporate proxy
 - `http://host.net` -> `https://host.net` replaces protocol from HTTP to HTTPS
 
@@ -1261,11 +1262,11 @@ This converts any HTTP URL to HTTPS by capturing everything after "http://" and 
 [settings]
 url_replacements = { 
   "regex:https://github\\.com/([^/]+)/([^/]+)/releases/download/(.+)" = 
-    "https://mirror.corp.com/github/$1/$2/$3" 
+    "https://hub.corp.com/artifactory/github/$1/$2/$3" 
 }
 ```
 Transforms `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz`
-to `https://mirror.corp.com/github/owner/repo/v1.0.0/file.tar.gz`
+to `https://hub.corp.com/artifactory/github/owner/repo/v1.0.0/file.tar.gz`
 
 **3. Subdomain to Path Conversion**
 ```toml
