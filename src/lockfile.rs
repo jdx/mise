@@ -245,6 +245,15 @@ impl Lockfile {
         target_platforms: &[crate::platform::Platform],
         _force_update: bool,
     ) -> Result<(String, Vec<LockfileTool>)> {
+        // Create progress reporter for this tool
+        use crate::ui::multi_progress_report::MultiProgressReport;
+        let mpr = MultiProgressReport::get();
+        let pr = mpr.add(&format!(
+            "fetching {} {}",
+            tool_version.ba().short,
+            tool_version.version
+        ));
+        pr.set_message("fetching metadata".into());
         let tool_name = &tool_version.ba().short;
 
         let backend = tool_version.ba().backend()?;
@@ -294,6 +303,7 @@ impl Lockfile {
             tool_entry.platforms.insert(result.0, result.1);
         }
 
+        pr.finish_with_message(format!("{} platforms", tool_entry.platforms.len()));
         Ok((tool_name.clone(), vec![tool_entry]))
     }
 }

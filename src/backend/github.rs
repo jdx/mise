@@ -113,6 +113,14 @@ impl Backend for UnifiedGitBackend {
             self.discover_bin_paths(tv)
         }
     }
+
+    async fn get_github_release_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<GithubReleaseConfig>> {
+        self.get_github_release_info(tv, target).await
+    }
 }
 
 impl UnifiedGitBackend {

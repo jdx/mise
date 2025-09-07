@@ -1,3 +1,4 @@
+use crate::http::HTTP;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
@@ -883,7 +884,7 @@ pub trait Backend: Debug + Send + Sync {
         debug!("Resolving lockfile info from tarball: {}", tarball_url);
 
         // Get checksum and size by downloading and hashing the file
-        let (checksum, size) = match self.download_and_hash_file(tarball_url).await {
+        let (checksum, size) = match self.download_and_hash_file(tarball_url, None).await {
             Ok((calculated_checksum, actual_size)) => (
                 Some(format!("blake3:{}", calculated_checksum)),
                 Some(actual_size),
@@ -918,9 +919,7 @@ pub trait Backend: Debug + Send + Sync {
             crate::github::ReleaseType::GitHub => {
                 // Build the asset filename from the pattern
                 if let Some(asset_pattern) = &release_info.asset_pattern {
-                    let filename = asset_pattern
-                        .replace("{os}", target.os_name())
-                        .replace("{arch}", target.arch_name());
+                    let filename = asset_pattern.as_str();
 
                     debug!("Looking for GitHub asset: {}", filename);
 
@@ -965,7 +964,7 @@ pub trait Backend: Debug + Send + Sync {
                                         "No digest available, will download and calculate checksum"
                                     );
                                     // Fallback: Download file and calculate checksum ourselves
-                                    match self.download_and_hash_file(&url).await {
+                                    match self.download_and_hash_file(&url, None).await {
                                         Ok((calculated_checksum, actual_size)) => {
                                             debug!(
                                                 "Calculated checksum: blake3:{}",
@@ -1018,12 +1017,10 @@ pub trait Backend: Debug + Send + Sync {
                 debug!("GitLab release support not yet implemented");
                 // TODO: Implement GitLab support
                 if let Some(asset_pattern) = &release_info.asset_pattern {
-                    let asset_url = asset_pattern
-                        .replace("{os}", target.os_name())
-                        .replace("{arch}", target.arch_name());
+                    let asset_url = asset_pattern;
 
                     return Ok(PlatformInfo {
-                        url: Some(asset_url),
+                        url: Some(asset_url.clone()),
                         checksum: None,
                         size: None,
                     });
@@ -1064,18 +1061,14 @@ pub trait Backend: Debug + Send + Sync {
 
     /// Download a file and calculate its BLAKE3 checksum and size
     /// Used as fallback when GitHub API doesn't provide digest information
-    async fn download_and_hash_file(&self, url: &str) -> Result<(String, u64)> {
-        use crate::http::HTTP;
-        use std::io::Write;
-
+    async fn download_and_hash_file(
+        &self,
+        url: &str,
+        pr: Option<&Box<dyn SingleReport>>,
+    ) -> Result<(String, u64)> {
         debug!("Downloading {} to calculate checksum and size", url);
 
-        // Download the file bytes
-        let bytes = HTTP.get_bytes(url).await?;
-        let bytes = bytes.as_ref();
-        let file_size = bytes.len() as u64;
-
-        // Write to a temporary file for hashing
+        // Prepare temporary file for download
         let temp_dir = dirs::CACHE.join("lockfile_checksums");
         file::create_dir_all(&temp_dir)?;
 
@@ -1083,11 +1076,11 @@ pub trait Backend: Debug + Send + Sync {
         let url_hash = hash::hash_blake3_to_str(url);
         let temp_path = temp_dir.join(format!("temp_{}.bin", &url_hash[..16]));
 
-        {
-            let mut temp_file = File::create(&temp_path)?;
-            temp_file.write_all(bytes)?;
-            temp_file.flush()?;
-        }
+        // Download the file directly to the temporary path
+        HTTP.download_file(url, &temp_path, pr).await?;
+
+        // Get file size
+        let file_size = temp_path.metadata()?.len();
 
         // Calculate BLAKE3 checksum
         let checksum = hash::file_hash_blake3(&temp_path, None)?;
