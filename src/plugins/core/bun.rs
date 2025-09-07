@@ -137,7 +137,7 @@ impl Backend for BunPlugin {
 
         Ok(Some(crate::github::GithubReleaseConfig {
             repo: "oven-sh/bun".to_string(),
-            asset_pattern: Some(asset_pattern),
+            asset_pattern,
             release_type: crate::github::ReleaseType::GitHub,
             tag_prefix: Some("bun-v".to_string()),
         }))

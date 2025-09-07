@@ -234,11 +234,7 @@ impl Backend for RubyPlugin {
     ) -> Result<Option<GithubReleaseConfig>> {
         Ok(Some(GithubReleaseConfig {
             repo: "oneclick/rubyinstaller2".to_string(),
-            asset_pattern: Some(format!(
-                "rubyinstaller-{}-1-{}.7z",
-                tv.version,
-                target.arch_name()
-            )),
+            asset_pattern: format!("rubyinstaller-{}-1-{}.7z", tv.version, target.arch_name()),
             release_type: ReleaseType::GitHub,
             tag_prefix: Some("RubyInstaller-".to_string()),
         }))

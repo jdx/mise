@@ -258,7 +258,7 @@ impl Backend for AquaBackend {
                 use crate::github::ReleaseType;
                 // Generate a basic asset pattern based on common patterns
                 // Since Aqua handles the specific asset selection, use a generic pattern
-                let asset_pattern = Some("*".to_string());
+                let asset_pattern = "*".to_string();
                 return Ok(Some(GithubReleaseConfig {
                     repo: format!("{}/{}", pkg.repo_owner, pkg.repo_name),
                     asset_pattern,

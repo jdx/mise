@@ -43,7 +43,7 @@ pub struct GithubAsset {
 #[derive(Debug, Clone)]
 pub struct GithubReleaseConfig {
     pub repo: String,
-    pub asset_pattern: Option<String>,
+    pub asset_pattern: String,
     pub release_type: ReleaseType,
     /// Tag prefix (e.g., "v" for "v1.2.3", "bun-v" for "bun-v1.2.3")
     pub tag_prefix: Option<String>,

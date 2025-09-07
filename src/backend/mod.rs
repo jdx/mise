@@ -911,113 +911,106 @@ pub trait Backend: Debug + Send + Sync {
         match release_info.release_type {
             crate::github::ReleaseType::GitHub => {
                 // Build the asset filename from the pattern
-                if let Some(asset_pattern) = &release_info.asset_pattern {
-                    let filename = asset_pattern.as_str();
+                let filename = release_info.asset_pattern.as_str();
 
-                    debug!("Looking for GitHub asset: {}", filename);
+                debug!("Looking for GitHub asset: {}", filename);
 
-                    // Build the tag name
-                    let tag = if let Some(prefix) = &release_info.tag_prefix {
-                        format!("{}{}", prefix, tv.version)
-                    } else {
-                        format!("v{}", tv.version)
-                    };
+                // Build the tag name
+                let tag = if let Some(prefix) = &release_info.tag_prefix {
+                    format!("{}{}", prefix, tv.version)
+                } else {
+                    format!("v{}", tv.version)
+                };
 
-                    debug!("Using GitHub tag: {}", tag);
+                debug!("Using GitHub tag: {}", tag);
 
-                    // Get release info from GitHub API
-                    match crate::github::get_release(&release_info.repo, &tag).await {
-                        Ok(release) => {
-                            debug!("Found GitHub release with {} assets", release.assets.len());
+                // Get release info from GitHub API
+                match crate::github::get_release(&release_info.repo, &tag).await {
+                    Ok(release) => {
+                        debug!("Found GitHub release with {} assets", release.assets.len());
 
-                            // Find the matching asset
-                            if let Some(asset) = release.assets.iter().find(|a| a.name == filename)
-                            {
-                                debug!(
-                                    "Found matching asset: {} (size: {}, digest: {:?})",
-                                    asset.name, asset.size, asset.digest
-                                );
-
-                                // Build the download URL
-                                let url = format!(
-                                    "https://github.com/{}/releases/download/{}/{}",
-                                    release_info.repo, tag, filename
-                                );
-
-                                // If we have a digest from GitHub API, use it directly
-                                if let Some(ref digest) = asset.digest {
-                                    debug!("Using digest from GitHub API: {}", digest);
-                                    return Ok(PlatformInfo {
-                                        url: Some(url),
-                                        checksum: Some(format!("sha256:{}", digest)),
-                                        size: Some(asset.size),
-                                    });
-                                } else {
-                                    debug!(
-                                        "No digest available, will download and calculate checksum"
-                                    );
-                                    // Fallback: Download file and calculate checksum ourselves
-                                    match self.download_and_hash_file(&url, None).await {
-                                        Ok((calculated_checksum, actual_size)) => {
-                                            debug!(
-                                                "Calculated checksum: blake3:{}",
-                                                calculated_checksum
-                                            );
-                                            return Ok(PlatformInfo {
-                                                url: Some(url),
-                                                checksum: Some(format!(
-                                                    "blake3:{}",
-                                                    calculated_checksum
-                                                )),
-                                                size: Some(actual_size),
-                                            });
-                                        }
-                                        Err(e) => {
-                                            warn!("Failed to download and hash {}: {}", url, e);
-                                            // Still return the info but without checksum
-                                            return Ok(PlatformInfo {
-                                                url: Some(url),
-                                                checksum: None,
-                                                size: Some(asset.size),
-                                            });
-                                        }
-                                    }
-                                }
-                            } else {
-                                warn!("Asset '{}' not found in release '{}'", filename, tag);
-                            }
-                        }
-                        Err(e) => {
+                        // Find the matching asset
+                        if let Some(asset) = release.assets.iter().find(|a| a.name == filename) {
                             debug!(
-                                "Failed to get GitHub release {}/{}: {}",
-                                release_info.repo, tag, e
+                                "Found matching asset: {} (size: {}, digest: {:?})",
+                                asset.name, asset.size, asset.digest
                             );
-                            // Fall back to constructed URL only
+
+                            // Build the download URL
                             let url = format!(
                                 "https://github.com/{}/releases/download/{}/{}",
                                 release_info.repo, tag, filename
                             );
-                            return Ok(PlatformInfo {
-                                url: Some(url),
-                                checksum: None,
-                                size: None,
-                            });
+
+                            // If we have a digest from GitHub API, use it directly
+                            if let Some(ref digest) = asset.digest {
+                                debug!("Using digest from GitHub API: {}", digest);
+                                return Ok(PlatformInfo {
+                                    url: Some(url),
+                                    checksum: Some(format!("sha256:{}", digest)),
+                                    size: Some(asset.size),
+                                });
+                            } else {
+                                debug!("No digest available, will download and calculate checksum");
+                                // Fallback: Download file and calculate checksum ourselves
+                                match self.download_and_hash_file(&url, None).await {
+                                    Ok((calculated_checksum, actual_size)) => {
+                                        debug!(
+                                            "Calculated checksum: blake3:{}",
+                                            calculated_checksum
+                                        );
+                                        return Ok(PlatformInfo {
+                                            url: Some(url),
+                                            checksum: Some(format!(
+                                                "blake3:{}",
+                                                calculated_checksum
+                                            )),
+                                            size: Some(actual_size),
+                                        });
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to download and hash {}: {}", url, e);
+                                        // Still return the info but without checksum
+                                        return Ok(PlatformInfo {
+                                            url: Some(url),
+                                            checksum: None,
+                                            size: Some(asset.size),
+                                        });
+                                    }
+                                }
+                            }
+                        } else {
+                            warn!("Asset '{}' not found in release '{}'", filename, tag);
                         }
+                    }
+                    Err(e) => {
+                        debug!(
+                            "Failed to get GitHub release {}/{}: {}",
+                            release_info.repo, tag, e
+                        );
+                        // Fall back to constructed URL only
+                        let url = format!(
+                            "https://github.com/{}/releases/download/{}/{}",
+                            release_info.repo, tag, filename
+                        );
+                        return Ok(PlatformInfo {
+                            url: Some(url),
+                            checksum: None,
+                            size: None,
+                        });
                     }
                 }
             }
             crate::github::ReleaseType::GitLab => {
                 debug!("GitLab release support not yet implemented");
                 // TODO: Implement GitLab support
-                if let Some(asset_pattern) = &release_info.asset_pattern {
-                    let asset_url = asset_pattern;
+                let asset_url = &release_info.asset_pattern;
 
-                    return Ok(PlatformInfo {
-                        url: Some(asset_url.clone()),
-                        checksum: None,
-                        size: None,
-                    });
-                }
+                return Ok(PlatformInfo {
+                    url: Some(asset_url.clone()),
+                    checksum: None,
+                    size: None,
+                });
             }
         }
 

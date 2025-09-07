@@ -126,7 +126,8 @@ impl Backend for UnifiedGitBackend {
         Ok(Some(GithubReleaseConfig {
             repo,
             asset_pattern: lookup_platform_key(&opts, "asset_pattern")
-                .or_else(|| opts.get("asset_pattern").cloned()),
+                .or_else(|| opts.get("asset_pattern").cloned())
+                .unwrap_or_else(|| "*".to_string()),
             release_type: if self.is_gitlab() {
                 ReleaseType::GitLab
             } else {
