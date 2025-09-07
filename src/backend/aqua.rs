@@ -249,16 +249,35 @@ impl Backend for AquaBackend {
 
     async fn get_github_release_info(
         &self,
-        _tv: &ToolVersion,
+        tv: &ToolVersion,
         _target: &PlatformTarget,
     ) -> Result<Option<GithubReleaseConfig>> {
         // Try to extract repo info from the aqua package
         if let Ok(pkg) = AQUA_REGISTRY.package(&self.id).await {
             if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
                 use crate::github::ReleaseType;
-                // Generate a basic asset pattern based on common patterns
-                // Since Aqua handles the specific asset selection, use a generic pattern
-                let asset_pattern = "*".to_string();
+
+                // Try to determine the actual asset name that would be used
+                let asset_pattern = match pkg.r#type {
+                    AquaPackageType::GithubRelease => {
+                        // Try to get the actual asset name by using the same logic as installation
+                        match self.get_actual_asset_name(&pkg, &tv.version).await {
+                            Ok(asset_name) => asset_name,
+                            Err(_) => {
+                                debug!(
+                                    "Failed to determine asset name for {}, returning None",
+                                    self.id
+                                );
+                                return Ok(None);
+                            }
+                        }
+                    }
+                    _ => {
+                        // For non-release types, we can't determine a specific asset pattern
+                        return Ok(None);
+                    }
+                };
+
                 return Ok(Some(GithubReleaseConfig {
                     repo: format!("{}/{}", pkg.repo_owner, pkg.repo_name),
                     asset_pattern,
@@ -851,6 +870,89 @@ impl AquaBackend {
             .unique_by(|(src, _)| src.to_path_buf())
             .collect();
         Ok(files)
+    }
+
+    /// Try to determine the actual asset name that would be used for a specific version
+    /// This mirrors the logic used during installation to find the right asset
+    async fn get_actual_asset_name(&self, pkg: &AquaPackage, version: &str) -> Result<String> {
+        // Try both with and without v prefix like installation does
+        let mut v = version.to_string();
+        let mut v_prefixed = (!version.starts_with('v')).then(|| format!("v{version}"));
+
+        if let Some(prefix) = &pkg.version_prefix {
+            if !v.starts_with(prefix) {
+                v = format!("{prefix}{v}");
+                v_prefixed = v_prefixed.map(|v| format!("{prefix}{v}"));
+            }
+        }
+
+        // Try v-prefixed version first since most aqua packages use v-prefixed versions
+        let version_to_use = if let Some(v_prefixed) = &v_prefixed {
+            // Try to get asset strings for v-prefixed version
+            match pkg.asset_strs(v_prefixed) {
+                Ok(asset_strs) if !asset_strs.is_empty() => {
+                    // Check if we can actually find this asset in the release
+                    match self
+                        .get_first_available_asset(pkg, v_prefixed, asset_strs)
+                        .await
+                    {
+                        Ok(asset_name) => return Ok(asset_name),
+                        Err(_) => {
+                            // Fall back to non-prefixed version
+                            v.as_str()
+                        }
+                    }
+                }
+                _ => v.as_str(),
+            }
+        } else {
+            v.as_str()
+        };
+
+        // Get asset strings for the chosen version
+        let asset_strs = pkg.asset_strs(version_to_use)?;
+        if asset_strs.is_empty() {
+            bail!("No assets defined for version {}", version_to_use);
+        }
+
+        // Get the first available asset from the release
+        self.get_first_available_asset(pkg, version_to_use, asset_strs)
+            .await
+    }
+
+    /// Get the first available asset from a GitHub release
+    async fn get_first_available_asset(
+        &self,
+        pkg: &AquaPackage,
+        version: &str,
+        asset_strs: IndexSet<String>,
+    ) -> Result<String> {
+        let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+        let gh_release = github::get_release(&gh_id, version).await?;
+
+        // Find the first asset that matches any of the expected asset strings
+        // This uses the same logic as `github_release_asset`
+        let asset_name = asset_strs
+            .iter()
+            .find_map(|expected| {
+                gh_release
+                    .assets
+                    .iter()
+                    .find(|a| {
+                        a.name == *expected || a.name.to_lowercase() == expected.to_lowercase()
+                    })
+                    .map(|a| a.name.clone())
+            })
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "No asset found for {}: {}\nAvailable assets:\n{}",
+                    self.id,
+                    asset_strs.iter().join(", "),
+                    gh_release.assets.iter().map(|a| &a.name).join("\n")
+                )
+            })?;
+
+        Ok(asset_name)
     }
 }
 

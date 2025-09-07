@@ -116,18 +116,30 @@ impl Backend for UnifiedGitBackend {
 
     async fn get_github_release_info(
         &self,
-        _tv: &ToolVersion,
-        _target: &PlatformTarget,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
     ) -> Result<Option<GithubReleaseConfig>> {
         use crate::github::ReleaseType;
         let repo = self.repo();
         let opts = self.ba.opts();
 
+        // Try to get asset pattern from options first
+        let asset_pattern = if let Some(pattern) = lookup_platform_key(&opts, "asset_pattern")
+            .or_else(|| opts.get("asset_pattern").cloned())
+        {
+            pattern
+        } else {
+            // Try to auto-detect asset pattern based on the target platform
+            // This mimics the logic used during installation
+            match self.try_auto_detect_pattern(tv, target, &repo, &opts).await {
+                Ok(pattern) => pattern,
+                Err(_) => "*".to_string(), // Fallback to wildcard if detection fails
+            }
+        };
+
         Ok(Some(GithubReleaseConfig {
             repo,
-            asset_pattern: lookup_platform_key(&opts, "asset_pattern")
-                .or_else(|| opts.get("asset_pattern").cloned())
-                .unwrap_or_else(|| "*".to_string()),
+            asset_pattern,
             release_type: if self.is_gitlab() {
                 ReleaseType::GitLab
             } else {
@@ -415,6 +427,50 @@ impl UnifiedGitBackend {
             // Fallback to simple contains check
             asset_name.contains(pattern)
         }
+    }
+
+    /// Try to auto-detect the asset pattern for lockfile generation
+    async fn try_auto_detect_pattern(
+        &self,
+        tv: &ToolVersion,
+        _target: &PlatformTarget,
+        repo: &str,
+        opts: &ToolVersionOptions,
+    ) -> Result<String> {
+        let api_url = self.get_api_url(opts);
+        let version = &tv.version;
+        let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
+        let repo = repo.to_string(); // Clone repo for the closure
+
+        // Use try_with_v_prefix to handle version prefix logic like installation does
+        let result = try_with_v_prefix(version, version_prefix, |candidate| {
+            let api_url = api_url.clone(); // Clone api_url for the closure
+            let repo = repo.clone(); // Clone repo for the closure
+            async move {
+                if self.is_gitlab() {
+                    let release = gitlab::get_release_for_url(&api_url, &repo, &candidate).await?;
+                    let available_assets: Vec<String> = release
+                        .assets
+                        .links
+                        .iter()
+                        .map(|a| a.name.clone())
+                        .collect();
+
+                    let asset_name = self.auto_detect_asset(&available_assets)?;
+                    Ok(asset_name)
+                } else {
+                    let release = github::get_release_for_url(&api_url, &repo, &candidate).await?;
+                    let available_assets: Vec<String> =
+                        release.assets.iter().map(|a| a.name.clone()).collect();
+
+                    let asset_name = self.auto_detect_asset(&available_assets)?;
+                    Ok(asset_name)
+                }
+            }
+        })
+        .await;
+
+        result
     }
 
     fn strip_version_prefix(&self, tag_name: &str) -> String {

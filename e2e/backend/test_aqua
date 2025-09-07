@@ -29,6 +29,10 @@ EOF
 
 touch mise.lock
 mise install
+mise lock --force --platform macos-arm64
 assert_contains "cat mise.lock" '[[tools.age]]'
 assert_contains "cat mise.lock" 'version = "1.2.0"'
 assert_contains "cat mise.lock" 'backend = "aqua:FiloSottile/age"'
+assert_contains "cat mise.lock" 'url = "https://github.com/FiloSottile/age/releases'
+assert_contains "cat mise.lock" 'size = 4516837'
+assert_contains "cat mise.lock" 'checksum = "blake3:a54d750d8599612d69bc9499b32a549506bfa1e122a051f31754b9ec4d94fc44"'
