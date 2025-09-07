@@ -565,21 +565,19 @@ impl Backend for NodePlugin {
 }
 
 impl NodePlugin {
-    /// Build platform-specific slug for Node.js downloads
-    /// This mirrors the logic from BuildOpts::new() and slug() function
-    fn build_platform_slug(&self, version: &str, target: &PlatformTarget) -> String {
-        let settings = Settings::get();
-
-        // Map Platform enum to Node.js OS names
-        let os = match target.os_name() {
+    /// Map OS name from Platform to Node.js convention
+    fn map_os(os_name: &str) -> &str {
+        match os_name {
             "macos" => "darwin",
             "linux" => "linux",
-            "windows" => "win32",
+            "windows" => "win",
             other => other,
-        };
+        }
+    }
 
-        // Map Platform enum to Node.js arch names
-        let arch = match target.arch_name() {
+    /// Map arch name from Platform to Node.js convention
+    fn map_arch(arch_name: &str) -> &str {
+        match arch_name {
             "x86" => "x86",
             "x64" => "x64",
             "arm" => "armv7l",
@@ -588,7 +586,16 @@ impl NodePlugin {
             "loongarch64" => "loong64",
             "riscv64" => "riscv64",
             other => other,
-        };
+        }
+    }
+
+    /// Build platform-specific slug for Node.js downloads
+    /// This mirrors the logic from BuildOpts::new() and slug() function
+    fn build_platform_slug(&self, version: &str, target: &PlatformTarget) -> String {
+        let settings = Settings::get();
+
+        let os = Self::map_os(target.os_name());
+        let arch = Self::map_arch(target.arch_name());
 
         if let Some(flavor) = &settings.node.flavor {
             format!("node-v{version}-{os}-{arch}-{flavor}")

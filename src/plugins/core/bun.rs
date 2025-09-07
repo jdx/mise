@@ -131,8 +131,8 @@ impl Backend for BunPlugin {
 
         // Build the asset pattern for Bun's GitHub releases
         // Pattern: bun-{os}-{arch}.zip
-        let os_name = self.map_os_to_bun(target.os_name());
-        let arch_name = self.map_arch_to_bun(target.arch_name());
+        let os_name = Self::map_os_to_bun(target.os_name());
+        let arch_name = Self::map_arch_to_bun(target.arch_name());
         let asset_pattern = format!("bun-{os_name}-{arch_name}.zip");
 
         Ok(Some(GitHubReleaseInfo {
@@ -148,7 +148,7 @@ impl Backend for BunPlugin {
 
 impl BunPlugin {
     /// Map our platform OS names to Bun's naming convention
-    fn map_os_to_bun<'a>(&self, os: &'a str) -> &'a str {
+    fn map_os_to_bun(os: &str) -> &str {
         match os {
             "macos" => "darwin",
             "linux" => "linux",
@@ -158,7 +158,7 @@ impl BunPlugin {
     }
 
     /// Map our platform arch names to Bun's naming convention
-    fn map_arch_to_bun<'a>(&self, arch: &'a str) -> &'a str {
+    fn map_arch_to_bun(arch: &str) -> &str {
         match arch {
             "x64" => "x64",
             "arm64" | "aarch64" => "aarch64",
