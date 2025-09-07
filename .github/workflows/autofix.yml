@@ -42,6 +42,7 @@ jobs:
             ~/.cache/mise
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise install
+      - run: mise lock --force
       - run: mise x -- bun i
       - run: mise run render
       - run: mise run lint-fix
