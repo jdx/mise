@@ -14,7 +14,6 @@ use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
-use crate::platform::Platform;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, tool_enabled};
@@ -33,6 +32,7 @@ use console::style;
 use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use platform_target::PlatformTarget;
 use regex::Regex;
 use std::sync::LazyLock as Lazy;
 
@@ -49,6 +49,7 @@ pub mod go;
 pub mod http;
 pub mod npm;
 pub mod pipx;
+pub mod platform_target;
 pub mod spm;
 pub mod static_helpers;
 pub mod ubi;
@@ -58,38 +59,6 @@ pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<String>>;
-
-/// Represents a target platform for lockfile metadata fetching
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PlatformTarget {
-    pub platform: Platform,
-}
-
-impl PlatformTarget {
-    pub fn new(platform: Platform) -> Self {
-        Self { platform }
-    }
-
-    pub fn from_current() -> Self {
-        Self::new(Platform::current())
-    }
-
-    pub fn os_name(&self) -> &str {
-        &self.platform.os
-    }
-
-    pub fn arch_name(&self) -> &str {
-        &self.platform.arch
-    }
-
-    pub fn qualifier(&self) -> Option<&str> {
-        self.platform.qualifier.as_deref()
-    }
-
-    pub fn to_key(&self) -> String {
-        self.platform.to_key()
-    }
-}
 
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]

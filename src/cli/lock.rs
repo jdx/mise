@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use crate::backend::{PlatformTarget, get};
+use crate::backend::{get, platform_target::PlatformTarget};
 use crate::config::Config;
 use crate::file::display_path;
 use crate::lockfile::Lockfile;
