@@ -158,6 +158,7 @@ impl BunPlugin {
     }
 
     /// Map our platform arch names to Bun's naming convention
+    /// Note: This handles simple cases. Complex musl/baseline variants are handled in arch()
     fn map_arch_to_bun(arch: &str) -> &str {
         match arch {
             "x64" => "x64",
@@ -165,42 +166,50 @@ impl BunPlugin {
             other => other,
         }
     }
+
+    /// Get the full Bun arch string with variants (musl, baseline, etc.)
+    fn get_bun_arch_with_variants() -> &'static str {
+        if cfg!(target_arch = "x86_64") {
+            if cfg!(target_env = "musl") {
+                if cfg!(target_feature = "avx2") {
+                    "x64-musl"
+                } else {
+                    "x64-musl-baseline"
+                }
+            } else if cfg!(target_feature = "avx2") {
+                "x64"
+            } else {
+                "x64-baseline"
+            }
+        } else if cfg!(target_arch = "aarch64") {
+            if cfg!(target_env = "musl") {
+                "aarch64-musl"
+            } else if cfg!(windows) {
+                "x64"
+            } else {
+                "aarch64"
+            }
+        } else {
+            &ARCH
+        }
+    }
 }
 
 fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "darwin"
+    let os_name = if cfg!(target_os = "macos") {
+        "macos"
     } else if cfg!(target_os = "linux") {
         "linux"
+    } else if cfg!(target_os = "windows") {
+        "windows"
     } else {
         &OS
-    }
+    };
+    BunPlugin::map_os_to_bun(os_name)
 }
 
 fn arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
-        if cfg!(target_env = "musl") {
-            if cfg!(target_feature = "avx2") {
-                "x64-musl"
-            } else {
-                "x64-musl-baseline"
-            }
-        } else if cfg!(target_feature = "avx2") {
-            "x64"
-        } else {
-            "x64-baseline"
-        }
-    } else if cfg!(target_arch = "aarch64") {
-        if cfg!(target_env = "musl") {
-            "aarch64-musl"
-        } else if cfg!(windows) {
-            "x64"
-        } else {
-            "aarch64"
-        }
-    } else {
-        &ARCH
-    }
+    BunPlugin::get_bun_arch_with_variants()
 }
 
 fn bun_bin_name() -> &'static str {

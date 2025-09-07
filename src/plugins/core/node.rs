@@ -689,38 +689,25 @@ fn make_install_cmd() -> String {
 }
 
 fn os() -> &'static str {
-    if cfg!(target_os = "linux") {
+    let os_name = if cfg!(target_os = "linux") {
         "linux"
     } else if cfg!(target_os = "macos") {
-        "darwin"
+        "macos"
     } else if cfg!(target_os = "windows") {
-        "win"
+        "windows"
     } else {
         built_info::CFG_OS
-    }
+    };
+    NodePlugin::map_os(os_name)
 }
 
 fn arch(settings: &Settings) -> &str {
     let arch = settings.arch();
-    if arch == "x86" {
-        "x86"
-    } else if arch == "x64" {
-        "x64"
-    } else if arch == "arm" {
-        if cfg!(target_feature = "v6") {
-            "armv6l"
-        } else {
-            "armv7l"
-        }
-    } else if arch == "loongarch64" {
-        "loong64"
-    } else if arch == "riscv64" {
-        "riscv64"
-    } else if arch == "aarch64" {
-        "arm64"
-    } else {
-        arch
+    // Special handling for ARM with target features
+    if arch == "arm" && cfg!(target_feature = "v6") {
+        return "armv6l";
     }
+    NodePlugin::map_arch(arch)
 }
 
 fn slug(v: &str) -> String {
