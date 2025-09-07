@@ -935,11 +935,37 @@ pub trait Backend: Debug + Send + Sync {
                     .await
                     {
                         Ok((size, digest)) => {
-                            return Ok(PlatformInfo {
-                                url: Some(url),
-                                checksum: digest, // Use SHA256 digest if available
-                                size: Some(size),
-                            });
+                            // If we have a digest from GitHub API, use it directly
+                            if digest.is_some() {
+                                return Ok(PlatformInfo {
+                                    url: Some(url),
+                                    checksum: digest, // Use SHA256 digest from GitHub API
+                                    size: Some(size),
+                                });
+                            } else {
+                                // Fallback: Download file and calculate checksum ourselves
+                                match self.download_and_hash_file(&url).await {
+                                    Ok(calculated_checksum) => {
+                                        return Ok(PlatformInfo {
+                                            url: Some(url),
+                                            checksum: Some(format!(
+                                                "sha256:{}",
+                                                calculated_checksum
+                                            )),
+                                            size: Some(size),
+                                        });
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to download and hash {}: {}", url, e);
+                                        // Still return the info but without checksum
+                                        return Ok(PlatformInfo {
+                                            url: Some(url),
+                                            checksum: None,
+                                            size: Some(size),
+                                        });
+                                    }
+                                }
+                            }
                         }
                         Err(_) => {
                             // Fall back to URL only if GitHub API fails
@@ -990,6 +1016,42 @@ pub trait Backend: Debug + Send + Sync {
             checksum: None,
             size: None,
         })
+    }
+
+    /// Download a file and calculate its SHA256 checksum
+    /// Used as fallback when GitHub API doesn't provide digest information
+    async fn download_and_hash_file(&self, url: &str) -> Result<String> {
+        use crate::http::HTTP;
+        use std::io::Write;
+
+        debug!("Downloading {} to calculate checksum", url);
+
+        // Download the file bytes
+        let bytes = HTTP.get_bytes(url).await?;
+        let bytes = bytes.as_ref();
+
+        // Write to a temporary file for hashing
+        let temp_dir = dirs::CACHE.join("lockfile_checksums");
+        file::create_dir_all(&temp_dir)?;
+
+        // Create a unique temporary filename based on URL hash
+        let url_hash = hash::hash_blake3_to_str(url);
+        let temp_path = temp_dir.join(format!("temp_{}.bin", &url_hash[..16]));
+
+        {
+            let mut temp_file = File::create(&temp_path)?;
+            temp_file.write_all(bytes)?;
+            temp_file.flush()?;
+        }
+
+        // Calculate SHA256 checksum
+        let checksum = hash::file_hash_sha256(&temp_path, None)?;
+
+        // Clean up temporary file
+        let _ = std::fs::remove_file(&temp_path);
+
+        debug!("Calculated checksum for {}: {}", url, checksum);
+        Ok(checksum)
     }
 }
 
