@@ -159,12 +159,12 @@ impl Lockfile {
             let mut tools = toml::Table::new();
             for (short, versions) in &self.tools {
                 // Always write Multi-Version format (array format) for consistency
-                let value: toml::Value = versions
+                let version_values: Vec<toml::Value> = versions
                     .iter()
                     .cloned()
                     .map(|version| version.into_toml_value())
-                    .collect::<Vec<toml::Value>>()
-                    .into();
+                    .collect();
+                let value = toml::Value::Array(version_values);
                 tools.insert(short.clone(), value);
             }
             let mut lockfile = toml::Table::new();
