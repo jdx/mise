@@ -1,4 +1,4 @@
-use crate::backend::{Backend, PlatformTarget, VersionCacheManager};
+use crate::backend::{Backend, VersionCacheManager, platform_target::PlatformTarget};
 use crate::build_time::built_info;
 use crate::cache::CacheManagerBuilder;
 use crate::cli::args::BackendArg;

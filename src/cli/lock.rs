@@ -76,7 +76,7 @@ impl Lock {
             miseprintln!(
                 "{} {}",
                 style("mise lock").bold().cyan(),
-                style("implementation now includes backend metadata fetching framework").green()
+                style("full implementation coming in next phase").green()
             );
         }
 

@@ -16,7 +16,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{
-    backend::{Backend, GitHubReleaseInfo, PlatformTarget, ReleaseType},
+    backend::{Backend, GitHubReleaseInfo, ReleaseType, platform_target::PlatformTarget},
     config::Config,
 };
 use crate::{file, github, plugins};
