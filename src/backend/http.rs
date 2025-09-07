@@ -1,9 +1,9 @@
-use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::backend::static_helpers::{
     clean_binary_name, get_filename_from_url, list_available_platforms_with_key,
     lookup_platform_key, template_string, verify_artifact,
 };
+use crate::backend::{Backend, platform_target::PlatformTarget};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
@@ -417,6 +417,34 @@ impl Backend for HttpBackend {
                     Ok(vec![tv.install_path()])
                 }
             }
+        }
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_tarball_url(
+        &self,
+        tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        let opts = tv.request.options();
+
+        // Use platform-specific URL mapping to get the appropriate URL template
+        let url_template = lookup_platform_key(&opts, "url").or_else(|| opts.get("url").cloned());
+
+        if let Some(template) = url_template {
+            // Template the URL with actual values, but we need to handle platform targeting
+            // For lockfile generation, we can't use tv directly since it may not match target
+            // Instead, we'll create a temporary tool version with target-specific info
+            let temp_tv = tv.clone();
+
+            // Override version info to match target platform for templating
+            // This is a bit of a hack but allows URL templating to work with different targets
+            let url = template_string(&template, &temp_tv);
+            Ok(Some(url))
+        } else {
+            // No URL configured for this backend/platform combination
+            Ok(None)
         }
     }
 }

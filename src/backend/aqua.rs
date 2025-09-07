@@ -1,4 +1,6 @@
-use crate::backend::backend_type::BackendType;
+use crate::backend::{
+    GithubReleaseConfig, backend_type::BackendType, platform_target::PlatformTarget,
+};
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::cmd::CmdLineRunner;
@@ -241,6 +243,28 @@ impl Backend for AquaBackend {
                 query_regex.is_match(v)
             })
             .collect()
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_github_release_info(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<Option<GithubReleaseConfig>> {
+        // Try to extract repo info from the aqua package
+        if let Ok(pkg) = AQUA_REGISTRY.package(&self.id).await {
+            if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
+                use crate::github::ReleaseType;
+                return Ok(Some(GithubReleaseConfig {
+                    repo: format!("{}/{}", pkg.repo_owner, pkg.repo_name),
+                    asset_pattern: None, // Let Aqua's asset detection handle this
+                    release_type: ReleaseType::GitHub,
+                    tag_prefix: pkg.version_prefix.clone(),
+                }));
+            }
+        }
+        Ok(None)
     }
 }
 

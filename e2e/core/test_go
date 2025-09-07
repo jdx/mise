@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
 export MISE_GO_DEFAULT_PACKAGES_FILE="$HOME/.default-go-packages"
 
 cat >"$MISE_GO_DEFAULT_PACKAGES_FILE" <<EOF
@@ -23,6 +25,51 @@ assert_fail "mise x go@1.21.4 -- go version"
 assert_contains "mise ls go" "go  1.21.4"
 cd -
 rm -rf "$HOME/go-mod/"
+
+echo "=== Testing multi-platform lockfile generation for Go ==="
+# Test generating lockfile for multiple platforms (single call)
+assert_contains "mise lock golang --platform linux-x64,macos-arm64,windows-x64" "Targeting 3 platform(s): linux-x64, macos-arm64, windows-x64"
+assert_contains "mise lock golang --platform linux-x64,macos-arm64,windows-x64" "Lockfile updated at"
+
+# Verify the lockfile exists and contains platform-specific data for all 3 platforms
+assert "test -f mise.lock" ""
+assert_contains "cat mise.lock" "linux-x64"
+assert_contains "cat mise.lock" "macos-arm64"
+assert_contains "cat mise.lock" "windows-x64"
+
+# Verify URLs are platform-specific for Go (uses Go mirrors)
+assert_contains "cat mise.lock" "golang.org/dl"
+assert_contains "cat mise.lock" "go1.20.linux-amd64.tar.gz"
+assert_contains "cat mise.lock" "go1.20.darwin-arm64.tar.gz"
+assert_contains "cat mise.lock" "go1.20.windows-amd64.zip"
+
+# Verify the basic lockfile structure
+assert_contains "cat mise.lock" 'backend = "core:go"'
+assert_contains "cat mise.lock" 'version = "1.20"'
+
+echo "=== Validating lockfile metadata ==="
+# Extract and validate specific platform metadata
+lockfile_content=$(cat mise.lock)
+
+# Verify each platform has the correct URL pattern
+assert_contains "echo '$lockfile_content'" "go1.20.linux-amd64.tar.gz"
+assert_contains "echo '$lockfile_content'" "go1.20.darwin-arm64.tar.gz"
+assert_contains "echo '$lockfile_content'" "go1.20.windows-amd64.zip"
+
+# Validate URLs are complete and properly formatted
+linux_url=$(echo "$lockfile_content" | grep -A5 "linux-x64" | grep "url = " | grep -o 'https://[^"]*')
+assert_contains "echo '$linux_url'" "go1.20.linux-amd64.tar.gz"
+
+macos_url=$(echo "$lockfile_content" | grep -A5 "macos-arm64" | grep "url = " | grep -o 'https://[^"]*')
+assert_contains "echo '$macos_url'" "go1.20.darwin-arm64.tar.gz"
+
+windows_url=$(echo "$lockfile_content" | grep -A5 "windows-x64" | grep "url = " | grep -o 'https://[^"]*')
+assert_contains "echo '$windows_url'" "go1.20.windows-amd64.zip"
+
+# Checksums and sizes are required - fail if missing
+echo "Verifying checksums and sizes are present in lockfile"
+assert_contains "cat mise.lock" "checksum = "
+assert_contains "cat mise.lock" "size = "
 
 # Required to properly cleanup as go installs read-only sources
 chmod -R +w ~/go

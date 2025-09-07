@@ -28,8 +28,8 @@ assert_contains "mise lock" "Lockfile updated at"
 
 # Verify the lockfile was created with new multi-version format
 assert "test -f mise.lock" ""
-assert_contains "cat mise.lock" "tiny = "
-assert_contains "cat mise.lock" "dummy = "
+assert_contains "cat mise.lock" "[[tools.tiny]]"
+assert_contains "cat mise.lock" "[[tools.dummy]]"
 assert_contains "cat mise.lock" "backend ="
 assert_contains "cat mise.lock" "version ="
 

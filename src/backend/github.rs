@@ -1,8 +1,10 @@
 use crate::backend::asset_detector;
-use crate::backend::backend_type::BackendType;
 use crate::backend::static_helpers::lookup_platform_key;
 use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, template_string, try_with_v_prefix, verify_artifact,
+};
+use crate::backend::{
+    GithubReleaseConfig, backend_type::BackendType, platform_target::PlatformTarget,
 };
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -408,6 +410,30 @@ impl UnifiedGitBackend {
         } else {
             tag_name.to_string()
         }
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_github_release_info(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<Option<GithubReleaseConfig>> {
+        use crate::github::ReleaseType;
+        let repo = self.repo();
+        let opts = self.ba.opts();
+
+        Ok(Some(GithubReleaseConfig {
+            repo,
+            asset_pattern: lookup_platform_key(&opts, "asset_pattern")
+                .or_else(|| opts.get("asset_pattern").cloned()),
+            release_type: if self.is_gitlab() {
+                ReleaseType::GitLab
+            } else {
+                ReleaseType::GitHub
+            },
+            tag_prefix: opts.get("version_prefix").cloned(),
+        }))
     }
 }
 

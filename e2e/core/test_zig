@@ -1,6 +1,55 @@
 #!/usr/bin/env bash
 
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
 assert "mise x zig@0.13.0 -- zig version" "0.13.0"
 assert "mise x zig@master -- zig version"
 assert "mise x zig@2024.11.0-mach -- zig version" "0.14.0-dev.2577+271452d22"
 assert "mise x zig@mach-latest -- zig version"
+
+echo "=== Testing multi-platform lockfile generation for Zig ==="
+# Test generating lockfile for multiple platforms (single call)
+mise use zig@0.13.0
+assert_contains "mise lock zig --platform linux-x64,macos-arm64,windows-x64" "Targeting 3 platform(s): linux-x64, macos-arm64, windows-x64"
+assert_contains "mise lock zig --platform linux-x64,macos-arm64,windows-x64" "Lockfile updated at"
+
+# Verify the lockfile exists and contains platform-specific data for all 3 platforms
+assert "test -f mise.lock" ""
+assert_contains "cat mise.lock" "linux-x64"
+assert_contains "cat mise.lock" "macos-arm64"
+assert_contains "cat mise.lock" "windows-x64"
+
+# Verify URLs are platform-specific for Zig (uses ziglang.org)
+assert_contains "cat mise.lock" "ziglang.org/download"
+assert_contains "cat mise.lock" "zig-linux-x86_64-0.13.0.tar.xz"
+assert_contains "cat mise.lock" "zig-macos-aarch64-0.13.0.tar.xz"
+assert_contains "cat mise.lock" "zig-windows-x86_64-0.13.0.zip"
+
+# Verify the basic lockfile structure
+assert_contains "cat mise.lock" 'backend = "core:zig"'
+assert_contains "cat mise.lock" 'version = "0.13.0"'
+
+echo "=== Validating lockfile metadata ==="
+# Extract and validate specific platform metadata
+lockfile_content=$(cat mise.lock)
+
+# Verify each platform has the correct URL pattern
+assert_contains "echo '$lockfile_content'" "zig-linux-x86_64-0.13.0.tar.xz"
+assert_contains "echo '$lockfile_content'" "zig-macos-aarch64-0.13.0.tar.xz"
+assert_contains "echo '$lockfile_content'" "zig-windows-x86_64-0.13.0.zip"
+
+# Validate URLs are complete and properly formatted
+linux_url=$(echo "$lockfile_content" | grep -A5 "linux-x64" | grep "url = " | grep -o 'https://[^"]*')
+assert_contains "echo '$linux_url'" "zig-linux-x86_64-0.13.0.tar.xz"
+
+macos_url=$(echo "$lockfile_content" | grep -A5 "macos-arm64" | grep "url = " | grep -o 'https://[^"]*')
+assert_contains "echo '$macos_url'" "zig-macos-aarch64-0.13.0.tar.xz"
+
+windows_url=$(echo "$lockfile_content" | grep -A5 "windows-x64" | grep "url = " | grep -o 'https://[^"]*')
+assert_contains "echo '$windows_url'" "zig-windows-x86_64-0.13.0.zip"
+
+# Checksums and sizes are required - fail if missing
+echo "Verifying checksums and sizes are present in lockfile"
+assert_contains "cat mise.lock" "checksum = "
+assert_contains "cat mise.lock" "size = "
