@@ -211,21 +211,6 @@ fn cache_dir() -> PathBuf {
     dirs::CACHE.join("github")
 }
 
-/// Get size for a specific asset from a GitHub release
-/// Returns the asset size in bytes
-pub async fn get_release_asset_size(repo: &str, tag: &str, asset_name: &str) -> Result<u64> {
-    let release = get_release(repo, tag).await?;
-
-    // Find the requested asset
-    let asset = release
-        .assets
-        .iter()
-        .find(|a| a.name == asset_name)
-        .ok_or_else(|| eyre::eyre!("Asset '{}' not found in release '{}'", asset_name, tag))?;
-
-    Ok(asset.size)
-}
-
 /// Get metadata (size, digest) for a specific asset from a GitHub release
 /// Returns (size, digest_opt) where digest is available since June 2025
 pub async fn get_release_asset_metadata(

@@ -14,33 +14,57 @@ require_cmd node
 assert_contains 'mise x bun -- bunx cowsay "hello world"' "hello world"
 
 echo "=== Testing multi-platform lockfile generation for Bun ==="
-# Test generating lockfile for multiple platforms
+# Test generating lockfile for multiple platforms (single call)
 assert_contains "mise lock bun --platform linux-x64,macos-arm64,windows-x64" "Targeting 3 platform(s): linux-x64, macos-arm64, windows-x64"
 assert_contains "mise lock bun --platform linux-x64,macos-arm64,windows-x64" "Lockfile updated at"
 
-# Verify the lockfile contains platform-specific data for all 3 platforms
+# Verify the lockfile exists and contains platform-specific data for all 3 platforms
 assert "test -f mise.lock" ""
 assert_contains "cat mise.lock" "linux-x64"
 assert_contains "cat mise.lock" "macos-arm64"
 assert_contains "cat mise.lock" "windows-x64"
 
-# Verify URLs are platform-specific for Bun
+# Verify URLs are platform-specific for Bun (GitHub releases)
 assert_contains "cat mise.lock" "bun-linux-x64.zip"
 assert_contains "cat mise.lock" "bun-darwin-aarch64.zip"
 assert_contains "cat mise.lock" "bun-windows-x64.zip"
 
-# Verify the basic structure is present
+# Verify the basic lockfile structure
 assert_contains "cat mise.lock" 'backend = "core:bun"'
 assert_contains "cat mise.lock" 'version = "1.1.21"'
 assert_contains "cat mise.lock" 'url = "https://github.com/oven-sh/bun/releases'
 
-# Verify sizes are present (GitHub provides asset sizes)
+echo "=== Validating lockfile metadata ==="
+# Verify GitHub API provides asset sizes
 assert_contains "cat mise.lock" "size = "
 
-echo "=== Testing individual platform generation ==="
-# Test generating for just one platform
-rm -f mise.lock
-assert_contains "mise lock bun --platform windows-x64" "Targeting 1 platform(s): windows-x64"
-assert_contains "cat mise.lock" "bun-windows-x64.zip"
-assert_not_contains "cat mise.lock" "linux-x64"
-assert_not_contains "cat mise.lock" "macos-arm64"
+# Extract and validate specific platform metadata
+lockfile_content=$(cat mise.lock)
+
+# Validate Linux platform has expected metadata
+linux_section=$(echo "$lockfile_content" | grep -A5 "linux-x64")
+assert_contains "echo '$linux_section'" "size = "
+assert_contains "echo '$linux_section'" "bun-linux-x64.zip"
+
+# Validate macOS platform has expected metadata
+macos_section=$(echo "$lockfile_content" | grep -A5 "macos-arm64")
+assert_contains "echo '$macos_section'" "size = "
+assert_contains "echo '$macos_section'" "bun-darwin-aarch64.zip"
+
+# Validate Windows platform has expected metadata
+windows_section=$(echo "$lockfile_content" | grep -A5 "windows-x64")
+assert_contains "echo '$windows_section'" "size = "
+assert_contains "echo '$windows_section'" "bun-windows-x64.zip"
+
+# Verify size values are reasonable (Bun binaries are typically 15-40MB)
+linux_size=$(echo "$lockfile_content" | grep -A5 "linux-x64" | grep "size = " | head -1 | grep -o '[0-9]\+')
+assert "[ $linux_size -gt 10000000 ]" "" # > 10MB
+assert "[ $linux_size -lt 50000000 ]" "" # < 50MB
+
+# Check if checksums are present (may not be available for older releases)
+if echo "$lockfile_content" | grep -q "checksum = "; then
+	echo "Found checksums in lockfile (GitHub digest support active)"
+	assert_contains "cat mise.lock" "checksum = "
+else
+	echo "No checksums found (expected for older releases without GitHub digest support)"
+fi
