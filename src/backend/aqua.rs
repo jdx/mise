@@ -256,9 +256,12 @@ impl Backend for AquaBackend {
         if let Ok(pkg) = AQUA_REGISTRY.package(&self.id).await {
             if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
                 use crate::github::ReleaseType;
+                // Generate a basic asset pattern based on common patterns
+                // Since Aqua handles the specific asset selection, use a generic pattern
+                let asset_pattern = Some(format!("*"));
                 return Ok(Some(GithubReleaseConfig {
                     repo: format!("{}/{}", pkg.repo_owner, pkg.repo_name),
-                    asset_pattern: None, // Let Aqua's asset detection handle this
+                    asset_pattern,
                     release_type: ReleaseType::GitHub,
                     tag_prefix: pkg.version_prefix.clone(),
                 }));

@@ -8,3 +8,18 @@ assert_contains "mise x -- rg --version" "ripgrep 14.1.0"
 assert "mise use github:nats-io/natscli@0.2.3"
 assert "mise which nats"
 assert_contains "mise x -- nats --version" "0.2.3"
+
+# Test GitHub backend with mise lock
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+cat <<EOF >mise.toml
+[tools]
+"github:BurntSushi/ripgrep" = "14.1.0"
+EOF
+
+touch mise.lock
+mise install
+assert_contains "cat mise.lock" '[[tools."github:BurntSushi/ripgrep"]]'
+assert_contains "cat mise.lock" 'version = "14.1.0"'
+assert_contains "cat mise.lock" 'backend = "github:BurntSushi/ripgrep"'

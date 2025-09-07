@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::backend::Backend;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -233,7 +234,11 @@ impl Backend for RubyPlugin {
     ) -> Result<Option<GithubReleaseConfig>> {
         Ok(Some(GithubReleaseConfig {
             repo: "oneclick/rubyinstaller2".to_string(),
-            asset_pattern: Some(format!("rubyinstaller-{}-1-{arch}.7z", tv.version)),
+            asset_pattern: Some(format!(
+                "rubyinstaller-{}-1-{}.7z",
+                tv.version,
+                target.arch_name()
+            )),
             release_type: ReleaseType::GitHub,
             tag_prefix: Some("RubyInstaller-".to_string()),
         }))

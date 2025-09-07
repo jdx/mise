@@ -18,3 +18,17 @@ assert_contains "MISE_USE_VERSIONS_HOST=0 mise ls-remote aqua:sharkdp/hyperfine"
 1.9.0
 1.10.0
 1.11.0"
+
+# Test Aqua backend with mise lock
+export MISE_LOCKFILE=1
+
+cat <<EOF >mise.toml
+[tools]
+"age" = "1.2.0"
+EOF
+
+touch mise.lock
+mise install
+assert_contains "cat mise.lock" '[[tools.age]]'
+assert_contains "cat mise.lock" 'version = "1.2.0"'
+assert_contains "cat mise.lock" 'backend = "aqua:FiloSottile/age"'
