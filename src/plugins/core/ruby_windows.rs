@@ -236,7 +236,7 @@ impl Backend for RubyPlugin {
             repo: "oneclick/rubyinstaller2".to_string(),
             asset_pattern: format!("rubyinstaller-{}-1-{}.7z", tv.version, target.arch_name()),
             release_type: ReleaseType::GitHub,
-            tag_prefix: Some("RubyInstaller-".to_string()),
+            tag: Some(format!("RubyInstaller-{}", tv.version)),
         }))
     }
 }

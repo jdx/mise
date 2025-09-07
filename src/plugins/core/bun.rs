@@ -133,13 +133,13 @@ impl Backend for BunPlugin {
         // Pattern: bun-{os}-{arch}.zip (where arch may include variants like -musl, -baseline)
         let os_name = Self::map_os_to_bun(target.os_name());
         let arch_name = Self::get_bun_arch_for_target(target);
-        let asset_pattern = format!("bun-{os_name}-{arch_name}.zip");
+        let asset = format!("bun-{os_name}-{arch_name}.zip");
 
         Ok(Some(crate::github::GithubReleaseConfig {
             repo: "oven-sh/bun".to_string(),
-            asset_pattern,
+            asset,
             release_type: crate::github::ReleaseType::GitHub,
-            tag_prefix: Some("bun-v".to_string()),
+            tag: format!("bun-v{}", tv.version),
         }))
     }
 }

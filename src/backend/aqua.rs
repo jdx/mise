@@ -258,7 +258,7 @@ impl Backend for AquaBackend {
                 use crate::github::ReleaseType;
 
                 // Try to determine the actual asset name that would be used
-                let asset_pattern = match pkg.r#type {
+                let asset = match pkg.r#type {
                     AquaPackageType::GithubRelease => {
                         // Try to get the actual asset name by using the same logic as installation
                         match self.get_actual_asset_name(&pkg, &tv.version).await {
@@ -278,11 +278,18 @@ impl Backend for AquaBackend {
                     }
                 };
 
+                // Construct the actual tag from version prefix and version
+                let tag = if let Some(ref prefix) = pkg.version_prefix {
+                    format!("{}{}", prefix, tv.version)
+                } else {
+                    format!("v{}", tv.version)
+                };
+
                 return Ok(Some(GithubReleaseConfig {
                     repo: format!("{}/{}", pkg.repo_owner, pkg.repo_name),
-                    asset_pattern,
+                    asset,
                     release_type: ReleaseType::GitHub,
-                    tag_prefix: pkg.version_prefix.clone(),
+                    tag,
                 }));
             }
         }

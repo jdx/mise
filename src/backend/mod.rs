@@ -900,7 +900,7 @@ pub trait Backend: Debug + Send + Sync {
     async fn resolve_lock_info_from_github_release(
         &self,
         release_info: &crate::github::GithubReleaseConfig,
-        tv: &ToolVersion,
+        _tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         debug!(
@@ -911,21 +911,14 @@ pub trait Backend: Debug + Send + Sync {
         match release_info.release_type {
             crate::github::ReleaseType::GitHub => {
                 // Build the asset filename from the pattern
-                let filename = release_info.asset_pattern.as_str();
+                let filename = release_info.asset.as_str();
 
                 debug!("Looking for GitHub asset: {}", filename);
 
-                // Build the tag name
-                let tag = if let Some(prefix) = &release_info.tag_prefix {
-                    format!("{}{}", prefix, tv.version)
-                } else {
-                    format!("v{}", tv.version)
-                };
-
-                debug!("Using GitHub tag: {}", tag);
+                debug!("Using GitHub tag: {}", release_info.tag);
 
                 // Get release info from GitHub API
-                match crate::github::get_release(&release_info.repo, &tag).await {
+                match crate::github::get_release(&release_info.repo, &release_info.tag).await {
                     Ok(release) => {
                         debug!("Found GitHub release with {} assets", release.assets.len());
 
@@ -939,7 +932,7 @@ pub trait Backend: Debug + Send + Sync {
                             // Build the download URL
                             let url = format!(
                                 "https://github.com/{}/releases/download/{}/{}",
-                                release_info.repo, tag, filename
+                                release_info.repo, release_info.tag, filename
                             );
 
                             // If we have a digest from GitHub API, use it directly
@@ -980,18 +973,21 @@ pub trait Backend: Debug + Send + Sync {
                                 }
                             }
                         } else {
-                            warn!("Asset '{}' not found in release '{}'", filename, tag);
+                            warn!(
+                                "Asset '{}' not found in release '{}'",
+                                filename, release_info.tag
+                            );
                         }
                     }
                     Err(e) => {
                         debug!(
                             "Failed to get GitHub release {}/{}: {}",
-                            release_info.repo, tag, e
+                            release_info.repo, release_info.tag, e
                         );
                         // Fall back to constructed URL only
                         let url = format!(
                             "https://github.com/{}/releases/download/{}/{}",
-                            release_info.repo, tag, filename
+                            release_info.repo, release_info.tag, filename
                         );
                         return Ok(PlatformInfo {
                             url: Some(url),
@@ -1004,7 +1000,7 @@ pub trait Backend: Debug + Send + Sync {
             crate::github::ReleaseType::GitLab => {
                 debug!("GitLab release support not yet implemented");
                 // TODO: Implement GitLab support
-                let asset_url = &release_info.asset_pattern;
+                let asset_url = &release_info.asset;
 
                 return Ok(PlatformInfo {
                     url: Some(asset_url.clone()),

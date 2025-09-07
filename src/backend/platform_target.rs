@@ -32,6 +32,12 @@ impl PlatformTarget {
     }
 }
 
+impl Default for PlatformTarget {
+    fn default() -> Self {
+        Self::from_current()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
