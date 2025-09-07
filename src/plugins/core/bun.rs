@@ -130,9 +130,9 @@ impl Backend for BunPlugin {
         let version = &tv.version;
 
         // Build the asset pattern for Bun's GitHub releases
-        // Pattern: bun-{os}-{arch}.zip
+        // Pattern: bun-{os}-{arch}.zip (where arch may include variants like -musl, -baseline)
         let os_name = Self::map_os_to_bun(target.os_name());
-        let arch_name = Self::map_arch_to_bun(target.arch_name());
+        let arch_name = Self::get_bun_arch_for_target(target);
         let asset_pattern = format!("bun-{os_name}-{arch_name}.zip");
 
         Ok(Some(GitHubReleaseInfo {
@@ -164,6 +164,24 @@ impl BunPlugin {
             "x64" => "x64",
             "arm64" | "aarch64" => "aarch64",
             other => other,
+        }
+    }
+
+    /// Get the full Bun arch string for a target platform
+    /// This handles musl, baseline, and other variants based on platform qualifiers
+    fn get_bun_arch_for_target(target: &PlatformTarget) -> String {
+        let base_arch = Self::map_arch_to_bun(target.arch_name());
+
+        // Handle qualifiers like musl, baseline, etc.
+        if let Some(qualifier) = target.qualifier() {
+            match qualifier {
+                "musl" => format!("{}-musl", base_arch),
+                "musl-baseline" => format!("{}-musl-baseline", base_arch),
+                "baseline" => format!("{}-baseline", base_arch),
+                other => format!("{}-{}", base_arch, other),
+            }
+        } else {
+            base_arch.to_string()
         }
     }
 
