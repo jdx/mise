@@ -433,8 +433,6 @@ impl UnifiedGitBackend {
             tag_name.to_string()
         }
     }
-
-    // ========== Lockfile Metadata Fetching Implementation ==========
 }
 
 #[cfg(test)]
