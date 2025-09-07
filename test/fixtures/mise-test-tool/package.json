@@ -7,9 +7,18 @@
     "mise-test-tool": "bin/mise-test-tool"
   },
   "scripts": {
-    "test": "node bin/mise-test-tool --version"
+    "test": "node bin/mise-test-tool --version",
+    "release": "npm run release:tarball && npm run release:gh",
+    "release:tarball": "cd .. && tar -czf mise-test-tool-v$npm_package_version.tar.gz mise-test-tool/",
+    "release:gh": "gh release create v$npm_package_version --title \"mise-test-tool v$npm_package_version\" --notes \"Release v$npm_package_version of mise-test-tool for lockfile development and testing.\" ../mise-test-tool-v$npm_package_version.tar.gz"
   },
-  "keywords": ["mise", "test", "tool", "lockfile", "multi-platform"],
+  "keywords": [
+    "mise",
+    "test",
+    "tool",
+    "lockfile",
+    "multi-platform"
+  ],
   "author": "Mise Contributors",
   "license": "MIT",
   "engines": {
