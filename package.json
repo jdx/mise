@@ -1,0 +1,26 @@
+{
+  "name": "mise-test-tool",
+  "version": "1.0.0",
+  "description": "Test tool for mise lockfile development and multi-platform testing",
+  "main": "bin/mise-test-tool",
+  "bin": {
+    "mise-test-tool": "bin/mise-test-tool"
+  },
+  "scripts": {
+    "test": "node bin/mise-test-tool --version"
+  },
+  "keywords": ["mise", "test", "tool", "lockfile", "multi-platform"],
+  "author": "Mise Contributors",
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mise-plugins/mise-test-tool.git"
+  },
+  "homepage": "https://github.com/mise-plugins/mise-test-tool",
+  "bugs": {
+    "url": "https://github.com/mise-plugins/mise-test-tool/issues"
+  }
+}
