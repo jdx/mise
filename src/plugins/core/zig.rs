@@ -208,13 +208,7 @@ impl Backend for ZigPlugin {
             other => other,
         };
 
-        let zig_os = match target.os_name() {
-            "macos" => "macos",
-            "linux" => "linux",
-            "freebsd" => "freebsd",
-            "windows" => "windows",
-            other => other,
-        };
+        let zig_os = target.os_name();
 
         // Reuse the existing JSON-based URL fetching logic
         let json_url = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
