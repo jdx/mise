@@ -3492,7 +3492,7 @@ yamllint.test = ["yamllint --version", "yamllint {{version}}"]
 yamlscript.description = "YS — YAML Done Wisely"
 yamlscript.backends = [
     "aqua:yaml/yamlscript",
-    "ubi:yaml/yamlscript[matching_regex=^ys]",
+    "ubi:yaml/yamlscript[matching_regex=^ys,extract_all=true]",
     "asdf:mise-plugins/mise-yamlscript"
 ]
 yamlscript.test = ["ys --version", "{{version}}"]
