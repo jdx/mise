@@ -196,16 +196,7 @@ impl BunPlugin {
 }
 
 fn os() -> &'static str {
-    let os_name = if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "windows") {
-        "windows"
-    } else {
-        &OS
-    };
-    BunPlugin::map_os_to_bun(os_name)
+    BunPlugin::map_os_to_bun(&OS)
 }
 
 fn arch() -> &'static str {

@@ -689,16 +689,7 @@ fn make_install_cmd() -> String {
 }
 
 fn os() -> &'static str {
-    let os_name = if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "windows") {
-        "windows"
-    } else {
-        built_info::CFG_OS
-    };
-    NodePlugin::map_os(os_name)
+    NodePlugin::map_os(built_info::CFG_OS)
 }
 
 fn arch(settings: &Settings) -> &str {
