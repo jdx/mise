@@ -217,8 +217,8 @@ impl dyn ConfigFile {
     }
 }
 
-fn init(path: &Path) -> Arc<dyn ConfigFile> {
-    match detect_config_file_type(path) {
+async fn init(path: &Path) -> Arc<dyn ConfigFile> {
+    match detect_config_file_type(path).await {
         Some(ConfigFileType::MiseToml) => Arc::new(MiseToml::init(path)),
         Some(ConfigFileType::ToolVersions) => Arc::new(ToolVersions::init(path)),
         Some(ConfigFileType::IdiomaticVersion) => {
@@ -228,30 +228,30 @@ fn init(path: &Path) -> Arc<dyn ConfigFile> {
     }
 }
 
-pub fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
+pub async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
     let path = if path.is_dir() {
         path.join(&*env::MISE_DEFAULT_CONFIG_FILENAME)
     } else {
         path.into()
     };
     let cf = match path.exists() {
-        true => parse(&path)?,
-        false => init(&path),
+        true => parse(&path).await?,
+        false => init(&path).await,
     };
     Ok(cf)
 }
 
-pub fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
+pub async fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
     if let Ok(settings) = Settings::try_get() {
         if settings.paranoid {
             trust_check(path)?;
         }
     }
-    match detect_config_file_type(path) {
+    match detect_config_file_type(path).await {
         Some(ConfigFileType::MiseToml) => Ok(Arc::new(MiseToml::from_file(path)?)),
         Some(ConfigFileType::ToolVersions) => Ok(Arc::new(ToolVersions::from_file(path)?)),
         Some(ConfigFileType::IdiomaticVersion) => {
-            Ok(Arc::new(IdiomaticVersionFile::from_file(path)?))
+            Ok(Arc::new(IdiomaticVersionFile::from_file(path).await?))
         }
         #[allow(clippy::box_default)]
         _ => Ok(Arc::new(MiseToml::default())),
@@ -462,24 +462,29 @@ fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
     Ok(hash == actual)
 }
 
-fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
+async fn filename_is_idiomatic(file_name: String) -> bool {
+    for b in backend::list() {
+        match b.idiomatic_filenames().await {
+            Ok(filenames) => {
+                if filenames.contains(&file_name) {
+                    return true;
+                }
+            }
+            Err(e) => {
+                debug!("idiomatic_filenames failed for {}: {:?}", b, e);
+            }
+        }
+    }
+    false
+}
+
+async fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
     match path
         .file_name()
         .and_then(|f| f.to_str())
         .unwrap_or("mise.toml")
     {
-        f if backend::list()
-            .iter()
-            .any(|b| match b.idiomatic_filenames() {
-                Ok(filenames) => filenames.contains(&f.to_string()),
-                Err(e) => {
-                    debug!("idiomatic_filenames failed for {}: {:?}", b, e);
-                    false
-                }
-            }) =>
-        {
-            Some(ConfigFileType::IdiomaticVersion)
-        }
+        f if filename_is_idiomatic(f.to_string()).await => Some(ConfigFileType::IdiomaticVersion),
         f if env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
             .as_ref()
             .is_some_and(|o| o.contains(f)) =>

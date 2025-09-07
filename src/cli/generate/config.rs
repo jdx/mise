@@ -11,6 +11,6 @@ pub struct Config {
 
 impl Config {
     pub async fn run(self) -> Result<()> {
-        self.generate.run()
+        self.generate.run().await
     }
 }

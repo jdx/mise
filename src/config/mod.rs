@@ -443,20 +443,16 @@ impl Config {
         Ok(tasks)
     }
 
-    pub fn get_tracked_config_files(&self) -> Result<ConfigMap> {
-        let config_files = Tracker::list_all()?
-            .into_iter()
-            .map(|path| match config_file::parse(&path) {
-                Ok(cf) => Some((path, cf)),
-                Err(err) => {
-                    error!("Error loading config file: {:#}", err);
-                    None
+    pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
+        let mut config_files: ConfigMap = ConfigMap::default();
+        for path in Tracker::list_all()?.into_iter() {
+            match config_file::parse(&path).await {
+                Ok(cf) => {
+                    config_files.insert(path, cf);
                 }
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flatten()
-            .collect();
+                Err(err) => error!("Error loading config file: {:#}", err),
+            }
+        }
         Ok(config_files)
     }
 
@@ -737,7 +733,7 @@ async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
             if !tool_is_enabled(&*tool) {
                 return vec![];
             }
-            match tool.idiomatic_filenames() {
+            match tool.idiomatic_filenames().await {
                 Ok(filenames) => filenames
                     .iter()
                     .map(|f| (f.to_string(), tool.id().to_string()))
@@ -1121,38 +1117,33 @@ async fn load_all_config_files(
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<ConfigMap> {
     backend::load_tools().await?;
-    Ok(config_filenames
-        .iter()
-        .unique()
-        .map(|f| {
-            if f.is_dir() {
-                return Ok(None);
-            }
-            let cf = match parse_config_file(f, idiomatic_filenames) {
-                Ok(cfg) => cfg,
-                Err(err) => {
-                    if err.to_string().contains("are not trusted.") {
-                        warn!("{err}");
-                        return Ok(None);
-                    }
-                    return Err(err.wrap_err(format!(
-                        "error parsing config file: {}",
-                        style::ebold(display_path(f))
-                    )));
+    let mut config_map = ConfigMap::default();
+    for f in config_filenames.iter().unique() {
+        if f.is_dir() {
+            continue;
+        }
+        let cf = match parse_config_file(f, idiomatic_filenames).await {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                if err.to_string().contains("are not trusted.") {
+                    warn!("{err}");
+                    continue;
                 }
-            };
-            if let Err(err) = Tracker::track(f) {
-                warn!("tracking config: {err:#}");
+                return Err(err.wrap_err(format!(
+                    "error parsing config file: {}",
+                    style::ebold(display_path(f))
+                )));
             }
-            Ok(Some((f.clone(), cf)))
-        })
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect())
+        };
+        if let Err(err) = Tracker::track(f) {
+            warn!("tracking config: {err:#}");
+        }
+        config_map.insert(f.clone(), cf);
+    }
+    Ok(config_map)
 }
 
-fn parse_config_file(
+async fn parse_config_file(
     f: &PathBuf,
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<Arc<dyn ConfigFile>> {
@@ -1163,9 +1154,11 @@ fn parse_config_file(
                 .into_iter()
                 .filter(|f| plugin.contains(&f.to_string()))
                 .collect::<Vec<_>>();
-            IdiomaticVersionFile::parse(f.into(), tools).map(|f| Arc::new(f) as Arc<dyn ConfigFile>)
+            IdiomaticVersionFile::parse(f.into(), tools)
+                .await
+                .map(|f| Arc::new(f) as Arc<dyn ConfigFile>)
         }
-        None => config_file::parse(f),
+        None => config_file::parse(f).await,
     }
 }
 

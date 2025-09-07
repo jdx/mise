@@ -67,7 +67,7 @@ async fn all_hooks(config: &Arc<Config>) -> &'static Vec<(PathBuf, Hook)> {
             let prev_configs = &hook_env::PREV_SESSION.loaded_configs;
             let old_configs = prev_configs.difference(&cur_configs);
             for p in old_configs {
-                if let Ok(cf) = config_file::parse(p) {
+                if let Ok(cf) = config_file::parse(p).await {
                     if let Ok(h) = cf.hooks() {
                         hooks.extend(h.into_iter().map(|h| (cf.config_root(), h)));
                     }

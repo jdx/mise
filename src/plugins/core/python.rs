@@ -457,7 +457,7 @@ impl Backend for PythonPlugin {
         }
     }
 
-    fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![
             ".python-version".to_string(),
             ".python-versions".to_string(),
