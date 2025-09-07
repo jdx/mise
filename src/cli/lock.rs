@@ -27,7 +27,7 @@ pub struct Lock {
     /// e.g.: linux-x64,macos-arm64,windows-x64
     /// If not specified, all platforms already in lockfile will be updated
     #[clap(long, short, value_delimiter = ',', verbatim_doc_comment)]
-    pub platform: Vec<String>,
+    pub platforms: Vec<String>,
 
     /// Update all tools even if lockfile data already exists
     #[clap(long, short, verbatim_doc_comment)]
@@ -53,8 +53,8 @@ impl Lock {
         let lockfile_path = std::path::Path::new("mise.lock");
 
         // Parse target platforms if specified
-        let target_platforms = if !self.platform.is_empty() {
-            Platform::parse_multiple(&self.platform)?
+        let target_platforms = if !self.platforms.is_empty() {
+            Platform::parse_multiple(&self.platforms)?
         } else if lockfile_path.exists() {
             // If lockfile exists and no platforms specified, extract from lockfile
             let existing_lockfile = Lockfile::read(lockfile_path)?;
@@ -155,7 +155,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
   
   $ <bold>mise lock</bold>                           Update lockfile in current directory for all platforms
   $ <bold>mise lock node python</bold>              Update only node and python 
-  $ <bold>mise lock --platform linux-x64</bold>     Update only linux-x64 platform
+  $ <bold>mise lock --platforms linux-x64</bold>     Update only linux-x64 platform
   $ <bold>mise lock --dry-run</bold>                Show what would be updated or created
   $ <bold>mise lock --force</bold>                  Re-download and update even if data exists
 "#

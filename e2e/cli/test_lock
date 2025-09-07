@@ -83,6 +83,20 @@ EOF
 # When lockfile exists and no platform specified, should extract from lockfile
 assert_contains "mise lock --dry-run" "Targeting 1 platform(s): linux-x64"
 
+echo "=== Testing aqua cargo-binstall digest resolution ==="
+# Ensure that when using aqua for cargo-binstall we resolve GitHub digest (sha256) not fallback blake3
+cat <<EOF >mise.toml
+[tools]
+cargo-binstall = "1.15.3"
+EOF
+
+assert_contains "cat mise.lock" "[[tools.cargo-binstall]]"
+assert_contains "cat mise.lock" 'backend = "aqua:cargo-bins/cargo-binstall"'
+# Expect sha256 algorithm (from GitHub API), not blake3 fallback
+assert_contains "cat mise.lock" 'checksum = "sha256:'
+assert_not_contains "cat mise.lock" 'checksum = "blake3:'
+rm -f mise.toml mise.lock
+
 echo "=== Testing help and version info ==="
 # Test that help works
 assert_contains "mise lock --help" "Update lockfile checksums and URLs"
