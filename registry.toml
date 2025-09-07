@@ -357,7 +357,7 @@ bosh.test = ["bosh --version", "version {{version}}"]
 bosh-backup-and-restore.aliases = ["bbr"]
 bosh-backup-and-restore.description = "BOSH Backup and Restore is a CLI utility for orchestrating the backup and restore of BOSH deployments and BOSH directors"
 bosh-backup-and-restore.backends = [
-    "github:cloudfoundry-incubator/bosh-backup-and-restore[matching=bbr-1]",
+    "ubi:cloudfoundry-incubator/bosh-backup-and-restore[matching=bbr-1]",
     "asdf:mise-plugins/tanzu-plug-in-for-asdf"
 ]
 bosh-backup-and-restore.os = ["linux", "macos"]
@@ -615,7 +615,7 @@ cloudflared.backends = [
 cloudflared.test = ["cloudflared -v", "cloudflared version {{version}}"]
 clusterawsadm.description = "clusterawsadm provides helpers for bootstrapping Kubernetes Cluster API Provider AWS"
 clusterawsadm.backends = [
-    "github:kubernetes-sigs/cluster-api-provider-aws",
+    "ubi:kubernetes-sigs/cluster-api-provider-aws",
     "asdf:kahun/asdf-clusterawsadm"
 ]
 clusterawsadm.test = [
@@ -1020,7 +1020,7 @@ elixir.depends = ["erlang"]
 elixir-ls.description = "A frontend-independent IDE 'smartness' server for Elixir. Implements the 'Language Server Protocol' standard and provides debugger support via the 'Debug Adapter Protocol'"
 elixir-ls.backends = ["asdf:mise-plugins/mise-elixir-ls"]
 elm.description = "Compiler for Elm, a functional language for reliable webapps"
-elm.backends = ["github:elm/compiler[exe=elm]", "asdf:asdf-community/asdf-elm"]
+elm.backends = ["ubi:elm/compiler[exe=elm]", "asdf:asdf-community/asdf-elm"]
 elm.test = ["elm --version", "{{version}}"]
 emsdk.description = "Emscripten is a complete compiler toolchain to WebAssembly, using LLVM, with a special focus on speed, size, and the Web platform"
 emsdk.backends = ["asdf:mise-plugins/mise-emsdk"]
@@ -1269,7 +1269,7 @@ gitversion.description = "From git log to SemVer in no time"
 gitversion.backends = ["aqua:gittools/gitversion", "ubi:gittools/gitversion"]
 glab.description = "gitlab cli"
 glab.backends = [
-    {full = "github:gitlab-org/cli[provider=gitlab,exe=glab]", platforms = [
+    {full = "ubi:gitlab-org/cli[provider=gitlab,exe=glab]", platforms = [
         "linux",
         "macos"
     ]},
@@ -1523,7 +1523,7 @@ helm-ct.description = "CLI tool for linting and testing Helm charts"
 helm-ct.backends = ["aqua:helm/chart-testing", "asdf:tablexi/asdf-helm-ct"]
 helm-diff.description = "A helm plugin that shows a diff explaining what a helm upgrade would change"
 helm-diff.backends = [
-    "github:databus23/helm-diff[exe=diff,rename_exe=helm-diff]",
+    "ubi:databus23/helm-diff[exe=diff,rename_exe=helm-diff]",
     "asdf:mise-plugins/mise-helm-diff"
 ]
 helm-diff.test = ["helm-diff version", "{{version}}"]
@@ -2176,7 +2176,7 @@ mdbook.backends = ["aqua:rust-lang/mdBook", "asdf:cipherstash/asdf-mdbook"]
 mdbook.test = ["mdbook --version", "mdbook v{{version}}"]
 mdbook-linkcheck.description = "A backend for `mdbook` which will check your links for you"
 mdbook-linkcheck.backends = [
-    "github:Michael-F-Bryan/mdbook-linkcheck",
+    "ubi:Michael-F-Bryan/mdbook-linkcheck",
     "asdf:mise-plugins/mise-mdbook-linkcheck"
 ]
 mdbook-linkcheck.test = [
@@ -2399,7 +2399,7 @@ operator-sdk.backends = [
 ]
 opsgenie-lamp.description = "OpsGenie Lamp with Go SDK"
 opsgenie-lamp.backends = [
-    "github:opsgenie/opsgenie-lamp",
+    "ubi:opsgenie/opsgenie-lamp",
     "asdf:mise-plugins/mise-opsgenie-lamp"
 ]
 opsgenie-lamp.test = [
@@ -3265,7 +3265,7 @@ tuist.description = "A toolchain to generate Xcode projects from Swift packages"
 tuist.backends = ["asdf:mise-plugins/mise-tuist"]
 tuist.os = ["macos"]
 tusd.description = "Reference server implementation in Go of tus: the open protocol for resumable file uploads"
-tusd.backends = ["github:tus/tusd"]
+tusd.backends = ["ubi:tus/tusd"]
 tusd.test = ["tusd --version | head -n1", "Version: v{{version}}"]
 typos.description = "Source code spell checker"
 typos.backends = [
