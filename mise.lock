@@ -202,11 +202,11 @@ backend = "core:ruby"
 
 [[tools.shellcheck]]
 version = "0.11.0"
-backend = "ubi:koalaman/shellcheck"
+backend = "aqua:koalaman/shellcheck"
 
 [[tools.shfmt]]
 version = "3.12.0"
-backend = "asdf:shfmt"
+backend = "aqua:mvdan/sh"
 
 [[tools.slsa-verifier]]
 version = "2.7.1"
