@@ -63,6 +63,7 @@ mod minisign;
 pub(crate) mod parallel;
 mod path;
 mod path_env;
+mod platform;
 mod plugins;
 mod rand;
 mod redactions;

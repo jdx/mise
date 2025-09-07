@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use crate::config::Config;
 use crate::file::display_path;
 use crate::lockfile::Lockfile;
+use crate::platform::Platform;
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
 use eyre::Result;
@@ -48,6 +49,21 @@ impl Lock {
         let settings = Settings::get();
         let config = Config::get().await?;
         settings.ensure_experimental("lock")?;
+
+        // Validate platforms if specified
+        if !self.platform.is_empty() {
+            let parsed_platforms = Platform::parse_multiple(&self.platform)?;
+            miseprintln!(
+                "{} Validated {} platform(s): {}",
+                style("→").green(),
+                parsed_platforms.len(),
+                parsed_platforms
+                    .iter()
+                    .map(|p| p.to_key())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
 
         // For Phase 1, just implement lockfile discovery and platform analysis
         self.analyze_lockfiles(&config).await?;
@@ -288,14 +304,30 @@ impl Lock {
             // If no platforms specified, target all platforms
             available_platforms.iter().cloned().collect()
         } else {
-            // Filter to only specified platforms that exist in lockfile
-            let specified_platforms: BTreeSet<String> = self.platform.iter().cloned().collect();
+            // Parse and validate specified platforms first, then filter
+            match Platform::parse_multiple(&self.platform) {
+                Ok(parsed_platforms) => {
+                    let specified_platforms: BTreeSet<String> =
+                        parsed_platforms.iter().map(|p| p.to_key()).collect();
 
-            available_platforms
-                .iter()
-                .filter(|platform| specified_platforms.contains(*platform))
-                .cloned()
-                .collect()
+                    available_platforms
+                        .iter()
+                        .filter(|platform| specified_platforms.contains(*platform))
+                        .cloned()
+                        .collect()
+                }
+                Err(_) => {
+                    // If parsing fails, fall back to original logic
+                    let specified_platforms: BTreeSet<String> =
+                        self.platform.iter().cloned().collect();
+
+                    available_platforms
+                        .iter()
+                        .filter(|platform| specified_platforms.contains(*platform))
+                        .cloned()
+                        .collect()
+                }
+            }
         }
     }
 }
