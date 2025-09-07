@@ -12,6 +12,7 @@ use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
+use crate::github::GithubReleaseConfig;
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::plugins::core::CORE_PLUGINS;
@@ -59,23 +60,6 @@ pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<String>>;
-
-/// Information about a GitHub/GitLab release for platform-specific tools
-#[derive(Debug, Clone)]
-pub struct GitHubReleaseInfo {
-    pub repo: String,
-    pub asset_pattern: Option<String>,
-    pub api_url: Option<String>,
-    pub release_type: ReleaseType,
-    /// Tag prefix (e.g., "v" for "v1.2.3", "bun-v" for "bun-v1.2.3")
-    pub tag_prefix: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub enum ReleaseType {
-    GitHub,
-    GitLab,
-}
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
@@ -847,7 +831,7 @@ pub trait Backend: Debug + Send + Sync {
         &self,
         _tv: &ToolVersion,
         _target: &PlatformTarget,
-    ) -> Result<Option<GitHubReleaseInfo>> {
+    ) -> Result<Option<GithubReleaseConfig>> {
         Ok(None) // Default: no GitHub release info available
     }
 
@@ -857,8 +841,16 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
+        debug!(
+            "Resolving lockfile info for {} {} on {:?}",
+            self.ba().tool_name,
+            tv.version,
+            target
+        );
+
         // Try simple tarball approach first
         if let Some(tarball_url) = self.get_tarball_url(tv, target).await? {
+            debug!("Using tarball URL approach: {}", tarball_url);
             return self
                 .resolve_lock_info_from_tarball(&tarball_url, tv, target)
                 .await;
@@ -866,12 +858,17 @@ pub trait Backend: Debug + Send + Sync {
 
         // Try GitHub/GitLab release approach second
         if let Some(release_info) = self.get_github_release_info(tv, target).await? {
+            debug!(
+                "Using GitHub release approach for repo: {}",
+                release_info.repo
+            );
             return self
                 .resolve_lock_info_from_github_release(&release_info, tv, target)
                 .await;
         }
 
         // Fall back to basic platform info without URLs/metadata
+        debug!("No tarball URL or GitHub release info available, using fallback");
         self.resolve_lock_info_fallback(tv, target).await
     }
 
@@ -883,15 +880,24 @@ pub trait Backend: Debug + Send + Sync {
         _tv: &ToolVersion,
         _target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        // For now, just return basic info with the URL
-        // In a full implementation, this would:
-        // 1. Make HEAD request to get content-length
-        // 2. Potentially download to get checksum
-        // 3. Handle any URL-specific logic
+        debug!("Resolving lockfile info from tarball: {}", tarball_url);
+
+        // Get checksum and size by downloading and hashing the file
+        let (checksum, size) = match self.download_and_hash_file(tarball_url).await {
+            Ok((calculated_checksum, actual_size)) => (
+                Some(format!("blake3:{}", calculated_checksum)),
+                Some(actual_size),
+            ),
+            Err(e) => {
+                warn!("Failed to download and hash {}: {}", tarball_url, e);
+                (None, None)
+            }
+        };
+
         Ok(PlatformInfo {
             url: Some(tarball_url.to_string()),
-            checksum: None, // TODO: Implement checksum fetching
-            size: None,     // TODO: Implement size fetching via HEAD request
+            checksum,
+            size,
         })
     }
 
@@ -899,76 +905,106 @@ pub trait Backend: Debug + Send + Sync {
     /// Queries release API, finds platform-specific assets, and populates PlatformInfo
     async fn resolve_lock_info_from_github_release(
         &self,
-        release_info: &GitHubReleaseInfo,
+        release_info: &crate::github::GithubReleaseConfig,
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
+        debug!(
+            "Resolving lockfile info from GitHub release for {}/{} on {:?}",
+            release_info.repo, tv.version, target
+        );
+
         match release_info.release_type {
-            ReleaseType::GitHub => {
+            crate::github::ReleaseType::GitHub => {
                 // Build the asset filename from the pattern
                 if let Some(asset_pattern) = &release_info.asset_pattern {
                     let filename = asset_pattern
                         .replace("{os}", target.os_name())
                         .replace("{arch}", target.arch_name());
 
-                    // Build the full URL
-                    let url = if let Some(api_url) = &release_info.api_url {
-                        format!("{}/{}", api_url, filename)
-                    } else {
-                        format!(
-                            "https://github.com/{}/releases/download/v{}/{}",
-                            release_info.repo, tv.version, filename
-                        )
-                    };
+                    debug!("Looking for GitHub asset: {}", filename);
 
-                    // Get metadata from GitHub API (size and digest if available)
+                    // Build the tag name
                     let tag = if let Some(prefix) = &release_info.tag_prefix {
                         format!("{}{}", prefix, tv.version)
                     } else {
                         format!("v{}", tv.version)
                     };
-                    match crate::github::get_release_asset_metadata(
-                        &release_info.repo,
-                        &tag,
-                        &filename,
-                    )
-                    .await
-                    {
-                        Ok((size, digest)) => {
-                            // If we have a digest from GitHub API, use it directly
-                            if digest.is_some() {
-                                return Ok(PlatformInfo {
-                                    url: Some(url),
-                                    checksum: digest, // Use SHA256 digest from GitHub API
-                                    size: Some(size),
-                                });
-                            } else {
-                                // Fallback: Download file and calculate checksum ourselves
-                                match self.download_and_hash_file(&url).await {
-                                    Ok(calculated_checksum) => {
-                                        return Ok(PlatformInfo {
-                                            url: Some(url),
-                                            checksum: Some(format!(
-                                                "sha256:{}",
+
+                    debug!("Using GitHub tag: {}", tag);
+
+                    // Get release info from GitHub API
+                    match crate::github::get_release(&release_info.repo, &tag).await {
+                        Ok(release) => {
+                            debug!("Found GitHub release with {} assets", release.assets.len());
+
+                            // Find the matching asset
+                            if let Some(asset) = release.assets.iter().find(|a| a.name == filename)
+                            {
+                                debug!(
+                                    "Found matching asset: {} (size: {}, digest: {:?})",
+                                    asset.name, asset.size, asset.digest
+                                );
+
+                                // Build the download URL
+                                let url = format!(
+                                    "https://github.com/{}/releases/download/{}/{}",
+                                    release_info.repo, tag, filename
+                                );
+
+                                // If we have a digest from GitHub API, use it directly
+                                if let Some(ref digest) = asset.digest {
+                                    debug!("Using digest from GitHub API: {}", digest);
+                                    return Ok(PlatformInfo {
+                                        url: Some(url),
+                                        checksum: Some(format!("sha256:{}", digest)),
+                                        size: Some(asset.size),
+                                    });
+                                } else {
+                                    debug!(
+                                        "No digest available, will download and calculate checksum"
+                                    );
+                                    // Fallback: Download file and calculate checksum ourselves
+                                    match self.download_and_hash_file(&url).await {
+                                        Ok((calculated_checksum, actual_size)) => {
+                                            debug!(
+                                                "Calculated checksum: blake3:{}",
                                                 calculated_checksum
-                                            )),
-                                            size: Some(size),
-                                        });
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to download and hash {}: {}", url, e);
-                                        // Still return the info but without checksum
-                                        return Ok(PlatformInfo {
-                                            url: Some(url),
-                                            checksum: None,
-                                            size: Some(size),
-                                        });
+                                            );
+                                            return Ok(PlatformInfo {
+                                                url: Some(url),
+                                                checksum: Some(format!(
+                                                    "blake3:{}",
+                                                    calculated_checksum
+                                                )),
+                                                size: Some(actual_size),
+                                            });
+                                        }
+                                        Err(e) => {
+                                            warn!("Failed to download and hash {}: {}", url, e);
+                                            // Still return the info but without checksum
+                                            return Ok(PlatformInfo {
+                                                url: Some(url),
+                                                checksum: None,
+                                                size: Some(asset.size),
+                                            });
+                                        }
                                     }
                                 }
+                            } else {
+                                warn!("Asset '{}' not found in release '{}'", filename, tag);
                             }
                         }
-                        Err(_) => {
-                            // Fall back to URL only if GitHub API fails
+                        Err(e) => {
+                            debug!(
+                                "Failed to get GitHub release {}/{}: {}",
+                                release_info.repo, tag, e
+                            );
+                            // Fall back to constructed URL only
+                            let url = format!(
+                                "https://github.com/{}/releases/download/{}/{}",
+                                release_info.repo, tag, filename
+                            );
                             return Ok(PlatformInfo {
                                 url: Some(url),
                                 checksum: None,
@@ -978,7 +1014,8 @@ pub trait Backend: Debug + Send + Sync {
                     }
                 }
             }
-            ReleaseType::GitLab => {
+            crate::github::ReleaseType::GitLab => {
+                debug!("GitLab release support not yet implemented");
                 // TODO: Implement GitLab support
                 if let Some(asset_pattern) = &release_info.asset_pattern {
                     let asset_url = asset_pattern
@@ -994,6 +1031,7 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
 
+        debug!("No asset pattern available for GitHub release");
         // Fallback - no asset pattern available
         Ok(PlatformInfo {
             url: None,
@@ -1006,9 +1044,15 @@ pub trait Backend: Debug + Send + Sync {
     /// Returns minimal PlatformInfo without external URLs
     async fn resolve_lock_info_fallback(
         &self,
-        _tv: &ToolVersion,
-        _target: &PlatformTarget,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
+        debug!(
+            "Using fallback lockfile info for {} {} on {:?} - no external metadata available",
+            self.ba().tool_name,
+            tv.version,
+            target
+        );
         // This is the fallback - no external metadata available
         // The tool would need to be installed to generate platform info
         Ok(PlatformInfo {
@@ -1018,17 +1062,18 @@ pub trait Backend: Debug + Send + Sync {
         })
     }
 
-    /// Download a file and calculate its SHA256 checksum
+    /// Download a file and calculate its BLAKE3 checksum and size
     /// Used as fallback when GitHub API doesn't provide digest information
-    async fn download_and_hash_file(&self, url: &str) -> Result<String> {
+    async fn download_and_hash_file(&self, url: &str) -> Result<(String, u64)> {
         use crate::http::HTTP;
         use std::io::Write;
 
-        debug!("Downloading {} to calculate checksum", url);
+        debug!("Downloading {} to calculate checksum and size", url);
 
         // Download the file bytes
         let bytes = HTTP.get_bytes(url).await?;
         let bytes = bytes.as_ref();
+        let file_size = bytes.len() as u64;
 
         // Write to a temporary file for hashing
         let temp_dir = dirs::CACHE.join("lockfile_checksums");
@@ -1044,14 +1089,17 @@ pub trait Backend: Debug + Send + Sync {
             temp_file.flush()?;
         }
 
-        // Calculate SHA256 checksum
-        let checksum = hash::file_hash_sha256(&temp_path, None)?;
+        // Calculate BLAKE3 checksum
+        let checksum = hash::file_hash_blake3(&temp_path, None)?;
 
         // Clean up temporary file
         let _ = std::fs::remove_file(&temp_path);
 
-        debug!("Calculated checksum for {}: {}", url, checksum);
-        Ok(checksum)
+        debug!(
+            "Calculated checksum for {}: {} (size: {} bytes)",
+            url, checksum, file_size
+        );
+        Ok((checksum, file_size))
     }
 }
 

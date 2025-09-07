@@ -78,20 +78,10 @@ assert_contains "echo '$macos_url'" "https://nodejs.org/dist/v20.1.0/node-v20.1.
 windows_url=$(echo "$lockfile_content" | grep -A5 "windows-x64" | grep "url = " | grep -o 'https://[^"]*')
 assert_contains "echo '$windows_url'" "https://nodejs.org/dist/v20.1.0/node-v20.1.0-win-x64.zip"
 
-# Check if additional metadata is present (checksums, sizes)
-if echo "$lockfile_content" | grep -q "checksum = "; then
-	echo "Found checksums in lockfile"
-	assert_contains "cat mise.lock" "checksum = "
-else
-	echo "No checksums found (expected for Node.js - uses official mirrors without API metadata)"
-fi
-
-if echo "$lockfile_content" | grep -q "size = "; then
-	echo "Found sizes in lockfile"
-	assert_contains "cat mise.lock" "size = "
-else
-	echo "No sizes found (expected for Node.js - uses official mirrors without API metadata)"
-fi
+# Checksums and sizes are required - fail if missing
+echo "Verifying checksums and sizes are present in lockfile"
+assert_contains "cat mise.lock" "checksum = "
+assert_contains "cat mise.lock" "size = "
 
 mise use --rm node
 

@@ -61,10 +61,6 @@ linux_size=$(echo "$lockfile_content" | grep -A5 "linux-x64" | grep "size = " | 
 assert "[ $linux_size -gt 10000000 ]" "" # > 10MB
 assert "[ $linux_size -lt 50000000 ]" "" # < 50MB
 
-# Check if checksums are present (may not be available for older releases)
-if echo "$lockfile_content" | grep -q "checksum = "; then
-	echo "Found checksums in lockfile (GitHub digest support active)"
-	assert_contains "cat mise.lock" "checksum = "
-else
-	echo "No checksums found (expected for older releases without GitHub digest support)"
-fi
+# Checksums are required - fail if missing
+echo "Verifying checksums are present in lockfile"
+assert_contains "cat mise.lock" "checksum = "

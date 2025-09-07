@@ -39,6 +39,22 @@ pub struct GithubAsset {
     pub digest: Option<String>,
 }
 
+/// Configuration for GitHub release-based tools
+#[derive(Debug, Clone)]
+pub struct GithubReleaseConfig {
+    pub repo: String,
+    pub asset_pattern: Option<String>,
+    pub release_type: ReleaseType,
+    /// Tag prefix (e.g., "v" for "v1.2.3", "bun-v" for "bun-v1.2.3")
+    pub tag_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ReleaseType {
+    GitHub,
+    GitLab,
+}
+
 type CacheGroup<T> = HashMap<String, CacheManager<T>>;
 
 static RELEASES_CACHE: Lazy<RwLock<CacheGroup<Vec<GithubRelease>>>> = Lazy::new(Default::default);
@@ -209,25 +225,6 @@ fn next_page(headers: &HeaderMap) -> Option<String> {
 
 fn cache_dir() -> PathBuf {
     dirs::CACHE.join("github")
-}
-
-/// Get metadata (size, digest) for a specific asset from a GitHub release
-/// Returns (size, digest_opt) where digest is available since June 2025
-pub async fn get_release_asset_metadata(
-    repo: &str,
-    tag: &str,
-    asset_name: &str,
-) -> Result<(u64, Option<String>)> {
-    let release = get_release(repo, tag).await?;
-
-    // Find the requested asset
-    let asset = release
-        .assets
-        .iter()
-        .find(|a| a.name == asset_name)
-        .ok_or_else(|| eyre::eyre!("Asset '{}' not found in release '{}'", asset_name, tag))?;
-
-    Ok((asset.size, asset.digest.clone()))
 }
 
 pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
