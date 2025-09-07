@@ -12,50 +12,38 @@ dummy = "2.0.0"
 EOF
 
 echo "=== Testing lockfile creation use case ==="
-# Test when no lockfiles exist but mise.toml exists
-assert_contains "mise lock" "No lockfile found, would create"
-assert_contains "mise lock" "mise.lock"
+# Test when no lockfiles exist but mise.toml exists - should create lockfile
+assert_contains "mise lock" "Targeting 1 platform(s)"
+assert_contains "mise lock" "Lockfile updated at mise.lock"
 
-# Should detect the missing lockfile and show what would be created
-assert_contains "mise lock" "No lockfile found, would create"
-assert_contains "mise lock" "mise.lock"
-assert_contains "mise lock" "Would create lockfile with 2 tool(s): tiny, dummy"
-assert_contains "mise lock" "Would initialize 2 tool(s) in new lockfile"
+# Verify the lockfile was created
+assert "test -f mise.lock" ""
 
 echo "=== Testing dry-run mode for lockfile creation ==="
-# Test detailed dry-run output
+# Remove lockfile and test dry-run
+rm -f mise.lock
 output=$(mise lock --dry-run)
-assert_contains "echo '$output'" "✓ tiny (new lockfile)"
-assert_contains "echo '$output'" "✓ dummy (new lockfile)"
+assert_contains "echo '$output'" "Dry run - showing what would be processed"
+assert_contains "echo '$output'" "tiny"
+assert_contains "echo '$output'" "dummy"
 
 echo "=== Testing tool filtering for lockfile creation ==="
 # Test filtering by specific tool
-assert_contains "mise lock tiny" "Would initialize 1 tool(s) in new lockfile"
 output=$(mise lock tiny --dry-run)
-assert_contains "echo '$output'" "✓ tiny (new lockfile)"
-assert_not_contains "echo '$output'" "✓ dummy (new lockfile)"
+assert_contains "echo '$output'" "tiny"
+assert_not_contains "echo '$output'" "dummy"
 
-# Test filtering by multiple tools
-assert_contains "mise lock tiny dummy" "Would initialize 2 tool(s) in new lockfile"
+# Test actual creation with filtering
+rm -f mise.lock
+assert_contains "mise lock tiny" "Lockfile updated at mise.lock"
 
-# Test non-existent tool filtering
-assert_not_contains "mise lock nonexistent" "Would initialize"
-
-echo "=== Testing transition from creation to existing ==="
-# Create a lockfile - now it should show as existing instead of missing
-cat <<EOF >mise.lock
-[tools.tiny]
-version = "1.0.0"
-backend = "asdf:tiny"
-EOF
-
-# Should now show existing lockfile instead of missing
-assert_contains "mise lock" "Found lockfile"
-assert_not_contains "mise lock" "No lockfile found, would create"
+echo "=== Testing lockfile regeneration ==="
+# Test that existing lockfile gets updated
+assert_contains "mise lock" "Lockfile updated at mise.lock"
 
 echo "=== Testing platform filtering with existing lockfile ==="
 # Platform filtering should work with existing lockfile
-assert_contains "mise lock --platform linux-x64" "Would update"
+assert_contains "mise lock --platform linux-x64" "Targeting 1 platform(s): linux-x64"
 
 echo "=== Testing help for creation ==="
 # Help should mention both updating and creating
