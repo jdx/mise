@@ -1,11 +1,12 @@
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::backend::{get, platform_target::PlatformTarget};
 use crate::config::Config;
 use crate::file::display_path;
 use crate::lockfile::Lockfile;
 use crate::platform::Platform;
+use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
 use eyre::Result;

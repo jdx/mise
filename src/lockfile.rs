@@ -172,6 +172,199 @@ impl Lockfile {
     pub fn tools(&self) -> &BTreeMap<String, Vec<LockfileTool>> {
         &self.tools
     }
+
+    pub fn tools_mut(&mut self) -> &mut BTreeMap<String, Vec<LockfileTool>> {
+        &mut self.tools
+    }
+
+    pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let path = path.as_ref();
+        let content = self.to_toml_string();
+        file::write(path, content)?;
+        Ok(())
+    }
+
+    fn to_toml_string(&self) -> String {
+        let mut doc = toml_edit::DocumentMut::new();
+        let mut tools_table = toml_edit::Table::new();
+
+        for (tool_name, versions) in &self.tools {
+            let mut versions_array = toml_edit::Array::new();
+            for version in versions {
+                // Convert toml::Value to toml_edit::Value
+                let toml_value = version.clone().into_toml_value();
+                let toml_edit_value = self.convert_toml_value(toml_value);
+                versions_array.push(toml_edit_value);
+            }
+            tools_table.insert(
+                tool_name,
+                toml_edit::Item::Value(toml_edit::Value::Array(versions_array)),
+            );
+        }
+
+        doc.insert("tools", toml_edit::Item::Table(tools_table));
+        doc.to_string()
+    }
+
+    fn convert_toml_value(&self, value: toml::Value) -> toml_edit::Value {
+        match value {
+            toml::Value::String(s) => toml_edit::Value::String(toml_edit::Formatted::new(s)),
+            toml::Value::Integer(i) => toml_edit::Value::Integer(toml_edit::Formatted::new(i)),
+            toml::Value::Float(f) => toml_edit::Value::Float(toml_edit::Formatted::new(f)),
+            toml::Value::Boolean(b) => toml_edit::Value::Boolean(toml_edit::Formatted::new(b)),
+            toml::Value::Table(table) => {
+                let mut new_table = toml_edit::InlineTable::new();
+                for (k, v) in table {
+                    new_table.insert(&k, self.convert_toml_value(v));
+                }
+                toml_edit::Value::InlineTable(new_table)
+            }
+            toml::Value::Array(array) => {
+                let mut new_array = toml_edit::Array::new();
+                for item in array {
+                    new_array.push(self.convert_toml_value(item));
+                }
+                toml_edit::Value::Array(new_array)
+            }
+            toml::Value::Datetime(dt) => toml_edit::Value::Datetime(toml_edit::Formatted::new(dt)),
+        }
+    }
+
+    /// Generate or update a lockfile with platform metadata for specified tools and platforms
+    pub async fn generate_for_tools(
+        path: &Path,
+        tools: &[ToolVersion],
+        target_platforms: &[crate::platform::Platform],
+        force_update: bool,
+    ) -> Result<Self> {
+        // Load existing lockfile or create new one
+        let mut lockfile = if path.exists() {
+            Self::read(path)?
+        } else {
+            Self::default()
+        };
+
+        // Process all tools in parallel
+        let tool_results = crate::parallel::parallel(tools.to_vec(), {
+            let target_platforms = target_platforms.to_vec();
+            move |tool_version| {
+                let target_platforms = target_platforms.clone();
+                async move {
+                    Self::fetch_tool_metadata(&tool_version, &target_platforms, force_update).await
+                }
+            }
+        })
+        .await?;
+
+        // Merge results into lockfile, preserving existing entries
+        for (tool_name, new_entries) in tool_results {
+            if new_entries.is_empty() {
+                continue; // Skip tools with no backend
+            }
+
+            match lockfile.tools.get_mut(&tool_name) {
+                Some(existing_entries) => {
+                    // Merge with existing entries
+                    for new_entry in new_entries {
+                        if let Some(existing_entry) = existing_entries
+                            .iter_mut()
+                            .find(|e| e.version == new_entry.version)
+                        {
+                            // Merge platforms, preferring new data if force_update
+                            if force_update {
+                                existing_entry.platforms = new_entry.platforms;
+                            } else {
+                                existing_entry.platforms.extend(new_entry.platforms);
+                            }
+                        } else {
+                            // Add new version entry
+                            existing_entries.push(new_entry);
+                        }
+                    }
+                }
+                None => {
+                    // Insert new tool entirely
+                    lockfile.tools.insert(tool_name, new_entries);
+                }
+            }
+        }
+
+        Ok(lockfile)
+    }
+
+    /// Fetch metadata for a single tool across all platforms
+    async fn fetch_tool_metadata(
+        tool_version: &ToolVersion,
+        target_platforms: &[crate::platform::Platform],
+        force_update: bool,
+    ) -> Result<(String, Vec<LockfileTool>)> {
+        use crate::backend::{PlatformTarget, get};
+
+        let tool_name = &tool_version.ba().short;
+
+        // Extract BackendArg from ToolRequest
+        let backend_arg = match &tool_version.request {
+            crate::toolset::ToolRequest::Version { backend, .. } => backend,
+            crate::toolset::ToolRequest::Prefix { backend, .. } => backend,
+            crate::toolset::ToolRequest::Ref { backend, .. } => backend,
+            crate::toolset::ToolRequest::Sub { backend, .. } => backend,
+            crate::toolset::ToolRequest::Path { backend, .. } => backend,
+            crate::toolset::ToolRequest::System { backend, .. } => backend,
+        };
+
+        let Some(backend) = get(backend_arg) else {
+            // Return empty entry if backend not found
+            return Ok((tool_name.clone(), vec![]));
+        };
+
+        // Create tool entry for this version
+        let mut tool_entry = LockfileTool {
+            version: tool_version.version.clone(),
+            backend: Some(tool_version.ba().full()),
+            platforms: Default::default(),
+        };
+
+        // Collect all platforms to update
+        let platforms_to_update = target_platforms.to_vec();
+
+        // Clone values for parallel processing
+        let backend_clone = backend.clone();
+        let tool_version_clone = tool_version.clone();
+
+        // Fetch platform metadata in parallel
+        let platform_results = crate::parallel::parallel(platforms_to_update, move |platform| {
+            let platform_target = PlatformTarget::new(platform.clone());
+            let backend = backend_clone.clone();
+            let tool_version = tool_version_clone.clone();
+            async move {
+                let platform_key = platform.to_key();
+                match backend
+                    .resolve_lock_info(&tool_version, &platform_target)
+                    .await
+                {
+                    Ok(platform_info) => {
+                        if platform_info.url.is_some()
+                            || platform_info.checksum.is_some()
+                            || platform_info.size.is_some()
+                        {
+                            Ok(Some((platform_key, platform_info)))
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    Err(_) => Ok(None), // Skip failed fetches
+                }
+            }
+        })
+        .await?;
+
+        // Insert successful results into the tool entry
+        for result in platform_results.into_iter().flatten() {
+            tool_entry.platforms.insert(result.0, result.1);
+        }
+
+        Ok((tool_name.clone(), vec![tool_entry]))
+    }
 }
 
 pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersion]) -> Result<()> {
