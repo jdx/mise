@@ -3,9 +3,9 @@ version = "1.7.7"
 backend = "aqua:rhysd/actionlint"
 
 [tools.actionlint.platforms.linux-x64]
-checksum = "blake3:845d95d47b6e76952f91a7c093dbfe439e22eb6fb5f81b553036e9254d7bbb31"
-size = 1962532
-url = "https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_darwin_arm64.tar.gz"
+checksum = "blake3:c2510efe17d0c09a62c25907f6e3e6af1bf62869e2f5d81bedf7e78b5517a1dd"
+size = 2080472
+url = "https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz"
 
 [tools.actionlint.platforms.macos-arm64]
 checksum = "blake3:845d95d47b6e76952f91a7c093dbfe439e22eb6fb5f81b553036e9254d7bbb31"
@@ -17,9 +17,9 @@ version = "1.2.1"
 backend = "aqua:FiloSottile/age"
 
 [tools.age.platforms.linux-x64]
-checksum = "blake3:5c7e92baa305e64738b31e6ed9725d6cecdb8915af6e1b6c59bb4d7890efaaca"
-size = 4758557
-url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"
+checksum = "blake3:8441277927f75428a6d22897a5cc05e8cdc03562d7a203b2bb9a7c6cd1d0c3bd"
+size = 5194720
+url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz"
 
 [tools.age.platforms.macos-arm64]
 checksum = "blake3:5c7e92baa305e64738b31e6ed9725d6cecdb8915af6e1b6c59bb4d7890efaaca"
@@ -45,14 +45,14 @@ version = "1.15.3"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "sha256:c639b2aa24d7eaf6d2fa553d66dc9aa85295140b5636d7be32e03858ed27ddca"
-size = 6004746
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.3/cargo-binstall-aarch64-apple-darwin.zip"
+checksum = "sha256:0998345fd26577fc7aa8ce886d2a168a93dfb42690c57d31f82252a650d5b838"
+size = 7319212
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.3/cargo-binstall-x86_64-unknown-linux-gnu.full.tgz"
 
 [tools.cargo-binstall.platforms.macos-arm64]
-checksum = "sha256:c639b2aa24d7eaf6d2fa553d66dc9aa85295140b5636d7be32e03858ed27ddca"
-size = 6004746
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.3/cargo-binstall-aarch64-apple-darwin.zip"
+checksum = "sha256:f2cb89c8865bd6b1cfd4b43381fec41ef12e091f35222919f0e438e79c982850"
+size = 6403659
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.3/cargo-binstall-aarch64-apple-darwin.full.zip"
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.7"
@@ -83,9 +83,9 @@ version = "2.5.3"
 backend = "aqua:sigstore/cosign"
 
 [tools.cosign.platforms.linux-x64]
-checksum = "sha256:86e0cad94d0da4c0dab5e26672ede71447a08a0f0d8495b9381c117df27d7d09"
-size = 152385074
-url = "https://github.com/sigstore/cosign/releases/download/v2.5.3/cosign-darwin-arm64"
+checksum = "sha256:783b5d6c74105401c63946c68d9b2a4e1aab3c8abce043e06b8510b02b623ec9"
+size = 154068646
+url = "https://github.com/sigstore/cosign/releases/download/v2.5.3/cosign-linux-amd64"
 
 [tools.cosign.platforms.macos-arm64]
 checksum = "sha256:86e0cad94d0da4c0dab5e26672ede71447a08a0f0d8495b9381c117df27d7d09"
@@ -97,9 +97,9 @@ version = "2.62.0"
 backend = "aqua:cli/cli"
 
 [tools.gh.platforms.linux-x64]
-checksum = "blake3:0ec40c9e6a944210058b8c06c30bc43617ccfcb498a66c6a27bad068876a894a"
-size = 12793347
-url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
+checksum = "blake3:638adec2a014820d3a372e0c52b570202417cf20b4f04c5a2c7e84a0c1080276"
+size = 13065800
+url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz"
 
 [tools.gh.platforms.macos-arm64]
 checksum = "blake3:0ec40c9e6a944210058b8c06c30bc43617ccfcb498a66c6a27bad068876a894a"
@@ -111,9 +111,9 @@ version = "1.10.7"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "sha256:863cd22fdfaa8afe16b0fb954aac03393ad5488465f30e48e970c095523ed2e4"
-size = 5928348
-url = "https://github.com/jdx/hk/releases/download/v1.10.7/hk-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:67740e439f09ba98280c9e0119e05264b086a481bf751953cebfae5602e871a4"
+size = 6873815
+url = "https://github.com/jdx/hk/releases/download/v1.10.7/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [tools.hk.platforms.macos-arm64]
 checksum = "sha256:863cd22fdfaa8afe16b0fb954aac03393ad5488465f30e48e970c095523ed2e4"
@@ -129,14 +129,14 @@ version = "1.8.1"
 backend = "aqua:jqlang/jq"
 
 [tools.jq.platforms.linux-x64]
-checksum = "sha256:a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263603"
-size = 841408
-url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
+checksum = "sha256:2be64e7129cecb11d5906290eba10af694fb9e3e7f9fc208a311dc33ca837eb0"
+size = 2026798
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-1.8.1.tar.gz"
 
 [tools.jq.platforms.macos-arm64]
-checksum = "sha256:a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263603"
-size = 841408
-url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
+checksum = "sha256:2be64e7129cecb11d5906290eba10af694fb9e3e7f9fc208a311dc33ca837eb0"
+size = 2026798
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-1.8.1.tar.gz"
 
 [[tools."npm:markdownlint-cli"]]
 version = "0.45.0"
@@ -151,9 +151,9 @@ version = "1.10.3"
 backend = "aqua:opentofu/opentofu"
 
 [tools.opentofu.platforms.linux-x64]
-checksum = "sha256:4f7390e7f18e5a56988037001547ca38beee349c395df524997bacf7235fa3bb"
-size = 25581258
-url = "https://github.com/opentofu/opentofu/releases/download/v1.10.3/tofu_1.10.3_darwin_arm64.tar.gz"
+checksum = "sha256:610464b31c6c5c9a6e1f282995117111b98464f337e2df1bb0a9958fee5e82bd"
+size = 26706372
+url = "https://github.com/opentofu/opentofu/releases/download/v1.10.3/tofu_1.10.3_linux_amd64.tar.gz"
 
 [tools.opentofu.platforms.macos-arm64]
 checksum = "sha256:4f7390e7f18e5a56988037001547ca38beee349c395df524997bacf7235fa3bb"
@@ -169,9 +169,9 @@ version = "0.29.1"
 backend = "aqua:apple/pkl"
 
 [tools.pkl.platforms.linux-x64]
-checksum = "sha256:75ca92e3eee7746e22b0f8a55bf1ee5c3ea0a78eec14586cd5618a9195707d5c"
-size = 104874656
-url = "https://github.com/apple/pkl/releases/download/0.29.1/pkl-macos-aarch64"
+checksum = "sha256:00578659c50711233212eb9271a68e109ed31b06fb9a9702f9e2730c81672a51"
+size = 104120120
+url = "https://github.com/apple/pkl/releases/download/0.29.1/pkl-alpine-linux-amd64"
 
 [tools.pkl.platforms.macos-arm64]
 checksum = "sha256:75ca92e3eee7746e22b0f8a55bf1ee5c3ea0a78eec14586cd5618a9195707d5c"
@@ -182,24 +182,14 @@ url = "https://github.com/apple/pkl/releases/download/0.29.1/pkl-macos-aarch64"
 version = "4.3.0"
 backend = "aqua:pre-commit/pre-commit"
 
-[tools.pre-commit.platforms.linux-x64]
-checksum = "sha256:f1d50b97e9ca9167aceb76c14e90b07cde8b6789bc199d5005cfd817a718878c"
-size = 8268268
-url = "https://github.com/pre-commit/pre-commit/releases/download/v4.3.0/pre-commit-4.3.0.pyz"
-
-[tools.pre-commit.platforms.macos-arm64]
-checksum = "sha256:f1d50b97e9ca9167aceb76c14e90b07cde8b6789bc199d5005cfd817a718878c"
-size = 8268268
-url = "https://github.com/pre-commit/pre-commit/releases/download/v4.3.0/pre-commit-4.3.0.pyz"
-
 [[tools.ripgrep]]
 version = "14.1.1"
 backend = "aqua:BurntSushi/ripgrep"
 
 [tools.ripgrep.platforms.linux-x64]
-checksum = "blake3:8d9942032585ea8ee805937634238d9aee7b210069f4703c88fbe568e26fb78a"
-size = 1787248
-url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
+checksum = "blake3:f73cca4e54d78c31f832c7f6e2c0b4db8b04fa3eaa747915727d570893dbee76"
+size = 2566310
+url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.ripgrep.platforms.macos-arm64]
 checksum = "blake3:8d9942032585ea8ee805937634238d9aee7b210069f4703c88fbe568e26fb78a"
@@ -227,9 +217,9 @@ version = "3.10.2"
 backend = "aqua:getsops/sops"
 
 [tools.sops.platforms.linux-x64]
-checksum = "blake3:c5f1ef7caf102f7f395733caaefcb8fd5aff2286cb32e3a0f30f71cbaed8946b"
-size = 44246082
-url = "https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.darwin.arm64"
+checksum = "blake3:b1b617fdeafca8a7ad87c4c2a216bf8ac0dfa36eea9fac597e3df0014b2b39f8"
+size = 45011128
+url = "https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.linux.amd64"
 
 [tools.sops.platforms.macos-arm64]
 checksum = "blake3:c5f1ef7caf102f7f395733caaefcb8fd5aff2286cb32e3a0f30f71cbaed8946b"
@@ -241,14 +231,14 @@ version = "0.10.0"
 backend = "aqua:tamasfe/taplo"
 
 [tools.taplo.platforms.linux-x64]
-checksum = "blake3:353ecb1ed7d279dec5e2fd388d292ef97db08a651405fa664ffec1b2896c05f0"
-size = 4616415
-url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-aarch64.gz"
+checksum = "blake3:2e8452e361c735169a8ce92d36b22e451e3504a8d996e7603f9840dddffb93a7"
+size = 5182591
+url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"
 
 [tools.taplo.platforms.macos-arm64]
-checksum = "blake3:353ecb1ed7d279dec5e2fd388d292ef97db08a651405fa664ffec1b2896c05f0"
-size = 4616415
-url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-aarch64.gz"
+checksum = "blake3:5df1e4b9a50b371e6537a93dee09b30e0bf287031e0ab4e6d3f4832ef5834ab9"
+size = 4810289
+url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-aarch64.zip"
 
 [[tools.terraform]]
 version = "1.12.2"
@@ -263,12 +253,12 @@ version = "2.3.2"
 backend = "aqua:watchexec/watchexec"
 
 [tools.watchexec.platforms.linux-x64]
-checksum = "blake3:31d8c3c5f9b287ef145b22e2cfa58569099a93e0794e824daeef4231969f7e45"
-size = 2009068
-url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-aarch64-apple-darwin.tar.xz"
+checksum = "sha512:ec2dadefbbfad9ba738a6f27ead78214e90db4d5bbf7eb2f4d8dac3cf18f468f900fe51d4ba107b3f2c0733c412c28e8c977f158968515c8b7f03f3c8391982a"
+size = 2899576
+url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-x86_64-unknown-linux-gnu.tar.xz"
 
 [tools.watchexec.platforms.macos-arm64]
-checksum = "blake3:31d8c3c5f9b287ef145b22e2cfa58569099a93e0794e824daeef4231969f7e45"
+checksum = "sha512:88ea43af48597f7dbfceb1783e131d53aabe920c2b253a1538cc4efeee686f01c1282821ddca5dd56cb490fc7105e4e1be2d55e523f873a980b9a19ea157d523"
 size = 2009068
 url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-aarch64-apple-darwin.tar.xz"
 

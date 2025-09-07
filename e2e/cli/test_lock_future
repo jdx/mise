@@ -44,11 +44,11 @@ cat mise.lock
 # - Checksums are updated
 # - URLs are current
 # - All existing platforms are refreshed
-# - New platforms can be added via --platform flag
+# - New platforms can be added via --platforms flag
 
 echo "=== Testing platform addition (future) ==="
 # This should add a new platform to the lockfile
-mise lock --platform macos-arm64
+mise lock --platforms macos-arm64
 
 echo "Lockfile with new platform:"
 cat mise.lock

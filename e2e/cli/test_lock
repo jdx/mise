@@ -90,6 +90,9 @@ cat <<EOF >mise.toml
 cargo-binstall = "1.15.3"
 EOF
 
+rm -f mise.lock
+assert_contains "mise lock -f" "Lockfile updated at"
+
 assert_contains "cat mise.lock" "[[tools.cargo-binstall]]"
 assert_contains "cat mise.lock" 'backend = "aqua:cargo-bins/cargo-binstall"'
 # Expect sha256 algorithm (from GitHub API), not blake3 fallback

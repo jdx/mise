@@ -1,5 +1,5 @@
 use crate::backend::{
-    GithubReleaseConfig, backend_type::BackendType, platform_target::PlatformTarget,
+    GithubReleaseConfig, asset_detector, backend_type::BackendType, platform_target::PlatformTarget,
 };
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
@@ -8,6 +8,7 @@ use crate::config::Settings;
 use crate::file::TarOptions;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
@@ -80,6 +81,201 @@ impl Backend for AquaBackend {
             }
         }
         Ok(versions)
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // Prefer Aqua registry checksum metadata to avoid downloading full artifacts
+        // Falls back to default behavior if checksum metadata is unavailable
+        if let Ok(pkg) = AQUA_REGISTRY.package(&self.id).await {
+            if matches!(pkg.r#type, AquaPackageType::GithubRelease) {
+                // Determine the final version tag as in install logic
+                let tag = self
+                    .get_version_tags()
+                    .await
+                    .ok()
+                    .into_iter()
+                    .flatten()
+                    .find(|(version, _)| version == &tv.version)
+                    .map(|(_, tag)| tag)
+                    .cloned();
+                let mut v = tag.clone().unwrap_or_else(|| tv.version.clone());
+                let v_prefixed =
+                    (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
+                if let Some(prefix) = &pkg.version_prefix {
+                    if !v.starts_with(prefix) {
+                        v = format!("{prefix}{v}");
+                    }
+                }
+                let final_tag = v_prefixed.unwrap_or(v.clone());
+
+                // Fetch release and resolve asset for this platform
+                let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
+                let release = crate::github::get_release(&gh_id, &final_tag).await?;
+
+                // Prefer platform-aware detection using release assets and PlatformTarget
+                let available_assets: Vec<String> =
+                    release.assets.iter().map(|a| a.name.clone()).collect();
+                let picker = asset_detector::AssetPicker::new(target);
+                let picked_name = picker.pick_best_asset(&available_assets).ok_or_else(|| {
+                    eyre::eyre!(
+                        "No suitable asset found for current platform ({}-{})\nAvailable assets: {}",
+                        target.os_name(),
+                        target.arch_name(),
+                        available_assets.join(", ")
+                    )
+                })?;
+
+                // Find the matching asset case-insensitively
+                let asset = release
+                    .assets
+                    .iter()
+                    .find(|a| a.name == picked_name)
+                    .or_else(|| {
+                        let lower = picked_name.to_lowercase();
+                        release
+                            .assets
+                            .iter()
+                            .find(|a| a.name.to_lowercase() == lower)
+                    })
+                    .ok_or_else(|| {
+                        eyre::eyre!(
+                            "Picked asset not found: {}\nAvailable assets: {}",
+                            picked_name,
+                            available_assets.join(", ")
+                        )
+                    })?;
+
+                let url = asset.browser_download_url.clone();
+                let size = asset.size;
+
+                // If GitHub API provides digest, prefer it
+                if let Some(d) = &asset.digest {
+                    let checksum = if d.contains(':') {
+                        d.clone()
+                    } else {
+                        format!("sha256:{d}")
+                    };
+                    return Ok(PlatformInfo {
+                        url: Some(url),
+                        checksum: Some(checksum),
+                        size: Some(size),
+                    });
+                }
+
+                // Otherwise, if Aqua defines a checksum file, use it to obtain sha256
+                if let Some(checksum) = &pkg.checksum {
+                    if checksum.enabled() {
+                        let checksum_assets = checksum.asset_strs(&pkg, &final_tag)?;
+                        if let Some(chk_asset) = release
+                            .assets
+                            .iter()
+                            .find(|a| checksum_assets.contains(&a.name))
+                        {
+                            let chk_url = chk_asset.browser_download_url.clone();
+                            let download_path = tv.download_path();
+                            file::create_dir_all(&download_path)?;
+                            let checksum_path =
+                                download_path.join(format!("{}.checksum", &chk_asset.name));
+                            HTTP.download_file(&chk_url, &checksum_path, None).await?;
+
+                            let mut checksum_file = file::read_to_string(&checksum_path)?;
+                            if checksum.file_format() == "regexp" {
+                                let pattern = checksum.pattern();
+                                if let Some(file) = &pattern.file {
+                                    let re = regex::Regex::new(file.as_str())?;
+                                    if let Some(line) = checksum_file.lines().find(|l| {
+                                        re.captures(l)
+                                            .is_some_and(|c| c[1].to_string() == asset.name)
+                                    }) {
+                                        checksum_file = line.to_string();
+                                    } else {
+                                        debug!(
+                                            "no line found matching {} in {} for {}",
+                                            file, checksum_file, asset.name
+                                        );
+                                    }
+                                }
+                                let re = regex::Regex::new(pattern.checksum.as_str())?;
+                                if let Some(caps) = re.captures(checksum_file.as_str()) {
+                                    checksum_file = caps[1].to_string();
+                                } else {
+                                    debug!(
+                                        "no checksum found matching {} in {}",
+                                        pattern.checksum, checksum_file
+                                    );
+                                }
+                            }
+
+                            let checksum_str = checksum_file
+                                .lines()
+                                .filter_map(|l| {
+                                    let split = l.split_whitespace().collect_vec();
+                                    if split.len() == 2 {
+                                        Some((
+                                            split[0].to_string(),
+                                            split[1]
+                                                .rsplit_once('/')
+                                                .map(|(_, f)| f)
+                                                .unwrap_or(split[1])
+                                                .trim_matches('*')
+                                                .to_string(),
+                                        ))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .find(|(_, f)| f == &asset.name)
+                                .map(|(c, _)| c)
+                                .unwrap_or(checksum_file);
+                            let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
+
+                            // Clean up checksum file
+                            let _ = std::fs::remove_file(&checksum_path);
+
+                            return Ok(PlatformInfo {
+                                url: Some(url),
+                                checksum: Some(checksum_val),
+                                size: Some(size),
+                            });
+                        }
+                    }
+                }
+
+                // Fallback: no digest or checksum file available, calculate checksum
+                match self.download_and_hash_file(&url, None).await {
+                    Ok((calculated_checksum, actual_size)) => {
+                        return Ok(PlatformInfo {
+                            url: Some(url),
+                            checksum: Some(format!("blake3:{}", calculated_checksum)),
+                            size: Some(actual_size),
+                        });
+                    }
+                    Err(_e) => {
+                        // As a last resort, return URL and known size
+                        return Ok(PlatformInfo {
+                            url: Some(url),
+                            checksum: None,
+                            size: Some(size),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Default behavior: try tarball URL, then GitHub release, then fallback
+        if let Some(tarball_url) = self.get_tarball_url(tv, target).await? {
+            return self.resolve_lock_info_from_tarball(&tarball_url).await;
+        }
+        if let Some(release_info) = self.get_github_release_info(tv, target).await? {
+            return self
+                .resolve_lock_info_from_github_release(&release_info, tv, target)
+                .await;
+        }
+        self.resolve_lock_info_fallback(tv, target).await
     }
 
     async fn install_version_(
