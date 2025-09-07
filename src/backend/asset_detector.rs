@@ -1,6 +1,8 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
+use crate::backend::platform_target::PlatformTarget;
+
 /// Platform detection patterns
 pub struct PlatformPatterns {
     pub os_patterns: &'static [(AssetOs, Regex)],
@@ -160,7 +162,9 @@ pub struct AssetPicker {
 }
 
 impl AssetPicker {
-    pub fn new(target_os: String, target_arch: String) -> Self {
+    pub fn new(target: &PlatformTarget) -> Self {
+        let target_os = target.os_name().to_string();
+        let target_arch = target.arch_name().to_string();
         // Determine the libc variant based on how mise was built
         let target_libc = if cfg!(target_env = "musl") {
             "musl".to_string()
@@ -364,11 +368,15 @@ pub fn detect_platform_from_url(url_str: &str) -> Option<DetectedPlatform> {
 
 #[cfg(test)]
 mod tests {
+    use crate::platform::Platform;
+
     use super::*;
 
     #[test]
     fn test_asset_picker_functionality() {
-        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let platform = Platform::parse("linux-x86_64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let picker = AssetPicker::new(&target);
         let assets = vec![
             "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
             "tool-1.0.0-darwin-x86_64.tar.gz".to_string(),
@@ -381,7 +389,9 @@ mod tests {
 
     #[test]
     fn test_asset_scoring() {
-        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let platform = Platform::parse("linux-x86_64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let picker = AssetPicker::new(&target);
 
         let score_linux = picker.score_asset("tool-1.0.0-linux-x86_64.tar.gz");
         let score_windows = picker.score_asset("tool-1.0.0-windows-x86_64.zip");
@@ -399,7 +409,9 @@ mod tests {
 
     #[test]
     fn test_archive_preference() {
-        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let platform = Platform::parse("linux-x86_64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let picker = AssetPicker::new(&target);
         let assets = vec![
             "tool-1.0.0-linux-x86_64".to_string(),
             "tool-1.0.0-linux-x86_64.tar.gz".to_string(),
@@ -422,7 +434,9 @@ mod tests {
         ];
 
         // Test Linux x86_64 - should prefer the libc variant that matches the build environment
-        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let platform = Platform::parse("linux-x86_64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let picker = AssetPicker::new(&target);
         let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
         if cfg!(target_env = "musl") {
             assert_eq!(picked, "ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz");
@@ -431,7 +445,9 @@ mod tests {
         }
 
         // Test Linux aarch64 - should prefer the libc variant that matches the build environment
-        let picker = AssetPicker::new("linux".to_string(), "aarch64".to_string());
+        let platform = Platform::parse("linux-aarch64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let picker = AssetPicker::new(&target);
         let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
         if cfg!(target_env = "musl") {
             assert_eq!(picked, "ripgrep-14.1.1-aarch64-unknown-linux-musl.tar.gz");
@@ -440,14 +456,18 @@ mod tests {
         }
 
         // Test macOS (should not be affected by libc)
-        let picker = AssetPicker::new("macos".to_string(), "x86_64".to_string());
+        let platform = Platform::parse("macos-x86_64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let picker = AssetPicker::new(&target);
         let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
         assert_eq!(picked, "ripgrep-14.1.1-x86_64-apple-darwin.tar.gz");
     }
 
     #[test]
     fn test_libc_scoring() {
-        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let platform = Platform::parse("linux-x86_64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let picker = AssetPicker::new(&target);
 
         // Test that the libc variant matching the build environment scores higher
         let gnu_score = picker.score_asset("ripgrep-14.1.1-x86_64-unknown-linux-gnu.tar.gz");
@@ -570,22 +590,30 @@ mod tests {
         ];
 
         // Test Linux x86_64 - should prefer musl over other variants when only musl is available
-        let picker = AssetPicker::new("linux".to_string(), "x86_64".to_string());
+        let platform = Platform::parse("linux-x86_64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let picker = AssetPicker::new(&target);
         let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
         assert_eq!(picked, "ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz");
 
         // Test Linux aarch64 - should prefer gnu over musl
-        let picker = AssetPicker::new("linux".to_string(), "aarch64".to_string());
+        let platform = Platform::parse("linux-aarch64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let picker = AssetPicker::new(&target);
         let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
         assert_eq!(picked, "ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz");
 
         // Test macOS x86_64 - should not be affected by libc
-        let picker = AssetPicker::new("macos".to_string(), "x86_64".to_string());
+        let platform = Platform::parse("macos-x86_64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let picker = AssetPicker::new(&target);
         let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
         assert_eq!(picked, "ripgrep-14.1.1-x86_64-apple-darwin.tar.gz");
 
         // Test macOS aarch64 - should not be affected by libc
-        let picker = AssetPicker::new("macos".to_string(), "aarch64".to_string());
+        let platform = Platform::parse("macos-aarch64").unwrap();
+        let target = PlatformTarget::new(platform);
+        let picker = AssetPicker::new(&target);
         let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
         assert_eq!(picked, "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz");
     }

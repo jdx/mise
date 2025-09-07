@@ -16,7 +16,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 use crate::{
-    backend::{Backend, GitHubReleaseInfo, ReleaseType, platform_target::PlatformTarget},
+    backend::{Backend, platform_target::PlatformTarget},
     config::Config,
 };
 use crate::{file, github, plugins};
@@ -126,22 +126,20 @@ impl Backend for BunPlugin {
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,
-    ) -> Result<Option<GitHubReleaseInfo>> {
-        let version = &tv.version;
+    ) -> Result<Option<crate::github::GithubReleaseConfig>> {
+        let _version = &tv.version;
 
         // Build the asset pattern for Bun's GitHub releases
         // Pattern: bun-{os}-{arch}.zip (where arch may include variants like -musl, -baseline)
         let os_name = Self::map_os_to_bun(target.os_name());
         let arch_name = Self::get_bun_arch_for_target(target);
-        let asset_pattern = format!("bun-{os_name}-{arch_name}.zip");
+        let asset = format!("bun-{os_name}-{arch_name}.zip");
 
-        Ok(Some(GitHubReleaseInfo {
+        Ok(Some(crate::github::GithubReleaseConfig {
             repo: "oven-sh/bun".to_string(),
-            asset_pattern: Some(asset_pattern),
-            api_url: Some(format!(
-                "https://github.com/oven-sh/bun/releases/download/bun-v{version}"
-            )),
-            release_type: ReleaseType::GitHub,
+            asset,
+            release_type: crate::github::ReleaseType::GitHub,
+            tag: format!("bun-v{}", tv.version),
         }))
     }
 }

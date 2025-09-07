@@ -5,11 +5,13 @@ use std::{
 };
 
 use crate::backend::Backend;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::PATH_KEY;
 use crate::github::GithubRelease;
+use crate::github::GithubReleaseConfig;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolVersion, Toolset};
@@ -221,6 +223,21 @@ impl Backend for RubyPlugin {
         let map = BTreeMap::new();
         // No modification to RUBYLIB
         Ok(map)
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    fn get_github_release_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<GithubReleaseConfig>> {
+        Ok(Some(GithubReleaseConfig {
+            repo: "oneclick/rubyinstaller2".to_string(),
+            asset_pattern: format!("rubyinstaller-{}-1-{}.7z", tv.version, target.arch_name()),
+            release_type: ReleaseType::GitHub,
+            tag: Some(format!("RubyInstaller-{}", tv.version)),
+        }))
     }
 }
 

@@ -5,7 +5,10 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::Backend, config::Config};
+use crate::{
+    backend::{Backend, platform_target::PlatformTarget},
+    config::Config,
+};
 use crate::{file, github, gpg, plugins};
 use async_trait::async_trait;
 use eyre::Result;
@@ -193,6 +196,51 @@ impl Backend for SwiftPlugin {
         self.verify(ctx, &tv)?;
 
         Ok(tv)
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_tarball_url(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        // Map platform target to Swift's naming conventions
+        let swift_platform = match target.os_name() {
+            "macos" => "osx".to_string(),
+            "windows" => "windows10".to_string(),
+            "linux" => "ubi9".to_string(), // fallback for linux
+            other => other.to_string(),
+        };
+
+        let swift_architecture = match (target.os_name(), target.arch_name()) {
+            ("linux", arch) if arch != "x64" => Some(arch),
+            ("windows", "arm64") => Some("arm64"),
+            _ => None,
+        };
+
+        let extension = match target.os_name() {
+            "macos" => "pkg",
+            "windows" => "exe",
+            _ => "tar.gz",
+        };
+
+        let architecture_suffix = match swift_architecture {
+            Some(arch) => format!("-{}", arch),
+            None => "".to_string(),
+        };
+
+        // Build the download URL using Swift's standard pattern
+        let url = format!(
+            "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
+            version = tv.version,
+            platform = swift_platform,
+            platform_directory = swift_platform.replace(".", ""),
+            extension = extension,
+            architecture = architecture_suffix,
+        );
+
+        Ok(Some(url))
     }
 }
 

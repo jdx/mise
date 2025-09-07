@@ -3,6 +3,8 @@
 export MISE_NODE_COREPACK=1
 export MISE_NODE_DEFAULT_PACKAGES_FILE="$PWD/.default-npm-packages"
 export NPM_CONFIG_FUND=false
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
 
 latest=$(mise latest node)
 echo "v$latest" >.node-version
@@ -19,6 +21,68 @@ mise use nodejs@20.1.0
 mise ls
 assert "mise x -- node --version" "v20.1.0"
 assert_contains "mise ls-remote nodejs" "20.1.0"
+
+echo "=== Testing multi-platform lockfile generation for Node.js ==="
+# Test generating lockfile for multiple platforms (single call)
+assert_contains "mise lock nodejs --platforms linux-x64,macos-arm64,windows-x64" "Targeting 3 platform(s): linux-x64, macos-arm64, windows-x64"
+assert_contains "mise lock nodejs --platforms linux-x64,macos-arm64,windows-x64" "Lockfile updated at"
+
+# Verify the lockfile exists and contains platform-specific data for all 3 platforms
+assert "test -f mise.lock" ""
+assert_contains "cat mise.lock" "linux-x64"
+assert_contains "cat mise.lock" "macos-arm64"
+assert_contains "cat mise.lock" "windows-x64"
+
+# Verify URLs are platform-specific for Node.js (uses official Node.js mirrors)
+assert_contains "cat mise.lock" "nodejs.org/dist"
+assert_contains "cat mise.lock" "linux-x64.tar.gz"
+assert_contains "cat mise.lock" "darwin-arm64.tar.gz"
+assert_contains "cat mise.lock" "win-x64.zip"
+
+# Verify the basic lockfile structure
+assert_contains "cat mise.lock" 'backend = "core:node"'
+assert_contains "cat mise.lock" 'version = "20.1.0"'
+
+echo "=== Validating lockfile metadata ==="
+# Extract and validate specific platform metadata
+lockfile_content=$(cat mise.lock)
+
+# Verify each platform has the correct URL pattern
+assert_contains "echo '$lockfile_content'" "node-v20.1.0-linux-x64.tar.gz"
+assert_contains "echo '$lockfile_content'" "node-v20.1.0-darwin-arm64.tar.gz"
+assert_contains "echo '$lockfile_content'" "node-v20.1.0-win-x64.zip"
+
+# Validate Linux platform metadata
+linux_section=$(echo "$lockfile_content" | grep -A5 "linux-x64")
+assert_contains "echo '$linux_section'" "node-v20.1.0-linux-x64.tar.gz"
+assert_contains "echo '$linux_section'" "nodejs.org/dist"
+
+# Validate macOS platform metadata
+macos_section=$(echo "$lockfile_content" | grep -A5 "macos-arm64")
+assert_contains "echo '$macos_section'" "node-v20.1.0-darwin-arm64.tar.gz"
+assert_contains "echo '$macos_section'" "nodejs.org/dist"
+
+# Validate Windows platform metadata
+windows_section=$(echo "$lockfile_content" | grep -A5 "windows-x64")
+assert_contains "echo '$windows_section'" "node-v20.1.0-win-x64.zip"
+assert_contains "echo '$windows_section'" "nodejs.org/dist"
+
+# Node.js doesn't typically provide sizes/checksums via API, so we expect URL-only metadata
+# Verify URLs are complete and properly formatted
+linux_url=$(echo "$lockfile_content" | grep -A5 "linux-x64" | grep "url = " | grep -o 'https://[^"]*')
+assert_contains "echo '$linux_url'" "https://nodejs.org/dist/v20.1.0/node-v20.1.0-linux-x64.tar.gz"
+
+macos_url=$(echo "$lockfile_content" | grep -A5 "macos-arm64" | grep "url = " | grep -o 'https://[^"]*')
+assert_contains "echo '$macos_url'" "https://nodejs.org/dist/v20.1.0/node-v20.1.0-darwin-arm64.tar.gz"
+
+windows_url=$(echo "$lockfile_content" | grep -A5 "windows-x64" | grep "url = " | grep -o 'https://[^"]*')
+assert_contains "echo '$windows_url'" "https://nodejs.org/dist/v20.1.0/node-v20.1.0-win-x64.zip"
+
+# Checksums and sizes are required - fail if missing
+echo "Verifying checksums and sizes are present in lockfile"
+assert_contains "cat mise.lock" "checksum = "
+assert_contains "cat mise.lock" "size = "
+
 mise use --rm node
 
 # MISE_LEGACY_VERSION_FILE env var

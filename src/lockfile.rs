@@ -1,9 +1,12 @@
-use crate::config::{Config, Settings};
 use crate::file;
 use crate::file::display_path;
 use crate::path::PathExt;
 use crate::registry::{REGISTRY, tool_enabled};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
+use crate::{
+    backend::platform_target::PlatformTarget,
+    config::{Config, Settings},
+};
 use eyre::{Report, Result, bail};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
@@ -140,19 +143,28 @@ impl Lockfile {
         Ok(lockfile)
     }
 
-    fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+    fn is_empty(&self) -> bool {
+        self.tools.is_empty()
+    }
+
+    pub fn tools(&self) -> &BTreeMap<String, Vec<LockfileTool>> {
+        &self.tools
+    }
+
+    /// Save the lockfile to the specified path
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         if self.is_empty() {
             let _ = file::remove_file(path);
         } else {
             let mut tools = toml::Table::new();
             for (short, versions) in &self.tools {
                 // Always write Multi-Version format (array format) for consistency
-                let value: toml::Value = versions
+                let version_values: Vec<toml::Value> = versions
                     .iter()
                     .cloned()
                     .map(|version| version.into_toml_value())
-                    .collect::<Vec<toml::Value>>()
-                    .into();
+                    .collect();
+                let value = toml::Value::Array(version_values);
                 tools.insert(short.clone(), value);
             }
             let mut lockfile = toml::Table::new();
@@ -165,12 +177,130 @@ impl Lockfile {
         Ok(())
     }
 
-    fn is_empty(&self) -> bool {
-        self.tools.is_empty()
+    /// Generate or update a lockfile with platform metadata for specified tools and platforms
+    pub async fn generate_for_tools(
+        path: &Path,
+        tools: &[ToolVersion],
+        target_platforms: &[crate::platform::Platform],
+        force_update: bool,
+    ) -> Result<Self> {
+        // Load existing lockfile or create new one
+        let mut lockfile = if path.exists() {
+            Self::read(path)?
+        } else {
+            Self::default()
+        };
+
+        // Process all tools in parallel
+        let tool_results = crate::parallel::parallel(tools.to_vec(), {
+            let target_platforms = target_platforms.to_vec();
+            move |tool_version| {
+                let target_platforms = target_platforms.clone();
+                async move { Self::fetch_tool_metadata(&tool_version, &target_platforms).await }
+            }
+        })
+        .await?;
+
+        // Merge results into lockfile, preserving existing entries
+        for (tool_name, new_entries) in tool_results {
+            if new_entries.is_empty() {
+                continue; // Skip tools with no backend
+            }
+
+            match lockfile.tools.get_mut(&tool_name) {
+                Some(existing_entries) => {
+                    // Merge with existing entries
+                    for new_entry in new_entries {
+                        if let Some(existing_entry) = existing_entries
+                            .iter_mut()
+                            .find(|e| e.version == new_entry.version)
+                        {
+                            // Merge platforms, preferring new data if force_update
+                            if force_update {
+                                existing_entry.platforms = new_entry.platforms;
+                            } else {
+                                existing_entry.platforms.extend(new_entry.platforms);
+                            }
+                        } else {
+                            // Add new version entry
+                            existing_entries.push(new_entry);
+                        }
+                    }
+                }
+                None => {
+                    // Insert new tool entirely
+                    lockfile.tools.insert(tool_name, new_entries);
+                }
+            }
+        }
+
+        Ok(lockfile)
     }
 
-    pub fn tools(&self) -> &BTreeMap<String, Vec<LockfileTool>> {
-        &self.tools
+    /// Fetch metadata for a single tool across all platforms
+    async fn fetch_tool_metadata(
+        tool_version: &ToolVersion,
+        target_platforms: &[crate::platform::Platform],
+    ) -> Result<(String, Vec<LockfileTool>)> {
+        // Create progress reporter for this tool
+        use crate::ui::multi_progress_report::MultiProgressReport;
+        let mpr = MultiProgressReport::get();
+        let pr = mpr.add(&format!(
+            "fetching {} {}",
+            tool_version.ba().short,
+            tool_version.version
+        ));
+        let tool_name = &tool_version.ba().short;
+
+        let backend = tool_version.ba().backend()?;
+
+        // Create tool entry for this version
+        let mut tool_entry = LockfileTool {
+            version: tool_version.version.clone(),
+            backend: Some(tool_version.ba().full()),
+            platforms: Default::default(),
+        };
+
+        // Collect all platforms to update
+        let platforms_to_update = target_platforms.to_vec();
+
+        // Clone values for parallel processing
+        let tool_version_clone = tool_version.clone();
+
+        // Fetch platform metadata in parallel
+        let platform_results = crate::parallel::parallel(platforms_to_update, move |platform| {
+            let platform_target = PlatformTarget::new(platform.clone());
+            let backend = backend.clone();
+            let tool_version = tool_version_clone.clone();
+            async move {
+                let platform_key = platform.to_key();
+                match backend
+                    .resolve_lock_info(&tool_version, &platform_target)
+                    .await
+                {
+                    Ok(platform_info) => {
+                        if platform_info.url.is_some()
+                            || platform_info.checksum.is_some()
+                            || platform_info.size.is_some()
+                        {
+                            Ok(Some((platform_key, platform_info)))
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                    Err(_) => Ok(None), // Skip failed fetches
+                }
+            }
+        })
+        .await?;
+
+        // Insert successful results into the tool entry
+        for result in platform_results.into_iter().flatten() {
+            tool_entry.platforms.insert(result.0, result.1);
+        }
+
+        pr.finish_with_message(format!("{} platforms", tool_entry.platforms.len()));
+        Ok((tool_name.clone(), vec![tool_entry]))
     }
 }
 
@@ -493,7 +623,27 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
 
 fn format(mut doc: DocumentMut) -> String {
     if let Some(tools) = doc.get_mut("tools") {
-        for (_k, v) in tools.as_table_mut().unwrap().iter_mut() {
+        let tools_table = tools.as_table_mut().unwrap();
+        let mut keys_to_convert = Vec::new();
+
+        // First pass: identify single tables that need to be converted to arrays
+        for (k, v) in tools_table.iter() {
+            if matches!(v, toml_edit::Item::Table(_)) {
+                keys_to_convert.push(k.to_string());
+            }
+        }
+
+        // Convert single tables to array of tables format
+        for key in keys_to_convert {
+            if let Some(toml_edit::Item::Table(table)) = tools_table.remove(&key) {
+                let mut art = toml_edit::ArrayOfTables::new();
+                art.push(table);
+                tools_table.insert(&key, toml_edit::Item::ArrayOfTables(art));
+            }
+        }
+
+        // Second pass: format all entries (now all should be arrays)
+        for (_k, v) in tools_table.iter_mut() {
             match v {
                 toml_edit::Item::ArrayOfTables(art) => {
                     for t in art.iter_mut() {
@@ -511,19 +661,10 @@ fn format(mut doc: DocumentMut) -> String {
                         }
                     }
                 }
-                toml_edit::Item::Table(t) => {
-                    t.sort_values_by(|a, _, b, _| {
-                        if a == "version" {
-                            return std::cmp::Ordering::Less;
-                        }
-                        a.to_string().cmp(&b.to_string())
-                    });
-                    // Sort platforms section within each tool
-                    if let Some(toml_edit::Item::Table(platforms_table)) = t.get_mut("platforms") {
-                        platforms_table.sort_values();
-                    }
+                _ => {
+                    // This should not happen anymore since we converted all tables to arrays above
+                    warn!("Unexpected non-array format in lockfile after conversion");
                 }
-                _ => {}
             }
         }
     }
@@ -619,5 +760,34 @@ backend = "core:python"
 
         // Clean up
         let _ = std::fs::remove_file(&test_lockfile);
+    }
+
+    #[test]
+    fn test_format_converts_single_table_to_array() {
+        // Test that the format function converts single table format to array format
+        let single_table_toml = r#"
+[tools.bun]
+version = "1.2.21"
+backend = "core:bun"
+
+[tools.bun.platforms.macos-arm64]
+checksum = "sha256:fd886630ba15c484236ad5f3f22b255d287c3eef8d3bc26fc809851035c04cec"
+size = 22056420
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.2.21/bun-darwin-aarch64.zip"
+
+[[tools.node]]
+version = "20.10.0"
+backend = "core:node"
+"#;
+
+        let doc: toml_edit::DocumentMut = single_table_toml.parse().unwrap();
+        let formatted = format(doc);
+
+        // Both tools should now use array format
+        assert!(formatted.contains("[[tools.bun]]"));
+        assert!(formatted.contains("[[tools.node]]"));
+        // Verify no single table format remains
+        assert!(!formatted.lines().any(|line| line.trim() == "[tools.bun]"));
+        assert!(!formatted.lines().any(|line| line.trim() == "[tools.node]"));
     }
 }

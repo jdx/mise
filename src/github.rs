@@ -32,8 +32,26 @@ pub struct GithubTag {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GithubAsset {
     pub name: String,
-    // pub size: u64,
+    pub size: u64,
     pub browser_download_url: String,
+    /// SHA256 digest of the asset (available since June 2025)
+    #[serde(default)]
+    pub digest: Option<String>,
+}
+
+/// Configuration for GitHub release-based tools
+#[derive(Debug, Clone)]
+pub struct GithubReleaseConfig {
+    pub repo: String,
+    pub asset: String,
+    pub release_type: ReleaseType,
+    pub tag: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum ReleaseType {
+    GitHub,
+    GitLab,
 }
 
 type CacheGroup<T> = HashMap<String, CacheManager<T>>;

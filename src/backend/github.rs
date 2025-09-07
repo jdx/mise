@@ -1,17 +1,18 @@
-use crate::backend::asset_detector;
-use crate::backend::backend_type::BackendType;
 use crate::backend::static_helpers::lookup_platform_key;
 use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, template_string, try_with_v_prefix, verify_artifact,
 };
+use crate::backend::{
+    GithubReleaseConfig, backend_type::BackendType, platform_target::PlatformTarget,
+};
 use crate::cli::args::BackendArg;
 use crate::config::Config;
-use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
 use crate::{backend::Backend, github, gitlab};
+use crate::{backend::asset_detector, github::GithubRelease, gitlab::GitlabRelease};
 use async_trait::async_trait;
 use eyre::Result;
 use regex::Regex;
@@ -21,6 +22,20 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct UnifiedGitBackend {
     ba: Arc<BackendArg>,
+}
+
+enum ForgeRelease {
+    Github(GithubRelease),
+    Gitlab(GitlabRelease),
+}
+
+impl ForgeRelease {
+    pub fn tag_name(&self) -> String {
+        match self {
+            ForgeRelease::Github(release) => release.tag_name.clone(),
+            ForgeRelease::Gitlab(release) => release.tag_name.clone(),
+        }
+    }
 }
 
 #[async_trait]
@@ -80,8 +95,10 @@ impl Backend for UnifiedGitBackend {
             );
             existing_platform
         } else {
+            let target = PlatformTarget::default();
             // Find the asset URL for this specific version
-            self.resolve_asset_url(&tv, &opts, &repo, &api_url).await?
+            self.resolve_asset_url(&tv, &opts, &repo, &api_url, &target)
+                .await?
         };
 
         // Download and install
@@ -103,6 +120,38 @@ impl Backend for UnifiedGitBackend {
         } else {
             self.discover_bin_paths(tv)
         }
+    }
+
+    async fn get_github_release_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<GithubReleaseConfig>> {
+        use crate::github::ReleaseType;
+        let repo = self.repo();
+        let opts = self.ba.opts();
+
+        let (release, asset) = self
+            .with_release_assets(
+                tv,
+                &repo,
+                &opts,
+                |_candidate, release, available_assets| async move {
+                    Ok((release, self.auto_detect_asset(&available_assets, target)?))
+                },
+            )
+            .await?;
+
+        Ok(Some(GithubReleaseConfig {
+            repo,
+            asset,
+            release_type: if self.is_gitlab() {
+                ReleaseType::GitLab
+            } else {
+                ReleaseType::GitHub
+            },
+            tag: release.tag_name(),
+        }))
     }
 }
 
@@ -206,6 +255,7 @@ impl UnifiedGitBackend {
         opts: &ToolVersionOptions,
         repo: &str,
         api_url: &str,
+        target: &PlatformTarget,
     ) -> Result<String> {
         // Check for direct platform-specific URLs first
         if let Some(direct_url) = lookup_platform_key(opts, "url") {
@@ -216,13 +266,13 @@ impl UnifiedGitBackend {
         let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
         if self.is_gitlab() {
             try_with_v_prefix(version, version_prefix, |candidate| async move {
-                self.resolve_gitlab_asset_url(tv, opts, repo, api_url, &candidate)
+                self.resolve_gitlab_asset_url(tv, opts, repo, api_url, &candidate, target)
                     .await
             })
             .await
         } else {
             try_with_v_prefix(version, version_prefix, |candidate| async move {
-                self.resolve_github_asset_url(tv, opts, repo, api_url, &candidate)
+                self.resolve_github_asset_url(tv, opts, repo, api_url, &candidate, target)
                     .await
             })
             .await
@@ -236,6 +286,7 @@ impl UnifiedGitBackend {
         repo: &str,
         api_url: &str,
         version: &str,
+        target: &PlatformTarget,
     ) -> Result<String> {
         let release = github::get_release_for_url(api_url, repo, version).await?;
 
@@ -265,7 +316,7 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection
-        let asset_name = self.auto_detect_asset(&available_assets)?;
+        let asset_name = self.auto_detect_asset(&available_assets, target)?;
         let asset = self
             .find_asset_case_insensitive(&release.assets, &asset_name, |a| &a.name)
             .ok_or_else(|| {
@@ -286,6 +337,7 @@ impl UnifiedGitBackend {
         repo: &str,
         api_url: &str,
         version: &str,
+        target: &PlatformTarget,
     ) -> Result<String> {
         let release = gitlab::get_release_for_url(api_url, repo, version).await?;
 
@@ -321,7 +373,7 @@ impl UnifiedGitBackend {
         }
 
         // Fall back to auto-detection
-        let asset_name = self.auto_detect_asset(&available_assets)?;
+        let asset_name = self.auto_detect_asset(&available_assets, target)?;
         let asset = self
             .find_asset_case_insensitive(&release.assets.links, &asset_name, |a| &a.name)
             .ok_or_else(|| {
@@ -335,18 +387,18 @@ impl UnifiedGitBackend {
         Ok(asset.direct_asset_url.clone())
     }
 
-    fn auto_detect_asset(&self, available_assets: &[String]) -> Result<String> {
-        let settings = Settings::get();
-        let picker = asset_detector::AssetPicker::new(
-            settings.os().to_string(),
-            settings.arch().to_string(),
-        );
+    fn auto_detect_asset(
+        &self,
+        available_assets: &[String],
+        target: &PlatformTarget,
+    ) -> Result<String> {
+        let picker = asset_detector::AssetPicker::new(target);
 
         picker.pick_best_asset(available_assets).ok_or_else(|| {
             eyre::eyre!(
                 "No suitable asset found for current platform ({}-{})\nAvailable assets: {}",
-                settings.os(),
-                settings.arch(),
+                target.os_name(),
+                target.arch_name(),
                 available_assets.join(", ")
             )
         })
@@ -383,6 +435,48 @@ impl UnifiedGitBackend {
             // Fallback to simple contains check
             asset_name.contains(pattern)
         }
+    }
+
+    /// Fetches release and executes callback with release data, handling v-prefix logic
+    /// This is a simplified version for asset name collection only
+    async fn with_release_assets<T, F, Fut>(
+        &self,
+        tv: &ToolVersion,
+        repo: &str,
+        opts: &ToolVersionOptions,
+        callback: F,
+    ) -> Result<T>
+    where
+        F: Fn(String, ForgeRelease, Vec<String>) -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        let api_url = self.get_api_url(opts);
+        let version = &tv.version;
+        let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
+
+        try_with_v_prefix(version, version_prefix, |candidate| {
+            let api_url = api_url.clone();
+            let repo = repo.to_string();
+            let callback = &callback;
+            async move {
+                if self.is_gitlab() {
+                    let release = gitlab::get_release_for_url(&api_url, &repo, &candidate).await?;
+                    let available_assets: Vec<String> = release
+                        .assets
+                        .links
+                        .iter()
+                        .map(|a| a.name.clone())
+                        .collect();
+                    callback(candidate, ForgeRelease::Gitlab(release), available_assets).await
+                } else {
+                    let release = github::get_release_for_url(&api_url, &repo, &candidate).await?;
+                    let available_assets: Vec<String> =
+                        release.assets.iter().map(|a| a.name.clone()).collect();
+                    callback(candidate, ForgeRelease::Github(release), available_assets).await
+                }
+            }
+        })
+        .await
     }
 
     fn strip_version_prefix(&self, tag_name: &str) -> String {

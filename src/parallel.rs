@@ -1,5 +1,6 @@
 use crate::Result;
 use crate::config::Settings;
+use std::future::Future;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -8,14 +9,16 @@ pub async fn parallel<T, F, Fut, U>(input: Vec<T>, f: F) -> Result<Vec<U>>
 where
     T: Send + 'static,
     U: Send + 'static,
-    F: Fn(T) -> Fut + Send + Copy + 'static,
+    F: Fn(T) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<U>> + Send + 'static,
 {
     let semaphore = Arc::new(Semaphore::new(Settings::get().jobs));
     let mut jset = JoinSet::new();
+    let f = Arc::new(f);
     let mut results = input.iter().map(|_| None).collect::<Vec<_>>();
     for item in input.into_iter().enumerate() {
         let semaphore = semaphore.clone();
+        let f = f.clone();
         let permit = semaphore.acquire_owned().await?;
         jset.spawn(async move {
             let _permit = permit;
