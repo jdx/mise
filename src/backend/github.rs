@@ -79,13 +79,6 @@ impl Backend for UnifiedGitBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let feature_name = if self.is_gitlab() {
-            "gitlab backend"
-        } else {
-            "github backend"
-        };
-        Settings::get().ensure_experimental(feature_name)?;
-
         let repo = self.repo();
         let opts = tv.request.options();
         let api_url = self.get_api_url(&opts);
