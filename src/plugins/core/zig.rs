@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::backend::Backend;
+use crate::backend::{Backend, platform_target::PlatformTarget};
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
@@ -192,6 +192,44 @@ impl Backend for ZigPlugin {
         self.install(ctx, &tv, &tarball_path)?;
         self.verify(ctx, &tv)?;
         Ok(tv)
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_tarball_url(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        // Map platform target to Zig's naming conventions
+        let zig_arch = match target.arch_name() {
+            "x64" => "x86_64",
+            "arm64" | "aarch64" => "aarch64",
+            other => other,
+        };
+
+        let zig_os = match target.os_name() {
+            "macos" => "macos",
+            "linux" => "linux",
+            "freebsd" => "freebsd",
+            "windows" => "windows",
+            other => other,
+        };
+
+        // Reuse the existing JSON-based URL fetching logic
+        let json_url = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
+            "https://machengine.org/zig/index.json"
+        } else {
+            "https://ziglang.org/download/index.json"
+        };
+
+        match self
+            .get_tarball_url_from_json(json_url, &tv.version, zig_arch, zig_os)
+            .await
+        {
+            Ok(url) => Ok(Some(url)),
+            Err(_) => Ok(None), // Return None if version/platform combination not found
+        }
     }
 }
 

@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::backend::Backend;
+use crate::backend::{Backend, GithubReleaseConfig};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -221,6 +221,16 @@ impl Backend for RubyPlugin {
         let map = BTreeMap::new();
         // No modification to RUBYLIB
         Ok(map)
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    fn get_github_release_info(&self) -> Option<GithubReleaseConfig> {
+        Some(GithubReleaseConfig {
+            repo: "oneclick/rubyinstaller2".to_string(),
+            tag_regex: Some(r"^RubyInstaller-{version}-1$".to_string()),
+            asset_regex: Some(r"^rubyinstaller-{version}-1-{arch}\.7z$".to_string()),
+        })
     }
 }
 

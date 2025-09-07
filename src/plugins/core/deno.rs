@@ -10,7 +10,7 @@ use itertools::Itertools;
 use serde::Deserialize;
 use versions::Versioning;
 
-use crate::backend::Backend;
+use crate::backend::{Backend, platform_target::PlatformTarget};
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
@@ -158,6 +158,36 @@ impl Backend for DenoPlugin {
             tv.install_path().join(".deno").to_string_lossy().into(),
         )]);
         Ok(map)
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_tarball_url(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        // Map platform target to Deno's naming conventions
+        let deno_arch = match target.arch_name() {
+            "x64" => "x86_64",
+            "arm64" | "aarch64" => "aarch64",
+            other => other,
+        };
+
+        let deno_os = match target.os_name() {
+            "macos" => "apple-darwin",
+            "linux" => "unknown-linux-gnu",
+            "windows" => "pc-windows-msvc",
+            other => other,
+        };
+
+        // Build the download URL using Deno's standard pattern
+        let url = format!(
+            "https://dl.deno.land/release/v{}/deno-{}-{}.zip",
+            tv.version, deno_arch, deno_os
+        );
+
+        Ok(Some(url))
     }
 }
 
