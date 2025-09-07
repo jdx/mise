@@ -144,6 +144,47 @@ impl Backend for BunPlugin {
             release_type: ReleaseType::GitHub,
         }))
     }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<crate::lockfile::PlatformInfo> {
+        let version = &tv.version;
+        let os_name = Self::map_os_to_bun(target.os_name());
+        let arch_name = Self::get_bun_arch_for_target(target);
+        let filename = format!("bun-{os_name}-{arch_name}.zip");
+        let url =
+            format!("https://github.com/oven-sh/bun/releases/download/bun-v{version}/{filename}");
+
+        // For GitHub releases, we can use the GitHub API to get asset size
+        if let Some(github_info) = self.get_github_release_info(tv, target).await? {
+            match crate::github::get_release_asset_size(
+                &github_info.repo,
+                &format!("bun-v{version}"),
+                &filename,
+            )
+            .await
+            {
+                Ok(size) => {
+                    return Ok(crate::lockfile::PlatformInfo {
+                        url: Some(url),
+                        checksum: None, // GitHub doesn't provide checksums directly
+                        size: Some(size),
+                    });
+                }
+                Err(_) => {
+                    // Fall back to URL only if GitHub API fails
+                }
+            }
+        }
+
+        Ok(crate::lockfile::PlatformInfo {
+            url: Some(url),
+            checksum: None,
+            size: None,
+        })
+    }
 }
 
 impl BunPlugin {

@@ -143,31 +143,6 @@ impl Lockfile {
         Ok(lockfile)
     }
 
-    fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        if self.is_empty() {
-            let _ = file::remove_file(path);
-        } else {
-            let mut tools = toml::Table::new();
-            for (short, versions) in &self.tools {
-                // Always write Multi-Version format (array format) for consistency
-                let value: toml::Value = versions
-                    .iter()
-                    .cloned()
-                    .map(|version| version.into_toml_value())
-                    .collect::<Vec<toml::Value>>()
-                    .into();
-                tools.insert(short.clone(), value);
-            }
-            let mut lockfile = toml::Table::new();
-            lockfile.insert("tools".to_string(), tools.into());
-
-            let content = toml::to_string_pretty(&toml::Value::Table(lockfile))?;
-            let content = format(content.parse()?);
-            file::write(path, content)?;
-        }
-        Ok(())
-    }
-
     fn is_empty(&self) -> bool {
         self.tools.is_empty()
     }
@@ -185,6 +160,12 @@ impl Lockfile {
         let content = self.to_toml_string();
         file::write(path, content)?;
         Ok(())
+    }
+
+    /// Save the lockfile to the specified path
+    /// This is an alias for write() with a more intuitive name
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        self.write(path)
     }
 
     fn to_toml_string(&self) -> String {

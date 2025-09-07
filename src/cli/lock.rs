@@ -121,8 +121,8 @@ impl Lock {
         )
         .await?;
 
-        // Write the lockfile
-        lockfile.write(lockfile_path)?;
+        // Save the lockfile
+        lockfile.save(lockfile_path)?;
 
         miseprintln!(
             "{} Lockfile updated at {}",
