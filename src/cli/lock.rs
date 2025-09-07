@@ -76,7 +76,7 @@ impl Lock {
             miseprintln!(
                 "{} {}",
                 style("mise lock").bold().cyan(),
-                style("implementation now includes backend metadata fetching framework").green()
+                style("full implementation coming in next phase").green()
             );
         }
 
@@ -135,7 +135,7 @@ impl Lock {
                 );
 
                 // Get tools from the corresponding config file
-                let config_path = lockfile_path.with_extension("toml");
+                let config_path = PathBuf::from("mise.toml");
 
                 // Try to read tools from the config file or from the overall config
                 let tools = if config_path.exists() {
@@ -258,11 +258,8 @@ impl Lock {
     fn discover_lockfiles(&self, _config: &Config) -> Result<Vec<PathBuf>> {
         let mut lockfiles = Vec::new();
 
-        // Focus on the local config root only (current directory context)
-        // Get the current/local config file path
-        let local_config_path = crate::config::local_toml_config_path();
-        let lockfile_path = local_config_path.with_extension("lock");
-
+        // Look for mise.lock in the current directory
+        let lockfile_path = PathBuf::from("mise.lock");
         lockfiles.push(lockfile_path);
 
         Ok(lockfiles)
