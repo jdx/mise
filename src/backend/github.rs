@@ -7,7 +7,6 @@ use crate::backend::{
 };
 use crate::cli::args::BackendArg;
 use crate::config::Config;
-use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;

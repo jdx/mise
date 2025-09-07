@@ -43,7 +43,7 @@ assert_contains "mise lock" "Lockfile updated at mise.lock"
 
 echo "=== Testing platform filtering with existing lockfile ==="
 # Platform filtering should work with existing lockfile
-assert_contains "mise lock --platform linux-x64" "Targeting 1 platform(s): linux-x64"
+assert_contains "mise lock --platforms linux-x64" "Targeting 1 platform(s): linux-x64"
 
 echo "=== Testing help for creation ==="
 # Help should mention both updating and creating
