@@ -196,9 +196,7 @@ impl Lockfile {
             let target_platforms = target_platforms.to_vec();
             move |tool_version| {
                 let target_platforms = target_platforms.clone();
-                async move {
-                    Self::fetch_tool_metadata(&tool_version, &target_platforms, force_update).await
-                }
+                async move { Self::fetch_tool_metadata(&tool_version, &target_platforms).await }
             }
         })
         .await?;
@@ -243,7 +241,6 @@ impl Lockfile {
     async fn fetch_tool_metadata(
         tool_version: &ToolVersion,
         target_platforms: &[crate::platform::Platform],
-        _force_update: bool,
     ) -> Result<(String, Vec<LockfileTool>)> {
         // Create progress reporter for this tool
         use crate::ui::multi_progress_report::MultiProgressReport;

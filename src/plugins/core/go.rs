@@ -4,7 +4,6 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::Result;
 use crate::backend::{Backend, platform_target::PlatformTarget};
 use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
@@ -100,15 +99,20 @@ impl GoPlugin {
         pr: &Box<dyn SingleReport>,
     ) -> eyre::Result<PathBuf> {
         let settings = Settings::get();
-        let filename = format!(
-            "go{}.{}-{}.{}",
-            tv.version,
-            platform(),
-            arch(&settings),
-            ext()
+
+        // Use get_tarball_url to get the download URL for consistency with lockfile generation
+        let target = crate::backend::platform_target::PlatformTarget::new(
+            crate::platform::Platform::current(),
         );
-        let tarball_url = Arc::new(format!("{}/{}", &settings.go_download_mirror, &filename));
-        let tarball_path = tv.download_path().join(&filename);
+
+        let tarball_url = Arc::new(
+            self.get_tarball_url(tv, &target)
+                .await?
+                .ok_or_else(|| eyre::eyre!("No tarball URL available for Go {}", tv.version))?,
+        );
+
+        let filename = tarball_url.split('/').next_back().unwrap();
+        let tarball_path = tv.download_path().join(filename);
 
         let tarball_url_ = tarball_url.clone();
         let checksum_handle = tokio::spawn(async move {
@@ -304,26 +308,4 @@ impl Backend for GoPlugin {
 
         Ok(Some(url))
     }
-}
-
-fn platform() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "darwin"
-    } else {
-        &OS
-    }
-}
-
-fn arch(settings: &Settings) -> &str {
-    match settings.arch() {
-        "x64" => "amd64",
-        "arm64" => "arm64",
-        "arm" => "armv6l",
-        "riscv64" => "riscv64",
-        other => other,
-    }
-}
-
-fn ext() -> &'static str {
-    if cfg!(windows) { "zip" } else { "tar.gz" }
 }

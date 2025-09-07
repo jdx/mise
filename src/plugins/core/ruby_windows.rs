@@ -4,12 +4,13 @@ use std::{
     sync::Arc,
 };
 
-use crate::backend::{Backend, GithubReleaseConfig};
+use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::PATH_KEY;
 use crate::github::GithubRelease;
+use crate::github::GithubReleaseConfig;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolVersion, Toolset};
@@ -225,12 +226,17 @@ impl Backend for RubyPlugin {
 
     // ========== Lockfile Metadata Fetching Implementation ==========
 
-    fn get_github_release_info(&self) -> Option<GithubReleaseConfig> {
-        Some(GithubReleaseConfig {
+    fn get_github_release_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<GithubReleaseConfig>> {
+        Ok(Some(GithubReleaseConfig {
             repo: "oneclick/rubyinstaller2".to_string(),
-            tag_regex: Some(r"^RubyInstaller-{version}-1$".to_string()),
-            asset_regex: Some(r"^rubyinstaller-{version}-1-{arch}\.7z$".to_string()),
-        })
+            asset_pattern: Some(format!("rubyinstaller-{}-1-{arch}.7z", tv.version)),
+            release_type: ReleaseType::GitHub,
+            tag_prefix: Some("RubyInstaller-".to_string()),
+        }))
     }
 }
 

@@ -116,10 +116,24 @@ impl Backend for UnifiedGitBackend {
 
     async fn get_github_release_info(
         &self,
-        tv: &ToolVersion,
-        target: &PlatformTarget,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
     ) -> Result<Option<GithubReleaseConfig>> {
-        self.get_github_release_info(tv, target).await
+        use crate::github::ReleaseType;
+        let repo = self.repo();
+        let opts = self.ba.opts();
+
+        Ok(Some(GithubReleaseConfig {
+            repo,
+            asset_pattern: lookup_platform_key(&opts, "asset_pattern")
+                .or_else(|| opts.get("asset_pattern").cloned()),
+            release_type: if self.is_gitlab() {
+                ReleaseType::GitLab
+            } else {
+                ReleaseType::GitHub
+            },
+            tag_prefix: opts.get("version_prefix").cloned(),
+        }))
     }
 }
 
@@ -421,28 +435,6 @@ impl UnifiedGitBackend {
     }
 
     // ========== Lockfile Metadata Fetching Implementation ==========
-
-    async fn get_github_release_info(
-        &self,
-        _tv: &ToolVersion,
-        _target: &PlatformTarget,
-    ) -> Result<Option<GithubReleaseConfig>> {
-        use crate::github::ReleaseType;
-        let repo = self.repo();
-        let opts = self.ba.opts();
-
-        Ok(Some(GithubReleaseConfig {
-            repo,
-            asset_pattern: lookup_platform_key(&opts, "asset_pattern")
-                .or_else(|| opts.get("asset_pattern").cloned()),
-            release_type: if self.is_gitlab() {
-                ReleaseType::GitLab
-            } else {
-                ReleaseType::GitHub
-            },
-            tag_prefix: opts.get("version_prefix").cloned(),
-        }))
-    }
 }
 
 #[cfg(test)]

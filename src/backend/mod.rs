@@ -852,9 +852,7 @@ pub trait Backend: Debug + Send + Sync {
         // Try simple tarball approach first
         if let Some(tarball_url) = self.get_tarball_url(tv, target).await? {
             debug!("Using tarball URL approach: {}", tarball_url);
-            return self
-                .resolve_lock_info_from_tarball(&tarball_url, tv, target)
-                .await;
+            return self.resolve_lock_info_from_tarball(&tarball_url).await;
         }
 
         // Try GitHub/GitLab release approach second
@@ -875,12 +873,7 @@ pub trait Backend: Debug + Send + Sync {
 
     /// Shared logic for processing tarball-based tools
     /// Downloads tarball headers, extracts size and URL info, and populates PlatformInfo
-    async fn resolve_lock_info_from_tarball(
-        &self,
-        tarball_url: &str,
-        _tv: &ToolVersion,
-        _target: &PlatformTarget,
-    ) -> Result<PlatformInfo> {
+    async fn resolve_lock_info_from_tarball(&self, tarball_url: &str) -> Result<PlatformInfo> {
         debug!("Resolving lockfile info from tarball: {}", tarball_url);
 
         // Get checksum and size by downloading and hashing the file
@@ -911,8 +904,8 @@ pub trait Backend: Debug + Send + Sync {
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
         debug!(
-            "Resolving lockfile info from GitHub release for {}/{} on {:?}",
-            release_info.repo, tv.version, target
+            "Resolving lockfile info from GitHub release for {} on {:?}",
+            release_info.repo, target
         );
 
         match release_info.release_type {

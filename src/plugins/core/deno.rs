@@ -12,9 +12,8 @@ use versions::Versioning;
 
 use crate::backend::{Backend, platform_target::PlatformTarget};
 use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
@@ -50,13 +49,16 @@ impl DenoPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
-        let settings = Settings::get();
-        let url = format!(
-            "https://dl.deno.land/release/v{}/deno-{}-{}.zip",
-            tv.version,
-            arch(&settings),
-            os()
+        // Use get_tarball_url to get the download URL for consistency with lockfile generation
+        let target = crate::backend::platform_target::PlatformTarget::new(
+            crate::platform::Platform::current(),
         );
+
+        let url = self
+            .get_tarball_url(tv, &target)
+            .await?
+            .ok_or_else(|| eyre::eyre!("No tarball URL available for Deno {}", tv.version))?;
+
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
@@ -188,26 +190,6 @@ impl Backend for DenoPlugin {
         );
 
         Ok(Some(url))
-    }
-}
-
-fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "apple-darwin"
-    } else if cfg!(target_os = "linux") {
-        "unknown-linux-gnu"
-    } else if cfg!(target_os = "windows") {
-        "pc-windows-msvc"
-    } else {
-        &OS
-    }
-}
-
-fn arch(settings: &Settings) -> &str {
-    match settings.arch() {
-        "x64" => "x86_64",
-        "arm64" => "aarch64",
-        other => other,
     }
 }
 
