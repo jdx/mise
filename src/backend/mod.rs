@@ -937,9 +937,11 @@ pub trait Backend: Debug + Send + Sync {
         // 1. Query GitHub/GitLab release API
         // 2. Find matching asset for the target platform
         // 3. Extract download URL, size, and checksums
-        let asset_url = release_info.asset_pattern.as_ref().map(|pattern| pattern
-                    .replace("{os}", target.os_name())
-                    .replace("{arch}", target.arch_name()));
+        let asset_url = release_info.asset_pattern.as_ref().map(|pattern| {
+            pattern
+                .replace("{os}", target.os_name())
+                .replace("{arch}", target.arch_name())
+        });
 
         Ok(PlatformInfo {
             url: asset_url,
