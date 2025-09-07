@@ -163,9 +163,29 @@ impl Lockfile {
     }
 
     /// Save the lockfile to the specified path
-    /// This is an alias for write() with a more intuitive name
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        self.write(path)
+        if self.is_empty() {
+            let _ = file::remove_file(path);
+        } else {
+            let mut tools = toml::Table::new();
+            for (short, versions) in &self.tools {
+                // Always write Multi-Version format (array format) for consistency
+                let value: toml::Value = versions
+                    .iter()
+                    .cloned()
+                    .map(|version| version.into_toml_value())
+                    .collect::<Vec<toml::Value>>()
+                    .into();
+                tools.insert(short.clone(), value);
+            }
+            let mut lockfile = toml::Table::new();
+            lockfile.insert("tools".to_string(), tools.into());
+
+            let content = toml::to_string_pretty(&toml::Value::Table(lockfile))?;
+            let content = format(content.parse()?);
+            file::write(path, content)?;
+        }
+        Ok(())
     }
 
     fn to_toml_string(&self) -> String {
@@ -280,7 +300,7 @@ impl Lockfile {
     async fn fetch_tool_metadata(
         tool_version: &ToolVersion,
         target_platforms: &[crate::platform::Platform],
-        force_update: bool,
+        _force_update: bool,
     ) -> Result<(String, Vec<LockfileTool>)> {
         let tool_name = &tool_version.ba().short;
 

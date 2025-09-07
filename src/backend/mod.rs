@@ -67,6 +67,8 @@ pub struct GitHubReleaseInfo {
     pub asset_pattern: Option<String>,
     pub api_url: Option<String>,
     pub release_type: ReleaseType,
+    /// Tag prefix (e.g., "v" for "v1.2.3", "bun-v" for "bun-v1.2.3")
+    pub tag_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -898,24 +900,79 @@ pub trait Backend: Debug + Send + Sync {
     async fn resolve_lock_info_from_github_release(
         &self,
         release_info: &GitHubReleaseInfo,
-        _tv: &ToolVersion,
+        tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<PlatformInfo> {
-        // For now, just return basic info
-        // In a full implementation, this would:
-        // 1. Query GitHub/GitLab release API
-        // 2. Find matching asset for the target platform
-        // 3. Extract download URL, size, and checksums
-        let asset_url = release_info.asset_pattern.as_ref().map(|pattern| {
-            pattern
-                .replace("{os}", target.os_name())
-                .replace("{arch}", target.arch_name())
-        });
+        match release_info.release_type {
+            ReleaseType::GitHub => {
+                // Build the asset filename from the pattern
+                if let Some(asset_pattern) = &release_info.asset_pattern {
+                    let filename = asset_pattern
+                        .replace("{os}", target.os_name())
+                        .replace("{arch}", target.arch_name());
 
+                    // Build the full URL
+                    let url = if let Some(api_url) = &release_info.api_url {
+                        format!("{}/{}", api_url, filename)
+                    } else {
+                        format!(
+                            "https://github.com/{}/releases/download/v{}/{}",
+                            release_info.repo, tv.version, filename
+                        )
+                    };
+
+                    // Get metadata from GitHub API (size and digest if available)
+                    let tag = if let Some(prefix) = &release_info.tag_prefix {
+                        format!("{}{}", prefix, tv.version)
+                    } else {
+                        format!("v{}", tv.version)
+                    };
+                    match crate::github::get_release_asset_metadata(
+                        &release_info.repo,
+                        &tag,
+                        &filename,
+                    )
+                    .await
+                    {
+                        Ok((size, digest)) => {
+                            return Ok(PlatformInfo {
+                                url: Some(url),
+                                checksum: digest, // Use SHA256 digest if available
+                                size: Some(size),
+                            });
+                        }
+                        Err(_) => {
+                            // Fall back to URL only if GitHub API fails
+                            return Ok(PlatformInfo {
+                                url: Some(url),
+                                checksum: None,
+                                size: None,
+                            });
+                        }
+                    }
+                }
+            }
+            ReleaseType::GitLab => {
+                // TODO: Implement GitLab support
+                if let Some(asset_pattern) = &release_info.asset_pattern {
+                    let asset_url = asset_pattern
+                        .replace("{os}", target.os_name())
+                        .replace("{arch}", target.arch_name());
+
+                    return Ok(PlatformInfo {
+                        url: Some(asset_url),
+                        checksum: None,
+                        size: None,
+                    });
+                }
+            }
+        }
+
+        // Fallback - no asset pattern available
         Ok(PlatformInfo {
-            url: asset_url,
-            checksum: None, // TODO: Implement checksum fetching from releases
-            size: None,     // TODO: Implement size fetching from GitHub API
+            url: None,
+            checksum: None,
+            size: None,
         })
     }
 

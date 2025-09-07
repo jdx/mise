@@ -34,6 +34,9 @@ pub struct GithubAsset {
     pub name: String,
     pub size: u64,
     pub browser_download_url: String,
+    /// SHA256 digest of the asset (available since June 2025)
+    #[serde(default)]
+    pub digest: Option<String>,
 }
 
 type CacheGroup<T> = HashMap<String, CacheManager<T>>;
@@ -221,6 +224,25 @@ pub async fn get_release_asset_size(repo: &str, tag: &str, asset_name: &str) -> 
         .ok_or_else(|| eyre::eyre!("Asset '{}' not found in release '{}'", asset_name, tag))?;
 
     Ok(asset.size)
+}
+
+/// Get metadata (size, digest) for a specific asset from a GitHub release
+/// Returns (size, digest_opt) where digest is available since June 2025
+pub async fn get_release_asset_metadata(
+    repo: &str,
+    tag: &str,
+    asset_name: &str,
+) -> Result<(u64, Option<String>)> {
+    let release = get_release(repo, tag).await?;
+
+    // Find the requested asset
+    let asset = release
+        .assets
+        .iter()
+        .find(|a| a.name == asset_name)
+        .ok_or_else(|| eyre::eyre!("Asset '{}' not found in release '{}'", asset_name, tag))?;
+
+    Ok((asset.size, asset.digest.clone()))
 }
 
 pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
