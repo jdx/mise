@@ -35,32 +35,20 @@ assert_contains "cat mise.lock" 'version = "1.1.21"'
 assert_contains "cat mise.lock" 'url = "https://github.com/oven-sh/bun/releases'
 
 echo "=== Validating lockfile metadata ==="
-# Verify GitHub API provides asset sizes
-assert_contains "cat mise.lock" "size = "
+# Validate exact sizes and checksums for each platform
+echo "Validating exact platform metadata"
 
-# Extract and validate specific platform metadata
-lockfile_content=$(cat mise.lock)
+# Linux x64 platform validation
+assert_contains "cat mise.lock" "size = 34153617"
+assert_contains "cat mise.lock" 'checksum = "blake3:1d5cbae518a45a59aa4429708779dde0b465624ecdaea9d6824dcda645edbdcb"'
+assert_contains "cat mise.lock" "bun-linux-x64.zip"
 
-# Validate Linux platform has expected metadata
-linux_section=$(echo "$lockfile_content" | grep -A5 "linux-x64")
-assert_contains "echo '$linux_section'" "size = "
-assert_contains "echo '$linux_section'" "bun-linux-x64.zip"
+# macOS ARM64 platform validation
+assert_contains "cat mise.lock" "size = 18244938"
+assert_contains "cat mise.lock" 'checksum = "blake3:0dc09c220944a16e0edcaf2ee4cbc9ca4ce40a5a117002bdb491c98fe64173ef"'
+assert_contains "cat mise.lock" "bun-darwin-aarch64.zip"
 
-# Validate macOS platform has expected metadata
-macos_section=$(echo "$lockfile_content" | grep -A5 "macos-arm64")
-assert_contains "echo '$macos_section'" "size = "
-assert_contains "echo '$macos_section'" "bun-darwin-aarch64.zip"
-
-# Validate Windows platform has expected metadata
-windows_section=$(echo "$lockfile_content" | grep -A5 "windows-x64")
-assert_contains "echo '$windows_section'" "size = "
-assert_contains "echo '$windows_section'" "bun-windows-x64.zip"
-
-# Verify size values are reasonable (Bun binaries are typically 15-40MB)
-linux_size=$(echo "$lockfile_content" | grep -A5 "linux-x64" | grep "size = " | head -1 | grep -o '[0-9]\+')
-assert "[ $linux_size -gt 10000000 ]" "" # > 10MB
-assert "[ $linux_size -lt 50000000 ]" "" # < 50MB
-
-# Checksums are required - fail if missing
-echo "Verifying checksums are present in lockfile"
-assert_contains "cat mise.lock" "checksum = "
+# Windows x64 platform validation
+assert_contains "cat mise.lock" "size = 37349456"
+assert_contains "cat mise.lock" 'checksum = "blake3:bfc442f36392b59aa616dd58d213296a1275943b6ba549b2dcd8638d44eb06c3"'
+assert_contains "cat mise.lock" "bun-windows-x64.zip"
