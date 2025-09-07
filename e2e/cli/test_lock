@@ -47,9 +47,30 @@ assert_contains "mise lock --platform macos-arm64" "Targeting 1 platform(s): mac
 assert_contains "mise lock --platform linux-x64,macos-arm64" "Targeting 2 platform(s): linux-x64, macos-arm64"
 
 echo "=== Testing force flag ==="
-# Test force flag - should regenerate lockfile
+# Test force flag - should regenerate lockfile even when it doesn't exist
 rm -f mise.lock
 assert_contains "mise lock --force" "Lockfile updated at"
+
+# Create an existing lockfile with outdated content (missing dummy tool)
+cat <<EOF >mise.lock
+[tools]
+tiny = [{ backend = "asdf:tiny", version = "1.0.0", platforms = { "linux-x64" = { checksum = "sha256:old_checksum", size = 999, url = "https://example.com/old-url" } } }]
+EOF
+
+# Verify the old lockfile only contains tiny, not dummy
+assert_contains "cat mise.lock" "tiny"
+assert_not_contains "cat mise.lock" "dummy"
+assert_not_contains "cat mise.lock" "[[tools.tiny]]"
+assert_not_contains "cat mise.lock" "[[tools.dummy]]"
+
+# Test that --force regenerates existing lockfile with proper content
+assert_contains "mise lock --force" "Lockfile updated at"
+
+# Verify the lockfile was actually regenerated with both tools from mise.toml
+assert_contains "cat mise.lock" "[[tools.tiny]]"
+assert_contains "cat mise.lock" "[[tools.dummy]]"
+# Verify it's using the new format, not the old one
+assert_not_contains "cat mise.lock" "old_checksum"
 
 echo "=== Testing existing lockfile handling ==="
 # Test that when lockfile exists, we extract platforms from it

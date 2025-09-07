@@ -938,9 +938,15 @@ pub trait Backend: Debug + Send + Sync {
                             // If we have a digest from GitHub API, use it directly
                             if let Some(ref digest) = asset.digest {
                                 debug!("Using digest from GitHub API: {}", digest);
+                                // GitHub API digest already includes the algorithm prefix
+                                let checksum = if digest.contains(':') {
+                                    digest.clone()
+                                } else {
+                                    format!("sha256:{}", digest)
+                                };
                                 return Ok(PlatformInfo {
                                     url: Some(url),
-                                    checksum: Some(format!("sha256:{}", digest)),
+                                    checksum: Some(checksum),
                                     size: Some(asset.size),
                                 });
                             } else {

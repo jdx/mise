@@ -623,7 +623,27 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
 
 fn format(mut doc: DocumentMut) -> String {
     if let Some(tools) = doc.get_mut("tools") {
-        for (_k, v) in tools.as_table_mut().unwrap().iter_mut() {
+        let tools_table = tools.as_table_mut().unwrap();
+        let mut keys_to_convert = Vec::new();
+
+        // First pass: identify single tables that need to be converted to arrays
+        for (k, v) in tools_table.iter() {
+            if matches!(v, toml_edit::Item::Table(_)) {
+                keys_to_convert.push(k.to_string());
+            }
+        }
+
+        // Convert single tables to array of tables format
+        for key in keys_to_convert {
+            if let Some(toml_edit::Item::Table(table)) = tools_table.remove(&key) {
+                let mut art = toml_edit::ArrayOfTables::new();
+                art.push(table);
+                tools_table.insert(&key, toml_edit::Item::ArrayOfTables(art));
+            }
+        }
+
+        // Second pass: format all entries (now all should be arrays)
+        for (_k, v) in tools_table.iter_mut() {
             match v {
                 toml_edit::Item::ArrayOfTables(art) => {
                     for t in art.iter_mut() {
@@ -641,19 +661,10 @@ fn format(mut doc: DocumentMut) -> String {
                         }
                     }
                 }
-                toml_edit::Item::Table(t) => {
-                    t.sort_values_by(|a, _, b, _| {
-                        if a == "version" {
-                            return std::cmp::Ordering::Less;
-                        }
-                        a.to_string().cmp(&b.to_string())
-                    });
-                    // Sort platforms section within each tool
-                    if let Some(toml_edit::Item::Table(platforms_table)) = t.get_mut("platforms") {
-                        platforms_table.sort_values();
-                    }
+                _ => {
+                    // This should not happen anymore since we converted all tables to arrays above
+                    warn!("Unexpected non-array format in lockfile after conversion");
                 }
-                _ => {}
             }
         }
     }
@@ -749,5 +760,34 @@ backend = "core:python"
 
         // Clean up
         let _ = std::fs::remove_file(&test_lockfile);
+    }
+
+    #[test]
+    fn test_format_converts_single_table_to_array() {
+        // Test that the format function converts single table format to array format
+        let single_table_toml = r#"
+[tools.bun]
+version = "1.2.21"
+backend = "core:bun"
+
+[tools.bun.platforms.macos-arm64]
+checksum = "sha256:fd886630ba15c484236ad5f3f22b255d287c3eef8d3bc26fc809851035c04cec"
+size = 22056420
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.2.21/bun-darwin-aarch64.zip"
+
+[[tools.node]]
+version = "20.10.0"
+backend = "core:node"
+"#;
+
+        let doc: toml_edit::DocumentMut = single_table_toml.parse().unwrap();
+        let formatted = format(doc);
+
+        // Both tools should now use array format
+        assert!(formatted.contains("[[tools.bun]]"));
+        assert!(formatted.contains("[[tools.node]]"));
+        // Verify no single table format remains
+        assert!(!formatted.lines().any(|line| line.trim() == "[tools.bun]"));
+        assert!(!formatted.lines().any(|line| line.trim() == "[tools.node]"));
     }
 }
