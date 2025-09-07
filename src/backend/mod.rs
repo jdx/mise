@@ -13,6 +13,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, tool_enabled};
@@ -31,6 +32,7 @@ use console::style;
 use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use platform_target::PlatformTarget;
 use regex::Regex;
 use std::sync::LazyLock as Lazy;
 
@@ -47,6 +49,7 @@ pub mod go;
 pub mod http;
 pub mod npm;
 pub mod pipx;
+pub mod platform_target;
 pub mod spm;
 pub mod static_helpers;
 pub mod ubi;
@@ -56,6 +59,21 @@ pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<String>>;
+
+/// Information about a GitHub/GitLab release for platform-specific tools
+#[derive(Debug, Clone)]
+pub struct GitHubReleaseInfo {
+    pub repo: String,
+    pub asset_pattern: Option<String>,
+    pub api_url: Option<String>,
+    pub release_type: ReleaseType,
+}
+
+#[derive(Debug, Clone)]
+pub enum ReleaseType {
+    GitHub,
+    GitLab,
+}
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
@@ -807,6 +825,114 @@ pub trait Backend: Debug + Send + Sync {
         _bump: bool,
     ) -> Result<Option<OutdatedInfo>> {
         Ok(None)
+    }
+
+    // ========== Lockfile Metadata Fetching Methods ==========
+
+    /// Optional: Provide tarball URL for platform-specific tool installation
+    /// Backends can implement this for simple tarball-based tools
+    async fn get_tarball_url(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        Ok(None) // Default: no tarball URL available
+    }
+
+    /// Optional: Provide GitHub/GitLab release info for platform-specific tool installation
+    /// Backends can implement this for GitHub/GitLab release-based tools
+    async fn get_github_release_info(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<Option<GitHubReleaseInfo>> {
+        Ok(None) // Default: no GitHub release info available
+    }
+
+    /// Resolve platform-specific lock information without installation
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // Try simple tarball approach first
+        if let Some(tarball_url) = self.get_tarball_url(tv, target).await? {
+            return self
+                .resolve_lock_info_from_tarball(&tarball_url, tv, target)
+                .await;
+        }
+
+        // Try GitHub/GitLab release approach second
+        if let Some(release_info) = self.get_github_release_info(tv, target).await? {
+            return self
+                .resolve_lock_info_from_github_release(&release_info, tv, target)
+                .await;
+        }
+
+        // Fall back to basic platform info without URLs/metadata
+        self.resolve_lock_info_fallback(tv, target).await
+    }
+
+    /// Shared logic for processing tarball-based tools
+    /// Downloads tarball headers, extracts size and URL info, and populates PlatformInfo
+    async fn resolve_lock_info_from_tarball(
+        &self,
+        tarball_url: &str,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // For now, just return basic info with the URL
+        // In a full implementation, this would:
+        // 1. Make HEAD request to get content-length
+        // 2. Potentially download to get checksum
+        // 3. Handle any URL-specific logic
+        Ok(PlatformInfo {
+            url: Some(tarball_url.to_string()),
+            checksum: None, // TODO: Implement checksum fetching
+            size: None,     // TODO: Implement size fetching via HEAD request
+        })
+    }
+
+    /// Shared logic for processing GitHub/GitLab release-based tools
+    /// Queries release API, finds platform-specific assets, and populates PlatformInfo
+    async fn resolve_lock_info_from_github_release(
+        &self,
+        release_info: &GitHubReleaseInfo,
+        _tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // For now, just return basic info
+        // In a full implementation, this would:
+        // 1. Query GitHub/GitLab release API
+        // 2. Find matching asset for the target platform
+        // 3. Extract download URL, size, and checksums
+        let asset_url = release_info.asset_pattern.as_ref().map(|pattern| {
+            pattern
+                .replace("{os}", target.os_name())
+                .replace("{arch}", target.arch_name())
+        });
+
+        Ok(PlatformInfo {
+            url: asset_url,
+            checksum: None, // TODO: Implement checksum fetching from releases
+            size: None,     // TODO: Implement size fetching from GitHub API
+        })
+    }
+
+    /// Fallback method when no specific metadata resolution is available
+    /// Returns minimal PlatformInfo without external URLs
+    async fn resolve_lock_info_fallback(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // This is the fallback - no external metadata available
+        // The tool would need to be installed to generate platform info
+        Ok(PlatformInfo {
+            url: None,
+            checksum: None,
+            size: None,
+        })
     }
 }
 
