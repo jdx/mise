@@ -448,7 +448,10 @@ ccache.description = "ccache – a fast compiler cache"
 ccache.backends = ["github:ccache/ccache", "asdf:asdf-community/asdf-ccache"]
 ccache.test = ["ccache --version", "ccache version {{version}}"]
 certstrap.description = "Tools to bootstrap CAs, certificate requests, and signed certificates"
-certstrap.backends = ["github:square/certstrap", "asdf:carnei-ro/asdf-certstrap"]
+certstrap.backends = [
+    "github:square/certstrap",
+    "asdf:carnei-ro/asdf-certstrap"
+]
 certstrap.test = ["certstrap --version", "certstrap version {{version}}"]
 cf.description = "The official command line client for Cloud Foundry"
 cf.backends = ["asdf:mise-plugins/mise-cf"]
@@ -519,7 +522,10 @@ choose.test = ["choose --version", "{{version}}"]
 chromedriver.description = "ChromeDriver is a standalone server that implements the W3C WebDriver and WebDriver BiDi standards"
 chromedriver.backends = ["asdf:mise-plugins/mise-chromedriver"]
 cidr-merger.description = "A simple command line tool to merge ip/ip cidr/ip range, supports IPv4/IPv6"
-cidr-merger.backends = ["github:zhanhb/cidr-merger", "asdf:ORCID/asdf-cidr-merger"]
+cidr-merger.backends = [
+    "github:zhanhb/cidr-merger",
+    "asdf:ORCID/asdf-cidr-merger"
+]
 cidr-merger.test = ["cidr-merger --version 2>&1", "cidr merger {{version}}"]
 cidrchk.description = "CLI tool for CIDR range operations (check, generate)"
 cidrchk.backends = ["github:mhausenblas/cidrchk", "asdf:ORCID/asdf-cidrchk"]
@@ -552,7 +558,10 @@ clang-format.backends = ["asdf:mise-plugins/mise-llvm"]
 clangd.description = "clangd understands your C++ code and adds smart features to your editor: code completion, compile errors, go-to-definition and more"
 clangd.backends = ["asdf:mise-plugins/mise-llvm"]
 clarinet.description = "Write, test and deploy high-quality smart contracts to the Stacks blockchain and Bitcoin"
-clarinet.backends = ["github:hirosystems/clarinet", "asdf:alexgo-io/asdf-clarinet"]
+clarinet.backends = [
+    "github:hirosystems/clarinet",
+    "asdf:alexgo-io/asdf-clarinet"
+]
 clarinet.os = ["linux", "macos"]
 clarinet.test = ["clarinet --version", "clarinet {{version}}"]
 claude.aliases = ["claude-code"]
@@ -579,7 +588,10 @@ clickhouse.description = "ClickHouse® is a high-performance, column-oriented SQ
 # clickhouse.test = ["ClickHouse --version", "ClickHouse local version"]
 clickhouse.backends = ["asdf:mise-plugins/mise-clickhouse"]
 clj-kondo.description = "Static analyzer and linter for Clojure code that sparks joy"
-clj-kondo.backends = ["github:clj-kondo/clj-kondo", "asdf:rynkowsg/asdf-clj-kondo"]
+clj-kondo.backends = [
+    "github:clj-kondo/clj-kondo",
+    "asdf:rynkowsg/asdf-clj-kondo"
+]
 clj-kondo.test = ["clj-kondo --version", "{{version}}"]
 cljstyle.description = "A tool for formatting Clojure code"
 cljstyle.backends = [
@@ -1546,7 +1558,10 @@ hishtory.backends = [
     "asdf:asdf-community/asdf-hishtory"
 ]
 hivemind.description = "Process manager for Procfile-based applications"
-hivemind.backends = ["github:DarthSim/hivemind", "go:github.com/DarthSim/hivemind"]
+hivemind.backends = [
+    "github:DarthSim/hivemind",
+    "go:github.com/DarthSim/hivemind"
+]
 hk.description = "git hook and pre-commit lint manager"
 hk.backends = ["aqua:jdx/hk", "ubi:jdx/hk"]
 hk.test = ["hk --version", "hk {{version}}"]
@@ -1933,7 +1948,10 @@ kubefedctl.test = [
     "kubefedctl version:"
 ] # may not have version in output
 kubefirst.description = "The Kubefirst CLI creates instant GitOps platforms that integrate some of the best tools in cloud native from scratch in minutes"
-kubefirst.backends = ["github:konstructio/kubefirst", "asdf:Claywd/asdf-kubefirst"]
+kubefirst.backends = [
+    "github:konstructio/kubefirst",
+    "asdf:Claywd/asdf-kubefirst"
+]
 kubelogin.description = "kubectl plugin for Kubernetes OpenID Connect authentication (kubectl oidc-login)"
 kubelogin.backends = ["aqua:int128/kubelogin"]
 kubemqctl.description = "Kubemqctl is a command line interface (CLI) for KubeMQ, Kubernetes Message Broker"
@@ -3204,7 +3222,10 @@ tonnage.backends = [
 traefik.description = "The Cloud Native Application Proxy"
 traefik.backends = ["github:traefik/traefik", "asdf:Dabolus/asdf-traefik"]
 transifex.description = "The Transifex command-line client"
-transifex.backends = ["github:transifex/cli[exe=tx]", "asdf:ORCID/asdf-transifex"]
+transifex.backends = [
+    "github:transifex/cli[exe=tx]",
+    "asdf:ORCID/asdf-transifex"
+]
 trdsql.description = "CLI tool that can execute SQL queries on CSV, LTSV, JSON and TBLN. Can output to various formats"
 trdsql.backends = ["aqua:noborus/trdsql", "asdf:johnlayton/asdf-trdsql"]
 tree-sitter.description = "An incremental parsing system for programming tools"
