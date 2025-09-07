@@ -1,4 +1,4 @@
-use crate::backend::{Backend, VersionCacheManager};
+use crate::backend::{Backend, PlatformTarget, VersionCacheManager};
 use crate::build_time::built_info;
 use crate::cache::CacheManagerBuilder;
 use crate::cli::args::BackendArg;
@@ -533,6 +533,68 @@ impl Backend for NodePlugin {
                 .into()
             })
             .clone()
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_tarball_url(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        let version = &tv.version;
+        let settings = Settings::get();
+
+        // Build platform-specific filename like Node.js does
+        let slug = self.build_platform_slug(version, target);
+        let filename = if target.os_name() == "windows" {
+            format!("{slug}.zip")
+        } else {
+            format!("{slug}.tar.gz")
+        };
+
+        // Use Node.js mirror URL to construct download URL
+        let url = settings
+            .node
+            .mirror_url()
+            .join(&format!("v{version}/{filename}"))
+            .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
+
+        Ok(Some(url.to_string()))
+    }
+}
+
+impl NodePlugin {
+    /// Build platform-specific slug for Node.js downloads
+    /// This mirrors the logic from BuildOpts::new() and slug() function
+    fn build_platform_slug(&self, version: &str, target: &PlatformTarget) -> String {
+        let settings = Settings::get();
+
+        // Map Platform enum to Node.js OS names
+        let os = match target.os_name() {
+            "macos" => "darwin",
+            "linux" => "linux",
+            "windows" => "win32",
+            other => other,
+        };
+
+        // Map Platform enum to Node.js arch names
+        let arch = match target.arch_name() {
+            "x86" => "x86",
+            "x64" => "x64",
+            "arm" => "armv7l",
+            "arm64" => "arm64",
+            "aarch64" => "arm64",
+            "loongarch64" => "loong64",
+            "riscv64" => "riscv64",
+            other => other,
+        };
+
+        if let Some(flavor) = &settings.node.flavor {
+            format!("node-v{version}-{os}-{arch}-{flavor}")
+        } else {
+            format!("node-v{version}-{os}-{arch}")
+        }
     }
 }
 

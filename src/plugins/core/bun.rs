@@ -15,7 +15,10 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::Backend, config::Config};
+use crate::{
+    backend::{Backend, GitHubReleaseInfo, PlatformTarget, ReleaseType},
+    config::Config,
+};
 use crate::{file, github, plugins};
 
 #[derive(Debug)]
@@ -115,6 +118,52 @@ impl Backend for BunPlugin {
         self.verify(ctx, &tv)?;
 
         Ok(tv)
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_github_release_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<GitHubReleaseInfo>> {
+        let version = &tv.version;
+
+        // Build the asset pattern for Bun's GitHub releases
+        // Pattern: bun-{os}-{arch}.zip
+        let os_name = self.map_os_to_bun(target.os_name());
+        let arch_name = self.map_arch_to_bun(target.arch_name());
+        let asset_pattern = format!("bun-{os_name}-{arch_name}.zip");
+
+        Ok(Some(GitHubReleaseInfo {
+            repo: "oven-sh/bun".to_string(),
+            asset_pattern: Some(asset_pattern),
+            api_url: Some(format!(
+                "https://github.com/oven-sh/bun/releases/download/bun-v{version}"
+            )),
+            release_type: ReleaseType::GitHub,
+        }))
+    }
+}
+
+impl BunPlugin {
+    /// Map our platform OS names to Bun's naming convention
+    fn map_os_to_bun<'a>(&self, os: &'a str) -> &'a str {
+        match os {
+            "macos" => "darwin",
+            "linux" => "linux",
+            "windows" => "windows",
+            other => other,
+        }
+    }
+
+    /// Map our platform arch names to Bun's naming convention
+    fn map_arch_to_bun<'a>(&self, arch: &'a str) -> &'a str {
+        match arch {
+            "x64" => "x64",
+            "arm64" | "aarch64" => "aarch64",
+            other => other,
+        }
     }
 }
 
