@@ -1,9 +1,12 @@
-use crate::config::{Config, Settings};
 use crate::file;
 use crate::file::display_path;
 use crate::path::PathExt;
 use crate::registry::{REGISTRY, tool_enabled};
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionList, Toolset};
+use crate::{
+    backend::{self, platform_target::PlatformTarget},
+    config::{Config, Settings},
+};
 use eyre::{Report, Result, bail};
 use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
@@ -298,8 +301,6 @@ impl Lockfile {
         target_platforms: &[crate::platform::Platform],
         force_update: bool,
     ) -> Result<(String, Vec<LockfileTool>)> {
-        use crate::backend::{PlatformTarget, get};
-
         let tool_name = &tool_version.ba().short;
 
         // Extract BackendArg from ToolRequest
@@ -312,7 +313,7 @@ impl Lockfile {
             crate::toolset::ToolRequest::System { backend, .. } => backend,
         };
 
-        let Some(backend) = get(backend_arg) else {
+        let Some(backend) = backend::get(backend_arg) else {
             // Return empty entry if backend not found
             return Ok((tool_name.clone(), vec![]));
         };
