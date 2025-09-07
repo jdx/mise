@@ -1,4 +1,4 @@
-{ pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, openssl, git }:
+{ pkgs, lib, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, openssl, git }:
 
 rustPlatform.buildRustPackage {
   pname = "mise";
@@ -19,7 +19,7 @@ rustPlatform.buildRustPackage {
     git
     gawk
     openssl
-  ] ++ lib.optionals stdenv.isDarwin [ darwin.apple_sdk.frameworks.Security darwin.apple_sdk.frameworks.SystemConfiguration ];
+  ];
 
   prePatch = ''
     substituteInPlace ./src/test.rs ./test/data/plugins/**/bin/* \
