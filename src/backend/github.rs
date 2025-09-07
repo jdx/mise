@@ -137,6 +137,14 @@ impl Backend for UnifiedGitBackend {
             }
         };
 
+        // Determine tag_prefix dynamically if not explicitly configured
+        let tag_prefix = if let Some(explicit_prefix) = opts.get("version_prefix").cloned() {
+            Some(explicit_prefix)
+        } else {
+            // Try to determine the actual tag prefix used by attempting to find the release
+            self.determine_tag_prefix(tv, &repo, &opts).await
+        };
+
         Ok(Some(GithubReleaseConfig {
             repo,
             asset_pattern,
@@ -145,7 +153,7 @@ impl Backend for UnifiedGitBackend {
             } else {
                 ReleaseType::GitHub
             },
-            tag_prefix: opts.get("version_prefix").cloned(),
+            tag_prefix,
         }))
     }
 }
@@ -471,6 +479,55 @@ impl UnifiedGitBackend {
         .await;
 
         result
+    }
+
+    /// Determines the actual tag prefix used by trying both with and without 'v' prefix
+    async fn determine_tag_prefix(
+        &self,
+        tv: &ToolVersion,
+        repo: &str,
+        opts: &ToolVersionOptions,
+    ) -> Option<String> {
+        let api_url = self.get_api_url(opts);
+        let version = &tv.version;
+
+        // Try both with and without 'v' prefix to see which one exists
+        let candidates = if version.starts_with('v') {
+            vec![
+                version.to_string(),
+                version.trim_start_matches('v').to_string(),
+            ]
+        } else {
+            vec![format!("v{version}"), version.to_string()]
+        };
+
+        for candidate in candidates {
+            let release_exists = if self.is_gitlab() {
+                gitlab::get_release_for_url(&api_url, repo, &candidate)
+                    .await
+                    .is_ok()
+            } else {
+                github::get_release_for_url(&api_url, repo, &candidate)
+                    .await
+                    .is_ok()
+            };
+
+            if release_exists {
+                // Found a release with this candidate version
+                if candidate == *version {
+                    // No prefix needed
+                    return None;
+                } else if candidate == format!("v{version}") {
+                    // Uses 'v' prefix
+                    return Some("v".to_string());
+                }
+                // If we get here, some other transformation occurred
+                break;
+            }
+        }
+
+        // If we can't determine it, default to None (no prefix)
+        None
     }
 
     fn strip_version_prefix(&self, tag_name: &str) -> String {

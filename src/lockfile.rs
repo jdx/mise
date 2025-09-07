@@ -250,7 +250,6 @@ impl Lockfile {
             tool_version.ba().short,
             tool_version.version
         ));
-        pr.set_message("fetching metadata".into());
         let tool_name = &tool_version.ba().short;
 
         let backend = tool_version.ba().backend()?;
