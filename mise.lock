@@ -39,18 +39,13 @@ checksum = "blake3:b5824ab4bf0afba1d27d55d4cbec1696c3d1070f6982cbf6b4fa0489892ec
 size = 22056420
 
 [[tools.cargo-binstall]]
-version = "1.15.3"
+version = "1.15.4"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "blake3:b6100a915a4531a7ea7e1d1d87a9e70ce4afc980d7e3bd420521a90b29bdc7de"
-size = 6772799
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.3/cargo-binstall-x86_64-unknown-linux-musl.tgz"
-
-[tools.cargo-binstall.platforms.macos-arm64]
-checksum = "blake3:8fb84239a9f54c0107faa2cf6ac12c658572b943356e1291c4cf39f34af6ceaf"
-size = 6004746
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.3/cargo-binstall-aarch64-apple-darwin.zip"
+checksum = "blake3:e96726cf26e534a44f61e015cc427ed92868fbf351fb7f1245d30e044d74cfa7"
+size = 6774865
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.4/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.7"
@@ -105,18 +100,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [[tools.hk]]
-version = "1.10.7"
+version = "1.12.0"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:426758a535d7e359bcd1e9f2f598a8aa01e518587a8141fc3b33f17617dfdfae"
-size = 6873815
-url = "https://github.com/jdx/hk/releases/download/v1.10.7/hk-x86_64-unknown-linux-gnu.tar.gz"
-
-[tools.hk.platforms.macos-arm64]
-checksum = "blake3:2990ec4745178df124c26dcef643a14d362fe8ca24759feba4bdf61e71bf4a63"
-size = 5928348
-url = "https://github.com/jdx/hk/releases/download/v1.10.7/hk-aarch64-apple-darwin.tar.gz"
+checksum = "blake3:5f4f62704bca96314d3ae11e2b0f0c9e76d07058f18676a5c31981763eb81d16"
+size = 6753765
+url = "https://github.com/jdx/hk/releases/download/v1.12.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"

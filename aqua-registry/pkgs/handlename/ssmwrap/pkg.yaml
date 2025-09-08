@@ -1,5 +1,5 @@
 packages:
-  - name: handlename/ssmwrap@v2.2.3
+  - name: handlename/ssmwrap@v2.2.4
   - name: handlename/ssmwrap
     version: v2.0.1
   - name: handlename/ssmwrap

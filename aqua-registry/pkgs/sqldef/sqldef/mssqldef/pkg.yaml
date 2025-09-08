@@ -1,2 +1,2 @@
 packages:
-  - name: sqldef/sqldef/mssqldef@v2.0.11
+  - name: sqldef/sqldef/mssqldef@v2.1.0

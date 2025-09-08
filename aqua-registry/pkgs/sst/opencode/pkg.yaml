@@ -1,5 +1,5 @@
 packages:
-  - name: sst/opencode@v0.6.4
+  - name: sst/opencode@v0.6.5
   - name: sst/opencode
     version: v0.1.61
   - name: sst/opencode
