@@ -11,6 +11,7 @@ use std::path::Path;
 // Shared OS/arch patterns used across helpers
 const OS_PATTERNS: &[&str] = &[
     "linux", "darwin", "macos", "windows", "win", "freebsd", "openbsd", "netbsd", "android",
+    "unknown",
 ];
 // Longer arch patterns first to avoid partial matches
 const ARCH_PATTERNS: &[&str] = &[
