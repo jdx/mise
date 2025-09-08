@@ -148,22 +148,7 @@
               "type": "string"
             },
             "env": {
-              "additionalProperties": {
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "enum": [false],
-                    "type": "boolean"
-                  }
-                ]
-              },
-              "description": "environment variables",
-              "type": "object"
+              "$ref": "#/$defs/env"
             },
             "tools": {
               "description": "tools to install/activate before running this task",
@@ -330,6 +315,254 @@
           "type": "object"
         }
       ]
+    },
+    "env": {
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "tools": {
+                "type": "boolean",
+                "description": "load tools before resolving"
+              },
+              "redact": {
+                "type": "boolean",
+                "description": "redact the value from logs"
+              }
+            }
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "description": "environment variables",
+      "properties": {
+        "_": {
+          "description": "environment modules",
+          "additionalProperties": true,
+          "properties": {
+            "file": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "tools": {
+                      "type": "boolean",
+                      "description": "load tools before resolving"
+                    },
+                    "redact": {
+                      "type": "boolean",
+                      "description": "redact the value from logs"
+                    }
+                  }
+                },
+                {
+                  "description": "dotenv file to load",
+                  "type": "string"
+                },
+                {
+                  "description": "dotenv files to load",
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "description": "dotenv file to load",
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          },
+                          "tools": {
+                            "type": "boolean",
+                            "description": "load tools before resolving"
+                          },
+                          "redact": {
+                            "type": "boolean",
+                            "description": "redact the value from logs"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "path": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "description": "PATH entry to add",
+                  "type": "string"
+                },
+                {
+                  "description": "PATH entries to add",
+                  "items": {
+                    "description": "PATH entry to add",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "python": {
+              "description": "python environment",
+              "properties": {
+                "venv": {
+                  "oneOf": [
+                    {
+                      "description": "path to python virtual environment to use",
+                      "type": "string"
+                    },
+                    {
+                      "description": "virtualenv options",
+                      "properties": {
+                        "create": {
+                          "default": false,
+                          "description": "create a new virtual environment if one does not exist",
+                          "type": "boolean"
+                        },
+                        "path": {
+                          "description": "path to python virtual environment to use",
+                          "type": "string"
+                        },
+                        "python": {
+                          "description": "python version to use",
+                          "type": "string"
+                        },
+                        "python_create_args": {
+                          "description": "additional arguments to pass to python when creating a virtual environment",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "uv_create_args": {
+                          "description": "additional arguments to pass to uv when creating a virtual environment",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": ["path"],
+                      "type": "object"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "source": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "tools": {
+                      "type": "boolean",
+                      "description": "load tools before resolving"
+                    },
+                    "redact": {
+                      "type": "boolean",
+                      "description": "redact the value from logs"
+                    }
+                  }
+                },
+                {
+                  "description": "bash script to load",
+                  "type": "string"
+                },
+                {
+                  "description": "bash scripts to load",
+                  "items": {
+                    "description": "bash script to load",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
     }
   },
   "description": "Config file for included mise tasks (https://mise.jdx.dev/tasks/#task-configuration)",

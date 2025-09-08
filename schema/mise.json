@@ -84,11 +84,41 @@
                 },
                 {
                   "description": "dotenv files to load",
+                  "type": "array",
                   "items": {
-                    "description": "dotenv file to load",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "description": "dotenv file to load",
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          },
+                          "tools": {
+                            "type": "boolean",
+                            "description": "load tools before resolving"
+                          },
+                          "redact": {
+                            "type": "boolean",
+                            "description": "redact the value from logs"
+                          }
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -1133,22 +1163,7 @@
               "type": "string"
             },
             "env": {
-              "additionalProperties": {
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "enum": [false],
-                    "type": "boolean"
-                  }
-                ]
-              },
-              "description": "environment variables",
-              "type": "object"
+              "$ref": "#/$defs/env"
             },
             "tools": {
               "description": "tools to install/activate before running this task",
