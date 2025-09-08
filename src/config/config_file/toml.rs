@@ -80,7 +80,7 @@ where
     {
         type Value = Vec<T>;
         fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-            formatter.write_str("string or array of strings")
+            formatter.write_str("a string, a map, or a list of strings/maps")
         }
 
         fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
@@ -91,17 +91,6 @@ where
             Ok(vec![v])
         }
 
-        fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
-        where
-            S: de::SeqAccess<'de>,
-        {
-            let mut v = vec![];
-            while let Some(s) = seq.next_element::<String>()? {
-                v.push(s.parse().map_err(de::Error::custom)?);
-            }
-            Ok(v)
-        }
-
         fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
         where
             M: de::MapAccess<'de>,
@@ -109,6 +98,13 @@ where
             Ok(vec![Deserialize::deserialize(
                 de::value::MapAccessDeserializer::new(map),
             )?])
+        }
+
+        fn visit_seq<S>(self, seq: S) -> std::result::Result<Self::Value, S::Error>
+        where
+            S: de::SeqAccess<'de>,
+        {
+            Deserialize::deserialize(de::value::SeqAccessDeserializer::new(seq))
         }
     }
 
