@@ -124,6 +124,7 @@ const taskSchema = JSON.parse(
   fs.readFileSync("schema/mise-task.json", "utf-8"),
 );
 taskSchema["$defs"].task = schema["$defs"].task;
+taskSchema["$defs"].env = schema["$defs"].env;
 fs.writeFileSync(
   "schema/mise-task.json.tmp",
   JSON.stringify(taskSchema, null, 2),

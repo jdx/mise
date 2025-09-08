@@ -1163,22 +1163,7 @@
               "type": "string"
             },
             "env": {
-              "additionalProperties": {
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "enum": [false],
-                    "type": "boolean"
-                  }
-                ]
-              },
-              "description": "environment variables",
-              "type": "object"
+              "$ref": "#/$defs/env"
             },
             "tools": {
               "description": "tools to install/activate before running this task",
