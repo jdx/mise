@@ -1,11 +1,42 @@
 # Changelog
 
+## [2025.9.6](https://github.com/jdx/mise/compare/v2025.9.5..v2025.9.6) - 2025-09-08
+
+### 🚀 Features
+
+- **(backend)** add Backend trait methods for metadata fetching by @jdx in [#6228](https://github.com/jdx/mise/pull/6228)
+- **(core)** implement metadata fetching for Node.js and Bun by @jdx in [#6230](https://github.com/jdx/mise/pull/6230)
+- **(mise-test-tool)** add release scripts for automated GitHub releases by @jdx in [bd0eadd](https://github.com/jdx/mise/commit/bd0eadde5fff3897cda47d533c02cfe8e2b20048)
+- **(platform)** implement platform parsing and CLI integration by @jdx in [#6227](https://github.com/jdx/mise/pull/6227)
+- migrate tools from ubi to github backend which work by @jdx in [#6232](https://github.com/jdx/mise/pull/6232)
+
+### 🐛 Bug Fixes
+
+- **(task)** use terminal width instead of hardcoded 60-char limit for task display by @jdx in [#6218](https://github.com/jdx/mise/pull/6218)
+- **(task)** use terminal width instead of hardcoded 60-char limit for task display by @jdx in [#6220](https://github.com/jdx/mise/pull/6220)
+- nix flake build failure on macOS by @okuuva in [#6223](https://github.com/jdx/mise/pull/6223)
+- only use multi-version syntax in mise.lock by @jdx in [#6224](https://github.com/jdx/mise/pull/6224)
+
+### 🧪 Testing
+
+- **(e2e)** add comprehensive parallel task execution test for issue #5451 by @jdx in [#6221](https://github.com/jdx/mise/pull/6221)
+
+### Chore
+
+- added .cursor/environment.json by @jdx in [dc6b145](https://github.com/jdx/mise/commit/dc6b1455967c650b4f960316830b63072998977c)
+- init agent-os by @jdx in [81af40e](https://github.com/jdx/mise/commit/81af40ece5a8e1481b3a4ebf0de8a401fb7685ad)
+- agent-os analyze by @jdx in [9625f58](https://github.com/jdx/mise/commit/9625f58112d4f22d299c1352a3e85f036435f21c)
+
 ## [2025.9.5](https://github.com/jdx/mise/compare/v2025.9.4..v2025.9.5) - 2025-09-06
 
 ### 🚀 Features
 
 - **(task)** add timeout support for task execution by @jdx in [#6216](https://github.com/jdx/mise/pull/6216)
 - **(task)** sub-tasks in run lists by @jdx in [#6212](https://github.com/jdx/mise/pull/6212)
+
+### 🐛 Bug Fixes
+
+- **(task)** remove MISE_TASK_UNNEST functionality by @jdx in [#6217](https://github.com/jdx/mise/pull/6217)
 
 ### Chore
 

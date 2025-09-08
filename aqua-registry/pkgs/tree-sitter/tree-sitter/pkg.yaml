@@ -1,5 +1,5 @@
 packages:
-  - name: tree-sitter/tree-sitter@v0.25.8
+  - name: tree-sitter/tree-sitter@v0.25.9
   - name: tree-sitter/tree-sitter
     version: v0.18.1
   - name: tree-sitter/tree-sitter
