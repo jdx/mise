@@ -2841,10 +2841,7 @@ semgrep.test = ["semgrep --version", "{{version}}"]
 semtag.description = "Semantic Tagging Script for Git"
 semtag.backends = ["asdf:mise-plugins/mise-semtag"]
 semver.description = "semver bash implementation"
-semver.backends = [
-    "aqua:fsaintjacques/semver-tool",
-    "asdf:mathew-fleisch/asdf-semver"
-]
+semver.backends = ["asdf:mathew-fleisch/asdf-semver"]  #    "aqua:fsaintjacques/semver-tool" # see https://github.com/jdx/mise/discussions/5833
 sentinel.description = "Sentinel is a policy as code tool that lets you control what users of HashiCorp products are allowed to do. It enforces policies proactively, preventing end users from deploying changes that are not allowed"
 sentinel.backends = ["asdf:mise-plugins/mise-hashicorp"]
 sentry.aliases = ["sentry-cli"]
