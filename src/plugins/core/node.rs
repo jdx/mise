@@ -1,4 +1,4 @@
-use crate::backend::{Backend, VersionCacheManager};
+use crate::backend::{Backend, VersionCacheManager, platform_target::PlatformTarget};
 use crate::build_time::built_info;
 use crate::cache::CacheManagerBuilder;
 use crate::cli::args::BackendArg;
@@ -534,6 +534,75 @@ impl Backend for NodePlugin {
             })
             .clone()
     }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_tarball_url(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        let version = &tv.version;
+        let settings = Settings::get();
+
+        // Build platform-specific filename like Node.js does
+        let slug = self.build_platform_slug(version, target);
+        let filename = if target.os_name() == "windows" {
+            format!("{slug}.zip")
+        } else {
+            format!("{slug}.tar.gz")
+        };
+
+        // Use Node.js mirror URL to construct download URL
+        let url = settings
+            .node
+            .mirror_url()
+            .join(&format!("v{version}/{filename}"))
+            .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
+
+        Ok(Some(url.to_string()))
+    }
+}
+
+impl NodePlugin {
+    /// Map OS name from Platform to Node.js convention
+    fn map_os(os_name: &str) -> &str {
+        match os_name {
+            "macos" => "darwin",
+            "linux" => "linux",
+            "windows" => "win",
+            other => other,
+        }
+    }
+
+    /// Map arch name from Platform to Node.js convention
+    fn map_arch(arch_name: &str) -> &str {
+        match arch_name {
+            "x86" => "x86",
+            "x64" => "x64",
+            "arm" => "armv7l",
+            "arm64" => "arm64",
+            "aarch64" => "arm64",
+            "loongarch64" => "loong64",
+            "riscv64" => "riscv64",
+            other => other,
+        }
+    }
+
+    /// Build platform-specific slug for Node.js downloads
+    /// This mirrors the logic from BuildOpts::new() and slug() function
+    fn build_platform_slug(&self, version: &str, target: &PlatformTarget) -> String {
+        let settings = Settings::get();
+
+        let os = Self::map_os(target.os_name());
+        let arch = Self::map_arch(target.arch_name());
+
+        if let Some(flavor) = &settings.node.flavor {
+            format!("node-v{version}-{os}-{arch}-{flavor}")
+        } else {
+            format!("node-v{version}-{os}-{arch}")
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -620,38 +689,16 @@ fn make_install_cmd() -> String {
 }
 
 fn os() -> &'static str {
-    if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "macos") {
-        "darwin"
-    } else if cfg!(target_os = "windows") {
-        "win"
-    } else {
-        built_info::CFG_OS
-    }
+    NodePlugin::map_os(built_info::CFG_OS)
 }
 
 fn arch(settings: &Settings) -> &str {
     let arch = settings.arch();
-    if arch == "x86" {
-        "x86"
-    } else if arch == "x64" {
-        "x64"
-    } else if arch == "arm" {
-        if cfg!(target_feature = "v6") {
-            "armv6l"
-        } else {
-            "armv7l"
-        }
-    } else if arch == "loongarch64" {
-        "loong64"
-    } else if arch == "riscv64" {
-        "riscv64"
-    } else if arch == "aarch64" {
-        "arm64"
-    } else {
-        arch
+    // Special handling for ARM with target features
+    if arch == "arm" && cfg!(target_feature = "v6") {
+        return "armv6l";
     }
+    NodePlugin::map_arch(arch)
 }
 
 fn slug(v: &str) -> String {

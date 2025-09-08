@@ -779,7 +779,9 @@ impl Display for Task {
             let cmd = cmd.lines().next().unwrap_or_default();
             let prefix = self.prefix();
             let prefix_len = measure_text_width(&prefix);
-            let max_width = (*env::TERM_WIDTH).saturating_sub(prefix_len + 4); // 4 chars buffer for spacing and ellipsis
+            // Ensure we have at least 20 characters for the command, even with very long prefixes
+            let available_width = (*env::TERM_WIDTH).saturating_sub(prefix_len + 4); // 4 chars buffer for spacing and ellipsis
+            let max_width = available_width.max(20); // Always show at least 20 chars of command
             let truncated_cmd = truncate_str(cmd, max_width, "…");
             write!(f, "{} {}", prefix, truncated_cmd)
         } else {

@@ -1,0 +1,17 @@
+{
+  "name": "mise development",
+  "user": "root",
+  "install": "bash .devcontainer/post-create.sh && cargo build",
+  "terminals": [
+    {
+      "name": "Build",
+      "command": "mise run build",
+      "description": "Build the project with cargo"
+    },
+    {
+      "name": "Test Watch",
+      "command": "mise run test:unit",
+      "description": "Run unit tests"
+    }
+  ]
+}

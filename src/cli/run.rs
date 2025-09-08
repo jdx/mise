@@ -1454,7 +1454,10 @@ pub enum TaskOutput {
 fn trunc(prefix: &str, msg: &str) -> String {
     let prefix_len = console::measure_text_width(prefix);
     let msg = msg.lines().next().unwrap_or_default();
-    console::truncate_str(msg, *env::TERM_WIDTH - prefix_len - 1, "…").to_string()
+    // Ensure we have at least 20 characters for the message, even with very long prefixes
+    let available_width = (*env::TERM_WIDTH).saturating_sub(prefix_len + 1);
+    let max_width = available_width.max(20); // Always show at least 20 chars of message
+    console::truncate_str(msg, max_width, "…").to_string()
 }
 
 async fn err_no_task(config: &Config, name: &str) -> Result<()> {
