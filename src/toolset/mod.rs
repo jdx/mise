@@ -20,7 +20,7 @@ use crate::{backend, config, env, hooks};
 use crate::{backend::Backend, parallel};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
-use eyre::{Result, WrapErr};
+use eyre::Result;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use outdated_info::OutdatedInfo;
@@ -244,11 +244,19 @@ impl Toolset {
                 Ok(leaf_versions) => installed.extend(leaf_versions),
                 Err(Error::InstallFailed {
                     successful_installations,
-                    failed_installations,
+                    mut failed_installations,
                 }) => {
                     // Count both successes and failures toward header progress
                     mpr.header_inc(successful_installations.len() + failed_installations.len());
                     installed.extend(successful_installations);
+
+                    // If exactly one tool failed, propagate its original error directly
+                    // so the error location points to the backend implementation.
+                    if failed_installations.len() == 1 {
+                        let (_tr, report) = failed_installations.remove(0);
+                        return Err(report);
+                    }
+
                     return Err(Error::InstallFailed {
                         successful_installations: installed,
                         failed_installations,
@@ -448,10 +456,9 @@ impl Toolset {
                             force: opts.force,
                             dry_run: opts.dry_run,
                         };
-                        let old_tv = tv.clone();
-                        ba.install_version(ctx, tv)
-                            .await
-                            .wrap_err_with(|| format!("failed to install {old_tv}"))
+                        // Avoid wrapping the backend error here so the error location
+                        // points to the backend implementation (more helpful for debugging).
+                        ba.install_version(ctx, tv).await
                     }
                     .await;
 

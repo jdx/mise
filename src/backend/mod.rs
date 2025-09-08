@@ -29,7 +29,7 @@ use crate::{dirs, env, file, hash, lock_file, plugins, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
 use console::style;
-use eyre::{Result, WrapErr, bail, eyre};
+use eyre::{Context, Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use platform_target::PlatformTarget;
@@ -507,7 +507,14 @@ pub trait Backend: Debug + Send + Sync {
             Ok(tv) => tv,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
-                return Err(e);
+                // Wrap at the backend layer so error Location points to backend code
+                // while preserving the underlying plugin/backtrace details.
+                return Err(e.wrap_err(format!(
+                    "failed to install {}@{} via backend {}",
+                    self.ba().tool_name(),
+                    old_tv.version,
+                    self.id()
+                )));
             }
         };
 
