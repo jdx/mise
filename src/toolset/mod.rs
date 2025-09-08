@@ -244,18 +244,11 @@ impl Toolset {
                 Ok(leaf_versions) => installed.extend(leaf_versions),
                 Err(Error::InstallFailed {
                     successful_installations,
-                    mut failed_installations,
+                    failed_installations,
                 }) => {
                     // Count both successes and failures toward header progress
                     mpr.header_inc(successful_installations.len() + failed_installations.len());
                     installed.extend(successful_installations);
-
-                    // If exactly one tool failed, propagate its original error directly
-                    // so the error location points to the backend implementation.
-                    if failed_installations.len() == 1 {
-                        let (_tr, report) = failed_installations.remove(0);
-                        return Err(report);
-                    }
 
                     return Err(Error::InstallFailed {
                         successful_installations: installed,
