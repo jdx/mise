@@ -48,9 +48,10 @@ assert "mise dr path" "$PWD/a"
 
 cat <<'EOF' >mise.toml
 [env]
-_.path = { path = ["a"], tools = true }
+_.path = [{ path = ["a", "b"], tools = true }]
 EOF
-assert "mise dr path" "$PWD/a"
+assert "mise dr path" "$PWD/a
+$PWD/b"
 
 cat <<'EOF' >mise.toml
 [[env]]
