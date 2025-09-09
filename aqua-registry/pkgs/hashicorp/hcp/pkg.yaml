@@ -1,0 +1,4 @@
+packages:
+  - name: hashicorp/hcp@v0.10.0
+  - name: hashicorp/hcp
+    version: v0.1.0

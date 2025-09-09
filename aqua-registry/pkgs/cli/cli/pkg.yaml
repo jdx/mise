@@ -1,5 +1,5 @@
 packages:
-  - name: cli/cli@v2.78.0
+  - name: cli/cli@v2.79.0
   - name: cli/cli
     version: v2.49.2
   - name: cli/cli

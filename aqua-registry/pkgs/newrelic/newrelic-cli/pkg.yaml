@@ -1,2 +1,2 @@
 packages:
-  - name: newrelic/newrelic-cli@v0.104.0
+  - name: newrelic/newrelic-cli@v0.104.1

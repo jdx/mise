@@ -1,5 +1,5 @@
 packages:
-  - name: carvel-dev/ytt@v0.52.0
+  - name: carvel-dev/ytt@v0.52.1
   - name: carvel-dev/ytt
     version: v0.46.6
   - name: carvel-dev/ytt
