@@ -104,6 +104,11 @@ fn main() -> eyre::Result<()> {
 }
 
 async fn main_() -> eyre::Result<()> {
+    // Set up color overrides before installing color_eyre
+    // This needs to happen early so color-eyre respects our color preferences
+    if let Some(colors_enabled) = *env::CLICOLOR {
+        owo_colors::set_override(colors_enabled);
+    }
     color_eyre::install()?;
     install_panic_hook();
     if std::env::current_dir().is_ok() {
@@ -134,9 +139,15 @@ fn handle_err(err: Report) -> eyre::Result<()> {
         }
     }
     show_github_rate_limit_err(&err);
-    if *env::MISE_FRIENDLY_ERROR
-        || (!cfg!(debug_assertions) && log::max_level() < log::LevelFilter::Debug)
-    {
+    let use_friendly = match *env::MISE_FRIENDLY_ERROR {
+        Some(true) => true,   // explicitly enabled
+        Some(false) => false, // explicitly disabled
+        None => {
+            // default behavior: friendly in release mode unless debug logging
+            !cfg!(debug_assertions) && log::max_level() < log::LevelFilter::Debug
+        }
+    };
+    if use_friendly {
         display_friendly_err(&err);
         exit(1);
     }

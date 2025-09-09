@@ -12,6 +12,7 @@ fn init() {
     }
     console::set_colors_enabled(false);
     console::set_colors_enabled_stderr(false);
+    owo_colors::set_override(false);
     env::set_var(
         "HOME",
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"),

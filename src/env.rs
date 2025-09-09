@@ -73,8 +73,16 @@ pub static XDG_DATA_HOME: Lazy<PathBuf> = Lazy::new(|| {
 pub static XDG_STATE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local").join("state")));
 
-/// always display "friendly" errors even in debug mode
-pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| var_is_true("MISE_FRIENDLY_ERROR"));
+/// control display of "friendly" errors - None means use default behavior, Some(true/false) forces on/off
+pub static MISE_FRIENDLY_ERROR: Lazy<Option<bool>> = Lazy::new(|| {
+    if var_is_true("MISE_FRIENDLY_ERROR") {
+        Some(true)
+    } else if var_is_false("MISE_FRIENDLY_ERROR") {
+        Some(false)
+    } else {
+        None
+    }
+});
 pub static MISE_TOOL_STUB: Lazy<bool> =
     Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("tool-stub"));
 pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
@@ -256,12 +264,17 @@ pub static CLICOLOR_FORCE: Lazy<Option<bool>> =
 pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
     if *CLICOLOR_FORCE == Some(true) {
         Some(true)
+    } else if *NO_COLOR {
+        Some(false)
     } else if let Ok(v) = var("CLICOLOR") {
         Some(v != "0")
     } else {
         None
     }
 });
+
+/// Disable color output - https://no-color.org/
+pub static NO_COLOR: Lazy<bool> = Lazy::new(|| var("NO_COLOR").is_ok_and(|v| !v.is_empty()));
 
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =

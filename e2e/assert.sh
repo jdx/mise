@@ -21,8 +21,17 @@ quiet_assert_succeed() {
 }
 quiet_assert_fail() {
 	local status=0
+	local output
 	debug "$ $1"
-	MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 bash -c "$1 2>&1" || status=$?
+	# Capture output and strip ANSI color codes
+	output=$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 bash -c "$1 2>&1" || echo "EXIT_CODE:$?")
+	if [[ $output == *"EXIT_CODE:"* ]]; then
+		status="${output##*EXIT_CODE:}"
+		output="${output%EXIT_CODE:*}"
+	fi
+	# Strip ANSI codes - using sed as bash parameter expansion doesn't support regex
+	# shellcheck disable=SC2001
+	echo "$output" | sed $'s/\x1b\\[[0-9;]*m//g'
 	if [[ $status -eq 0 ]]; then
 		fail "[$1] command succeeded but was expected to fail"
 	fi

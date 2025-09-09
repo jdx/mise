@@ -137,6 +137,10 @@ impl Settings {
         if settings.raw {
             settings.jobs = 1;
         }
+        // Handle NO_COLOR environment variable
+        if *env::NO_COLOR {
+            settings.color = false;
+        }
         if settings.debug {
             settings.log_level = "debug".to_string();
         }
@@ -162,16 +166,28 @@ impl Settings {
             }
         }
         if !settings.color {
+            debug!("Disabling colors: settings.color=false");
             console::set_colors_enabled(false);
             console::set_colors_enabled_stderr(false);
+            owo_colors::set_override(false);
+            debug!("owo_colors::set_override(false) called");
         } else if *env::CLICOLOR_FORCE == Some(true) {
+            debug!("Forcing colors enabled: CLICOLOR_FORCE=1");
             console::set_colors_enabled(true);
             console::set_colors_enabled_stderr(true);
+            owo_colors::set_override(true);
+            debug!("owo_colors::set_override(true) called");
         } else if *env::CLICOLOR == Some(false) {
+            debug!("Disabling colors: CLICOLOR=0");
             console::set_colors_enabled(false);
             console::set_colors_enabled_stderr(false);
+            owo_colors::set_override(false);
+            debug!("owo_colors::set_override(false) called");
         } else if ci_info::is_ci() && !cfg!(test) {
+            debug!("Enabling colors in CI");
             console::set_colors_enabled_stderr(true);
+            owo_colors::set_override(true);
+            debug!("owo_colors::set_override(true) called");
         }
         if settings.ci {
             settings.yes = true;
