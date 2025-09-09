@@ -208,6 +208,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0674a1ddeecb70197781e945de4b3b8ffb61fa939a5597bcf48503737663100"
 
 [[package]]
+name = "aqua-registry"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "eyre",
+ "indexmap 2.11.0",
+ "itertools 0.13.0",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_yaml",
+ "strum 0.26.3",
+ "tokio",
+ "tokio-test",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -282,6 +299,28 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+]
+
+[[package]]
+name = "async-stream"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5a71a6f37880a80d1d7f19efd781e4b5de42c88f0722cc13bcb6cc2cfe8476"
+dependencies = [
+ "async-stream-impl",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "async-stream-impl"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7c24de15d275a1ecfd47a380fb4d5ec9bfe0933f309ed5e705b775596a3574d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
 ]
 
 [[package]]
@@ -1475,7 +1514,7 @@ dependencies = [
  "pest",
  "pest_derive",
  "regex",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.16",
 ]
 
@@ -3858,6 +3897,7 @@ dependencies = [
 name = "mise"
 version = "2025.9.9"
 dependencies = [
+ "aqua-registry",
  "async-backtrace",
  "async-trait",
  "base64 0.22.1",
@@ -3937,7 +3977,7 @@ dependencies = [
  "shell-words",
  "signal-hook",
  "siphasher",
- "strum",
+ "strum 0.27.2",
  "sys-info",
  "tabled",
  "taplo",
@@ -5020,7 +5060,7 @@ dependencies = [
  "serde_with",
  "serde_yaml",
  "sha2",
- "strum",
+ "strum 0.27.2",
  "thiserror 2.0.16",
  "walkdir",
  "zeroize",
@@ -5764,11 +5804,33 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "strum"
+version = "0.26.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
+dependencies = [
+ "strum_macros 0.26.4",
+]
+
+[[package]]
+name = "strum"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.27.2",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.26.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.106",
 ]
 
 [[package]]
@@ -6168,6 +6230,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-stream"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eca58d7bba4a75707817a2c44174253f9236b2d5fbd055602e9d5c07c139a047"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-test"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2468baabc3311435b55dd935f702f42cd1b8abb7e754fb7dfb16bd36aa88f9f7"
+dependencies = [
+ "async-stream",
+ "bytes",
+ "futures-core",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "tokio-util"
 version = "0.7.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6395,7 +6481,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sevenz-rust2",
- "strum",
+ "strum 0.27.2",
  "tempfile",
  "thiserror 2.0.16",
  "url",
@@ -6598,7 +6684,7 @@ dependencies = [
  "regex",
  "serde",
  "shell-words",
- "strum",
+ "strum 0.27.2",
  "tera",
  "thiserror 2.0.16",
  "versions 7.0.0",
