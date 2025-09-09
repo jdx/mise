@@ -507,13 +507,8 @@ pub trait Backend: Debug + Send + Sync {
             Ok(tv) => tv,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
-                // Wrap at the backend layer so error Location points to backend code
-                // while preserving the underlying plugin/backtrace details.
-                return Err(e.wrap_err(format!(
-                    "failed to install {}@{}",
-                    self.ba().full(),
-                    old_tv.version
-                )));
+                // Pass through the error - it will be wrapped at a higher level
+                return Err(e);
             }
         };
 

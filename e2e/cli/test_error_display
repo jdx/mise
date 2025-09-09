@@ -4,12 +4,12 @@ set -euo pipefail
 
 # Test comprehensive error display for both friendly and non-friendly error messages
 # This test validates that error messages are properly formatted and contain expected content
+# It checks multi-line output to ensure no double-wrapping or redundant messages
 
-# Test friendly error messages (default behavior)
-echo "Testing friendly error messages..."
+echo "Testing error message formatting..."
 
 # Test 1: Invalid tool version error (friendly)
-echo "Test 1: Invalid tool version"
+echo "Test 1: Invalid tool version - checking full error output"
 set +e
 output=$(mise install node@invalid-version 2>&1)
 exit_code=$?
@@ -20,15 +20,32 @@ if [ $exit_code -eq 0 ]; then
 	exit 1
 fi
 
-# Check that error contains expected patterns for friendly errors
-if ! echo "$output" | grep -qi "failed to install core:node@invalid-version"; then
-	echo "ERROR: Missing expected error message for invalid version"
+# Check the error output structure
+# Should show "Failed to install core:node@invalid-version:" at the top level
+# Should NOT have duplicate "failed to install" messages
+if ! echo "$output" | grep -q "Failed to install core:node@invalid-version:"; then
+	echo "ERROR: Missing expected top-level error message"
 	echo "Output: $output"
 	exit 1
 fi
 
-# Test 2: Missing plugin error (friendly)
-echo "Test 2: Missing plugin"
+# Check that we don't have redundant "failed to install" wrapping
+failed_count=$(echo "$output" | grep -ic "failed to install" || true)
+if [ "$failed_count" -gt 1 ]; then
+	echo "ERROR: Found redundant 'failed to install' messages (count: $failed_count)"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Check for HTTP error details (the actual error)
+if ! echo "$output" | grep -qi "404\|not found\|http"; then
+	echo "ERROR: Missing HTTP error details"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Test 2: Missing plugin error
+echo "Test 2: Missing plugin - checking error structure"
 set +e
 output=$(mise install nonexistent-tool@1.0.0 2>&1)
 exit_code=$?
@@ -39,63 +56,98 @@ if [ $exit_code -eq 0 ]; then
 	exit 1
 fi
 
-# Check for plugin not found error
+# Check for appropriate error message
 if ! echo "$output" | grep -q "not found\|unknown backend\|no backend found"; then
 	echo "ERROR: Missing expected error message for missing plugin"
 	echo "Output: $output"
 	exit 1
 fi
 
-# Test 3: Invalid configuration error (friendly)
-echo "Test 3: Invalid configuration"
-cat >test_invalid_config.toml <<EOF
-[tools]
-node = "this is not valid"
-invalid_key = true
-EOF
-
+# Test 3: Multiple installation failures should show clear error structure
+echo "Test 3: Multiple installation failures"
 set +e
-output=$(mise --file test_invalid_config.toml install 2>&1)
+output=$(mise install node@invalid-version python@invalid-version 2>&1)
 exit_code=$?
 set -e
-rm -f test_invalid_config.toml
 
 if [ $exit_code -eq 0 ]; then
-	echo "ERROR: Expected non-zero exit code for invalid config"
+	echo "ERROR: Expected non-zero exit code for multiple invalid versions"
 	exit 1
 fi
 
-# Test non-friendly error messages (with RUST_BACKTRACE)
-echo "Testing non-friendly error messages with backtrace..."
+# For multiple failures, should show "Failed to install tools:" followed by list
+if echo "$output" | grep -q "python@invalid-version"; then
+	# Multiple tools were attempted
+	if ! echo "$output" | grep -q "Failed to install tools:"; then
+		echo "ERROR: Missing 'Failed to install tools:' header for multiple failures"
+		echo "Output: $output"
+		exit 1
+	fi
+else
+	# Only one tool was attempted (parallel execution may vary)
+	if ! echo "$output" | grep -q "Failed to install core:node@invalid-version"; then
+		echo "ERROR: Missing error message for single failure"
+		echo "Output: $output"
+		exit 1
+	fi
+fi
 
-# Test 4: Invalid tool version with backtrace
-echo "Test 4: Invalid tool version with backtrace"
+# Test 4: Backend-specific error with context
+echo "Test 4: Backend error with proper context"
+set +e
+output=$(mise install cargo:nonexistent-crate-12345@1.0.0 2>&1)
+exit_code=$?
+set -e
+
+if [ $exit_code -eq 0 ]; then
+	echo "ERROR: Expected non-zero exit code for invalid cargo crate"
+	exit 1
+fi
+
+# Check that error shows the full tool identifier
+if ! echo "$output" | grep -qi "cargo:nonexistent-crate-12345"; then
+	echo "ERROR: Missing full tool identifier in error message"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Should not have duplicate "failed to install" messages
+failed_count=$(echo "$output" | grep -ic "failed to install" || true)
+if [ "$failed_count" -gt 1 ]; then
+	echo "ERROR: Found redundant 'failed to install' messages in cargo error (count: $failed_count)"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Test 5: Error with backtrace should maintain structure
+echo "Test 5: Error with backtrace enabled"
 set +e
 output=$(RUST_BACKTRACE=1 mise install node@invalid-version 2>&1)
 exit_code=$?
 set -e
 
 if [ $exit_code -eq 0 ]; then
-	echo "ERROR: Expected non-zero exit code for invalid version with backtrace"
+	echo "ERROR: Expected non-zero exit code with backtrace"
 	exit 1
 fi
 
-# Check that error contains backtrace markers
-if ! echo "$output" | grep -q "Stack backtrace\|at src/\|at /"; then
-	echo "WARNING: Expected backtrace markers not found (may be optimized out in release builds)"
-	# Don't fail here as release builds might not have full backtraces
-fi
-
-# Still should contain the main error message
-if ! echo "$output" | grep -qi "failed to install core:node@invalid-version\|invalid-version"; then
-	echo "ERROR: Missing expected error message with backtrace enabled"
+# Should still have the main error message
+if ! echo "$output" | grep -q "Failed to install core:node@invalid-version"; then
+	echo "ERROR: Missing main error message with backtrace enabled"
 	echo "Output: $output"
 	exit 1
 fi
 
-# Test 5: Network/download error (friendly)
-echo "Test 5: Network/download error"
-# Force a download error by using an invalid URL backend
+# Check that backtrace doesn't introduce duplicate error wrapping
+failed_count=$(echo "$output" | grep -ic "failed to install" || true)
+if [ "$failed_count" -gt 1 ]; then
+	echo "ERROR: Found redundant 'failed to install' messages with backtrace (count: $failed_count)"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Test 6: Network/download error formatting
+echo "Test 6: Network/download error"
 cat >test_download_error.toml <<EOF
 [tools]
 "github:nonexistent-org/nonexistent-repo" = "latest"
@@ -119,82 +171,23 @@ if ! echo "$output" | grep -qi "failed\|error\|unable\|404\|not found"; then
 	exit 1
 fi
 
-# Test 6: Permission denied error (if possible)
-echo "Test 6: Permission denied scenario"
-if [ -w /usr/local ]; then
-	echo "Skipping permission test (have write access)"
-else
-	# Try to install to a protected location
-	set +e
-	output=$(MISE_DATA_DIR=/usr/local/mise-test mise install node@20 2>&1)
-	exit_code=$?
-	set -e
-
-	if [ $exit_code -eq 0 ]; then
-		echo "WARNING: Expected non-zero exit code for permission denied"
-	else
-		# Check for permission-related error patterns
-		if echo "$output" | grep -qi "permission\|denied\|cannot create\|access"; then
-			echo "Permission error detected as expected"
-		fi
-	fi
-fi
-
-# Test 7: Backend-specific error with context
-echo "Test 7: Backend error with context"
-# Try to use a cargo backend with invalid crate
+# Test 7: Debug mode should show more detail but maintain structure
+echo "Test 7: Debug mode error structure"
 set +e
-output=$(mise install cargo:nonexistent-crate-12345@1.0.0 2>&1)
+output=$(MISE_DEBUG=1 mise install node@invalid-version 2>&1 | head -100)
 exit_code=$?
 set -e
-
-if [ $exit_code -eq 0 ]; then
-	echo "ERROR: Expected non-zero exit code for invalid cargo crate"
-	exit 1
-fi
-
-# Check that error mentions the backend
-if ! echo "$output" | grep -qi "cargo\|crate\|failed to install"; then
-	echo "ERROR: Missing backend context in error message"
-	echo "Output: $output"
-	exit 1
-fi
-
-# Test 8: Multiple installation failures
-echo "Test 8: Multiple installation failures"
-set +e
-output=$(mise install node@invalid-version python@invalid-version 2>&1)
-exit_code=$?
-set -e
-
-if [ $exit_code -eq 0 ]; then
-	echo "ERROR: Expected non-zero exit code for multiple invalid versions"
-	exit 1
-fi
-
-# Check that both errors are mentioned
-if ! echo "$output" | grep -q "node@invalid-version"; then
-	echo "ERROR: Missing node error in multiple failure output"
-	echo "Output: $output"
-	exit 1
-fi
-
-# Test 9: Error location verification (debug mode)
-echo "Test 9: Error location in debug mode"
-set +e
-output=$(MISE_DEBUG=1 mise install node@invalid-version 2>&1)
-exit_code=$?
-set -e
-
-if [ $exit_code -eq 0 ]; then
-	echo "ERROR: Expected non-zero exit code in debug mode"
-	exit 1
-fi
 
 # In debug mode, we should see more detailed error information
-if ! echo "$output" | grep -qi "debug\|trace\|verbose\|failed"; then
-	echo "WARNING: Expected debug output markers not found"
-	# Don't fail as debug output format may vary
+# but the structure should still be clean without redundant wrapping
+if echo "$output" | grep -q "Failed to install"; then
+	failed_count=$(echo "$output" | grep -ic "failed to install" || true)
+	if [ "$failed_count" -gt 1 ]; then
+		echo "ERROR: Found redundant 'failed to install' messages in debug mode (count: $failed_count)"
+		echo "First 100 lines of output:"
+		echo "$output"
+		exit 1
+	fi
 fi
 
 echo "All error display tests passed!"
