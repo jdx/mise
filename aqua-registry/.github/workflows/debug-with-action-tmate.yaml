@@ -34,7 +34,7 @@ jobs:
           AQUA_GITHUB_TOKEN: ${{github.token}}
 
       # The default vim doesn't work well, so we install the latest vim ourselves.
-      - uses: rhysd/action-setup-vim@8e931b9954b19d4203d5caa5ff5521f3bc21dcc7 # v1.4.2
+      - uses: rhysd/action-setup-vim@89f3345bcde053529463583418779d83ee6dfb33 # v1.4.3
 
       - uses: mxschmitt/action-tmate@e5c7151931ca95bad1c6f4190c730ecf8c7dde48 # v3.19
         with:
