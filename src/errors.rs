@@ -53,7 +53,7 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
         // Show the underlying error with the tool context
         return format!(
             "Failed to install {}@{}: {}",
-            tr.ba().short,
+            tr.ba().full(),
             tr.version(),
             if *RUST_BACKTRACE {
                 format!("{error}")
@@ -67,7 +67,7 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
     let mut output = vec![];
     let failed_tools: Vec<String> = failed_installations
         .iter()
-        .map(|(tr, _)| format!("{}@{}", tr.ba().short, tr.version()))
+        .map(|(tr, _)| format!("{}@{}", tr.ba().full(), tr.version()))
         .collect();
 
     output.push(format!(
@@ -82,7 +82,11 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
         } else {
             format!("{error:?}")
         };
-        output.push(format!("\n{}@{}: {error_str}", tr.ba().short, tr.version()));
+        output.push(format!(
+            "\n{}@{}: {error_str}",
+            tr.ba().full(),
+            tr.version()
+        ));
     }
 
     output.join("\n")
