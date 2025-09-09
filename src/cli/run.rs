@@ -415,7 +415,13 @@ impl Run {
                         }
                         let jset = jset.clone();
                         let this_ = this.clone();
+                        let wait_start = std::time::Instant::now();
                         let permit = semaphore.clone().acquire_owned().await?;
+                        trace!(
+                            "semaphore acquired for {} after {}ms",
+                            task.name,
+                            wait_start.elapsed().as_millis()
+                        );
                         let config = config.clone();
                         let sched_tx = sched_tx.clone();
                         in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -482,7 +488,13 @@ impl Run {
                         if this.is_stopping() { break; }
                         let jset = jset.clone();
                         let this_ = this.clone();
+                        let wait_start = std::time::Instant::now();
                         let permit = semaphore.clone().acquire_owned().await?;
+                        trace!(
+                            "semaphore acquired for {} after {}ms",
+                            task.name,
+                            wait_start.elapsed().as_millis()
+                        );
                         let config = config.clone();
                         let sched_tx = sched_tx.clone();
                         in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -592,6 +604,7 @@ impl Run {
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
     ) -> Result<()> {
         let prefix = task.estyled_prefix();
+        let total_start = std::time::Instant::now();
         if Settings::get().task_skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "skipping task");
@@ -614,11 +627,23 @@ impl Run {
         for (k, v) in &task.tools {
             tools.push(format!("{k}@{v}").parse()?);
         }
+        let ts_build_start = std::time::Instant::now();
         let ts = ToolsetBuilder::new()
             .with_args(&tools)
             .build(config)
             .await?;
+        trace!(
+            "task {} ToolsetBuilder::build took {}ms",
+            task.name,
+            ts_build_start.elapsed().as_millis()
+        );
+        let env_render_start = std::time::Instant::now();
         let mut env = task.render_env(config, &ts).await?;
+        trace!(
+            "task {} render_env took {}ms",
+            task.name,
+            env_render_start.elapsed().as_millis()
+        );
         let output = self.output(Some(task));
         env.insert("MISE_TASK_OUTPUT".into(), output.to_string());
         if !self.timings {
@@ -642,7 +667,14 @@ impl Run {
         let timer = std::time::Instant::now();
 
         if let Some(file) = &task.file {
+            let exec_start = std::time::Instant::now();
             self.exec_file(config, file, task, &env, &prefix).await?;
+            trace!(
+                "task {} exec_file took {}ms (total {}ms)",
+                task.name,
+                exec_start.elapsed().as_millis(),
+                total_start.elapsed().as_millis()
+            );
         } else {
             let rendered_run_scripts = task
                 .render_run_scripts_with_args(config, self.cd.clone(), &task.args, &env)
@@ -658,8 +690,15 @@ impl Run {
             self.parse_usage_spec_and_init_env(config, task, &mut env, get_args)
                 .await?;
 
+            let exec_start = std::time::Instant::now();
             self.exec_task_run_entries(config, task, &env, &prefix, rendered_run_scripts, sched_tx)
                 .await?;
+            trace!(
+                "task {} exec_task_run_entries took {}ms (total {}ms)",
+                task.name,
+                exec_start.elapsed().as_millis(),
+                total_start.elapsed().as_millis()
+            );
         }
 
         if self.task_timings()
