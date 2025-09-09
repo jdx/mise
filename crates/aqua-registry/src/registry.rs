@@ -1,16 +1,15 @@
 use crate::types::{AquaPackage, RegistryIndex};
 use crate::RegistryBuilder;
+use dashmap::DashMap;
 use eyre::Result;
 use once_cell::sync::OnceCell;
-use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 static GLOBAL_REGISTRY: OnceCell<Arc<AquaRegistryManager>> = OnceCell::new();
 
 pub struct AquaRegistryManager {
     index: RegistryIndex,
-    cache: Mutex<HashMap<String, AquaPackage>>,
+    cache: DashMap<String, AquaPackage>,
 }
 
 impl AquaRegistryManager {
@@ -33,7 +32,7 @@ impl AquaRegistryManager {
 
         Ok(Self {
             index,
-            cache: Mutex::new(HashMap::new()),
+            cache: DashMap::new(),
         })
     }
 
@@ -43,13 +42,13 @@ impl AquaRegistryManager {
                 packages_by_name: indexmap::IndexMap::new(),
                 aliases: indexmap::IndexMap::new(),
             },
-            cache: Mutex::new(HashMap::new()),
+            cache: DashMap::new(),
         }
     }
 
     pub async fn package(&self, id: &str) -> Result<AquaPackage> {
         // Check cache first
-        if let Some(pkg) = self.cache.lock().await.get(id) {
+        if let Some(pkg) = self.cache.get(id) {
             return Ok(pkg.clone());
         }
 
@@ -58,7 +57,7 @@ impl AquaRegistryManager {
             let pkg = pkg.clone();
 
             // Cache it
-            self.cache.lock().await.insert(id.to_string(), pkg.clone());
+            self.cache.insert(id.to_string(), pkg.clone());
 
             Ok(pkg)
         } else {

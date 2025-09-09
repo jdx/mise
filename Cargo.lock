@@ -212,6 +212,7 @@ name = "aqua-registry"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "dashmap 6.1.0",
  "eyre",
  "indexmap 2.11.0",
  "itertools 0.14.0",
