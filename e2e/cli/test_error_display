@@ -5,43 +5,26 @@ set -euo pipefail
 # Test comprehensive error display with multiline snapshot-style checks
 # This test validates that error messages are properly formatted and structured
 
-echo "Testing error message formatting..."
+# Disable colors for consistent output
+export NO_COLOR=1
 
-# Helper function to normalize error output for comparison
-# Removes ANSI colors, normalizes paths, and filters out variable content
-normalize_output() {
-	sed -E \
-		-e 's/\x1b\[[0-9;]*m//g' \
-		-e 's|/Users/[^/]+|/Users/USER|g' \
-		-e 's|/home/[^/]+|/home/USER|g' \
-		-e 's|~/.local|~/.local|g' \
-		-e 's|src/.+\.rs:[0-9]+|src/FILE.rs:LINE|g' \
-		-e 's|at .+\.rs:[0-9]+|at FILE.rs:LINE|g' \
-		-e 's|2025\.[0-9]+\.[0-9]+(-[A-Z]+)?|VERSION|g' \
-		-e 's|[0-9a-f]{7}|COMMIT|g'
-}
+echo "Testing error message formatting..."
 
 # Test 1: Invalid tool version error - check full error structure
 echo "Test 1: Invalid tool version - multiline error check"
-output=$(mise install core:node@invalid-version 2>&1 | normalize_output || true)
+output=$(mise install core:node@invalid-version 2>&1 || true)
 
 # Check that the error message has the expected structure
-expected_pattern="mise mise VERSION by @jdx –      install
-mise node@invalid-version         install
-mise node@invalid-version         download node-vinvalid-version
-mise node@invalid-version         download node-vinvalid-version.tar.gz
-mise ERROR Failed to install tool: node@invalid-version
-
-node@invalid-version: 
-   0: HTTP status client error (404 Not Found) for url"
-
-# Extract just the key parts we want to verify
-output_excerpt=$(echo "$output" | head -8 | tail -7)
-
-if ! echo "$output_excerpt" | grep -q "Failed to install core:node@invalid-version:"; then
+if ! echo "$output" | grep -q "Failed to install core:node@invalid-version:"; then
 	echo "ERROR: Output structure doesn't match expected format"
-	echo "=== Expected pattern ==="
-	echo "$expected_pattern"
+	echo "=== Actual output ==="
+	echo "$output" | head -20
+	exit 1
+fi
+
+# Should have HTTP error in the output
+if ! echo "$output" | grep -q "HTTP status client error"; then
+	echo "ERROR: Missing HTTP error"
 	echo "=== Actual output ==="
 	echo "$output" | head -20
 	exit 1
@@ -51,7 +34,7 @@ echo "✓ Error structure matches expected format"
 
 # Test 2: Backend-specific error with proper formatting
 echo "Test 2: Backend error - multiline check"
-output=$(mise install cargo:nonexistent-crate-12345@1.0.0 2>&1 | normalize_output || true)
+output=$(mise install cargo:nonexistent-crate-12345@1.0.0 2>&1 || true)
 
 # Should show the full tool identifier and error details
 if ! echo "$output" | grep -q "Failed to install cargo:nonexistent-crate-12345@1.0.0:"; then
@@ -73,7 +56,7 @@ echo "✓ Backend error structure correct"
 
 # Test 3: Multiple tool failures should have proper structure
 echo "Test 3: Multiple installation failures - multiline check"
-output=$(mise install tiny@999.999.999 jq@999.999.999 2>&1 | normalize_output || true)
+output=$(mise install tiny@999.999.999 jq@999.999.999 2>&1 || true)
 
 # When multiple tools fail, we should see a different format
 # The exact format depends on whether they're processed in parallel
@@ -99,7 +82,7 @@ fi
 
 # Test 4: Error with RUST_BACKTRACE should show full trace
 echo "Test 4: Error with backtrace - multiline structure"
-output=$(RUST_BACKTRACE=1 mise install node@invalid-version 2>&1 | normalize_output || true)
+output=$(RUST_BACKTRACE=1 mise install node@invalid-version 2>&1 || true)
 
 # Should still have the main error structure
 if ! echo "$output" | grep -q "Failed to install core:node@invalid-version:"; then
@@ -110,7 +93,7 @@ if ! echo "$output" | grep -q "Failed to install core:node@invalid-version:"; th
 fi
 
 # With RUST_BACKTRACE=1, we should see stack frames or location info
-if echo "$output" | grep -qE "(BACKTRACE|Location:|at FILE\.rs:LINE)"; then
+if echo "$output" | grep -qE "(BACKTRACE|Location:|at .+\.rs:[0-9]+)"; then
 	echo "✓ Backtrace information present"
 else
 	echo "Note: Backtrace may be optimized out in release builds"
@@ -118,7 +101,7 @@ fi
 
 # Test 5: Plugin not found error should have clear message
 echo "Test 5: Plugin not found - multiline check"
-output=$(mise install nonexistent-tool@1.0.0 2>&1 | normalize_output || true)
+output=$(mise install nonexistent-tool@1.0.0 2>&1 || true)
 
 # Should have a clear "not found" message
 if ! echo "$output" | grep -qi "not found\|unknown backend\|no backend found"; then
@@ -138,7 +121,7 @@ node = "this is not valid"
 invalid_key = true
 EOF
 
-output=$(MISE_CONFIG_FILE=test_invalid_config.toml mise install 2>&1 | normalize_output || true)
+output=$(MISE_CONFIG_FILE=test_invalid_config.toml mise install 2>&1 || true)
 rm -f test_invalid_config.toml
 
 # Should show configuration error
@@ -158,7 +141,7 @@ cat >test_download_error.toml <<EOF
 "github:nonexistent-org/nonexistent-repo" = "latest"
 EOF
 
-output=$(MISE_CONFIG_FILE=test_download_error.toml mise install 2>&1 | normalize_output || true)
+output=$(MISE_CONFIG_FILE=test_download_error.toml mise install 2>&1 || true)
 rm -f test_download_error.toml
 
 # Should show network/download related error
