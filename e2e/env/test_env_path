@@ -53,11 +53,14 @@ EOF
 assert "mise dr path" "$PWD/a"
 
 cat <<'EOF' >mise.toml
-[env]
+[[env]]
 _.path = [{ path = "a", tools = true }, "b"]
+[[env]]
+_.path = "c"
 EOF
 assert "mise dr path" "$PWD/a
-$PWD/b"
+$PWD/b
+$PWD/c"
 
 mkdir -p sub_dir
 cd sub_dir
