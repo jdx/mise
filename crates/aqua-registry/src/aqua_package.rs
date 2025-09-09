@@ -11,11 +11,11 @@ impl AquaPackage {
         self = apply_override(self.clone(), self.version_override(versions));
         if let Some(avo) = self.overrides.clone().into_iter().find(|o| {
             if let (Some(goos), Some(goarch)) = (&o.goos, &o.goarch) {
-                goos == &os() && goarch == &arch()
+                goos == os() && goarch == arch()
             } else if let Some(goos) = &o.goos {
-                goos == &os()
+                goos == os()
             } else if let Some(goarch) = &o.goarch {
-                goarch == &arch()
+                goarch == arch()
             } else {
                 false
             }

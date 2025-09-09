@@ -52,7 +52,7 @@ fn bake_registry() -> Result<(), Box<dyn std::error::Error>> {
 
     // Embed the YAML content as a string literal
     for line in registry_content.lines() {
-        code_lines.push(format!("{}", line));
+        code_lines.push(line.to_string());
     }
 
     code_lines.extend(vec![
