@@ -104,12 +104,16 @@ fn main() -> eyre::Result<()> {
 }
 
 async fn main_() -> eyre::Result<()> {
-    // Set up color overrides before installing color_eyre
-    // This needs to happen early so color-eyre respects our color preferences
-    if let Some(colors_enabled) = *env::CLICOLOR {
-        owo_colors::set_override(colors_enabled);
+    // Configure color-eyre based on color preferences
+    if *env::CLICOLOR == Some(false) {
+        // Use blank theme (no colors) when colors are disabled
+        color_eyre::config::HookBuilder::new()
+            .theme(color_eyre::config::Theme::new())
+            .install()?;
+    } else {
+        // Use default installation with colors
+        color_eyre::install()?;
     }
-    color_eyre::install()?;
     install_panic_hook();
     if std::env::current_dir().is_ok() {
         unsafe {
