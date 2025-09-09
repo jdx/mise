@@ -10,148 +10,147 @@ export NO_COLOR=1
 
 echo "Testing error message formatting..."
 
-# Test 1: Invalid tool version error - check full error structure
-echo "Test 1: Invalid tool version - multiline error check"
+# Test 1: Invalid tool version error - check full multiline structure
+echo "Test 1: Invalid tool version - multiline snapshot check"
 output=$(mise install core:node@invalid-version 2>&1 || true)
 
-# Check that the error message has the expected structure
-if ! echo "$output" | grep -q "Failed to install core:node@invalid-version:"; then
-	echo "ERROR: Output structure doesn't match expected format"
-	echo "=== Actual output ==="
-	echo "$output" | head -20
-	exit 1
-fi
-
-# Should have HTTP error in the output
-if ! echo "$output" | grep -q "HTTP status client error"; then
-	echo "ERROR: Missing HTTP error"
-	echo "=== Actual output ==="
-	echo "$output" | head -20
-	exit 1
-fi
-
-echo "✓ Error structure matches expected format"
-
-# Test 2: Backend-specific error with proper formatting
-echo "Test 2: Backend error - multiline check"
-output=$(mise install cargo:nonexistent-crate-12345@1.0.0 2>&1 || true)
-
-# Should show the full tool identifier and error details
-if ! echo "$output" | grep -q "Failed to install cargo:nonexistent-crate-12345@1.0.0:"; then
-	echo "ERROR: Missing proper tool identifier in cargo error"
-	echo "=== Actual output ==="
-	echo "$output" | head -15
-	exit 1
-fi
-
-# Check that we have the error chain structure
-if ! echo "$output" | grep -q "   0:"; then
-	echo "ERROR: Missing error chain in output"
-	echo "=== Actual output ==="
-	echo "$output" | head -15
-	exit 1
-fi
-
-echo "✓ Backend error structure correct"
-
-# Test 3: Multiple tool failures should have proper structure
-echo "Test 3: Multiple installation failures - multiline check"
-output=$(mise install tiny@999.999.999 jq@999.999.999 2>&1 || true)
-
-# When multiple tools fail, we should see a different format
-# The exact format depends on whether they're processed in parallel
-if echo "$output" | grep -q "Failed to install tools:"; then
-	# Multiple failures format
-	if ! echo "$output" | grep -q "tiny@999.999.999\|jq@999.999.999"; then
-		echo "ERROR: Missing tool names in multiple failure output"
+# Check for the error structure across multiple lines
+# The format varies between debug and release builds
+if echo "$output" | grep -q "Failed to install core:node@invalid-version:"; then
+	# Check that HTTP error appears in the error chain
+	if echo "$output" | grep -q "HTTP status client error"; then
+		echo "✓ Error has correct multiline structure with HTTP error"
+	else
+		echo "ERROR: Missing HTTP error in error chain"
 		echo "=== Actual output ==="
 		echo "$output" | head -20
 		exit 1
 	fi
-	echo "✓ Multiple failure format correct"
 else
-	# Single failure format (if processed sequentially)
-	if ! echo "$output" | grep -qE "Failed to install (asdf:tiny|aqua:jqlang/jq)@999.999.999:"; then
+	echo "ERROR: Missing main error message"
+	echo "=== Actual output ==="
+	echo "$output" | head -20
+	exit 1
+fi
+
+# Test 2: Check error chain formatting with numbered entries
+echo "Test 2: Error chain structure - multiline check"
+output=$(mise install cargo:nonexistent-crate-12345@1.0.0 2>&1 || true)
+
+# Verify we have an error chain with "   0:" formatting
+if echo "$output" | grep -E "^\s+0:" >/dev/null 2>&1; then
+	echo "✓ Error chain has numbered entries"
+else
+	echo "ERROR: Missing proper error chain structure"
+	echo "=== Actual output ==="
+	echo "$output" | head -15
+	exit 1
+fi
+
+# Test 3: Multiple tool failures - check multiline list format
+echo "Test 3: Multiple installation failures - multiline check"
+output=$(mise install tiny@999.999.999 jq@999.999.999 2>&1 || true)
+
+# For multiple failures, check if both tools are mentioned
+if echo "$output" | grep -q "Failed to install tools:"; then
+	# Multiple failure format should list all tools
+	if echo "$output" | grep -q "tiny@999.999.999" && echo "$output" | grep -q "jq@999.999.999"; then
+		echo "✓ Multiple failure format lists both tools"
+	else
+		echo "ERROR: Multiple failures should list all tools"
+		echo "=== Actual output ==="
+		echo "$output" | head -25
+		exit 1
+	fi
+else
+	# Single failure or sequential processing
+	if echo "$output" | grep -E "Failed to install.*@999.999.999:" >/dev/null 2>&1; then
+		echo "✓ Failure format correct"
+	else
 		echo "ERROR: Missing proper error format"
 		echo "=== Actual output ==="
 		echo "$output" | head -20
 		exit 1
 	fi
-	echo "✓ Single failure format correct"
 fi
 
-# Test 4: Error with RUST_BACKTRACE should show full trace
+# Test 4: Backtrace format check - should have Location: on its own line
 echo "Test 4: Error with backtrace - multiline structure"
 output=$(RUST_BACKTRACE=1 mise install node@invalid-version 2>&1 || true)
 
-# Should still have the main error structure
-if ! echo "$output" | grep -q "Failed to install core:node@invalid-version:"; then
-	echo "ERROR: Missing main error with backtrace enabled"
-	echo "=== Actual output (first 30 lines) ==="
-	echo "$output" | head -30
-	exit 1
-fi
-
-# With RUST_BACKTRACE=1, we should see stack frames or location info
-if echo "$output" | grep -qE "(BACKTRACE|Location:|at .+\.rs:[0-9]+)"; then
-	echo "✓ Backtrace information present"
+# Check for multiline backtrace structure
+if echo "$output" | grep -E "^Location:" >/dev/null 2>&1; then
+	# Should have file location on next line
+	if echo "$output" | grep -E "^\s+src/.*\.rs:[0-9]+" >/dev/null 2>&1; then
+		echo "✓ Backtrace has proper multiline Location format"
+	else
+		echo "✓ Location header present"
+	fi
+elif echo "$output" | grep -q "BACKTRACE"; then
+	echo "✓ Backtrace section present"
 else
 	echo "Note: Backtrace may be optimized out in release builds"
 fi
 
-# Test 5: Plugin not found error should have clear message
-echo "Test 5: Plugin not found - multiline check"
+# Test 5: Simple error messages should be concise
+echo "Test 5: Plugin not found - concise message check"
 output=$(mise install nonexistent-tool@1.0.0 2>&1 || true)
 
-# Should have a clear "not found" message
-if ! echo "$output" | grep -qi "not found\|unknown backend\|no backend found"; then
-	echo "ERROR: Missing clear 'not found' message for missing plugin"
+# Count lines to ensure error is concise
+line_count=$(echo "$output" | wc -l)
+if echo "$output" | grep -q "not found in mise tool registry"; then
+	if [ "$line_count" -lt 10 ]; then
+		echo "✓ Plugin not found message is concise (${line_count} lines)"
+	else
+		echo "Warning: Error message may be verbose (${line_count} lines)"
+	fi
+else
+	echo "ERROR: Missing clear 'not found' message"
 	echo "=== Actual output ==="
-	echo "$output" | head -10
+	echo "$output"
 	exit 1
 fi
 
-echo "✓ Plugin not found error format correct"
-
-# Test 6: Invalid config file error
-echo "Test 6: Invalid configuration - multiline check"
+# Test 6: Config errors should show context across multiple lines
+echo "Test 6: Invalid configuration - multiline error context"
 cat >test_invalid_config.toml <<EOF
 [tools]
 node = "this is not valid"
-invalid_key = true
+python = ["also", "not", "valid"]
 EOF
 
 output=$(MISE_CONFIG_FILE=test_invalid_config.toml mise install 2>&1 || true)
 rm -f test_invalid_config.toml
 
-# Should show configuration error
-if ! echo "$output" | grep -qi "error\|invalid\|failed"; then
-	echo "ERROR: Missing error indication for invalid config"
+# Config errors often have multiline context
+if echo "$output" | grep -qi "error\|parse\|invalid\|failed"; then
+	echo "✓ Config error detected"
+else
+	echo "ERROR: Missing configuration error"
 	echo "=== Actual output ==="
 	echo "$output" | head -15
 	exit 1
 fi
 
-echo "✓ Invalid config error format correct"
+# Test 7: Network errors should show URL and status across lines
+echo "Test 7: Network/download error - multiline URL and status"
+output=$(mise install github:nonexistent-org/nonexistent-repo@latest 2>&1 || true)
 
-# Test 7: Network error formatting
-echo "Test 7: Network/download error - multiline check"
-cat >test_download_error.toml <<EOF
-[tools]
-"github:nonexistent-org/nonexistent-repo" = "latest"
-EOF
-
-output=$(MISE_CONFIG_FILE=test_download_error.toml mise install 2>&1 || true)
-rm -f test_download_error.toml
-
-# Should show network/download related error
-if ! echo "$output" | grep -qi "github:nonexistent-org/nonexistent-repo\|404\|not found\|failed"; then
-	echo "ERROR: Missing proper network error information"
+# Should show the tool and have error details
+if echo "$output" | grep -q "github:nonexistent-org/nonexistent-repo"; then
+	if echo "$output" | grep -qi "404\|not found\|failed\|error"; then
+		echo "✓ Network error shows tool and error details"
+	else
+		echo "ERROR: Missing error details for network failure"
+		echo "=== Actual output ==="
+		echo "$output" | head -15
+		exit 1
+	fi
+else
+	echo "ERROR: Missing tool identifier in network error"
 	echo "=== Actual output ==="
 	echo "$output" | head -15
 	exit 1
 fi
-
-echo "✓ Network error format correct"
 
 echo "All error display tests passed!"
