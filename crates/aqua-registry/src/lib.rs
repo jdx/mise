@@ -1,7 +1,10 @@
+pub mod aqua_package;
 pub mod builder;
-pub mod implementations;
+pub mod expressions;
 pub mod registry;
+pub mod type_implementations;
 pub mod types;
+pub mod utils;
 
 #[cfg(feature = "baked")]
 pub mod baked {
