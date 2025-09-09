@@ -510,10 +510,9 @@ pub trait Backend: Debug + Send + Sync {
                 // Wrap at the backend layer so error Location points to backend code
                 // while preserving the underlying plugin/backtrace details.
                 return Err(e.wrap_err(format!(
-                    "failed to install {}@{} via backend {}",
-                    self.ba().tool_name(),
-                    old_tv.version,
-                    self.id()
+                    "failed to install {}@{}",
+                    self.ba().full(),
+                    old_tv.version
                 )));
             }
         };

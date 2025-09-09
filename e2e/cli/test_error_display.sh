@@ -21,7 +21,7 @@ if [ $exit_code -eq 0 ]; then
 fi
 
 # Check that error contains expected patterns for friendly errors
-if ! echo "$output" | grep -q "failed to install node@invalid-version"; then
+if ! echo "$output" | grep -qi "failed to install.*node@invalid-version"; then
 	echo "ERROR: Missing expected error message for invalid version"
 	echo "Output: $output"
 	exit 1
@@ -87,7 +87,7 @@ if ! echo "$output" | grep -q "Stack backtrace\|at src/\|at /"; then
 fi
 
 # Still should contain the main error message
-if ! echo "$output" | grep -q "failed to install node@invalid-version\|invalid-version"; then
+if ! echo "$output" | grep -qi "failed to install.*node@invalid-version\|invalid-version"; then
 	echo "ERROR: Missing expected error message with backtrace enabled"
 	echo "Output: $output"
 	exit 1
