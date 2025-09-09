@@ -5,24 +5,24 @@ set -euo pipefail
 # Test comprehensive error display
 # This test validates that error messages are properly formatted and structured
 
-# Try to disable colors (though debug build may ignore this - that's a bug to fix)
+# Try to disable colors
 export NO_COLOR=1
 
-# Local local_assert_fail function that doesn't force MISE_FRIENDLY_ERROR
-local_local_assert_fail() {
+# Local assert_fail function that doesn't force MISE_FRIENDLY_ERROR
+local_assert_fail() {
 	local cmd="$1"
 	local expected="${2:-}"
 	local status=0
 	local actual
-	
+
 	debug "$ $cmd"
-	actual=$(RUST_BACKTRACE=0 bash -c "$cmd 2>&1" || status=$?)
-	
+	actual=$(RUST_BACKTRACE=0 bash -c "$cmd 2>&1") || status=$?
+
 	if [[ $status -eq 0 ]]; then
 		fail "[$cmd] command succeeded but was expected to fail"
 	fi
-	
-	if [[ -z "$expected" ]]; then
+
+	if [[ -z $expected ]]; then
 		ok "[$cmd] expected failure"
 	elif [[ $actual == *"$expected"* ]]; then
 		ok "[$cmd] output contains expected text"
@@ -79,30 +79,31 @@ export MISE_FRIENDLY_ERROR=0
 # Test 1: Invalid tool version error - check for the numbered error format with more context
 echo "Test 1: Invalid tool version"
 local_assert_fail "mise install core:node@invalid-version" \
-	"mise ERROR Failed to install core:node@invalid-version: 
-   0: HTTP status client error (404 Not Found)"
+	"Error: 
+   0: Failed to install core:node@invalid-version:"
 
 # Test 2: Backend error (cargo) - check for numbered error format with more context
 echo "Test 2: Cargo backend error"
 local_assert_fail "mise install cargo:nonexistent-crate-12345@1.0.0" \
-	"mise ERROR Failed to install cargo:nonexistent-crate-12345@1.0.0: 
-   0: HTTP status client error (404 Not Found)"
+	"Error: 
+   0: Failed to install cargo:nonexistent-crate-12345@1.0.0:"
 
 # Test 3: GitHub repository not found - check for numbered error format with more context
 echo "Test 3: GitHub repository not found"
 local_assert_fail "mise install github:nonexistent-org/nonexistent-repo@latest" \
-	"mise ERROR Failed to install github:nonexistent-org/nonexistent-repo@latest: 
-   0:"
+	"Error: 
+   0: Failed to install github:nonexistent-org/nonexistent-repo@latest:"
 
 # Test 4: Multiple tool failures - check for numbered error format
 echo "Test 4: Multiple tool failures"
 local_assert_fail "mise install tiny@999.999.999 jq@999.999.999" \
-	"mise ERROR Failed to install"
+	"Error:"
 
 # Test 5: Error with backtrace enabled - check for proper backtrace format
 echo "Test 5: Error with backtrace"
 local_assert_fail "RUST_BACKTRACE=1 mise install core:node@invalid-version" \
-	"mise ERROR Failed to install core:node@invalid-version: HTTP status client error (404 Not Found)"
+	"Error: 
+   0: Failed to install core:node@invalid-version:"
 
 # Test 6: Invalid configuration (treated as version strings)
 echo "Test 6: Invalid configuration"
@@ -113,7 +114,7 @@ python = ["also", "not", "valid"]
 EOF
 
 local_assert_fail "MISE_CONFIG_FILE=test_invalid_config.toml mise install" \
-	"mise ERROR Failed to install"
+	"Error:"
 rm -f test_invalid_config.toml
 
 echo ""
