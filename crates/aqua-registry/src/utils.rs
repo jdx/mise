@@ -91,11 +91,23 @@ pub fn arch() -> &'static str {
     }
 }
 
-// Template rendering function - simplified stub for now
-pub fn aqua_template_render(template: &str, _ctx: &HashMap<String, String>) -> Result<String> {
-    // For now, just return the template as-is - would need actual templating logic
-    // In a real implementation, this would substitute template variables with context values
-    Ok(template.to_string())
+// Template rendering function - basic implementation for aqua templates
+pub fn aqua_template_render(template: &str, ctx: &HashMap<String, String>) -> Result<String> {
+    let mut result = template.to_string();
+
+    // Simple template substitution for aqua templates like {{.Version}}, {{.Arch}}, etc.
+    for (key, value) in ctx {
+        let patterns = [
+            format!("{{{{.{}}}}}", key), // {{.Key}}
+            format!("{{{{{}}}}}", key),  // {{Key}} (alternative format)
+        ];
+
+        for pattern in &patterns {
+            result = result.replace(pattern, value);
+        }
+    }
+
+    Ok(result)
 }
 
 // Version utility functions - stubs for now
