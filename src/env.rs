@@ -73,14 +73,15 @@ pub static XDG_DATA_HOME: Lazy<PathBuf> = Lazy::new(|| {
 pub static XDG_STATE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local").join("state")));
 
-/// control display of "friendly" errors - None means use default behavior, Some(true/false) forces on/off
-pub static MISE_FRIENDLY_ERROR: Lazy<Option<bool>> = Lazy::new(|| {
+/// control display of "friendly" errors - defaults to release mode behavior unless overridden
+pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| {
     if var_is_true("MISE_FRIENDLY_ERROR") {
-        Some(true)
+        true
     } else if var_is_false("MISE_FRIENDLY_ERROR") {
-        Some(false)
+        false
     } else {
-        None
+        // default behavior: friendly in release mode unless debug logging
+        !cfg!(debug_assertions) && log::max_level() < log::LevelFilter::Debug
     }
 });
 pub static MISE_TOOL_STUB: Lazy<bool> =

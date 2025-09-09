@@ -143,15 +143,7 @@ fn handle_err(err: Report) -> eyre::Result<()> {
         }
     }
     show_github_rate_limit_err(&err);
-    let use_friendly = match *env::MISE_FRIENDLY_ERROR {
-        Some(true) => true,   // explicitly enabled
-        Some(false) => false, // explicitly disabled
-        None => {
-            // default behavior: friendly in release mode unless debug logging
-            !cfg!(debug_assertions) && log::max_level() < log::LevelFilter::Debug
-        }
-    };
-    if use_friendly {
+    if *env::MISE_FRIENDLY_ERROR {
         display_friendly_err(&err);
         exit(1);
     }
