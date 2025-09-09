@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: hashicorp
+    repo_name: hcp
+    description: HCP Command-Line Interface
+    url: https://releases.hashicorp.com/hcp/{{trimV .Version}}/hcp_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip

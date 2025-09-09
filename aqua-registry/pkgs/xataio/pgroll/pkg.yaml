@@ -1,4 +1,4 @@
 packages:
-  - name: xataio/pgroll@v0.14.1
+  - name: xataio/pgroll@v0.14.2
   - name: xataio/pgroll
     version: v0.2.1

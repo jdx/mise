@@ -1,5 +1,24 @@
 # Changelog
 
+## [2025.9.7](https://github.com/jdx/mise/compare/v2025.9.6..v2025.9.7) - 2025-09-09
+
+### 🐛 Bug Fixes
+
+- **(env)** allow mixed map for env._.file by @risu729 in [#6148](https://github.com/jdx/mise/pull/6148)
+- **(tasks)** restore parallel starts with poetry via list_paths cache and stable exec-env cache by @jdx in [#6237](https://github.com/jdx/mise/pull/6237)
+- add 'unknown' to the list of OS patterns by @efussi in [#6235](https://github.com/jdx/mise/pull/6235)
+- propagate errors from backend installs by @jdx in [#6236](https://github.com/jdx/mise/pull/6236)
+
+### 📦️ Dependency Updates
+
+- update taiki-e/install-action digest to 0c5db7f by @renovate[bot] in [#6244](https://github.com/jdx/mise/pull/6244)
+- update golang docker tag to v1.25.1 by @renovate[bot] in [#6247](https://github.com/jdx/mise/pull/6247)
+- update dependency vitepress to v1.6.4 by @renovate[bot] in [#6246](https://github.com/jdx/mise/pull/6246)
+
+### New Contributors
+
+- @efussi made their first contribution in [#6235](https://github.com/jdx/mise/pull/6235)
+
 ## [2025.9.6](https://github.com/jdx/mise/compare/v2025.9.5..v2025.9.6) - 2025-09-08
 
 ### 🚀 Features

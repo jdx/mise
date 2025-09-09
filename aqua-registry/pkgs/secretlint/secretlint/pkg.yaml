@@ -1,5 +1,5 @@
 packages:
-  - name: secretlint/secretlint@v11.2.3
+  - name: secretlint/secretlint@v11.2.4
   - name: secretlint/secretlint
     version: v8.2.4
   - name: secretlint/secretlint

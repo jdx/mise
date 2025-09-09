@@ -1,5 +1,5 @@
 packages:
-  - name: protocolbuffers/protobuf-go/protoc-gen-go@v1.36.8
+  - name: protocolbuffers/protobuf-go/protoc-gen-go@v1.36.9
   - name: protocolbuffers/protobuf-go/protoc-gen-go
     version: v1.28.0
   - name: protocolbuffers/protobuf-go/protoc-gen-go

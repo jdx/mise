@@ -1,2 +1,2 @@
 packages:
-  - name: hashicorp/packer@v1.14.1
+  - name: hashicorp/packer@v1.14.2
