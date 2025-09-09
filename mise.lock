@@ -47,6 +47,11 @@ checksum = "blake3:e96726cf26e534a44f61e015cc427ed92868fbf351fb7f1245d30e044d74c
 size = 6774865
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.4/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
+[tools.cargo-binstall.platforms.macos-arm64]
+checksum = "blake3:6a9104a686d44217ccfdcc2b9333a708d8ebd5a4abafe4d2eda5dec77c051a67"
+size = 5997376
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.4/cargo-binstall-aarch64-apple-darwin.zip"
+
 [[tools."cargo:cargo-edit"]]
 version = "0.13.7"
 backend = "cargo:cargo-edit"
@@ -107,6 +112,11 @@ backend = "aqua:jdx/hk"
 checksum = "blake3:5f4f62704bca96314d3ae11e2b0f0c9e76d07058f18676a5c31981763eb81d16"
 size = 6753765
 url = "https://github.com/jdx/hk/releases/download/v1.12.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+
+[tools.hk.platforms.macos-arm64]
+checksum = "blake3:4a5e2f34cd73cc54e9beafb189f1566c9d2a3de26eb6aae1a3ee69312bd752ac"
+size = 5853150
+url = "https://github.com/jdx/hk/releases/download/v1.12.0/hk-aarch64-apple-darwin.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"

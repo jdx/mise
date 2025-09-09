@@ -69,6 +69,7 @@ assert "mise install"
 
 echo "Testing parallel task execution (running 3 times for reliability)..."
 
+# Run the test 3 times to ensure reliability
 for test_run in {1..3}; do
 	echo ""
 	echo "=== Test Run $test_run/3 ==="

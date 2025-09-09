@@ -46,19 +46,32 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
         return "Installation failed".to_string();
     }
 
+    // For a single failure, show the underlying error directly to preserve
+    // the original error location for better debugging
+    if failed_installations.len() == 1 {
+        let (tr, error) = &failed_installations[0];
+        // Show the underlying error with the tool context
+        return format!(
+            "Failed to install {}@{}: {}",
+            tr.ba().full(),
+            tr.version(),
+            if *RUST_BACKTRACE {
+                format!("{error}")
+            } else {
+                format!("{error:?}")
+            }
+        );
+    }
+
+    // For multiple failures, show a summary and then each error
     let mut output = vec![];
     let failed_tools: Vec<String> = failed_installations
         .iter()
-        .map(|(tr, _)| format!("{}@{}", tr.ba().short, tr.version()))
+        .map(|(tr, _)| format!("{}@{}", tr.ba().full(), tr.version()))
         .collect();
 
     output.push(format!(
-        "Failed to install {}: {}",
-        if failed_tools.len() == 1 {
-            "tool"
-        } else {
-            "tools"
-        },
+        "Failed to install tools: {}",
         failed_tools.join(", ")
     ));
 
@@ -69,7 +82,11 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
         } else {
             format!("{error:?}")
         };
-        output.push(format!("\n{}@{}: {error_str}", tr.ba().short, tr.version()));
+        output.push(format!(
+            "\n{}@{}: {error_str}",
+            tr.ba().full(),
+            tr.version()
+        ));
     }
 
     output.join("\n")

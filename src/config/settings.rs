@@ -137,6 +137,10 @@ impl Settings {
         if settings.raw {
             settings.jobs = 1;
         }
+        // Handle NO_COLOR environment variable
+        if *env::NO_COLOR {
+            settings.color = false;
+        }
         if settings.debug {
             settings.log_level = "debug".to_string();
         }

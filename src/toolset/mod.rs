@@ -21,7 +21,7 @@ use crate::{backend::Backend, parallel};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
 use dashmap::DashMap;
-use eyre::{Result, WrapErr};
+use eyre::Result;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use outdated_info::OutdatedInfo;
@@ -255,6 +255,7 @@ impl Toolset {
                     // Count both successes and failures toward header progress
                     mpr.header_inc(successful_installations.len() + failed_installations.len());
                     installed.extend(successful_installations);
+
                     return Err(Error::InstallFailed {
                         successful_installations: installed,
                         failed_installations,
@@ -454,10 +455,9 @@ impl Toolset {
                             force: opts.force,
                             dry_run: opts.dry_run,
                         };
-                        let old_tv = tv.clone();
-                        ba.install_version(ctx, tv)
-                            .await
-                            .wrap_err_with(|| format!("failed to install {old_tv}"))
+                        // Avoid wrapping the backend error here so the error location
+                        // points to the backend implementation (more helpful for debugging).
+                        ba.install_version(ctx, tv).await
                     }
                     .await;
 

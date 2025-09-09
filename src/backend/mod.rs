@@ -507,6 +507,7 @@ pub trait Backend: Debug + Send + Sync {
             Ok(tv) => tv,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
+                // Pass through the error - it will be wrapped at a higher level
                 return Err(e);
             }
         };
