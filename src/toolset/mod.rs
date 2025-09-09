@@ -21,7 +21,7 @@ use crate::{backend::Backend, parallel};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
 use dashmap::DashMap;
-use eyre::{Result, WrapErr};
+use eyre::Result;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use outdated_info::OutdatedInfo;
