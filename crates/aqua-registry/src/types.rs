@@ -12,6 +12,7 @@ pub enum AquaPackageType {
     GithubRelease,
     Http,
     GoInstall,
+    GoBuild,
     Cargo,
 }
 
