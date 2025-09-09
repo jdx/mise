@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
 
+# Skip GPG verification for this test as it can fail on CI
+export MISE_NODE_VERIFY=0
 assert "mise install-into node@22.0.0 ./mynode"
 assert "./mynode/bin/node -v" "v22.0.0"

@@ -29,7 +29,7 @@ use crate::{dirs, env, file, hash, lock_file, plugins, versions_host};
 use async_trait::async_trait;
 use backend_type::BackendType;
 use console::style;
-use eyre::{Context, Result, bail, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use platform_target::PlatformTarget;
