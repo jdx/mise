@@ -2,6 +2,8 @@ use eyre::{WrapErr, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
+use serde::de::Deserialize;
+use serde::de::IntoDeserializer;
 use serde::de::Visitor;
 use serde::{Deserializer, de};
 use serde_derive::Deserialize;
@@ -752,7 +754,7 @@ where
     }
 }
 
-impl<'de> de::Deserialize<'de> for EnvList {
+impl<'de> Deserialize<'de> for EnvList {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -800,11 +802,11 @@ impl<'de> de::Deserialize<'de> for EnvList {
 
                             #[derive(Deserialize)]
                             struct EnvDirectives {
-                                #[serde(default, deserialize_with = "deserialize_arr")]
+                                #[serde(default, deserialize_with = "deserialize_env_directives")]
                                 path: Vec<MiseTomlEnvDirective>,
-                                #[serde(default, deserialize_with = "deserialize_arr")]
+                                #[serde(default, deserialize_with = "deserialize_env_directives")]
                                 file: Vec<MiseTomlEnvDirective>,
-                                #[serde(default, deserialize_with = "deserialize_arr")]
+                                #[serde(default, deserialize_with = "deserialize_env_directives")]
                                 source: Vec<MiseTomlEnvDirective>,
                                 #[serde(default)]
                                 python: EnvDirectivePython,
@@ -812,7 +814,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 other: BTreeMap<String, toml::Value>,
                             }
 
-                            impl<'de> de::Deserialize<'de> for EnvDirectivePythonVenv {
+                            impl<'de> Deserialize<'de> for EnvDirectivePythonVenv {
                                 fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
                                 where
                                     D: Deserializer<'de>,
@@ -964,7 +966,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 }
                             }
 
-                            impl<'de> de::Deserialize<'de> for Val {
+                            impl<'de> Deserialize<'de> for Val {
                                 fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
                                 where
                                     D: Deserializer<'de>,
@@ -1096,7 +1098,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
     }
 }
 
-impl<'de> de::Deserialize<'de> for MiseTomlToolList {
+impl<'de> Deserialize<'de> for MiseTomlToolList {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -1240,64 +1242,103 @@ impl FromStr for MiseTomlEnvDirective {
     }
 }
 
-impl<'de> de::Deserialize<'de> for MiseTomlEnvDirective {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        struct MiseTomlEnvDirectiveVisitor;
+pub fn deserialize_env_directives<'de, D>(
+    deserializer: D,
+) -> Result<Vec<MiseTomlEnvDirective>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    struct EnvMap {
+        #[serde(alias = "value")]
+        path: toml::Value,
+        #[serde(flatten)]
+        options: EnvDirectiveOptions,
+    }
 
-        impl<'de> Visitor<'de> for MiseTomlEnvDirectiveVisitor {
-            type Value = MiseTomlEnvDirective;
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("env directive")
-            }
+    fn process_map<E: de::Error>(map: EnvMap) -> Result<Vec<MiseTomlEnvDirective>, E> {
+        match map.path {
+            toml::Value::String(s) => Ok(vec![MiseTomlEnvDirective {
+                value: s,
+                options: map.options,
+            }]),
 
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(MiseTomlEnvDirective {
-                    value: v.into(),
-                    options: Default::default(),
+            toml::Value::Array(arr) => arr
+                .into_iter()
+                .map(|val| {
+                    val.as_str()
+                        .map(|s| MiseTomlEnvDirective {
+                            value: s.to_string(),
+                            options: map.options.clone(),
+                        })
+                        .ok_or_else(|| de::Error::custom("path array must contain only strings"))
                 })
-            }
+                .collect(),
 
-            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
-            where
-                M: de::MapAccess<'de>,
-            {
-                let mut options: EnvDirectiveOptions = Default::default();
-                let mut value = None;
-                while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    match k.as_str() {
-                        "value" | "path" => {
-                            value = Some(v.as_str().unwrap().to_string());
-                        }
-                        "tools" => {
-                            options.tools = v.as_bool().unwrap();
-                        }
-                        "redact" => {
-                            options.redact = v.as_bool().unwrap();
-                        }
-                        _ => {
-                            return Err(de::Error::custom("invalid key"));
-                        }
-                    }
-                }
-                if let Some(value) = value {
-                    Ok(MiseTomlEnvDirective { value, options })
-                } else {
-                    Err(de::Error::custom("missing value"))
-                }
-            }
+            _ => Err(de::Error::custom(
+                "path must be a string or array of strings",
+            )),
+        }
+    }
+
+    struct MiseTomlEnvDirectiveVisitor;
+
+    impl<'de> Visitor<'de> for MiseTomlEnvDirectiveVisitor {
+        type Value = Vec<MiseTomlEnvDirective>;
+
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+            formatter.write_str("a string, a map, or a list of directives")
         }
 
-        deserializer.deserialize_any(MiseTomlEnvDirectiveVisitor)
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            v.parse()
+                .map(|directive: MiseTomlEnvDirective| vec![directive])
+                .map_err(de::Error::custom)
+        }
+
+        fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            process_map(EnvMap::deserialize(de::value::MapAccessDeserializer::new(
+                map,
+            ))?)
+        }
+
+        fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
+        where
+            S: de::SeqAccess<'de>,
+        {
+            let mut directives = Vec::new();
+            while let Some(value) = seq.next_element::<toml::Value>()? {
+                match value {
+                    toml::Value::String(s) => {
+                        directives.push(s.parse().map_err(de::Error::custom)?);
+                    }
+                    toml::Value::Table(t) => {
+                        directives.extend(process_map(
+                            EnvMap::deserialize(t.into_deserializer())
+                                .map_err(de::Error::custom)?,
+                        )?);
+                    }
+                    _ => {
+                        return Err(de::Error::custom(
+                            "sequence must contain only strings or maps",
+                        ));
+                    }
+                }
+            }
+            Ok(directives)
+        }
     }
+
+    deserializer.deserialize_any(MiseTomlEnvDirectiveVisitor)
 }
 
-impl<'de> de::Deserialize<'de> for MiseTomlTool {
+impl<'de> Deserialize<'de> for MiseTomlTool {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -1390,7 +1431,7 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
     }
 }
 
-impl<'de> de::Deserialize<'de> for Tasks {
+impl<'de> Deserialize<'de> for Tasks {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -1408,7 +1449,7 @@ impl<'de> de::Deserialize<'de> for Tasks {
                 M: de::MapAccess<'de>,
             {
                 struct TaskDef(Task);
-                impl<'de> de::Deserialize<'de> for TaskDef {
+                impl<'de> Deserialize<'de> for TaskDef {
                     fn deserialize<D>(deserializer: D) -> std::result::Result<TaskDef, D::Error>
                     where
                         D: de::Deserializer<'de>,
@@ -1448,7 +1489,7 @@ impl<'de> de::Deserialize<'de> for Tasks {
                             where
                                 M: de::MapAccess<'de>,
                             {
-                                let t = de::Deserialize::deserialize(
+                                let t = Deserialize::deserialize(
                                     de::value::MapAccessDeserializer::new(map),
                                 )?;
                                 Ok(TaskDef(t))
@@ -1471,7 +1512,7 @@ impl<'de> de::Deserialize<'de> for Tasks {
     }
 }
 
-impl<'de> de::Deserialize<'de> for BackendArg {
+impl<'de> Deserialize<'de> for BackendArg {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -1496,7 +1537,7 @@ impl<'de> de::Deserialize<'de> for BackendArg {
     }
 }
 
-impl<'de> de::Deserialize<'de> for Alias {
+impl<'de> Deserialize<'de> for Alias {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
