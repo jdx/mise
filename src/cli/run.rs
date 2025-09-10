@@ -410,7 +410,7 @@ impl Run {
                     Ok((task, deps_for_remove)) => {
                         drained_any = true;
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
-                        if this.is_stopping() {
+                        if this.is_stopping() && !this.continue_on_error {
                             break;
                         }
                         let jset = jset.clone();
@@ -485,7 +485,7 @@ impl Run {
                 m = sched_rx.recv() => {
                     if let Some((task, deps_for_remove)) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
-                        if this.is_stopping() { break; }
+                        if this.is_stopping() && !this.continue_on_error { break; }
                         let jset = jset.clone();
                         let this_ = this.clone();
                         let wait_start = std::time::Instant::now();
@@ -571,6 +571,8 @@ impl Run {
             let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
             eprintln!("{}", style::edim(msg));
         };
+        // If there were failures and --continue-on-error was used, print a brief summary
+        this.maybe_print_failure_summary();
         if let Some((task, status)) = this.failed_tasks.lock().unwrap().first() {
             let prefix = task.estyled_prefix();
             this.eprint(
@@ -583,6 +585,22 @@ impl Run {
         time!("parallelize_tasks done");
 
         Ok(())
+    }
+
+    fn maybe_print_failure_summary(&self) {
+        if !self.continue_on_error {
+            return;
+        }
+        let failed = self.failed_tasks.lock().unwrap().clone();
+        if failed.is_empty() {
+            return;
+        }
+        let count = failed.len();
+        eprintln!("{} {} task(s) failed:", style::ered("ERROR"), count);
+        for (task, status) in &failed {
+            let prefix = task.estyled_prefix();
+            self.eprint(task, &prefix, &format!("exited with status {}", status));
+        }
     }
 
     fn eprint(&self, task: &Task, prefix: &str, line: &str) {
@@ -825,7 +843,14 @@ impl Run {
             });
         }
 
+        // Wait for completion
         done_rx.await.map_err(|e| eyre!(e))?;
+
+        // Check if we failed during the execution
+        if self.is_stopping() && !self.continue_on_error {
+            return Err(eyre!("task sequence aborted due to failure"));
+        }
+
         Ok(())
     }
 
