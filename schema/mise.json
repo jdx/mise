@@ -139,6 +139,10 @@
                           }
                         }
                       ]
+                    },
+                    "tools": {
+                      "type": "boolean",
+                      "description": "load tools before resolving"
                     }
                   }
                 },
@@ -148,11 +152,37 @@
                 },
                 {
                   "description": "PATH entries to add",
+                  "type": "array",
                   "items": {
-                    "description": "PATH entry to add",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "description": "PATH entry to add",
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          },
+                          "tools": {
+                            "type": "boolean",
+                            "description": "load tools before resolving"
+                          }
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -238,11 +268,41 @@
                 },
                 {
                   "description": "bash scripts to load",
+                  "type": "array",
                   "items": {
-                    "description": "bash script to load",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "description": "bash script to load",
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          },
+                          "tools": {
+                            "type": "boolean",
+                            "description": "load tools before resolving"
+                          },
+                          "redact": {
+                            "type": "boolean",
+                            "description": "redact the value from logs"
+                          }
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             }
