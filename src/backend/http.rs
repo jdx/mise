@@ -97,18 +97,36 @@ impl HttpBackend {
         let extracted_path = self.get_cached_extracted_path(cache_key);
         let metadata_path = self.get_cache_metadata_path(cache_key);
 
-        // Create cache directory
-        file::create_dir_all(&cache_path)?;
+        // Ensure parent directory exists (we'll atomically rename into it)
+        if let Some(parent) = cache_path.parent() {
+            file::create_dir_all(parent)?;
+        }
 
-        // Remove existing extracted contents if they exist
+        // Create a unique temporary directory for atomic extraction
+        let pid = std::process::id();
+        let now_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
+        let tmp_dir_name = format!("{}.tmp-{}-{}", cache_key, pid, now_ms);
+        let tmp_extract_path = match cache_path.parent() {
+            Some(parent) => parent.join(tmp_dir_name),
+            None => cache_path.with_extension(format!("tmp-{}-{}", pid, now_ms)),
+        };
+
+        // Ensure any previous temp dir is removed
+        if tmp_extract_path.exists() {
+            let _ = file::remove_all(&tmp_extract_path);
+        }
+
+        // Perform extraction into the temp directory
+        self.extract_artifact_to_cache(file_path, &tmp_extract_path, tv, opts, pr)?;
+
+        // Replace any existing extracted cache atomically
         if extracted_path.exists() {
             file::remove_all(&extracted_path)?;
         }
+        // Rename temp directory to the final cache path
+        std::fs::rename(&tmp_extract_path, &extracted_path)?;
 
-        // Extract tarball to cache
-        self.extract_artifact_to_cache(file_path, &extracted_path, tv, opts, pr)?;
-
-        // Create metadata
+        // Only write metadata after the extracted directory is in place
         let metadata = CacheMetadata {
             url: url.to_string(),
             checksum: lookup_platform_key(opts, "checksum")
@@ -118,7 +136,6 @@ impl HttpBackend {
             platform: self.get_platform_key(),
         };
 
-        // Write metadata
         let metadata_json = serde_json::to_string_pretty(&metadata)?;
         file::write(&metadata_path, metadata_json)?;
 
@@ -343,6 +360,9 @@ impl Backend for HttpBackend {
         // regardless of whether a checksum was provided or what algorithm was used
         let cache_key = self.get_file_based_cache_key(&file_path, &opts)?;
         let cached_extracted_path = self.get_cached_extracted_path(&cache_key);
+
+        // Acquire a cache-level lock to serialize extraction for this cache key
+        let _cache_lock = crate::lock_file::get(&cached_extracted_path, ctx.force)?;
 
         // Check if tarball is already cached
         if self.is_tarball_cached(&cache_key) {
