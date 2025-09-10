@@ -63,6 +63,10 @@ assert "mise dr path" "$PWD/a
 $PWD/b
 $PWD/c"
 
+cat <<'EOF' >mise.toml
+[env]
+_.path = ['a', 'b']
+EOF
 mkdir -p sub_dir
 cd sub_dir
 cat <<'EOF' >mise.toml
