@@ -65,20 +65,22 @@ impl<'a> TomlParser<'a> {
     }
 }
 
-pub fn deserialize_arr<'de, D, T>(deserializer: D) -> std::result::Result<Vec<T>, D::Error>
+pub fn deserialize_arr<'de, D, T, C>(deserializer: D) -> std::result::Result<C, D::Error>
 where
     D: de::Deserializer<'de>,
     T: FromStr + Deserialize<'de>,
     <T as FromStr>::Err: std::fmt::Display,
+    C: FromIterator<T> + Deserialize<'de>,
 {
-    struct ArrVisitor<T>(std::marker::PhantomData<T>);
+    struct ArrVisitor<T, C>(std::marker::PhantomData<(T, C)>);
 
-    impl<'de, T> de::Visitor<'de> for ArrVisitor<T>
+    impl<'de, T, C> de::Visitor<'de> for ArrVisitor<T, C>
     where
         T: FromStr + Deserialize<'de>,
         <T as FromStr>::Err: std::fmt::Display,
+        C: FromIterator<T> + Deserialize<'de>,
     {
-        type Value = Vec<T>;
+        type Value = C;
         fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
             formatter.write_str("a string, a map, or a list of strings/maps")
         }
@@ -88,23 +90,22 @@ where
             E: de::Error,
         {
             let v = v.parse().map_err(de::Error::custom)?;
-            Ok(vec![v])
+            Ok(std::iter::once(v).collect())
         }
 
         fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
         where
             M: de::MapAccess<'de>,
         {
-            Ok(vec![Deserialize::deserialize(
-                de::value::MapAccessDeserializer::new(map),
-            )?])
+            let item = T::deserialize(de::value::MapAccessDeserializer::new(map))?;
+            Ok(std::iter::once(item).collect())
         }
 
         fn visit_seq<S>(self, seq: S) -> std::result::Result<Self::Value, S::Error>
         where
             S: de::SeqAccess<'de>,
         {
-            Deserialize::deserialize(de::value::SeqAccessDeserializer::new(seq))
+            C::deserialize(de::value::SeqAccessDeserializer::new(seq))
         }
     }
 
