@@ -1,5 +1,5 @@
 packages:
-  - name: kubernetes-sigs/aws-iam-authenticator@v0.7.6
+  - name: kubernetes-sigs/aws-iam-authenticator@v0.7.7
   - name: kubernetes-sigs/aws-iam-authenticator
     version: v0.5.3
   - name: kubernetes-sigs/aws-iam-authenticator

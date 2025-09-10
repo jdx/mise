@@ -1,5 +1,5 @@
 packages:
-  - name: kubernetes/minikube@v1.36.0
+  - name: kubernetes/minikube@v1.37.0
   - name: kubernetes/minikube
     version: v1.17.1
   - name: kubernetes/minikube

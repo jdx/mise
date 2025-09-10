@@ -6,12 +6,12 @@ if ! command -v usage &> /dev/null
     return 1
 end
 
-if ! set -q _usage_spec_mise_2025_9_7
-  set -g _usage_spec_mise_2025_9_7 (mise usage | string collect)
+if ! set -q _usage_spec_mise_2025_9_8
+  set -g _usage_spec_mise_2025_9_8 (mise usage | string collect)
 end
 set -l tokens
 if commandline -x >/dev/null 2>&1
-    complete -xc mise -a '(usage complete-word --shell fish -s "$_usage_spec_mise_2025_9_7" -- (commandline -xpc) (commandline -t))'
+    complete -xc mise -a '(usage complete-word --shell fish -s "$_usage_spec_mise_2025_9_8" -- (commandline -xpc) (commandline -t))'
 else
-    complete -xc mise -a '(usage complete-word --shell fish -s "$_usage_spec_mise_2025_9_7" -- (commandline -opc) (commandline -t))'
+    complete -xc mise -a '(usage complete-word --shell fish -s "$_usage_spec_mise_2025_9_8" -- (commandline -opc) (commandline -t))'
 end

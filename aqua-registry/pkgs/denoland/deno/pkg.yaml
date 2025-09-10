@@ -1,5 +1,5 @@
 packages:
-  - name: denoland/deno@v2.4.5
+  - name: denoland/deno@v2.5.0
   - name: denoland/deno
     version: v1.40.2
   - name: denoland/deno

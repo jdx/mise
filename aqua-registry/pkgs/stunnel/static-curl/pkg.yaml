@@ -1,5 +1,5 @@
 packages:
-  - name: stunnel/static-curl@8.15.0
+  - name: stunnel/static-curl@8.16.0
   - name: stunnel/static-curl
     version: 8.6.0
   - name: stunnel/static-curl

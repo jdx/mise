@@ -1,4 +1,4 @@
 packages:
-  - name: kubernetes/kubernetes/kube-aggregator@v1.34.0
+  - name: kubernetes/kubernetes/kube-aggregator@v1.34.1
   - name: kubernetes/kubernetes/kube-aggregator
     version: v1.25.4

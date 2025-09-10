@@ -1,5 +1,5 @@
 packages:
-  - name: kubernetes/kubernetes/kube-scheduler@v1.34.0
+  - name: kubernetes/kubernetes/kube-scheduler@v1.34.1
   - name: kubernetes/kubernetes/kube-scheduler
     version: v1.25.4
   - name: kubernetes/kubernetes/kube-scheduler
