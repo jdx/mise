@@ -38713,6 +38713,11 @@ packages:
       algorithm: sha256
   - type: http
     repo_owner: hashicorp
+    repo_name: hcp
+    description: HCP Command-Line Interface
+    url: https://releases.hashicorp.com/hcp/{{trimV .Version}}/hcp_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+  - type: http
+    repo_owner: hashicorp
     repo_name: levant
     rosetta2: true
     url: https://releases.hashicorp.com/levant/{{trimV .Version}}/levant_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
@@ -38884,14 +38889,28 @@ packages:
     repo_owner: hashicorp
     repo_name: waypoint
     description: A tool to build, deploy, and release any application on any platform
-    supported_envs:
-      - darwin
-      - amd64
-    url: https://releases.hashicorp.com/waypoint/{{trimV .Version}}/waypoint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
-    checksum:
-      type: http
-      url: https://releases.hashicorp.com/waypoint/{{trimV .Version}}/waypoint_{{trimV .Version}}_SHA256SUMS
-      algorithm: sha256
+    version_filter: Version matches "^v\\d+\\.\\d+\\.\\d+
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.10.0")
+        url: https://releases.hashicorp.com/waypoint/{{trimV .Version}}/waypoint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+        checksum:
+          type: http
+          url: https://releases.hashicorp.com/waypoint/{{trimV .Version}}/waypoint_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: "true"
+        url: https://releases.hashicorp.com/waypoint/{{trimV .Version}}/waypoint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+        checksum:
+          type: http
+          url: https://releases.hashicorp.com/waypoint/{{trimV .Version}}/waypoint_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
   - name: haskell/cabal/cabal-install
     type: http
     repo_owner: haskell
@@ -55372,6 +55391,18 @@ packages:
     description: "Disk Usage/Free Utility - a better 'df' alternative"
     version_constraint: "false"
     version_overrides:
+      - version_constraint: Version == "v0.9.0"
+        asset: duf_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: semver("<= 0.2.0")
         asset: duf_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -55428,13 +55459,25 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.8.1")
         asset: duf_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         replacements:
           amd64: x86_64
           darwin: Darwin
           windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: duf_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
         checksum:
           type: github_release
           asset: checksums.txt

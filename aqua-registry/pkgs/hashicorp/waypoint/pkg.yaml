@@ -1,2 +1,4 @@
 packages:
   - name: hashicorp/waypoint@v0.11.4
+  - name: hashicorp/waypoint
+    version: v0.9.1

@@ -1,5 +1,5 @@
 packages:
-  - name: tailor-platform/tailorctl@v2.4.2
+  - name: tailor-platform/tailorctl@v2.4.3
   - name: tailor-platform/tailorctl
     version: v1.18.1
   - name: tailor-platform/tailorctl

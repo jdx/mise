@@ -1,2 +1,2 @@
 packages:
-  - name: hashicorp/packer-plugin-sdk/packer-sdc@v0.6.2
+  - name: hashicorp/packer-plugin-sdk/packer-sdc@v0.6.3

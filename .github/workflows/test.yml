@@ -118,7 +118,7 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-      - uses: taiki-e/install-action@36fe651a94decc767e6b64b0809a2c266db00c18 # v2
+      - uses: taiki-e/install-action@0c5db7f7f897c03b771660e91d065338615679f4 # v2
         with:
           tool: cargo-deny,cargo-msrv,cargo-machete
       - run: rustup component add llvm-tools-preview

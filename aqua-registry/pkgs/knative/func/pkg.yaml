@@ -1,5 +1,5 @@
 packages:
-  - name: knative/func@knative-v1.19.1
+  - name: knative/func@knative-v1.19.2
   - name: knative/func
     version: v0.26.0
   - name: knative/func

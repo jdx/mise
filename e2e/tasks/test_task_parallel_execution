@@ -10,6 +10,9 @@ temp_log=$(mktemp)
 trap 'rm -f $temp_log' EXIT
 
 cat <<EOF >mise.toml
+[tools]
+poetry = "latest"
+
 [tasks.process1]
 run = '''
 echo "\$(date +%s%N) process1 start" >> $temp_log
@@ -62,94 +65,107 @@ echo "process6 complete"
 run = "mise run process1 ::: process2 ::: process3 ::: process4 ::: process5 ::: process6"
 EOF
 
-echo "Testing parallel task execution..."
+assert "mise install"
 
-# Record start time for overall execution time measurement
-start_time=$(date +%s)
+echo "Testing parallel task execution (running 3 times for reliability)..."
 
-# Run the tasks and capture output
-task_output=$(mise run run-all)
+# Run the test 3 times to ensure reliability
+for test_run in {1..3}; do
+	echo ""
+	echo "=== Test Run $test_run/3 ==="
 
-# Record end time
-end_time=$(date +%s)
-total_time=$((end_time - start_time))
+	# Clear the log file for each run
+	rm -f "$temp_log"
 
-echo "Total execution time: ${total_time}s"
+	# Record start time for overall execution time measurement
+	start_time=$(date +%s)
 
-# Read the log file to analyze timing
-echo "Task execution log:"
-cat "$temp_log" | sort
+	# Run the tasks and capture output
+	task_output=$(mise run run-all)
 
-# Parse start times to check if tasks started concurrently
-mapfile -t start_times < <(grep "start" "$temp_log" | awk '{print $1}' | sort -n)
-mapfile -t end_times < <(grep "end" "$temp_log" | awk '{print $1}' | sort -n)
+	# Record end time
+	end_time=$(date +%s)
+	total_time=$((end_time - start_time))
 
-echo "Analyzing task start times..."
+	echo "Total execution time: ${total_time}s"
 
-if [ ${#start_times[@]} -ne 6 ]; then
-	echo "ERROR: Expected 6 task start times, got ${#start_times[@]}"
-	exit 1
-fi
+	# Read the log file to analyze timing
+	echo "Task execution log:"
+	cat "$temp_log" | sort
 
-if [ ${#end_times[@]} -ne 6 ]; then
-	echo "ERROR: Expected 6 task end times, got ${#end_times[@]}"
-	exit 1
-fi
+	# Parse start times to check if tasks started concurrently
+	mapfile -t start_times < <(grep "start" "$temp_log" | awk '{print $1}' | sort -n)
+	mapfile -t end_times < <(grep "end" "$temp_log" | awk '{print $1}' | sort -n)
 
-# Calculate time differences between task starts (in nanoseconds)
-# For parallel execution, all tasks should start within a small window (< 1 second)
-first_start=${start_times[0]}
-last_start=${start_times[5]}
-start_spread=$((last_start - first_start))
+	echo "Analyzing task start times..."
 
-# Convert nanoseconds to milliseconds for easier interpretation
-start_spread_ms=$((start_spread / 1000000))
-
-echo "Time between first and last task start: ${start_spread_ms}ms"
-
-# Check if tasks started in parallel (within 1 second = 1000ms)
-if [ $start_spread_ms -gt 1000 ]; then
-	echo "WARNING: Tasks may not be running in parallel. Start spread: ${start_spread_ms}ms"
-	echo "This could indicate the original issue is still present."
-else
-	echo "✓ Tasks started concurrently (within ${start_spread_ms}ms)"
-fi
-
-# Critical check: Ensure all tasks start before any task completes
-# This is essential for true parallel execution
-echo "Checking that all tasks start before any complete..."
-last_start_time=${start_times[5]}
-first_end_time=${end_times[0]}
-
-if [ "$last_start_time" -gt "$first_end_time" ]; then
-	echo "ERROR: Some tasks completed before all tasks started!"
-	echo "Last task started at: $last_start_time"
-	echo "First task completed at: $first_end_time"
-	echo "This indicates sequential execution, not parallel execution."
-	exit 1
-else
-	echo "✓ All tasks started before any completed - confirming parallel execution"
-fi
-
-# Check total execution time
-# If running sequentially: 6 tasks * 2 seconds = ~12 seconds
-# If running in parallel: ~2-3 seconds (plus overhead)
-if [ $total_time -gt 8 ]; then
-	echo "ERROR: Total execution time too long (${total_time}s). Tasks appear to be running sequentially."
-	echo "Expected: ~2-4 seconds for parallel execution"
-	echo "Got: ${total_time}s (suggests sequential execution)"
-	exit 1
-else
-	echo "✓ Total execution time acceptable (${total_time}s) - suggests parallel execution"
-fi
-
-# Verify all tasks completed successfully using the captured output
-for i in {1..6}; do
-	if ! grep -q "process${i} complete" <<<"$task_output"; then
-		echo "ERROR: process${i} did not complete successfully"
+	if [ ${#start_times[@]} -ne 6 ]; then
+		echo "ERROR: Expected 6 task start times, got ${#start_times[@]}"
 		exit 1
 	fi
+
+	if [ ${#end_times[@]} -ne 6 ]; then
+		echo "ERROR: Expected 6 task end times, got ${#end_times[@]}"
+		exit 1
+	fi
+
+	# Calculate time differences between task starts (in nanoseconds)
+	# For parallel execution, all tasks should start within a small window (< 1 second)
+	first_start=${start_times[0]}
+	last_start=${start_times[5]}
+	start_spread=$((last_start - first_start))
+
+	# Convert nanoseconds to milliseconds for easier interpretation
+	start_spread_ms=$((start_spread / 1000000))
+
+	echo "Time between first and last task start: ${start_spread_ms}ms"
+
+	# Check if tasks started in parallel (within 1 second = 1000ms)
+	if [ $start_spread_ms -gt 1000 ]; then
+		echo "WARNING: Tasks may not be running in parallel. Start spread: ${start_spread_ms}ms"
+		echo "This could indicate the original issue is still present."
+	else
+		echo "✓ Tasks started concurrently (within ${start_spread_ms}ms)"
+	fi
+
+	# Critical check: Ensure all tasks start before any task completes
+	# This is essential for true parallel execution
+	echo "Checking that all tasks start before any complete..."
+	last_start_time=${start_times[5]}
+	first_end_time=${end_times[0]}
+
+	if [ "$last_start_time" -gt "$first_end_time" ]; then
+		echo "ERROR: Some tasks completed before all tasks started!"
+		echo "Last task started at: $last_start_time"
+		echo "First task completed at: $first_end_time"
+		echo "This indicates sequential execution, not parallel execution."
+		exit 1
+	else
+		echo "✓ All tasks started before any completed - confirming parallel execution"
+	fi
+
+	# Check total execution time
+	# If running sequentially: 6 tasks * 2 seconds = ~12 seconds
+	# If running in parallel: ~2-3 seconds (plus overhead)
+	if [ $total_time -gt 8 ]; then
+		echo "ERROR: Total execution time too long (${total_time}s). Tasks appear to be running sequentially."
+		echo "Expected: ~2-4 seconds for parallel execution"
+		echo "Got: ${total_time}s (suggests sequential execution)"
+		exit 1
+	else
+		echo "✓ Total execution time acceptable (${total_time}s) - suggests parallel execution"
+	fi
+
+	# Verify all tasks completed successfully using the captured output
+	for i in {1..6}; do
+		if ! grep -q "process${i} complete" <<<"$task_output"; then
+			echo "ERROR: process${i} did not complete successfully"
+			exit 1
+		fi
+	done
+
+	echo "✓ All tasks completed successfully in test run $test_run"
 done
 
-echo "✓ All tasks completed successfully"
-echo "✓ Parallel task execution test passed"
+echo ""
+echo "✓ All 3 test runs passed - Parallel task execution test passed"
