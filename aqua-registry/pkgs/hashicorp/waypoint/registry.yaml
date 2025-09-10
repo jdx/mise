@@ -4,7 +4,7 @@ packages:
     repo_owner: hashicorp
     repo_name: waypoint
     description: A tool to build, deploy, and release any application on any platform
-    version_filter: Version matches "^v\\d+\\.\\d+\\.\\d+
+    version_filter: Version matches "^v\\d+\\.\\d+\\.\\d+"
     version_constraint: "false"
     version_overrides:
       - version_constraint: semver("< 0.10.0")

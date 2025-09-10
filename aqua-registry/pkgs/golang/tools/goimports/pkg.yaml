@@ -1,2 +1,2 @@
 packages:
-  - name: golang/tools/goimports@v0.36.0
+  - name: golang/tools/goimports@v0.37.0

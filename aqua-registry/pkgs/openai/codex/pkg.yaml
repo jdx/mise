@@ -1,5 +1,5 @@
 packages:
-  - name: openai/codex@rust-v0.31.0
+  - name: openai/codex@rust-v0.33.0
   - name: openai/codex
     version: rust-v0.25.0
   - name: openai/codex

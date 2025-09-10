@@ -141,7 +141,7 @@ version = "3.6.2"
 backend = "npm:prettier"
 
 [[tools."pipx:toml-sort"]]
-version = "0.24.2"
+version = "0.24.3"
 backend = "pipx:toml-sort"
 
 [[tools.pkl]]

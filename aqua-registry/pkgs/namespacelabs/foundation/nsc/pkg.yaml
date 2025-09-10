@@ -1,5 +1,5 @@
 packages:
-  - name: namespacelabs/foundation/nsc@v0.0.437
+  - name: namespacelabs/foundation/nsc@v0.0.438
   - name: namespacelabs/foundation/nsc
     version: v0.0.212
   - name: namespacelabs/foundation/nsc

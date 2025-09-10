@@ -1,5 +1,16 @@
 # Changelog
 
+## [2025.9.8](https://github.com/jdx/mise/compare/v2025.9.7..v2025.9.8) - 2025-09-10
+
+### 🐛 Bug Fixes
+
+- **(tasks)** prevent hang when task fails in sequence by @jdx in [#6260](https://github.com/jdx/mise/pull/6260)
+- **(version)** fetch mise version if cached version is older than the current by @risu729 in [#6252](https://github.com/jdx/mise/pull/6252)
+
+### 📦️ Dependency Updates
+
+- update rhysd/action-setup-vim action to v1.4.3 by @renovate[bot] in [#6249](https://github.com/jdx/mise/pull/6249)
+
 ## [2025.9.7](https://github.com/jdx/mise/compare/v2025.9.6..v2025.9.7) - 2025-09-09
 
 ### 🐛 Bug Fixes

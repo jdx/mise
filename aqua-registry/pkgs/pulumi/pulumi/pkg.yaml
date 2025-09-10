@@ -1,5 +1,5 @@
 packages:
-  - name: pulumi/pulumi@v3.193.0
+  - name: pulumi/pulumi@v3.194.0
   - name: pulumi/pulumi
     version: v3.39.4
   - name: pulumi/pulumi
