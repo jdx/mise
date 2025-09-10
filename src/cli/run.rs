@@ -410,7 +410,7 @@ impl Run {
                     Ok((task, deps_for_remove)) => {
                         drained_any = true;
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
-                        if this.is_stopping() {
+                        if this.is_stopping() && !this.continue_on_error {
                             break;
                         }
                         let jset = jset.clone();
@@ -485,7 +485,7 @@ impl Run {
                 m = sched_rx.recv() => {
                     if let Some((task, deps_for_remove)) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
-                        if this.is_stopping() { break; }
+                        if this.is_stopping() && !this.continue_on_error { break; }
                         let jset = jset.clone();
                         let this_ = this.clone();
                         let wait_start = std::time::Instant::now();
@@ -825,7 +825,14 @@ impl Run {
             });
         }
 
+        // Wait for completion
         done_rx.await.map_err(|e| eyre!(e))?;
+
+        // Check if we failed during the execution
+        if self.is_stopping() && !self.continue_on_error {
+            return Err(eyre!("task sequence aborted due to failure"));
+        }
+
         Ok(())
     }
 
