@@ -571,6 +571,8 @@ impl Run {
             let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
             eprintln!("{}", style::edim(msg));
         };
+        // If there were failures and --continue-on-error was used, print a brief summary
+        this.maybe_print_failure_summary();
         if let Some((task, status)) = this.failed_tasks.lock().unwrap().first() {
             let prefix = task.estyled_prefix();
             this.eprint(
@@ -583,6 +585,22 @@ impl Run {
         time!("parallelize_tasks done");
 
         Ok(())
+    }
+
+    fn maybe_print_failure_summary(&self) {
+        if !self.continue_on_error {
+            return;
+        }
+        let failed = self.failed_tasks.lock().unwrap().clone();
+        if failed.is_empty() {
+            return;
+        }
+        let count = failed.len();
+        eprintln!("{} {} task(s) failed:", style::ered("ERROR"), count);
+        for (task, status) in &failed {
+            let prefix = task.estyled_prefix();
+            self.eprint(task, &prefix, &format!("exited with status {}", status));
+        }
     }
 
     fn eprint(&self, task: &Task, prefix: &str, line: &str) {
