@@ -1157,19 +1157,17 @@
                   "type": "array",
                   "items": {
                     "description": "task name and args",
-                    "type": {
-                      "oneOf": [
-                        {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
                           "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
                         }
-                      ]
-                    }
+                      }
+                    ]
                   }
                 }
               ]
