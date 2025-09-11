@@ -9,39 +9,27 @@ URL replacements allow you to modify or redirect any URL that mise attempts to a
 
 ## Configuration Examples
 
-Environment variable (JSON format):
-```bash
-# Simple hostname replacement
-export MISE_URL_REPLACEMENTS='
-{
-  "github.com": "nexus.mycompany.net", 
-  "releases.hashicorp.com": "artifactory.xmpl.com"
-}'
+In mise.toml (single line):
 
-# Regex pattern (note the escaped backslashes in JSON)
-export MISE_URL_REPLACEMENTS='
-{
-  "regex:^http://(.+)" = "https://$1",
-  "regex:https://github\.com/([^/]+)/([^/]+)/releases/download/(.+)":
-  "https://hub.corp.com/artifactory/github/$1/$2/$3"
-}'
-```
-
-In mise.toml:
 ```toml
 [settings]
-# Simple hostname replacement
-url_replacements = { 
-  "github.com" = "nexus.mycompany.net", 
-  "releases.hashicorp.com" = "artifactory.xmpl.com" 
-}
+url_replacements = { "github.com" = "nexus.mycompany.net" }
+```
 
-# Regex patterns
-url_replacements = {
-  "regex:^http://(.+)" = "https://$1",
-  "regex:https://github\\.com/([^/]+)/([^/]+)/releases/download/(.+)" = 
-    "https://hub.corp.com/artifactory/github/$1/$2/$3"
-}
+In mise.toml (multiline):
+
+```toml
+[settings.url_replacements]
+"github.com" = "nexus.mycompany.net"
+"releases.hashicorp.com" = "artifactory.xmpl.com" 
+```
+
+RegEx example:
+
+```toml
+[settings.url_replacements]
+"regex:^http://(.+)" = "https://$1"
+"regex:https://github\\.com/([^/]+)/([^/]+)/releases/download/(.+)" = "https://hub.corp.com/artifactory/github/$1/$2/$3"
 ```
 
 ## Simple Hostname Replacement

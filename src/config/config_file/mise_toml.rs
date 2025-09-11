@@ -83,12 +83,6 @@ pub struct MiseTomlTool {
     pub options: Option<ToolVersionOptions>,
 }
 
-#[derive(Debug, Clone)]
-pub struct MiseTomlEnvDirective {
-    pub value: String,
-    pub options: EnvDirectiveOptions,
-}
-
 #[derive(Debug, Default, Clone)]
 pub struct Tasks(pub BTreeMap<String, Task>);
 
@@ -775,6 +769,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                 }
                 Ok(EnvList(env))
             }
+
             fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
@@ -783,6 +778,33 @@ impl<'de> de::Deserialize<'de> for EnvList {
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "_" | "mise" => {
+                            #[derive(Deserialize)]
+                            #[serde(untagged)]
+                            enum MiseTomlEnvDirective {
+                                Single {
+                                    #[serde(alias = "path")]
+                                    value: String,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                                Multiple {
+                                    #[serde(alias = "value", alias = "path", alias = "paths")]
+                                    values: Vec<String>,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                            }
+
+                            impl FromStr for MiseTomlEnvDirective {
+                                type Err = String;
+                                fn from_str(s: &str) -> Result<Self, Self::Err> {
+                                    Ok(MiseTomlEnvDirective::Single {
+                                        value: s.to_string(),
+                                        options: Default::default(),
+                                    })
+                                }
+                            }
+
                             struct EnvDirectivePythonVenv {
                                 path: String,
                                 create: bool,
@@ -901,17 +923,29 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 }
                             }
 
+                            fn flatten_directives<F>(
+                                directives: Vec<MiseTomlEnvDirective>,
+                                constructor: F,
+                            ) -> impl Iterator<Item = EnvDirective>
+                            where
+                                F: Fn(String, EnvDirectiveOptions) -> EnvDirective + 'static,
+                            {
+                                directives.into_iter().flat_map(move |d| match d {
+                                    MiseTomlEnvDirective::Single { value, options } => {
+                                        vec![constructor(value, options)]
+                                    }
+                                    MiseTomlEnvDirective::Multiple { values, options } => values
+                                        .into_iter()
+                                        .map(|v| constructor(v, options.clone()))
+                                        .collect(),
+                                })
+                            }
+
                             let directives = map.next_value::<EnvDirectives>()?;
                             // TODO: parse these in the order they're defined somehow
-                            for d in directives.path {
-                                env.push(EnvDirective::Path(d.value, d.options));
-                            }
-                            for d in directives.file {
-                                env.push(EnvDirective::File(d.value, d.options));
-                            }
-                            for d in directives.source {
-                                env.push(EnvDirective::Source(d.value, d.options));
-                            }
+                            env.extend(flatten_directives(directives.path, EnvDirective::Path));
+                            env.extend(flatten_directives(directives.file, EnvDirective::File));
+                            env.extend(flatten_directives(directives.source, EnvDirective::Source));
                             for (key, value) in directives.other {
                                 env.push(EnvDirective::Module(key, value, Default::default()));
                             }
@@ -1226,74 +1260,6 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
         }
 
         deserializer.deserialize_any(MiseTomlToolListVisitor)
-    }
-}
-
-impl FromStr for MiseTomlEnvDirective {
-    type Err = eyre::Report;
-
-    fn from_str(s: &str) -> eyre::Result<Self> {
-        Ok(MiseTomlEnvDirective {
-            value: s.into(),
-            options: Default::default(),
-        })
-    }
-}
-
-impl<'de> de::Deserialize<'de> for MiseTomlEnvDirective {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        struct MiseTomlEnvDirectiveVisitor;
-
-        impl<'de> Visitor<'de> for MiseTomlEnvDirectiveVisitor {
-            type Value = MiseTomlEnvDirective;
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("env directive")
-            }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(MiseTomlEnvDirective {
-                    value: v.into(),
-                    options: Default::default(),
-                })
-            }
-
-            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
-            where
-                M: de::MapAccess<'de>,
-            {
-                let mut options: EnvDirectiveOptions = Default::default();
-                let mut value = None;
-                while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    match k.as_str() {
-                        "value" | "path" => {
-                            value = Some(v.as_str().unwrap().to_string());
-                        }
-                        "tools" => {
-                            options.tools = v.as_bool().unwrap();
-                        }
-                        "redact" => {
-                            options.redact = v.as_bool().unwrap();
-                        }
-                        _ => {
-                            return Err(de::Error::custom("invalid key"));
-                        }
-                    }
-                }
-                if let Some(value) = value {
-                    Ok(MiseTomlEnvDirective { value, options })
-                } else {
-                    Err(de::Error::custom("missing value"))
-                }
-            }
-        }
-
-        deserializer.deserialize_any(MiseTomlEnvDirectiveVisitor)
     }
 }
 
