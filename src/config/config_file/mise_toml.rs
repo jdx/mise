@@ -779,6 +779,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                     match key.as_str() {
                         "_" | "mise" => {
                             #[derive(Deserialize)]
+                            #[serde(untagged)]
                             enum MiseTomlEnvDirective {
                                 Single {
                                     #[serde(alias = "path")]
