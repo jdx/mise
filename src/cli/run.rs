@@ -415,20 +415,27 @@ impl Run {
                         }
                         let jset = jset.clone();
                         let this_ = this.clone();
-                        let wait_start = std::time::Instant::now();
-                        let permit = semaphore.clone().acquire_owned().await?;
-                        trace!(
-                            "semaphore acquired for {} after {}ms",
-                            task.name,
-                            wait_start.elapsed().as_millis()
-                        );
+                        let needs_permit = Self::task_needs_permit(&task);
+                        let permit_opt = if needs_permit {
+                            let wait_start = std::time::Instant::now();
+                            let p = Some(semaphore.clone().acquire_owned().await?);
+                            trace!(
+                                "semaphore acquired for {} after {}ms",
+                                task.name,
+                                wait_start.elapsed().as_millis()
+                            );
+                            p
+                        } else {
+                            trace!("no semaphore needed for orchestrator task: {}", task.name);
+                            None
+                        };
                         let config = config.clone();
                         let sched_tx = sched_tx.clone();
                         in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         let in_flight_c = in_flight.clone();
                         trace!("running task: {task}");
                         jset.lock().await.spawn(async move {
-                            let _permit = permit;
+                            let _permit = permit_opt;
                             let result =
                                 this_.run_task_sched(&task, &config, sched_tx.clone()).await;
                             if let Err(err) = &result {
@@ -488,20 +495,27 @@ impl Run {
                         if this.is_stopping() && !this.continue_on_error { break; }
                         let jset = jset.clone();
                         let this_ = this.clone();
-                        let wait_start = std::time::Instant::now();
-                        let permit = semaphore.clone().acquire_owned().await?;
-                        trace!(
-                            "semaphore acquired for {} after {}ms",
-                            task.name,
-                            wait_start.elapsed().as_millis()
-                        );
+                        let needs_permit = Self::task_needs_permit(&task);
+                        let permit_opt = if needs_permit {
+                            let wait_start = std::time::Instant::now();
+                            let p = Some(semaphore.clone().acquire_owned().await?);
+                            trace!(
+                                "semaphore acquired for {} after {}ms",
+                                task.name,
+                                wait_start.elapsed().as_millis()
+                            );
+                            p
+                        } else {
+                            trace!("no semaphore needed for orchestrator task: {}", task.name);
+                            None
+                        };
                         let config = config.clone();
                         let sched_tx = sched_tx.clone();
                         in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         let in_flight_c = in_flight.clone();
                         trace!("running task: {task}");
                         jset.lock().await.spawn(async move {
-                            let _permit = permit;
+                            let _permit = permit_opt;
                             let result = this_.run_task_sched(&task, &config, sched_tx.clone()).await;
                             if let Err(err) = &result {
                                 let status = Error::get_exit_status(err);
@@ -585,6 +599,12 @@ impl Run {
         time!("parallelize_tasks done");
 
         Ok(())
+    }
+
+    fn task_needs_permit(task: &Task) -> bool {
+        // Only shell/script tasks execute external commands and need a concurrency slot.
+        // Orchestrator-only tasks (pure groups of sub-tasks) do not.
+        task.file.is_some() || !task.run_script_strings().is_empty()
     }
 
     fn maybe_print_failure_summary(&self) {
@@ -1032,22 +1052,22 @@ impl Run {
             }
             TaskOutput::KeepOrder => {
                 cmd = cmd.with_on_stdout(|line| {
-                    self.keep_order_output
-                        .lock()
-                        .unwrap()
-                        .get_mut(task)
-                        .unwrap()
-                        .0
-                        .push((prefix.to_string(), line));
+                    let mut map = self.keep_order_output.lock().unwrap();
+                    if !map.contains_key(task) {
+                        map.insert(task.clone(), Default::default());
+                    }
+                    if let Some(entry) = map.get_mut(task) {
+                        entry.0.push((prefix.to_string(), line));
+                    }
                 });
                 cmd = cmd.with_on_stderr(|line| {
-                    self.keep_order_output
-                        .lock()
-                        .unwrap()
-                        .get_mut(task)
-                        .unwrap()
-                        .1
-                        .push((prefix.to_string(), line));
+                    let mut map = self.keep_order_output.lock().unwrap();
+                    if !map.contains_key(task) {
+                        map.insert(task.clone(), Default::default());
+                    }
+                    if let Some(entry) = map.get_mut(task) {
+                        entry.1.push((prefix.to_string(), line));
+                    }
                 });
             }
             TaskOutput::Replacing => {
