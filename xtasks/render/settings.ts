@@ -125,6 +125,7 @@ const taskSchema = JSON.parse(
 );
 taskSchema["$defs"].task = schema["$defs"].task;
 taskSchema["$defs"].env = schema["$defs"].env;
+taskSchema["$defs"].env_directive = schema["$defs"].env_directive;
 fs.writeFileSync(
   "schema/mise-task.json.tmp",
   JSON.stringify(taskSchema, null, 2),

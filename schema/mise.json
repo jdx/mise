@@ -4,6 +4,50 @@
   "title": "mise",
   "type": "object",
   "$defs": {
+    "env_directive": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tools": {
+          "type": "boolean",
+          "description": "load tools before resolving"
+        },
+        "redact": {
+          "type": "boolean",
+          "description": "redact the value from logs"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "path"
+          ]
+        },
+        {
+          "required": [
+            "paths"
+          ]
+        }
+      ]
+    },
     "env": {
       "additionalProperties": {
         "oneOf": [
@@ -53,30 +97,7 @@
             "file": {
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      ]
-                    },
-                    "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
-                    }
-                  }
+                  "$ref": "#/$defs/env_directive"
                 },
                 {
                   "description": "dotenv file to load",
@@ -92,30 +113,7 @@
                         "type": "string"
                       },
                       {
-                        "type": "object",
-                        "properties": {
-                          "path": {
-                            "oneOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              }
-                            ]
-                          },
-                          "tools": {
-                            "type": "boolean",
-                            "description": "load tools before resolving"
-                          },
-                          "redact": {
-                            "type": "boolean",
-                            "description": "redact the value from logs"
-                          }
-                        }
+                        "$ref": "#/$defs/env_directive"
                       }
                     ]
                   }
@@ -140,11 +138,29 @@
                         }
                       ]
                     },
+                    "paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
                     "tools": {
                       "type": "boolean",
                       "description": "load tools before resolving"
                     }
-                  }
+                  },
+                  "oneOf": [
+                    {
+                      "required": [
+                        "path"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "paths"
+                      ]
+                    }
+                  ]
                 },
                 {
                   "description": "PATH entry to add",
@@ -226,7 +242,9 @@
                           }
                         }
                       },
-                      "required": ["path"],
+                      "required": [
+                        "path"
+                      ],
                       "type": "object"
                     }
                   ]
@@ -237,30 +255,7 @@
             "source": {
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      ]
-                    },
-                    "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
-                    }
-                  }
+                  "$ref": "#/$defs/env_directive"
                 },
                 {
                   "description": "bash script to load",
@@ -276,30 +271,7 @@
                         "type": "string"
                       },
                       {
-                        "type": "object",
-                        "properties": {
-                          "path": {
-                            "oneOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              }
-                            ]
-                          },
-                          "tools": {
-                            "type": "boolean",
-                            "description": "load tools before resolving"
-                          },
-                          "redact": {
-                            "type": "boolean",
-                            "description": "redact the value from logs"
-                          }
-                        }
+                        "$ref": "#/$defs/env_directive"
                       }
                     ]
                   }
@@ -663,7 +635,13 @@
           "default": "info",
           "description": "Show more/less output.",
           "type": "string",
-          "enum": ["trace", "debug", "info", "warn", "error"]
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
         },
         "node": {
           "additionalProperties": false,
@@ -1110,7 +1088,14 @@
           "type": "string"
         },
         "windows_executable_extensions": {
-          "default": ["exe", "bat", "cmd", "com", "ps1", "vbs"],
+          "default": [
+            "exe",
+            "bat",
+            "cmd",
+            "com",
+            "ps1",
+            "vbs"
+          ],
           "description": "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on.",
           "type": "array",
           "items": {
@@ -1256,7 +1241,9 @@
                         ]
                       }
                     },
-                    "required": ["version"],
+                    "required": [
+                      "version"
+                    ],
                     "type": "object",
                     "additionalProperties": {
                       "oneOf": [
@@ -1294,11 +1281,15 @@
                   "properties": {
                     "auto": {
                       "description": "automatically touch an internal tracked file instead of specifying outputs",
-                      "enum": [true],
+                      "enum": [
+                        true
+                      ],
                       "type": "boolean"
                     }
                   },
-                  "required": ["auto"],
+                  "required": [
+                    "auto"
+                  ],
                   "type": "object"
                 }
               ]
@@ -1316,7 +1307,10 @@
                   "type": "boolean"
                 },
                 {
-                  "enum": ["stdout", "stderr"],
+                  "enum": [
+                    "stdout",
+                    "stderr"
+                  ],
                   "type": "string"
                 }
               ]
@@ -1508,7 +1502,9 @@
               "type": "string"
             }
           },
-          "required": ["version"],
+          "required": [
+            "version"
+          ],
           "type": "object",
           "additionalProperties": {
             "oneOf": [
