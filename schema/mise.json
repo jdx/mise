@@ -37,14 +37,10 @@
       },
       "oneOf": [
         {
-          "required": [
-            "path"
-          ]
+          "required": ["path"]
         },
         {
-          "required": [
-            "paths"
-          ]
+          "required": ["paths"]
         }
       ]
     },
@@ -151,14 +147,10 @@
                   },
                   "oneOf": [
                     {
-                      "required": [
-                        "path"
-                      ]
+                      "required": ["path"]
                     },
                     {
-                      "required": [
-                        "paths"
-                      ]
+                      "required": ["paths"]
                     }
                   ]
                 },
@@ -242,9 +234,7 @@
                           }
                         }
                       },
-                      "required": [
-                        "path"
-                      ],
+                      "required": ["path"],
                       "type": "object"
                     }
                   ]
@@ -635,13 +625,7 @@
           "default": "info",
           "description": "Show more/less output.",
           "type": "string",
-          "enum": [
-            "trace",
-            "debug",
-            "info",
-            "warn",
-            "error"
-          ]
+          "enum": ["trace", "debug", "info", "warn", "error"]
         },
         "node": {
           "additionalProperties": false,
@@ -1088,14 +1072,7 @@
           "type": "string"
         },
         "windows_executable_extensions": {
-          "default": [
-            "exe",
-            "bat",
-            "cmd",
-            "com",
-            "ps1",
-            "vbs"
-          ],
+          "default": ["exe", "bat", "cmd", "com", "ps1", "vbs"],
           "description": "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on.",
           "type": "array",
           "items": {
@@ -1241,9 +1218,7 @@
                         ]
                       }
                     },
-                    "required": [
-                      "version"
-                    ],
+                    "required": ["version"],
                     "type": "object",
                     "additionalProperties": {
                       "oneOf": [
@@ -1281,15 +1256,11 @@
                   "properties": {
                     "auto": {
                       "description": "automatically touch an internal tracked file instead of specifying outputs",
-                      "enum": [
-                        true
-                      ],
+                      "enum": [true],
                       "type": "boolean"
                     }
                   },
-                  "required": [
-                    "auto"
-                  ],
+                  "required": ["auto"],
                   "type": "object"
                 }
               ]
@@ -1307,10 +1278,7 @@
                   "type": "boolean"
                 },
                 {
-                  "enum": [
-                    "stdout",
-                    "stderr"
-                  ],
+                  "enum": ["stdout", "stderr"],
                   "type": "string"
                 }
               ]
@@ -1502,9 +1470,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "version"
-          ],
+          "required": ["version"],
           "type": "object",
           "additionalProperties": {
             "oneOf": [
