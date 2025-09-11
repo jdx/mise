@@ -545,18 +545,6 @@ impl Run {
                 task.name,
                 wait_start.elapsed().as_millis()
             );
-            // If a failure occurred while we were waiting for a permit and we're not
-            // in continue-on-error mode, skip launching this task. This prevents
-            // subsequently queued tasks (e.g., from CLI ":::" groups) from running
-            // after the first failure when --jobs=1 and ensures immediate stop.
-            if this.is_stopping() && !this.continue_on_error {
-                trace!(
-                    "aborting spawn after failure (not continue-on-error): {} {}",
-                    task.name,
-                    task.args.join(" ")
-                );
-                return Ok(());
-            }
             p
         } else {
             trace!("no semaphore needed for orchestrator task: {}", task.name);
