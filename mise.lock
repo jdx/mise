@@ -132,6 +132,10 @@ checksum = "sha256:a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263
 size = 841408
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
 
+[[tools."npm:ajv-cli"]]
+version = "5.0.0"
+backend = "npm:ajv-cli"
+
 [[tools."npm:markdownlint-cli"]]
 version = "0.45.0"
 backend = "npm:markdownlint-cli"
