@@ -2,7 +2,6 @@ use eyre::{WrapErr, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
-use serde::de::Deserialize;
 use serde::de::Visitor;
 use serde::{Deserializer, de};
 use serde_derive::Deserialize;
@@ -747,7 +746,7 @@ where
     }
 }
 
-impl<'de> Deserialize<'de> for EnvList {
+impl<'de> de::Deserialize<'de> for EnvList {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -834,7 +833,7 @@ impl<'de> Deserialize<'de> for EnvList {
                                 other: BTreeMap<String, toml::Value>,
                             }
 
-                            impl<'de> Deserialize<'de> for EnvDirectivePythonVenv {
+                            impl<'de> de::Deserialize<'de> for EnvDirectivePythonVenv {
                                 fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
                                 where
                                     D: Deserializer<'de>,
@@ -998,7 +997,7 @@ impl<'de> Deserialize<'de> for EnvList {
                                 }
                             }
 
-                            impl<'de> Deserialize<'de> for Val {
+                            impl<'de> de::Deserialize<'de> for Val {
                                 fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
                                 where
                                     D: Deserializer<'de>,
@@ -1130,7 +1129,7 @@ impl<'de> Deserialize<'de> for EnvList {
     }
 }
 
-impl<'de> Deserialize<'de> for MiseTomlToolList {
+impl<'de> de::Deserialize<'de> for MiseTomlToolList {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -1263,7 +1262,7 @@ impl<'de> Deserialize<'de> for MiseTomlToolList {
     }
 }
 
-impl<'de> Deserialize<'de> for MiseTomlTool {
+impl<'de> de::Deserialize<'de> for MiseTomlTool {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -1356,7 +1355,7 @@ impl<'de> Deserialize<'de> for MiseTomlTool {
     }
 }
 
-impl<'de> Deserialize<'de> for Tasks {
+impl<'de> de::Deserialize<'de> for Tasks {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -1374,7 +1373,7 @@ impl<'de> Deserialize<'de> for Tasks {
                 M: de::MapAccess<'de>,
             {
                 struct TaskDef(Task);
-                impl<'de> Deserialize<'de> for TaskDef {
+                impl<'de> de::Deserialize<'de> for TaskDef {
                     fn deserialize<D>(deserializer: D) -> std::result::Result<TaskDef, D::Error>
                     where
                         D: de::Deserializer<'de>,
@@ -1414,7 +1413,7 @@ impl<'de> Deserialize<'de> for Tasks {
                             where
                                 M: de::MapAccess<'de>,
                             {
-                                let t = Deserialize::deserialize(
+                                let t = de::Deserialize::deserialize(
                                     de::value::MapAccessDeserializer::new(map),
                                 )?;
                                 Ok(TaskDef(t))
@@ -1437,7 +1436,7 @@ impl<'de> Deserialize<'de> for Tasks {
     }
 }
 
-impl<'de> Deserialize<'de> for BackendArg {
+impl<'de> de::Deserialize<'de> for BackendArg {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -1462,7 +1461,7 @@ impl<'de> Deserialize<'de> for BackendArg {
     }
 }
 
-impl<'de> Deserialize<'de> for Alias {
+impl<'de> de::Deserialize<'de> for Alias {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
