@@ -39,22 +39,14 @@
         {
           "type": "object",
           "properties": {
-            "path": {
-              "oneOf": [
-                { "type": "string" },
-                { "type": "array", "items": { "type": "string" } }
-              ]
-            }
+            "path": { "$ref": "#/$defs/env_directive/properties/path" }
           },
           "required": ["path"]
         },
         {
           "type": "object",
           "properties": {
-            "paths": {
-              "type": "array",
-              "items": { "type": "string" }
-            }
+            "paths": { "$ref": "#/$defs/env_directive/properties/paths" }
           },
           "required": ["paths"]
         }
