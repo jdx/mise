@@ -196,7 +196,9 @@
                           }
                         }
                       },
-                      "required": ["path"],
+                      "required": [
+                        "path"
+                      ],
                       "type": "object"
                     }
                   ]
@@ -272,6 +274,7 @@
           "type": "boolean"
         },
         "aqua": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "baked_registry": {
@@ -339,6 +342,7 @@
           "type": "string"
         },
         "cargo": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "binstall": {
@@ -419,6 +423,7 @@
           }
         },
         "dotnet": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "package_flags": {
@@ -457,6 +462,7 @@
           "type": "string"
         },
         "erlang": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "compile": {
@@ -603,9 +609,16 @@
           "default": "info",
           "description": "Show more/less output.",
           "type": "string",
-          "enum": ["trace", "debug", "info", "warn", "error"]
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ]
         },
         "node": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "compile": {
@@ -632,6 +645,7 @@
           "type": "boolean"
         },
         "npm": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "bun": {
@@ -669,6 +683,7 @@
           "type": "boolean"
         },
         "pipx": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "registry_url": {
@@ -697,6 +712,7 @@
           "deprecated": true
         },
         "python": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "compile": {
@@ -815,6 +831,7 @@
           "type": "boolean"
         },
         "ruby": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "apply_patches": {
@@ -855,6 +872,7 @@
           }
         },
         "rust": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "cargo_home": {
@@ -876,6 +894,7 @@
           "type": "boolean"
         },
         "sops": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "age_key": {
@@ -903,6 +922,7 @@
           }
         },
         "status": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "missing_tools": {
@@ -926,6 +946,7 @@
           }
         },
         "swift": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "gpg_verify": {
@@ -1050,7 +1071,14 @@
           "type": "string"
         },
         "windows_executable_extensions": {
-          "default": ["exe", "bat", "cmd", "com", "ps1", "vbs"],
+          "default": [
+            "exe",
+            "bat",
+            "cmd",
+            "com",
+            "ps1",
+            "vbs"
+          ],
           "description": "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on.",
           "type": "array",
           "items": {
@@ -1196,7 +1224,9 @@
                         ]
                       }
                     },
-                    "required": ["version"],
+                    "required": [
+                      "version"
+                    ],
                     "type": "object",
                     "additionalProperties": {
                       "oneOf": [
@@ -1234,11 +1264,15 @@
                   "properties": {
                     "auto": {
                       "description": "automatically touch an internal tracked file instead of specifying outputs",
-                      "enum": [true],
+                      "enum": [
+                        true
+                      ],
                       "type": "boolean"
                     }
                   },
-                  "required": ["auto"],
+                  "required": [
+                    "auto"
+                  ],
                   "type": "object"
                 }
               ]
@@ -1256,7 +1290,10 @@
                   "type": "boolean"
                 },
                 {
-                  "enum": ["stdout", "stderr"],
+                  "enum": [
+                    "stdout",
+                    "stderr"
+                  ],
                   "type": "string"
                 }
               ]
@@ -1428,6 +1465,7 @@
               ]
             },
             "install_env": {
+              "type": "object",
               "additionalProperties": {
                 "oneOf": [
                   {
@@ -1448,7 +1486,9 @@
               "type": "string"
             }
           },
-          "required": ["version"],
+          "required": [
+            "version"
+          ],
           "type": "object",
           "additionalProperties": {
             "oneOf": [
@@ -1532,10 +1572,7 @@
         "properties": {
           "run": {
             "type": "string",
-            "description": "script to run when file changes",
-            "items": {
-              "type": "string"
-            }
+            "description": "script to run when file changes"
           },
           "patterns": {
             "type": "array",
@@ -1647,6 +1684,7 @@
       "$ref": "#/$defs/watch_files"
     },
     "_": {
+      "type": "object",
       "additionalProperties": true
     }
   }
