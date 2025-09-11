@@ -37,9 +37,21 @@
       },
       "oneOf": [
         {
+          "type": "object",
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/env_directive/properties/path"
+            }
+          },
           "required": ["path"]
         },
         {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "$ref": "#/$defs/env_directive/properties/paths"
+            }
+          },
           "required": ["paths"]
         }
       ]
@@ -147,9 +159,34 @@
                   },
                   "oneOf": [
                     {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        }
+                      },
                       "required": ["path"]
                     },
                     {
+                      "type": "object",
+                      "properties": {
+                        "paths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
                       "required": ["paths"]
                     }
                   ]
