@@ -536,6 +536,18 @@ impl Run {
         deps_for_remove: Arc<Mutex<Deps>>,
         ctx: SpawnCtx,
     ) -> Result<()> {
+        // If we're already stopping due to a previous failure and not in
+        // continue-on-error mode, do not launch this task. Ensure we remove
+        // it from the dependency graph so the scheduler can make progress.
+        if this.is_stopping() && !this.continue_on_error {
+            trace!(
+                "aborting spawn before start (not continue-on-error): {} {}",
+                task.name,
+                task.args.join(" ")
+            );
+            deps_for_remove.lock().await.remove(&task);
+            return Ok(());
+        }
         let needs_permit = Self::task_needs_permit(&task);
         let permit_opt = if needs_permit {
             let wait_start = std::time::Instant::now();
@@ -555,6 +567,8 @@ impl Run {
                     task.name,
                     task.args.join(" ")
                 );
+                // Remove from deps so the scheduler can drain and not hang
+                deps_for_remove.lock().await.remove(&task);
                 return Ok(());
             }
             p
