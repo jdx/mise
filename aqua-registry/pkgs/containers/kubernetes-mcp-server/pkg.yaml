@@ -1,2 +1,2 @@
 packages:
-  - name: containers/kubernetes-mcp-server@v0.0.49
+  - name: containers/kubernetes-mcp-server@v0.0.50

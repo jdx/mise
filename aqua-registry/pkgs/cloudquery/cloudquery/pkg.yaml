@@ -1,5 +1,5 @@
 packages:
-  - name: cloudquery/cloudquery@cli-v6.28.0
+  - name: cloudquery/cloudquery@cli-v6.28.1
   - name: cloudquery/cloudquery
     version: cli/v0.32.11
   - name: cloudquery/cloudquery

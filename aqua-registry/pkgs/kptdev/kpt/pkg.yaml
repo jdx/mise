@@ -1,5 +1,5 @@
 packages:
-  - name: kptdev/kpt@v1.0.0-beta.57
+  - name: kptdev/kpt@v1.0.0-beta.58
   - name: kptdev/kpt
     version: v1.0.0-beta.55
   - name: kptdev/kpt

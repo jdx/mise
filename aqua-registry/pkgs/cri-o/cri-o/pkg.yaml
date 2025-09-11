@@ -1,5 +1,5 @@
 packages:
-  - name: cri-o/cri-o@v1.33.4
+  - name: cri-o/cri-o@v1.34.0
   - name: cri-o/cri-o
     version: v1.30.3
   - name: cri-o/cri-o
