@@ -21,9 +21,11 @@ mod path;
 mod source;
 mod venv;
 
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EnvDirectiveOptions {
+    #[serde(default)]
     pub(crate) tools: bool,
+    #[serde(default)]
     pub(crate) redact: bool,
 }
 
