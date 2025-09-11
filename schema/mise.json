@@ -272,6 +272,7 @@
           "type": "boolean"
         },
         "aqua": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "baked_registry": {
@@ -339,6 +340,7 @@
           "type": "string"
         },
         "cargo": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "binstall": {
@@ -419,6 +421,7 @@
           }
         },
         "dotnet": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "package_flags": {
@@ -457,6 +460,7 @@
           "type": "string"
         },
         "erlang": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "compile": {
@@ -606,6 +610,7 @@
           "enum": ["trace", "debug", "info", "warn", "error"]
         },
         "node": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "compile": {
@@ -632,6 +637,7 @@
           "type": "boolean"
         },
         "npm": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "bun": {
@@ -669,6 +675,7 @@
           "type": "boolean"
         },
         "pipx": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "registry_url": {
@@ -697,6 +704,7 @@
           "deprecated": true
         },
         "python": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "compile": {
@@ -815,6 +823,7 @@
           "type": "boolean"
         },
         "ruby": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "apply_patches": {
@@ -855,6 +864,7 @@
           }
         },
         "rust": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "cargo_home": {
@@ -876,6 +886,7 @@
           "type": "boolean"
         },
         "sops": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "age_key": {
@@ -903,6 +914,7 @@
           }
         },
         "status": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "missing_tools": {
@@ -926,6 +938,7 @@
           }
         },
         "swift": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "gpg_verify": {
