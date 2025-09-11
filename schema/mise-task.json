@@ -365,30 +365,7 @@
             "file": {
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      ]
-                    },
-                    "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
-                    }
-                  }
+                  "$ref": "#/$defs/env_directive"
                 },
                 {
                   "description": "dotenv file to load",
@@ -404,30 +381,7 @@
                         "type": "string"
                       },
                       {
-                        "type": "object",
-                        "properties": {
-                          "path": {
-                            "oneOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              }
-                            ]
-                          },
-                          "tools": {
-                            "type": "boolean",
-                            "description": "load tools before resolving"
-                          },
-                          "redact": {
-                            "type": "boolean",
-                            "description": "redact the value from logs"
-                          }
-                        }
+                        "$ref": "#/$defs/env_directive"
                       }
                     ]
                   }
@@ -451,8 +405,26 @@
                           }
                         }
                       ]
+                    },
+                    "paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "tools": {
+                      "type": "boolean",
+                      "description": "load tools before resolving"
                     }
-                  }
+                  },
+                  "oneOf": [
+                    {
+                      "required": ["path"]
+                    },
+                    {
+                      "required": ["paths"]
+                    }
+                  ]
                 },
                 {
                   "description": "PATH entry to add",
@@ -460,11 +432,37 @@
                 },
                 {
                   "description": "PATH entries to add",
+                  "type": "array",
                   "items": {
-                    "description": "PATH entry to add",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "description": "PATH entry to add",
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          },
+                          "tools": {
+                            "type": "boolean",
+                            "description": "load tools before resolving"
+                          }
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -519,30 +517,7 @@
             "source": {
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      ]
-                    },
-                    "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
-                    }
-                  }
+                  "$ref": "#/$defs/env_directive"
                 },
                 {
                   "description": "bash script to load",
@@ -550,11 +525,18 @@
                 },
                 {
                   "description": "bash scripts to load",
+                  "type": "array",
                   "items": {
-                    "description": "bash script to load",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "description": "bash script to load",
+                        "type": "string"
+                      },
+                      {
+                        "$ref": "#/$defs/env_directive"
+                      }
+                    ]
+                  }
                 }
               ]
             }
@@ -563,6 +545,46 @@
         }
       },
       "type": "object"
+    },
+    "env_directive": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tools": {
+          "type": "boolean",
+          "description": "load tools before resolving"
+        },
+        "redact": {
+          "type": "boolean",
+          "description": "redact the value from logs"
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["path"]
+        },
+        {
+          "required": ["paths"]
+        }
+      ]
     }
   },
   "description": "Config file for included mise tasks (https://mise.jdx.dev/tasks/#task-configuration)",
