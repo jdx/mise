@@ -395,22 +395,13 @@
                   "properties": {
                     "path": {
                       "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
+                        { "type": "string" },
+                        { "type": "array", "items": { "type": "string" } }
                       ]
                     },
                     "paths": {
                       "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
+                      "items": { "type": "string" }
                     },
                     "tools": {
                       "type": "boolean",
@@ -419,9 +410,25 @@
                   },
                   "oneOf": [
                     {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "oneOf": [
+                            { "type": "string" },
+                            { "type": "array", "items": { "type": "string" } }
+                          ]
+                        }
+                      },
                       "required": ["path"]
                     },
                     {
+                      "type": "object",
+                      "properties": {
+                        "paths": {
+                          "type": "array",
+                          "items": { "type": "string" }
+                        }
+                      },
                       "required": ["paths"]
                     }
                   ]
@@ -579,9 +586,25 @@
       },
       "oneOf": [
         {
+          "type": "object",
+          "properties": {
+            "path": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "array", "items": { "type": "string" } }
+              ]
+            }
+          },
           "required": ["path"]
         },
         {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
           "required": ["paths"]
         }
       ]
