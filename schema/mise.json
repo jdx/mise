@@ -5,41 +5,52 @@
   "type": "object",
   "$defs": {
     "env_directive": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "oneOf": [
-            {
-              "type": "string"
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
             },
-            {
+            "tools": {
+              "type": "boolean",
+              "description": "load tools before resolving"
+            },
+            "redact": {
+              "type": "boolean",
+              "description": "redact the value from logs"
+            }
+          },
+          "required": ["path"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "paths": {
               "type": "array",
               "items": {
                 "type": "string"
               }
+            },
+            "tools": {
+              "type": "boolean",
+              "description": "load tools before resolving"
+            },
+            "redact": {
+              "type": "boolean",
+              "description": "redact the value from logs"
             }
-          ]
-        },
-        "paths": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "tools": {
-          "type": "boolean",
-          "description": "load tools before resolving"
-        },
-        "redact": {
-          "type": "boolean",
-          "description": "redact the value from logs"
-        }
-      },
-      "oneOf": [
-        {
-          "required": ["path"]
-        },
-        {
+          },
           "required": ["paths"]
         }
       ]
