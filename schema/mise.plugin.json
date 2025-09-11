@@ -30,6 +30,7 @@
     },
     "list-bin-paths": {
       "description": "configuration for bin/list-bin-paths script",
+      "type": "object",
       "additionalProperties": false,
       "properties": {
         "cache-key": {
@@ -43,6 +44,7 @@
     },
     "exec-env": {
       "description": "configuration for bin/exec-env script",
+      "type": "object",
       "additionalProperties": false,
       "properties": {
         "cache-key": {

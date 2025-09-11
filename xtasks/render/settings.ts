@@ -97,6 +97,7 @@ for (const key in doc) {
   } else {
     for (const subkey in props) {
       settings[key] = settings[key] || {
+        type: "object",
         additionalProperties: false,
         description: props.description,
         properties: {},

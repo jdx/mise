@@ -1,6 +1,6 @@
 {
   "$id": "https://mise.jdx.dev/schema/mise-task.json",
-  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2019-09/schema#",
   "title": "mise-task-schema",
   "type": "object",
   "$defs": {

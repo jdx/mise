@@ -167,6 +167,12 @@ Lint Markdown files
 
 Lint using ripgrep
 
+## `lint:schema`
+
+- **Usage**: `lint:schema`
+
+Lint schemas
+
 ## `lint:toml`
 
 - **Usage**: `lint:toml`
