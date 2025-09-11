@@ -212,6 +212,14 @@ pub struct Run {
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
 
+struct SpawnCtx {
+    semaphore: Arc<Semaphore>,
+    config: Arc<Config>,
+    sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+    jset: Arc<Mutex<JoinSet<Result<()>>>>,
+    in_flight: Arc<std::sync::atomic::AtomicUsize>,
+}
+
 impl Run {
     pub async fn run(mut self) -> Result<()> {
         let config = Config::get().await?;
@@ -417,11 +425,13 @@ impl Run {
                             this.clone(),
                             task,
                             deps_for_remove,
-                            semaphore.clone(),
-                            config.clone(),
-                            sched_tx.clone(),
-                            jset.clone(),
-                            in_flight.clone(),
+                            SpawnCtx {
+                                semaphore: semaphore.clone(),
+                                config: config.clone(),
+                                sched_tx: sched_tx.clone(),
+                                jset: jset.clone(),
+                                in_flight: in_flight.clone(),
+                            },
                         )
                         .await?;
                     }
@@ -449,11 +459,13 @@ impl Run {
                             this.clone(),
                             task,
                             deps_for_remove,
-                            semaphore.clone(),
-                            config.clone(),
-                            sched_tx.clone(),
-                            jset.clone(),
-                            in_flight.clone(),
+                            SpawnCtx {
+                                semaphore: semaphore.clone(),
+                                config: config.clone(),
+                                sched_tx: sched_tx.clone(),
+                                jset: jset.clone(),
+                                in_flight: in_flight.clone(),
+                            },
                         )
                         .await?;
                     } else {
@@ -522,16 +534,12 @@ impl Run {
         this: Arc<Self>,
         task: Task,
         deps_for_remove: Arc<Mutex<Deps>>,
-        semaphore: Arc<Semaphore>,
-        config: Arc<Config>,
-        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
-        jset: Arc<Mutex<JoinSet<Result<()>>>>,
-        in_flight: Arc<std::sync::atomic::AtomicUsize>,
+        ctx: SpawnCtx,
     ) -> Result<()> {
         let needs_permit = Self::task_needs_permit(&task);
         let permit_opt = if needs_permit {
             let wait_start = std::time::Instant::now();
-            let p = Some(semaphore.clone().acquire_owned().await?);
+            let p = Some(ctx.semaphore.clone().acquire_owned().await?);
             trace!(
                 "semaphore acquired for {} after {}ms",
                 task.name,
@@ -543,12 +551,15 @@ impl Run {
             None
         };
 
-        in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let in_flight_c = in_flight.clone();
+        ctx.in_flight
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let in_flight_c = ctx.in_flight.clone();
         trace!("running task: {task}");
-        jset.lock().await.spawn(async move {
+        ctx.jset.lock().await.spawn(async move {
             let _permit = permit_opt;
-            let result = this.run_task_sched(&task, &config, sched_tx.clone()).await;
+            let result = this
+                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone())
+                .await;
             if let Err(err) = &result {
                 let status = Error::get_exit_status(err);
                 if !this.is_stopping() && status.is_none() {
