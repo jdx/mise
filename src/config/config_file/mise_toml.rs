@@ -1118,7 +1118,6 @@ impl<'de> Deserialize<'de> for EnvList {
                                     let opts = EnvDirectiveOptions { tools, redact };
                                     env.push(EnvDirective::Val(key, value.to_string(), opts));
                                 }
-                                _ => env.push(EnvDirective::Rm(key, Default::default())),
                             }
                         }
                     }
