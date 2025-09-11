@@ -5,7 +5,7 @@ use once_cell::sync::OnceCell;
 use serde::de::Visitor;
 use serde::{Deserializer, de};
 use serde_derive::Deserialize;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{
@@ -964,161 +964,38 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             }
                         }
                         _ => {
-                            enum Val {
-                                Int(i64),
+                            #[derive(Deserialize)]
+                            #[serde(untagged)]
+                            pub enum PrimitiveVal {
                                 Str(String),
+                                Int(i64),
                                 Bool(bool),
+                            }
+                            #[derive(Deserialize)]
+                            #[serde(untagged)]
+                            enum Val {
+                                Primitive(PrimitiveVal),
                                 Map {
-                                    value: Box<Val>,
-                                    tools: bool,
-                                    redact: bool,
+                                    value: PrimitiveVal,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
                                 },
                             }
-                            impl Display for Val {
-                                fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-                                    match self {
-                                        Val::Int(i) => write!(f, "{i}"),
-                                        Val::Str(s) => write!(f, "{s}"),
-                                        Val::Bool(b) => write!(f, "{b}"),
-                                        Val::Map {
-                                            value,
-                                            tools,
-                                            redact,
-                                        } => {
-                                            write!(f, "{value}")?;
-                                            if *tools {
-                                                write!(f, " tools")?;
-                                            }
-                                            if *redact {
-                                                write!(f, " redact")?;
-                                            }
-                                            Ok(())
-                                        }
-                                    }
+                            let (value, options) = match map.next_value::<Val>()? {
+                                Val::Primitive(p) => (p, EnvDirectiveOptions::default()),
+                                Val::Map { value, options } => (value, options),
+                            };
+                            let directive = match value {
+                                PrimitiveVal::Str(s) => EnvDirective::Val(key, s, options),
+                                PrimitiveVal::Int(i) => {
+                                    EnvDirective::Val(key, i.to_string(), options)
                                 }
-                            }
-
-                            impl<'de> de::Deserialize<'de> for Val {
-                                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                                where
-                                    D: Deserializer<'de>,
-                                {
-                                    struct ValVisitor;
-
-                                    impl<'de> Visitor<'de> for ValVisitor {
-                                        type Value = Val;
-                                        fn expecting(
-                                            &self,
-                                            formatter: &mut Formatter,
-                                        ) -> std::fmt::Result
-                                        {
-                                            formatter.write_str("env value")
-                                        }
-
-                                        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(Val::Bool(v))
-                                        }
-
-                                        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(Val::Int(v))
-                                        }
-
-                                        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(Val::Str(v.to_string()))
-                                        }
-
-                                        fn visit_map<A>(
-                                            self,
-                                            mut map: A,
-                                        ) -> Result<Self::Value, A::Error>
-                                        where
-                                            A: de::MapAccess<'de>,
-                                        {
-                                            let mut value: Option<Val> = None;
-                                            let mut tools = None;
-                                            let mut redact = None;
-                                            while let Some((key, val)) =
-                                                map.next_entry::<String, Val>()?
-                                            {
-                                                match key.as_str() {
-                                                    "value" => {
-                                                        value = Some(val);
-                                                    }
-                                                    "tools" => {
-                                                        tools = Some(val);
-                                                    }
-                                                    "redact" => {
-                                                        redact = Some(val);
-                                                    }
-                                                    _ => {
-                                                        return Err(de::Error::unknown_field(
-                                                            &key,
-                                                            &["value", "tools", "redact"],
-                                                        ));
-                                                    }
-                                                }
-                                            }
-                                            let value = value
-                                                .ok_or_else(|| de::Error::missing_field("value"))?;
-                                            let tools = if let Some(Val::Bool(tools)) = tools {
-                                                tools
-                                            } else {
-                                                false
-                                            };
-                                            Ok(Val::Map {
-                                                value: Box::new(value),
-                                                tools,
-                                                redact: redact
-                                                    .map(|r| {
-                                                        if let Val::Bool(b) = r { b } else { false }
-                                                    })
-                                                    .unwrap_or_default(),
-                                            })
-                                        }
-                                    }
-
-                                    deserializer.deserialize_any(ValVisitor)
+                                PrimitiveVal::Bool(true) => {
+                                    EnvDirective::Val(key, "true".to_string(), options)
                                 }
-                            }
-
-                            let value = map.next_value::<Val>()?;
-                            match value {
-                                Val::Int(i) => {
-                                    env.push(EnvDirective::Val(
-                                        key,
-                                        i.to_string(),
-                                        Default::default(),
-                                    ));
-                                }
-                                Val::Str(s) => {
-                                    env.push(EnvDirective::Val(key, s, Default::default()));
-                                }
-                                Val::Bool(true) => env.push(EnvDirective::Val(
-                                    key,
-                                    "true".into(),
-                                    Default::default(),
-                                )),
-                                Val::Bool(false) => {
-                                    env.push(EnvDirective::Rm(key, Default::default()))
-                                }
-                                Val::Map {
-                                    value,
-                                    tools,
-                                    redact,
-                                } => {
-                                    let opts = EnvDirectiveOptions { tools, redact };
-                                    env.push(EnvDirective::Val(key, value.to_string(), opts));
-                                }
-                            }
+                                PrimitiveVal::Bool(false) => EnvDirective::Rm(key, options),
+                            };
+                            env.push(directive);
                         }
                     }
                 }
