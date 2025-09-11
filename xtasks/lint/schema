@@ -2,6 +2,6 @@
 #MISE description="Lint schemas"
 set -euo pipefail
 
-ajv compile -s schema/mise.json --spec=draft2019 --strict=true
-ajv compile -s schema/mise-task.json --spec=draft2019 --strict=true
-ajv compile -s schema/mise.plugin.json --spec=draft2020 --strict=true
+ajv compile -s schema/mise.json --spec=draft2019 --strict-schema=true
+ajv compile -s schema/mise-task.json --spec=draft2019 --strict-schema=true
+ajv compile -s schema/mise.plugin.json --spec=draft2020 --strict-schema=true

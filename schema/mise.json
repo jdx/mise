@@ -1148,11 +1148,21 @@
                 },
                 {
                   "description": "task with args to run before this task",
+                  "type": "array",
                   "items": {
                     "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -1164,11 +1174,21 @@
                 },
                 {
                   "description": "task with args to run after this task",
+                  "type": "array",
                   "items": {
                     "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
