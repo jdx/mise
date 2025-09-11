@@ -1,5 +1,5 @@
 packages:
-  - name: astral-sh/uv@0.8.16
+  - name: astral-sh/uv@0.8.17
   - name: astral-sh/uv
     version: 0.2.21
   - name: astral-sh/uv

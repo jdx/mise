@@ -1,0 +1,9 @@
+packages:
+  - name: technicalpickles/envsense@0.3.4
+  - name: technicalpickles/envsense@0.3.1
+  - name: technicalpickles/envsense
+    version: 0.2.2
+  - name: technicalpickles/envsense
+    version: v0.2.1
+  - name: technicalpickles/envsense
+    version: v0.2.0

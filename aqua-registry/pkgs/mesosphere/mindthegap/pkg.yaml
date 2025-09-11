@@ -1,5 +1,5 @@
 packages:
-  - name: mesosphere/mindthegap@v1.23.0
+  - name: mesosphere/mindthegap@v1.24.0
   - name: mesosphere/mindthegap
     version: v0.13.0
   - name: mesosphere/mindthegap
