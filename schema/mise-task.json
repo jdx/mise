@@ -391,47 +391,7 @@
             "path": {
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "oneOf": [
-                        { "type": "string" },
-                        { "type": "array", "items": { "type": "string" } }
-                      ]
-                    },
-                    "paths": {
-                      "type": "array",
-                      "items": { "type": "string" }
-                    },
-                    "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
-                    }
-                  },
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "path": {
-                          "oneOf": [
-                            { "type": "string" },
-                            { "type": "array", "items": { "type": "string" } }
-                          ]
-                        }
-                      },
-                      "required": ["path"]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "paths": {
-                          "type": "array",
-                          "items": { "type": "string" }
-                        }
-                      },
-                      "required": ["paths"]
-                    }
-                  ]
+                  "$ref": "#/$defs/env_directive"
                 },
                 {
                   "description": "PATH entry to add",
@@ -446,28 +406,7 @@
                         "description": "PATH entry to add",
                         "type": "string"
                       },
-                      {
-                        "type": "object",
-                        "properties": {
-                          "path": {
-                            "oneOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              }
-                            ]
-                          },
-                          "tools": {
-                            "type": "boolean",
-                            "description": "load tools before resolving"
-                          }
-                        }
-                      }
+                      { "$ref": "#/$defs/env_directive" }
                     ]
                   }
                 }
