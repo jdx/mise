@@ -40,10 +40,7 @@
           "type": "object",
           "properties": {
             "path": {
-              "oneOf": [
-                { "type": "string" },
-                { "type": "array", "items": { "type": "string" } }
-              ]
+              "$ref": "#/$defs/env_directive/properties/path"
             }
           },
           "required": ["path"]
@@ -52,8 +49,7 @@
           "type": "object",
           "properties": {
             "paths": {
-              "type": "array",
-              "items": { "type": "string" }
+              "$ref": "#/$defs/env_directive/properties/paths"
             }
           },
           "required": ["paths"]
@@ -167,8 +163,15 @@
                       "properties": {
                         "path": {
                           "oneOf": [
-                            { "type": "string" },
-                            { "type": "array", "items": { "type": "string" } }
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
                           ]
                         }
                       },
@@ -179,7 +182,9 @@
                       "properties": {
                         "paths": {
                           "type": "array",
-                          "items": { "type": "string" }
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": ["paths"]
@@ -1180,11 +1185,21 @@
                 },
                 {
                   "description": "task with args to run before this task",
+                  "type": "array",
                   "items": {
                     "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -1196,11 +1211,21 @@
                 },
                 {
                   "description": "task with args to run after this task",
+                  "type": "array",
                   "items": {
                     "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
