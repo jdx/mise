@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use serde::de::Deserialize;
-use serde::de::IntoDeserializer;
 use serde::de::Visitor;
 use serde::{Deserializer, de};
 use serde_derive::Deserialize;
@@ -83,12 +82,6 @@ pub struct MiseTomlToolList(Vec<MiseTomlTool>);
 pub struct MiseTomlTool {
     pub tt: ToolVersionType,
     pub options: Option<ToolVersionOptions>,
-}
-
-#[derive(Debug, Clone)]
-pub struct MiseTomlEnvDirective {
-    pub value: String,
-    pub options: EnvDirectiveOptions,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -777,6 +770,7 @@ impl<'de> Deserialize<'de> for EnvList {
                 }
                 Ok(EnvList(env))
             }
+
             fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
@@ -785,6 +779,32 @@ impl<'de> Deserialize<'de> for EnvList {
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "_" | "mise" => {
+                            #[derive(Deserialize)]
+                            enum MiseTomlEnvDirective {
+                                Single {
+                                    #[serde(alias = "path")]
+                                    value: String,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                                Multiple {
+                                    #[serde(alias = "value", alias = "path", alias = "paths")]
+                                    values: Vec<String>,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                            }
+
+                            impl FromStr for MiseTomlEnvDirective {
+                                type Err = String;
+                                fn from_str(s: &str) -> Result<Self, Self::Err> {
+                                    Ok(MiseTomlEnvDirective::Single {
+                                        value: s.to_string(),
+                                        options: Default::default(),
+                                    })
+                                }
+                            }
+
                             struct EnvDirectivePythonVenv {
                                 path: String,
                                 create: bool,
@@ -802,11 +822,11 @@ impl<'de> Deserialize<'de> for EnvList {
 
                             #[derive(Deserialize)]
                             struct EnvDirectives {
-                                #[serde(default, deserialize_with = "deserialize_env_directives")]
+                                #[serde(default, deserialize_with = "deserialize_arr")]
                                 path: Vec<MiseTomlEnvDirective>,
-                                #[serde(default, deserialize_with = "deserialize_env_directives")]
+                                #[serde(default, deserialize_with = "deserialize_arr")]
                                 file: Vec<MiseTomlEnvDirective>,
-                                #[serde(default, deserialize_with = "deserialize_env_directives")]
+                                #[serde(default, deserialize_with = "deserialize_arr")]
                                 source: Vec<MiseTomlEnvDirective>,
                                 #[serde(default)]
                                 python: EnvDirectivePython,
@@ -903,17 +923,29 @@ impl<'de> Deserialize<'de> for EnvList {
                                 }
                             }
 
+                            fn flatten_directives<F>(
+                                directives: Vec<MiseTomlEnvDirective>,
+                                constructor: F,
+                            ) -> impl Iterator<Item = EnvDirective>
+                            where
+                                F: Fn(String, EnvDirectiveOptions) -> EnvDirective + 'static,
+                            {
+                                directives.into_iter().flat_map(move |d| match d {
+                                    MiseTomlEnvDirective::Single { value, options } => {
+                                        vec![constructor(value, options)]
+                                    }
+                                    MiseTomlEnvDirective::Multiple { values, options } => values
+                                        .into_iter()
+                                        .map(|v| constructor(v, options.clone()))
+                                        .collect(),
+                                })
+                            }
+
                             let directives = map.next_value::<EnvDirectives>()?;
                             // TODO: parse these in the order they're defined somehow
-                            for d in directives.path {
-                                env.push(EnvDirective::Path(d.value, d.options));
-                            }
-                            for d in directives.file {
-                                env.push(EnvDirective::File(d.value, d.options));
-                            }
-                            for d in directives.source {
-                                env.push(EnvDirective::Source(d.value, d.options));
-                            }
+                            env.extend(flatten_directives(directives.path, EnvDirective::Path));
+                            env.extend(flatten_directives(directives.file, EnvDirective::File));
+                            env.extend(flatten_directives(directives.source, EnvDirective::Source));
                             for (key, value) in directives.other {
                                 env.push(EnvDirective::Module(key, value, Default::default()));
                             }
@@ -1086,6 +1118,7 @@ impl<'de> Deserialize<'de> for EnvList {
                                     let opts = EnvDirectiveOptions { tools, redact };
                                     env.push(EnvDirective::Val(key, value.to_string(), opts));
                                 }
+                                _ => env.push(EnvDirective::Rm(key, Default::default())),
                             }
                         }
                     }
@@ -1229,113 +1262,6 @@ impl<'de> Deserialize<'de> for MiseTomlToolList {
 
         deserializer.deserialize_any(MiseTomlToolListVisitor)
     }
-}
-
-impl FromStr for MiseTomlEnvDirective {
-    type Err = eyre::Report;
-
-    fn from_str(s: &str) -> eyre::Result<Self> {
-        Ok(MiseTomlEnvDirective {
-            value: s.into(),
-            options: Default::default(),
-        })
-    }
-}
-
-pub fn deserialize_env_directives<'de, D>(
-    deserializer: D,
-) -> Result<Vec<MiseTomlEnvDirective>, D::Error>
-where
-    D: de::Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    struct EnvMap {
-        #[serde(alias = "value")]
-        path: toml::Value,
-        #[serde(flatten)]
-        options: EnvDirectiveOptions,
-    }
-
-    fn process_map<E: de::Error>(map: EnvMap) -> Result<Vec<MiseTomlEnvDirective>, E> {
-        match map.path {
-            toml::Value::String(s) => Ok(vec![MiseTomlEnvDirective {
-                value: s,
-                options: map.options,
-            }]),
-
-            toml::Value::Array(arr) => arr
-                .into_iter()
-                .map(|val| {
-                    val.as_str()
-                        .map(|s| MiseTomlEnvDirective {
-                            value: s.to_string(),
-                            options: map.options.clone(),
-                        })
-                        .ok_or_else(|| de::Error::custom("path array must contain only strings"))
-                })
-                .collect(),
-
-            _ => Err(de::Error::custom(
-                "path must be a string or array of strings",
-            )),
-        }
-    }
-
-    struct MiseTomlEnvDirectiveVisitor;
-
-    impl<'de> Visitor<'de> for MiseTomlEnvDirectiveVisitor {
-        type Value = Vec<MiseTomlEnvDirective>;
-
-        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-            formatter.write_str("a string, a map, or a list of directives")
-        }
-
-        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            v.parse()
-                .map(|directive: MiseTomlEnvDirective| vec![directive])
-                .map_err(de::Error::custom)
-        }
-
-        fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
-        where
-            M: de::MapAccess<'de>,
-        {
-            process_map(EnvMap::deserialize(de::value::MapAccessDeserializer::new(
-                map,
-            ))?)
-        }
-
-        fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
-        where
-            S: de::SeqAccess<'de>,
-        {
-            let mut directives = Vec::new();
-            while let Some(value) = seq.next_element::<toml::Value>()? {
-                match value {
-                    toml::Value::String(s) => {
-                        directives.push(s.parse().map_err(de::Error::custom)?);
-                    }
-                    toml::Value::Table(t) => {
-                        directives.extend(process_map(
-                            EnvMap::deserialize(t.into_deserializer())
-                                .map_err(de::Error::custom)?,
-                        )?);
-                    }
-                    _ => {
-                        return Err(de::Error::custom(
-                            "sequence must contain only strings or maps",
-                        ));
-                    }
-                }
-            }
-            Ok(directives)
-        }
-    }
-
-    deserializer.deserialize_any(MiseTomlEnvDirectiveVisitor)
 }
 
 impl<'de> Deserialize<'de> for MiseTomlTool {
