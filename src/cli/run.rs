@@ -413,65 +413,17 @@ impl Run {
                         if this.is_stopping() && !this.continue_on_error {
                             break;
                         }
-                        let jset = jset.clone();
-                        let this_ = this.clone();
-                        let needs_permit = Self::task_needs_permit(&task);
-                        let permit_opt = if needs_permit {
-                            let wait_start = std::time::Instant::now();
-                            let p = Some(semaphore.clone().acquire_owned().await?);
-                            trace!(
-                                "semaphore acquired for {} after {}ms",
-                                task.name,
-                                wait_start.elapsed().as_millis()
-                            );
-                            p
-                        } else {
-                            trace!("no semaphore needed for orchestrator task: {}", task.name);
-                            None
-                        };
-                        let config = config.clone();
-                        let sched_tx = sched_tx.clone();
-                        in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        let in_flight_c = in_flight.clone();
-                        trace!("running task: {task}");
-                        jset.lock().await.spawn(async move {
-                            let _permit = permit_opt;
-                            let result =
-                                this_.run_task_sched(&task, &config, sched_tx.clone()).await;
-                            if let Err(err) = &result {
-                                let status = Error::get_exit_status(err);
-                                if !this_.is_stopping() && status.is_none() {
-                                    let prefix = task.estyled_prefix();
-                                    if Settings::get().verbose {
-                                        this_.eprint(
-                                            &task,
-                                            &prefix,
-                                            &format!("{} {err:?}", style::ered("ERROR")),
-                                        );
-                                    } else {
-                                        this_.eprint(
-                                            &task,
-                                            &prefix,
-                                            &format!("{} {err}", style::ered("ERROR")),
-                                        );
-                                        let mut current_err = err.source();
-                                        while let Some(e) = current_err {
-                                            this_.eprint(
-                                                &task,
-                                                &prefix,
-                                                &format!("{} {e}", style::ered("ERROR")),
-                                            );
-                                            current_err = e.source();
-                                        }
-                                    };
-                                }
-                                this_.add_failed_task(task.clone(), status);
-                            }
-                            deps_for_remove.lock().await.remove(&task);
-                            trace!("deps removed: {} {}", task.name, task.args.join(" "));
-                            in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-                            result
-                        });
+                        Self::spawn_sched_job(
+                            this.clone(),
+                            task,
+                            deps_for_remove,
+                            semaphore.clone(),
+                            config.clone(),
+                            sched_tx.clone(),
+                            jset.clone(),
+                            in_flight.clone(),
+                        )
+                        .await?;
                     }
                     Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
                     Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
@@ -493,52 +445,17 @@ impl Run {
                     if let Some((task, deps_for_remove)) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
                         if this.is_stopping() && !this.continue_on_error { break; }
-                        let jset = jset.clone();
-                        let this_ = this.clone();
-                        let needs_permit = Self::task_needs_permit(&task);
-                        let permit_opt = if needs_permit {
-                            let wait_start = std::time::Instant::now();
-                            let p = Some(semaphore.clone().acquire_owned().await?);
-                            trace!(
-                                "semaphore acquired for {} after {}ms",
-                                task.name,
-                                wait_start.elapsed().as_millis()
-                            );
-                            p
-                        } else {
-                            trace!("no semaphore needed for orchestrator task: {}", task.name);
-                            None
-                        };
-                        let config = config.clone();
-                        let sched_tx = sched_tx.clone();
-                        in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        let in_flight_c = in_flight.clone();
-                        trace!("running task: {task}");
-                        jset.lock().await.spawn(async move {
-                            let _permit = permit_opt;
-                            let result = this_.run_task_sched(&task, &config, sched_tx.clone()).await;
-                            if let Err(err) = &result {
-                                let status = Error::get_exit_status(err);
-                                if !this_.is_stopping() && status.is_none() {
-                                    let prefix = task.estyled_prefix();
-                                    if Settings::get().verbose {
-                                        this_.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
-                                    } else {
-                                        this_.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
-                                        let mut current_err = err.source();
-                                        while let Some(e) = current_err {
-                                            this_.eprint(&task, &prefix, &format!("{} {e}", style::ered("ERROR")));
-                                            current_err = e.source();
-                                        }
-                                    };
-                                }
-                                this_.add_failed_task(task.clone(), status);
-                            }
-                            deps_for_remove.lock().await.remove(&task);
-                            trace!("deps removed: {} {}", task.name, task.args.join(" "));
-                            in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-                            result
-                        });
+                        Self::spawn_sched_job(
+                            this.clone(),
+                            task,
+                            deps_for_remove,
+                            semaphore.clone(),
+                            config.clone(),
+                            sched_tx.clone(),
+                            jset.clone(),
+                            in_flight.clone(),
+                        )
+                        .await?;
                     } else {
                         // channel closed; rely on main_done/in_flight to exit soon
                     }
@@ -597,6 +514,63 @@ impl Run {
             exit(*status);
         }
         time!("parallelize_tasks done");
+
+        Ok(())
+    }
+
+    async fn spawn_sched_job(
+        this: Arc<Self>,
+        task: Task,
+        deps_for_remove: Arc<Mutex<Deps>>,
+        semaphore: Arc<Semaphore>,
+        config: Arc<Config>,
+        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+        jset: Arc<Mutex<JoinSet<Result<()>>>>,
+        in_flight: Arc<std::sync::atomic::AtomicUsize>,
+    ) -> Result<()> {
+        let needs_permit = Self::task_needs_permit(&task);
+        let permit_opt = if needs_permit {
+            let wait_start = std::time::Instant::now();
+            let p = Some(semaphore.clone().acquire_owned().await?);
+            trace!(
+                "semaphore acquired for {} after {}ms",
+                task.name,
+                wait_start.elapsed().as_millis()
+            );
+            p
+        } else {
+            trace!("no semaphore needed for orchestrator task: {}", task.name);
+            None
+        };
+
+        in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let in_flight_c = in_flight.clone();
+        trace!("running task: {task}");
+        jset.lock().await.spawn(async move {
+            let _permit = permit_opt;
+            let result = this.run_task_sched(&task, &config, sched_tx.clone()).await;
+            if let Err(err) = &result {
+                let status = Error::get_exit_status(err);
+                if !this.is_stopping() && status.is_none() {
+                    let prefix = task.estyled_prefix();
+                    if Settings::get().verbose {
+                        this.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
+                    } else {
+                        this.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
+                        let mut current_err = err.source();
+                        while let Some(e) = current_err {
+                            this.eprint(&task, &prefix, &format!("{} {e}", style::ered("ERROR")));
+                            current_err = e.source();
+                        }
+                    };
+                }
+                this.add_failed_task(task.clone(), status);
+            }
+            deps_for_remove.lock().await.remove(&task);
+            trace!("deps removed: {} {}", task.name, task.args.join(" "));
+            in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            result
+        });
 
         Ok(())
     }
