@@ -246,7 +246,7 @@ a file for `sources` to work.
 [tasks.build]
 run = "cargo build"
 sources = ["Cargo.toml", "src/**/*.rs"]
-outputs = { auto = true } # same as not specifying outputs at all
+outputs = { auto = true } # this is the default when sources is defined
 ```
 
 ### `shell`
