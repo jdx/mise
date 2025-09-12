@@ -265,6 +265,19 @@ impl ToolStub {
                             }
                         }
                     }
+                } else {
+                    // When skipping download, still try to guess the binary name from the URL
+                    if !explicit_platform_bins.contains_key(&platform) && self.bin.is_none() {
+                        let filename = get_filename_from_url(&url);
+                        // Only set bin for non-archive formats where we can guess the binary name
+                        if !self.is_archive_format(&url) {
+                            let detected_bin = extract_tool_name_from_filename(&filename);
+                            if detected_bin != stub_filename {
+                                platform_table["bin"] = toml_edit::value(&detected_bin);
+                                detected_bin_paths.push(detected_bin);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -394,9 +407,10 @@ impl ToolStub {
                 }
             }
         } else {
-            // For single binary files, just use the tool name
+            // For single binary files, try to extract the tool name from the filename
+            // Remove common platform suffixes to get the actual binary name
             pr.finish();
-            Some(self.get_tool_name())
+            Some(extract_tool_name_from_filename(&filename))
         };
 
         Ok((checksum, size, bin_path))
@@ -647,6 +661,63 @@ impl ToolStub {
 
 fn format_size_comment(bytes: u64) -> String {
     format!(" # {}", format_size(bytes, BINARY))
+}
+
+fn extract_tool_name_from_filename(filename: &str) -> String {
+    // Remove file extension if present
+    let name = std::path::Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(filename);
+
+    // Common platform/architecture suffixes to remove
+    let suffixes = [
+        "-linux-x64",
+        "-linux-x86_64",
+        "-linux-amd64",
+        "-linux-arm64",
+        "-linux-aarch64",
+        "-darwin-x64",
+        "-darwin-x86_64",
+        "-darwin-amd64",
+        "-darwin-arm64",
+        "-darwin-aarch64",
+        "-macos-x64",
+        "-macos-x86_64",
+        "-macos-amd64",
+        "-macos-arm64",
+        "-macos-aarch64",
+        "-windows-x64",
+        "-windows-x86_64",
+        "-windows-amd64",
+        "-windows-arm64",
+        "-windows-aarch64",
+        "-win-x64",
+        "-win-x86_64",
+        "-win-amd64",
+        "-win-arm64",
+        "-win-aarch64",
+        "-x86_64",
+        "-x64",
+        "-amd64",
+        "-arm64",
+        "-aarch64",
+        "-linux",
+        "-darwin",
+        "-macos",
+        "-windows",
+        "-win",
+    ];
+
+    let mut result = name.to_string();
+    for suffix in &suffixes {
+        if let Some(pos) = result.rfind(suffix) {
+            result.truncate(pos);
+            break;
+        }
+    }
+
+    result
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

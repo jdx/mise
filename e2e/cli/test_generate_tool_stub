@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Test that tool-stub generation correctly sets the bin field
+
+assert() {
+	local actual="$1"
+	local expected="$2"
+	local message="${3:-Assertion failed}"
+	if [[ $actual != "$expected" ]]; then
+		echo "FAIL: $message"
+		echo "  Expected: '$expected'"
+		echo "  Actual:   '$actual'"
+		exit 1
+	fi
+}
+
+assert_contains() {
+	local haystack="$1"
+	local needle="$2"
+	local message="${3:-Assertion failed}"
+	if [[ ! $haystack =~ $needle ]]; then
+		echo "FAIL: $message"
+		echo "  Expected to contain: '$needle'"
+		echo "  Actual: '$haystack'"
+		exit 1
+	fi
+}
+
+assert_not_contains() {
+	local haystack="$1"
+	local needle="$2"
+	local message="${3:-Assertion failed}"
+	if [[ $haystack =~ $needle ]]; then
+		echo "FAIL: $message"
+		echo "  Expected NOT to contain: '$needle'"
+		echo "  Actual: '$haystack'"
+		exit 1
+	fi
+}
+
+# Create a temporary directory for testing
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+trap 'rm -rf "$TEST_DIR"' EXIT
+
+echo "Testing tool-stub generation with single binary download (jq)..."
+
+# Generate a tool stub for jq (single binary file, not an archive)
+mise generate tool-stub jq-test \
+	--platform-url "macos-arm64:https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64" \
+	--platform-url "linux-x64:https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64" \
+	--skip-download
+
+# Check that the file was created
+[[ -f jq-test ]] || {
+	echo "FAIL: Tool stub file should be created"
+	exit 1
+}
+
+# Check the content of the generated stub
+STUB_CONTENT=$(cat jq-test)
+
+# The bin field should be set to "jq" since the downloaded binary is named "jq"
+# but our stub is named "jq-test"
+assert_contains "$STUB_CONTENT" 'bin = "jq"' "The bin field should be set to 'jq'"
+
+echo "Testing tool-stub generation with archive (ripgrep)..."
+
+# Generate a tool stub for ripgrep (archive with binary inside)
+mise generate tool-stub rg-test \
+	--platform-url "linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz" \
+	--skip-download
+
+# Check that the file was created
+[[ -f rg-test ]] || {
+	echo "FAIL: Tool stub file should be created"
+	exit 1
+}
+
+# Check the content
+STUB_CONTENT=$(cat rg-test)
+
+# For archives, when we skip download, the bin field won't be set
+# But let's test that bin is properly handled when explicitly provided
+mise generate tool-stub rg-explicit \
+	--platform-url "linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz" \
+	--bin "rg" \
+	--skip-download
+
+STUB_CONTENT=$(cat rg-explicit)
+assert_contains "$STUB_CONTENT" 'bin = "rg"' "The bin field should be set when explicitly provided"
+
+echo "Testing that bin field is omitted when it matches the stub name..."
+
+# Generate a stub where the binary name matches the stub name
+mise generate tool-stub jq \
+	--platform-url "macos-arm64:https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64" \
+	--bin "jq" \
+	--skip-download
+
+STUB_CONTENT=$(cat jq)
+# When bin matches the stub name, it should be omitted
+assert_not_contains "$STUB_CONTENT" 'bin =' "The bin field should be omitted when it matches stub name"
+
+echo "Testing with actual download to detect binary path..."
+
+# Test with a small binary that we can actually download
+# Using jq as it's a single binary and relatively small
+mise generate tool-stub jq-download \
+	--platform-url "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64"
+
+STUB_CONTENT=$(cat jq-download)
+# For a single binary download, the bin should be set to the actual binary name "jq"
+# not "jq-download" (the stub name)
+assert_contains "$STUB_CONTENT" 'bin = "jq"' "The bin field should be set to the actual binary name"
+
+echo "All tests passed!"
