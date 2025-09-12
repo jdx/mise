@@ -1,13 +1,27 @@
+#!/usr/bin/env bun
+
+//MISE description="Render JSON schema"
+//MISE depends=["docs:setup"]
+
 import * as fs from "node:fs";
 import * as child_process from "node:child_process";
 import * as toml from "toml";
-import { match } from "ts-pattern";
+
+type Props = {
+  type: string;
+  description: string;
+  default?: unknown;
+  deprecated?: string;
+  enum?: [string, ...string[]][];
+};
+
+type SettingsToml = Record<string, Props | Record<string, Props>>;
 
 type Element = {
-  default: string | number | boolean;
-  description: string;
-  deprecated?: boolean;
   type: string;
+  default: unknown;
+  description: string;
+  deprecated?: true;
   enum?: string[];
   items?: {
     type: string;
@@ -17,95 +31,88 @@ type Element = {
   };
 };
 
-type Props = {
-  type: string;
-  default: string | number | boolean;
-  description: string;
-  deprecated: string;
-  enum?: [string][];
+type NestedElement = {
+  type: "object";
+  additionalProperties: false;
+  deprecated?: true;
+  properties: Record<string, Element>;
 };
 
 function buildElement(key: string, props: Props): Element {
-  let { type } = props;
+  const typeMap: Record<string, string> = {
+    String: "string",
+    Path: "string",
+    Url: "string",
+    Duration: "string",
+    Bool: "boolean",
+    Integer: "number",
+    ListString: "string[]",
+    ListPath: "string[]",
+    SetString: "string[]",
+    "IndexMap<String, String>": "object",
+  };
+  const type = props.type ? typeMap[props.type] : undefined;
   if (!type) {
-    throw new Error("Type property must be a string");
+    throw new Error(`Unknown type: ${props.type}`);
   }
-
-  if (type.startsWith("Option<")) {
-    type = type.slice(7, -1);
-  }
-
-  type = type.replace(/PathBuf/g, "Path").replaceAll("PathBuf", "String");
-
-  type = match(type)
-    .with("String", () => "string")
-    .with("Path", () => "string")
-    .with("Url", () => "string")
-    .with("Duration", () => "string")
-    .with("Bool", () => "boolean")
-    .with("Integer", () => "number")
-    .with("ListString", () => "string[]")
-    .with("ListPath", () => "string[]")
-    .with("SetString", () => "string[]")
-    .with("IndexMap<String, String>", () => "object")
-    .otherwise(() => {
-      throw new Error(`Unknown type: ${type}`);
-    });
 
   if (!props.description) {
-    console.error(`Missing description for ${key}`);
-    process.exit(1);
+    throw new Error(`Missing description for ${key}`);
   }
 
-  const ele: Element = {
+  const element: Element = {
     default: props.default,
     description: props.description,
     type,
   };
 
   if (props.deprecated) {
-    ele.deprecated = true;
+    element.deprecated = true;
   }
   if (props.enum) {
-    ele.enum = props.enum.map((e) => e[0]);
+    element.enum = props.enum.map((e) => e[0]);
   }
 
   if (type === "string[]") {
-    ele.type = "array";
-    ele.items = {
+    element.type = "array";
+    element.items = {
       type: "string",
     };
   }
 
   if (type === "object") {
-    ele.type = "object";
-    ele.additionalProperties = {
+    element.additionalProperties = {
       type: "string",
     };
   }
 
-  return ele;
+  return element;
 }
 
-const doc = toml.parse(fs.readFileSync("settings.toml", "utf-8"));
-const settings: any = {};
+const doc = toml.parse(
+  fs.readFileSync("settings.toml", "utf-8"),
+) as SettingsToml;
+const settings: Record<string, Element | NestedElement> = {};
+
+const hasSubkeys = (props: SettingsToml[string]): props is Props => {
+  return "type" in props;
+};
 
 for (const key in doc) {
   const props = doc[key];
-  if (props.type) {
+  if (hasSubkeys(props)) {
     settings[key] = buildElement(key, props);
   } else {
     for (const subkey in props) {
-      settings[key] = settings[key] || {
+      settings[key] ??= {
         type: "object",
         additionalProperties: false,
-        description: props.description,
         properties: {},
       };
       if (props.deprecated) {
         settings[key].deprecated = true;
       }
-      settings[key].properties[subkey] = buildElement(
+      (settings[key] as NestedElement).properties[subkey] = buildElement(
         `${key}.${subkey}`,
         props[subkey],
       );
@@ -115,7 +122,7 @@ for (const key in doc) {
 
 const schema = JSON.parse(fs.readFileSync("schema/mise.json", "utf-8"));
 schema["$defs"].settings.properties = settings;
-fs.writeFileSync("schema/mise.json.tmp", JSON.stringify(schema, null, 2));
+fs.writeFileSync("schema/mise.json.tmp", JSON.stringify(schema));
 
 child_process.execSync("jq . < schema/mise.json.tmp > schema/mise.json");
 child_process.execSync("prettier --write schema/mise.json");
@@ -127,10 +134,7 @@ const taskSchema = JSON.parse(
 taskSchema["$defs"].task = schema["$defs"].task;
 taskSchema["$defs"].env = schema["$defs"].env;
 taskSchema["$defs"].env_directive = schema["$defs"].env_directive;
-fs.writeFileSync(
-  "schema/mise-task.json.tmp",
-  JSON.stringify(taskSchema, null, 2),
-);
+fs.writeFileSync("schema/mise-task.json.tmp", JSON.stringify(taskSchema));
 child_process.execSync(
   "jq . < schema/mise-task.json.tmp > schema/mise-task.json",
 );
