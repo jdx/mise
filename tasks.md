@@ -237,13 +237,13 @@ Render help documentation
 
 Generate man pages
 
-## `render:settings`
+## `render:schema`
 
 - Depends: docs:setup
 
-- **Usage**: `render:settings`
+- **Usage**: `render:schema`
 
-Render settings documentation
+Render JSON schema
 
 ## `render:usage`
 
