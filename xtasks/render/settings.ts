@@ -12,6 +12,9 @@ type Element = {
   items?: {
     type: string;
   };
+  additionalProperties?: {
+    type: string;
+  };
 };
 
 type Props = {
@@ -44,6 +47,7 @@ function buildElement(key: string, props: Props): Element {
     .with("ListString", () => "string[]")
     .with("ListPath", () => "string[]")
     .with("SetString", () => "string[]")
+    .with("IndexMap<String, String>", () => "object")
     .otherwise(() => {
       throw new Error(`Unknown type: ${type}`);
     });
@@ -73,6 +77,13 @@ function buildElement(key: string, props: Props): Element {
     };
   }
 
+  if (type === "object") {
+    ele.type = "object";
+    ele.additionalProperties = {
+      type: "string",
+    };
+  }
+
   return ele;
 }
 
@@ -86,6 +97,7 @@ for (const key in doc) {
   } else {
     for (const subkey in props) {
       settings[key] = settings[key] || {
+        type: "object",
         additionalProperties: false,
         description: props.description,
         properties: {},
@@ -113,6 +125,8 @@ const taskSchema = JSON.parse(
   fs.readFileSync("schema/mise-task.json", "utf-8"),
 );
 taskSchema["$defs"].task = schema["$defs"].task;
+taskSchema["$defs"].env = schema["$defs"].env;
+taskSchema["$defs"].env_directive = schema["$defs"].env_directive;
 fs.writeFileSync(
   "schema/mise-task.json.tmp",
   JSON.stringify(taskSchema, null, 2),

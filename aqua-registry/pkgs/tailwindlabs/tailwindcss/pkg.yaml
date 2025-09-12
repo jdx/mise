@@ -1,5 +1,5 @@
 packages:
-  - name: tailwindlabs/tailwindcss@v4.1.12
+  - name: tailwindlabs/tailwindcss@v4.1.13
   - name: tailwindlabs/tailwindcss
     version: v3.4.17
   - name: tailwindlabs/tailwindcss

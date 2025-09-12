@@ -1,5 +1,5 @@
 packages:
-  - name: gojuno/minimock@v3.4.6
+  - name: gojuno/minimock@v3.4.7
   - name: gojuno/minimock
     version: v3.3.1
   - name: gojuno/minimock

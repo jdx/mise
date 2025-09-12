@@ -1,5 +1,5 @@
 packages:
-  - name: dlvhdr/gh-dash@v4.16.1
+  - name: dlvhdr/gh-dash@v4.16.2
   - name: dlvhdr/gh-dash
     version: v3.14.0
   - name: dlvhdr/gh-dash

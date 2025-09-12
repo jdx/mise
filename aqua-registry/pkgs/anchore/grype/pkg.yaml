@@ -1,5 +1,5 @@
 packages:
-  - name: anchore/grype@v0.99.0
+  - name: anchore/grype@v0.99.1
   - name: anchore/grype
     version: v0.71.0
   - name: anchore/grype

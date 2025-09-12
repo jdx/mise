@@ -1,4 +1,4 @@
 packages:
-  - name: mikefarah/yq@v4.47.1
+  - name: mikefarah/yq@v4.47.2
   - name: mikefarah/yq
     version: v4.9.5

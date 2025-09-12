@@ -1,2 +1,2 @@
 packages:
-  - name: golang/tools/stringer@v0.36.0
+  - name: golang/tools/stringer@v0.37.0

@@ -24,6 +24,12 @@ impl Shell for Pwsh {
             $env:__MISE_ORIG_PATH = $env:PATH
 
             function mise {{
+                [CmdletBinding()]
+                param(
+                    [Parameter(ValueFromRemainingArguments=$true)]  # Allow any number of arguments, including none
+                    [string[]] $arguments
+                )
+
                 $previous_out_encoding = $OutputEncoding
                 $previous_console_out_encoding = [Console]::OutputEncoding
                 $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8
@@ -33,38 +39,41 @@ impl Shell for Pwsh {
                     [Console]::OutputEncoding = $previous_console_out_encoding
                 }}
 
-                # Read line directly from input to workaround powershell input parsing for functions
-                $code = [System.Management.Automation.Language.Parser]::ParseInput($MyInvocation.Statement.Substring($MyInvocation.OffsetInLine - 1), [ref]$null, [ref]$null)
-                $myLine = $code.Find({{ $args[0].CommandElements }}, $true).CommandElements | ForEach-Object {{ $_.ToString() }} | Join-String -Separator ' '
-                $command, [array]$arguments = Invoke-Expression ('Write-Output -- ' + $myLine)
-                
-                if ($null -eq $arguments) {{ 
+                if ($arguments.count -eq 0) {{
                     & {exe}
                     _reset_output_encoding
                     return
                 }} elseif ($arguments -contains '-h' -or $arguments -contains '--help') {{
-                    & {exe} $arguments
+                    & {exe} @arguments
                     _reset_output_encoding
                     return
-                }} 
+                }}
 
                 $command = $arguments[0]
-                $arguments = $arguments[1..$arguments.Length]
+                if ($arguments.Length -gt 1) {{
+                    $remainingArgs = $arguments[1..($arguments.Length - 1)]
+                }} else {{
+                    $remainingArgs = @()
+                }}
 
                 switch ($command) {{
                     {{ $_ -in 'deactivate', 'shell', 'sh' }} {{
-                        & {exe} $command $arguments | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                        & {exe} $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
                         _reset_output_encoding
                     }}
                     default {{
-                        & {exe} $command $arguments
+                        & {exe} $command @remainingArgs
                         $status = $LASTEXITCODE
                         if ($(Test-Path -Path Function:\_mise_hook)){{
                             _mise_hook
                         }}
                         _reset_output_encoding
                         # Pass down exit code from mise after _mise_hook
-                        pwsh -NoProfile -Command exit $status 
+                        if ($PSVersionTable.PSVersion.Major -ge 7) {{
+                            pwsh -NoProfile -Command exit $status
+                        }} else {{
+                            powershell -NoProfile -Command exit $status
+                        }}
                     }}
                 }}
             }}
@@ -80,6 +89,12 @@ impl Shell for Pwsh {
             }}
 
             function __enable_mise_chpwd{{
+                if ($PSVersionTable.PSVersion.Major -lt 7) {{
+                    if ($env:MISE_PWSH_CHPWD_WARNING -ne '0') {{
+                        Write-Warning "mise: chpwd functionality requires PowerShell version 7 or higher. Your current version is $($PSVersionTable.PSVersion). You can add `$env:MISE_PWSH_CHPWD_WARNING=0` to your environment to disable this warning."
+                    }}
+                    return
+                }}
                 if (-not $__mise_pwsh_chpwd){{
                     $Global:__mise_pwsh_chpwd= $true
                     $_mise_chpwd_hook = [EventHandler[System.Management.Automation.LocationChangedEventArgs]] {{

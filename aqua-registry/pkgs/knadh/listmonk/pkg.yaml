@@ -1,4 +1,4 @@
 packages:
-  - name: knadh/listmonk@v5.0.3
+  - name: knadh/listmonk@v5.1.0
   - name: knadh/listmonk
     version: v2.4.0

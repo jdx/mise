@@ -1,4 +1,4 @@
-use crate::config::config_file::{config_root, trust_check};
+use crate::config::config_file::trust_check;
 use crate::dirs;
 use crate::env;
 use crate::env_diff::EnvMap;
@@ -21,9 +21,11 @@ mod path;
 mod source;
 mod venv;
 
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EnvDirectiveOptions {
+    #[serde(default)]
     pub(crate) tools: bool,
+    #[serde(default)]
     pub(crate) redact: bool,
 }
 
@@ -217,7 +219,7 @@ impl EnvResults {
             //     &directive,
             //     &source
             // );
-            let config_root = config_root(&source);
+            let config_root = crate::config::config_file::config_root::config_root(&source);
             ctx.insert("cwd", &*dirs::CWD);
             ctx.insert("config_root", &config_root);
             let env_vars = env
@@ -360,22 +362,21 @@ impl EnvResults {
         // trace!("resolve: paths: {:#?}", &paths);
         // trace!("resolve: ctx.env: {:#?}", &ctx.get("env"));
         for (source, paths) in &paths.iter().chunk_by(|(_, source)| source) {
-            let config_root = source
-                .parent()
-                .map(Path::to_path_buf)
-                .or_else(|| dirs::CWD.clone())
-                .unwrap_or_default();
+            // Use the computed config_root (project root for nested configs) for path resolution
+            // to be consistent with other env directives like _.source and _.file
+            let config_root = crate::config::config_file::config_root::config_root(source);
             let paths = paths.map(|(p, _)| p).collect_vec();
-            let paths = paths
+            let mut paths = paths
                 .iter()
                 .rev()
                 .flat_map(|path| env::split_paths(path))
                 .map(|s| normalize_path(&config_root, s))
                 .collect::<Vec<_>>();
-            r.env_paths.extend(paths);
+            // r.env_paths is already reversed and paths should prepend r.env_paths
+            paths.reverse();
+            paths.extend(r.env_paths);
+            r.env_paths = paths;
         }
-
-        r.env_paths.reverse();
 
         Ok(r)
     }

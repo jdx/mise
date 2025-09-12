@@ -1,2 +1,2 @@
 packages:
-  - name: nuclio/nuclio@1.15.2
+  - name: nuclio/nuclio@1.15.3

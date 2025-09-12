@@ -1,4 +1,4 @@
 packages:
-  - name: regclient/regclient/regsync@v0.9.1
+  - name: regclient/regclient/regsync@v0.9.2
   - name: regclient/regclient/regsync
     version: v0.3.8

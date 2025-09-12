@@ -1,5 +1,5 @@
 packages:
-  - name: twpayne/chezmoi@v2.65.0
+  - name: twpayne/chezmoi@v2.65.1
   - name: twpayne/chezmoi
     version: v2.29.4
   - name: twpayne/chezmoi

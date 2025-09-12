@@ -1,5 +1,5 @@
 packages:
-  - name: snyk/cli@v1.1298.3
+  - name: snyk/cli@v1.1299.0
   - name: snyk/cli
     version: v1.1229.0
   - name: snyk/cli

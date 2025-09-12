@@ -1,5 +1,5 @@
 packages:
-  - name: winebarrel/cronplan/cronplan@v1.10.5
+  - name: winebarrel/cronplan/cronplan@v2.0.2
   - name: winebarrel/cronplan/cronplan
     version: v1.2.0
   - name: winebarrel/cronplan/cronplan

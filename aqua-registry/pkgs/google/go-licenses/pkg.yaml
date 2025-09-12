@@ -1,2 +1,4 @@
 packages:
-  - name: google/go-licenses@v1.6.0
+  - name: google/go-licenses@v2.0.1
+  - name: google/go-licenses
+    version: v1.6.0

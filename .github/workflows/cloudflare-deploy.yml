@@ -1,0 +1,58 @@
+name: cloudflare-deploy
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run in dry-run mode (no actual deployment)"
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: cloudflare-deploy-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
+
+env:
+  DRY_RUN: ${{ github.event_name == 'release' && '0' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.dry_run && '1' || '0')) || '1' }}
+  MISE_EXPERIMENTAL: 1
+
+jobs:
+  deploy-cloudflare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      (github.event_name == 'release' && 
+       startsWith(github.event.release.tag_name, 'v') && 
+       !github.event.release.prerelease) ||
+      github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+
+      - name: Install mise
+        run: |
+          curl -fsSL https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          ~/.local/bin/mise --version
+
+      - name: Install mise tools
+        run: mise install
+
+      - name: Deploy Cloudflare Worker
+        run: mise x -- scripts/deploy-worker.sh
+        env:
+          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
+
+      - name: Update Redirect
+        run: |
+          VERSION="$(./scripts/get-version.sh)"
+          mise x -- scripts/update-redirect.sh "$VERSION"
+        continue-on-error: true
+        env:
+          CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+          CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}

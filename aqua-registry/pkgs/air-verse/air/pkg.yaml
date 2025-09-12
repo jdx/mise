@@ -1,5 +1,5 @@
 packages:
-  - name: air-verse/air@v1.62.0
+  - name: air-verse/air@v1.63.0
   - name: air-verse/air
     version: v1.27.3
   - name: air-verse/air

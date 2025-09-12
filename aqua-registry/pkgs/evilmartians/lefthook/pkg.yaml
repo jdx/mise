@@ -1,5 +1,5 @@
 packages:
-  - name: evilmartians/lefthook@v1.12.3
+  - name: evilmartians/lefthook@v1.13.0
   - name: evilmartians/lefthook
     version: v0.8.0
   - name: evilmartians/lefthook

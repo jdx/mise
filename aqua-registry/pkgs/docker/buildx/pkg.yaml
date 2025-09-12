@@ -1,5 +1,5 @@
 packages:
-  - name: docker/buildx@v0.27.0
+  - name: docker/buildx@v0.28.0
   - name: docker/buildx
     version: v0.10.0-rc1
   - name: docker/buildx

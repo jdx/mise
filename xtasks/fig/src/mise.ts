@@ -579,11 +579,11 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["set", "add", "create"],
-          description: "Add/update an alias for a plugin",
+          description: "Add/update an alias for a backend/plugin",
           args: [
             {
               name: "plugin",
-              description: "The plugin to set the alias for",
+              description: "The backend/plugin to set the alias for",
               generators: pluginGenerator,
               debounce: true,
             },
@@ -596,22 +596,24 @@ const completionSpec: Fig.Spec = {
             {
               name: "value",
               description: "The value to set the alias to",
+              isOptional: true,
             },
           ],
         },
         {
           name: ["unset", "rm", "remove", "delete", "del"],
-          description: "Clears an alias for a plugin",
+          description: "Clears an alias for a backend/plugin",
           args: [
             {
               name: "plugin",
-              description: "The plugin to remove the alias from",
+              description: "The backend/plugin to remove the alias from",
               generators: pluginGenerator,
               debounce: true,
             },
             {
               name: "alias",
               description: "The alias to remove",
+              isOptional: true,
               generators: aliasGenerator,
               debounce: true,
             },
@@ -1871,6 +1873,11 @@ const completionSpec: Fig.Spec = {
       description: "Run task(s)",
       options: [
         {
+          name: "--no-cache",
+          description: "Do not use cache on remote tasks",
+          isRepeatable: false,
+        },
+        {
           name: ["-C", "--cd"],
           description: "Change to this directory before executing the command",
           isRepeatable: false,
@@ -1929,6 +1936,19 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: ["-S", "--silent"],
+          description: "Don't show any output except for errors",
+          isRepeatable: false,
+        },
+        {
+          name: "--timeout",
+          description: "Timeout for the task to complete\ne.g.: 30s, 5m",
+          isRepeatable: false,
+          args: {
+            name: "timeout",
+          },
+        },
+        {
           name: "--no-timings",
           description: "Hides elapsed time after each task completes",
           isRepeatable: false,
@@ -1939,11 +1959,6 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: ["-S", "--silent"],
-          description: "Don't show any output except for errors",
-          isRepeatable: false,
-        },
-        {
           name: ["-o", "--output"],
           description:
             "Change how tasks information is output when running tasks",
@@ -1951,10 +1966,6 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "output",
           },
-        },
-        {
-          name: "--no-cache",
-          isRepeatable: false,
         },
       ],
       generateSpec: usageGenerateSpec(["mise tasks --usage"]),
@@ -2553,6 +2564,11 @@ const completionSpec: Fig.Spec = {
           description: "Run task(s)",
           options: [
             {
+              name: "--no-cache",
+              description: "Do not use cache on remote tasks",
+              isRepeatable: false,
+            },
+            {
               name: ["-C", "--cd"],
               description:
                 "Change to this directory before executing the command",
@@ -2613,6 +2629,19 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: ["-S", "--silent"],
+              description: "Don't show any output except for errors",
+              isRepeatable: false,
+            },
+            {
+              name: "--timeout",
+              description: "Timeout for the task to complete\ne.g.: 30s, 5m",
+              isRepeatable: false,
+              args: {
+                name: "timeout",
+              },
+            },
+            {
               name: "--no-timings",
               description: "Hides elapsed time after each task completes",
               isRepeatable: false,
@@ -2623,11 +2652,6 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
-              name: ["-S", "--silent"],
-              description: "Don't show any output except for errors",
-              isRepeatable: false,
-            },
-            {
               name: ["-o", "--output"],
               description:
                 "Change how tasks information is output when running tasks",
@@ -2635,10 +2659,6 @@ const completionSpec: Fig.Spec = {
               args: {
                 name: "output",
               },
-            },
-            {
-              name: "--no-cache",
-              isRepeatable: false,
             },
           ],
           args: [

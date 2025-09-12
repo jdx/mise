@@ -1,5 +1,5 @@
 packages:
-  - name: Kong/deck@v1.50.0
+  - name: Kong/deck@v1.51.0
   - name: Kong/deck
     version: v1.10.0
   - name: Kong/deck

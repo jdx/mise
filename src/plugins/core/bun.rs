@@ -15,7 +15,10 @@ use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::Backend, config::Config};
+use crate::{
+    backend::{Backend, GitHubReleaseInfo, ReleaseType, platform_target::PlatformTarget},
+    config::Config,
+};
 use crate::{file, github, plugins};
 
 #[derive(Debug)]
@@ -116,42 +119,106 @@ impl Backend for BunPlugin {
 
         Ok(tv)
     }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_github_release_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<GitHubReleaseInfo>> {
+        let version = &tv.version;
+
+        // Build the asset pattern for Bun's GitHub releases
+        // Pattern: bun-{os}-{arch}.zip (where arch may include variants like -musl, -baseline)
+        let os_name = Self::map_os_to_bun(target.os_name());
+        let arch_name = Self::get_bun_arch_for_target(target);
+        let asset_pattern = format!("bun-{os_name}-{arch_name}.zip");
+
+        Ok(Some(GitHubReleaseInfo {
+            repo: "oven-sh/bun".to_string(),
+            asset_pattern: Some(asset_pattern),
+            api_url: Some(format!(
+                "https://github.com/oven-sh/bun/releases/download/bun-v{version}"
+            )),
+            release_type: ReleaseType::GitHub,
+        }))
+    }
+}
+
+impl BunPlugin {
+    /// Map our platform OS names to Bun's naming convention
+    fn map_os_to_bun(os: &str) -> &str {
+        match os {
+            "macos" => "darwin",
+            "linux" => "linux",
+            "windows" => "windows",
+            other => other,
+        }
+    }
+
+    /// Map our platform arch names to Bun's naming convention
+    /// Note: This handles simple cases. Complex musl/baseline variants are handled in arch()
+    fn map_arch_to_bun(arch: &str) -> &str {
+        match arch {
+            "x64" => "x64",
+            "arm64" | "aarch64" => "aarch64",
+            other => other,
+        }
+    }
+
+    /// Get the full Bun arch string for a target platform
+    /// This handles musl, baseline, and other variants based on platform qualifiers
+    fn get_bun_arch_for_target(target: &PlatformTarget) -> String {
+        let base_arch = Self::map_arch_to_bun(target.arch_name());
+
+        // Handle qualifiers like musl, baseline, etc.
+        if let Some(qualifier) = target.qualifier() {
+            match qualifier {
+                "musl" => format!("{}-musl", base_arch),
+                "musl-baseline" => format!("{}-musl-baseline", base_arch),
+                "baseline" => format!("{}-baseline", base_arch),
+                other => format!("{}-{}", base_arch, other),
+            }
+        } else {
+            base_arch.to_string()
+        }
+    }
+
+    /// Get the full Bun arch string with variants (musl, baseline, etc.)
+    fn get_bun_arch_with_variants() -> &'static str {
+        if cfg!(target_arch = "x86_64") {
+            if cfg!(target_env = "musl") {
+                if cfg!(target_feature = "avx2") {
+                    "x64-musl"
+                } else {
+                    "x64-musl-baseline"
+                }
+            } else if cfg!(target_feature = "avx2") {
+                "x64"
+            } else {
+                "x64-baseline"
+            }
+        } else if cfg!(target_arch = "aarch64") {
+            if cfg!(target_env = "musl") {
+                "aarch64-musl"
+            } else if cfg!(windows) {
+                "x64"
+            } else {
+                "aarch64"
+            }
+        } else {
+            &ARCH
+        }
+    }
 }
 
 fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "darwin"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else {
-        &OS
-    }
+    BunPlugin::map_os_to_bun(&OS)
 }
 
 fn arch() -> &'static str {
-    if cfg!(target_arch = "x86_64") {
-        if cfg!(target_env = "musl") {
-            if cfg!(target_feature = "avx2") {
-                "x64-musl"
-            } else {
-                "x64-musl-baseline"
-            }
-        } else if cfg!(target_feature = "avx2") {
-            "x64"
-        } else {
-            "x64-baseline"
-        }
-    } else if cfg!(target_arch = "aarch64") {
-        if cfg!(target_env = "musl") {
-            "aarch64-musl"
-        } else if cfg!(windows) {
-            "x64"
-        } else {
-            "aarch64"
-        }
-    } else {
-        &ARCH
-    }
+    BunPlugin::get_bun_arch_with_variants()
 }
 
 fn bun_bin_name() -> &'static str {

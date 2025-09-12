@@ -1,4 +1,4 @@
 packages:
-  - name: grafana/mimir/mimir@mimir-2.17.0
+  - name: grafana/mimir/mimir@mimir-2.17.1
   - name: grafana/mimir/mimir
     version: mimir-2.2.0-rc.0

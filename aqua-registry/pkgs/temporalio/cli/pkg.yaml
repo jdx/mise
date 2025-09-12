@@ -1,0 +1,10 @@
+packages:
+  - name: temporalio/cli@v1.4.2-fairness.0
+  - name: temporalio/cli
+    version: 0.5.0
+  - name: temporalio/cli
+    version: v0.4.0
+  - name: temporalio/cli
+    version: v0.2.0
+  - name: temporalio/cli
+    version: v0.1.0

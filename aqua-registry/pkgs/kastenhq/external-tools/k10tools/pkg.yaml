@@ -1,5 +1,5 @@
 packages:
-  - name: kastenhq/external-tools/k10tools@8.0.7
+  - name: kastenhq/external-tools/k10tools@8.0.8
   - name: kastenhq/external-tools/k10tools
     version: 6.0.3
   - name: kastenhq/external-tools/k10tools

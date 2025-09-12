@@ -80,7 +80,7 @@ where
     {
         type Value = Vec<T>;
         fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-            formatter.write_str("string or array of strings")
+            formatter.write_str("a string, a map, or a list of strings/maps")
         }
 
         fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
@@ -91,17 +91,6 @@ where
             Ok(vec![v])
         }
 
-        fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
-        where
-            S: de::SeqAccess<'de>,
-        {
-            let mut v = vec![];
-            while let Some(s) = seq.next_element::<String>()? {
-                v.push(s.parse().map_err(de::Error::custom)?);
-            }
-            Ok(v)
-        }
-
         fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
         where
             M: de::MapAccess<'de>,
@@ -109,6 +98,28 @@ where
             Ok(vec![Deserialize::deserialize(
                 de::value::MapAccessDeserializer::new(map),
             )?])
+        }
+
+        fn visit_seq<S>(self, seq: S) -> std::result::Result<Self::Value, S::Error>
+        where
+            S: de::SeqAccess<'de>,
+        {
+            #[derive(Deserialize)]
+            #[serde(untagged)]
+            enum StringOrValue<T> {
+                String(String),
+                Value(T),
+            }
+            let mut seq = seq;
+            let mut values = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+            while let Some(element) = seq.next_element::<StringOrValue<T>>()? {
+                let value = match element {
+                    StringOrValue::String(s) => s.parse().map_err(de::Error::custom)?,
+                    StringOrValue::Value(v) => v,
+                };
+                values.push(value);
+            }
+            Ok(values)
         }
     }
 
@@ -118,6 +129,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
+    use std::str::FromStr;
 
     #[test]
     fn test_parse_arr() {
@@ -138,5 +151,107 @@ mod tests {
         assert_eq!(table.get("foo").unwrap().as_str().unwrap(), "bar");
         assert_eq!(table.get("baz").unwrap().as_str().unwrap(), "qux");
         assert_eq!(table.get("num").unwrap().as_integer().unwrap(), 123);
+    }
+
+    #[derive(Deserialize, Debug, PartialEq, Eq)]
+    #[serde(untagged)]
+    enum TestItem {
+        String(String),
+        Object { a: String, b: i64 },
+    }
+
+    impl FromStr for TestItem {
+        type Err = String;
+
+        fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+            Ok(TestItem::String(s.to_string()))
+        }
+    }
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct TestStruct {
+        #[serde(default, deserialize_with = "deserialize_arr")]
+        arr: Vec<TestItem>,
+    }
+
+    #[test]
+    fn test_deserialize_arr_string() {
+        let toml_str = r#"arr = "hello""#;
+        let expected = TestStruct {
+            arr: vec![TestItem::String("hello".to_string())],
+        };
+        let actual: TestStruct = toml::from_str(toml_str).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_deserialize_arr_string_list() {
+        let toml_str = r#"arr = ["hello", "world"]"#;
+        let expected = TestStruct {
+            arr: vec![
+                TestItem::String("hello".to_string()),
+                TestItem::String("world".to_string()),
+            ],
+        };
+        let actual: TestStruct = toml::from_str(toml_str).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_deserialize_arr_map() {
+        let toml_str = r#"arr = { a = "foo", b = 123 }"#;
+        let expected = TestStruct {
+            arr: vec![TestItem::Object {
+                a: "foo".to_string(),
+                b: 123,
+            }],
+        };
+        let actual: TestStruct = toml::from_str(toml_str).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_deserialize_arr_map_list() {
+        let toml_str = r#"
+        arr = [
+            { a = "foo", b = 123 },
+            { a = "bar", b = 456 },
+        ]
+        "#;
+        let expected = TestStruct {
+            arr: vec![
+                TestItem::Object {
+                    a: "foo".to_string(),
+                    b: 123,
+                },
+                TestItem::Object {
+                    a: "bar".to_string(),
+                    b: 456,
+                },
+            ],
+        };
+        let actual: TestStruct = toml::from_str(toml_str).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_deserialize_arr_mixed_list() {
+        let toml_str = r#"
+        arr = [
+            "hello",
+            { a = "foo", b = 123 },
+        ]
+        "#;
+        let expected = TestStruct {
+            arr: vec![
+                TestItem::String("hello".to_string()),
+                TestItem::Object {
+                    a: "foo".to_string(),
+                    b: 123,
+                },
+            ],
+        };
+        let actual: TestStruct = toml::from_str(toml_str).unwrap();
+        assert_eq!(actual, expected);
     }
 }

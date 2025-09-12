@@ -1,5 +1,5 @@
 packages:
-  - name: Songmu/ecschedule@v0.15.1
+  - name: Songmu/ecschedule@v0.15.3
   - name: Songmu/ecschedule
     version: v0.11.4
   - name: Songmu/ecschedule

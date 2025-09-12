@@ -1,12 +1,12 @@
 packages:
-  - name: hadolint/hadolint@v2.12.0
+  - name: hadolint/hadolint@v2.13.1
+  - name: hadolint/hadolint
+    version: v2.12.1-beta
   - name: hadolint/hadolint
     version: v2.10.0
   - name: hadolint/hadolint
     version: v2.9.3
   - name: hadolint/hadolint
     version: v2.7.0
-  - name: hadolint/hadolint
-    version: v2.6.1
   - name: hadolint/hadolint
     version: v1.2.2

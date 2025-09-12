@@ -17,7 +17,41 @@ assert "mise env" # does not error
 
 cat <<EOF >mise.toml
 [env]
+_.file = 'a'
+EOF
+echo 'export A=1' >a
+assert "mise env | grep -v PATH" "export A=1"
+
+cat <<EOF >mise.toml
+[env]
+_.file = { value = 'b.json' }
+EOF
+echo '{"B": 2}' >b.json
+assert "mise env | grep -v PATH" "export B=2"
+
+cat <<EOF >mise.toml
+[env]
 _.file = ['a', 'b.json']
+EOF
+echo 'export A=1' >a
+echo '{"B": 2}' >b.json
+assert "mise env | grep -v PATH" "export A=1
+export B=2"
+
+cat <<EOF >mise.toml
+[env]
+_.file = ['a', {path = 'b.json', tools = true}]
+EOF
+echo 'export A=1' >a
+echo '{"B": 2}' >b.json
+assert "mise env | grep -v PATH" "export A=1
+export B=2"
+
+cat <<EOF >mise.toml
+[[env]]
+_.file = 'a'
+[[env]]
+_.file = [{ path = ['b.json'], tools = true }]
 EOF
 echo 'export A=1' >a
 echo '{"B": 2}' >b.json

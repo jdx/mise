@@ -1,5 +1,5 @@
 packages:
-  - name: jesseduffield/lazygit@v0.54.2
+  - name: jesseduffield/lazygit@v0.55.0
   - name: jesseduffield/lazygit
     version: v0.53.0
   - name: jesseduffield/lazygit

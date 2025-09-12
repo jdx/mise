@@ -1,5 +1,5 @@
 packages:
-  - name: helmwave/helmwave@v0.42.1
+  - name: helmwave/helmwave@v0.42.2
   - name: helmwave/helmwave
     version: v0.35.3
   - name: helmwave/helmwave

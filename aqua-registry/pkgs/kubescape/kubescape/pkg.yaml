@@ -1,5 +1,5 @@
 packages:
-  - name: kubescape/kubescape@v3.0.38
+  - name: kubescape/kubescape@v3.0.40
   - name: kubescape/kubescape
     version: v3.0.3
   - name: kubescape/kubescape

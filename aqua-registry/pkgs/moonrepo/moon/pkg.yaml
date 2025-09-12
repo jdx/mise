@@ -1,5 +1,5 @@
 packages:
-  - name: moonrepo/moon@v1.39.4
+  - name: moonrepo/moon@v1.40.2
   - name: moonrepo/moon
     version: "@moonrepo/cli@0.12.1"
   - name: moonrepo/moon

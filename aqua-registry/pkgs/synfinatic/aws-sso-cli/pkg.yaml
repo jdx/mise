@@ -1,5 +1,5 @@
 packages:
-  - name: synfinatic/aws-sso-cli@v2.0.3
+  - name: synfinatic/aws-sso-cli@v2.1.0
   - name: synfinatic/aws-sso-cli
     version: v1.9.5
   - name: synfinatic/aws-sso-cli

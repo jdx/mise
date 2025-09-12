@@ -18,7 +18,7 @@ env:
   MISE_EXPERIMENTAL: 1
   MISE_LOCKFILE: 1
   RUST_BACKTRACE: 1
-  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 permissions:
   pull-requests: write
@@ -118,7 +118,7 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-      - uses: taiki-e/install-action@36fe651a94decc767e6b64b0809a2c266db00c18 # v2
+      - uses: taiki-e/install-action@01548646b508174da6dd38eafe7a5909d7cfe11d # v2
         with:
           tool: cargo-deny,cargo-msrv,cargo-machete
       - run: rustup component add llvm-tools-preview

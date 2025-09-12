@@ -1,5 +1,5 @@
 packages:
-  - name: junegunn/fzf@v0.65.1
+  - name: junegunn/fzf@v0.65.2
   - name: junegunn/fzf
     version: v0.54.1
   - name: junegunn/fzf

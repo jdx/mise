@@ -1,5 +1,5 @@
 packages:
-  - name: updatecli/updatecli@v0.105.1
+  - name: updatecli/updatecli@v0.107.0
   - name: updatecli/updatecli
     version: v0.40.1
   - name: updatecli/updatecli

@@ -1,5 +1,5 @@
 packages:
-  - name: okteto/okteto@3.10.1
+  - name: okteto/okteto@3.11.0
   - name: okteto/okteto
     version: 1.10.5
   - name: okteto/okteto

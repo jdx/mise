@@ -1,5 +1,5 @@
 packages:
-  - name: fastfetch-cli/fastfetch@2.50.2
+  - name: fastfetch-cli/fastfetch@2.52.0
   - name: fastfetch-cli/fastfetch
     version: 2.45.0
   - name: fastfetch-cli/fastfetch

@@ -1,5 +1,5 @@
 packages:
-  - name: helmfile/vals@v0.42.0
+  - name: helmfile/vals@v0.42.1
   - name: helmfile/vals
     version: v0.16.2
   - name: helmfile/vals

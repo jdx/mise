@@ -1,5 +1,5 @@
 packages:
-  - name: foundry-rs/foundry@v1.3.2
+  - name: foundry-rs/foundry@v1.3.5
   - name: foundry-rs/foundry
     version: nightly-709f266ff6a26264ac4fc8c06cc40964861c7ebb
   - name: foundry-rs/foundry

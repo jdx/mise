@@ -1,5 +1,5 @@
 packages:
-  - name: axodotdev/cargo-dist@v0.30.0-prerelease.1
+  - name: axodotdev/cargo-dist@v0.30.0
   - name: axodotdev/cargo-dist
     version: v1.0.0-rc.1
   - name: axodotdev/cargo-dist

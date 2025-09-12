@@ -1,5 +1,5 @@
 packages:
-  - name: kubernetes/kubernetes/kube-controller-manager@v1.33.4
+  - name: kubernetes/kubernetes/kube-controller-manager@v1.34.1
   - name: kubernetes/kubernetes/kube-controller-manager
     version: v1.25.4
   - name: kubernetes/kubernetes/kube-controller-manager

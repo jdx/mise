@@ -1,5 +1,5 @@
 packages:
-  - name: goreleaser/nfpm@v2.43.0
+  - name: goreleaser/nfpm@v2.43.1
   - name: goreleaser/nfpm
     version: v2.30.0
   - name: goreleaser/nfpm

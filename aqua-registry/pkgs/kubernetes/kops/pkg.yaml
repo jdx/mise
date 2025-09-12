@@ -1,2 +1,2 @@
 packages:
-  - name: kubernetes/kops@v1.33.0
+  - name: kubernetes/kops@v1.33.1

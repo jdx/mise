@@ -1,4 +1,4 @@
 packages:
-  - name: hashicorp/terraform@v1.13.0
+  - name: hashicorp/terraform@v1.13.2
   - name: hashicorp/terraform
     version: v1.0.1

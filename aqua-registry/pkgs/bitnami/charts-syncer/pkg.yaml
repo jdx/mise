@@ -1,5 +1,5 @@
 packages:
-  - name: bitnami/charts-syncer@v2.1.3
+  - name: bitnami/charts-syncer@v2.1.4
   - name: bitnami/charts-syncer
     version: v0.20.1
   - name: bitnami/charts-syncer

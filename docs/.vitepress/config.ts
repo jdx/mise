@@ -181,6 +181,7 @@ export default withMermaid(
             { text: "Architecture", link: "/architecture" },
             { text: "Paranoid", link: "/paranoid" },
             { text: "Templates", link: "/templates" },
+            { text: "URL Replacements", link: "/url-replacements" },
             { text: "Model Context Protocol", link: "/mcp" },
             { text: "How I Use mise", link: "/how-i-use-mise" },
             { text: "Directory Structure", link: "/directories" },

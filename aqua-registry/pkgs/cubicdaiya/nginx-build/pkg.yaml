@@ -1,4 +1,4 @@
 packages:
-  - name: cubicdaiya/nginx-build@v0.16.1
+  - name: cubicdaiya/nginx-build@v0.16.3
   - name: cubicdaiya/nginx-build
     version: v0.11.13

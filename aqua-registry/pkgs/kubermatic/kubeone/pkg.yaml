@@ -1,4 +1,4 @@
 packages:
-  - name: kubermatic/kubeone@v1.11.1
+  - name: kubermatic/kubeone@v1.11.2
   - name: kubermatic/kubeone
     version: v1.3.5

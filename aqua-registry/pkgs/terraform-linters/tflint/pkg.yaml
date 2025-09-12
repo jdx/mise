@@ -1,5 +1,5 @@
 packages:
-  - name: terraform-linters/tflint@v0.58.1
+  - name: terraform-linters/tflint@v0.59.1
   - name: terraform-linters/tflint
     version: v0.51.0
   - name: terraform-linters/tflint

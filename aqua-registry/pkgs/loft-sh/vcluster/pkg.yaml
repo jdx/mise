@@ -1,4 +1,4 @@
 packages:
-  - name: loft-sh/vcluster@v0.27.0
+  - name: loft-sh/vcluster@v0.28.0
   - name: loft-sh/vcluster
     version: v0.15.2

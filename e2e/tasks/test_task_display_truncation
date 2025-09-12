@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# Test for task display truncation fix
+# This test verifies that task names/commands are not truncated at 60 characters
+# and instead use proper width calculations
+
+cat <<EOF >mise.toml
+[tasks.short]
+run = 'echo "short task"'
+
+[tasks.medium-length-task-name]
+run = 'echo "medium length task with some reasonable command length here"'
+
+[tasks.very-long-task-name-that-exceeds-sixty-characters-to-test-truncation]
+run = 'echo "this is a very long command that should not be immediately truncated"'
+
+[tasks.super-duper-ultra-mega-extremely-long-task-name-that-definitely-exceeds-the-old-sixty-character-hard-limit]
+run = 'echo "super long command text that should show more than just the command name before truncation"'
+EOF
+
+# Test task listing shows full names (not truncated at 60 chars)
+assert_contains "mise task ls" "short"
+assert_contains "mise task ls" "medium-length-task-name"
+assert_contains "mise task ls" "very-long-task-name-that-exceeds-sixty-characters-to-test-truncation"
+assert_contains "mise task ls" "super-duper-ultra-mega-extremely-long-task-name-that-definitely-exceeds-the-old-sixty-character-hard-limit"
+
+# Test that we can still run tasks with long names
+assert_succeed "mise run short"
+assert_succeed "mise run medium-length-task-name"
+
+# Verify the task runs successfully (main functionality not affected)
+output=$(mise run short 2>&1)
+if [[ $output == *"short task"* ]]; then
+	ok "[task execution] short task runs correctly"
+else
+	fail "[task execution] expected 'short task' in output, got: $output"
+fi
+
+echo "Task display truncation test completed successfully"

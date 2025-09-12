@@ -1,5 +1,5 @@
 packages:
-  - name: uutils/coreutils@0.1.0
+  - name: uutils/coreutils@0.2.2
   - name: uutils/coreutils
     version: 0.0.28
   - name: uutils/coreutils

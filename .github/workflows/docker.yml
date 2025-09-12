@@ -12,7 +12,7 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  GITHUB_API_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || github.token }}
+  GITHUB_API_TOKEN: ${{ secrets.MISE_GH_TOKEN || github.token }}
 
 jobs:
   docker:

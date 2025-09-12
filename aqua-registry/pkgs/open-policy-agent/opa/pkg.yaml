@@ -1,5 +1,5 @@
 packages:
-  - name: open-policy-agent/opa@v1.7.1
+  - name: open-policy-agent/opa@v1.8.0
   - name: open-policy-agent/opa
     version: v0.36.1
   - name: open-policy-agent/opa

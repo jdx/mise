@@ -1,4 +1,4 @@
 packages:
-  - name: GoogleCloudPlatform/alloydb-auth-proxy@v1.13.5
+  - name: GoogleCloudPlatform/alloydb-auth-proxy@v1.13.6
   - name: GoogleCloudPlatform/alloydb-auth-proxy
     version: v1.8.0

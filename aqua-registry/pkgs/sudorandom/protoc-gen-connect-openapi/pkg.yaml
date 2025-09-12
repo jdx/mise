@@ -1,4 +1,4 @@
 packages:
-  - name: sudorandom/protoc-gen-connect-openapi@v0.20.3
+  - name: sudorandom/protoc-gen-connect-openapi@v0.21.2
   - name: sudorandom/protoc-gen-connect-openapi
     version: v0.13.0

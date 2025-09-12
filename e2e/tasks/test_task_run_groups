@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.t1]
+run = 'echo one'
+
+[tasks.t2]
+run = 'echo two'
+
+[tasks.t3]
+run = 'echo three'
+
+[tasks.grouped]
+run = [
+  { task = 't1' },
+  { tasks = ['t2','t3'] },
+  'echo end',
+]
+EOF
+
+# All outputs should appear
+assert_contains "mise run grouped" "one"
+assert_contains "mise run grouped" "two"
+assert_contains "mise run grouped" "three"
+assert_contains "mise run grouped" "end"
+
+# Ensure trailing script runs after grouped tasks complete
+assert_matches "mise run grouped" "one(.|\n)*end"
+assert_matches "mise run grouped" "two(.|\n)*end"
+assert_matches "mise run grouped" "three(.|\n)*end"

@@ -29,17 +29,17 @@ body = """
     | filter(attribute="scope")
     | sort(attribute="scope") -%}
         {% if commit.scope -%}
-        - {{self::commit(commit=commit)}}\
+    - {{self::commit(commit=commit)}}\
         {% endif -%}
     {% endfor -%}
     {% for commit in commits -%}
         {% if commit.scope -%}
         {% else -%}
-          - {{self::commit(commit=commit)}}\
+    - {{self::commit(commit=commit)}}\
         {% endif -%}
     {% endfor -%}
-{% endfor %}
-{% if github.contributors | filter(attribute="is_first_time", value=true) | length != 0 -%}
+{% endfor -%}
+{% if github.contributors | filter(attribute="is_first_time", value=true) | length != 0 %}
 ### New Contributors
 {% for contributor in github.contributors | filter(attribute="is_first_time", value=true) %}
   - @{{ contributor.username }} made their first contribution
@@ -47,16 +47,15 @@ body = """
       [#{{ contributor.pr_number }}]($REPO/pull/{{ contributor.pr_number }})\
     {% endif %}\
 {% endfor %}
-
-{% endif -%}
+{% endif %}
 {% macro commit(commit) -%}
 {% if commit.scope %}**({{commit.scope}})** {% endif -%}
 {% if commit.breaking %}**breaking** {% endif -%}
-{{ commit.message | split(pat="\n") | first | trim }} by \
-{% if commit.remote.username %}[@{{commit.remote.username}}](https://github.com/{{commit.remote.username}})\
-{% else %}{{commit.author.name}}{% endif %} in \
-{% if commit.remote.pr_number %}[#{{ commit.remote.pr_number }}]($REPO/pull/{{ commit.remote.pr_number }})\
-{% else %}[{{ commit.id | truncate(length=7, end="") }}]($REPO/commit/{{ commit.id }})\
+{{ commit.message | split(pat="\n") | first | trim }} by\
+{% if commit.remote.username %} @{{commit.remote.username}}\
+{% else %} {{commit.author.name}}{% endif %} in\
+{% if commit.remote.pr_number %} [#{{ commit.remote.pr_number }}]($REPO/pull/{{ commit.remote.pr_number }})\
+{% else %} [{{ commit.id | truncate(length=7, end="") }}]($REPO/commit/{{ commit.id }})\
 {%- endif %}
 {% endmacro commit -%}
 """

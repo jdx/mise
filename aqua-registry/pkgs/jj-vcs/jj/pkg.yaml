@@ -1,5 +1,5 @@
 packages:
-  - name: jj-vcs/jj@v0.32.0
+  - name: jj-vcs/jj@v0.33.0
   - name: jj-vcs/jj
     version: v0.13.0
   - name: jj-vcs/jj

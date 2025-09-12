@@ -1,5 +1,5 @@
 packages:
-  - name: openshift/osdctl@v0.46.0
+  - name: openshift/osdctl@v0.47.1
   - name: openshift/osdctl
     version: v0.12.0
   - name: openshift/osdctl

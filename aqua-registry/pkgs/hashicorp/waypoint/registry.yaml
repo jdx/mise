@@ -4,11 +4,25 @@ packages:
     repo_owner: hashicorp
     repo_name: waypoint
     description: A tool to build, deploy, and release any application on any platform
-    supported_envs:
-      - darwin
-      - amd64
-    url: https://releases.hashicorp.com/waypoint/{{trimV .Version}}/waypoint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
-    checksum:
-      type: http
-      url: https://releases.hashicorp.com/waypoint/{{trimV .Version}}/waypoint_{{trimV .Version}}_SHA256SUMS
-      algorithm: sha256
+    version_filter: Version matches "^v\\d+\\.\\d+\\.\\d+"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.10.0")
+        url: https://releases.hashicorp.com/waypoint/{{trimV .Version}}/waypoint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+        checksum:
+          type: http
+          url: https://releases.hashicorp.com/waypoint/{{trimV .Version}}/waypoint_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: "true"
+        url: https://releases.hashicorp.com/waypoint/{{trimV .Version}}/waypoint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+        checksum:
+          type: http
+          url: https://releases.hashicorp.com/waypoint/{{trimV .Version}}/waypoint_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - linux
+          - amd64

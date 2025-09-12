@@ -1,5 +1,5 @@
 packages:
-  - name: hashicorp/terraform-ls@v0.36.5
+  - name: hashicorp/terraform-ls@v0.37.0
   - name: hashicorp/terraform-ls
     version: v0.14.0
   - name: hashicorp/terraform-ls

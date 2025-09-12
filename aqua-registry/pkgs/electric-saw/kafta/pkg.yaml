@@ -1,4 +1,4 @@
 packages:
-  - name: electric-saw/kafta@v0.1.9
+  - name: electric-saw/kafta@v0.2.0
   - name: electric-saw/kafta
     version: v0.1.7

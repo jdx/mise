@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Verify that keep-order output mode does not panic and preserves order
+
+cat <<EOF >mise.toml
+[tasks.a]
+run = "printf 'A1\nA2'"
+
+[tasks.b]
+run = "printf 'B1\nB2'"
+
+[tasks.sequence]
+run = [
+  { task = "a" },
+  { task = "b" },
+]
+EOF
+
+output=$(MISE_TASK_OUTPUT=keep-order mise run sequence 2>&1) && exit_code=0 || exit_code=$?
+
+if [ "$exit_code" -ne 0 ]; then
+	echo "Expected exit code 0, got $exit_code"
+	echo "$output"
+	exit 1
+fi
+
+# Ensure there is no panic message
+if echo "$output" | grep -qi "panicked"; then
+	echo "Found panic in output"
+	echo "$output"
+	exit 1
+fi
+
+# Verify order: all A lines before B lines
+apos=$(echo "$output" | grep -n "^\\[a\\] A1$" | cut -d: -f1 | head -n1 || true)
+if [ -z "$apos" ]; then
+	echo "Did not find [a] A1"
+	echo "$output"
+	exit 1
+fi
+
+bpos=$(echo "$output" | grep -n "^\\[b\\] B1$" | cut -d: -f1 | head -n1 || true)
+if [ -z "$bpos" ]; then
+	echo "Did not find [b] B1"
+	echo "$output"
+	exit 1
+fi
+
+if [ "$apos" -ge "$bpos" ]; then
+	echo "Output for task a did not appear before task b"
+	echo "$output"
+	exit 1
+fi
+
+echo "keep-order sequence ran successfully"

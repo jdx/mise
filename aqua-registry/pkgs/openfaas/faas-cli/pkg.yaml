@@ -1,2 +1,2 @@
 packages:
-  - name: openfaas/faas-cli@0.17.7
+  - name: openfaas/faas-cli@0.17.8

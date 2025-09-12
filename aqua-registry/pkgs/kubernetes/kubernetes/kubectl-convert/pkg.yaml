@@ -1,5 +1,5 @@
 packages:
-  - name: kubernetes/kubernetes/kubectl-convert@v1.33.4
+  - name: kubernetes/kubernetes/kubectl-convert@v1.34.1
   - name: kubernetes/kubernetes/kubectl-convert
     version: v1.25.4
   - name: kubernetes/kubernetes/kubectl-convert

@@ -37,6 +37,8 @@ export default {
         type = "string";
       } else if (type === "ListString" || type === "ListPath") {
         type = "string[]";
+      } else if (type === "IndexMap<String, String>") {
+        type = "object";
       }
       // } else if (type === "String" || type === "PathBuf") {
       //   type = 'string';
