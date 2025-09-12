@@ -4,14 +4,26 @@ use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-#[derive(Debug, Clone, Eq, PartialEq, strum::EnumIs, Default)]
+#[derive(Debug, Clone, Eq, PartialEq, strum::EnumIs)]
 pub enum TaskOutputs {
     Files(Vec<String>),
-    #[default]
     Auto,
 }
 
+impl Default for TaskOutputs {
+    fn default() -> Self {
+        TaskOutputs::Files(vec![])
+    }
+}
+
 impl TaskOutputs {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            TaskOutputs::Files(files) => files.is_empty(),
+            TaskOutputs::Auto => false,
+        }
+    }
+
     pub fn paths(&self, task: &Task) -> Vec<String> {
         match self {
             TaskOutputs::Files(files) => files.clone(),

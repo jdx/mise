@@ -568,6 +568,9 @@ impl Task {
         for s in &mut self.sources {
             *s = tera.render_str(s, &tera_ctx)?;
         }
+        if !self.sources.is_empty() && self.outputs.is_empty() {
+            self.outputs = TaskOutputs::Auto;
+        }
         self.outputs.render(&mut tera, &tera_ctx)?;
         for d in &mut self.depends {
             d.render(&mut tera, &tera_ctx)?;
