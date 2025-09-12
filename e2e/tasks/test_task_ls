@@ -50,7 +50,7 @@ test-with-args     ./tasks.toml"
 assert_json "mise task ls --json" "$(
 	cat <<EOF
 [
- {
+  {
    "name": "filetask2",
    "aliases": [],
    "description": "",
@@ -63,9 +63,7 @@ assert_json "mise task ls --json" "$(
    "hide": false,
    "raw": false,
    "sources": [],
-   "outputs": {
-    "auto": true
-   },
+   "outputs": [],
    "shell": null,
    "quiet": false,
    "silent": false,
@@ -86,9 +84,7 @@ assert_json "mise task ls --json" "$(
    "hide": false,
    "raw": false,
    "sources": [],
-   "outputs": {
-    "auto": true
-   },
+   "outputs": [],
    "shell": null,
    "quiet": false,
    "silent": false,
@@ -109,9 +105,7 @@ assert_json "mise task ls --json" "$(
    "hide": false,
    "raw": false,
    "sources": [],
-   "outputs": {
-    "auto": true
-   },
+   "outputs": [],
    "shell": null,
    "quiet": false,
    "silent": false,
@@ -134,9 +128,7 @@ assert_json "mise task ls --json" "$(
    "hide": false,
    "raw": false,
    "sources": [],
-   "outputs": {
-    "auto": true
-   },
+   "outputs": [],
    "shell": null,
    "quiet": false,
    "silent": false,
@@ -162,9 +154,7 @@ assert_json "mise task ls --json" "$(
    "hide": false,
    "raw": false,
    "sources": [],
-   "outputs": {
-    "auto": true
-   },
+   "outputs": [],
    "shell": null,
    "quiet": false,
    "silent": false,
