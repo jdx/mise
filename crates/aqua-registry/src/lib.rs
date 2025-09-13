@@ -1,11 +1,11 @@
-pub mod aqua_package;
-pub mod aqua_template;
-pub mod builder;
-pub mod git;
-pub mod registry;
-pub mod type_implementations;
-pub mod types;
-pub mod utils;
+pub(crate) mod aqua_package;
+pub(crate) mod aqua_template;
+pub(crate) mod builder;
+pub(crate) mod git;
+pub(crate) mod registry;
+pub(crate) mod type_implementations;
+pub(crate) mod types;
+pub(crate) mod utils;
 
 #[cfg(feature = "baked")]
 pub mod baked {
@@ -21,6 +21,7 @@ pub mod baked {
     }
 }
 
+// Public API - only expose what's actually used by the main mise codebase
 pub use registry::AquaRegistryManager;
 pub use types::{AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType};
 

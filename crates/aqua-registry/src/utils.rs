@@ -162,17 +162,6 @@ pub fn split_version_prefix(v: &str) -> (&str, &str) {
     ("", v)
 }
 
-pub fn versions_versioning_new(v: &str) -> Option<semver::Version> {
-    // Parse version using semver - remove prefix first
-    let (_, clean_version) = split_version_prefix(v);
-    semver::Version::parse(clean_version).ok()
-}
-
-pub fn versions_requirement_new(req: &str) -> Option<semver::VersionReq> {
-    // Parse version requirement using semver
-    semver::VersionReq::parse(req).ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
