@@ -25,8 +25,89 @@ macro_rules! hashmap {
 pub use hashmap;
 
 pub fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
-    use deepmerge::{DeepMerge, DefaultPolicy};
-    orig.merge_with_policy(avo.clone(), &DefaultPolicy);
+    // For now, we need to manually check each field because deepmerge doesn't have a
+    // built-in policy for "only merge if non-empty". We could create a custom policy
+    // but it would require modifying the deepmerge crate itself.
+
+    // Only override fields if they're not empty/default in the override
+    if avo.r#type != AquaPackageType::GithubRelease {
+        orig.r#type = avo.r#type.clone();
+    }
+    if !avo.repo_owner.is_empty() {
+        orig.repo_owner = avo.repo_owner.clone();
+    }
+    if !avo.repo_name.is_empty() {
+        orig.repo_name = avo.repo_name.clone();
+    }
+    if avo.name.is_some() {
+        orig.name = avo.name.clone();
+    }
+    if !avo.asset.is_empty() {
+        orig.asset = avo.asset.clone();
+    }
+    if !avo.url.is_empty() {
+        orig.url = avo.url.clone();
+    }
+    if avo.description.is_some() {
+        orig.description = avo.description.clone();
+    }
+    if !avo.format.is_empty() {
+        orig.format = avo.format.clone();
+    }
+    if avo.rosetta2 {
+        orig.rosetta2 = avo.rosetta2;
+    }
+    if avo.windows_arm_emulation {
+        orig.windows_arm_emulation = avo.windows_arm_emulation;
+    }
+    if avo.complete_windows_ext {
+        orig.complete_windows_ext = avo.complete_windows_ext;
+    }
+    if !avo.supported_envs.is_empty() {
+        orig.supported_envs = avo.supported_envs.clone();
+    }
+    if !avo.files.is_empty() {
+        orig.files = avo.files.clone();
+    }
+    if !avo.replacements.is_empty() {
+        orig.replacements.extend(avo.replacements.clone());
+    }
+    if avo.version_prefix.is_some() {
+        orig.version_prefix = avo.version_prefix.clone();
+    }
+    if avo.version_filter.is_some() {
+        orig.version_filter = avo.version_filter.clone();
+    }
+    if avo.version_source.is_some() {
+        orig.version_source = avo.version_source.clone();
+    }
+    if avo.checksum.is_some() {
+        orig.checksum = avo.checksum.clone();
+    }
+    if avo.slsa_provenance.is_some() {
+        orig.slsa_provenance = avo.slsa_provenance.clone();
+    }
+    if avo.minisign.is_some() {
+        orig.minisign = avo.minisign.clone();
+    }
+    if !avo.overrides.is_empty() {
+        orig.overrides = avo.overrides.clone();
+    }
+    if !avo.version_constraint.is_empty() {
+        orig.version_constraint = avo.version_constraint.clone();
+    }
+    if !avo.version_overrides.is_empty() {
+        orig.version_overrides = avo.version_overrides.clone();
+    }
+    if avo.no_asset {
+        orig.no_asset = avo.no_asset;
+    }
+    if avo.error_message.is_some() {
+        orig.error_message = avo.error_message.clone();
+    }
+    if avo.path.is_some() {
+        orig.path = avo.path.clone();
+    }
     orig
 }
 

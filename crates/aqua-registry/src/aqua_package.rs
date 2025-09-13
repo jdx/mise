@@ -43,7 +43,7 @@ impl AquaPackage {
     }
 
     fn version_override(&self, versions: &[&str]) -> &AquaPackage {
-        let _expressions = versions
+        let expressions = versions
             .iter()
             .map(|v| (self.expr_parser(v), self.expr_ctx(v)))
             .collect_vec();
@@ -53,11 +53,20 @@ impl AquaPackage {
             .find(|vo| {
                 if vo.version_constraint.is_empty() {
                     true
+                } else if vo.version_constraint == "true" {
+                    // Special case: "true" always matches
+                    true
+                } else if vo.version_constraint == "false" {
+                    // Special case: "false" never matches
+                    false
                 } else {
-                    // Check if any of the provided versions match the constraint
-                    versions
-                        .iter()
-                        .any(|version| matches_version_constraint(version, &vo.version_constraint))
+                    // Try expression evaluation first for complex constraints
+                    expressions.iter().any(|(expr, ctx)| {
+                        expr.eval(&vo.version_constraint, ctx)
+                            .unwrap_or(false.into())
+                            .as_bool()
+                            .unwrap_or(false)
+                    })
                 }
             })
             .unwrap_or(self)

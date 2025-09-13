@@ -38,6 +38,25 @@ fn create_empty_baked_registry() {
 fn bake_registry() -> Result<(), Box<dyn std::error::Error>> {
     let registry_content = fs::read_to_string("registry.yaml")?;
 
+    // Security check: ensure the YAML doesn't contain the raw string delimiter
+    // which would break the generated Rust code
+    if registry_content.contains("\"###") {
+        return Err(
+            "registry.yaml contains the sequence '\"###' which would break the raw string literal. \
+             This sequence is not allowed in the registry YAML content. \
+             Please remove or escape this sequence from the registry.yaml file."
+                .into(),
+        );
+    }
+
+    // Additional check for the closing delimiter without quotes (just in case)
+    if registry_content.contains("###") {
+        eprintln!(
+            "Warning: registry.yaml contains '###'. While this specific sequence is safe, \
+             be aware that '\"###' would break compilation."
+        );
+    }
+
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("aqua_baked.rs");
 

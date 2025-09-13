@@ -28,9 +28,9 @@ impl RegistryBuilder {
     #[cfg(feature = "baked")]
     fn merge_baked(mut self) -> Self {
         // This will be populated by build.rs with the baked registry data
-        let baked_index: RegistryIndex = super::baked::get_baked_registry();
-        self.packages.extend(baked_index.packages_by_name);
-        self.aliases.extend(baked_index.aliases);
+        let baked_index = super::baked::get_baked_registry();
+        self.packages.extend(baked_index.packages_by_name.clone());
+        self.aliases.extend(baked_index.aliases.clone());
         self
     }
 

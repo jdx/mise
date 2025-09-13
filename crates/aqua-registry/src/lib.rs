@@ -10,13 +10,12 @@ pub mod utils;
 pub mod baked {
     use super::types::RegistryIndex;
     use once_cell::sync::Lazy;
+    use std::sync::Arc;
 
-    static BAKED_REGISTRY: Lazy<RegistryIndex> =
-        Lazy::new(|| include!(concat!(env!("OUT_DIR"), "/aqua_baked.rs")));
+    static BAKED_REGISTRY: Lazy<Arc<RegistryIndex>> =
+        Lazy::new(|| Arc::new(include!(concat!(env!("OUT_DIR"), "/aqua_baked.rs"))));
 
-    pub fn get_baked_registry() -> RegistryIndex {
-        // Clone is needed here because we can't return a reference to the static
-        // In a real implementation, we might use Arc or implement a more efficient clone
+    pub fn get_baked_registry() -> Arc<RegistryIndex> {
         BAKED_REGISTRY.clone()
     }
 }
