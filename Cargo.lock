@@ -214,16 +214,19 @@ dependencies = [
  "async-trait",
  "dashmap 6.1.0",
  "deepmerge",
+ "evalexpr",
  "eyre",
  "indexmap 2.11.0",
  "itertools 0.14.0",
  "once_cell",
  "regex",
+ "semver",
  "serde",
  "serde_yaml",
  "strum",
  "tokio",
  "tokio-test",
+ "versions 6.3.2",
 ]
 
 [[package]]
@@ -1515,6 +1518,12 @@ dependencies = [
  "cc",
  "libc",
 ]
+
+[[package]]
+name = "evalexpr"
+version = "11.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6aff27af350e7b53e82aac3e5ab6389abd8f280640ac034508dff0608c4c7e5"
 
 [[package]]
 name = "exec"

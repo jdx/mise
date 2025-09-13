@@ -40,6 +40,20 @@ impl RegistryBuilder {
         self.with_registry_yaml(&content)
     }
 
+    pub fn try_add_registry_file<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
+        let content = std::fs::read_to_string(path.as_ref())
+            .wrap_err_with(|| format!("Failed to read registry file: {:?}", path.as_ref()))?;
+        self.try_add_registry_yaml(&content)
+    }
+
+    pub fn try_add_registry_yaml(&mut self, yaml_content: &str) -> Result<()> {
+        let registry: RegistryYaml =
+            serde_yaml::from_str(yaml_content).wrap_err("Failed to parse registry YAML")?;
+
+        self.merge_registry(registry);
+        Ok(())
+    }
+
     pub fn with_registry_yaml(mut self, yaml_content: &str) -> Result<Self> {
         let registry: RegistryYaml =
             serde_yaml::from_str(yaml_content).wrap_err("Failed to parse registry YAML")?;
@@ -48,11 +62,20 @@ impl RegistryBuilder {
         Ok(self)
     }
 
-    pub fn with_git_repo<P: AsRef<Path>>(self, _url: &str, _cache_dir: P) -> Result<Self> {
-        // For now, this is a stub - git support can be added later
-        // In the real implementation, this would clone/update the repo
-        // and then load either registry.yaml or pkgs/**/registry.yaml files
-        Err(eyre::eyre!("Git support not yet implemented"))
+    pub fn with_git_repo<P: AsRef<Path>>(self, url: &str, cache_dir: P) -> Result<Self> {
+        // For now, this is a stub - actual Git implementation would be added here
+        // The implementation would:
+        // 1. Clone or update the git repository to cache_dir
+        // 2. Look for registry.yaml or pkgs/**/registry.yaml files
+        // 3. Load them with with_registry_file
+        //
+        // Since the aqua-registry crate should remain independent of mise's git module,
+        // this would need to be implemented by the caller or through dependency injection
+        Err(eyre::eyre!(
+            "Git repository support for '{}' not yet implemented in aqua-registry crate. Cache dir: {:?}",
+            url,
+            cache_dir.as_ref()
+        ))
     }
 
     fn merge_registry(&mut self, registry: RegistryYaml) {

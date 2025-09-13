@@ -1,4 +1,4 @@
-use crate::expressions::*;
+use crate::expressions::{CallContext, Context, Environment, Value};
 use crate::types::*;
 use crate::utils::*;
 use eyre::Result;
@@ -193,56 +193,62 @@ impl AquaPackage {
         aqua_template_render(s, &ctx)
     }
 
-    fn expr_parser(&self, v: &str) -> ExprEnvironment {
+    pub fn version_filter_ok(&self, v: &str) -> Result<bool> {
+        if let Some(filter) = &self.version_filter {
+            // Use the expression evaluation
+            let env = self.expr_parser(v);
+            let ctx = self.expr_ctx(v);
+            match env.eval(filter, &ctx) {
+                Ok(result) => {
+                    if let Some(expr) = result.as_bool() {
+                        return Ok(expr);
+                    } else {
+                        eprintln!("invalid response from version filter: {}", filter);
+                        return Ok(true);
+                    }
+                }
+                Err(_) => {
+                    eprintln!("invalid response from version filter: {}", filter);
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    fn expr_parser(&self, v: &str) -> Environment {
         let (_, v) = split_version_prefix(v);
-        let ver = versions_versioning_new(v);
-        let mut env = expr_environment_new();
+        let ver = versions::Versioning::new(v);
+        let mut env = Environment::new();
         env.add_function("semver", move |c| {
             if c.args.len() != 1 {
-                return Err("semver() takes exactly one argument".to_string().into());
+                return Err("semver() takes exactly one argument".to_string());
             }
             let requirements = c.args[0]
                 .as_string()
                 .unwrap()
                 .replace(' ', "")
                 .split(',')
-                .map(versions_requirement_new)
+                .map(versions::Requirement::new)
                 .collect::<Vec<_>>();
             if requirements.iter().any(|r| r.is_none()) {
-                return Err("invalid semver requirement".to_string().into());
+                return Err("invalid semver requirement".to_string());
             }
-            if let Some(_ver) = &ver {
-                // Simplified stub - return true for now
-                Ok(true.into())
+            if let Some(ver) = &ver {
+                Ok(requirements
+                    .iter()
+                    .all(|r| r.clone().is_some_and(|r| r.matches(ver)))
+                    .into())
             } else {
-                Err("invalid version".to_string().into())
+                Err("invalid version".to_string())
             }
         });
         env
     }
 
-    fn expr_ctx(&self, v: &str) -> ExprContext {
-        let mut ctx = expr_context_default();
+    fn expr_ctx(&self, v: &str) -> Context {
+        let mut ctx = Context::default();
         ctx.insert("Version", v);
         ctx
-    }
-
-    pub fn version_filter_ok(&self, v: &str) -> Result<bool> {
-        if let Some(filter) = &self.version_filter {
-            // Compile and evaluate the expression
-            if let Ok(program) = expr_compile(filter) {
-                let env = self.expr_parser(v);
-                let ctx = self.expr_ctx(v);
-                if let Ok(result) = env.run(program, &ctx) {
-                    if let Some(bool_val) = result.as_bool() {
-                        return Ok(bool_val);
-                    } else {
-                        eprintln!("invalid response from version filter: {}", filter);
-                        return Ok(true);
-                    }
-                }
-            }
-        }
-        Ok(true)
     }
 }

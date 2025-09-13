@@ -22,9 +22,9 @@ fn create_empty_baked_registry() {
 
     let empty_registry_code = r#"
 {
-    use super::types::{RegistryIndex};
+    use super::types::RegistryIndex;
     use indexmap::IndexMap;
-    
+
     RegistryIndex {
         packages_by_name: IndexMap::new(),
         aliases: IndexMap::new(),
@@ -44,7 +44,7 @@ fn bake_registry() -> Result<(), Box<dyn std::error::Error>> {
     // Generate Rust code for the baked registry
     let mut code_lines = vec![
         "{".to_string(),
-        "    use super::types::{RegistryIndex, AquaPackage};".to_string(),
+        "    use super::types::RegistryIndex;".to_string(),
         "    use indexmap::IndexMap;".to_string(),
         "".to_string(),
         "    let registry_yaml = r###\"".to_string(),
