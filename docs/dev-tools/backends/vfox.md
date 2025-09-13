@@ -81,3 +81,4 @@ For more information, see:
 
 - [Using Plugins](../../plugin-usage.md) - End-user guide
 - [Plugin Development](../../tool-plugin-development.md) - Developer guide
+- [Plugin Template](https://github.com/jdx/mise-tool-plugin-template) - Quick start template for creating plugins
