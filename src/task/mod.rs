@@ -15,7 +15,6 @@ use globset::GlobBuilder;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use petgraph::prelude::*;
-use serde::de;
 use serde_derive::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -125,10 +124,10 @@ pub struct Task {
     pub timeout: Option<String>,
 
     // normal type
-    #[serde(default, deserialize_with = "deserialize_run_entries")]
+    #[serde(default, deserialize_with = "deserialize_arr")]
     pub run: Vec<RunEntry>,
 
-    #[serde(default, deserialize_with = "deserialize_run_entries")]
+    #[serde(default, deserialize_with = "deserialize_arr")]
     pub run_windows: Vec<RunEntry>,
 
     // command type
@@ -720,50 +719,6 @@ impl Default for Task {
             timeout: None,
         }
     }
-}
-
-pub fn deserialize_run_entries<'de, D>(
-    deserializer: D,
-) -> std::result::Result<Vec<RunEntry>, D::Error>
-where
-    D: de::Deserializer<'de>,
-{
-    struct RunEntriesVisitor;
-    impl<'de> de::Visitor<'de> for RunEntriesVisitor {
-        type Value = Vec<RunEntry>;
-        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-            formatter.write_str("string | object | array of string/object")
-        }
-
-        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(vec![RunEntry::Script(v.to_string())])
-        }
-
-        fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
-        where
-            M: de::MapAccess<'de>,
-        {
-            let entry: RunEntry =
-                de::Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))?;
-            Ok(vec![entry])
-        }
-
-        fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
-        where
-            S: de::SeqAccess<'de>,
-        {
-            let mut v = vec![];
-            while let Some(entry) = seq.next_element::<RunEntry>()? {
-                v.push(entry);
-            }
-            Ok(v)
-        }
-    }
-
-    deserializer.deserialize_any(RunEntriesVisitor)
 }
 
 impl Display for Task {
