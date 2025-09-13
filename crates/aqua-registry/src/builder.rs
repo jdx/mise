@@ -17,12 +17,15 @@ impl RegistryBuilder {
     }
 
     pub fn with_baked() -> Self {
-        let mut builder = Self::new();
+        let builder = Self::new();
         #[cfg(feature = "baked")]
         {
-            builder = builder.merge_baked();
+            builder.merge_baked()
         }
-        builder
+        #[cfg(not(feature = "baked"))]
+        {
+            builder
+        }
     }
 
     #[cfg(feature = "baked")]

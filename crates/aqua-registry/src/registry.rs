@@ -7,6 +7,8 @@ use once_cell::sync::OnceCell;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+type GitCloneFn = Box<dyn Fn(&str, &PathBuf) -> Result<Vec<PathBuf>>>;
+
 static GLOBAL_REGISTRY: OnceCell<Arc<AquaRegistryManager>> = OnceCell::new();
 
 pub struct AquaRegistryManager {
@@ -182,7 +184,7 @@ impl AquaRegistryManager {
         registry_url: Option<&str>,
         additional_registries: &[String],
         use_baked_registry: bool,
-        git_clone_fn: Option<Box<dyn Fn(&str, &PathBuf) -> Result<Vec<PathBuf>>>>,
+        git_clone_fn: Option<GitCloneFn>,
     ) -> Result<Self> {
         let mut builder = if use_baked_registry {
             RegistryBuilder::with_baked()

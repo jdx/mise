@@ -4,24 +4,7 @@ use expr::{Context, Environment};
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
-use semver::{Version, VersionReq};
 use std::collections::HashMap;
-
-fn matches_version_constraint(version: &str, constraint: &str) -> bool {
-    // Extract the clean semver part from the version (remove prefixes like 'v')
-    let (_, clean_version) = split_version_prefix(version);
-
-    // Try to parse both the version and constraint
-    let Ok(version) = Version::parse(clean_version) else {
-        return false;
-    };
-
-    let Ok(req) = VersionReq::parse(constraint) else {
-        return false;
-    };
-
-    req.matches(&version)
-}
 
 impl AquaPackage {
     pub fn with_version(mut self, versions: &[&str]) -> AquaPackage {
@@ -251,7 +234,7 @@ impl AquaPackage {
         Ok(true)
     }
 
-    fn expr_parser(&self, v: &str) -> Environment {
+    fn expr_parser(&self, v: &str) -> Environment<'_> {
         let (_, v) = split_version_prefix(v);
         let ver = versions::Versioning::new(v);
         let mut env = Environment::new();

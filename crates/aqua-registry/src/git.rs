@@ -126,6 +126,11 @@ impl GitRepo {
 
     /// Recursively find registry.yaml files in a directory
     fn find_registry_files_in_dir(&self, dir: &Path) -> Result<Vec<PathBuf>> {
+        Self::find_registry_files_in_dir_impl(dir)
+    }
+
+    /// Implementation of recursive registry file search
+    fn find_registry_files_in_dir_impl(dir: &Path) -> Result<Vec<PathBuf>> {
         let mut files = Vec::new();
 
         for entry in std::fs::read_dir(dir)? {
@@ -139,7 +144,7 @@ impl GitRepo {
                     files.push(registry_file);
                 }
                 // Recursively search subdirectories
-                files.extend(self.find_registry_files_in_dir(&path)?);
+                files.extend(Self::find_registry_files_in_dir_impl(&path)?);
             }
         }
 
