@@ -1,5 +1,4 @@
 use crate::config::Settings;
-use crate::dirs;
 use crate::duration::WEEKLY;
 use crate::file;
 use crate::git::{CloneOptions, Git};
@@ -82,20 +81,16 @@ fn create_registry_with_git_support(settings: &Settings) -> Result<AquaRegistryM
     )
 }
 
-fn clone_or_update_git_registry(url: &str, _cache_dir: &std::path::Path) -> Result<Vec<PathBuf>> {
-    // Use mise's cache directory
-    let actual_cache_dir = dirs::CACHE.join("aqua-registry");
-    let repo = Git::new(&actual_cache_dir);
+fn clone_or_update_git_registry(url: &str, cache_dir: &std::path::Path) -> Result<Vec<PathBuf>> {
+    // Use the provided cache directory
+    let repo = Git::new(cache_dir);
 
     if repo.exists() {
         // Update existing repository
         fetch_latest_repo(&repo)?;
     } else {
         // Clone new repository
-        info!(
-            "cloning aqua registry from {} to {:?}",
-            url, actual_cache_dir
-        );
+        info!("cloning aqua registry from {} to {:?}", url, cache_dir);
         repo.clone(url, CloneOptions::default())?;
     }
 
@@ -103,13 +98,13 @@ fn clone_or_update_git_registry(url: &str, _cache_dir: &std::path::Path) -> Resu
     let mut registry_files = Vec::new();
 
     // Check for main registry.yaml
-    let main_registry = actual_cache_dir.join("registry.yaml");
+    let main_registry = cache_dir.join("registry.yaml");
     if main_registry.exists() {
         registry_files.push(main_registry);
     }
 
     // Check for pkgs/**/registry.yaml files
-    let pkgs_dir = actual_cache_dir.join("pkgs");
+    let pkgs_dir = cache_dir.join("pkgs");
     if pkgs_dir.exists() {
         for entry in std::fs::read_dir(&pkgs_dir)? {
             let entry = entry?;
