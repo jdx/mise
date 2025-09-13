@@ -1,42 +1,13 @@
-use crate::backend::aqua;
-use crate::backend::aqua::{arch, os};
-use crate::duration::WEEKLY;
-use crate::env;
-use crate::git::{CloneOptions, Git};
-use crate::semver::split_version_prefix;
-use crate::{aqua::aqua_template, config::Settings};
-use crate::{dirs, file, hashmap};
-use expr::{Context, Program, Value};
-use eyre::{ContextCompat, Result, bail, eyre};
+use expr::{Context, Environment, Program, Value};
+use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use serde_derive::Deserialize;
 use std::cmp::PartialEq;
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::LazyLock as Lazy;
-use std::sync::LazyLock;
-use tokio::sync::Mutex;
+use versions::Versioning;
 
-#[allow(clippy::invisible_characters)]
-pub static AQUA_STANDARD_REGISTRY_FILES: Lazy<HashMap<&'static str, &'static str>> =
-    Lazy::new(|| include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry.rs")));
-
-pub static AQUA_REGISTRY: Lazy<AquaRegistry> = Lazy::new(|| {
-    AquaRegistry::standard().unwrap_or_else(|err| {
-        warn!("failed to initialize aqua registry: {err:?}");
-        AquaRegistry::default()
-    })
-});
-static AQUA_REGISTRY_PATH: Lazy<PathBuf> = Lazy::new(|| dirs::CACHE.join("aqua-registry"));
-static AQUA_DEFAULT_REGISTRY_URL: &str = "https://github.com/aquaproj/aqua-registry";
-
-#[derive(Default)]
-pub struct AquaRegistry {
-    path: PathBuf,
-    repo_exists: bool,
-}
-
+/// Type of Aqua package
 #[derive(Debug, Deserialize, Default, Clone, PartialEq, strum::Display)]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
@@ -50,6 +21,7 @@ pub enum AquaPackageType {
     Cargo,
 }
 
+/// Main Aqua package definition
 #[derive(Debug, Deserialize, Clone)]
 #[serde(default)]
 pub struct AquaPackage {
@@ -83,6 +55,7 @@ pub struct AquaPackage {
     pub path: Option<String>,
 }
 
+/// Override configuration for specific OS/architecture combinations
 #[derive(Debug, Deserialize, Clone)]
 struct AquaOverride {
     #[serde(flatten)]
@@ -91,12 +64,14 @@ struct AquaOverride {
     goarch: Option<String>,
 }
 
+/// File definition within a package
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaFile {
     pub name: String,
     pub src: Option<String>,
 }
 
+/// Checksum algorithm options
 #[derive(Debug, Deserialize, Clone, strum::AsRefStr, strum::Display)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -108,6 +83,7 @@ pub enum AquaChecksumAlgorithm {
     Md5,
 }
 
+/// Type of checksum source
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaChecksumType {
@@ -115,6 +91,7 @@ pub enum AquaChecksumType {
     Http,
 }
 
+/// Type of minisign source
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaMinisignType {
@@ -122,6 +99,7 @@ pub enum AquaMinisignType {
     Http,
 }
 
+/// Cosign signature configuration
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaCosignSignature {
     pub r#type: Option<String>,
@@ -130,6 +108,8 @@ pub struct AquaCosignSignature {
     pub url: Option<String>,
     pub asset: Option<String>,
 }
+
+/// Cosign verification configuration
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaCosign {
     pub enabled: Option<bool>,
@@ -142,6 +122,7 @@ pub struct AquaCosign {
     opts: Vec<String>,
 }
 
+/// SLSA provenance configuration
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaSlsaProvenance {
     pub enabled: Option<bool>,
@@ -154,6 +135,7 @@ pub struct AquaSlsaProvenance {
     pub source_tag: Option<String>,
 }
 
+/// Minisign verification configuration
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaMinisign {
     pub enabled: Option<bool>,
@@ -165,6 +147,7 @@ pub struct AquaMinisign {
     pub public_key: Option<String>,
 }
 
+/// Checksum verification configuration
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaChecksum {
     pub r#type: Option<AquaChecksumType>,
@@ -177,115 +160,64 @@ pub struct AquaChecksum {
     url: Option<String>,
 }
 
+/// Checksum pattern configuration
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaChecksumPattern {
     pub checksum: String,
     pub file: Option<String>,
 }
 
+/// Registry YAML file structure
 #[derive(Debug, Deserialize)]
-struct RegistryYaml {
-    packages: Vec<AquaPackage>,
+pub struct RegistryYaml {
+    pub packages: Vec<AquaPackage>,
 }
 
-impl AquaRegistry {
-    pub fn standard() -> Result<Self> {
-        let path = AQUA_REGISTRY_PATH.clone();
-        let repo = Git::new(&path);
-        let settings = Settings::get();
-        let registry_url =
-            settings
-                .aqua
-                .registry_url
-                .as_deref()
-                .or(if settings.aqua.baked_registry {
-                    None
-                } else {
-                    Some(AQUA_DEFAULT_REGISTRY_URL)
-                });
-        if let Some(registry_url) = registry_url {
-            if repo.exists() {
-                // TODO: re-clone if remote url doesn't match
-                fetch_latest_repo(&repo)?;
-            } else {
-                info!("cloning aqua registry from {registry_url} to {path:?}");
-                repo.clone(registry_url, CloneOptions::default())?;
-            }
+impl Default for AquaPackage {
+    fn default() -> Self {
+        Self {
+            r#type: AquaPackageType::GithubRelease,
+            repo_owner: String::new(),
+            repo_name: String::new(),
+            name: None,
+            asset: String::new(),
+            url: String::new(),
+            description: None,
+            format: String::new(),
+            rosetta2: false,
+            windows_arm_emulation: false,
+            complete_windows_ext: true,
+            supported_envs: Vec::new(),
+            files: Vec::new(),
+            replacements: HashMap::new(),
+            version_prefix: None,
+            version_filter: None,
+            version_filter_expr: None,
+            version_source: None,
+            checksum: None,
+            slsa_provenance: None,
+            minisign: None,
+            overrides: Vec::new(),
+            version_constraint: String::new(),
+            version_overrides: Vec::new(),
+            no_asset: false,
+            error_message: None,
+            path: None,
         }
-        Ok(Self {
-            path,
-            repo_exists: repo.exists(),
-        })
     }
-
-    pub async fn package(&self, id: &str) -> Result<AquaPackage> {
-        static CACHE: LazyLock<Mutex<HashMap<String, AquaPackage>>> =
-            LazyLock::new(|| Mutex::new(HashMap::new()));
-        if let Some(pkg) = CACHE.lock().await.get(id) {
-            return Ok(pkg.clone());
-        }
-        let path_id = id.split('/').join(std::path::MAIN_SEPARATOR_STR);
-        let path = self.path.join("pkgs").join(&path_id).join("registry.yaml");
-        let mut pkg = self
-            .fetch_package_yaml(id, &path)
-            .await?
-            .packages
-            .into_iter()
-            .next()
-            .wrap_err(format!("no package found for {id} in {path:?}"))?;
-        if let Some(version_filter) = &pkg.version_filter {
-            pkg.version_filter_expr = Some(expr::compile(version_filter)?);
-        }
-        CACHE.lock().await.insert(id.to_string(), pkg.clone());
-        Ok(pkg)
-    }
-
-    pub async fn package_with_version(&self, id: &str, versions: &[&str]) -> Result<AquaPackage> {
-        Ok(self.package(id).await?.with_version(versions))
-    }
-
-    async fn fetch_package_yaml(&self, id: &str, path: &PathBuf) -> Result<RegistryYaml> {
-        let registry = if self.repo_exists {
-            trace!("reading aqua-registry for {id} from repo at {path:?}");
-            serde_yaml::from_reader(file::open(path)?)?
-        } else if Settings::get().aqua.baked_registry
-            && AQUA_STANDARD_REGISTRY_FILES.contains_key(id)
-        {
-            trace!("reading baked-in aqua-registry for {id}");
-            serde_yaml::from_str(AQUA_STANDARD_REGISTRY_FILES.get(id).unwrap())?
-        } else {
-            bail!("no aqua-registry found for {id}");
-        };
-        Ok(registry)
-    }
-}
-
-fn fetch_latest_repo(repo: &Git) -> Result<()> {
-    if file::modified_duration(&repo.dir)? < WEEKLY {
-        return Ok(());
-    }
-
-    // Don't update if PREFER_OFFLINE is set
-    if env::PREFER_OFFLINE.load(std::sync::atomic::Ordering::Relaxed) {
-        trace!("skipping aqua registry update due to PREFER_OFFLINE");
-        return Ok(());
-    }
-
-    info!("updating aqua registry repo");
-    repo.update(None)?;
-    Ok(())
 }
 
 impl AquaPackage {
-    pub fn with_version(mut self, versions: &[&str]) -> AquaPackage {
+    /// Apply version-specific configurations and overrides
+    pub fn with_version(mut self, versions: &[&str], os: &str, arch: &str) -> AquaPackage {
         self = apply_override(self.clone(), self.version_override(versions));
         if let Some(avo) = self.overrides.clone().into_iter().find(|o| {
             if let (Some(goos), Some(goarch)) = (&o.goos, &o.goarch) {
-                goos == aqua::os() && goarch == aqua::arch()
+                goos == os && goarch == arch
             } else if let Some(goos) = &o.goos {
-                goos == aqua::os()
+                goos == os
             } else if let Some(goarch) = &o.goarch {
-                goarch == aqua::arch()
+                goarch == arch
             } else {
                 false
             }
@@ -295,7 +227,6 @@ impl AquaPackage {
         self
     }
 
-    // all versions must refer to the same logical version. e.g. ["v1.2.3", "1.2.3"]
     fn version_override(&self, versions: &[&str]) -> &AquaPackage {
         let expressions = versions
             .iter()
@@ -310,7 +241,9 @@ impl AquaPackage {
                 } else {
                     expressions.iter().any(|(expr, ctx)| {
                         expr.eval(&vo.version_constraint, ctx)
-                            .map_err(|e| debug!("error parsing {}: {e}", vo.version_constraint))
+                            .map_err(|e| {
+                                log::debug!("error parsing {}: {e}", vo.version_constraint)
+                            })
                             .unwrap_or(false.into())
                             .as_bool()
                             .unwrap()
@@ -320,6 +253,7 @@ impl AquaPackage {
             .unwrap_or(self)
     }
 
+    /// Detect the format of an archive based on its filename
     fn detect_format(&self, asset_name: &str) -> &'static str {
         let formats = [
             "tar.br", "tar.bz2", "tar.gz", "tar.lz4", "tar.sz", "tar.xz", "tbr", "tbz", "tbz2",
@@ -340,18 +274,19 @@ impl AquaPackage {
         "raw"
     }
 
-    pub fn format(&self, v: &str) -> Result<&str> {
+    /// Get the format for this package and version
+    pub fn format(&self, v: &str, os: &str, arch: &str) -> Result<&str> {
         if self.r#type == AquaPackageType::GithubArchive {
             return Ok("tar.gz");
         }
         let format = if self.format.is_empty() {
             let asset = if !self.asset.is_empty() {
-                self.asset(v)?
+                self.asset(v, os, arch)?
             } else if !self.url.is_empty() {
                 self.url.to_string()
             } else {
-                debug!("no asset or url for {}/{}", self.repo_owner, self.repo_name);
-                "".to_string()
+                log::debug!("no asset or url for {}/{}", self.repo_owner, self.repo_name);
+                String::new()
             };
             self.detect_format(&asset)
         } else {
@@ -365,36 +300,37 @@ impl AquaPackage {
         Ok(format)
     }
 
-    pub fn asset(&self, v: &str) -> Result<String> {
-        // derive asset from url if not set and url contains a path
+    /// Get the asset name for this package and version
+    pub fn asset(&self, v: &str, os: &str, arch: &str) -> Result<String> {
         if self.asset.is_empty() && self.url.split("/").count() > "//".len() {
             let asset = self.url.rsplit("/").next().unwrap_or("");
-            self.parse_aqua_str(asset, v, &Default::default())
+            self.parse_aqua_str(asset, v, &Default::default(), os, arch)
         } else {
-            self.parse_aqua_str(&self.asset, v, &Default::default())
+            self.parse_aqua_str(&self.asset, v, &Default::default(), os, arch)
         }
     }
 
-    pub fn asset_strs(&self, v: &str) -> Result<IndexSet<String>> {
-        let mut strs = IndexSet::from([self.asset(v)?]);
-        if cfg!(macos) {
+    /// Get all possible asset strings for this package, version and platform
+    pub fn asset_strs(&self, v: &str, os: &str, arch: &str) -> Result<IndexSet<String>> {
+        let mut strs =
+            IndexSet::from([self.parse_aqua_str(&self.asset, v, &Default::default(), os, arch)?]);
+        if os == "darwin" {
             let mut ctx = HashMap::default();
             ctx.insert("Arch".to_string(), "universal".to_string());
-            strs.insert(self.parse_aqua_str(&self.asset, v, &ctx)?);
-        } else if cfg!(windows) {
+            strs.insert(self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?);
+        } else if os == "windows" {
             let mut ctx = HashMap::default();
-            let asset = self.parse_aqua_str(&self.asset, v, &ctx)?;
-            if self.complete_windows_ext && self.format(v)? == "raw" {
+            let asset = self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?;
+            if self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
                 strs.insert(format!("{asset}.exe"));
             } else {
                 strs.insert(asset);
             }
-            if cfg!(target_arch = "aarch64") {
-                // assume windows arm64 emulation is supported
+            if arch == "arm64" {
                 ctx.insert("Arch".to_string(), "amd64".to_string());
-                strs.insert(self.parse_aqua_str(&self.asset, v, &ctx)?);
-                let asset = self.parse_aqua_str(&self.asset, v, &ctx)?;
-                if self.complete_windows_ext && self.format(v)? == "raw" {
+                strs.insert(self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?);
+                let asset = self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?;
+                if self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
                     strs.insert(format!("{asset}.exe"));
                 } else {
                     strs.insert(asset);
@@ -404,50 +340,81 @@ impl AquaPackage {
         Ok(strs)
     }
 
-    pub fn url(&self, v: &str) -> Result<String> {
+    /// Get the URL for this package and version
+    pub fn url(&self, v: &str, os: &str, arch: &str) -> Result<String> {
         let mut url = self.url.clone();
-        if cfg!(windows) && self.complete_windows_ext && self.format(v)? == "raw" {
+        if os == "windows" && self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
             url.push_str(".exe");
         }
-        self.parse_aqua_str(&url, v, &Default::default())
+        self.parse_aqua_str(&url, v, &Default::default(), os, arch)
     }
 
-    fn parse_aqua_str(
+    /// Parse an Aqua template string with variable substitution and platform info
+    pub fn parse_aqua_str(
         &self,
         s: &str,
         v: &str,
         overrides: &HashMap<String, String>,
+        os: &str,
+        arch: &str,
     ) -> Result<String> {
-        let os = os();
-        let mut arch = arch();
+        let mut actual_arch = arch;
         if os == "darwin" && arch == "arm64" && self.rosetta2 {
-            arch = "amd64";
+            actual_arch = "amd64";
         }
         if os == "windows" && arch == "arm64" && self.windows_arm_emulation {
-            arch = "amd64";
+            actual_arch = "amd64";
         }
+
         let replace = |s: &str| {
             self.replacements
                 .get(s)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| s.to_string())
         };
+
         let semver = if let Some(prefix) = &self.version_prefix {
             v.strip_prefix(prefix).unwrap_or(v)
         } else {
             v
         };
-        let mut ctx = hashmap! {
-            "Version".to_string() => replace(v),
-            "SemVer".to_string() => replace(semver),
-            "OS".to_string() => replace(os),
-            "GOOS".to_string() => replace(os),
-            "GOARCH".to_string() => replace(arch),
-            "Arch".to_string() => replace(arch),
-            "Format".to_string() => replace(&self.format),
-        };
+
+        let mut ctx = HashMap::new();
+        ctx.insert("Version".to_string(), replace(v));
+        ctx.insert("SemVer".to_string(), replace(semver));
+        ctx.insert("OS".to_string(), replace(os));
+        ctx.insert("GOOS".to_string(), replace(os));
+        ctx.insert("GOARCH".to_string(), replace(actual_arch));
+        ctx.insert("Arch".to_string(), replace(actual_arch));
+        ctx.insert("Format".to_string(), replace(&self.format));
         ctx.extend(overrides.clone());
-        aqua_template::render(s, &ctx)
+
+        crate::template::render(s, &ctx)
+    }
+
+    /// Set up version filter expression if configured
+    pub fn setup_version_filter(&mut self) -> Result<()> {
+        if let Some(version_filter) = &self.version_filter {
+            self.version_filter_expr = Some(expr::compile(version_filter)?);
+        }
+        Ok(())
+    }
+
+    /// Check if a version passes the version filter
+    pub fn version_filter_ok(&self, v: &str) -> Result<bool> {
+        if let Some(filter) = self.version_filter_expr.clone() {
+            if let Value::Bool(expr) = self.expr(v, filter)? {
+                Ok(expr)
+            } else {
+                log::warn!(
+                    "invalid response from version filter: {}",
+                    self.version_filter.as_ref().unwrap()
+                );
+                Ok(true)
+            }
+        } else {
+            Ok(true)
+        }
     }
 
     fn expr(&self, v: &str, program: Program) -> Result<Value> {
@@ -455,10 +422,10 @@ impl AquaPackage {
         expr.run(program, &self.expr_ctx(v)).map_err(|e| eyre!(e))
     }
 
-    fn expr_parser(&self, v: &str) -> expr::Environment<'_> {
+    fn expr_parser(&self, v: &str) -> Environment<'_> {
         let (_, v) = split_version_prefix(v);
-        let ver = versions::Versioning::new(v);
-        let mut env = expr::Environment::new();
+        let ver = Versioning::new(v);
+        let mut env = Environment::new();
         env.add_function("semver", move |c| {
             if c.args.len() != 1 {
                 return Err("semver() takes exactly one argument".to_string().into());
@@ -490,28 +457,38 @@ impl AquaPackage {
         ctx.insert("Version", v);
         ctx
     }
+}
 
-    pub fn version_filter_ok(&self, v: &str) -> Result<bool> {
-        // TODO: precompile the expression
-        if let Some(filter) = self.version_filter_expr.clone() {
-            if let Value::Bool(expr) = self.expr(v, filter)? {
-                Ok(expr)
-            } else {
-                warn!(
-                    "invalid response from version filter: {}",
-                    self.version_filter.as_ref().unwrap()
-                );
-                Ok(true)
+/// splits a version number into an optional prefix and the remaining version string
+fn split_version_prefix(version: &str) -> (String, String) {
+    version
+        .char_indices()
+        .find_map(|(i, c)| {
+            if c.is_ascii_digit() {
+                if i == 0 {
+                    return Some(i);
+                }
+                // If the previous char is a delimiter or 'v', we found a split point.
+                let prev_char = version.chars().nth(i - 1).unwrap();
+                if ['-', '_', '/', '.', 'v', 'V'].contains(&prev_char) {
+                    return Some(i);
+                }
             }
-        } else {
-            Ok(true)
-        }
-    }
+            None
+        })
+        .map_or_else(
+            || ("".into(), version.into()),
+            |i| {
+                let (prefix, version) = version.split_at(i);
+                (prefix.into(), version.into())
+            },
+        )
 }
 
 impl AquaFile {
-    pub fn src(&self, pkg: &AquaPackage, v: &str) -> Result<Option<String>> {
-        let asset = pkg.asset(v)?;
+    /// Get the source path for this file within the package
+    pub fn src(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
+        let asset = pkg.asset(v, os, arch)?;
         let asset = asset.strip_suffix(".tar.gz").unwrap_or(&asset);
         let asset = asset.strip_suffix(".tar.xz").unwrap_or(asset);
         let asset = asset.strip_suffix(".tar.bz2").unwrap_or(asset);
@@ -524,13 +501,14 @@ impl AquaFile {
         let asset = asset.strip_suffix(".txz").unwrap_or(asset);
         let asset = asset.strip_suffix(".tbz2").unwrap_or(asset);
         let asset = asset.strip_suffix(".tbz").unwrap_or(asset);
-        let ctx = hashmap! {
-            "AssetWithoutExt".to_string() => asset.to_string(),
-            "FileName".to_string() => self.name.to_string(),
-        };
+
+        let mut ctx = HashMap::new();
+        ctx.insert("AssetWithoutExt".to_string(), asset.to_string());
+        ctx.insert("FileName".to_string(), self.name.to_string());
+
         self.src
             .as_ref()
-            .map(|src| pkg.parse_aqua_str(src, v, &ctx))
+            .map(|src| pkg.parse_aqua_str(src, v, &ctx, os, arch))
             .transpose()
     }
 }
@@ -590,11 +568,13 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
         slsa_provenance.merge(avo_slsa_provenance);
         orig.slsa_provenance = Some(slsa_provenance);
     }
+
     if let Some(avo_minisign) = avo.minisign.clone() {
         let mut minisign = orig.minisign.unwrap_or_else(|| avo_minisign.clone());
         minisign.merge(avo_minisign);
         orig.minisign = Some(minisign);
     }
+
     if avo.no_asset {
         orig.no_asset = true;
     }
@@ -607,35 +587,47 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     orig
 }
 
+// Implementation of merge methods for various types
 impl AquaChecksum {
     pub fn _type(&self) -> &AquaChecksumType {
         self.r#type.as_ref().unwrap()
     }
+
     pub fn algorithm(&self) -> &AquaChecksumAlgorithm {
         self.algorithm.as_ref().unwrap()
     }
-    pub fn asset_strs(&self, pkg: &AquaPackage, v: &str) -> Result<IndexSet<String>> {
+
+    pub fn asset_strs(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<IndexSet<String>> {
         let mut asset_strs = IndexSet::new();
-        for asset in pkg.asset_strs(v)? {
+        for asset in pkg.asset_strs(v, os, arch)? {
             let checksum_asset = self.asset.as_ref().unwrap();
-            let ctx = hashmap! {
-                "Asset".to_string() => asset.to_string(),
-            };
-            asset_strs.insert(pkg.parse_aqua_str(checksum_asset, v, &ctx)?);
+            let mut ctx = HashMap::new();
+            ctx.insert("Asset".to_string(), asset.to_string());
+            asset_strs.insert(pkg.parse_aqua_str(checksum_asset, v, &ctx, os, arch)?);
         }
         Ok(asset_strs)
     }
+
     pub fn pattern(&self) -> &AquaChecksumPattern {
         self.pattern.as_ref().unwrap()
     }
+
     pub fn enabled(&self) -> bool {
         self.enabled.unwrap_or(true)
     }
+
     pub fn file_format(&self) -> &str {
         self.file_format.as_deref().unwrap_or("raw")
     }
-    pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default())
+
+    pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
 
     fn merge(&mut self, other: Self) {
@@ -670,10 +662,10 @@ impl AquaChecksum {
 }
 
 impl AquaCosign {
-    pub fn opts(&self, pkg: &AquaPackage, v: &str) -> Result<Vec<String>> {
+    pub fn opts(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Vec<String>> {
         self.opts
             .iter()
-            .map(|opt| pkg.parse_aqua_str(opt, v, &Default::default()))
+            .map(|opt| pkg.parse_aqua_str(opt, v, &Default::default(), os, arch))
             .collect()
     }
 
@@ -715,16 +707,24 @@ impl AquaCosign {
 }
 
 impl AquaCosignSignature {
-    pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default())
+    pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
-    pub fn asset(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(self.asset.as_ref().unwrap(), v, &Default::default())
+
+    pub fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(
+            self.asset.as_ref().unwrap(),
+            v,
+            &Default::default(),
+            os,
+            arch,
+        )
     }
-    pub fn arg(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+
+    pub fn arg(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
         match self.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
-                let asset = self.asset(pkg, v)?;
+                let asset = self.asset(pkg, v, os, arch)?;
                 let repo_owner = self
                     .repo_owner
                     .clone()
@@ -738,13 +738,14 @@ impl AquaCosignSignature {
                     "https://github.com/{repo}/releases/download/{v}/{asset}"
                 ))
             }
-            "http" => self.url(pkg, v),
+            "http" => self.url(pkg, v, os, arch),
             t => {
-                warn!(
+                log::warn!(
                     "unsupported cosign signature type for {}/{}: {t}",
-                    pkg.repo_owner, pkg.repo_name
+                    pkg.repo_owner,
+                    pkg.repo_name
                 );
-                Ok("".to_string())
+                Ok(String::new())
             }
         }
     }
@@ -769,11 +770,18 @@ impl AquaCosignSignature {
 }
 
 impl AquaSlsaProvenance {
-    pub fn asset(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(self.asset.as_ref().unwrap(), v, &Default::default())
+    pub fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(
+            self.asset.as_ref().unwrap(),
+            v,
+            &Default::default(),
+            os,
+            arch,
+        )
     }
-    pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default())
+
+    pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
 
     fn merge(&mut self, other: Self) {
@@ -808,14 +816,29 @@ impl AquaMinisign {
     pub fn _type(&self) -> &AquaMinisignType {
         self.r#type.as_ref().unwrap()
     }
-    pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default())
+
+    pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
-    pub fn asset(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(self.asset.as_ref().unwrap(), v, &Default::default())
+
+    pub fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(
+            self.asset.as_ref().unwrap(),
+            v,
+            &Default::default(),
+            os,
+            arch,
+        )
     }
-    pub fn public_key(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        pkg.parse_aqua_str(self.public_key.as_ref().unwrap(), v, &Default::default())
+
+    pub fn public_key(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(
+            self.public_key.as_ref().unwrap(),
+            v,
+            &Default::default(),
+            os,
+            arch,
+        )
     }
 
     fn merge(&mut self, other: Self) {
@@ -839,40 +862,6 @@ impl AquaMinisign {
         }
         if let Some(public_key) = other.public_key {
             self.public_key = Some(public_key);
-        }
-    }
-}
-
-impl Default for AquaPackage {
-    fn default() -> Self {
-        Self {
-            r#type: AquaPackageType::GithubRelease,
-            repo_owner: "".to_string(),
-            repo_name: "".to_string(),
-            name: None,
-            asset: "".to_string(),
-            url: "".to_string(),
-            description: None,
-            format: "".to_string(),
-            rosetta2: false,
-            windows_arm_emulation: false,
-            complete_windows_ext: true,
-            supported_envs: vec![],
-            files: vec![],
-            replacements: HashMap::new(),
-            version_prefix: None,
-            version_filter: None,
-            version_filter_expr: None,
-            version_source: None,
-            checksum: None,
-            slsa_provenance: None,
-            minisign: None,
-            overrides: vec![],
-            version_constraint: "".to_string(),
-            version_overrides: vec![],
-            no_asset: false,
-            error_message: None,
-            path: None,
         }
     }
 }

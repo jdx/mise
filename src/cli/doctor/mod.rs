@@ -545,7 +545,7 @@ fn shell() -> String {
 }
 
 fn aqua_registry_count() -> usize {
-    crate::aqua::aqua_registry::AQUA_STANDARD_REGISTRY_FILES.len()
+    aqua_registry::AQUA_STANDARD_REGISTRY_FILES.len()
 }
 
 fn aqua_registry_count_str() -> String {

@@ -202,28 +202,28 @@ impl Parser<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::Config;
-
     use super::*;
-    use crate::hashmap;
 
-    #[tokio::test]
-    async fn test_render() {
-        let _config = Config::get().await.unwrap();
+    fn hashmap(data: Vec<(&str, &str)>) -> HashMap<String, String> {
+        data.iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn test_render() {
         let tmpl = "Hello, {{.OS}}!";
-        let mut ctx = HashMap::new();
-        ctx.insert("OS".to_string(), "world".to_string());
+        let ctx = hashmap(vec![("OS", "world")]);
         assert_eq!(render(tmpl, &ctx).unwrap(), "Hello, world!");
     }
 
     macro_rules! parse_tests {
     ($($name:ident: $value:expr,)*) => {
         $(
-            #[tokio::test]
-            async fn $name() {
-                let _config = Config::get().await.unwrap();
-                let (input, expected, ctx): (&str, &str, HashMap<&str, &str>) = $value;
-                let ctx = ctx.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            #[test]
+            fn $name() {
+                let (input, expected, ctx_data): (&str, &str, Vec<(&str, &str)>) = $value;
+                let ctx = hashmap(ctx_data);
                 let parser = Parser { ctx: &ctx };
                 let tokens = lex(input).unwrap();
                 assert_eq!(expected, parser.parse(tokens.iter().collect()).unwrap());
@@ -232,25 +232,24 @@ mod tests {
     }}
 
     parse_tests!(
-        test_parse_key: (".OS", "world", hashmap!{"OS" => "world"}),
-        test_parse_string: ("\"world\"", "world", hashmap!{}),
-        test_parse_title: (r#"title "world""#, "World", hashmap!{}),
-        test_parse_trimv: (r#"trimV "v1.0.0""#, "1.0.0", hashmap!{}),
-        test_parse_trim_prefix: (r#"trimPrefix "v" "v1.0.0""#, "1.0.0", hashmap!{}),
-        test_parse_trim_prefix2: (r#"trimPrefix "v" "1.0.0""#, "1.0.0", hashmap!{}),
-        test_parse_trim_suffix: (r#"trimSuffix "-v1.0.0" "foo-v1.0.0""#, "foo", hashmap!{}),
-        test_parse_pipe: (r#"trimPrefix "foo-" "foo-v1.0.0" | trimV"#, "1.0.0", hashmap!{}),
+        test_parse_key: (".OS", "world", vec![("OS", "world")]),
+        test_parse_string: ("\"world\"", "world", vec![]),
+        test_parse_title: (r#"title "world""#, "World", vec![]),
+        test_parse_trimv: (r#"trimV "v1.0.0""#, "1.0.0", vec![]),
+        test_parse_trim_prefix: (r#"trimPrefix "v" "v1.0.0""#, "1.0.0", vec![]),
+        test_parse_trim_prefix2: (r#"trimPrefix "v" "1.0.0""#, "1.0.0", vec![]),
+        test_parse_trim_suffix: (r#"trimSuffix "-v1.0.0" "foo-v1.0.0""#, "foo", vec![]),
+        test_parse_pipe: (r#"trimPrefix "foo-" "foo-v1.0.0" | trimV"#, "1.0.0", vec![]),
         test_parse_multiple_pipes: (
             r#"trimPrefix "foo-" "foo-v1.0.0-beta" | trimSuffix "-beta" | trimV"#,
             "1.0.0",
-            hashmap!{},
+            vec![],
         ),
-        test_parse_replace: (r#"replace "foo" "bar" "foo-bar""#, "bar-bar", hashmap!{}),
+        test_parse_replace: (r#"replace "foo" "bar" "foo-bar""#, "bar-bar", vec![]),
     );
 
-    #[tokio::test]
-    async fn test_parse_err() {
-        let _config = Config::get().await.unwrap();
+    #[test]
+    fn test_parse_err() {
         let parser = Parser {
             ctx: &HashMap::new(),
         };
@@ -258,9 +257,8 @@ mod tests {
         assert!(parser.parse(tokens.iter().collect()).is_err());
     }
 
-    #[tokio::test]
-    async fn test_lex() {
-        let _config = Config::get().await.unwrap();
+    #[test]
+    fn test_lex() {
         assert_eq!(
             lex(r#"trimPrefix "foo-" "foo-v1.0.0" | trimV"#).unwrap(),
             vec![

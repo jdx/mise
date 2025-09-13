@@ -11,7 +11,7 @@ use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
 use crate::{
-    aqua::aqua_registry::{
+    aqua::aqua_registry_wrapper::{
         AQUA_REGISTRY, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
     },
     cache::{CacheManager, CacheManagerBuilder},
@@ -285,7 +285,7 @@ impl AquaBackend {
                                 continue;
                             }
                         }
-                        let pkg = pkg.clone().with_version(&[version]);
+                        let pkg = pkg.clone().with_version(&[version], os(), arch());
                         if let Some(prefix) = &pkg.version_prefix {
                             if let Some(_v) = version.strip_prefix(prefix) {
                                 version = _v;
@@ -315,13 +315,13 @@ impl AquaBackend {
             AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
                 Ok((self.github_archive_url(pkg, v), false))
             }
-            AquaPackageType::Http => pkg.url(v).map(|url| (url, false)),
+            AquaPackageType::Http => pkg.url(v, os(), arch()).map(|url| (url, false)),
             ref t => bail!("unsupported aqua package type: {t}"),
         }
     }
 
     async fn github_release_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        let asset_strs = pkg.asset_strs(v)?;
+        let asset_strs = pkg.asset_strs(v, os(), arch())?;
         self.github_release_asset(pkg, v, asset_strs).await
     }
 
@@ -394,10 +394,10 @@ impl AquaBackend {
                 if checksum.enabled() {
                     let url = match checksum._type() {
                         AquaChecksumType::GithubRelease => {
-                            let asset_strs = checksum.asset_strs(pkg, v)?;
+                            let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
                             self.github_release_asset(pkg, v, asset_strs).await?
                         }
-                        AquaChecksumType::Http => checksum.url(pkg, v)?,
+                        AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
                     };
                     let checksum_path = download_path.join(format!("{filename}.checksum"));
                     HTTP.download_file(&url, &checksum_path, Some(&ctx.pr))
@@ -485,7 +485,7 @@ impl AquaBackend {
             debug!("minisign: {:?}", minisign);
             let sig_path = match minisign._type() {
                 AquaMinisignType::GithubRelease => {
-                    let asset = minisign.asset(pkg, v)?;
+                    let asset = minisign.asset(pkg, v, os(), arch())?;
                     let repo_owner = minisign
                         .repo_owner
                         .clone()
@@ -510,7 +510,7 @@ impl AquaBackend {
                     }
                 }
                 AquaMinisignType::Http => {
-                    let url = minisign.url(pkg, v)?;
+                    let url = minisign.url(pkg, v, os(), arch())?;
                     let path = tv.download_path().join(filename).with_extension(".minisig");
                     HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
                     path
@@ -518,7 +518,7 @@ impl AquaBackend {
             };
             let data = file::read(tv.download_path().join(filename))?;
             let sig = file::read_to_string(sig_path)?;
-            minisign::verify(&minisign.public_key(pkg, v)?, &data, &sig)?;
+            minisign::verify(&minisign.public_key(pkg, v, os(), arch())?, &data, &sig)?;
         }
         Ok(())
     }
@@ -552,7 +552,7 @@ impl AquaBackend {
                 let repo = format!("{repo_owner}/{repo_name}");
                 let provenance_path = match slsa.r#type.as_deref().unwrap_or_default() {
                     "github_release" => {
-                        let asset = slsa.asset(pkg, v)?;
+                        let asset = slsa.asset(pkg, v, os(), arch())?;
                         let url = github::get_release(&repo, v)
                             .await?
                             .assets
@@ -569,7 +569,7 @@ impl AquaBackend {
                         }
                     }
                     "http" => {
-                        let url = slsa.url(pkg, v)?;
+                        let url = slsa.url(pkg, v, os(), arch())?;
                         let path = tv.download_path().join(filename);
                         HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
                         path.to_string_lossy().to_string()
@@ -635,25 +635,25 @@ impl AquaBackend {
                     cmd = cmd.env("COSIGN_EXPERIMENTAL", "1");
                 }
                 if let Some(signature) = &cosign.signature {
-                    let arg = signature.arg(pkg, v)?;
+                    let arg = signature.arg(pkg, v, os(), arch())?;
                     if !arg.is_empty() {
                         cmd = cmd.arg("--signature").arg(arg);
                     }
                 }
                 if let Some(key) = &cosign.key {
-                    let arg = key.arg(pkg, v)?;
+                    let arg = key.arg(pkg, v, os(), arch())?;
                     if !arg.is_empty() {
                         cmd = cmd.arg("--key").arg(arg);
                     }
                 }
                 if let Some(certificate) = &cosign.certificate {
-                    let arg = certificate.arg(pkg, v)?;
+                    let arg = certificate.arg(pkg, v, os(), arch())?;
                     if !arg.is_empty() {
                         cmd = cmd.arg("--certificate").arg(arg);
                     }
                 }
                 if let Some(bundle) = &cosign.bundle {
-                    let url = bundle.arg(pkg, v)?;
+                    let url = bundle.arg(pkg, v, os(), arch())?;
                     if !url.is_empty() {
                         let filename = url.split('/').next_back().unwrap();
                         let bundle_path = download_path.join(filename);
@@ -662,7 +662,7 @@ impl AquaBackend {
                         cmd = cmd.arg("--bundle").arg(bundle_path);
                     }
                 }
-                for opt in cosign.opts(pkg, v)? {
+                for opt in cosign.opts(pkg, v, os(), arch())? {
                     cmd = cmd.arg(opt);
                 }
                 for arg in Settings::get()
@@ -694,11 +694,11 @@ impl AquaBackend {
         ctx.pr.set_message(format!("extract {filename}"));
         let install_path = tv.install_path();
         file::remove_all(&install_path)?;
-        let format = pkg.format(v)?;
+        let format = pkg.format(v, os(), arch())?;
         let mut bin_names: Vec<Cow<'_, str>> = pkg
             .files
             .iter()
-            .filter_map(|file| match file.src(pkg, v) {
+            .filter_map(|file| match file.src(pkg, v, os(), arch()) {
                 Ok(Some(s)) => Some(Cow::Owned(s)),
                 Ok(None) => Some(Cow::Borrowed(file.name.as_str())),
                 Err(_) => None,
@@ -802,11 +802,11 @@ impl AquaBackend {
             .iter()
             .map(|f| {
                 let srcs = if let Some(prefix) = &pkg.version_prefix {
-                    vec![f.src(pkg, &format!("{}{}", prefix, tv.version))?]
+                    vec![f.src(pkg, &format!("{}{}", prefix, tv.version), os(), arch())?]
                 } else {
                     vec![
-                        f.src(pkg, &tv.version)?,
-                        f.src(pkg, &format!("v{}", tv.version))?,
+                        f.src(pkg, &tv.version, os(), arch())?,
+                        f.src(pkg, &format!("v{}", tv.version), os(), arch())?,
                     ]
                 };
                 Ok(srcs
