@@ -1,8 +1,0 @@
-packages:
-  - name: nabeken/go-github-apps@v0.2.4
-  - name: nabeken/go-github-apps
-    version: v0.1.3
-  - name: nabeken/go-github-apps
-    version: v0.1.2
-  - name: nabeken/go-github-apps
-    version: v0.1.1

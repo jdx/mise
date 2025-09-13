@@ -1,6 +1,0 @@
-packages:
-  - name: axllent/mailpit@v1.27.7
-  - name: axllent/mailpit
-    version: v1.6.14
-  - name: axllent/mailpit
-    version: 1.2.1

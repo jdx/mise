@@ -1,8 +1,0 @@
-packages:
-  - name: carvel-dev/vendir@v0.44.0
-  - name: carvel-dev/vendir
-    version: v0.38.0
-  - name: carvel-dev/vendir
-    version: v0.24.0
-  - name: carvel-dev/vendir
-    version: v0.17.0

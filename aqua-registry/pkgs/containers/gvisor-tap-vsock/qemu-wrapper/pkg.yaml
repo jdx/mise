@@ -1,2 +1,0 @@
-packages:
-  - name: containers/gvisor-tap-vsock/qemu-wrapper@v0.8.7

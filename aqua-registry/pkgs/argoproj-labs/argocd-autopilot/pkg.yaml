@@ -1,6 +1,0 @@
-packages:
-  - name: argoproj-labs/argocd-autopilot@v0.4.19
-  - name: argoproj-labs/argocd-autopilot
-    version: v0.3.7
-  - name: argoproj-labs/argocd-autopilot
-    version: v0.1.6

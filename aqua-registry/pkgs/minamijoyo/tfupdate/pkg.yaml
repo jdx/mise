@@ -1,4 +1,0 @@
-packages:
-  - name: minamijoyo/tfupdate@v0.9.2
-  - name: minamijoyo/tfupdate
-    version: v0.6.2

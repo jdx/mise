@@ -1,8 +1,0 @@
-packages:
-  - name: fujiwara/maprobe@v0.10.3
-  - name: fujiwara/maprobe
-    version: v0.7.7
-  - name: fujiwara/maprobe
-    version: v0.5.1
-  - name: fujiwara/maprobe
-    version: v0.2.4

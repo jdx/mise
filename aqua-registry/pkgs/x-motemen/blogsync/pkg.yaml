@@ -1,6 +1,0 @@
-packages:
-  - name: x-motemen/blogsync@v0.20.1
-  - name: x-motemen/blogsync
-    version: v0.12.2
-  - name: x-motemen/blogsync
-    version: v0.12.1

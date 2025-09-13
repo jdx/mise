@@ -1,4 +1,0 @@
-packages:
-  - name: loft-sh/devpod@v0.6.15
-  - name: loft-sh/devpod
-    version: v0.0.3

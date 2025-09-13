@@ -1,6 +1,0 @@
-packages:
-  - name: nakabonne/ali@v0.7.5
-  - name: nakabonne/ali
-    version: v0.7.0
-  - name: nakabonne/ali
-    version: v0.6.1
