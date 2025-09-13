@@ -1798,6 +1798,15 @@ esac`),
           description: "Set the environment variable in the global config file",
           isRepeatable: false,
         },
+        {
+          name: ["-E", "--env"],
+          description:
+            "Create/modify an environment-specific config file like .mise.<env>.toml",
+          isRepeatable: false,
+          args: {
+            name: "env",
+          },
+        },
       ],
       args: {
         name: "env_var",
