@@ -65,22 +65,20 @@ impl<'a> TomlParser<'a> {
     }
 }
 
-pub fn deserialize_arr<'de, D, T, C>(deserializer: D) -> std::result::Result<C, D::Error>
+pub fn deserialize_arr<'de, D, T>(deserializer: D) -> std::result::Result<Vec<T>, D::Error>
 where
     D: de::Deserializer<'de>,
     T: FromStr + Deserialize<'de>,
     <T as FromStr>::Err: std::fmt::Display,
-    C: FromIterator<T> + Deserialize<'de>,
 {
-    struct ArrVisitor<T, C>(std::marker::PhantomData<(T, C)>);
+    struct ArrVisitor<T>(std::marker::PhantomData<T>);
 
-    impl<'de, T, C> de::Visitor<'de> for ArrVisitor<T, C>
+    impl<'de, T> de::Visitor<'de> for ArrVisitor<T>
     where
         T: FromStr + Deserialize<'de>,
         <T as FromStr>::Err: std::fmt::Display,
-        C: FromIterator<T> + Deserialize<'de>,
     {
-        type Value = C;
+        type Value = Vec<T>;
         fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
             formatter.write_str("a string, a map, or a list of strings/maps")
         }
@@ -90,15 +88,16 @@ where
             E: de::Error,
         {
             let v = v.parse().map_err(de::Error::custom)?;
-            Ok(std::iter::once(v).collect())
+            Ok(vec![v])
         }
 
         fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
         where
             M: de::MapAccess<'de>,
         {
-            let item = T::deserialize(de::value::MapAccessDeserializer::new(map))?;
-            Ok(std::iter::once(item).collect())
+            Ok(vec![Deserialize::deserialize(
+                de::value::MapAccessDeserializer::new(map),
+            )?])
         }
 
         fn visit_seq<S>(self, seq: S) -> std::result::Result<Self::Value, S::Error>
@@ -112,13 +111,15 @@ where
                 Value(T),
             }
             let mut seq = seq;
-            std::iter::from_fn(|| seq.next_element::<StringOrValue<T>>().transpose())
-                .map(|element| match element {
-                    Ok(StringOrValue::String(s)) => s.parse().map_err(de::Error::custom),
-                    Ok(StringOrValue::Value(v)) => Ok(v),
-                    Err(e) => Err(e),
-                })
-                .collect()
+            let mut values = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+            while let Some(element) = seq.next_element::<StringOrValue<T>>()? {
+                let value = match element {
+                    StringOrValue::String(s) => s.parse().map_err(de::Error::custom)?,
+                    StringOrValue::Value(v) => v,
+                };
+                values.push(value);
+            }
+            Ok(values)
         }
     }
 
