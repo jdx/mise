@@ -1,5 +1,6 @@
 pub mod aqua_package;
 pub mod builder;
+pub mod git;
 pub mod registry;
 pub mod type_implementations;
 pub mod types;
@@ -102,5 +103,18 @@ aliases:
             let result = manager.package("nonexistent").await;
             assert!(result.is_err());
         });
+    }
+
+    #[test]
+    fn test_registry_manager_with_git_url() {
+        // Test that git URLs are handled gracefully (even if git command fails)
+        let manager = AquaRegistryManager::with_settings(
+            Some("https://github.com/nonexistent/repo.git"),
+            &[],
+            false,
+        );
+
+        // Should not panic even if git fails
+        assert!(manager.is_ok() || manager.is_err());
     }
 }

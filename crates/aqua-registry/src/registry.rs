@@ -1,3 +1,4 @@
+use crate::git;
 use crate::types::{AquaPackage, RegistryIndex};
 use crate::RegistryBuilder;
 use dashmap::DashMap;
@@ -46,20 +47,57 @@ impl AquaRegistryManager {
         // Add default registry if provided
         if let Some(url) = registry_url {
             if url.starts_with("http://") || url.starts_with("https://") {
-                // TODO: Implement git repo support - for now just log
-                eprintln!("Git registry support not yet implemented: {}", url);
-                failed_registries.push(url.to_string());
+                // Handle git repositories
+                let cache_dir = std::env::temp_dir()
+                    .join("mise-aqua-registry-cache")
+                    .join("default");
+                match git::clone_or_update_registry(url, &cache_dir) {
+                    Ok(registry_files) => {
+                        for registry_file in registry_files {
+                            if let Err(err) = builder.try_add_registry_file(&registry_file) {
+                                eprintln!(
+                                    "Failed to load registry file {:?}: {err:?}",
+                                    registry_file
+                                );
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("Failed to clone/update git registry from {}: {err:?}", url);
+                        failed_registries.push(url.to_string());
+                    }
+                }
             } else {
                 registries_to_load.push(url);
             }
         }
 
         // Add additional registries
-        for registry in additional_registries {
+        for (idx, registry) in additional_registries.iter().enumerate() {
             if registry.starts_with("http://") || registry.starts_with("https://") {
-                // TODO: Implement git repo support - for now just log
-                eprintln!("Git registry support not yet implemented: {}", registry);
-                failed_registries.push(registry.clone());
+                // Handle git repositories
+                let cache_dir = std::env::temp_dir()
+                    .join("mise-aqua-registry-cache")
+                    .join(format!("additional-{}", idx));
+                match git::clone_or_update_registry(registry, &cache_dir) {
+                    Ok(registry_files) => {
+                        for registry_file in registry_files {
+                            if let Err(err) = builder.try_add_registry_file(&registry_file) {
+                                eprintln!(
+                                    "Failed to load registry file {:?}: {err:?}",
+                                    registry_file
+                                );
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!(
+                            "Failed to clone/update git registry from {}: {err:?}",
+                            registry
+                        );
+                        failed_registries.push(registry.clone());
+                    }
+                }
             } else {
                 registries_to_load.push(registry);
             }
