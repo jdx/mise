@@ -139,12 +139,12 @@ impl RegistryFetcher for DefaultRegistryFetcher {
         }
 
         // Fall back to baked registry if enabled
-        if self.config.use_baked_registry
-            && AQUA_STANDARD_REGISTRY_FILES.contains_key(package_id)
-            && let Some(content) = AQUA_STANDARD_REGISTRY_FILES.get(package_id)
-        {
-            log::trace!("reading baked-in aqua-registry for {package_id}");
-            return Ok(serde_yaml::from_str(content)?);
+        #[allow(clippy::collapsible_if)]
+        if self.config.use_baked_registry && AQUA_STANDARD_REGISTRY_FILES.contains_key(package_id) {
+            if let Some(content) = AQUA_STANDARD_REGISTRY_FILES.get(package_id) {
+                log::trace!("reading baked-in aqua-registry for {package_id}");
+                return Ok(serde_yaml::from_str(content)?);
+            }
         }
 
         Err(AquaRegistryError::RegistryNotAvailable(format!(
@@ -176,13 +176,14 @@ impl FileCacheStore {
 impl CacheStore for FileCacheStore {
     fn is_fresh(&self, key: &str) -> bool {
         // Check if cache entry exists and is less than a week old
-        if let Ok(metadata) = std::fs::metadata(self.cache_dir.join(key))
-            && let Ok(modified) = metadata.modified()
-        {
-            let age = std::time::SystemTime::now()
-                .duration_since(modified)
-                .unwrap_or_default();
-            return age < std::time::Duration::from_secs(7 * 24 * 60 * 60); // 1 week
+        #[allow(clippy::collapsible_if)]
+        if let Ok(metadata) = std::fs::metadata(self.cache_dir.join(key)) {
+            if let Ok(modified) = metadata.modified() {
+                let age = std::time::SystemTime::now()
+                    .duration_since(modified)
+                    .unwrap_or_default();
+                return age < std::time::Duration::from_secs(7 * 24 * 60 * 60); // 1 week
+            }
         }
         false
     }

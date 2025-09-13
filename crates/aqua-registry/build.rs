@@ -97,15 +97,19 @@ fn collect_registries_recursive(
             registries.push((prefix.clone(), content.clone()));
 
             // Process aliases if they exist
-            if content.contains("aliases")
-                && let Ok(registry) = serde_yaml::from_str::<serde_yaml::Value>(&content)
-                && let Some(packages) = registry.get("packages").and_then(|p| p.as_sequence())
-            {
-                for package in packages {
-                    if let Some(aliases) = package.get("aliases").and_then(|a| a.as_sequence()) {
-                        for alias in aliases {
-                            if let Some(name) = alias.get("name").and_then(|n| n.as_str()) {
-                                registries.push((name.to_string(), content.clone()));
+            #[allow(clippy::collapsible_if)]
+            if content.contains("aliases") {
+                if let Ok(registry) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
+                    if let Some(packages) = registry.get("packages").and_then(|p| p.as_sequence()) {
+                        for package in packages {
+                            if let Some(aliases) =
+                                package.get("aliases").and_then(|a| a.as_sequence())
+                            {
+                                for alias in aliases {
+                                    if let Some(name) = alias.get("name").and_then(|n| n.as_str()) {
+                                        registries.push((name.to_string(), content.clone()));
+                                    }
+                                }
                             }
                         }
                     }
