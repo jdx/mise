@@ -86,7 +86,7 @@ jobs:
   dev-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/jdx/mise:dev
+      image: ghcr.io/jdx/mise:dev@sha256:aa27808f06b3a4ca146108cb0be95e621bc5d0642aae891c5445a5a018c99df2
     needs: [dev]
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4

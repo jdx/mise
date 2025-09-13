@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     container:
-      image: ghcr.io/jdx/mise:copr
+      image: ghcr.io/jdx/mise:copr@sha256:7ef681f6f2aa2851c5fba6afbffb1c5ac1e126e101dace1d9dda294b653690be
     
     steps:
       - name: Checkout repository
