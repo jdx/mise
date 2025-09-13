@@ -24,7 +24,7 @@ regex = "1"
 dashmap = "6"
 deepmerge = { version = "0.1", features = ["derive", "indexmap"] }
 semver = "1"
-evalexpr = "11"
+expr = { package = "expr-lang", version = "0.3" }
 versions = "6"
 
 [build-dependencies]

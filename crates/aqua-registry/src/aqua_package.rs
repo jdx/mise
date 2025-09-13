@@ -1,4 +1,4 @@
-use crate::expressions::{CallContext, Context, Environment, Value};
+use crate::expressions::{Context, Environment};
 use crate::types::*;
 use crate::utils::*;
 use eyre::Result;
@@ -231,7 +231,7 @@ impl AquaPackage {
         let mut env = Environment::new();
         env.add_function("semver", move |c| {
             if c.args.len() != 1 {
-                return Err("semver() takes exactly one argument".to_string());
+                return Err("semver() takes exactly one argument".to_string().into());
             }
             let requirements = c.args[0]
                 .as_string()
@@ -241,7 +241,7 @@ impl AquaPackage {
                 .map(versions::Requirement::new)
                 .collect::<Vec<_>>();
             if requirements.iter().any(|r| r.is_none()) {
-                return Err("invalid semver requirement".to_string());
+                return Err("invalid semver requirement".to_string().into());
             }
             if let Some(ver) = &ver {
                 Ok(requirements
@@ -249,7 +249,7 @@ impl AquaPackage {
                     .all(|r| r.clone().is_some_and(|r| r.matches(ver)))
                     .into())
             } else {
-                Err("invalid version".to_string())
+                Err("invalid version".to_string().into())
             }
         });
         env
