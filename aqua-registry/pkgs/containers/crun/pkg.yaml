@@ -1,2 +1,2 @@
 packages:
-  - name: containers/crun@1.23.1
+  - name: containers/crun@1.24

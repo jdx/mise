@@ -105,7 +105,22 @@ where
         where
             S: de::SeqAccess<'de>,
         {
-            C::deserialize(de::value::SeqAccessDeserializer::new(seq))
+            #[derive(Deserialize)]
+            #[serde(untagged)]
+            enum StringOrValue<T> {
+                String(String),
+                Value(T),
+            }
+            let mut seq = seq;
+            let mut values = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+            while let Some(element) = seq.next_element::<StringOrValue<T>>()? {
+                let value = match element {
+                    StringOrValue::String(s) => s.parse().map_err(de::Error::custom)?,
+                    StringOrValue::Value(v) => v,
+                };
+                values.push(value);
+            }
+            Ok(values)
         }
     }
 

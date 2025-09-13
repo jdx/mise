@@ -1,2 +1,2 @@
 packages:
-  - name: gruntwork-io/terragrunt@v0.87.0
+  - name: gruntwork-io/terragrunt@v0.87.1

@@ -1,4 +1,4 @@
-import fsAsync = require("node:fs/promises");
+import * as fsAsync from "node:fs/promises";
 import * as ts from "typescript";
 import * as path from "path";
 

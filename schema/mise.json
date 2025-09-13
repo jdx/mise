@@ -4,6 +4,58 @@
   "title": "mise",
   "type": "object",
   "$defs": {
+    "env_directive": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tools": {
+          "type": "boolean",
+          "description": "load tools before resolving"
+        },
+        "redact": {
+          "type": "boolean",
+          "description": "redact the value from logs"
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/env_directive/properties/path"
+            }
+          },
+          "required": ["path"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "$ref": "#/$defs/env_directive/properties/paths"
+            }
+          },
+          "required": ["paths"]
+        }
+      ]
+    },
     "env": {
       "additionalProperties": {
         "oneOf": [
@@ -53,30 +105,7 @@
             "file": {
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      ]
-                    },
-                    "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
-                    }
-                  }
+                  "$ref": "#/$defs/env_directive"
                 },
                 {
                   "description": "dotenv file to load",
@@ -92,30 +121,7 @@
                         "type": "string"
                       },
                       {
-                        "type": "object",
-                        "properties": {
-                          "path": {
-                            "oneOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              }
-                            ]
-                          },
-                          "tools": {
-                            "type": "boolean",
-                            "description": "load tools before resolving"
-                          },
-                          "redact": {
-                            "type": "boolean",
-                            "description": "redact the value from logs"
-                          }
-                        }
+                        "$ref": "#/$defs/env_directive"
                       }
                     ]
                   }
@@ -139,8 +145,51 @@
                           }
                         }
                       ]
+                    },
+                    "paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "tools": {
+                      "type": "boolean",
+                      "description": "load tools before resolving"
                     }
-                  }
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["path"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "paths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": ["paths"]
+                    }
+                  ]
                 },
                 {
                   "description": "PATH entry to add",
@@ -148,11 +197,37 @@
                 },
                 {
                   "description": "PATH entries to add",
+                  "type": "array",
                   "items": {
-                    "description": "PATH entry to add",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "description": "PATH entry to add",
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          },
+                          "tools": {
+                            "type": "boolean",
+                            "description": "load tools before resolving"
+                          }
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -207,30 +282,7 @@
             "source": {
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      ]
-                    },
-                    "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
-                    }
-                  }
+                  "$ref": "#/$defs/env_directive"
                 },
                 {
                   "description": "bash script to load",
@@ -238,11 +290,18 @@
                 },
                 {
                   "description": "bash scripts to load",
+                  "type": "array",
                   "items": {
-                    "description": "bash script to load",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "description": "bash script to load",
+                        "type": "string"
+                      },
+                      {
+                        "$ref": "#/$defs/env_directive"
+                      }
+                    ]
+                  }
                 }
               ]
             }
@@ -272,6 +331,7 @@
           "type": "boolean"
         },
         "aqua": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "baked_registry": {
@@ -339,6 +399,7 @@
           "type": "string"
         },
         "cargo": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "binstall": {
@@ -419,6 +480,7 @@
           }
         },
         "dotnet": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "package_flags": {
@@ -457,6 +519,7 @@
           "type": "string"
         },
         "erlang": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "compile": {
@@ -606,6 +669,7 @@
           "enum": ["trace", "debug", "info", "warn", "error"]
         },
         "node": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "compile": {
@@ -632,6 +696,7 @@
           "type": "boolean"
         },
         "npm": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "bun": {
@@ -669,6 +734,7 @@
           "type": "boolean"
         },
         "pipx": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "registry_url": {
@@ -697,6 +763,7 @@
           "deprecated": true
         },
         "python": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "compile": {
@@ -815,6 +882,7 @@
           "type": "boolean"
         },
         "ruby": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "apply_patches": {
@@ -855,6 +923,7 @@
           }
         },
         "rust": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "cargo_home": {
@@ -876,6 +945,7 @@
           "type": "boolean"
         },
         "sops": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "age_key": {
@@ -903,6 +973,7 @@
           }
         },
         "status": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "missing_tools": {
@@ -926,6 +997,7 @@
           }
         },
         "swift": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "gpg_verify": {
@@ -1113,11 +1185,21 @@
                 },
                 {
                   "description": "task with args to run before this task",
+                  "type": "array",
                   "items": {
                     "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -1129,11 +1211,21 @@
                 },
                 {
                   "description": "task with args to run after this task",
+                  "type": "array",
                   "items": {
                     "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -1428,6 +1520,7 @@
               ]
             },
             "install_env": {
+              "type": "object",
               "additionalProperties": {
                 "oneOf": [
                   {
@@ -1532,10 +1625,7 @@
         "properties": {
           "run": {
             "type": "string",
-            "description": "script to run when file changes",
-            "items": {
-              "type": "string"
-            }
+            "description": "script to run when file changes"
           },
           "patterns": {
             "type": "array",
@@ -1647,6 +1737,7 @@
       "$ref": "#/$defs/watch_files"
     },
     "_": {
+      "type": "object",
       "additionalProperties": true
     }
   }

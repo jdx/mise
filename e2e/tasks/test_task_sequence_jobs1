@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Verify that running a task sequence with --jobs=1 executes tasks and exits
+
+cat <<EOF >mise.toml
+[tasks.a]
+run = "echo A"
+
+[tasks.b]
+run = "echo B"
+
+[tasks.sequence]
+run = [
+  { task = "a" },
+  { task = "b" },
+]
+EOF
+
+output=$(mise run --jobs=1 sequence 2>&1) && exit_code=0 || exit_code=$?
+
+if [ "$exit_code" -ne 0 ]; then
+	echo "Expected exit code 0, got $exit_code"
+	echo "$output"
+	exit 1
+fi
+
+if ! echo "$output" | grep -q "A"; then
+	echo "Did not find output from task a"
+	echo "$output"
+	exit 1
+fi
+
+if ! echo "$output" | grep -q "B"; then
+	echo "Did not find output from task b"
+	echo "$output"
+	exit 1
+fi
+
+echo "jobs=1 sequence ran successfully"

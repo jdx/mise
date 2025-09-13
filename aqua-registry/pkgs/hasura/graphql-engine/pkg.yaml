@@ -1,2 +1,2 @@
 packages:
-  - name: hasura/graphql-engine@v2.48.4
+  - name: hasura/graphql-engine@v2.48.5

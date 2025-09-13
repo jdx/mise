@@ -1,4 +1,4 @@
 packages:
-  - name: fastly/cli@v11.5.0
+  - name: fastly/cli@v12.0.0
   - name: fastly/cli
     version: v4.5.0

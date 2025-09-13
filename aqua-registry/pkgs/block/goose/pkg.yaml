@@ -1,4 +1,4 @@
 packages:
-  - name: block/goose@v1.7.0
+  - name: block/goose@v1.8.0
   - name: block/goose
     version: v1.0.0

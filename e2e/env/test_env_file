@@ -51,7 +51,7 @@ cat <<EOF >mise.toml
 [[env]]
 _.file = 'a'
 [[env]]
-_.file = [{ path = 'b.json', tools = true }]
+_.file = [{ path = ['b.json'], tools = true }]
 EOF
 echo 'export A=1' >a
 echo '{"B": 2}' >b.json

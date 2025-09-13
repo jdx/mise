@@ -77,7 +77,7 @@ When implementing new backends, follow this pattern:
 - Uses `confique` crate for configuration management
 - Settings defined in `settings.toml` (generates code/docs)
 - Tool registry mappings in `registry.toml`
-- All config changes require running `mise run render:settings`
+- All config changes require running `mise run render:schema`
 
 ## Key Files and Directories
 

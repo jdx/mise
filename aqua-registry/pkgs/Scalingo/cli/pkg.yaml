@@ -1,5 +1,5 @@
 packages:
-  - name: Scalingo/cli@1.38.0
+  - name: Scalingo/cli@1.39.0
   - name: Scalingo/cli
     version: 1.24.1
   - name: Scalingo/cli

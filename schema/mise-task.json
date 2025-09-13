@@ -1,6 +1,6 @@
 {
   "$id": "https://mise.jdx.dev/schema/mise-task.json",
-  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2019-09/schema#",
   "title": "mise-task-schema",
   "type": "object",
   "$defs": {
@@ -98,11 +98,21 @@
                 },
                 {
                   "description": "task with args to run before this task",
+                  "type": "array",
                   "items": {
                     "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -114,11 +124,21 @@
                 },
                 {
                   "description": "task with args to run after this task",
+                  "type": "array",
                   "items": {
                     "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -365,30 +385,7 @@
             "file": {
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      ]
-                    },
-                    "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
-                    }
-                  }
+                  "$ref": "#/$defs/env_directive"
                 },
                 {
                   "description": "dotenv file to load",
@@ -404,30 +401,7 @@
                         "type": "string"
                       },
                       {
-                        "type": "object",
-                        "properties": {
-                          "path": {
-                            "oneOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "array",
-                                "items": {
-                                  "type": "string"
-                                }
-                              }
-                            ]
-                          },
-                          "tools": {
-                            "type": "boolean",
-                            "description": "load tools before resolving"
-                          },
-                          "redact": {
-                            "type": "boolean",
-                            "description": "redact the value from logs"
-                          }
-                        }
+                        "$ref": "#/$defs/env_directive"
                       }
                     ]
                   }
@@ -451,8 +425,51 @@
                           }
                         }
                       ]
+                    },
+                    "paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "tools": {
+                      "type": "boolean",
+                      "description": "load tools before resolving"
                     }
-                  }
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["path"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "paths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": ["paths"]
+                    }
+                  ]
                 },
                 {
                   "description": "PATH entry to add",
@@ -460,11 +477,37 @@
                 },
                 {
                   "description": "PATH entries to add",
+                  "type": "array",
                   "items": {
-                    "description": "PATH entry to add",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "description": "PATH entry to add",
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          },
+                          "tools": {
+                            "type": "boolean",
+                            "description": "load tools before resolving"
+                          }
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -519,30 +562,7 @@
             "source": {
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      ]
-                    },
-                    "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
-                    }
-                  }
+                  "$ref": "#/$defs/env_directive"
                 },
                 {
                   "description": "bash script to load",
@@ -550,11 +570,18 @@
                 },
                 {
                   "description": "bash scripts to load",
+                  "type": "array",
                   "items": {
-                    "description": "bash script to load",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "description": "bash script to load",
+                        "type": "string"
+                      },
+                      {
+                        "$ref": "#/$defs/env_directive"
+                      }
+                    ]
+                  }
                 }
               ]
             }
@@ -563,6 +590,58 @@
         }
       },
       "type": "object"
+    },
+    "env_directive": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tools": {
+          "type": "boolean",
+          "description": "load tools before resolving"
+        },
+        "redact": {
+          "type": "boolean",
+          "description": "redact the value from logs"
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/env_directive/properties/path"
+            }
+          },
+          "required": ["path"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "$ref": "#/$defs/env_directive/properties/paths"
+            }
+          },
+          "required": ["paths"]
+        }
+      ]
     }
   },
   "description": "Config file for included mise tasks (https://mise.jdx.dev/tasks/#task-configuration)",

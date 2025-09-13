@@ -1,5 +1,36 @@
 # Changelog
 
+## [2025.9.9](https://github.com/jdx/mise/compare/v2025.9.8..v2025.9.9) - 2025-09-11
+
+### 🐛 Bug Fixes
+
+- **(backend)** make HTTP installs atomic and serialize with cache lock by @jdx in [#6259](https://github.com/jdx/mise/pull/6259)
+- **(env)** allow nested env._.path directives by @risu729 in [#6160](https://github.com/jdx/mise/pull/6160)
+- **(env)** disallow nested env objects by @risu729 in [#6268](https://github.com/jdx/mise/pull/6268)
+- **(schema)** allow nested arrays in task.depends by @risu729 in [#6265](https://github.com/jdx/mise/pull/6265)
+- **(task)** resolve jobs=1 hang and keep-order panic; improve Ctrl-C handling by @jdx in [#6264](https://github.com/jdx/mise/pull/6264)
+- **(tasks)** stop CLI group after first failure without --continue-on-error by @jdx in [#6270](https://github.com/jdx/mise/pull/6270)
+
+### 📚 Documentation
+
+- fixed toml issues in URL replacements settings documentation by @ThomasSteinbach in [#6269](https://github.com/jdx/mise/pull/6269)
+
+### Chore
+
+- **(schema)** strict oneOf branches and DRY env_directive in schemas by @jdx in [#6271](https://github.com/jdx/mise/pull/6271)
+- add schema linter by @risu729 in [#6267](https://github.com/jdx/mise/pull/6267)
+
+## [2025.9.8](https://github.com/jdx/mise/compare/v2025.9.7..v2025.9.8) - 2025-09-10
+
+### 🐛 Bug Fixes
+
+- **(tasks)** prevent hang when task fails in sequence by @jdx in [#6260](https://github.com/jdx/mise/pull/6260)
+- **(version)** fetch mise version if cached version is older than the current by @risu729 in [#6252](https://github.com/jdx/mise/pull/6252)
+
+### 📦️ Dependency Updates
+
+- update rhysd/action-setup-vim action to v1.4.3 by @renovate[bot] in [#6249](https://github.com/jdx/mise/pull/6249)
+
 ## [2025.9.7](https://github.com/jdx/mise/compare/v2025.9.6..v2025.9.7) - 2025-09-09
 
 ### 🐛 Bug Fixes

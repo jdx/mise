@@ -212,6 +212,14 @@ pub struct Run {
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
 
+struct SpawnCtx {
+    semaphore: Arc<Semaphore>,
+    config: Arc<Config>,
+    sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+    jset: Arc<Mutex<JoinSet<Result<()>>>>,
+    in_flight: Arc<std::sync::atomic::AtomicUsize>,
+}
+
 impl Run {
     pub async fn run(mut self) -> Result<()> {
         let config = Config::get().await?;
@@ -410,61 +418,22 @@ impl Run {
                     Ok((task, deps_for_remove)) => {
                         drained_any = true;
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
-                        if this.is_stopping() {
+                        if this.is_stopping() && !this.continue_on_error {
                             break;
                         }
-                        let jset = jset.clone();
-                        let this_ = this.clone();
-                        let wait_start = std::time::Instant::now();
-                        let permit = semaphore.clone().acquire_owned().await?;
-                        trace!(
-                            "semaphore acquired for {} after {}ms",
-                            task.name,
-                            wait_start.elapsed().as_millis()
-                        );
-                        let config = config.clone();
-                        let sched_tx = sched_tx.clone();
-                        in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        let in_flight_c = in_flight.clone();
-                        trace!("running task: {task}");
-                        jset.lock().await.spawn(async move {
-                            let _permit = permit;
-                            let result =
-                                this_.run_task_sched(&task, &config, sched_tx.clone()).await;
-                            if let Err(err) = &result {
-                                let status = Error::get_exit_status(err);
-                                if !this_.is_stopping() && status.is_none() {
-                                    let prefix = task.estyled_prefix();
-                                    if Settings::get().verbose {
-                                        this_.eprint(
-                                            &task,
-                                            &prefix,
-                                            &format!("{} {err:?}", style::ered("ERROR")),
-                                        );
-                                    } else {
-                                        this_.eprint(
-                                            &task,
-                                            &prefix,
-                                            &format!("{} {err}", style::ered("ERROR")),
-                                        );
-                                        let mut current_err = err.source();
-                                        while let Some(e) = current_err {
-                                            this_.eprint(
-                                                &task,
-                                                &prefix,
-                                                &format!("{} {e}", style::ered("ERROR")),
-                                            );
-                                            current_err = e.source();
-                                        }
-                                    };
-                                }
-                                this_.add_failed_task(task.clone(), status);
-                            }
-                            deps_for_remove.lock().await.remove(&task);
-                            trace!("deps removed: {} {}", task.name, task.args.join(" "));
-                            in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-                            result
-                        });
+                        Self::spawn_sched_job(
+                            this.clone(),
+                            task,
+                            deps_for_remove,
+                            SpawnCtx {
+                                semaphore: semaphore.clone(),
+                                config: config.clone(),
+                                sched_tx: sched_tx.clone(),
+                                jset: jset.clone(),
+                                in_flight: in_flight.clone(),
+                            },
+                        )
+                        .await?;
                     }
                     Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
                     Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
@@ -485,46 +454,20 @@ impl Run {
                 m = sched_rx.recv() => {
                     if let Some((task, deps_for_remove)) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
-                        if this.is_stopping() { break; }
-                        let jset = jset.clone();
-                        let this_ = this.clone();
-                        let wait_start = std::time::Instant::now();
-                        let permit = semaphore.clone().acquire_owned().await?;
-                        trace!(
-                            "semaphore acquired for {} after {}ms",
-                            task.name,
-                            wait_start.elapsed().as_millis()
-                        );
-                        let config = config.clone();
-                        let sched_tx = sched_tx.clone();
-                        in_flight.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        let in_flight_c = in_flight.clone();
-                        trace!("running task: {task}");
-                        jset.lock().await.spawn(async move {
-                            let _permit = permit;
-                            let result = this_.run_task_sched(&task, &config, sched_tx.clone()).await;
-                            if let Err(err) = &result {
-                                let status = Error::get_exit_status(err);
-                                if !this_.is_stopping() && status.is_none() {
-                                    let prefix = task.estyled_prefix();
-                                    if Settings::get().verbose {
-                                        this_.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
-                                    } else {
-                                        this_.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
-                                        let mut current_err = err.source();
-                                        while let Some(e) = current_err {
-                                            this_.eprint(&task, &prefix, &format!("{} {e}", style::ered("ERROR")));
-                                            current_err = e.source();
-                                        }
-                                    };
-                                }
-                                this_.add_failed_task(task.clone(), status);
-                            }
-                            deps_for_remove.lock().await.remove(&task);
-                            trace!("deps removed: {} {}", task.name, task.args.join(" "));
-                            in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-                            result
-                        });
+                        if this.is_stopping() && !this.continue_on_error { break; }
+                        Self::spawn_sched_job(
+                            this.clone(),
+                            task,
+                            deps_for_remove,
+                            SpawnCtx {
+                                semaphore: semaphore.clone(),
+                                config: config.clone(),
+                                sched_tx: sched_tx.clone(),
+                                jset: jset.clone(),
+                                in_flight: in_flight.clone(),
+                            },
+                        )
+                        .await?;
                     } else {
                         // channel closed; rely on main_done/in_flight to exit soon
                     }
@@ -571,6 +514,8 @@ impl Run {
             let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
             eprintln!("{}", style::edim(msg));
         };
+        // If there were failures and --continue-on-error was used, print a brief summary
+        this.maybe_print_failure_summary();
         if let Some((task, status)) = this.failed_tasks.lock().unwrap().first() {
             let prefix = task.estyled_prefix();
             this.eprint(
@@ -583,6 +528,110 @@ impl Run {
         time!("parallelize_tasks done");
 
         Ok(())
+    }
+
+    async fn spawn_sched_job(
+        this: Arc<Self>,
+        task: Task,
+        deps_for_remove: Arc<Mutex<Deps>>,
+        ctx: SpawnCtx,
+    ) -> Result<()> {
+        // If we're already stopping due to a previous failure and not in
+        // continue-on-error mode, do not launch this task. Ensure we remove
+        // it from the dependency graph so the scheduler can make progress.
+        if this.is_stopping() && !this.continue_on_error {
+            trace!(
+                "aborting spawn before start (not continue-on-error): {} {}",
+                task.name,
+                task.args.join(" ")
+            );
+            deps_for_remove.lock().await.remove(&task);
+            return Ok(());
+        }
+        let needs_permit = Self::task_needs_permit(&task);
+        let permit_opt = if needs_permit {
+            let wait_start = std::time::Instant::now();
+            let p = Some(ctx.semaphore.clone().acquire_owned().await?);
+            trace!(
+                "semaphore acquired for {} after {}ms",
+                task.name,
+                wait_start.elapsed().as_millis()
+            );
+            // If a failure occurred while we were waiting for a permit and we're not
+            // in continue-on-error mode, skip launching this task. This prevents
+            // subsequently queued tasks (e.g., from CLI ":::" groups) from running
+            // after the first failure when --jobs=1 and ensures immediate stop.
+            if this.is_stopping() && !this.continue_on_error {
+                trace!(
+                    "aborting spawn after failure (not continue-on-error): {} {}",
+                    task.name,
+                    task.args.join(" ")
+                );
+                // Remove from deps so the scheduler can drain and not hang
+                deps_for_remove.lock().await.remove(&task);
+                return Ok(());
+            }
+            p
+        } else {
+            trace!("no semaphore needed for orchestrator task: {}", task.name);
+            None
+        };
+
+        ctx.in_flight
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let in_flight_c = ctx.in_flight.clone();
+        trace!("running task: {task}");
+        ctx.jset.lock().await.spawn(async move {
+            let _permit = permit_opt;
+            let result = this
+                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone())
+                .await;
+            if let Err(err) = &result {
+                let status = Error::get_exit_status(err);
+                if !this.is_stopping() && status.is_none() {
+                    let prefix = task.estyled_prefix();
+                    if Settings::get().verbose {
+                        this.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
+                    } else {
+                        this.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
+                        let mut current_err = err.source();
+                        while let Some(e) = current_err {
+                            this.eprint(&task, &prefix, &format!("{} {e}", style::ered("ERROR")));
+                            current_err = e.source();
+                        }
+                    };
+                }
+                this.add_failed_task(task.clone(), status);
+            }
+            deps_for_remove.lock().await.remove(&task);
+            trace!("deps removed: {} {}", task.name, task.args.join(" "));
+            in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            result
+        });
+
+        Ok(())
+    }
+
+    fn task_needs_permit(task: &Task) -> bool {
+        // Only shell/script tasks execute external commands and need a concurrency slot.
+        // Orchestrator-only tasks (pure groups of sub-tasks) do not.
+        task.file.is_some() || !task.run_script_strings().is_empty()
+    }
+
+    fn maybe_print_failure_summary(&self) {
+        if !self.continue_on_error {
+            return;
+        }
+        let failed = self.failed_tasks.lock().unwrap().clone();
+        if failed.is_empty() {
+            return;
+        }
+        let count = failed.len();
+        eprintln!("{} {} task(s) failed:", style::ered("ERROR"), count);
+        for (task, status) in &failed {
+            let prefix = task.estyled_prefix();
+            self.eprint(task, &prefix, &format!("exited with status {}", status));
+        }
     }
 
     fn eprint(&self, task: &Task, prefix: &str, line: &str) {
@@ -825,7 +874,14 @@ impl Run {
             });
         }
 
+        // Wait for completion
         done_rx.await.map_err(|e| eyre!(e))?;
+
+        // Check if we failed during the execution
+        if self.is_stopping() && !self.continue_on_error {
+            return Err(eyre!("task sequence aborted due to failure"));
+        }
+
         Ok(())
     }
 
@@ -1007,22 +1063,22 @@ impl Run {
             }
             TaskOutput::KeepOrder => {
                 cmd = cmd.with_on_stdout(|line| {
-                    self.keep_order_output
-                        .lock()
-                        .unwrap()
-                        .get_mut(task)
-                        .unwrap()
-                        .0
-                        .push((prefix.to_string(), line));
+                    let mut map = self.keep_order_output.lock().unwrap();
+                    if !map.contains_key(task) {
+                        map.insert(task.clone(), Default::default());
+                    }
+                    if let Some(entry) = map.get_mut(task) {
+                        entry.0.push((prefix.to_string(), line));
+                    }
                 });
                 cmd = cmd.with_on_stderr(|line| {
-                    self.keep_order_output
-                        .lock()
-                        .unwrap()
-                        .get_mut(task)
-                        .unwrap()
-                        .1
-                        .push((prefix.to_string(), line));
+                    let mut map = self.keep_order_output.lock().unwrap();
+                    if !map.contains_key(task) {
+                        map.insert(task.clone(), Default::default());
+                    }
+                    if let Some(entry) = map.get_mut(task) {
+                        entry.1.push((prefix.to_string(), line));
+                    }
                 });
             }
             TaskOutput::Replacing => {

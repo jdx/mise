@@ -1,6 +1,10 @@
 packages:
-  - name: sqldef/sqldef/psqldef@v2.3.0
+  - name: sqldef/sqldef/psqldef@v2.4.1
   - name: sqldef/sqldef/psqldef
-    version: v0.1.1
+    version: v0.17.19
+  - name: sqldef/sqldef/psqldef
+    version: v0.12.8
+  - name: sqldef/sqldef/psqldef
+    version: v0.9.0
   - name: sqldef/sqldef/psqldef
     version: v0.1.0
