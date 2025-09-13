@@ -25,46 +25,8 @@ macro_rules! hashmap {
 pub use hashmap;
 
 pub fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
-    if avo.r#type != AquaPackageType::GithubRelease {
-        orig.r#type = avo.r#type.clone();
-    }
-    if !avo.repo_owner.is_empty() {
-        orig.repo_owner = avo.repo_owner.clone();
-    }
-    if !avo.repo_name.is_empty() {
-        orig.repo_name = avo.repo_name.clone();
-    }
-    if !avo.asset.is_empty() {
-        orig.asset = avo.asset.clone();
-    }
-    if !avo.url.is_empty() {
-        orig.url = avo.url.clone();
-    }
-    if !avo.format.is_empty() {
-        orig.format = avo.format.clone();
-    }
-    if avo.rosetta2 {
-        orig.rosetta2 = true;
-    }
-    if avo.windows_arm_emulation {
-        orig.windows_arm_emulation = true;
-    }
-    if !avo.complete_windows_ext {
-        orig.complete_windows_ext = false;
-    }
-    if !avo.supported_envs.is_empty() {
-        orig.supported_envs = avo.supported_envs.clone();
-    }
-    if !avo.files.is_empty() {
-        orig.files = avo.files.clone();
-    }
-    orig.replacements.extend(avo.replacements.clone());
-    if let Some(avo_version_prefix) = avo.version_prefix.clone() {
-        orig.version_prefix = Some(avo_version_prefix);
-    }
-    if !avo.overrides.is_empty() {
-        orig.overrides = avo.overrides.clone();
-    }
+    use deepmerge::{DeepMerge, DefaultPolicy};
+    orig.merge_with_policy(avo.clone(), &DefaultPolicy);
     orig
 }
 

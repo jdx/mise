@@ -22,6 +22,7 @@ async-trait = "0.1"
 itertools = "0.14"
 regex = "1"
 dashmap = "6"
+deepmerge = { version = "0.1", features = ["derive", "indexmap"] }
 
 [build-dependencies]
 serde = { version = "1", features = ["derive"] }
