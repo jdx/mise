@@ -142,14 +142,14 @@ impl AquaPackage {
             // "https://example.com/" -> ["https:", "", "example.com", ""]
             // "https://example.com/file.zip" -> ["https:", "", "example.com", "file.zip"]
             // We need at least 4 parts with a non-empty filename
-            parts.len() > 3 && parts.get(3).map_or(false, |part| !part.is_empty())
+            parts.len() > 3 && parts.get(3).is_some_and(|part| !part.is_empty())
         } else {
             // For URLs without protocol:
             // "example.com" -> ["example.com"]
             // "example.com/" -> ["example.com", ""]
             // "example.com/file.zip" -> ["example.com", "file.zip"]
             // We need at least 2 parts with a non-empty filename
-            parts.len() > 1 && parts.get(1).map_or(false, |part| !part.is_empty())
+            parts.len() > 1 && parts.get(1).is_some_and(|part| !part.is_empty())
         }
     }
 
