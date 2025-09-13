@@ -119,11 +119,37 @@ impl AquaPackage {
 
     pub fn asset(&self, v: &str) -> Result<String> {
         // derive asset from url if not set and url contains a path
-        if self.asset.is_empty() && self.url.split("/").count() > "//".len() {
+        if self.asset.is_empty() && self.url_has_path() {
             let asset = self.url.rsplit("/").next().unwrap_or("");
             self.parse_aqua_str(asset, v, &Default::default())
         } else {
             self.parse_aqua_str(&self.asset, v, &Default::default())
+        }
+    }
+
+    /// Check if the URL has an actual path component (not just a domain)
+    fn url_has_path(&self) -> bool {
+        if self.url.is_empty() {
+            return false;
+        }
+
+        // Split by '/' and check if there's actually a path component
+        let parts: Vec<&str> = self.url.split('/').collect();
+
+        if self.url.starts_with("http://") || self.url.starts_with("https://") {
+            // For HTTP URLs:
+            // "https://example.com" -> ["https:", "", "example.com"]
+            // "https://example.com/" -> ["https:", "", "example.com", ""]
+            // "https://example.com/file.zip" -> ["https:", "", "example.com", "file.zip"]
+            // We need at least 4 parts with a non-empty filename
+            parts.len() > 3 && parts.get(3).map_or(false, |part| !part.is_empty())
+        } else {
+            // For URLs without protocol:
+            // "example.com" -> ["example.com"]
+            // "example.com/" -> ["example.com", ""]
+            // "example.com/file.zip" -> ["example.com", "file.zip"]
+            // We need at least 2 parts with a non-empty filename
+            parts.len() > 1 && parts.get(1).map_or(false, |part| !part.is_empty())
         }
     }
 
@@ -259,5 +285,86 @@ impl AquaPackage {
         let mut ctx = Context::default();
         ctx.insert("Version", v);
         ctx
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_url_has_path() {
+        let mut package = AquaPackage::default();
+
+        // Test case 1: empty URL
+        package.url = String::new();
+        assert!(!package.url_has_path());
+
+        // Test case 2: URL with no path (just domain)
+        package.url = "https://example.com".to_string();
+        assert!(!package.url_has_path());
+
+        // Test case 3: URL with trailing slash (still no path)
+        package.url = "https://example.com/".to_string();
+        assert!(!package.url_has_path());
+
+        // Test case 4: URL with actual file
+        package.url = "https://example.com/file.zip".to_string();
+        assert!(package.url_has_path());
+
+        // Test case 5: URL with path and file
+        package.url = "https://example.com/path/to/file.zip".to_string();
+        assert!(package.url_has_path());
+
+        // Test case 6: GitHub release URL
+        package.url =
+            "https://github.com/owner/repo/releases/download/v1.0.0/binary-linux-amd64.tar.gz"
+                .to_string();
+        assert!(package.url_has_path());
+
+        // Test case 7: URL without protocol (should still work)
+        package.url = "example.com/file.zip".to_string();
+        assert!(package.url_has_path());
+
+        // Test case 8: malformed URL that doesn't follow HTTP convention
+        package.url = "not-a-url".to_string();
+        assert!(!package.url_has_path());
+    }
+
+    #[test]
+    fn test_asset_method_url_derivation() {
+        let version = "1.0.0";
+
+        // Test case 1: asset field is not empty - should use the asset field
+        let mut package = AquaPackage::default();
+        package.asset = "custom-asset.tar.gz".to_string();
+        package.url = "https://example.com/some/file.zip".to_string();
+        assert_eq!(package.asset(version).unwrap(), "custom-asset.tar.gz");
+
+        // Test case 2: asset is empty, URL has a filename - should extract filename
+        let mut package = AquaPackage::default();
+        package.asset = String::new();
+        package.url = "https://example.com/path/to/file.zip".to_string();
+        assert_eq!(package.asset(version).unwrap(), "file.zip");
+
+        // Test case 3: asset is empty, URL has no path (just domain) - should use empty asset
+        let mut package = AquaPackage::default();
+        package.asset = String::new();
+        package.url = "https://example.com".to_string();
+        assert_eq!(package.asset(version).unwrap(), "");
+
+        // Test case 4: asset is empty, URL has trailing slash - should use empty asset
+        let mut package = AquaPackage::default();
+        package.asset = String::new();
+        package.url = "https://example.com/".to_string();
+        assert_eq!(package.asset(version).unwrap(), "");
+
+        // Test case 5: asset is empty, URL has multiple path components - should get last one
+        let mut package = AquaPackage::default();
+        package.asset = String::new();
+        package.url =
+            "https://github.com/owner/repo/releases/download/v1.0.0/binary-linux-amd64.tar.gz"
+                .to_string();
+        assert_eq!(package.asset(version).unwrap(), "binary-linux-amd64.tar.gz");
     }
 }
