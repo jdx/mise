@@ -276,10 +276,10 @@ end
 
 function M.get_os()
     -- Use the RUNTIME object provided by vfox/mise
-    local os = RUNTIME.osType:lower()
-    if os == "windows" then
+    local os = RUNTIME.osType
+    if os == "Windows" then
         return "win"
-    elseif os == "darwin" then
+    elseif os == "Darwin" then
         return "darwin"
     else
         return "linux"
@@ -349,10 +349,17 @@ function PLUGIN:PreInstall(ctx)
     local version = ctx.version
 
     -- Determine platform using RUNTIME object
-    local os_name = RUNTIME.osType:lower()
     local arch = RUNTIME.archType == "amd64" and "x64" or RUNTIME.archType
-    local platform = os_name .. "-" .. arch
-    local extension = (os_name == "windows") and "zip" or "tar.gz"
+    local os_token
+    if RUNTIME.osType == "Windows" then
+        os_token = "win"
+    elseif RUNTIME.osType == "Darwin" then
+        os_token = "darwin"
+    else
+        os_token = "linux"
+    end
+    local platform = os_token .. "-" .. arch
+    local extension = (RUNTIME.osType == "Windows") and "zip" or "tar.gz"
     
     -- Build download URL
     local filename = "node-v" .. version .. "-" .. platform .. "." .. extension
@@ -389,7 +396,7 @@ end
 -- hooks/env_keys.lua
 function PLUGIN:EnvKeys(ctx)
     local mainPath = ctx.path
-    local os_type = RUNTIME.osType:lower()
+    local os_type = RUNTIME.osType
     
     local env_vars = {
         {
@@ -404,7 +411,7 @@ function PLUGIN:EnvKeys(ctx)
     
     -- Add npm global modules to PATH
     local npm_global_path = mainPath .. "/lib/node_modules/.bin"
-    if os_type == "windows" then
+    if os_type == "Windows" then
         npm_global_path = mainPath .. "/node_modules/.bin"
     end
     
