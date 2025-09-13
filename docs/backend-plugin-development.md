@@ -76,21 +76,26 @@ end
 
 ### Using the Template Repository
 
-While the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) is primarily designed for tool plugins, you can adapt it for backend plugins:
+Use the dedicated [mise-backend-plugin-template](https://github.com/jdx/mise-backend-plugin-template) for creating backend plugins:
 
 ```bash
-# Clone the template
-git clone https://github.com/jdx/mise-tool-plugin-template my-backend-plugin
-cd my-backend-plugin
+# Option 1: Use GitHub's template feature (recommended)
+# Visit https://github.com/jdx/mise-backend-plugin-template
+# Click "Use this template" to create your repository
 
-# Remove the template's git history
+# Option 2: Clone and modify
+git clone https://github.com/jdx/mise-backend-plugin-template my-backend-plugin
+cd my-backend-plugin
 rm -rf .git
 git init
-
-# Replace tool plugin hooks with backend hooks
-rm hooks/*.lua
-# Create backend_list_versions.lua, backend_install.lua, backend_exec_env.lua
 ```
+
+The template includes:
+- Complete backend plugin structure with all required hooks
+- Modern development tooling (hk, stylua, luacheck, actionlint)  
+- Comprehensive documentation and examples
+- CI/CD setup with GitHub Actions
+- Multiple implementation patterns for different backend types
 
 ### 1. Plugin Structure
 
@@ -413,7 +418,7 @@ TODO: We need caching support for [Shared Lua modules](plugin-lua-modules.md).
 
 ## Next Steps
 
-- [Start with the plugin template](https://github.com/jdx/mise-tool-plugin-template)
+- [Start with the backend plugin template](https://github.com/jdx/mise-backend-plugin-template)
 - [Learn about Tool Plugin Development](tool-plugin-development.md)
 - [Explore available Lua modules](plugin-lua-modules.md)
 - [Publishing your plugin](plugin-publishing.md)
