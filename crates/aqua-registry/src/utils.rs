@@ -130,23 +130,9 @@ pub fn arch() -> &'static str {
     }
 }
 
-// Template rendering function - basic implementation for aqua templates
+// Template rendering function - uses advanced aqua template engine
 pub fn aqua_template_render(template: &str, ctx: &HashMap<String, String>) -> Result<String> {
-    let mut result = template.to_string();
-
-    // Simple template substitution for aqua templates like {{.Version}}, {{.Arch}}, etc.
-    for (key, value) in ctx {
-        let patterns = [
-            format!("{{{{.{}}}}}", key), // {{.Key}}
-            format!("{{{{{}}}}}", key),  // {{Key}} (alternative format)
-        ];
-
-        for pattern in &patterns {
-            result = result.replace(pattern, value);
-        }
-    }
-
-    Ok(result)
+    crate::aqua_template::render(template, ctx)
 }
 
 // Version utility functions - stubs for now
@@ -263,5 +249,43 @@ mod tests {
         // Non-empty fields should be preserved when override is empty
         assert_eq!(result.repo_owner, "original");
         assert_eq!(result.repo_name, "repo");
+    }
+
+    #[test]
+    fn test_aqua_template_render_advanced() {
+        use crate::hashmap;
+
+        // Test basic substitution
+        let ctx = hashmap! {
+            "Version".to_string() => "v1.2.3".to_string(),
+            "OS".to_string() => "linux".to_string(),
+            "Arch".to_string() => "amd64".to_string(),
+        };
+
+        let result = aqua_template_render("{{.Version}}", &ctx).unwrap();
+        assert_eq!(result, "v1.2.3");
+
+        // Test advanced pipe functionality
+        let result = aqua_template_render("{{.Version | trimV}}", &ctx).unwrap();
+        assert_eq!(result, "1.2.3");
+
+        // Test multiple pipes with title case
+        let ctx2 = hashmap! {
+            "Name".to_string() => "my-tool-name".to_string(),
+        };
+        let result =
+            aqua_template_render("{{.Name | replace \"-\" \" \" | title}}", &ctx2).unwrap();
+        assert_eq!(result, "My Tool Name");
+
+        // Test trimPrefix and trimSuffix
+        let ctx3 = hashmap! {
+            "Version".to_string() => "foo-v1.2.3-beta".to_string(),
+        };
+        let result = aqua_template_render(
+            "{{.Version | trimPrefix \"foo-\" | trimSuffix \"-beta\" | trimV}}",
+            &ctx3,
+        )
+        .unwrap();
+        assert_eq!(result, "1.2.3");
     }
 }

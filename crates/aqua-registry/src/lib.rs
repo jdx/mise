@@ -1,4 +1,5 @@
 pub mod aqua_package;
+pub mod aqua_template;
 pub mod builder;
 pub mod git;
 pub mod registry;
