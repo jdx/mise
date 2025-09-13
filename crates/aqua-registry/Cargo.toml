@@ -12,6 +12,9 @@ keywords = ["mise", "aqua", "registry", "package-manager"]
 categories = ["development-tools"]
 build = "build.rs"
 
+[package.metadata.cargo-machete]
+ignored = ["serde"]
+
 [features]
 default = []
 
