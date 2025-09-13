@@ -77,18 +77,13 @@ version = "2.2.2"
 backend = "cargo:usage-cli"
 
 [[tools.cosign]]
-version = "2.5.3"
+version = "2.6.0"
 backend = "aqua:sigstore/cosign"
 
 [tools.cosign.platforms.linux-x64]
-checksum = "sha256:783b5d6c74105401c63946c68d9b2a4e1aab3c8abce043e06b8510b02b623ec9"
-size = 154068646
-url = "https://github.com/sigstore/cosign/releases/download/v2.5.3/cosign-linux-amd64"
-
-[tools.cosign.platforms.macos-arm64]
-checksum = "sha256:86e0cad94d0da4c0dab5e26672ede71447a08a0f0d8495b9381c117df27d7d09"
-size = 152385074
-url = "https://github.com/sigstore/cosign/releases/download/v2.5.3/cosign-darwin-arm64"
+checksum = "sha256:ea5c65f99425d6cfbb5c4b5de5dac035f14d09131c1a0ea7c7fc32eab39364f9"
+size = 155329864
+url = "https://github.com/sigstore/cosign/releases/download/v2.6.0/cosign-linux-amd64"
 
 [[tools.gh]]
 version = "2.62.0"

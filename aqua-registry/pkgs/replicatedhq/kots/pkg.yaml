@@ -1,4 +1,4 @@
 packages:
-  - name: replicatedhq/kots@v1.128.0
+  - name: replicatedhq/kots@v1.128.1
   - name: replicatedhq/kots
     version: v1.59.1

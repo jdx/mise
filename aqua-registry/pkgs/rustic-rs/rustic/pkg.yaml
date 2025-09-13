@@ -1,5 +1,5 @@
 packages:
-  - name: rustic-rs/rustic@v0.9.5
+  - name: rustic-rs/rustic@v0.10.0
   - name: rustic-rs/rustic
     version: v0.5.4
   - name: rustic-rs/rustic

@@ -1,5 +1,36 @@
 # Changelog
 
+## [2025.9.10](https://github.com/jdx/mise/compare/v2025.9.9..v2025.9.10) - 2025-09-13
+
+### 📦 Registry
+
+- use asdf to install semver-tool by @jylenhof in [#6233](https://github.com/jdx/mise/pull/6233)
+
+### 🐛 Bug Fixes
+
+- **(tool-stub)** detect binary names from single-file downloads by @jdx in [#6281](https://github.com/jdx/mise/pull/6281)
+
+### 🚜 Refactor
+
+- allow any collection types in deserialize_arr by @risu729 in [#6282](https://github.com/jdx/mise/pull/6282)
+- use deserialize_arr for task runs by @risu729 in [#6253](https://github.com/jdx/mise/pull/6253)
+
+### 📚 Documentation
+
+- **(getting-started)** add backends step with diagram, github example, env vars and simple tasks by @jdx in [#6288](https://github.com/jdx/mise/pull/6288)
+- simplify OS detection in tool plugin development by @jdx in [#6287](https://github.com/jdx/mise/pull/6287)
+- update backend plugin template references by @jdx in [942f5eb](https://github.com/jdx/mise/commit/942f5eb1436fef38920836347218984200b07386)
+
+### 📦️ Dependency Updates
+
+- update rust crate chrono to v0.4.42 by @renovate[bot] in [#6274](https://github.com/jdx/mise/pull/6274)
+- update taiki-e/install-action digest to 0154864 by @renovate[bot] in [#6273](https://github.com/jdx/mise/pull/6273)
+
+### Chore
+
+- **(schema)** fix schema for subtasks by @risu729 in [#6289](https://github.com/jdx/mise/pull/6289)
+- update render:schema task by @risu729 in [#6275](https://github.com/jdx/mise/pull/6275)
+
 ## [2025.9.9](https://github.com/jdx/mise/compare/v2025.9.8..v2025.9.9) - 2025-09-11
 
 ### 🐛 Bug Fixes

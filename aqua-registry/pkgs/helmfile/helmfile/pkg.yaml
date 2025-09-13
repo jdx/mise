@@ -1,2 +1,2 @@
 packages:
-  - name: helmfile/helmfile@v1.1.6
+  - name: helmfile/helmfile@v1.1.7

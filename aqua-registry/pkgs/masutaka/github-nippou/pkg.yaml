@@ -1,5 +1,5 @@
 packages:
-  - name: masutaka/github-nippou@v4.2.36
+  - name: masutaka/github-nippou@v4.2.39
   - name: masutaka/github-nippou
     version: v4.2.9
   - name: masutaka/github-nippou

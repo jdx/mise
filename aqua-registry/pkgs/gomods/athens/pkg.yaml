@@ -1,4 +1,4 @@
 packages:
-  - name: gomods/athens@v0.16.0
+  - name: gomods/athens@v0.16.1
   - name: gomods/athens
     version: v0.12.1
