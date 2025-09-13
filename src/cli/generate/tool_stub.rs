@@ -444,7 +444,11 @@ impl ToolStub {
         if will_strip {
             let path = std::path::Path::new(&selected_exe);
             if let Ok(stripped) = path.strip_prefix(path.components().next().unwrap()) {
-                return Ok(stripped.to_string_lossy().to_string());
+                let stripped_str = stripped.to_string_lossy().to_string();
+                // Don't return empty string if stripping removed everything
+                if !stripped_str.is_empty() {
+                    return Ok(stripped_str);
+                }
             }
         }
 

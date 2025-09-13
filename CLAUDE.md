@@ -11,6 +11,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `mise run test:e2e` - Run end-to-end tests only
 - `mise run snapshots` - Update test snapshots with `cargo insta`
 
+### Debugging
+- Use `MISE_DEBUG=1` or `MISE_TRACE=1` environment variables to enable debug output (not `RUST_LOG`)
+
 ### Code Quality and Testing
 - `mise run lint` - Run all linting tasks
 - `mise run lint-fix` - Run linting and automatically fix issues
