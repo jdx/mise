@@ -1,2 +1,2 @@
 packages:
-  - name: protocolbuffers/protobuf/protoc@v32.0
+  - name: protocolbuffers/protobuf/protoc@v32.1

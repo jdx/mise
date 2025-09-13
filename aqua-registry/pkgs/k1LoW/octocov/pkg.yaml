@@ -1,5 +1,5 @@
 packages:
-  - name: k1LoW/octocov@v0.71.5
+  - name: k1LoW/octocov@v0.72.1
   - name: k1LoW/octocov
     version: v0.56.1
   - name: k1LoW/octocov

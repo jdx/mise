@@ -1,2 +1,2 @@
 packages:
-  - name: aws/eks-hybrid@v1.0.12
+  - name: aws/eks-hybrid@v1.0.13

@@ -1,5 +1,5 @@
 packages:
-  - name: pnpm/pnpm@v10.15.1
+  - name: pnpm/pnpm@v10.16.0
   - name: pnpm/pnpm
     version: v7.0.0-alpha.0
   - name: pnpm/pnpm

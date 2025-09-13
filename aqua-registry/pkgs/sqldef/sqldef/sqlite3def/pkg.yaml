@@ -1,2 +1,2 @@
 packages:
-  - name: sqldef/sqldef/sqlite3def@v2.4.1
+  - name: sqldef/sqldef/sqlite3def@v2.4.2

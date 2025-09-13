@@ -1,5 +1,5 @@
 packages:
-  - name: tombi-toml/tombi@v0.6.4
+  - name: tombi-toml/tombi@v0.6.5
   - name: tombi-toml/tombi
     version: v0.3.39
   - name: tombi-toml/tombi

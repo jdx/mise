@@ -1,4 +1,4 @@
 packages:
-  - name: LucasPickering/slumber@v3.4.0
+  - name: LucasPickering/slumber@v4.0.0
   - name: LucasPickering/slumber
     version: v1.0.0

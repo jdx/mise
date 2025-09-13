@@ -1,5 +1,5 @@
 packages:
-  - name: redpanda-data/redpanda@v25.2.3
+  - name: redpanda-data/redpanda@v25.2.4
   - name: redpanda-data/redpanda
     version: v22.3.5
   - name: redpanda-data/redpanda
