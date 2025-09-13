@@ -1,6 +1,5 @@
 pub mod aqua_package;
 pub mod builder;
-pub mod expressions;
 pub mod registry;
 pub mod type_implementations;
 pub mod types;

@@ -328,7 +328,3 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
 
     fs::write(&dest_path, lines.join("\n")).unwrap();
 }
-
-// pub static AQUA_STANDARD_REGISTRY_FILES: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
-//     include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry.rs"));
-// });

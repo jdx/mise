@@ -11,7 +11,7 @@ use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
 use crate::{
-    aqua::aqua_registry_new::{
+    aqua::aqua_registry::{
         AQUA_REGISTRY, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
     },
     cache::{CacheManager, CacheManagerBuilder},
