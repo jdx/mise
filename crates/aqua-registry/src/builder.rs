@@ -37,6 +37,7 @@ impl RegistryBuilder {
         self
     }
 
+    #[allow(dead_code)] // Used internally and in tests
     pub fn with_registry_file<P: AsRef<Path>>(self, path: P) -> Result<Self> {
         let content = std::fs::read_to_string(path.as_ref())
             .wrap_err_with(|| format!("Failed to read registry file: {:?}", path.as_ref()))?;
@@ -57,6 +58,7 @@ impl RegistryBuilder {
         Ok(())
     }
 
+    #[allow(dead_code)] // Used internally and in tests
     pub fn with_registry_yaml(mut self, yaml_content: &str) -> Result<Self> {
         let registry: RegistryYaml =
             serde_yaml::from_str(yaml_content).wrap_err("Failed to parse registry YAML")?;
@@ -65,6 +67,7 @@ impl RegistryBuilder {
         Ok(self)
     }
 
+    #[allow(dead_code)] // Used internally and in tests
     pub fn with_git_repo<P: AsRef<Path>>(mut self, url: &str, cache_dir: P) -> Result<Self> {
         use crate::git;
 

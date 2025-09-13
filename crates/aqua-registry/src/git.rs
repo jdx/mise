@@ -152,6 +152,7 @@ impl GitRepo {
     }
 
     /// Get the path to the repository
+    #[cfg(test)]
     pub fn path(&self) -> &Path {
         &self.path
     }

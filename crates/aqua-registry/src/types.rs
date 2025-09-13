@@ -218,6 +218,7 @@ impl RegistryIndex {
         None
     }
 
+    #[cfg(test)]
     pub fn contains(&self, id_or_alias: &str) -> bool {
         self.get(id_or_alias).is_some()
     }
