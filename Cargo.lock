@@ -211,19 +211,15 @@ checksum = "b0674a1ddeecb70197781e945de4b3b8ffb61fa939a5597bcf48503737663100"
 name = "aqua-registry"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "dashmap 6.1.0",
  "expr-lang",
  "eyre",
  "indexmap 2.11.0",
  "itertools 0.14.0",
  "once_cell",
- "regex",
- "semver",
  "serde",
  "serde_yaml",
  "strum",
- "tokio",
  "tokio-test",
  "versions 6.3.2",
 ]
@@ -3928,7 +3924,6 @@ dependencies = [
  "duct 0.13.7",
  "either",
  "exec",
- "expr-lang",
  "eyre",
  "filetime",
  "flate2",

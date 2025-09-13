@@ -79,7 +79,6 @@ duct = "0.13"
 either = { version = "1", features = ["serde"] }
 homedir = "0.3"
 # expr-lang = { path = "../expr-lang" }
-expr-lang = "0.3"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"

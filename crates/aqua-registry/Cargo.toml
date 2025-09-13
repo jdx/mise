@@ -17,12 +17,8 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 once_cell = "1"
 strum = { version = "0.27", features = ["derive"] }
-tokio = { version = "1", features = ["sync"] }
-async-trait = "0.1"
 itertools = "0.14"
-regex = "1"
 dashmap = "6"
-semver = "1"
 expr = { package = "expr-lang", version = "0.3" }
 versions = "6"
 

@@ -8,7 +8,8 @@ use std::collections::HashMap;
 
 impl AquaPackage {
     pub fn with_version(mut self, versions: &[&str]) -> AquaPackage {
-        self = apply_override(self.clone(), self.version_override(versions));
+        let version_override = self.version_override(versions);
+        self = apply_override(self.clone(), version_override);
         if let Some(avo) = self.overrides.clone().into_iter().find(|o| {
             if let (Some(goos), Some(goarch)) = (&o.goos, &o.goarch) {
                 goos == os() && goarch == arch()
@@ -235,7 +236,13 @@ impl AquaPackage {
     }
 
     fn expr_parser(&self, v: &str) -> Environment<'_> {
-        let (_, v) = split_version_prefix(v);
+        // Strip package-specific version prefix for semver evaluation
+        let v = if let Some(prefix) = &self.version_prefix {
+            v.strip_prefix(prefix).unwrap_or(v)
+        } else {
+            let (_, v) = split_version_prefix(v);
+            v
+        };
         let ver = versions::Versioning::new(v);
         let mut env = Environment::new();
         env.add_function("semver", move |c| {
@@ -266,7 +273,13 @@ impl AquaPackage {
 
     fn expr_ctx(&self, v: &str) -> Context {
         let mut ctx = Context::default();
-        ctx.insert("Version", v);
+        // Strip version prefix for semver evaluation
+        let clean_version = if let Some(prefix) = &self.version_prefix {
+            v.strip_prefix(prefix).unwrap_or(v)
+        } else {
+            v
+        };
+        ctx.insert("Version", clean_version);
         ctx
     }
 }
