@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/vfox"]
+members = ["crates/vfox", "crates/aqua-registry"]
 
 [package]
 name = "mise"
@@ -27,7 +27,6 @@ include = [
   "/src/**/*.rs",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
-  "/aqua-registry/pkgs/**/registry.yaml",
 ]
 build = "build.rs"
 rust-version = "1.85"
@@ -53,6 +52,7 @@ lto = true
 opt-level = 3
 
 [dependencies]
+aqua-registry = { path = "crates/aqua-registry", features = ["baked"] }
 async-backtrace = "0.2"
 async-trait = "0.1"
 base64 = "0.22"

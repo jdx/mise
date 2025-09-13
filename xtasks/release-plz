@@ -47,9 +47,8 @@ sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/versio
 
 mise run render ::: lint-fix
 
-rm -rf aqua-registry
-git clone https://github.com/aquaproj/aqua-registry
-rm aqua-registry/.gitattributes
+# Download only the registry.yaml file instead of cloning the entire repo
+curl -fsSL https://raw.githubusercontent.com/aquaproj/aqua-registry/main/registry.yaml -o crates/aqua-registry/registry.yaml
 
 mise up
 git status
@@ -59,7 +58,7 @@ git add \
 	Cargo.toml \
 	CHANGELOG.md \
 	README.md \
-	aqua-registry \
+	crates/aqua-registry/registry.yaml \
 	default.nix \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \

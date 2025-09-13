@@ -334,6 +334,13 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "additional_registries": {
+              "description": "Additional aqua registries to use.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "baked_registry": {
               "default": true,
               "description": "Use baked-in aqua registry.",

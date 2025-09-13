@@ -55,6 +55,18 @@ env = "MISE_ALWAYS_KEEP_INSTALL"
 type = "Bool"
 description = "should mise keep install files after installation even if the installation fails"
 
+[aqua.additional_registries]
+env = "MISE_AQUA_ADDITIONAL_REGISTRIES"
+type = "ListString"
+rust_type = "Vec<String>"
+optional = true
+description = "Additional aqua registries to use."
+docs = """
+Additional aqua registries to use. These can be file paths or URLs to extra `registry.yaml` files to merge.
+These registries will be layered on top of the baked registry and any git registry configured via `aqua.registry_url`.
+Later registries override earlier ones for package collisions.
+"""
+
 [aqua.baked_registry]
 env = "MISE_AQUA_BAKED_REGISTRY"
 type = "Bool"
