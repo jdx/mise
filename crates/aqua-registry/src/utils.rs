@@ -25,9 +25,7 @@ macro_rules! hashmap {
 pub use hashmap;
 
 pub fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
-    // For now, we need to manually check each field because deepmerge doesn't have a
-    // built-in policy for "only merge if non-empty". We could create a custom policy
-    // but it would require modifying the deepmerge crate itself.
+    // Manually merge fields with "only merge if non-empty" policy
 
     // Only override fields if they're not empty/default in the override
     if avo.r#type != AquaPackageType::GithubRelease {

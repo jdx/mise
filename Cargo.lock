@@ -213,7 +213,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "dashmap 6.1.0",
- "deepmerge",
  "expr-lang",
  "eyre",
  "indexmap 2.11.0",
@@ -1168,28 +1167,6 @@ dependencies = [
  "lock_api",
  "once_cell",
  "parking_lot_core",
-]
-
-[[package]]
-name = "deepmerge"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6753c66c1ac85dcf7bd530e01eadd3e6e099f4ad611254961c00d9385530598e"
-dependencies = [
- "deepmerge-derive",
- "indexmap 2.11.0",
-]
-
-[[package]]
-name = "deepmerge-derive"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "856827703aabae42155dad0751d0441a4fe5e9e31b2580d64e08d9069a1c4c3c"
-dependencies = [
- "darling 0.21.3",
- "proc-macro2",
- "quote",
- "syn 2.0.106",
 ]
 
 [[package]]

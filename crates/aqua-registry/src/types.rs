@@ -1,9 +1,8 @@
-use deepmerge::prelude::*;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use std::collections::HashMap;
 
-#[derive(Debug, Deserialize, Default, Clone, PartialEq, strum::Display, DeepMerge)]
+#[derive(Debug, Deserialize, Default, Clone, PartialEq, strum::Display)]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum AquaPackageType {
@@ -17,7 +16,7 @@ pub enum AquaPackageType {
     Cargo,
 }
 
-#[derive(Debug, Deserialize, Clone, DeepMerge)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(default)]
 pub struct AquaPackage {
     pub r#type: AquaPackageType,
@@ -40,32 +39,29 @@ pub struct AquaPackage {
     pub checksum: Option<AquaChecksum>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     pub minisign: Option<AquaMinisign>,
-    #[merge(skip)]
     pub overrides: Vec<AquaOverride>,
     pub version_constraint: String,
-    #[merge(skip)]
     pub version_overrides: Vec<AquaPackage>,
     pub no_asset: bool,
     pub error_message: Option<String>,
     pub path: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, DeepMerge)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AquaOverride {
     #[serde(flatten)]
-    #[merge(skip)]
     pub pkg: AquaPackage,
     pub goos: Option<String>,
     pub goarch: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, DeepMerge)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AquaFile {
     pub name: String,
     pub src: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, strum::AsRefStr, strum::Display, DeepMerge)]
+#[derive(Debug, Deserialize, Clone, strum::AsRefStr, strum::Display)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum AquaChecksumAlgorithm {
@@ -76,21 +72,21 @@ pub enum AquaChecksumAlgorithm {
     Md5,
 }
 
-#[derive(Debug, Deserialize, Clone, DeepMerge)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaChecksumType {
     GithubRelease,
     Http,
 }
 
-#[derive(Debug, Deserialize, Clone, DeepMerge)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AquaMinisignType {
     GithubRelease,
     Http,
 }
 
-#[derive(Debug, Deserialize, Clone, DeepMerge)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AquaCosignSignature {
     pub r#type: Option<String>,
     pub repo_owner: Option<String>,
@@ -99,7 +95,7 @@ pub struct AquaCosignSignature {
     pub asset: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, DeepMerge)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AquaCosign {
     pub enabled: Option<bool>,
     pub experimental: Option<bool>,
@@ -111,7 +107,7 @@ pub struct AquaCosign {
     pub opts: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, DeepMerge)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AquaSlsaProvenance {
     pub enabled: Option<bool>,
     pub r#type: Option<String>,
@@ -123,7 +119,7 @@ pub struct AquaSlsaProvenance {
     pub source_tag: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, DeepMerge)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AquaMinisign {
     pub enabled: Option<bool>,
     pub r#type: Option<AquaMinisignType>,
@@ -134,7 +130,7 @@ pub struct AquaMinisign {
     pub public_key: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, DeepMerge)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AquaChecksum {
     pub r#type: Option<AquaChecksumType>,
     pub algorithm: Option<AquaChecksumAlgorithm>,
@@ -146,7 +142,7 @@ pub struct AquaChecksum {
     pub url: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, DeepMerge)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AquaChecksumPattern {
     pub checksum: String,
     pub file: Option<String>,
@@ -158,7 +154,7 @@ pub struct RegistryYaml {
     pub aliases: Option<Vec<AquaAlias>>,
 }
 
-#[derive(Debug, Deserialize, Clone, DeepMerge)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AquaAlias {
     pub name: String,
     pub package: String,
