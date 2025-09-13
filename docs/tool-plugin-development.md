@@ -212,12 +212,36 @@ end
 
 ## Creating a Tool Plugin
 
+### Using the Template Repository
+
+The easiest way to create a new tool plugin is to use the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) repository as a starting point:
+
+```bash
+# Clone the template
+git clone https://github.com/jdx/mise-tool-plugin-template my-tool-plugin
+cd my-tool-plugin
+
+# Remove the template's git history and start fresh
+rm -rf .git
+git init
+
+# Customize the plugin for your tool
+# Edit metadata.lua, hooks/*.lua files, etc.
+```
+
+The template includes:
+- Pre-configured plugin structure with all required hooks
+- Example implementations with comments
+- Linting configuration (`.luacheckrc`, `stylua.toml`)
+- Testing setup with mise tasks
+- GitHub Actions workflow for CI
+
 ### 1. Plugin Structure
 
-Create a directory with this structure:
+Create a directory with this structure (or use the template above):
 
 ```
-nodejs-plugin/
+my-tool-plugin/
 ├── metadata.lua          # Plugin metadata and configuration
 ├── hooks/               # Hook functions directory
 │   ├── available.lua    # List available versions [required]
@@ -263,11 +287,11 @@ local M = {}
 function M.get_arch()
     -- Use the RUNTIME object provided by vfox/mise
     local arch = RUNTIME.archType
-    if arch == "amd64" or arch == "x86_64" then
+    if arch == "amd64" then
         return "x64"
-    elseif arch == "386" or arch == "i386" then
+    elseif arch == "386" then
         return "x86"
-    elseif arch == "arm64" or arch == "aarch64" then
+    elseif arch == "arm64" then
         return "arm64"
     else
         return arch  -- return as-is for other architectures
@@ -350,11 +374,11 @@ function PLUGIN:PreInstall(ctx)
 
     -- Determine platform using RUNTIME object
     local arch_token
-    if RUNTIME.archType == "amd64" or RUNTIME.archType == "x86_64" then
+    if RUNTIME.archType == "amd64" then
         arch_token = "x64"
-    elseif RUNTIME.archType == "386" or RUNTIME.archType == "i386" or RUNTIME.archType == "i686" then
+    elseif RUNTIME.archType == "386" then
         arch_token = "x86"
-    elseif RUNTIME.archType == "arm64" or RUNTIME.archType == "aarch64" then
+    elseif RUNTIME.archType == "arm64" then
         arch_token = "arm64"
     else
         arch_token = RUNTIME.archType
@@ -503,21 +527,31 @@ end
 
 ```bash
 # Link your plugin for development
-mise plugin link nodejs /path/to/nodejs-plugin
+mise plugin link my-tool /path/to/my-tool-plugin
 
 # Test listing versions
-mise ls-remote nodejs
+mise ls-remote my-tool
 
 # Test installation
-mise install nodejs@20.0.0
+mise install my-tool@1.0.0
 
 # Test environment setup
-mise use nodejs@20.0.0
-node --version
+mise use my-tool@1.0.0
+my-tool --version
 
-# Test legacy file parsing
-echo "18.18.0" > .nvmrc
-mise use nodejs
+# Test legacy file parsing (if applicable)
+echo "2.0.0" > .my-tool-version
+mise use my-tool
+```
+
+If you're using the template repository, you can run the included tests:
+
+```bash
+# Run linting
+mise run lint
+
+# Run tests
+mise run test
 ```
 
 ### Debug Mode
@@ -771,6 +805,7 @@ end
 
 ## Next Steps
 
+- [Start with the plugin template](https://github.com/jdx/mise-tool-plugin-template)
 - [Learn about Backend Plugin Development](backend-plugin-development.md)
 - [Explore available Lua modules](plugin-lua-modules.md)
 - [Publishing your plugin](plugin-publishing.md)
