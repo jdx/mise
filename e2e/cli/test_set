@@ -8,3 +8,18 @@ assert_fail "mise set FOO" "Environment variable FOO not found"
 
 assert "mise set --file .test.mise.toml FOO=bar" ""
 assert "mise set --file .test.mise.toml FOO" "bar"
+
+# Test -E flag for environment-specific config files
+assert "mise set -E staging STAGING_VAR=staging_value" ""
+assert "mise set -E staging STAGING_VAR" "staging_value"
+assert "mise set -E staging" "STAGING_VAR  staging_value ~/workdir/mise.staging.toml"
+
+# Test that -E flag only shows vars from that environment file
+assert "mise set -E production PROD_VAR=prod_value" ""
+assert "mise set -E production" "PROD_VAR  prod_value ~/workdir/mise.production.toml"
+# STAGING_VAR should not appear when reading production env
+assert_not_contains "mise set -E production" "STAGING_VAR"
+
+# Test that regular set doesn't show env-specific vars
+assert_not_contains "mise set" "STAGING_VAR"
+assert_not_contains "mise set" "PROD_VAR"

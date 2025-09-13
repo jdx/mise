@@ -149,6 +149,22 @@ impl Set {
                     _ => None,
                 })
                 .collect()
+        } else if self.env.is_some() {
+            // When -E flag is used, read from the environment-specific file
+            let filename = self.filename()?;
+            let config = MiseToml::from_file(&filename).unwrap_or_default();
+            config
+                .env_entries()?
+                .into_iter()
+                .filter_map(|ed| match ed {
+                    EnvDirective::Val(key, value, _) => Some(Row {
+                        key,
+                        value,
+                        source: display_path(&filename),
+                    }),
+                    _ => None,
+                })
+                .collect()
         } else {
             Config::get()
                 .await?
