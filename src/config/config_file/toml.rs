@@ -112,15 +112,13 @@ where
                 Value(T),
             }
             let mut seq = seq;
-            let mut values = Vec::with_capacity(seq.size_hint().unwrap_or(0));
-            while let Some(element) = seq.next_element::<StringOrValue<T>>()? {
-                let value = match element {
-                    StringOrValue::String(s) => s.parse().map_err(de::Error::custom)?,
-                    StringOrValue::Value(v) => v,
-                };
-                values.push(value);
-            }
-            Ok(values)
+            std::iter::from_fn(|| seq.next_element::<StringOrValue<T>>().transpose())
+                .map(|element| match element {
+                    Ok(StringOrValue::String(s)) => s.parse().map_err(de::Error::custom),
+                    Ok(StringOrValue::Value(v)) => Ok(v),
+                    Err(e) => Err(e),
+                })
+                .collect()
         }
     }
 
