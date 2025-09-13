@@ -275,13 +275,13 @@ impl AquaPackage {
     }
 
     /// Get the format for this package and version
-    pub fn format(&self, v: &str) -> Result<&str> {
+    pub fn format(&self, v: &str, os: &str, arch: &str) -> Result<&str> {
         if self.r#type == AquaPackageType::GithubArchive {
             return Ok("tar.gz");
         }
         let format = if self.format.is_empty() {
             let asset = if !self.asset.is_empty() {
-                self.asset(v)?
+                self.asset(v, os, arch)?
             } else if !self.url.is_empty() {
                 self.url.to_string()
             } else {
@@ -301,45 +301,36 @@ impl AquaPackage {
     }
 
     /// Get the asset name for this package and version
-    pub fn asset(&self, v: &str) -> Result<String> {
+    pub fn asset(&self, v: &str, os: &str, arch: &str) -> Result<String> {
         if self.asset.is_empty() && self.url.split("/").count() > "//".len() {
             let asset = self.url.rsplit("/").next().unwrap_or("");
-            self.parse_aqua_str(asset, v, &Default::default())
+            self.parse_aqua_str(asset, v, &Default::default(), os, arch)
         } else {
-            self.parse_aqua_str(&self.asset, v, &Default::default())
+            self.parse_aqua_str(&self.asset, v, &Default::default(), os, arch)
         }
     }
 
-    /// Get all possible asset strings for this package and version
-    pub fn asset_strs(&self, v: &str) -> Result<IndexSet<String>> {
-        self.asset_strs_with_platform(v, "linux", "x86_64")
-    }
-
     /// Get all possible asset strings for this package, version and platform
-    pub fn asset_strs_with_platform(
-        &self,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<IndexSet<String>> {
-        let mut strs = IndexSet::from([self.asset(v)?]);
+    pub fn asset_strs(&self, v: &str, os: &str, arch: &str) -> Result<IndexSet<String>> {
+        let mut strs =
+            IndexSet::from([self.parse_aqua_str(&self.asset, v, &Default::default(), os, arch)?]);
         if os == "darwin" {
             let mut ctx = HashMap::default();
             ctx.insert("Arch".to_string(), "universal".to_string());
-            strs.insert(self.parse_aqua_str_with_platform(&self.asset, v, &ctx, os, arch)?);
+            strs.insert(self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?);
         } else if os == "windows" {
             let mut ctx = HashMap::default();
-            let asset = self.parse_aqua_str_with_platform(&self.asset, v, &ctx, os, arch)?;
-            if self.complete_windows_ext && self.format(v)? == "raw" {
+            let asset = self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?;
+            if self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
                 strs.insert(format!("{asset}.exe"));
             } else {
                 strs.insert(asset);
             }
             if arch == "arm64" {
                 ctx.insert("Arch".to_string(), "amd64".to_string());
-                strs.insert(self.parse_aqua_str_with_platform(&self.asset, v, &ctx, os, arch)?);
-                let asset = self.parse_aqua_str_with_platform(&self.asset, v, &ctx, os, arch)?;
-                if self.complete_windows_ext && self.format(v)? == "raw" {
+                strs.insert(self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?);
+                let asset = self.parse_aqua_str(&self.asset, v, &ctx, os, arch)?;
+                if self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
                     strs.insert(format!("{asset}.exe"));
                 } else {
                     strs.insert(asset);
@@ -350,31 +341,16 @@ impl AquaPackage {
     }
 
     /// Get the URL for this package and version
-    pub fn url(&self, v: &str) -> Result<String> {
-        self.url_with_platform(v, "linux")
-    }
-
-    /// Get the URL for this package, version and platform
-    pub fn url_with_platform(&self, v: &str, os: &str) -> Result<String> {
+    pub fn url(&self, v: &str, os: &str, arch: &str) -> Result<String> {
         let mut url = self.url.clone();
-        if os == "windows" && self.complete_windows_ext && self.format(v)? == "raw" {
+        if os == "windows" && self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
             url.push_str(".exe");
         }
-        self.parse_aqua_str(&url, v, &Default::default())
-    }
-
-    /// Parse an Aqua template string with variable substitution
-    pub fn parse_aqua_str(
-        &self,
-        s: &str,
-        v: &str,
-        overrides: &HashMap<String, String>,
-    ) -> Result<String> {
-        self.parse_aqua_str_with_platform(s, v, overrides, "linux", "x86_64")
+        self.parse_aqua_str(&url, v, &Default::default(), os, arch)
     }
 
     /// Parse an Aqua template string with variable substitution and platform info
-    pub fn parse_aqua_str_with_platform(
+    pub fn parse_aqua_str(
         &self,
         s: &str,
         v: &str,
@@ -511,19 +487,8 @@ fn split_version_prefix(version: &str) -> (String, String) {
 
 impl AquaFile {
     /// Get the source path for this file within the package
-    pub fn src(&self, pkg: &AquaPackage, v: &str) -> Result<Option<String>> {
-        self.src_with_platform(pkg, v, "linux", "x86_64")
-    }
-
-    /// Get the source path for this file within the package with platform info
-    pub fn src_with_platform(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<Option<String>> {
-        let asset = pkg.asset(v)?;
+    pub fn src(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
+        let asset = pkg.asset(v, os, arch)?;
         let asset = asset.strip_suffix(".tar.gz").unwrap_or(&asset);
         let asset = asset.strip_suffix(".tar.xz").unwrap_or(asset);
         let asset = asset.strip_suffix(".tar.bz2").unwrap_or(asset);
@@ -543,7 +508,7 @@ impl AquaFile {
 
         self.src
             .as_ref()
-            .map(|src| pkg.parse_aqua_str_with_platform(src, v, &ctx, os, arch))
+            .map(|src| pkg.parse_aqua_str(src, v, &ctx, os, arch))
             .transpose()
     }
 }
@@ -640,17 +605,11 @@ impl AquaChecksum {
         arch: &str,
     ) -> Result<IndexSet<String>> {
         let mut asset_strs = IndexSet::new();
-        for asset in pkg.asset_strs_with_platform(v, os, arch)? {
+        for asset in pkg.asset_strs(v, os, arch)? {
             let checksum_asset = self.asset.as_ref().unwrap();
             let mut ctx = HashMap::new();
             ctx.insert("Asset".to_string(), asset.to_string());
-            asset_strs.insert(pkg.parse_aqua_str_with_platform(
-                checksum_asset,
-                v,
-                &ctx,
-                os,
-                arch,
-            )?);
+            asset_strs.insert(pkg.parse_aqua_str(checksum_asset, v, &ctx, os, arch)?);
         }
         Ok(asset_strs)
     }
@@ -667,24 +626,8 @@ impl AquaChecksum {
         self.file_format.as_deref().unwrap_or("raw")
     }
 
-    pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        self.url_with_platform(pkg, v, "linux", "x86_64")
-    }
-
-    pub fn url_with_platform(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<String> {
-        pkg.parse_aqua_str_with_platform(
-            self.url.as_ref().unwrap(),
-            v,
-            &Default::default(),
-            os,
-            arch,
-        )
+    pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
 
     fn merge(&mut self, other: Self) {
@@ -719,20 +662,10 @@ impl AquaChecksum {
 }
 
 impl AquaCosign {
-    pub fn opts(&self, pkg: &AquaPackage, v: &str) -> Result<Vec<String>> {
-        self.opts_with_platform(pkg, v, "linux", "x86_64")
-    }
-
-    pub fn opts_with_platform(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<Vec<String>> {
+    pub fn opts(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Vec<String>> {
         self.opts
             .iter()
-            .map(|opt| pkg.parse_aqua_str_with_platform(opt, v, &Default::default(), os, arch))
+            .map(|opt| pkg.parse_aqua_str(opt, v, &Default::default(), os, arch))
             .collect()
     }
 
@@ -774,38 +707,12 @@ impl AquaCosign {
 }
 
 impl AquaCosignSignature {
-    pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        self.url_with_platform(pkg, v, "linux", "x86_64")
+    pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
 
-    pub fn url_with_platform(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<String> {
-        pkg.parse_aqua_str_with_platform(
-            self.url.as_ref().unwrap(),
-            v,
-            &Default::default(),
-            os,
-            arch,
-        )
-    }
-
-    pub fn asset(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        self.asset_with_platform(pkg, v, "linux", "x86_64")
-    }
-
-    pub fn asset_with_platform(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<String> {
-        pkg.parse_aqua_str_with_platform(
+    pub fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(
             self.asset.as_ref().unwrap(),
             v,
             &Default::default(),
@@ -814,20 +721,10 @@ impl AquaCosignSignature {
         )
     }
 
-    pub fn arg(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        self.arg_with_platform(pkg, v, "linux", "x86_64")
-    }
-
-    pub fn arg_with_platform(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<String> {
+    pub fn arg(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
         match self.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
-                let asset = self.asset_with_platform(pkg, v, os, arch)?;
+                let asset = self.asset(pkg, v, os, arch)?;
                 let repo_owner = self
                     .repo_owner
                     .clone()
@@ -841,7 +738,7 @@ impl AquaCosignSignature {
                     "https://github.com/{repo}/releases/download/{v}/{asset}"
                 ))
             }
-            "http" => self.url_with_platform(pkg, v, os, arch),
+            "http" => self.url(pkg, v, os, arch),
             t => {
                 log::warn!(
                     "unsupported cosign signature type for {}/{}: {t}",
@@ -873,18 +770,8 @@ impl AquaCosignSignature {
 }
 
 impl AquaSlsaProvenance {
-    pub fn asset(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        self.asset_with_platform(pkg, v, "linux", "x86_64")
-    }
-
-    pub fn asset_with_platform(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<String> {
-        pkg.parse_aqua_str_with_platform(
+    pub fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(
             self.asset.as_ref().unwrap(),
             v,
             &Default::default(),
@@ -893,24 +780,8 @@ impl AquaSlsaProvenance {
         )
     }
 
-    pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        self.url_with_platform(pkg, v, "linux", "x86_64")
-    }
-
-    pub fn url_with_platform(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<String> {
-        pkg.parse_aqua_str_with_platform(
-            self.url.as_ref().unwrap(),
-            v,
-            &Default::default(),
-            os,
-            arch,
-        )
+    pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
 
     fn merge(&mut self, other: Self) {
@@ -946,38 +817,12 @@ impl AquaMinisign {
         self.r#type.as_ref().unwrap()
     }
 
-    pub fn url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        self.url_with_platform(pkg, v, "linux", "x86_64")
+    pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
 
-    pub fn url_with_platform(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<String> {
-        pkg.parse_aqua_str_with_platform(
-            self.url.as_ref().unwrap(),
-            v,
-            &Default::default(),
-            os,
-            arch,
-        )
-    }
-
-    pub fn asset(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        self.asset_with_platform(pkg, v, "linux", "x86_64")
-    }
-
-    pub fn asset_with_platform(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<String> {
-        pkg.parse_aqua_str_with_platform(
+    pub fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(
             self.asset.as_ref().unwrap(),
             v,
             &Default::default(),
@@ -986,18 +831,8 @@ impl AquaMinisign {
         )
     }
 
-    pub fn public_key(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        self.public_key_with_platform(pkg, v, "linux", "x86_64")
-    }
-
-    pub fn public_key_with_platform(
-        &self,
-        pkg: &AquaPackage,
-        v: &str,
-        os: &str,
-        arch: &str,
-    ) -> Result<String> {
-        pkg.parse_aqua_str_with_platform(
+    pub fn public_key(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+        pkg.parse_aqua_str(
             self.public_key.as_ref().unwrap(),
             v,
             &Default::default(),
