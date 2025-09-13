@@ -11,7 +11,7 @@ use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
 use crate::{
-    aqua::aqua_registry::{
+    aqua::aqua_registry_wrapper::{
         AQUA_REGISTRY, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
     },
     cache::{CacheManager, CacheManagerBuilder},
@@ -285,7 +285,7 @@ impl AquaBackend {
                                 continue;
                             }
                         }
-                        let pkg = pkg.clone().with_version(&[version]);
+                        let pkg = pkg.clone().with_version(&[version], os(), arch());
                         if let Some(prefix) = &pkg.version_prefix {
                             if let Some(_v) = version.strip_prefix(prefix) {
                                 version = _v;
@@ -394,7 +394,7 @@ impl AquaBackend {
                 if checksum.enabled() {
                     let url = match checksum._type() {
                         AquaChecksumType::GithubRelease => {
-                            let asset_strs = checksum.asset_strs(pkg, v)?;
+                            let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
                             self.github_release_asset(pkg, v, asset_strs).await?
                         }
                         AquaChecksumType::Http => checksum.url(pkg, v)?,

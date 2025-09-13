@@ -1,0 +1,52 @@
+[package]
+name = "aqua-registry"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Aqua registry backend for mise"
+authors = ["Jeff Dickey (@jdx)"]
+license = "MIT"
+build = "build.rs"
+
+[features]
+default = []
+http = ["reqwest"]
+cache = []
+
+[dependencies]
+# Core dependencies
+serde = { version = "1", features = ["derive"] }
+serde_derive = "1"
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+eyre = "0.6"
+indexmap = { version = "2", features = ["serde"] }
+itertools = "0.14"
+strum = { version = "0.27", features = ["derive"] }
+
+# Template parsing and evaluation
+expr-lang = "0.3"
+versions = { version = "6", features = ["serde"] }
+heck = "0.5"
+
+
+# HTTP client (optional)
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "gzip",
+], optional = true }
+
+# Async runtime
+tokio = { version = "1", features = ["sync"] }
+
+# Logging
+log = "0.4"
+
+# Regex
+regex = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }
+pretty_assertions = "1"
+insta = { version = "1", features = ["json"] }

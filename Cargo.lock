@@ -208,6 +208,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0674a1ddeecb70197781e945de4b3b8ffb61fa939a5597bcf48503737663100"
 
 [[package]]
+name = "aqua-registry"
+version = "0.1.0"
+dependencies = [
+ "expr-lang",
+ "eyre",
+ "heck",
+ "indexmap 2.11.0",
+ "insta",
+ "itertools 0.14.0",
+ "log",
+ "pretty_assertions",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serde_yaml",
+ "strum",
+ "thiserror 2.0.16",
+ "tokio",
+ "versions 6.3.2",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3858,6 +3882,7 @@ dependencies = [
 name = "mise"
 version = "2025.9.10"
 dependencies = [
+ "aqua-registry",
  "async-backtrace",
  "async-trait",
  "base64 0.22.1",
