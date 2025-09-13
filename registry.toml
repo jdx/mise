@@ -2844,7 +2844,7 @@ semver.description = "semver bash implementation"
 semver.backends = [
     # "aqua:fsaintjacques/semver-tool", # see https://github.com/jdx/mise/discussions/5833
     "vfox:mise-plugins/mise-semver",
-    "asdf:mathew-fleisch/asdf-semver",
+    "asdf:mathew-fleisch/asdf-semver"
 ]
 semver.test = ["semver --version", "semver: {{version}}"]
 sentinel.description = "Sentinel is a policy as code tool that lets you control what users of HashiCorp products are allowed to do. It enforces policies proactively, preventing end users from deploying changes that are not allowed"
