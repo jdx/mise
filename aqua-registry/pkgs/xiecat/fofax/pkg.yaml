@@ -1,4 +1,0 @@
-packages:
-  - name: xiecat/fofax@v0.1.47
-  - name: xiecat/fofax
-    version: v0.1.34

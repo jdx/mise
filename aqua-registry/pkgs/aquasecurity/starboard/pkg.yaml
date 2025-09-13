@@ -1,4 +1,0 @@
-packages:
-  - name: aquasecurity/starboard@v0.15.19
-  - name: aquasecurity/starboard
-    version: v0.14.1

@@ -1,6 +1,0 @@
-packages:
-  - name: fujiwara/lambroll@v1.3.1
-  - name: fujiwara/lambroll
-    version: v0.14.7
-  - name: fujiwara/lambroll
-    version: v0.12.7

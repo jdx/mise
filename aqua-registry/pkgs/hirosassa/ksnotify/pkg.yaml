@@ -1,6 +1,0 @@
-packages:
-  - name: hirosassa/ksnotify@v3.0.0
-  - name: hirosassa/ksnotify
-    version: v2.0.0
-  - name: hirosassa/ksnotify
-    version: v1.2.0

@@ -1,4 +1,0 @@
-packages:
-  - name: microsoft/kiota@v1.28.0
-  - name: microsoft/kiota
-    version: v1.0.1

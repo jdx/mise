@@ -1,8 +1,0 @@
-packages:
-  - name: segmentio/chamber@v3.1.3
-  - name: segmentio/chamber
-    version: v2.10.7
-  - name: segmentio/chamber
-    version: v2.3.2
-  - name: segmentio/chamber
-    version: v2.1.0

@@ -1,8 +1,0 @@
-packages:
-  - name: Azure/aztfexport@v0.18.0
-  - name: Azure/aztfexport
-    version: v0.7.0
-  - name: Azure/aztfexport
-    version: v0.0.6
-  - name: Azure/aztfexport
-    version: v0.0.1

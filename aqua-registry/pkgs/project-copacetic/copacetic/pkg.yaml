@@ -1,8 +1,0 @@
-packages:
-  - name: project-copacetic/copacetic@v0.11.1
-  - name: project-copacetic/copacetic
-    version: v0.3.0
-  - name: project-copacetic/copacetic
-    version: v0.2.0
-  - name: project-copacetic/copacetic
-    version: v0.1.0
