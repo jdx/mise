@@ -14,7 +14,7 @@ build = "build.rs"
 publish = false
 
 [package.metadata.cargo-machete]
-ignored = ["serde"]
+ignored = ["serde", "expr-lang"]
 
 [features]
 default = []
