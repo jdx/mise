@@ -15,7 +15,6 @@ use globset::GlobBuilder;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use petgraph::prelude::*;
-use serde::de;
 use serde_derive::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
