@@ -1,4 +1,0 @@
-packages:
-  - name: googleapis/api-linter@v1.71.0
-  - name: googleapis/api-linter
-    version: v1.35.0

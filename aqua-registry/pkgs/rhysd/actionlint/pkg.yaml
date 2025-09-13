@@ -1,6 +1,0 @@
-packages:
-  - name: rhysd/actionlint@v1.7.7
-  - name: rhysd/actionlint
-    version: v1.6.1
-  - name: rhysd/actionlint
-    version: v1.4.0

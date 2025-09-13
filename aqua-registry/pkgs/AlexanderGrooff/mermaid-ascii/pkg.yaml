@@ -1,4 +1,0 @@
-packages:
-  - name: AlexanderGrooff/mermaid-ascii@0.7.0
-  - name: AlexanderGrooff/mermaid-ascii
-    version: 0.1.0

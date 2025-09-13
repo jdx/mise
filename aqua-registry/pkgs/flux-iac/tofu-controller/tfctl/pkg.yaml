@@ -1,6 +1,0 @@
-packages:
-  - name: flux-iac/tofu-controller/tfctl@v0.16.0-rc.5
-  - name: flux-iac/tofu-controller/tfctl
-    version: v0.16.0-rc.4
-  - name: flux-iac/tofu-controller/tfctl
-    version: v0.15.1

@@ -1,6 +1,0 @@
-packages:
-  - name: Mikescher/better-docker-ps@v1.15
-  - name: Mikescher/better-docker-ps
-    version: v1.5
-  - name: Mikescher/better-docker-ps
-    version: v1.0

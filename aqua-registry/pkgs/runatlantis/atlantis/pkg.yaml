@@ -1,8 +1,0 @@
-packages:
-  - name: runatlantis/atlantis@v0.35.1
-  - name: runatlantis/atlantis
-    version: v0.17.3
-  - name: runatlantis/atlantis
-    version: v0.15.1
-  - name: runatlantis/atlantis
-    version: v0.1.0

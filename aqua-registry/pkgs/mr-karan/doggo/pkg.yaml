@@ -1,8 +1,0 @@
-packages:
-  - name: mr-karan/doggo@v1.0.5
-  - name: mr-karan/doggo
-    version: v0.5.7
-  - name: mr-karan/doggo
-    version: v0.4.1
-  - name: mr-karan/doggo
-    version: v0.2.3

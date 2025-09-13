@@ -1,6 +1,0 @@
-packages:
-  - name: fluxcd/flux2@v2.6.4
-  - name: fluxcd/flux2
-    version: v2.0.0
-  - name: fluxcd/flux2
-    version: v0.25.2

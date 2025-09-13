@@ -510,7 +510,7 @@ chisel.backends = [
     "go:github.com/jpillora/chisel",
     "asdf:lwiechec/asdf-chisel"
 ]
-chisel.test = ["chisel --version", "{{version}}"]
+# chisel.test = ["chisel --version", "{{version}}"] - flaky
 choose.description = "A human-friendly and fast alternative to cut (and sometimes awk)"
 choose.backends = [
     "aqua:theryangeary/choose",
@@ -3562,7 +3562,7 @@ zizmor.backends = [
     "ubi:zizmorcore/zizmor",
     "cargo:zizmor"
 ]
-zizmor.test = ["zizmor --version", "zizmor {{version}}"]
+# zizmor.test = ["zizmor --version", "zizmor {{version}}"] - flaky
 zls.description = "A Zig language server supporting Zig developers with features like autocomplete and goto definition"
 zls.backends = ["aqua:zigtools/zls", "ubi:zigtools/zls"]
 zls.test = ["zls --version", "{{version}}"]

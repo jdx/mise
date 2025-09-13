@@ -1,4 +1,0 @@
-packages:
-  - name: docker/cli@v28.4.0
-  - name: docker/cli
-    version: v20.10.23
