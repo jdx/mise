@@ -54,15 +54,12 @@ pub fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     if !avo.format.is_empty() {
         orig.format = avo.format.clone();
     }
-    if avo.rosetta2 {
-        orig.rosetta2 = avo.rosetta2;
-    }
-    if avo.windows_arm_emulation {
-        orig.windows_arm_emulation = avo.windows_arm_emulation;
-    }
-    if avo.complete_windows_ext {
-        orig.complete_windows_ext = avo.complete_windows_ext;
-    }
+    // For boolean fields, we need to check if they're explicitly set in the override
+    // Since we can't distinguish between "false by default" and "explicitly set to false",
+    // we'll apply these boolean overrides unconditionally to allow both true and false overrides
+    orig.rosetta2 = avo.rosetta2;
+    orig.windows_arm_emulation = avo.windows_arm_emulation;
+    orig.complete_windows_ext = avo.complete_windows_ext;
     if !avo.supported_envs.is_empty() {
         orig.supported_envs = avo.supported_envs.clone();
     }
@@ -99,9 +96,8 @@ pub fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     if !avo.version_overrides.is_empty() {
         orig.version_overrides = avo.version_overrides.clone();
     }
-    if avo.no_asset {
-        orig.no_asset = avo.no_asset;
-    }
+    // Apply no_asset unconditionally to allow both true and false overrides
+    orig.no_asset = avo.no_asset;
     if avo.error_message.is_some() {
         orig.error_message = avo.error_message.clone();
     }
@@ -189,4 +185,83 @@ pub fn versions_versioning_new(v: &str) -> Option<semver::Version> {
 pub fn versions_requirement_new(req: &str) -> Option<semver::VersionReq> {
     // Parse version requirement using semver
     semver::VersionReq::parse(req).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_apply_override_boolean_fields() {
+        let mut orig = AquaPackage {
+            complete_windows_ext: true,
+            rosetta2: false,
+            windows_arm_emulation: true,
+            no_asset: false,
+            ..Default::default()
+        };
+
+        // Test overriding complete_windows_ext from true to false
+        let override_to_false = AquaPackage {
+            complete_windows_ext: false,
+            ..Default::default()
+        };
+        orig = apply_override(orig.clone(), &override_to_false);
+        assert_eq!(
+            orig.complete_windows_ext, false,
+            "complete_windows_ext should be overridden to false"
+        );
+
+        // Test overriding complete_windows_ext from false to true
+        let override_to_true = AquaPackage {
+            complete_windows_ext: true,
+            ..Default::default()
+        };
+        orig = apply_override(orig.clone(), &override_to_true);
+        assert_eq!(
+            orig.complete_windows_ext, true,
+            "complete_windows_ext should be overridden to true"
+        );
+
+        // Test overriding rosetta2 from false to true
+        let override_rosetta2 = AquaPackage {
+            rosetta2: true,
+            ..Default::default()
+        };
+        orig = apply_override(orig.clone(), &override_rosetta2);
+        assert_eq!(orig.rosetta2, true, "rosetta2 should be overridden to true");
+
+        // Test overriding no_asset from false to true
+        let override_no_asset = AquaPackage {
+            no_asset: true,
+            ..Default::default()
+        };
+        orig = apply_override(orig.clone(), &override_no_asset);
+        assert_eq!(orig.no_asset, true, "no_asset should be overridden to true");
+    }
+
+    #[test]
+    fn test_apply_override_preserves_other_fields() {
+        let orig = AquaPackage {
+            repo_owner: "original".to_string(),
+            repo_name: "repo".to_string(),
+            complete_windows_ext: true,
+            ..Default::default()
+        };
+
+        let avo = AquaPackage {
+            complete_windows_ext: false, // This should override
+            // repo_owner and repo_name are empty, so they should NOT be overridden
+            ..Default::default()
+        };
+
+        let result = apply_override(orig.clone(), &avo);
+
+        // Boolean field should be overridden
+        assert_eq!(result.complete_windows_ext, false);
+
+        // Non-empty fields should be preserved when override is empty
+        assert_eq!(result.repo_owner, "original");
+        assert_eq!(result.repo_name, "repo");
+    }
 }
