@@ -74,12 +74,30 @@ end
 
 ## Creating a Backend Plugin
 
+### Using the Template Repository
+
+While the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) is primarily designed for tool plugins, you can adapt it for backend plugins:
+
+```bash
+# Clone the template
+git clone https://github.com/jdx/mise-tool-plugin-template my-backend-plugin
+cd my-backend-plugin
+
+# Remove the template's git history
+rm -rf .git
+git init
+
+# Replace tool plugin hooks with backend hooks
+rm hooks/*.lua
+# Create backend_list_versions.lua, backend_install.lua, backend_exec_env.lua
+```
+
 ### 1. Plugin Structure
 
 Create a directory with this structure:
 
 ```
-vfox-npm/
+my-backend-plugin/
 ├── metadata.lua                    # Plugin metadata
 ├── hooks/
 │   ├── backend_list_versions.lua   # BackendListVersions hook
@@ -395,7 +413,8 @@ TODO: We need caching support for [Shared Lua modules](plugin-lua-modules.md).
 
 ## Next Steps
 
+- [Start with the plugin template](https://github.com/jdx/mise-tool-plugin-template)
 - [Learn about Tool Plugin Development](tool-plugin-development.md)
-- [Explore available Lua modules](plugin-lua-modules.md)  
+- [Explore available Lua modules](plugin-lua-modules.md)
 - [Publishing your plugin](plugin-publishing.md)
 - [View the vfox-npm plugin source](https://github.com/jdx/vfox-npm)
