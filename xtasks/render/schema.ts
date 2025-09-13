@@ -131,9 +131,10 @@ fs.unlinkSync("schema/mise.json.tmp");
 const taskSchema = JSON.parse(
   fs.readFileSync("schema/mise-task.json", "utf-8"),
 );
-taskSchema["$defs"].task = schema["$defs"].task;
-taskSchema["$defs"].env = schema["$defs"].env;
 taskSchema["$defs"].env_directive = schema["$defs"].env_directive;
+taskSchema["$defs"].env = schema["$defs"].env;
+taskSchema["$defs"].task_run_entry = schema["$defs"].task_run_entry;
+taskSchema["$defs"].task = schema["$defs"].task;
 fs.writeFileSync("schema/mise-task.json.tmp", JSON.stringify(taskSchema));
 child_process.execSync(
   "jq . < schema/mise-task.json.tmp > schema/mise-task.json",

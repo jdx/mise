@@ -4,55 +4,6 @@
   "title": "mise-task-schema",
   "type": "object",
   "$defs": {
-    "run_step": {
-      "oneOf": [
-        {
-          "description": "script to run",
-          "type": "string"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "task": {
-              "description": "single task name (with optional args) to run",
-              "type": "string"
-            }
-          },
-          "required": ["task"],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "tasks": {
-              "description": "parallel task group to run",
-              "items": {
-                "description": "task name and args",
-                "type": "string"
-              },
-              "type": "array"
-            }
-          },
-          "required": ["tasks"],
-          "type": "object"
-        }
-      ]
-    },
-    "run_field": {
-      "oneOf": [
-        {
-          "description": "script to run",
-          "type": "string"
-        },
-        {
-          "description": "list of steps mixing scripts and task references",
-          "items": {
-            "$ref": "#/$defs/run_step"
-          },
-          "type": "array"
-        }
-      ]
-    },
     "task": {
       "oneOf": [
         {
@@ -274,32 +225,26 @@
             "run": {
               "oneOf": [
                 {
-                  "description": "script to run",
-                  "type": "string"
+                  "$ref": "#/$defs/task_run_entry"
                 },
                 {
-                  "description": "script to run",
+                  "type": "array",
                   "items": {
-                    "description": "script to run",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "$ref": "#/$defs/task_run_entry"
+                  }
                 }
               ]
             },
             "run_windows": {
               "oneOf": [
                 {
-                  "description": "script to run on windows",
-                  "type": "string"
+                  "$ref": "#/$defs/task_run_entry"
                 },
                 {
-                  "description": "script to run on windows",
+                  "type": "array",
                   "items": {
-                    "description": "script to run on windows",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "$ref": "#/$defs/task_run_entry"
+                  }
                 }
               ]
             },
@@ -640,6 +585,40 @@
             }
           },
           "required": ["paths"]
+        }
+      ]
+    },
+    "task_run_entry": {
+      "oneOf": [
+        {
+          "description": "script to run",
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "task": {
+              "description": "single task name (with optional args) to run",
+              "type": "string"
+            }
+          },
+          "required": ["task"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tasks": {
+              "description": "parallel task group to run",
+              "items": {
+                "description": "task name and args",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": ["tasks"]
         }
       ]
     }
