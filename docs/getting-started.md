@@ -314,7 +314,7 @@ echo "node env: $NODE_ENV"
 # node env: production
 ```
 
-### 6. Run a task {#run-a-task}
+### 5. Run a task {#run-a-task}
 
 You can define simple tasks in `mise.toml` and run them with `mise run`:
 
