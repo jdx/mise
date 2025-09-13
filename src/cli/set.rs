@@ -65,7 +65,7 @@ impl Set {
             _ => {}
         }
 
-        let filename = self.filename();
+        let filename = self.filename()?;
         let config = MiseToml::from_file(&filename).unwrap_or_default();
 
         let mut mise_toml = get_mise_toml(&filename)?;
@@ -165,21 +165,21 @@ impl Set {
         Ok(rows)
     }
 
-    fn filename(&self) -> PathBuf {
+    fn filename(&self) -> Result<PathBuf> {
         if let Some(file) = &self.file {
-            file.clone()
+            Ok(file.clone())
         } else if self.global {
-            config::global_config_path()
+            Ok(config::global_config_path())
         } else if let Some(env) = &self.env {
-            let cwd = env::current_dir().unwrap_or_default();
+            let cwd = env::current_dir()?;
             let p = cwd.join(format!(".mise.{env}.toml"));
             if p.exists() {
-                p
+                Ok(p)
             } else {
-                cwd.join(format!("mise.{env}.toml"))
+                Ok(cwd.join(format!("mise.{env}.toml")))
             }
         } else {
-            config::local_toml_config_path()
+            Ok(config::local_toml_config_path())
         }
     }
 }
