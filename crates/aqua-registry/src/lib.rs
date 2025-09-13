@@ -9,8 +9,7 @@ mod types;
 
 // Re-export only what's needed by the main mise crate
 pub use registry::{
-    AQUA_STANDARD_REGISTRY_FILES, AquaRegistry, DefaultRegistryFetcher, FileCacheStore,
-    NoOpCacheStore,
+    AQUA_STANDARD_REGISTRY, AquaRegistry, DefaultRegistryFetcher, FileCacheStore, NoOpCacheStore,
 };
 pub use types::{AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType, RegistryYaml};
 

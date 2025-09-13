@@ -168,7 +168,7 @@ pub struct AquaChecksumPattern {
 }
 
 /// Registry YAML file structure
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct RegistryYaml {
     pub packages: Vec<AquaPackage>,
 }

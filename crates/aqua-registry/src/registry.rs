@@ -37,9 +37,8 @@ pub struct FileCacheStore {
     cache_dir: PathBuf,
 }
 
-/// Baked registry files (compiled into binary)
-pub static AQUA_STANDARD_REGISTRY_FILES: LazyLock<HashMap<&'static str, &'static str>> =
-    LazyLock::new(|| include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry.rs")));
+// Include the generated registry data with pre-parsed structures
+include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry.rs"));
 
 impl AquaRegistry {
     /// Create a new AquaRegistry with the given configuration
@@ -140,10 +139,12 @@ impl RegistryFetcher for DefaultRegistryFetcher {
 
         // Fall back to baked registry if enabled
         #[allow(clippy::collapsible_if)]
-        if self.config.use_baked_registry && AQUA_STANDARD_REGISTRY_FILES.contains_key(package_id) {
-            if let Some(content) = AQUA_STANDARD_REGISTRY_FILES.get(package_id) {
-                log::trace!("reading baked-in aqua-registry for {package_id}");
-                return Ok(serde_yaml::from_str(content)?);
+        if self.config.use_baked_registry {
+            if let Some(registry) = AQUA_STANDARD_REGISTRY.get(package_id) {
+                log::trace!(
+                    "reading pre-parsed baked-in aqua-registry for {package_id} (no YAML parsing needed)"
+                );
+                return Ok(registry.clone());
             }
         }
 
