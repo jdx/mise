@@ -1,6 +1,0 @@
-packages:
-  - name: arttor/helmify@v0.4.18
-  - name: arttor/helmify
-    version: v0.4.4
-  - name: arttor/helmify
-    version: v0.3.0

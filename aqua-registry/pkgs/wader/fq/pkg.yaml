@@ -1,4 +1,0 @@
-packages:
-  - name: wader/fq@v0.15.1
-  - name: wader/fq
-    version: v0.0.4

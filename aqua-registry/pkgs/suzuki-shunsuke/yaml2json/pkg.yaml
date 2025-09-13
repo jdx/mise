@@ -1,4 +1,0 @@
-packages:
-  - name: suzuki-shunsuke/yaml2json@v0.2.1
-  - name: suzuki-shunsuke/yaml2json
-    version: v0.1.0

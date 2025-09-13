@@ -1,4 +1,0 @@
-packages:
-  - name: scaleway/scaleway-cli@v2.42.0
-  - name: scaleway/scaleway-cli
-    version: v2.4.0

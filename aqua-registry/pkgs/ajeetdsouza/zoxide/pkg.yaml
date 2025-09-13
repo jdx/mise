@@ -1,4 +1,0 @@
-packages:
-  - name: ajeetdsouza/zoxide@v0.9.8
-  - name: ajeetdsouza/zoxide
-    version: v0.8.1

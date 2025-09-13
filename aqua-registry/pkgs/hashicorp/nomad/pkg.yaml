@@ -1,4 +1,0 @@
-packages:
-  - name: hashicorp/nomad@v1.10.5
-  - name: hashicorp/nomad
-    version: v1.2.6

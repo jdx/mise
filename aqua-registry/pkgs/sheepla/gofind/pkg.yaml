@@ -1,4 +1,0 @@
-packages:
-  - name: sheepla/gofind@v0.0.3
-  - name: sheepla/gofind
-    version: v0.0.1

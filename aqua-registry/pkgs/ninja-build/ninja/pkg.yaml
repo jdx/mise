@@ -1,4 +1,0 @@
-packages:
-  - name: ninja-build/ninja@v1.12.1
-  - name: ninja-build/ninja
-    version: v1.11.1

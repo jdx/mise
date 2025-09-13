@@ -1,6 +1,0 @@
-packages:
-  - name: zyedidia/eget@v1.3.4
-  - name: zyedidia/eget
-    version: v1.0.1
-  - name: zyedidia/eget
-    version: v0.1.0

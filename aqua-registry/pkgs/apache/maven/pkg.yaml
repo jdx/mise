@@ -1,6 +1,0 @@
-packages:
-  - name: apache/maven@maven-3.9.11
-  - name: apache/maven
-    version: maven-3.9.10
-  - name: apache/maven
-    version: maven-3.0.4

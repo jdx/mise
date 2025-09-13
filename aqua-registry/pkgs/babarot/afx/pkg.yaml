@@ -1,6 +1,0 @@
-packages:
-  - name: babarot/afx@v0.2.1
-  - name: babarot/afx
-    version: v0.1.25
-  - name: babarot/afx
-    version: v0.1.0

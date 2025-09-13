@@ -1,8 +1,0 @@
-packages:
-  - name: open-policy-agent/conftest@v0.62.0
-  - name: open-policy-agent/conftest
-    version: v0.27.0
-  - name: open-policy-agent/conftest
-    version: v0.20.0
-  - name: open-policy-agent/conftest
-    version: 0.9.1
