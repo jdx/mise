@@ -349,7 +349,16 @@ function PLUGIN:PreInstall(ctx)
     local version = ctx.version
 
     -- Determine platform using RUNTIME object
-    local arch = RUNTIME.archType == "amd64" and "x64" or RUNTIME.archType
+    local arch_token
+    if RUNTIME.archType == "amd64" or RUNTIME.archType == "x86_64" then
+        arch_token = "x64"
+    elseif RUNTIME.archType == "386" or RUNTIME.archType == "i386" or RUNTIME.archType == "i686" then
+        arch_token = "x86"
+    elseif RUNTIME.archType == "arm64" or RUNTIME.archType == "aarch64" then
+        arch_token = "arm64"
+    else
+        arch_token = RUNTIME.archType
+    end
     local os_token
     if RUNTIME.osType == "Windows" then
         os_token = "win"
@@ -358,7 +367,7 @@ function PLUGIN:PreInstall(ctx)
     else
         os_token = "linux"
     end
-    local platform = os_token .. "-" .. arch
+    local platform = os_token .. "-" .. arch_token
     local extension = (RUNTIME.osType == "Windows") and "zip" or "tar.gz"
     
     -- Build download URL
