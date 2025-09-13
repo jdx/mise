@@ -42,17 +42,18 @@ jobs:
   list-changed-tools:
     timeout-minutes: 10
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' }}
     outputs:
-      tools: ${{ steps.diff.outputs.tools }}
+      tools: ${{ steps.diff.outputs.tools || steps.set-empty.outputs.tools }}
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
         with:
           fetch-depth: 0
       - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        if: ${{ github.event_name == 'pull_request' }}
         with:
           install_args: jd yj
       - id: diff
+        if: ${{ github.event_name == 'pull_request' }}
         shell: bash # -eo pipefail
         run: |
           changed_tools=$( \
@@ -64,6 +65,9 @@ jobs:
           )
           echo "$changed_tools"
           echo "tools=$changed_tools" >> $GITHUB_OUTPUT
+      - id: set-empty
+        if: ${{ github.event_name != 'pull_request' }}
+        run: echo "tools=" >> $GITHUB_OUTPUT
 
   test-tool:
     name: test-tool-${{ matrix.tranche }}
