@@ -65,20 +65,18 @@ impl RegistryBuilder {
         Ok(self)
     }
 
-    pub fn with_git_repo<P: AsRef<Path>>(self, url: &str, cache_dir: P) -> Result<Self> {
-        // For now, this is a stub - actual Git implementation would be added here
-        // The implementation would:
-        // 1. Clone or update the git repository to cache_dir
-        // 2. Look for registry.yaml or pkgs/**/registry.yaml files
-        // 3. Load them with with_registry_file
-        //
-        // Since the aqua-registry crate should remain independent of mise's git module,
-        // this would need to be implemented by the caller or through dependency injection
-        Err(eyre::eyre!(
-            "Git repository support for '{}' not yet implemented in aqua-registry crate. Cache dir: {:?}",
-            url,
-            cache_dir.as_ref()
-        ))
+    pub fn with_git_repo<P: AsRef<Path>>(mut self, url: &str, cache_dir: P) -> Result<Self> {
+        use crate::git;
+
+        // Clone or update the git repository and get registry files
+        let registry_files = git::clone_or_update_registry(url, cache_dir.as_ref())?;
+
+        // Load each registry file found
+        for registry_file in registry_files {
+            self = self.with_registry_file(registry_file)?;
+        }
+
+        Ok(self)
     }
 
     fn merge_registry(&mut self, registry: RegistryYaml) {

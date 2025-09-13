@@ -117,4 +117,17 @@ aliases:
         // Should not panic even if git fails
         assert!(manager.is_ok() || manager.is_err());
     }
+
+    #[test]
+    fn test_registry_builder_with_git_repo() {
+        let temp_dir = std::env::temp_dir().join("test-registry-builder-git-repo");
+
+        // Test with invalid URL - should handle error gracefully
+        let builder = RegistryBuilder::new();
+        let result = builder.with_git_repo("https://nonexistent.example.com/repo.git", &temp_dir);
+        assert!(result.is_err());
+
+        // Cleanup
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
 }
