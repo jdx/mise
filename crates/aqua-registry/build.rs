@@ -15,11 +15,11 @@ fn generate_baked_registry(out_dir: &str) {
 
     let mut code = String::from("HashMap::from([\n");
 
-    if let Some(registry_dir) = registry_dir {
-        if let Ok(registries) = collect_aqua_registries(&registry_dir) {
-            for (id, content) in registries {
-                code.push_str(&format!("    ({:?}, {:?}),\n", id, content));
-            }
+    if let Some(registry_dir) = registry_dir
+        && let Ok(registries) = collect_aqua_registries(&registry_dir)
+    {
+        for (id, content) in registries {
+            code.push_str(&format!("    ({:?}, {:?}),\n", id, content));
         }
     }
 

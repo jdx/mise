@@ -23,7 +23,9 @@ pub static AQUA_REGISTRY: Lazy<MiseAquaRegistry> = Lazy::new(|| {
 #[derive(Debug)]
 pub struct MiseAquaRegistry {
     inner: AquaRegistry,
+    #[allow(dead_code)]
     path: PathBuf,
+    #[allow(dead_code)]
     repo_exists: bool,
 }
 

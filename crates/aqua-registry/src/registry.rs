@@ -12,9 +12,12 @@ where
     F: RegistryFetcher,
     C: CacheStore,
 {
+    #[allow(dead_code)]
     config: AquaRegistryConfig,
     fetcher: F,
+    #[allow(dead_code)]
     cache_store: C,
+    #[allow(dead_code)]
     repo_exists: bool,
 }
 
@@ -72,7 +75,7 @@ impl AquaRegistry {
         }
     }
 
-    fn check_repo_exists(cache_dir: &PathBuf) -> bool {
+    fn check_repo_exists(cache_dir: &std::path::Path) -> bool {
         cache_dir.join(".git").exists()
     }
 }
@@ -136,18 +139,12 @@ impl RegistryFetcher for DefaultRegistryFetcher {
         }
 
         // Fall back to baked registry if enabled
-        if self.config.use_baked_registry {
-            if let Some(content) = AQUA_STANDARD_REGISTRY_FILES.get(package_id) {
-                log::trace!("reading baked-in aqua-registry for {package_id}");
-                return Ok(serde_yaml::from_str(content)?);
-            }
-        }
-
-        // If HTTP feature is enabled and we have a registry URL, we could try to fetch directly
-        #[cfg(feature = "http")]
-        if let Some(_registry_url) = &self.config.registry_url {
-            // TODO: Implement HTTP fetching of individual registry files
-            // This would require knowing the structure of the remote registry
+        if self.config.use_baked_registry
+            && AQUA_STANDARD_REGISTRY_FILES.contains_key(package_id)
+            && let Some(content) = AQUA_STANDARD_REGISTRY_FILES.get(package_id)
+        {
+            log::trace!("reading baked-in aqua-registry for {package_id}");
+            return Ok(serde_yaml::from_str(content)?);
         }
 
         Err(AquaRegistryError::RegistryNotAvailable(format!(
@@ -179,13 +176,13 @@ impl FileCacheStore {
 impl CacheStore for FileCacheStore {
     fn is_fresh(&self, key: &str) -> bool {
         // Check if cache entry exists and is less than a week old
-        if let Ok(metadata) = std::fs::metadata(self.cache_dir.join(key)) {
-            if let Ok(modified) = metadata.modified() {
-                let age = std::time::SystemTime::now()
-                    .duration_since(modified)
-                    .unwrap_or_default();
-                return age < std::time::Duration::from_secs(7 * 24 * 60 * 60); // 1 week
-            }
+        if let Ok(metadata) = std::fs::metadata(self.cache_dir.join(key))
+            && let Ok(modified) = metadata.modified()
+        {
+            let age = std::time::SystemTime::now()
+                .duration_since(modified)
+                .unwrap_or_default();
+            return age < std::time::Duration::from_secs(7 * 24 * 60 * 60); // 1 week
         }
         false
     }
@@ -217,8 +214,8 @@ mod tests {
         let config = AquaRegistryConfig::default();
         let registry = AquaRegistry::new(config);
 
-        // This should not panic
-        assert!(!registry.repo_exists || registry.repo_exists);
+        // This should not panic - registry should be created successfully
+        drop(registry);
     }
 
     #[test]

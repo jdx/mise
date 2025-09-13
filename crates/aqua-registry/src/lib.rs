@@ -7,8 +7,12 @@ mod registry;
 mod template;
 mod types;
 
-pub use registry::*;
-pub use types::*;
+// Re-export only what's needed by the main mise crate
+pub use registry::{
+    AQUA_STANDARD_REGISTRY_FILES, AquaRegistry, DefaultRegistryFetcher, FileCacheStore,
+    NoOpCacheStore,
+};
+pub use types::{AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType, RegistryYaml};
 
 use thiserror::Error;
 
@@ -56,6 +60,7 @@ impl Default for AquaRegistryConfig {
 }
 
 /// Trait for fetching registry files from various sources
+#[allow(async_fn_in_trait)]
 pub trait RegistryFetcher {
     /// Fetch and parse a registry YAML file for the given package ID
     async fn fetch_registry(&self, package_id: &str) -> Result<crate::types::RegistryYaml>;

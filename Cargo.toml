@@ -79,7 +79,6 @@ duct = "0.13"
 either = { version = "1", features = ["serde"] }
 homedir = "0.3"
 # expr-lang = { path = "../expr-lang" }
-expr-lang = "0.3"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
@@ -157,7 +156,7 @@ urlencoding = "2.1.3"
 usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
-aqua-registry = { path = "crates/aqua-registry", features = ["http"] }
+aqua-registry = { path = "crates/aqua-registry" }
 walkdir = "2"
 which = "7"
 xx = { version = "2", features = ["glob"] }

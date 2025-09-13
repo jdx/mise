@@ -1,5 +1,5 @@
 use expr::{Context, Environment, Program, Value};
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use serde_derive::Deserialize;
@@ -413,7 +413,7 @@ impl AquaPackage {
         ctx.insert("Format".to_string(), replace(&self.format));
         ctx.extend(overrides.clone());
 
-        crate::template::render(s, &ctx).map_err(From::from)
+        crate::template::render(s, &ctx)
     }
 
     /// Set up version filter expression if configured
@@ -483,15 +483,30 @@ impl AquaPackage {
     }
 }
 
-// Helper function to split version prefix (simplified version)
-fn split_version_prefix(v: &str) -> (&str, &str) {
-    // This is a simplified version - in the real implementation this would
-    // handle more complex version prefix parsing
-    if v.starts_with('v') {
-        ("v", &v[1..])
-    } else {
-        ("", v)
-    }
+/// splits a version number into an optional prefix and the remaining version string
+fn split_version_prefix(version: &str) -> (String, String) {
+    version
+        .char_indices()
+        .find_map(|(i, c)| {
+            if c.is_ascii_digit() {
+                if i == 0 {
+                    return Some(i);
+                }
+                // If the previous char is a delimiter or 'v', we found a split point.
+                let prev_char = version.chars().nth(i - 1).unwrap();
+                if ['-', '_', '/', '.', 'v', 'V'].contains(&prev_char) {
+                    return Some(i);
+                }
+            }
+            None
+        })
+        .map_or_else(
+            || ("".into(), version.into()),
+            |i| {
+                let (prefix, version) = version.split_at(i);
+                (prefix.into(), version.into())
+            },
+        )
 }
 
 impl AquaFile {
