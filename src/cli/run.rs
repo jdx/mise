@@ -1220,8 +1220,7 @@ impl Run {
     }
 
     async fn sources_are_fresh(&self, task: &Task, config: &Arc<Config>) -> Result<bool> {
-        let outputs = task.outputs.paths(task);
-        if task.sources.is_empty() && outputs.is_empty() {
+        if task.sources.is_empty() {
             return Ok(false);
         }
         // TODO: We should benchmark this and find out if it might be possible to do some caching around this or something
@@ -1248,7 +1247,7 @@ impl Run {
                 return Ok(false);
             }
             let sources = self.get_last_modified_from_metadatas(&source_metadatas);
-            let outputs = self.get_last_modified(&root, &outputs)?;
+            let outputs = self.get_last_modified(&root, &task.outputs.paths(task))?;
             file::write(&source_metadata_hash_path, &source_metadata_hash)?;
             trace!("sources: {sources:?}, outputs: {outputs:?}");
             match (sources, outputs) {

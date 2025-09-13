@@ -17,6 +17,13 @@ impl Default for TaskOutputs {
 }
 
 impl TaskOutputs {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            TaskOutputs::Files(files) => files.is_empty(),
+            TaskOutputs::Auto => false,
+        }
+    }
+
     pub fn paths(&self, task: &Task) -> Vec<String> {
         match self {
             TaskOutputs::Files(files) => files.clone(),

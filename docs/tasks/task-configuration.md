@@ -232,6 +232,7 @@ has changed since the last build.
 ### `outputs`
 
 - **Type**: `string | string[] | { auto = true }`
+- **Default**: `{ auto = true }`
 
 The counterpart to `sources`, these are the files or directories that the task will create/modify after
 it executes.
@@ -245,7 +246,7 @@ a file for `sources` to work.
 [tasks.build]
 run = "cargo build"
 sources = ["Cargo.toml", "src/**/*.rs"]
-outputs = { auto = true }
+outputs = { auto = true } # this is the default when sources is defined
 ```
 
 ### `shell`
