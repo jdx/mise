@@ -261,28 +261,28 @@ Create shared functions in the `lib/` directory:
 local M = {}
 
 function M.get_arch()
-    local arch = os.getenv("PROCESSOR_ARCHITECTURE") or os.capture("uname -m")
-    if arch:match("x86_64") or arch:match("AMD64") then
+    -- Use the RUNTIME object provided by vfox/mise
+    local arch = RUNTIME.archType
+    if arch == "amd64" or arch == "x86_64" then
         return "x64"
-    elseif arch:match("i386") or arch:match("i686") then
+    elseif arch == "386" or arch == "i386" then
         return "x86"
-    elseif arch:match("arm64") or arch:match("aarch64") then
+    elseif arch == "arm64" or arch == "aarch64" then
         return "arm64"
     else
-        return "x64"  -- default
+        return arch  -- return as-is for other architectures
     end
 end
 
 function M.get_os()
-    if package.config:sub(1,1) == '\\' then
+    -- Use the RUNTIME object provided by vfox/mise
+    local os = RUNTIME.osType:lower()
+    if os == "windows" then
         return "win"
+    elseif os == "darwin" then
+        return "darwin"
     else
-        local os_name = os.capture("uname"):lower()
-        if os_name:find("darwin") then
-            return "darwin"
-        else
-            return "linux"
-        end
+        return "linux"
     end
 end
 
@@ -347,11 +347,12 @@ end
 -- hooks/pre_install.lua
 function PLUGIN:PreInstall(ctx)
     local version = ctx.version
-    local helper = require("lib/helper")
-    
-    -- Determine platform
-    local platform = helper.get_platform()
-    local extension = platform:match("win") and "zip" or "tar.gz"
+
+    -- Determine platform using RUNTIME object
+    local os_name = RUNTIME.osType:lower()
+    local arch = RUNTIME.archType == "amd64" and "x64" or RUNTIME.archType
+    local platform = os_name .. "-" .. arch
+    local extension = (os_name == "windows") and "zip" or "tar.gz"
     
     -- Build download URL
     local filename = "node-v" .. version .. "-" .. platform .. "." .. extension
@@ -388,8 +389,7 @@ end
 -- hooks/env_keys.lua
 function PLUGIN:EnvKeys(ctx)
     local mainPath = ctx.path
-    local helper = require("lib/helper")
-    local os_type = helper.get_os()
+    local os_type = RUNTIME.osType:lower()
     
     local env_vars = {
         {
@@ -404,7 +404,7 @@ function PLUGIN:EnvKeys(ctx)
     
     -- Add npm global modules to PATH
     local npm_global_path = mainPath .. "/lib/node_modules/.bin"
-    if os_type == "win" then
+    if os_type == "windows" then
         npm_global_path = mainPath .. "/node_modules/.bin"
     end
     
@@ -424,10 +424,8 @@ end
 function PLUGIN:PostInstall(ctx)
     local sdkInfo = ctx.sdkInfo['nodejs']
     local path = sdkInfo.path
-    local helper = require("lib/helper")
-    
     -- Set executable permissions on Unix systems
-    if helper.get_os() ~= "win" then
+    if RUNTIME.osType ~= "Windows" then
         os.execute("chmod +x " .. path .. "/bin/*")
     end
     
@@ -437,7 +435,7 @@ function PLUGIN:PostInstall(ctx)
     
     -- Configure npm to use local cache
     local npm_cmd = path .. "/bin/npm"
-    if helper.get_os() == "win" then
+    if RUNTIME.osType == "Windows" then
         npm_cmd = path .. "/npm.cmd"
     end
     
@@ -575,14 +573,14 @@ end
 
 ### Platform Detection
 
-Handle different operating systems properly:
+Handle different operating systems properly using the RUNTIME object:
 
 ```lua
 -- lib/platform.lua
 local M = {}
 
 function M.is_windows()
-    return package.config:sub(1,1) == '\\'
+    return RUNTIME.osType == "Windows"
 end
 
 function M.get_exe_extension()
@@ -595,6 +593,10 @@ end
 
 return M
 ```
+
+**Note:** The `RUNTIME` object is automatically available in all plugin hooks and provides:
+- `RUNTIME.osType`: Operating system type ("Windows", "Linux", "Darwin")
+- `RUNTIME.archType`: Architecture ("amd64", "arm64", "386", etc.)
 
 ### Version Normalization
 
@@ -649,14 +651,12 @@ Different installation logic based on platform or version:
 ```lua
 function PLUGIN:PreInstall(ctx)
     local version = ctx.version
-    local helper = require("lib/helper")
-    local platform = helper.get_platform()
-    
-    -- Different logic for different platforms
-    if platform:match("win") then
+
+    -- Different logic for different platforms using RUNTIME object
+    if RUNTIME.osType == "Windows" then
         -- Windows-specific installation
         return install_windows(version)
-    elseif platform:match("darwin") then
+    elseif RUNTIME.osType == "Darwin" then
         -- macOS-specific installation
         return install_macos(version)
     else
@@ -742,8 +742,7 @@ function PLUGIN:EnvKeys(ctx)
     }
     
     -- Platform-specific additions
-    local helper = require("lib/helper")
-    if helper.get_os() == "darwin" then
+    if RUNTIME.osType == "Darwin" then
         table.insert(env_vars, {
             key = "DYLD_LIBRARY_PATH",
             value = mainPath .. "/lib"
