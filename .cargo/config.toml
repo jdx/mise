@@ -1,5 +1,4 @@
 #paths = ["../usage/lib"]
-paths = ["../deepmerge"]
 
 [env]
 RUST_TEST_THREADS = '1'
