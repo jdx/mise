@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# Create an initial mise.toml file to reproduce the issue
+echo '[tools]
+node = "20"' >mise.toml
+
+# This should create mise.pp.toml (environment-specific) instead of modifying mise.toml
+# Currently this fails because the -E flag doesn't exist
+if mise set -E pp NODE_ENV=production 2>/dev/null; then
+	# If the command succeeded, check if it created the environment-specific file
+	if [[ -f "mise.pp.toml" ]]; then
+		assert "cat mise.pp.toml" '[env]
+NODE_ENV = "production"'
+		# Ensure original mise.toml wasn't modified
+		assert "cat mise.toml" '[tools]
+node = "20"'
+	else
+		echo "ERROR: mise set -E pp should create mise.pp.toml but it doesn't exist"
+		exit 1
+	fi
+else
+	echo "Expected: mise set -E flag should exist and work"
+	echo "Actual: mise set command doesn't support -E flag"
+	exit 1
+fi
+
+# Cleanup
+rm -f mise.toml mise.pp.toml

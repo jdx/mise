@@ -16,6 +16,7 @@ use tabled::Tabled;
 /// Set environment variables in mise.toml
 ///
 /// By default, this command modifies `mise.toml` in the current directory.
+/// Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
 #[derive(Debug, clap::Args)]
 #[clap(aliases = ["ev", "env-vars"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Set {
@@ -30,8 +31,12 @@ pub struct Set {
     complete: bool,
 
     /// Set the environment variable in the global config file
-    #[clap(short, long, verbatim_doc_comment, overrides_with = "file")]
+    #[clap(short, long, verbatim_doc_comment, overrides_with_all = &["file", "env"])]
     global: bool,
+
+    /// Create/modify an environment-specific config file like .mise.<env>.toml
+    #[clap(short = 'E', long, overrides_with_all = &["global", "file"])]
+    env: Option<String>,
 
     /// Remove the environment variable from config file
     ///
@@ -60,7 +65,7 @@ impl Set {
             _ => {}
         }
 
-        let filename = self.filename();
+        let filename = self.filename()?;
         let config = MiseToml::from_file(&filename).unwrap_or_default();
 
         let mut mise_toml = get_mise_toml(&filename)?;
@@ -144,6 +149,22 @@ impl Set {
                     _ => None,
                 })
                 .collect()
+        } else if self.env.is_some() {
+            // When -E flag is used, read from the environment-specific file
+            let filename = self.filename()?;
+            let config = MiseToml::from_file(&filename).unwrap_or_default();
+            config
+                .env_entries()?
+                .into_iter()
+                .filter_map(|ed| match ed {
+                    EnvDirective::Val(key, value, _) => Some(Row {
+                        key,
+                        value,
+                        source: display_path(&filename),
+                    }),
+                    _ => None,
+                })
+                .collect()
         } else {
             Config::get()
                 .await?
@@ -160,13 +181,21 @@ impl Set {
         Ok(rows)
     }
 
-    fn filename(&self) -> PathBuf {
+    fn filename(&self) -> Result<PathBuf> {
         if let Some(file) = &self.file {
-            file.clone()
+            Ok(file.clone())
         } else if self.global {
-            config::global_config_path()
+            Ok(config::global_config_path())
+        } else if let Some(env) = &self.env {
+            let cwd = env::current_dir()?;
+            let p = cwd.join(format!(".mise.{env}.toml"));
+            if p.exists() {
+                Ok(p)
+            } else {
+                Ok(cwd.join(format!("mise.{env}.toml")))
+            }
         } else {
-            config::local_toml_config_path()
+            Ok(config::local_toml_config_path())
         }
     }
 }
@@ -196,6 +225,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise set NODE_ENV</bold>
     production
+
+    $ <bold>mise set -E staging NODE_ENV=staging</bold>
+    # creates or modifies mise.staging.toml
 
     $ <bold>mise set</bold>
     key       value       source

@@ -115,7 +115,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise run [FLAGS]`](/cli/run.md)
 - [`mise search [FLAGS] [NAME]`](/cli/search.md)
 - [`mise self-update [FLAGS] [VERSION]`](/cli/self-update.md)
-- [`mise set [--file <FILE>] [-g --global] [ENV_VAR]…`](/cli/set.md)
+- [`mise set [FLAGS] [ENV_VAR]…`](/cli/set.md)
 - [`mise settings [FLAGS] [SETTING] [VALUE] <SUBCOMMAND>`](/cli/settings.md)
 - [`mise settings add [-l --local] <SETTING> <VALUE>`](/cli/settings/add.md)
 - [`mise settings get [-l --local] <SETTING>`](/cli/settings/get.md)

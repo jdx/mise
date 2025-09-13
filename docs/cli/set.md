@@ -1,11 +1,12 @@
 # `mise set`
 
-- **Usage**: `mise set [--file <FILE>] [-g --global] [ENV_VAR]…`
+- **Usage**: `mise set [FLAGS] [ENV_VAR]…`
 - **Source code**: [`src/cli/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/set.rs)
 
 Set environment variables in mise.toml
 
 By default, this command modifies `mise.toml` in the current directory.
+Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
 
 ## Arguments
 
@@ -26,6 +27,10 @@ Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
 
 Set the environment variable in the global config file
 
+### `-E --env <ENV>`
+
+Create/modify an environment-specific config file like .mise.&lt;env>.toml
+
 Examples:
 
 ```
@@ -33,6 +38,9 @@ $ mise set NODE_ENV=production
 
 $ mise set NODE_ENV
 production
+
+$ mise set -E staging NODE_ENV=staging
+# creates or modifies mise.staging.toml
 
 $ mise set
 key       value       source
