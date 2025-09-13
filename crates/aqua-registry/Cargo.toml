@@ -1,11 +1,15 @@
 [package]
 name = "aqua-registry"
-version = "0.1.0"
+version = "2025.9.10"
 edition = "2024"
-publish = false
 description = "Aqua registry backend for mise"
 authors = ["Jeff Dickey (@jdx)"]
 license = "MIT"
+repository = "https://github.com/jdx/mise"
+homepage = "https://mise.jdx.dev"
+readme = "README.md"
+keywords = ["mise", "aqua", "registry", "package-manager"]
+categories = ["development-tools"]
 build = "build.rs"
 
 [features]

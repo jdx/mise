@@ -209,7 +209,7 @@ checksum = "b0674a1ddeecb70197781e945de4b3b8ffb61fa939a5597bcf48503737663100"
 
 [[package]]
 name = "aqua-registry"
-version = "0.1.0"
+version = "2025.9.10"
 dependencies = [
  "expr-lang",
  "eyre",
