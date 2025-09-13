@@ -74,19 +74,38 @@ pub fn aqua_template_render(template: &str, ctx: &HashMap<String, String>) -> Re
 
 // Version utility functions - stubs for now
 pub fn split_version_prefix(v: &str) -> (&str, &str) {
-    // Simple stub - would need actual version prefix splitting logic
-    // Should split version into prefix and semver parts
+    // Split version into prefix and semver parts
+    // Common prefixes: "v", "release-", "version-", etc.
+    let prefixes = ["version-", "release-", "ver-", "v"];
+
+    for prefix in &prefixes {
+        if let Some(remaining) = v.strip_prefix(prefix) {
+            // Check if remaining part looks like a version (starts with digit)
+            if remaining.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                return (prefix, remaining);
+            }
+        }
+    }
+
+    // If no common prefix found, check for single 'v' prefix
+    if v.starts_with('v') && v.len() > 1 {
+        let remaining = &v[1..];
+        if remaining.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            return ("v", remaining);
+        }
+    }
+
+    // No prefix found
     ("", v)
 }
 
-pub fn versions_versioning_new(_v: &str) -> Option<()> {
-    // Stub for versions crate integration
-    // Would return parsed version object
-    None
+pub fn versions_versioning_new(v: &str) -> Option<semver::Version> {
+    // Parse version using semver - remove prefix first
+    let (_, clean_version) = split_version_prefix(v);
+    semver::Version::parse(clean_version).ok()
 }
 
-pub fn versions_requirement_new(_req: &str) -> Option<()> {
-    // Stub for versions crate integration
-    // Would return parsed requirement object
-    None
+pub fn versions_requirement_new(req: &str) -> Option<semver::VersionReq> {
+    // Parse version requirement using semver
+    semver::VersionReq::parse(req).ok()
 }

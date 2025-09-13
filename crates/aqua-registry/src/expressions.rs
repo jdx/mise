@@ -1,46 +1,73 @@
+use evalexpr::{eval_with_context_mut, ContextWithMutableVariables, HashMapContext, Value};
 use eyre::{eyre, Result};
+use std::collections::HashMap;
 
-// Expression evaluation system - currently implemented as stubs
-// These would integrate with a real expression evaluation library
-
+// Expression evaluation system using evalexpr
 pub fn expr_environment_new() -> ExprEnvironment {
-    // Stub for expr crate integration
-    ExprEnvironment
+    ExprEnvironment {
+        functions: HashMap::new(),
+    }
 }
 
 pub fn expr_context_default() -> ExprContext {
-    // Stub for expr crate integration
-    ExprContext
+    ExprContext {
+        context: HashMapContext::new(),
+    }
 }
 
-pub fn expr_compile(_expr: &str) -> Result<ExprProgram> {
-    // Stub for expr crate integration
-    // In a real implementation, this would parse and compile the expression
-    Err(eyre!("Expression compilation not implemented"))
+pub fn expr_compile(expr: &str) -> Result<ExprProgram> {
+    // For simple expressions, we can store the expression string
+    // evalexpr doesn't require pre-compilation for basic use
+    Ok(ExprProgram {
+        expression: expr.to_string(),
+    })
 }
 
-// Stub types for expr integration
-pub struct ExprEnvironment;
-pub struct ExprContext;
-pub struct ExprProgram;
+// Type alias to simplify complex function type
+type ExprFunction = Box<dyn Fn(&ExprCallContext) -> Result<ExprValue, Box<dyn std::error::Error>>>;
+
+// Expression evaluation types
+pub struct ExprEnvironment {
+    functions: HashMap<String, ExprFunction>,
+}
+
+pub struct ExprContext {
+    context: HashMapContext,
+}
+
+pub struct ExprProgram {
+    expression: String,
+}
 
 impl ExprEnvironment {
-    pub fn add_function<F>(&mut self, _name: &str, _func: F)
+    pub fn add_function<F>(&mut self, name: &str, func: F)
     where
         F: Fn(&ExprCallContext) -> Result<ExprValue, Box<dyn std::error::Error>> + 'static,
     {
-        // Stub - would register the function in the environment
+        self.functions.insert(name.to_string(), Box::new(func));
     }
 
-    pub fn run(&self, _program: ExprProgram, _ctx: &ExprContext) -> Result<ExprValue> {
-        // Stub - would execute the compiled program with the context
-        Err(eyre!("Expression evaluation not implemented"))
+    pub fn run(&self, program: ExprProgram, ctx: &ExprContext) -> Result<ExprValue> {
+        // For basic expressions, evaluate directly with the context
+        let result = eval_with_context_mut(&program.expression, &mut ctx.context.clone())
+            .map_err(|e| eyre!("Expression evaluation failed: {}", e))?;
+
+        match result {
+            Value::Boolean(b) => Ok(ExprValue::Bool(b)),
+            Value::String(s) => Ok(ExprValue::String(s)),
+            Value::Int(i) => Ok(ExprValue::String(i.to_string())),
+            Value::Float(f) => Ok(ExprValue::String(f.to_string())),
+            _ => Err(eyre!("Unsupported expression result type")),
+        }
     }
 }
 
 impl ExprContext {
-    pub fn insert(&mut self, _key: &str, _value: &str) {
-        // Stub - would insert key-value pair into context
+    pub fn insert(&mut self, key: &str, value: &str) {
+        let _ = self
+            .context
+            .set_value(key.to_string(), Value::String(value.to_string()));
+        // If setting fails, we can ignore for now
     }
 }
 

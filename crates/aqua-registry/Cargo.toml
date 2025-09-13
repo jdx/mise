@@ -23,6 +23,8 @@ itertools = "0.14"
 regex = "1"
 dashmap = "6"
 deepmerge = { version = "0.1", features = ["derive", "indexmap"] }
+semver = "1"
+evalexpr = "11"
 
 [build-dependencies]
 serde = { version = "1", features = ["derive"] }

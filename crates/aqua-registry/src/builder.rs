@@ -52,7 +52,7 @@ impl RegistryBuilder {
         // For now, this is a stub - git support can be added later
         // In the real implementation, this would clone/update the repo
         // and then load either registry.yaml or pkgs/**/registry.yaml files
-        todo!("Git support not yet implemented")
+        Err(eyre::eyre!("Git support not yet implemented"))
     }
 
     fn merge_registry(&mut self, registry: RegistryYaml) {

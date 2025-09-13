@@ -4,7 +4,24 @@ use crate::utils::*;
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use semver::{Version, VersionReq};
 use std::collections::HashMap;
+
+fn matches_version_constraint(version: &str, constraint: &str) -> bool {
+    // Extract the clean semver part from the version (remove prefixes like 'v')
+    let (_, clean_version) = split_version_prefix(version);
+
+    // Try to parse both the version and constraint
+    let Ok(version) = Version::parse(clean_version) else {
+        return false;
+    };
+
+    let Ok(req) = VersionReq::parse(constraint) else {
+        return false;
+    };
+
+    req.matches(&version)
+}
 
 impl AquaPackage {
     pub fn with_version(mut self, versions: &[&str]) -> AquaPackage {
@@ -37,8 +54,10 @@ impl AquaPackage {
                 if vo.version_constraint.is_empty() {
                     true
                 } else {
-                    // Simplified stub - always return true for now
-                    true
+                    // Check if any of the provided versions match the constraint
+                    versions
+                        .iter()
+                        .any(|version| matches_version_constraint(version, &vo.version_constraint))
                 }
             })
             .unwrap_or(self)
