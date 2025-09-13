@@ -18,9 +18,8 @@ if [[ $cur_version != "$latest_version" ]]; then
 	echo "Releasing $cur_version"
 	cargo set-version "$cur_version" --workspace
 	cargo publish --allow-dirty -p vfox
-	cargo publish --allow-dirty -p aqua-registry
 	cargo add "vfox@$cur_version"
-	cargo add "aqua-registry@$cur_version"
+	# aqua-registry is an internal crate and should not be published
 	cargo publish --allow-dirty -p mise
 	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
 	changelog="$(echo "$changelog" | tail -n +3)"
