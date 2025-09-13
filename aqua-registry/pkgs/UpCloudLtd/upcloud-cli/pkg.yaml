@@ -1,5 +1,5 @@
 packages:
-  - name: UpCloudLtd/upcloud-cli@v3.22.0
+  - name: UpCloudLtd/upcloud-cli@v3.23.0
   - name: UpCloudLtd/upcloud-cli
     version: v3.15.0
   - name: UpCloudLtd/upcloud-cli

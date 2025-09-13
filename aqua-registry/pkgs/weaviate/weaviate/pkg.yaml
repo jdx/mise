@@ -1,5 +1,5 @@
 packages:
-  - name: weaviate/weaviate@v1.32.7
+  - name: weaviate/weaviate@v1.32.8
   - name: weaviate/weaviate
     version: v1.30.3
   - name: weaviate/weaviate

@@ -1,5 +1,5 @@
 packages:
-  - name: bitnami-labs/sealed-secrets@v0.31.0
+  - name: bitnami-labs/sealed-secrets@v0.32.1
   - name: bitnami-labs/sealed-secrets
     version: v0.17.5
   - name: bitnami-labs/sealed-secrets

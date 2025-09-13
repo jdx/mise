@@ -1,5 +1,5 @@
 packages:
-  - name: buildkite/cli@v3.11.0
+  - name: buildkite/cli@v3.12.0
   - name: buildkite/cli
     version: v3.0.0-beta.20240418
   - name: buildkite/cli

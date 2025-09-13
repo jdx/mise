@@ -1,5 +1,5 @@
 packages:
-  - name: go-acme/lego@v4.25.2
+  - name: go-acme/lego@v4.26.0
   - name: go-acme/lego
     version: v4.5.2
   - name: go-acme/lego

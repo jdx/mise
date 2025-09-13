@@ -1,2 +1,2 @@
 packages:
-  - name: linkerd/linkerd2@edge-25.9.1
+  - name: linkerd/linkerd2@edge-25.9.2

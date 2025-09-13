@@ -12,4 +12,4 @@ packages:
   - name: rhysd/actionlint@v1.7.7
   - name: suzuki-shunsuke/cmdx@v2.0.2
   - name: jqlang/jq@jq-1.8.1
-  - name: cli/cli@v2.78.0
+  - name: cli/cli@v2.79.0

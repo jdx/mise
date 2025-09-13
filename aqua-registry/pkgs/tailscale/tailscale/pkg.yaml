@@ -1,2 +1,2 @@
 packages:
-  - name: tailscale/tailscale@v1.86.2
+  - name: tailscale/tailscale@v1.88.1

@@ -1,5 +1,5 @@
 packages:
-  - name: helm/helm@v3.18.6
+  - name: helm/helm@v3.19.0
   - name: helm/helm
     version: v3.5.4
   - name: helm/helm
