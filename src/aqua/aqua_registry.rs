@@ -43,22 +43,6 @@ pub static AQUA_REGISTRY: Lazy<Arc<AquaRegistryManager>> = Lazy::new(|| {
     Arc::new(registry_manager)
 });
 
-pub struct AquaRegistry;
-
-impl AquaRegistry {
-    pub async fn package(&self, id: &str) -> Result<aqua_registry::AquaPackage> {
-        AQUA_REGISTRY.package(id).await
-    }
-
-    pub async fn package_with_version(
-        &self,
-        id: &str,
-        versions: &[&str],
-    ) -> Result<aqua_registry::AquaPackage> {
-        AQUA_REGISTRY.package_with_version(id, versions).await
-    }
-}
-
 // Re-export types for backwards compatibility
 pub use aqua_registry::{AquaChecksumType, AquaMinisignType, AquaPackageType};
 
@@ -79,11 +63,12 @@ pub static AQUA_STANDARD_REGISTRY_FILES: Lazy<HashMap<&'static str, &'static str
 
 // Git support implementation
 fn create_registry_with_git_support(settings: &Settings) -> Result<AquaRegistryManager> {
-    let git_clone_fn = Some(
-        Box::new(|url: &str, cache_dir: &PathBuf| -> Result<Vec<PathBuf>> {
+    let git_clone_fn = Some(Box::new(
+        |url: &str, cache_dir: &std::path::Path| -> Result<Vec<PathBuf>> {
             clone_or_update_git_registry(url, cache_dir)
-        }) as Box<dyn Fn(&str, &PathBuf) -> Result<Vec<PathBuf>>>,
-    );
+        },
+    )
+        as Box<dyn Fn(&str, &std::path::Path) -> Result<Vec<PathBuf>>>);
 
     AquaRegistryManager::with_git_support(
         settings.aqua.registry_url.as_deref(),
@@ -97,7 +82,7 @@ fn create_registry_with_git_support(settings: &Settings) -> Result<AquaRegistryM
     )
 }
 
-fn clone_or_update_git_registry(url: &str, _cache_dir: &PathBuf) -> Result<Vec<PathBuf>> {
+fn clone_or_update_git_registry(url: &str, _cache_dir: &std::path::Path) -> Result<Vec<PathBuf>> {
     // Use mise's cache directory
     let actual_cache_dir = dirs::CACHE.join("aqua-registry");
     let repo = Git::new(&actual_cache_dir);

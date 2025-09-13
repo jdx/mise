@@ -20,13 +20,13 @@ pub mod baked {
     }
 }
 
-pub use builder::RegistryBuilder;
 pub use registry::AquaRegistryManager;
-pub use types::*;
+pub use types::{AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::builder::RegistryBuilder;
 
     #[test]
     fn test_registry_builder() {

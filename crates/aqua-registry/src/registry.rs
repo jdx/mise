@@ -1,13 +1,13 @@
+use crate::builder::RegistryBuilder;
 use crate::git;
 use crate::types::{AquaPackage, RegistryIndex};
-use crate::RegistryBuilder;
 use dashmap::DashMap;
 use eyre::Result;
 use once_cell::sync::OnceCell;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-type GitCloneFn = Box<dyn Fn(&str, &PathBuf) -> Result<Vec<PathBuf>>>;
+type GitCloneFn = Box<dyn Fn(&str, &std::path::Path) -> Result<Vec<PathBuf>>>;
 
 static GLOBAL_REGISTRY: OnceCell<Arc<AquaRegistryManager>> = OnceCell::new();
 
@@ -200,7 +200,7 @@ impl AquaRegistryManager {
             if url.starts_with("http://") || url.starts_with("https://") {
                 if let Some(ref git_fn) = git_clone_fn {
                     let cache_dir = cache_base.join("default");
-                    match git_fn(url, &cache_dir) {
+                    match git_fn(url, cache_dir.as_path()) {
                         Ok(registry_files) => {
                             for registry_file in registry_files {
                                 if let Err(err) = builder.try_add_registry_file(&registry_file) {
@@ -234,7 +234,7 @@ impl AquaRegistryManager {
             if registry.starts_with("http://") || registry.starts_with("https://") {
                 if let Some(ref git_fn) = git_clone_fn {
                     let cache_dir = cache_base.join(format!("additional-{}", idx));
-                    match git_fn(registry, &cache_dir) {
+                    match git_fn(registry, cache_dir.as_path()) {
                         Ok(registry_files) => {
                             for registry_file in registry_files {
                                 if let Err(err) = builder.try_add_registry_file(&registry_file) {
