@@ -51,7 +51,7 @@ mise run render ::: lint-fix
 rm -rf aqua-registry
 git clone https://github.com/aquaproj/aqua-registry
 # Keep only pkgs/**/registry.yaml files, remove everything else
-find aqua-registry -type f ! -path "aqua-registry/pkgs/*/registry.yaml" -delete
+find aqua-registry -type f ! -path "aqua-registry/pkgs/*/registry.yaml" ! -name LICENSE -delete
 find aqua-registry -type d -empty -delete
 
 mise up
