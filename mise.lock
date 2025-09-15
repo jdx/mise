@@ -27,30 +27,21 @@ size = 4758557
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"
 
 [[tools.bun]]
-version = "1.2.21"
+version = "1.2.22"
 backend = "core:bun"
 
 [tools.bun.platforms.linux-x64]
-checksum = "blake3:cf519ce71d7c518e211001f428ae34c2ec2a4f0484787bdf28baf7f372c94860"
-size = 39128668
-
-[tools.bun.platforms.macos-arm64]
-checksum = "blake3:b5824ab4bf0afba1d27d55d4cbec1696c3d1070f6982cbf6b4fa0489892ec931"
-size = 22056420
+checksum = "blake3:bf32acffd6e77803ba760caf8d2909389da01c95613b81fe155fe87e2a8f8004"
+size = 39256266
 
 [[tools.cargo-binstall]]
-version = "1.15.4"
+version = "1.15.5"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "blake3:e96726cf26e534a44f61e015cc427ed92868fbf351fb7f1245d30e044d74cfa7"
-size = 6774865
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.4/cargo-binstall-x86_64-unknown-linux-musl.tgz"
-
-[tools.cargo-binstall.platforms.macos-arm64]
-checksum = "blake3:6a9104a686d44217ccfdcc2b9333a708d8ebd5a4abafe4d2eda5dec77c051a67"
-size = 5997376
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.4/cargo-binstall-aarch64-apple-darwin.zip"
+checksum = "blake3:1a5fa23fb172db04713b8acd854227ad5df08480dcc0a2fbd71f4fd93c0693ca"
+size = 6790102
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.5/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.7"
@@ -100,18 +91,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [[tools.hk]]
-version = "1.12.0"
+version = "1.12.1"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:5f4f62704bca96314d3ae11e2b0f0c9e76d07058f18676a5c31981763eb81d16"
-size = 6753765
-url = "https://github.com/jdx/hk/releases/download/v1.12.0/hk-x86_64-unknown-linux-gnu.tar.gz"
-
-[tools.hk.platforms.macos-arm64]
-checksum = "blake3:4a5e2f34cd73cc54e9beafb189f1566c9d2a3de26eb6aae1a3ee69312bd752ac"
-size = 5853150
-url = "https://github.com/jdx/hk/releases/download/v1.12.0/hk-aarch64-apple-darwin.tar.gz"
+checksum = "blake3:2e8d3a27beabb40355f7deb89aa02599769a31513af1df88b6f2509f23274f2d"
+size = 6751013
+url = "https://github.com/jdx/hk/releases/download/v1.12.1/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"

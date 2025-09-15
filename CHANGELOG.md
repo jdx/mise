@@ -1,5 +1,26 @@
 # Changelog
 
+## [2025.9.11](https://github.com/jdx/mise/compare/v2025.9.10..v2025.9.11) - 2025-09-15
+
+### 🚀 Features
+
+- **(ci)** run all registry tools when workflow_dispatch is triggered by @jdx in [#6295](https://github.com/jdx/mise/pull/6295)
+- **(set)** add -E/--env flag to mise set command by @jdx in [#6291](https://github.com/jdx/mise/pull/6291)
+- **(tasks)** make auto outputs default by @risu729 in [#6137](https://github.com/jdx/mise/pull/6137)
+
+### 🚜 Refactor
+
+- **(aqua)** extract aqua registry into internal subcrate by @jdx in [#6293](https://github.com/jdx/mise/pull/6293)
+
+### 📚 Documentation
+
+- fix mkdir paths by @risu729 in [#6298](https://github.com/jdx/mise/pull/6298)
+
+### Chore
+
+- **(aqua-registry)** remove unused aqua-registry files by @jdx in [#6294](https://github.com/jdx/mise/pull/6294)
+- keep aqua-registry LICENSE file by @risu729 in [#6297](https://github.com/jdx/mise/pull/6297)
+
 ## [2025.9.10](https://github.com/jdx/mise/compare/v2025.9.9..v2025.9.10) - 2025-09-13
 
 ### 📦 Registry
