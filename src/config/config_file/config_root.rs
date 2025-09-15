@@ -22,7 +22,7 @@ pub fn config_root(path: &Path) -> PathBuf {
     let path = path
         .absolutize()
         .map(|p| p.to_path_buf())
-        .unwrap_or(path.to_path_buf());
+        .unwrap_or_else(|_| path.to_path_buf());
     if let Some(cached) = CONFIG_ROOT_CACHE.lock().unwrap().get(&path).cloned() {
         return cached;
     }

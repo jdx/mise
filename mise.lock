@@ -34,6 +34,10 @@ backend = "core:bun"
 checksum = "blake3:bf32acffd6e77803ba760caf8d2909389da01c95613b81fe155fe87e2a8f8004"
 size = 39256266
 
+[tools.bun.platforms.macos-arm64]
+checksum = "blake3:ec41528ae2badd9c5d41cefe2c463a307c46d9b5f0ccf157d6f406890340833e"
+size = 22178114
+
 [[tools.cargo-binstall]]
 version = "1.15.5"
 backend = "aqua:cargo-bins/cargo-binstall"
@@ -42,6 +46,11 @@ backend = "aqua:cargo-bins/cargo-binstall"
 checksum = "blake3:1a5fa23fb172db04713b8acd854227ad5df08480dcc0a2fbd71f4fd93c0693ca"
 size = 6790102
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.5/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+
+[tools.cargo-binstall.platforms.macos-arm64]
+checksum = "blake3:4eff2c4ed16a8864b20b55fbe855821e60dfb633c04e40ab67679a0639f08b2f"
+size = 6004395
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.5/cargo-binstall-aarch64-apple-darwin.zip"
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.7"
@@ -76,6 +85,11 @@ checksum = "sha256:ea5c65f99425d6cfbb5c4b5de5dac035f14d09131c1a0ea7c7fc32eab3936
 size = 155329864
 url = "https://github.com/sigstore/cosign/releases/download/v2.6.0/cosign-linux-amd64"
 
+[tools.cosign.platforms.macos-arm64]
+checksum = "sha256:dea5b83b8b375b99ac803c7bdb1f798963dbeb47789ceb72153202e7f20e8d07"
+size = 154611890
+url = "https://github.com/sigstore/cosign/releases/download/v2.6.0/cosign-darwin-arm64"
+
 [[tools.gh]]
 version = "2.62.0"
 backend = "aqua:cli/cli"
@@ -98,6 +112,11 @@ backend = "aqua:jdx/hk"
 checksum = "blake3:2e8d3a27beabb40355f7deb89aa02599769a31513af1df88b6f2509f23274f2d"
 size = 6751013
 url = "https://github.com/jdx/hk/releases/download/v1.12.1/hk-x86_64-unknown-linux-gnu.tar.gz"
+
+[tools.hk.platforms.macos-arm64]
+checksum = "blake3:1d4153f34bc93216980171a07b0e5441d4e99776506f95ca9c3d63603a9d044c"
+size = 5854360
+url = "https://github.com/jdx/hk/releases/download/v1.12.1/hk-aarch64-apple-darwin.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"
