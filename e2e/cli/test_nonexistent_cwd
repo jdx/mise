@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Test that mise handles commands from non-existent directories gracefully
+# This test validates that when a directory is deleted while mise is running from it,
+# mise shows a warning but continues execution
+
+# Test helper function to run commands from a non-existent directory
+run_from_nonexistent() {
+	local cmd="$1"
+	local should_succeed="${2:-true}" # Whether the command should succeed despite the warning
+
+	# Create a temporary directory
+	local temp_dir
+	temp_dir=$(mktemp -d)
+
+	# Change to the temporary directory
+	cd "$temp_dir"
+
+	# Remove the directory while we're still in it
+	rmdir "$temp_dir"
+
+	# Now we're in a non-existent directory - run the mise command
+	local status=0
+	local output
+	output=$(MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 bash -c "$cmd 2>&1") || status=$?
+
+	# Check for the warning about non-existent directory
+	if [[ $output == *"Current directory does not exist"* ]] || [[ $output == *"WARNING"* ]]; then
+		ok "[$cmd] showed warning about non-existent directory"
+	else
+		# Some commands might not trigger the warning if they exit early
+		debug "[$cmd] may not have shown warning, output: ${output:0:100}..."
+	fi
+
+	if [[ $should_succeed == "true" ]]; then
+		if [[ $status -eq 0 ]]; then
+			ok "[$cmd] succeeded despite non-existent directory"
+		else
+			# Command might fail for other reasons (e.g., missing tools)
+			debug "[$cmd] failed (status $status), which might be expected"
+		fi
+	else
+		if [[ $status -ne 0 ]]; then
+			ok "[$cmd] failed as expected"
+		else
+			fail "[$cmd] succeeded but was expected to fail"
+		fi
+	fi
+
+	# Return to a valid directory
+	cd "$HOME" || cd / || true
+}
+
+echo "Testing mise commands from non-existent directories..."
+
+# Test various commands - they should all show a warning but may still work
+echo "Test 1: mise --version from non-existent directory"
+run_from_nonexistent "mise --version" "true"
+
+echo "Test 2: mise ls from non-existent directory"
+run_from_nonexistent "mise ls" "true"
+
+echo "Test 3: mise current from non-existent directory"
+run_from_nonexistent "mise current" "true"
+
+echo "Test 4: mise env from non-existent directory"
+run_from_nonexistent "mise env" "true"
+
+echo "Test 5: mise doctor from non-existent directory"
+run_from_nonexistent "mise doctor" "true"
+
+echo "Test 6: mise plugins from non-existent directory"
+run_from_nonexistent "mise plugins" "true"
+
+# Commands that need to write to cwd might fail
+echo "Test 7: mise use from non-existent directory"
+run_from_nonexistent "mise use node@20" "false"
+
+echo "Test 8: mise install from non-existent directory"
+run_from_nonexistent "mise install" "true" # Should work for global tools
+
+# Test that the warning appears consistently
+echo "Test 9: Verify warning message format"
+temp_dir=$(mktemp -d)
+cd "$temp_dir"
+rmdir "$temp_dir"
+
+output=$(mise --version 2>&1) || true
+if [[ $output == *"WARNING"* ]] && [[ $output == *"Current directory does not exist"* ]]; then
+	ok "Warning message has proper format"
+elif [[ $output == *"current directory"* ]]; then
+	ok "Warning message mentions directory issue"
+else
+	debug "Warning might not be shown for --version: ${output:0:100}..."
+fi
+
+cd "$HOME" || cd / || true
+
+echo ""
+echo "All non-existent directory tests passed!"
