@@ -191,7 +191,7 @@ aws-amplify.backends = [
     "asdf:LozanoMatheus/asdf-aws-amplify-cli"
 ]
 aws-cli.aliases = ["aws", "awscli"]
-aws-cli.description = "The AWS Command Line Interface (AWS CLI) is a unified tool that provides a consistent interface for interacting with all parts of Amazon Web Services"
+aws-cli.description = "The AWS Command Line Interface (AWS CLI v2) is a unified tool that provides a consistent interface for interacting with all parts of Amazon Web Services"
 aws-cli.backends = ["aqua:aws/aws-cli", "asdf:MetricMike/asdf-awscli"]
 aws-cli.test = ["aws --version", "aws-cli/{{version}}"]
 aws-cli.os = ["linux", "macos"]
