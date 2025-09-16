@@ -54,9 +54,11 @@ toolchains. Please consult the Rust documentation for the most up-to-date list o
 The `profile` option allows you to specify the type of release to install. The following values
 are supported:
 
-- `minimal`: Includes as few components as possible to get a working compiler (rustc, rust-std, and cargo)
-- `default` (default): Includes all of components in the minimal profile, and adds rust-docs, rustfmt, and clippy
-- `complete`: Includes all the components available through rustup. This should never be used, as it includes every component ever included in the metadata and thus will almost always fail.
+- `minimal`: Includes as few components as possible to get a working compiler (`rustc`, `rust-std`, and `cargo`)
+- `default`: Includes all of the components in the minimal profile, and adds `rust-docs`, `rustfmt`, and `clippy`
+- `complete`: Includes all the components available through `rustup`. This should never be used, as it includes every component ever included in the metadata and thus will almost always fail.
+
+If not set, it defaults to the profile configured in `rustup`. You can check your current default by running `rustup show profile`.
 
 ```toml
 [tools]
