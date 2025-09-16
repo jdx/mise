@@ -33,6 +33,14 @@ fn generate_baked_registry(out_dir: &str) {
 }
 
 fn find_registry_dir() -> Option<std::path::PathBuf> {
+    // Prefer the registry embedded within this crate: crates/aqua-registry/aqua-registry
+    if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
+        let embedded = std::path::Path::new(&manifest_dir).join("aqua-registry");
+        if embedded.exists() {
+            return Some(embedded);
+        }
+    }
+
     let current_dir = env::current_dir().ok()?;
 
     // Look for the workspace root by finding a Cargo.toml that contains [workspace]
