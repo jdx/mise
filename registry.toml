@@ -1298,11 +1298,7 @@ glab.backends = [
 ]
 glab.test = ["glab version", "glab {{version}}"]
 gleam.description = "A friendly language for building type-safe, scalable systems"
-gleam.backends = [
-    "aqua:gleam-lang/gleam",
-    "asdf:asdf-community/asdf-gleam",
-    "cargo:gleam"
-]
+gleam.backends = ["aqua:gleam-lang/gleam", "asdf:asdf-community/asdf-gleam"]
 gleam.test = ["gleam --version", "gleam {{version}}"]
 glen.description = "cli to export gitlab variables"
 glen.backends = ["github:lingrino/glen", "asdf:bradym/asdf-glen"]
@@ -2802,19 +2798,18 @@ rocq.aliases = ["coq"]
 ruby.description = "Ruby language"
 ruby.backends = ["core:ruby"]
 ruff.description = "An extremely fast Python linter and code formatter, written in Rust"
+# ruff intends to publish to crates.io soon.
 ruff.backends = [
     "aqua:astral-sh/ruff",
     "ubi:astral-sh/ruff",
-    "asdf:simhem/asdf-ruff",
-    "cargo:ruff"
+    "asdf:simhem/asdf-ruff"
 ]
 rust.description = "Rust language"
 rust.backends = ["core:rust", "asdf:code-lever/asdf-rust"]
 rust-analyzer.description = "A Rust compiler front-end for IDEs"
 rust-analyzer.backends = [
     "aqua:rust-lang/rust-analyzer",
-    "asdf:Xyven1/asdf-rust-analyzer",
-    "cargo:rust-analyzer"
+    "asdf:Xyven1/asdf-rust-analyzer"
 ]
 rustic.description = "rustic - fast, encrypted, and deduplicated backups powered by Rust"
 rustic.backends = [
@@ -3391,12 +3386,12 @@ usage.os = ["linux", "macos", "freebsd"]
 usage.test = ["usage --version", "usage-cli {{version}}"]
 usql.description = "Universal command-line interface for SQL databases"
 usql.backends = ["aqua:xo/usql", "asdf:itspngu/asdf-usql"]
+# uv intends to publish to crates.io, but hasn't done so yet
 uv.description = "An extremely fast Python package installer and resolver, written in Rust"
 uv.backends = [
     "aqua:astral-sh/uv",
     "ubi:astral-sh/uv",
     "asdf:asdf-community/asdf-uv",
-    "cargo:uv",
     "pipx:uv"
 ]
 uv.test = ["uv --version", "uv {{version}}"]
