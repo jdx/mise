@@ -24,6 +24,14 @@ exists_on_crates() {
 	return 1
 }
 
+can_publish_mise() {
+	# Skip publishing if aqua-registry is a path dependency (internal crate)
+	if grep -qE '^aqua-registry\s*=\s*\{[^}]*path\s*=' Cargo.toml; then
+		return 1
+	fi
+	return 0
+}
+
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
 latest_version="$(cargo info --registry "crates-io" --color never --quiet mise | grep "^version:" | cut -d' ' -f2)"
 if [[ $cur_version != "$latest_version" ]]; then
@@ -39,7 +47,11 @@ if [[ $cur_version != "$latest_version" ]]; then
 	if exists_on_crates mise "$cur_version"; then
 		echo "mise@$cur_version already on crates.io, skipping publish"
 	else
-		cargo publish --allow-dirty -p mise
+		if can_publish_mise; then
+			cargo publish --allow-dirty -p mise
+		else
+			echo "Skipping publish of mise due to path dependency on aqua-registry"
+		fi
 	fi
 	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
 	changelog="$(echo "$changelog" | tail -n +3)"
