@@ -209,7 +209,7 @@ checksum = "b0674a1ddeecb70197781e945de4b3b8ffb61fa939a5597bcf48503737663100"
 
 [[package]]
 name = "aqua-registry"
-version = "2025.9.10"
+version = "2025.9.11"
 dependencies = [
  "expr-lang",
  "eyre",
@@ -6677,7 +6677,7 @@ dependencies = [
 
 [[package]]
 name = "vfox"
-version = "1.0.5"
+version = "2025.9.11"
 dependencies = [
  "clap",
  "env_logger",

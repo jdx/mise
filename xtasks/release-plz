@@ -12,19 +12,44 @@ fi
 git config user.name mise-en-dev
 git config user.email release@mise.jdx.dev
 
+exists_on_crates() {
+	crate="$1"
+	version="$2"
+	if cargo info --registry "crates-io" --color never --quiet "$crate" | grep -E "^version:\s+$version$" >/dev/null 2>&1; then
+		return 0
+	fi
+	if curl -fsSL "https://crates.io/api/v1/crates/$crate/$version" >/dev/null 2>&1; then
+		return 0
+	fi
+	return 1
+}
+
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
 latest_version="$(cargo info --registry "crates-io" --color never --quiet mise | grep "^version:" | cut -d' ' -f2)"
 if [[ $cur_version != "$latest_version" ]]; then
 	echo "Releasing $cur_version"
 	cargo set-version "$cur_version" --workspace
-	cargo publish --allow-dirty -p vfox
+	if exists_on_crates vfox "$cur_version"; then
+		echo "vfox@$cur_version already on crates.io, skipping publish"
+	else
+		cargo publish --allow-dirty -p vfox
+	fi
 	cargo add "vfox@$cur_version"
 	# aqua-registry is an internal crate and should not be published
-	cargo publish --allow-dirty -p mise
+	if exists_on_crates mise "$cur_version"; then
+		echo "mise@$cur_version already on crates.io, skipping publish"
+	else
+		cargo publish --allow-dirty -p mise
+	fi
 	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
 	changelog="$(echo "$changelog" | tail -n +3)"
-	git tag "v$cur_version" -s -m "$changelog"
-	git push --tags
+	if git rev-parse -q --verify "refs/tags/v$cur_version" >/dev/null ||
+		git ls-remote --exit-code --tags origin "v$cur_version" >/dev/null 2>&1; then
+		echo "Tag v$cur_version already exists, skipping tag creation"
+	else
+		git tag "v$cur_version" -s -m "$changelog"
+		git push --tags
+	fi
 	exit 0
 fi
 
