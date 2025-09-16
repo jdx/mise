@@ -9,9 +9,7 @@ fn main() {
 fn generate_baked_registry(out_dir: &str) {
     let dest_path = Path::new(out_dir).join("aqua_standard_registry.rs");
 
-    // Look for the aqua-registry directory in the workspace root
-    let registry_dir = find_registry_dir()
-        .expect("Could not find aqua-registry directory in workspace root. Expected to find it at workspace_root/aqua-registry/");
+    let registry_dir = find_registry_dir();
 
     let registries =
         collect_aqua_registries(&registry_dir).expect("Failed to collect aqua registry files");
@@ -32,29 +30,15 @@ fn generate_baked_registry(out_dir: &str) {
     fs::write(dest_path, code).expect("Failed to write baked registry file");
 }
 
-fn find_registry_dir() -> Option<std::path::PathBuf> {
-    let current_dir = env::current_dir().ok()?;
-
-    // Look for the workspace root by finding a Cargo.toml that contains [workspace]
-    let workspace_root = current_dir.ancestors().find(|dir| {
-        let cargo_toml = dir.join("Cargo.toml");
-        if !cargo_toml.exists() {
-            return false;
-        }
-        // Check if this Cargo.toml defines a workspace
-        if let Ok(content) = fs::read_to_string(&cargo_toml) {
-            content.contains("[workspace]")
-        } else {
-            false
-        }
-    })?;
-
-    let aqua_registry = workspace_root.join("aqua-registry");
-    if aqua_registry.exists() {
-        return Some(aqua_registry);
+fn find_registry_dir() -> std::path::PathBuf {
+    // Registry location is constant: crates/aqua-registry/aqua-registry
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR")
+        .expect("CARGO_MANIFEST_DIR environment variable must be set");
+    let embedded = std::path::Path::new(&manifest_dir).join("aqua-registry");
+    if embedded.exists() {
+        return embedded;
     }
-
-    None
+    panic!("Registry directory not found");
 }
 
 fn collect_aqua_registries(

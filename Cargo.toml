@@ -27,7 +27,6 @@ include = [
   "/src/**/*.rs",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
-  "/aqua-registry/pkgs/**/registry.yaml",
 ]
 build = "build.rs"
 rust-version = "1.85"
