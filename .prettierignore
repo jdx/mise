@@ -8,7 +8,7 @@
 .cliffignore
 *.kdl
 CHANGELOG.md
-aqua-registry/
+crates/aqua-registry/aqua-registry/
 docs/.vitepress/cache
 docs/.vitepress/dist
 docs/cli
