@@ -9,9 +9,15 @@ fn main() {
 fn generate_baked_registry(out_dir: &str) {
     let dest_path = Path::new(out_dir).join("aqua_standard_registry.rs");
 
-    // Look for the aqua-registry directory in the workspace root
-    let registry_dir = find_registry_dir()
-        .expect("Could not find aqua-registry directory in workspace root. Expected to find it at workspace_root/aqua-registry/");
+    // Use the embedded registry directory inside this crate; if missing, bake an empty map for dev builds
+    let registry_dir = match find_registry_dir() {
+        Some(dir) => dir,
+        None => {
+            fs::write(&dest_path, "HashMap::from([])")
+                .expect("Failed to write baked registry file");
+            return;
+        }
+    };
 
     let registries =
         collect_aqua_registries(&registry_dir).expect("Failed to collect aqua registry files");
@@ -33,35 +39,12 @@ fn generate_baked_registry(out_dir: &str) {
 }
 
 fn find_registry_dir() -> Option<std::path::PathBuf> {
-    // Prefer the registry embedded within this crate: crates/aqua-registry/aqua-registry
-    if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
-        let embedded = std::path::Path::new(&manifest_dir).join("aqua-registry");
-        if embedded.exists() {
-            return Some(embedded);
-        }
+    // Registry location is constant: crates/aqua-registry/aqua-registry
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").ok()?;
+    let embedded = std::path::Path::new(&manifest_dir).join("aqua-registry");
+    if embedded.exists() {
+        return Some(embedded);
     }
-
-    let current_dir = env::current_dir().ok()?;
-
-    // Look for the workspace root by finding a Cargo.toml that contains [workspace]
-    let workspace_root = current_dir.ancestors().find(|dir| {
-        let cargo_toml = dir.join("Cargo.toml");
-        if !cargo_toml.exists() {
-            return false;
-        }
-        // Check if this Cargo.toml defines a workspace
-        if let Ok(content) = fs::read_to_string(&cargo_toml) {
-            content.contains("[workspace]")
-        } else {
-            false
-        }
-    })?;
-
-    let aqua_registry = workspace_root.join("aqua-registry");
-    if aqua_registry.exists() {
-        return Some(aqua_registry);
-    }
-
     None
 }
 

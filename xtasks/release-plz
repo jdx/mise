@@ -36,19 +36,19 @@ if [[ $cur_version != "$latest_version" ]]; then
 	fi
 	cargo add "vfox@$cur_version"
 
-	# Publish aqua-registry crate same as vfox
 	if exists_on_crates aqua-registry "$cur_version"; then
 		echo "aqua-registry@$cur_version already on crates.io, skipping publish"
 	else
 		cargo publish --allow-dirty -p aqua-registry
 	fi
 	cargo add "aqua-registry@$cur_version"
-	# aqua-registry is an internal crate and should not be published
+
 	if exists_on_crates mise "$cur_version"; then
 		echo "mise@$cur_version already on crates.io, skipping publish"
 	else
 		cargo publish --allow-dirty -p mise
 	fi
+
 	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
 	changelog="$(echo "$changelog" | tail -n +3)"
 	if git rev-parse -q --verify "refs/tags/v$cur_version" >/dev/null ||
