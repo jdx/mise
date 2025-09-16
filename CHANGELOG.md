@@ -1,12 +1,33 @@
 # Changelog
 
-## [2025.9.11](https://github.com/jdx/mise/compare/v2025.9.10..v2025.9.11) - 2025-09-15
+## [2025.9.12](https://github.com/jdx/mise/compare/v2025.9.11..v2025.9.12) - 2025-09-16
+
+### 🐛 Bug Fixes
+
+- **(ci)** properly exclude aqua-registry files from hk linting by @jdx in [42d7758](https://github.com/jdx/mise/commit/42d7758d157317088ac5194ac26eefc7fc1ba4f8)
+
+### Chore
+
+- **(release)** embed aqua-registry under crate and publish like vfox by @jdx in [#6306](https://github.com/jdx/mise/pull/6306)
+- ignore aqua-registry assets from prettier by @jdx in [047d77b](https://github.com/jdx/mise/commit/047d77be35fea0b3277342cb6383a1873bca19a5)
+- disable "useless cat" shellcheck by @jdx in [a6def59](https://github.com/jdx/mise/commit/a6def59fe945028934fed0694df2b4daeeaaf478)
+
+## [2025.9.11](https://github.com/jdx/mise/compare/v2025.9.10..v2025.9.11) - 2025-09-16
+
+### 📦 Registry
+
+- indicate aws-cli is v2 by @jayvdb in [#6300](https://github.com/jdx/mise/pull/6300)
 
 ### 🚀 Features
 
 - **(ci)** run all registry tools when workflow_dispatch is triggered by @jdx in [#6295](https://github.com/jdx/mise/pull/6295)
+- **(cli)** handle non-existent working directories gracefully by @jdx in [#6304](https://github.com/jdx/mise/pull/6304)
 - **(set)** add -E/--env flag to mise set command by @jdx in [#6291](https://github.com/jdx/mise/pull/6291)
 - **(tasks)** make auto outputs default by @risu729 in [#6137](https://github.com/jdx/mise/pull/6137)
+
+### 🐛 Bug Fixes
+
+- align crate versions to fix release-plz script by @jdx in [5a464e9](https://github.com/jdx/mise/commit/5a464e98b56f49200e69ce2665ed896c74b206e3)
 
 ### 🚜 Refactor
 
@@ -15,11 +36,18 @@
 ### 📚 Documentation
 
 - fix mkdir paths by @risu729 in [#6298](https://github.com/jdx/mise/pull/6298)
+- fix rust profile default by @risu729 in [#6305](https://github.com/jdx/mise/pull/6305)
 
 ### Chore
 
 - **(aqua-registry)** remove unused aqua-registry files by @jdx in [#6294](https://github.com/jdx/mise/pull/6294)
+- **(release)** make release-plz idempotent for existing crate versions by @jdx in [dbdfd6a](https://github.com/jdx/mise/commit/dbdfd6a713852a1d55a6bb8376d2996545e128ce)
+- **(release)** skip publishing mise when aqua-registry is a path dep by @jdx in [47efffd](https://github.com/jdx/mise/commit/47efffdfc0316100f41c6c077d17fd6014663f4f)
 - keep aqua-registry LICENSE file by @risu729 in [#6297](https://github.com/jdx/mise/pull/6297)
+
+### New Contributors
+
+- @jayvdb made their first contribution in [#6300](https://github.com/jdx/mise/pull/6300)
 
 ## [2025.9.10](https://github.com/jdx/mise/compare/v2025.9.9..v2025.9.10) - 2025-09-13
 

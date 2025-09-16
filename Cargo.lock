@@ -3875,7 +3875,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.9.11"
+version = "2025.9.12"
 dependencies = [
  "aqua-registry",
  "async-backtrace",
