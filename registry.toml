@@ -119,7 +119,7 @@ apko.backends = [
 apko.test = ["apko version", "GitVersion:    v{{version}}"]
 apollo-ios.aliases = ["apollo-ios-cli"]
 apollo-ios.description = "Apollo iOS Code Generation"
-apollo-ios.backends = ["asdf:mise-plugins/mise-apollo-ios-cli"]
+apollo-ios.backends = ["ubi:apollographql/apollo-ios", "asdf:mise-plugins/mise-apollo-ios-cli"]
 apollo-router.description = "A configurable, high-performance routing runtime for Apollo Federation"
 apollo-router.backends = [
     "github:apollographql/router",
@@ -307,7 +307,10 @@ bazelisk.backends = [
     "asdf:josephtate/asdf-bazelisk"
 ]
 bbr-s3-config-validator.description = "The BOSH Backup and Restore (BBR) S3 bucket configuration validator is a tool to validate and troubleshoot your Cloud Foundry and BBR external blobstore configuration"
-bbr-s3-config-validator.backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
+bbr-s3-config-validator.backends = [
+    "github:cloudfoundry/bosh-backup-and-restore[asset_pattern=bbr-s3-config-validator-*,bin=bbr-s3-config-validator]",
+    "asdf:mise-plugins/tanzu-plug-in-for-asdf"
+]
 bfs.description = "Breadth-first search for your files"
 bfs.backends = ["asdf:mise-plugins/mise-bfs"]
 binnacle.description = "An opinionated tool to interact with Kubernetes' Helm"
@@ -385,7 +388,7 @@ btop.test = [
     "btop version: {{version}}"
 ]
 btrace.description = "BTrace - a safe, dynamic tracing tool for the Java platform"
-btrace.backends = ["asdf:mise-plugins/mise-btrace"]
+btrace.backends = ["github:btraceio/btrace", "asdf:mise-plugins/mise-btrace"]
 buf.description = "The best way of working with Protocol Buffers"
 buf.backends = [
     "aqua:bufbuild/buf",
@@ -800,7 +803,7 @@ dagu.description = "Yet another cron alternative with a Web UI, but with much mo
 dagu.backends = ["aqua:dagu-org/dagu", "ubi:dagu-org/dagu"]
 dagu.test = ["dagu version 2>&1", "{{version}}"]
 danger-js.description = "Danger runs during your CI process, and gives teams the chance to automate common code review chores"
-danger-js.backends = ["asdf:mise-plugins/mise-danger-js"]
+danger-js.backends = ["ubi:danger/danger-js[exe=danger,bin=danger]", "asdf:mise-plugins/mise-danger-js"]
 danger-swift.description = "Stop saying 'you forgot to …' in code review"
 danger-swift.backends = ["spm:danger/swift"]
 dapr.description = "Command-line tools for Dapr"
@@ -919,7 +922,7 @@ doggo.description = ":dog: Command-line DNS Client for Humans. Written in Golang
 doggo.backends = ["aqua:mr-karan/doggo", "ubi:mr-karan/doggo"]
 doggo.test = ["doggo --version | awk '{print $1}'", "v{{version}}"]
 dome.description = "DOME is a framework for making 2D games using the Wren programming language which can be played across platforms"
-dome.backends = ["asdf:mise-plugins/mise-dome"]
+dome.backends = ["ubi:domeengine/dome", "asdf:mise-plugins/mise-dome"]
 doppler.description = "The official CLI for interacting with your Doppler secrets and configuration"
 doppler.backends = [
     "github:DopplerHQ/cli[exe=doppler]",
@@ -2685,10 +2688,6 @@ redo.backends = [
     "asdf:chessmango/asdf-redo"
 ]
 redo.test = ["which redo", "redo"]
-# not working right with ubi
-# bbr-s3-config-validator.backends = ["ubi:cloudfoundry-incubator/bosh-backup-and-restore[matching=bbr-s3-config-validator,exe=bbr-s3-config-validator]", "asdf:mise-plugins/tanzu-plug-in-for-asdf"]
-# bbr-s3-config-validator.os = ["linux"]
-# bbr-s3-config-validator.test = ["bbr-s3-config-validator --help", "{{version}}"]
 redpanda-connect.description = "Fancy stream processing made operationally mundane"
 redpanda-connect.backends = [
     "aqua:redpanda-data/connect",
@@ -3033,7 +3032,7 @@ swift.description = "Swift Lang (Core)"
 swift.backends = ["core:swift"]
 swift.os = ["linux", "macos"]
 swift-package-list.description = "A command-line tool to get all used Swift Package dependencies"
-swift-package-list.backends = ["asdf:mise-plugins/mise-swift-package-list"]
+swift-package-list.backends = ["spm:FelixHerrmann/swift-package-list", "asdf:mise-plugins/mise-swift-package-list"]
 swiftformat.description = "A command-line tool and Xcode Extension for formatting Swift code"
 swiftformat.backends = ["asdf:mise-plugins/mise-swiftformat"]
 swiftgen.description = "The Swift code generator for your assets, storyboards, Localizable.strings, … — Get rid of all String-based APIs!"
@@ -3341,7 +3340,7 @@ uv.backends = [
 ]
 uv.test = ["uv --version", "uv {{version}}"]
 v.description = "V - https://vlang.io"
-v.backends = ["asdf:mise-plugins/mise-v"]
+v.backends = ["ubi:vlang/v","asdf:mise-plugins/mise-v"]
 vacuum.description = "vacuum is the worlds fastest OpenAPI 3, OpenAPI 2 / Swagger linter and quality analysis tool. Built in go, it tears through API specs faster than you can think. vacuum is compatible with Spectral rulesets and generates compatible reports"
 vacuum.backends = ["aqua:daveshanley/vacuum"]
 vacuum.test = ["vacuum version", "{{version}}"]
@@ -3459,7 +3458,7 @@ xcbeautify.backends = [
 ]
 xcbeautify.test = ["which xcbeautify", "xcbeautify"]
 xchtmlreport.description = "Xcode-like HTML report for Unit and UI Tests"
-xchtmlreport.backends = ["asdf:mise-plugins/mise-xchtmlreport"]
+xchtmlreport.backends = ["spm:XCTestHTMLReport/XCTestHTMLReport", "asdf:mise-plugins/mise-xchtmlreport"]
 xcodegen.description = "A Swift command line tool for generating your Xcode project"
 xcodegen.backends = ["asdf:mise-plugins/mise-xcodegen"]
 xcodes.description = "The best command-line tool to install and switch between multiple versions of Xcode"
