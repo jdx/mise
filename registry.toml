@@ -119,6 +119,7 @@ apko.backends = [
 apko.test = ["apko version", "GitVersion:    v{{version}}"]
 apollo-ios.aliases = ["apollo-ios-cli"]
 apollo-ios.description = "Apollo iOS Code Generation"
+apollo-ios.os = ["macos"]
 apollo-ios.backends = ["ubi:apollographql/apollo-ios", "asdf:mise-plugins/mise-apollo-ios-cli"]
 apollo-router.description = "A configurable, high-performance routing runtime for Apollo Federation"
 apollo-router.backends = [
@@ -307,6 +308,7 @@ bazelisk.backends = [
     "asdf:josephtate/asdf-bazelisk"
 ]
 bbr-s3-config-validator.description = "The BOSH Backup and Restore (BBR) S3 bucket configuration validator is a tool to validate and troubleshoot your Cloud Foundry and BBR external blobstore configuration"
+bbr-s3-config-validator.os = ["linux"]
 bbr-s3-config-validator.backends = [
     "github:cloudfoundry/bosh-backup-and-restore[asset_pattern=bbr-s3-config-validator-*,bin=bbr-s3-config-validator]",
     "asdf:mise-plugins/tanzu-plug-in-for-asdf"
@@ -803,6 +805,7 @@ dagu.description = "Yet another cron alternative with a Web UI, but with much mo
 dagu.backends = ["aqua:dagu-org/dagu", "ubi:dagu-org/dagu"]
 dagu.test = ["dagu version 2>&1", "{{version}}"]
 danger-js.description = "Danger runs during your CI process, and gives teams the chance to automate common code review chores"
+danger-js.os = ["macos"]
 danger-js.backends = ["ubi:danger/danger-js[exe=danger,bin=danger]", "asdf:mise-plugins/mise-danger-js"]
 danger-swift.description = "Stop saying 'you forgot to …' in code review"
 danger-swift.backends = ["spm:danger/swift"]
