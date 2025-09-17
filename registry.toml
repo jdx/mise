@@ -837,7 +837,7 @@ delta.backends = [
 ]
 delta.test = ["delta --version", "delta {{version}}"]
 deno.description = "A modern runtime for JavaScript and TypeScript (Builtin plugin)"
-deno.backends = ["core:deno", "cargo:deno"]
+deno.backends = ["core:deno"]
 depot.description = "Depot CLI, build your Docker images in the cloud"
 depot.backends = ["github:depot/cli[exe=depot]", "asdf:depot/asdf-depot"]
 depot.test = ["depot --version", "depot version {{version}}"]
@@ -938,8 +938,8 @@ dotenv-linter.description = "Lightning-fast linter for .env files. Written in Ru
 dotenv-linter.backends = [
     "aqua:dotenv-linter/dotenv-linter",
     "ubi:dotenv-linter/dotenv-linter",
-    "cargo:dotenv-linter",
-    "asdf:wesleimp/asdf-dotenv-linter"
+    "asdf:wesleimp/asdf-dotenv-linter",
+    "cargo:dotenv-linter"
 ]
 dotenv-linter.test = ["dotenv-linter --version", "dotenv-linter {{version}}"]
 dotenvx.description = "a secure dotenv–from the creator of `dotenv`"
@@ -2798,7 +2798,6 @@ rocq.aliases = ["coq"]
 ruby.description = "Ruby language"
 ruby.backends = ["core:ruby"]
 ruff.description = "An extremely fast Python linter and code formatter, written in Rust"
-# ruff intends to publish to crates.io soon.
 ruff.backends = [
     "aqua:astral-sh/ruff",
     "ubi:astral-sh/ruff",
@@ -3248,7 +3247,6 @@ tilt.description = "Define your dev environment as code. For microservice apps o
 tilt.backends = ["aqua:tilt-dev/tilt", "asdf:eaceaser/asdf-tilt"]
 timoni.description = "Timoni is a package manager for Kubernetes, powered by CUE and inspired by Helm"
 timoni.backends = ["aqua:stefanprodan/timoni", "asdf:Smana/asdf-timoni"]
-# tiny is no longer published on crates.io
 tiny.description = "rtx-tiny is mostly a fake plugin to check mise in CI"
 tiny.backends = ["asdf:mise-plugins/mise-tiny"]
 tinytex.description = "A lightweight, cross-platform, portable, and easy-to-maintain LaTeX distribution based on TeX Live"
@@ -3386,12 +3384,12 @@ usage.os = ["linux", "macos", "freebsd"]
 usage.test = ["usage --version", "usage-cli {{version}}"]
 usql.description = "Universal command-line interface for SQL databases"
 usql.backends = ["aqua:xo/usql", "asdf:itspngu/asdf-usql"]
-# uv intends to publish to crates.io, but hasn't done so yet
 uv.description = "An extremely fast Python package installer and resolver, written in Rust"
 uv.backends = [
     "aqua:astral-sh/uv",
     "ubi:astral-sh/uv",
     "asdf:asdf-community/asdf-uv",
+    # "cargo:uv" disabled until published
     "pipx:uv"
 ]
 uv.test = ["uv --version", "uv {{version}}"]
@@ -3625,7 +3623,6 @@ zls.description = "A Zig language server supporting Zig developers with features
 zls.backends = ["aqua:zigtools/zls", "ubi:zigtools/zls"]
 zls.test = ["zls --version", "{{version}}"]
 zola.description = "A fast static site generator in a single binary with everything built-in. https://www.getzola.org"
-# zola is not published on cargo
 zola.backends = [
     "aqua:getzola/zola",
     "ubi:getzola/zola",
