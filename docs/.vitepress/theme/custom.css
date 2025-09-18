@@ -214,15 +214,9 @@ h1,
   text-transform: uppercase;
 }
 
-/* Hide search button text, keep icon only */
+/* Make search button text invisible but maintain layout */
 .DocSearch-Button .DocSearch-Button-Placeholder {
-  display: none;
-}
-
-/* Maintain search button width without text */
-.DocSearch-Button {
-  min-width: 200px !important;
-  padding: 0 16px !important;
+  visibility: hidden;
 }
 
 /* Adjust h1 size for Bebas Neue's tall characters */
