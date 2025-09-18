@@ -13,10 +13,8 @@
         stroke="url(#borderGradient)"
         stroke-width="3"/>
 
-  <!-- Terminal header bar - solid dark color -->
-  <rect x="20" y="30" width="80" height="18" rx="8"
-        fill="#2a2a2a"/>
-  <rect x="20" y="40" width="80" height="8"
+  <!-- Terminal header bar - solid dark color (adjusted to fit within stroke) -->
+  <rect x="21.5" y="31.5" width="77" height="16" rx="6"
         fill="#2a2a2a"/>
 
   <!-- Terminal window controls -->
@@ -24,8 +22,8 @@
   <circle cx="44" cy="39" r="3" fill="#ffbd2e"/>
   <circle cx="56" cy="39" r="3" fill="#52e892"/>
 
-  <!-- Command prompt symbol -->
-  <text x="28" y="68"
+  <!-- Command prompt symbol (moved up slightly) -->
+  <text x="28" y="64"
         font-family="monospace"
         font-size="16"
         font-weight="bold"
@@ -33,9 +31,9 @@
     &gt;_
   </text>
 
-  <!-- Command lines - simple colored rectangles -->
-  <rect x="52" y="58" width="35" height="2.5" fill="#00d9ff" opacity="0.7"/>
-  <rect x="28" y="72" width="25" height="2.5" fill="#52e892" opacity="0.6"/>
-  <rect x="56" y="72" width="18" height="2.5" fill="#ff9100" opacity="0.6"/>
-  <rect x="28" y="80" width="38" height="2.5" fill="#00d9ff" opacity="0.4"/>
+  <!-- Command lines - adjusted spacing -->
+  <rect x="52" y="56" width="35" height="2.5" fill="#00d9ff" opacity="0.7"/>
+  <rect x="28" y="74" width="25" height="2.5" fill="#52e892" opacity="0.6"/>
+  <rect x="56" y="74" width="18" height="2.5" fill="#ff9100" opacity="0.6"/>
+  <rect x="28" y="82" width="38" height="2.5" fill="#00d9ff" opacity="0.4"/>
 </svg>
