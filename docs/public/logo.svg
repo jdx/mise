@@ -1,53 +1,41 @@
 <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="borderGradient" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#00d9ff;stop-opacity:1" />
       <stop offset="50%" style="stop-color:#52e892;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#ff9100;stop-opacity:1" />
     </linearGradient>
-
-    <linearGradient id="gradient2" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#00d9ff;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#52e892;stop-opacity:1" />
-    </linearGradient>
-
-    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
-      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.15"/>
-    </filter>
   </defs>
 
-  <!-- Main terminal window - larger and centered -->
+  <!-- Main terminal window -->
   <rect x="20" y="30" width="80" height="60" rx="8"
         fill="#1a1a1a"
-        stroke="url(#gradient1)"
-        stroke-width="3"
-        filter="url(#shadow)"/>
+        stroke="url(#borderGradient)"
+        stroke-width="3"/>
 
-  <!-- Terminal header bar -->
-  <rect x="20" y="30" width="80" height="16" rx="8"
-        fill="url(#gradient1)"
-        opacity="0.15"/>
+  <!-- Terminal header bar - solid dark color -->
+  <rect x="20" y="30" width="80" height="18" rx="8"
+        fill="#2a2a2a"/>
+  <rect x="20" y="40" width="80" height="8"
+        fill="#2a2a2a"/>
 
   <!-- Terminal window controls -->
-  <circle cx="32" cy="38" r="3.5" fill="#ff5252"/>
-  <circle cx="44" cy="38" r="3.5" fill="#ffbd2e"/>
-  <circle cx="56" cy="38" r="3.5" fill="#52e892"/>
+  <circle cx="32" cy="39" r="3" fill="#ff5252"/>
+  <circle cx="44" cy="39" r="3" fill="#ffbd2e"/>
+  <circle cx="56" cy="39" r="3" fill="#52e892"/>
 
   <!-- Command prompt symbol -->
-  <text x="28" y="64"
-        font-family="'Courier New', monospace"
-        font-size="18"
+  <text x="28" y="68"
+        font-family="monospace"
+        font-size="16"
         font-weight="bold"
         fill="#52e892">
-    &gt;
+    &gt;_
   </text>
 
-  <!-- Cursor -->
-  <rect x="42" y="52" width="8" height="16" fill="#52e892" opacity="0.8"/>
-
-  <!-- Command lines -->
-  <rect x="54" y="56" width="36" height="3" fill="url(#gradient2)" opacity="0.7"/>
-  <rect x="28" y="72" width="28" height="3" fill="#00d9ff" opacity="0.5"/>
-  <rect x="60" y="72" width="20" height="3" fill="#ff9100" opacity="0.5"/>
-  <rect x="28" y="80" width="40" height="3" fill="#52e892" opacity="0.3"/>
+  <!-- Command lines - simple colored rectangles -->
+  <rect x="52" y="58" width="35" height="2.5" fill="#00d9ff" opacity="0.7"/>
+  <rect x="28" y="72" width="25" height="2.5" fill="#52e892" opacity="0.6"/>
+  <rect x="56" y="72" width="18" height="2.5" fill="#ff9100" opacity="0.6"/>
+  <rect x="28" y="80" width="38" height="2.5" fill="#00d9ff" opacity="0.4"/>
 </svg>
