@@ -191,6 +191,52 @@
   }
 }
 
+/* GitHub star count badge */
+.VPSocialLinks a[href*="github.com/jdx/mise"] {
+  display: inline-flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  position: relative;
+  padding-bottom: 12px !important;
+  margin-bottom: -12px !important;
+}
+
+/* Ensure GitHub icon is visible and aligned */
+.VPSocialLinks a[href*="github.com/jdx/mise"] svg {
+  display: block !important;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+}
+
+.VPSocialLinks .star-count {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--vp-c-text-3);
+  font-family: var(--vp-font-family-mono);
+  letter-spacing: -0.02em;
+  transition: color 0.25s ease;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.VPSocialLinks a[href*="github.com/jdx/mise"]:hover .star-count {
+  color: var(--vp-c-brand-1);
+}
+
+/* Hide star count on mobile to save space */
+@media (max-width: 640px) {
+  .VPSocialLinks .star-count {
+    display: none;
+  }
+}
+
 /* Apply Bebas Neue to h1 headers, navigation, and key UI elements */
 h1,
 .vp-doc h1,
@@ -240,19 +286,14 @@ h1,
 }
 
 .VPHero .name {
-  background: linear-gradient(
-    120deg,
-    #00d9ff 0%,
-    #52e892 50%,
-    #ff9100 100%
-  );
+  background: linear-gradient(120deg, #00d9ff 0%, #52e892 50%, #ff9100 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   font-weight: 900;
   letter-spacing: -0.02em;
-  font-size: 5rem !important;
+  font-size: 6rem !important;
   line-height: 1.1 !important;
   animation: shimmer 3s ease-in-out infinite;
   filter: drop-shadow(0 0 20px rgba(0, 217, 255, 0.3));
@@ -260,12 +301,7 @@ h1,
 
 /* Light mode hero gradient */
 :root:not(.dark) .VPHero .name {
-  background: linear-gradient(
-    120deg,
-    #00acc1 0%,
-    #4caf50 50%,
-    #ff9800 100%
-  );
+  background: linear-gradient(120deg, #00acc1 0%, #4caf50 50%, #ff9800 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -565,13 +601,13 @@ div[class*="language-"] .copy:hover {
 /* Responsive improvements */
 @media (max-width: 1024px) {
   .VPHero .name {
-    font-size: 4rem !important;
+    font-size: 5rem !important;
   }
 }
 
 @media (max-width: 768px) {
   .VPHero .name {
-    font-size: 3.5rem !important;
+    font-size: 4rem !important;
   }
 
   .VPHero .tagline {
