@@ -214,6 +214,11 @@ h1,
   text-transform: uppercase;
 }
 
+/* Hide search button text, keep icon only */
+.DocSearch-Button .DocSearch-Button-Placeholder {
+  display: none;
+}
+
 /* Adjust h1 size for Bebas Neue's tall characters */
 .vp-doc h1 {
   font-size: 3rem;
