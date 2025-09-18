@@ -298,7 +298,7 @@ h1,
   -webkit-text-fill-color: transparent;
   font-weight: 900;
   letter-spacing: -0.02em;
-  font-size: 5rem !important;
+  font-size: 6rem !important;
   line-height: 1.1 !important;
   animation: shimmer 3s ease-in-out infinite;
   filter: drop-shadow(0 0 20px rgba(0, 217, 255, 0.3));
@@ -611,13 +611,13 @@ div[class*="language-"] .copy:hover {
 /* Responsive improvements */
 @media (max-width: 1024px) {
   .VPHero .name {
-    font-size: 4rem !important;
+    font-size: 5rem !important;
   }
 }
 
 @media (max-width: 768px) {
   .VPHero .name {
-    font-size: 3.5rem !important;
+    font-size: 4rem !important;
   }
 
   .VPHero .tagline {

@@ -81,8 +81,8 @@ sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/versio
 
 # Update GitHub star count using gh CLI
 stars_raw="$(gh api repos/jdx/mise --jq '.stargazers_count')"
-if [[ -n "$stars_raw" ]]; then
-	if [[ "$stars_raw" -ge 1000 ]]; then
+if [[ -n $stars_raw ]]; then
+	if [[ $stars_raw -ge 1000 ]]; then
 		# Format as k notation (e.g., 19346 -> 19.3k)
 		stars_formatted="$(echo "scale=1; $stars_raw / 1000" | bc)k"
 		# Remove trailing .0k
@@ -92,7 +92,7 @@ if [[ -n "$stars_raw" ]]; then
 	fi
 
 	# Update the stars data file
-	cat > docs/.vitepress/stars.data.ts <<EOF
+	cat >docs/.vitepress/stars.data.ts <<EOF
 // This file is auto-updated by xtasks/release-plz
 // Current star count from GitHub API
 export default {
