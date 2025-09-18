@@ -60,7 +60,10 @@ features:
       <div class="step-content">
         <p class="step-label">Run any tool instantly</p>
         <div class="code-box">
-          <code>mise x node@22 -- node --version</code>
+          <div class="code-content">
+            <code>mise x node@22 -- node --version</code>
+            <span class="code-output">→ v22.11.0</span>
+          </div>
           <button class="copy-btn" onclick="navigator.clipboard.writeText('mise x node@22 -- node --version')">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -68,7 +71,6 @@ features:
             </svg>
           </button>
         </div>
-        <p class="step-output">→ v22.11.0</p>
       </div>
     </div>
   </div>
@@ -179,13 +181,26 @@ features:
     box-shadow: 0 2px 8px rgba(0, 217, 255, 0.15);
 }
 
-.code-box code {
+.code-content {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.code-box code {
     font-family: var(--vp-font-family-mono);
     font-size: 0.9rem;
     color: var(--vp-c-text-1);
     background: none;
     padding: 0;
+}
+
+.code-output {
+    font-family: var(--vp-font-family-mono);
+    font-size: 0.8rem;
+    color: var(--vp-c-success-1);
+    font-weight: 600;
 }
 
 .copy-btn {
@@ -207,14 +222,6 @@ features:
 
 .copy-btn:active {
     transform: scale(0.95);
-}
-
-.step-output {
-    margin: 0.5rem 0 0 0;
-    color: var(--vp-c-success-1);
-    font-family: var(--vp-font-family-mono);
-    font-size: 0.85rem;
-    font-weight: 600;
 }
 
 /* Dark mode adjustments */
