@@ -15,12 +15,14 @@ export default {
     onMounted(() => {
       // Add star count to GitHub social link
       const addStarCount = () => {
-        const githubLink = document.querySelector('.VPSocialLinks a[href*="github.com/jdx/mise"]');
-        if (githubLink && !githubLink.querySelector('.star-count')) {
-          const starBadge = document.createElement('span');
-          starBadge.className = 'star-count';
+        const githubLink = document.querySelector(
+          '.VPSocialLinks a[href*="github.com/jdx/mise"]',
+        );
+        if (githubLink && !githubLink.querySelector(".star-count")) {
+          const starBadge = document.createElement("span");
+          starBadge.className = "star-count";
           starBadge.innerHTML = starsData.stars;
-          starBadge.title = 'GitHub Stars';
+          starBadge.title = "GitHub Stars";
           githubLink.appendChild(starBadge);
         }
       };
