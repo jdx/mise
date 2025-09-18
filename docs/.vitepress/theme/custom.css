@@ -188,14 +188,38 @@
   }
 }
 
-/* Apply Bebas Neue to h1 headers and site title only */
+/* Apply Bebas Neue to h1 headers, navigation, and key UI elements */
 h1,
 .vp-doc h1,
 .VPHero .name,
 .VPHome .name,
-.VPNavBarTitle .title {
+.VPNavBarTitle .title,
+.VPNavBarMenu .VPNavBarMenuLink,
+.VPNavBarMenuGroup .text,
+.VPDocOutlineTitle,
+.DocSearch-Button .DocSearch-Button-Placeholder,
+.VPLocalSearchBox button .vpi-search-box {
   font-family: "Bebas Neue", var(--vp-font-family-base) !important;
   letter-spacing: 0.03em;
+}
+
+/* Nav bar menu items (Dev Tools, Environments, Tasks) */
+.VPNavBarMenu .VPNavBarMenuLink {
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+}
+
+/* "On this page" header */
+.VPDocOutlineTitle {
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Search button text */
+.DocSearch-Button .DocSearch-Button-Placeholder {
+  font-size: 1rem;
+  letter-spacing: 0.04em;
 }
 
 /* Adjust h1 size for Bebas Neue's tall characters */
