@@ -121,19 +121,42 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
     // wait until #![feature(absolute_path)] hits Rust stable release channel
     tera.register_filter(
         "canonicalize",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
+        move |input: &Value, args: &HashMap<String, Value>| match input {
             Value::String(s) => {
                 let p = Path::new(s).canonicalize()?;
+                if let Some(Value::String(join_path)) = args.get("join") {
+                    let joined_path = p.join(join_path);
+                    return Ok(Value::String(joined_path.to_string_lossy().to_string()))
+                }
                 Ok(Value::String(p.to_string_lossy().to_string()))
             }
             _ => Err("canonicalize input must be a string".into()),
         },
     );
+    tera.register_function(
+        "cwd",
+        move |args: &HashMap<String, Value>| match env::current_dir() {
+            Ok(dir) => {
+                if let Some(Value::String(join_path)) = args.get("join") {
+                    let joined_path = dir.join(join_path);
+                    Ok(Value::String(joined_path.to_string_lossy().to_string()))
+                } else {
+                    // No join parameter, return cwd as-is
+                    Ok(Value::String(dir.to_string_lossy().to_string()))
+                }
+            }
+            _ => Err("couldn't read cwd, do you have permission to read current folder?".into()),
+        },
+    );
     tera.register_filter(
         "dirname",
-        move |input: &Value, _args: &HashMap<String, Value>| match input {
+        move |input: &Value, args: &HashMap<String, Value>| match input {
             Value::String(s) => {
                 let p = Path::new(s).parent().unwrap();
+                if let Some(Value::String(join_path)) = args.get("join") {
+                    let joined_path = p.join(join_path);
+                    return Ok(Value::String(joined_path.to_string_lossy().to_string()))
+                }
                 Ok(Value::String(p.to_string_lossy().to_string()))
             }
             _ => Err("dirname input must be a string".into()),
@@ -303,7 +326,23 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
 pub fn get_tera(dir: Option<&Path>) -> Tera {
     let mut tera = TERA.clone();
     let dir = dir.map(PathBuf::from);
-    tera.register_function("exec", tera_exec(dir, env::PRISTINE_ENV.clone()));
+    tera.register_function("exec", tera_exec(dir.clone(), env::PRISTINE_ENV.clone()));
+    
+    if let Some(config_root) = dir {
+        let config_root_clone = config_root.clone();
+        tera.register_function(
+            "config_root",
+            move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+                if let Some(Value::String(join_path)) = args.get("join") {
+                    let joined_path = config_root_clone.join(join_path);
+                    Ok(Value::String(joined_path.to_string_lossy().to_string()))
+                } else {
+                    // No join parameter, return config_root as-is
+                    Ok(Value::String(config_root_clone.to_string_lossy().to_string()))
+                }
+            }
+        );
+    }
 
     tera
 }
@@ -652,6 +691,41 @@ mod tests {
             r#"{% set p = "1.10.2" %}{% if p is semver_matching("^1.10.0") %} ok {% endif %}"#,
         );
         assert_eq!(s.trim(), "ok");
+    }
+
+    #[tokio::test]
+    async fn test_config_root_function() {
+        let _config = Config::get().await.unwrap();
+        
+        let s = render("{{ config_root() }}");
+        assert_eq!(s, "/");
+        
+        let s = render("{{ config_root(join='mise/tasks') }}");
+        assert_eq!(s, "/mise/tasks");
+        
+        let s = render("{{ config_root(join='mise/setup-token.ts') }}");
+        assert_eq!(s, "/mise/setup-token.ts");
+    }
+
+    #[tokio::test]
+    async fn test_config_root_function_with_spaces() {
+        let _config = Config::get().await.unwrap();
+        
+        let config_root = Path::new("/Users/test/my projects/project with spaces");
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("config_root", &config_root);
+        
+        let mut tera = get_tera(Some(config_root));
+
+        let result_variable = tera.render_str("{{ config_root | quote }}", &tera_ctx).unwrap();
+        assert_eq!(result_variable, "'/Users/test/my projects/project with spaces'");
+
+        let result = tera.render_str("{{ config_root() | quote }}", &tera_ctx).unwrap();
+        assert_eq!(result, "'/Users/test/my projects/project with spaces'");
+        assert_eq!(result, result_variable);
+        
+        let result = tera.render_str("{{ config_root(join='mise/setup-token.ts') | quote }}", &tera_ctx).unwrap();
+        assert_eq!(result, "'/Users/test/my projects/project with spaces/mise/setup-token.ts'");
     }
 
     fn render(s: &str) -> String {
