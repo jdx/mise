@@ -196,9 +196,7 @@ h1,
 .VPNavBarTitle .title,
 .VPNavBarMenu .VPNavBarMenuLink,
 .VPNavBarMenuGroup .text,
-.VPDocOutlineTitle,
-.DocSearch-Button .DocSearch-Button-Placeholder,
-.VPLocalSearchBox button .vpi-search-box {
+.VPDocOutlineTitle {
   font-family: "Bebas Neue", var(--vp-font-family-base) !important;
   letter-spacing: 0.03em;
 }
@@ -214,12 +212,6 @@ h1,
   font-size: 1rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-}
-
-/* Search button text */
-.DocSearch-Button .DocSearch-Button-Placeholder {
-  font-size: 1rem;
-  letter-spacing: 0.04em;
 }
 
 /* Adjust h1 size for Bebas Neue's tall characters */
