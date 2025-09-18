@@ -9,14 +9,12 @@ This command starts an MCP server that exposes mise functionality
 to AI assistants over stdin/stdout using JSON-RPC protocol.
 
 The MCP server provides access to:
-
 - Installed and available tools
 - Task definitions and execution
 - Environment variables
 - Configuration information
 
 Resources available:
-
 - mise://tools - List all tools (use ?include_inactive=true to include inactive tools)
 - mise://tasks - List all tasks with their configurations
 - mise://env - List all environment variables

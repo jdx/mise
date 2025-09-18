@@ -53,6 +53,6 @@ Search a tool
   jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
   jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
   gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
-/jq
+/jq 
 esc clear filter • enter confirm
 ```

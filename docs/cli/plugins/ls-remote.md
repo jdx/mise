@@ -22,4 +22,4 @@ Show the git url for each plugin e.g.: <https://github.com/mise-plugins/mise-poe
 
 ### `--only-names`
 
-Only show the name of each plugin by default it will show a "\*" next to installed plugins
+Only show the name of each plugin by default it will show a "*" next to installed plugins

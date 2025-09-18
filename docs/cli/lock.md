@@ -40,9 +40,9 @@ Number of jobs to run in parallel
 [default: 4]
 
 Examples:
-
-$ mise lock Update lockfile in current directory for all platforms
-$ mise lock node python Update only node and python
-$ mise lock --platform linux-x64 Update only linux-x64 platform
-$ mise lock --dry-run Show what would be updated or created
-$ mise lock --force Re-download and update even if data exists
+  
+  $ mise lock                           Update lockfile in current directory for all platforms
+  $ mise lock node python              Update only node and python
+  $ mise lock --platform linux-x64     Update only linux-x64 platform
+  $ mise lock --dry-run                Show what would be updated or created
+  $ mise lock --force                  Re-download and update even if data exists
