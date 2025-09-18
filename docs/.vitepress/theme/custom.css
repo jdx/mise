@@ -556,9 +556,31 @@ div[class*="language-"] .copy:hover {
   --vp-local-search-highlight-text: var(--vp-c-brand-1);
 }
 
+/* Algolia DocSearch customization */
 .DocSearch {
   --docsearch-primary-color: var(--vp-c-brand-1) !important;
   --docsearch-highlight-color: var(--vp-c-brand-1) !important;
+  --docsearch-muted-color: var(--vp-c-text-2) !important;
+  --docsearch-hit-color: var(--vp-c-text-1) !important;
+  --docsearch-hit-active-color: var(--vp-c-text-1) !important;
+  --docsearch-hit-background: var(--vp-c-bg-soft) !important;
+}
+
+/* Saturated cyan-teal background for selected search results */
+.DocSearch-Hit[aria-selected="true"] {
+  background-color: rgba(0, 217, 255, 0.1) !important;
+}
+
+.DocSearch-Hit[aria-selected="true"] a {
+  background-color: rgba(0, 217, 255, 0.1) !important;
+}
+
+.dark .DocSearch-Hit[aria-selected="true"] {
+  background-color: rgba(0, 217, 255, 0.08) !important;
+}
+
+.dark .DocSearch-Hit[aria-selected="true"] a {
+  background-color: rgba(0, 217, 255, 0.08) !important;
 }
 
 /* Page transitions */
