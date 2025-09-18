@@ -199,15 +199,16 @@
   justify-content: center;
   gap: 0;
   position: relative;
-  padding-bottom: 14px !important;
-  margin-bottom: -11px !important;
+  padding-bottom: 12px !important;
+  margin-bottom: -12px !important;
 }
 
-/* Ensure GitHub icon is visible */
+/* Ensure GitHub icon is visible and aligned */
 .VPSocialLinks a[href*="github.com/jdx/mise"] svg {
   display: block !important;
   width: 20px;
   height: 20px;
+  margin-top: 2px;
 }
 
 .VPSocialLinks .star-count {
