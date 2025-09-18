@@ -149,6 +149,7 @@ features:
     font-weight: 700;
     font-size: 1rem;
     flex-shrink: 0;
+    margin-top: -2px; /* Align with step label text */
 }
 
 /* Dark mode - ensure good contrast with darker gradient */
@@ -172,7 +173,8 @@ features:
 .code-box {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    justify-content: space-between;
+    gap: 1rem;
     background: var(--vp-c-code-block-bg);
     border: 1px solid var(--vp-c-divider);
     border-radius: 8px;
@@ -199,6 +201,11 @@ features:
     color: var(--vp-c-text-1);
     background: none;
     padding: 0;
+}
+
+/* For single line code boxes without output */
+.code-box > code {
+    flex: 1;
 }
 
 .code-output {
