@@ -55,7 +55,7 @@ Here is how the `uv` project will look like:
 .
 ├── .gitignore
 ├── .python-version
-├── hello.py
+├── main.py
 ├── pyproject.toml
 └── README.md
 
@@ -63,7 +63,7 @@ cat .python-version
 # 3.12
 ```
 
-If you run `uv run hello.py` in the `uv` project, `uv` will automatically create a virtual environment for you using the python version specified in the `.python-version` file. This will also create a `uv.lock` file.
+If you run `uv run main.py` in the `uv` project, `uv` will automatically create a virtual environment for you using the python version specified in the `.python-version` file. This will also create a `uv.lock` file.
 
 `mise` will detect the python version in `.python-version`, however, it won't use the virtual env created by `uv` by default. So, using `which python` will show a global python installation from `mise`.
 
