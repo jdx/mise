@@ -7,7 +7,7 @@
   /* Brand Colors - Modern developer aesthetic */
   --vp-c-brand-1: #00d9ff; /* Bright cyan - primary brand */
   --vp-c-brand-2: #00b8d9; /* Darker cyan - hover states */
-  --vp-c-brand-3: #0097a7; /* Even darker - active states */
+  --vp-c-brand-3: #00acc1; /* Even darker - active states */
   --vp-c-brand-soft: rgba(0, 217, 255, 0.14);
 
   /* Accent Colors - Terminal-inspired green */
@@ -70,21 +70,21 @@
 
 /* Light mode customizations */
 :root:not(.dark) {
-  /* Light mode brand colors - more muted for better readability */
-  --vp-c-brand-1: #0097a7; /* Darker cyan for light mode */
-  --vp-c-brand-2: #00838f; /* Even darker on hover */
-  --vp-c-brand-3: #006064; /* Active state */
-  --vp-c-brand-soft: rgba(0, 151, 167, 0.08);
+  /* Light mode brand colors - brighter for better visibility */
+  --vp-c-brand-1: #00acc1; /* Bright cyan for light mode */
+  --vp-c-brand-2: #0097a7; /* Slightly darker on hover */
+  --vp-c-brand-3: #00838f; /* Active state */
+  --vp-c-brand-soft: rgba(0, 172, 193, 0.08);
 
   /* Adjusted success colors for light mode */
-  --vp-c-success-1: #2e7d32;
-  --vp-c-success-2: #1b5e20;
-  --vp-c-success-soft: rgba(46, 125, 50, 0.08);
+  --vp-c-success-1: #4caf50;
+  --vp-c-success-2: #388e3c;
+  --vp-c-success-soft: rgba(76, 175, 80, 0.08);
 
   /* Adjusted warning colors */
-  --vp-c-warning-1: #ef6c00;
-  --vp-c-warning-2: #e65100;
-  --vp-c-warning-soft: rgba(239, 108, 0, 0.08);
+  --vp-c-warning-1: #ff9800;
+  --vp-c-warning-2: #f57c00;
+  --vp-c-warning-soft: rgba(255, 152, 0, 0.08);
 
   /* Background colors with better contrast */
   --vp-c-bg: #ffffff;
@@ -104,7 +104,7 @@
 
   /* Light mode code styling */
   --vp-c-code-bg: #f1f3f5;
-  --vp-c-code-color: #006064;
+  --vp-c-code-color: #00838f;
 
   /* Code blocks in light mode */
   --vp-code-block-bg: #f8f9fa;
@@ -162,9 +162,9 @@
 :root:not(.dark) .VPNavBarTitle .title {
   background-image: linear-gradient(
     120deg,
-    #0097a7 0%,
-    #2e7d32 50%,
-    #ef6c00 100%
+    #00acc1 0%,
+    #4caf50 50%,
+    #ff9800 100%
   );
 }
 
