@@ -252,7 +252,7 @@ Create a GitHub release for better discoverability:
 
 ### 4. Release Notes Template
 
-```markdown
+````markdown
 ## Changes in v1.2.3
 
 ### Added
@@ -275,7 +275,9 @@ Create a GitHub release for better discoverability:
 ```bash
 mise plugin install my-plugin https://github.com/username/my-plugin
 ```
-```
+````
+
+````
 
 ## Distribution Methods
 
@@ -292,7 +294,7 @@ mise plugin install my-plugin https://github.com/username/my-plugin@v1.2.3
 
 # Install from other Git providers
 mise plugin install my-plugin https://gitlab.com/username/my-plugin
-```
+````
 
 ### 2. Private Repository Access
 

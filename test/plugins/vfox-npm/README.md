@@ -43,4 +43,4 @@ This plugin implements the vfox backend interface to:
 
 ## License
 
-MIT 
+MIT

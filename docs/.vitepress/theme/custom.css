@@ -240,12 +240,7 @@ h1,
 }
 
 .VPHero .name {
-  background: linear-gradient(
-    120deg,
-    #00d9ff 0%,
-    #52e892 50%,
-    #ff9100 100%
-  );
+  background: linear-gradient(120deg, #00d9ff 0%, #52e892 50%, #ff9100 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -260,12 +255,7 @@ h1,
 
 /* Light mode hero gradient */
 :root:not(.dark) .VPHero .name {
-  background: linear-gradient(
-    120deg,
-    #00acc1 0%,
-    #4caf50 50%,
-    #ff9800 100%
-  );
+  background: linear-gradient(120deg, #00acc1 0%, #4caf50 50%, #ff9800 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;

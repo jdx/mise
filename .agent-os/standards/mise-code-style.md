@@ -3,18 +3,21 @@
 ## Rust Code Standards
 
 ### Code Organization
+
 - **Module Structure**: Follow the established hierarchy in `src/`
 - **One Feature Per File**: Keep modules focused and cohesive
 - **Public API**: Use `pub` judiciously, prefer `pub(crate)` for internal APIs
 - **Re-exports**: Use `mod.rs` for clean module interfaces
 
 ### Naming Conventions
+
 - **Structs/Enums**: PascalCase (e.g., `ToolVersion`, `BackendType`)
 - **Functions/Variables**: snake_case (e.g., `load_tools`, `config_file`)
 - **Constants**: SCREAMING_SNAKE_CASE (e.g., `CORE_PLUGINS`, `VERSION_REGEX`)
 - **Type Aliases**: PascalCase (e.g., `ABackend`, `BackendMap`)
 
 ### Error Handling
+
 - **Use `eyre::Result<T>`** for all fallible operations
 - **Context on errors**: Use `.wrap_err()` or `.context()` for helpful error messages
 - **Custom errors**: Define in `src/errors.rs` when needed
@@ -35,6 +38,7 @@ pub fn load_config() -> Config {
 ```
 
 ### Async/Await Patterns
+
 - **Async functions**: Use `async fn` for I/O operations
 - **Tokio runtime**: Already configured in main.rs
 - **Parallel execution**: Use `tokio::task::JoinSet` for concurrent operations
@@ -52,12 +56,14 @@ while let Some(result) = tasks.join_next().await {
 ```
 
 ### Memory Management
+
 - **Avoid unnecessary clones**: Use references where possible
 - **Arc for shared data**: Use `Arc<T>` for shared immutable data
 - **String vs &str**: Use `&str` for parameters, `String` for owned data
 - **Lazy statics**: Use `std::sync::LazyLock` for expensive initialization
 
 ### Testing Standards
+
 - **Unit tests**: In same file as code being tested
 - **Integration tests**: In `e2e/` directory
 - **Snapshot tests**: Use `insta` crate for CLI output testing
@@ -80,6 +86,7 @@ mod tests {
 ## Backend Implementation Standards
 
 ### Backend Trait Implementation
+
 - **ID consistency**: Backend ID must match registry entry
 - **Version parsing**: Handle various version formats (semver, date-based, etc.)
 - **Platform support**: Check OS compatibility in `is_supported_os()`
@@ -89,13 +96,13 @@ mod tests {
 #[async_trait]
 impl Backend for MyBackend {
     fn id(&self) -> &str { "my-tool" }
-    
+
     fn get_type(&self) -> BackendType { BackendType::Core }
-    
+
     async fn list_remote_versions(&self) -> Result<Vec<String>> {
         // Implementation with proper error handling
     }
-    
+
     async fn install_version(&self, ctx: &InstallContext) -> Result<()> {
         // Implementation with progress reporting
     }
@@ -103,6 +110,7 @@ impl Backend for MyBackend {
 ```
 
 ### Plugin Standards
+
 - **Core plugins**: Implement directly in Rust for best performance
 - **External plugins**: Use ASDF/vfox compatibility when possible
 - **Metadata**: Include `mise.plugin.toml` for plugin configuration
@@ -111,6 +119,7 @@ impl Backend for MyBackend {
 ## Configuration Standards
 
 ### TOML Structure
+
 - **Consistent formatting**: Use `taplo` for TOML formatting
 - **Comments**: Document complex configuration options
 - **Schema validation**: Use JSON schema for validation
@@ -132,6 +141,7 @@ run = "cargo build --release"
 ```
 
 ### Settings Management
+
 - **settings.toml**: Source of truth for all settings
 - **Code generation**: Settings auto-generate Rust code
 - **Documentation**: Settings auto-generate documentation
@@ -140,6 +150,7 @@ run = "cargo build --release"
 ## CLI Standards
 
 ### Command Structure
+
 - **Subcommands**: One file per major command in `src/cli/`
 - **Arguments**: Use clap derive macros consistently
 - **Help text**: Provide clear, concise help for all commands
@@ -152,7 +163,7 @@ pub struct Use {
     /// Tools to install and use
     #[clap(value_name = "TOOL[@VERSION]")]
     pub tool: Vec<ToolArg>,
-    
+
     /// Save to global config instead of project config
     #[clap(short, long)]
     pub global: bool,
@@ -160,6 +171,7 @@ pub struct Use {
 ```
 
 ### Output Standards
+
 - **Progress reporting**: Use progress bars for long operations
 - **Color support**: Respect NO_COLOR and terminal capabilities
 - **Structured output**: Support JSON output for scripting
@@ -168,20 +180,21 @@ pub struct Use {
 ## Documentation Standards
 
 ### Code Documentation
+
 - **Public APIs**: Document all public functions and structs
 - **Examples**: Include usage examples in doc comments
 - **Panics/Errors**: Document when functions can panic or error
 - **Safety**: Document any unsafe code usage
 
-```rust
+````rust
 /// Installs a tool version to the specified directory
-/// 
+///
 /// # Arguments
 /// * `ctx` - Installation context with tool and version info
-/// 
+///
 /// # Errors
 /// Returns an error if the tool cannot be downloaded or installed
-/// 
+///
 /// # Example
 /// ```
 /// let ctx = InstallContext::new(tool, version, install_path);
@@ -190,9 +203,10 @@ pub struct Use {
 pub async fn install_version(&self, ctx: &InstallContext) -> Result<()> {
     // Implementation
 }
-```
+````
 
 ### README and Guides
+
 - **Clear structure**: Use headings and bullet points effectively
 - **Code examples**: Include working code examples
 - **Links**: Link to relevant documentation sections
@@ -201,6 +215,7 @@ pub async fn install_version(&self, ctx: &InstallContext) -> Result<()> {
 ## Performance Standards
 
 ### Optimization Guidelines
+
 - **Lazy initialization**: Don't compute until needed
 - **Parallel operations**: Use async/await for I/O bound operations
 - **Caching**: Cache expensive computations and network requests
@@ -220,6 +235,7 @@ let results = try_join_all(futures).await?;
 ```
 
 ### Profiling and Monitoring
+
 - **Timing macros**: Use `time!()` macro for performance monitoring
 - **Progress reporting**: Show progress for long-running operations
 - **Metrics**: Collect metrics where appropriate
@@ -228,6 +244,7 @@ let results = try_join_all(futures).await?;
 ## Security Standards
 
 ### Input Validation
+
 - **Sanitize inputs**: Validate all external inputs
 - **Path traversal**: Prevent directory traversal attacks
 - **Command injection**: Sanitize shell commands
@@ -244,12 +261,14 @@ fn validate_version(version: &str) -> Result<()> {
 ```
 
 ### File Operations
+
 - **Permissions**: Set appropriate file permissions
 - **Atomic operations**: Use atomic file operations when possible
 - **Temp files**: Clean up temporary files
 - **Symlinks**: Handle symlinks securely
 
 ### Network Operations
+
 - **HTTPS only**: Use HTTPS for all network operations
 - **Certificate validation**: Validate SSL certificates
 - **Timeouts**: Set reasonable timeouts for network operations
@@ -258,18 +277,21 @@ fn validate_version(version: &str) -> Result<()> {
 ## Commit and PR Standards
 
 ### Conventional Commits
+
 - **Format**: `<type>(<scope>): <description>`
 - **Types**: feat, fix, refactor, docs, style, perf, test, chore
 - **Scopes**: Use appropriate scope (cli, config, backend, etc.)
 - **Description**: Clear, concise description of changes
 
 ### Code Review
+
 - **Small PRs**: Keep PRs focused and reviewable
 - **Tests included**: Include tests for all new functionality
 - **Documentation**: Update documentation for public API changes
 - **Breaking changes**: Clearly mark and document breaking changes
 
 ### Pre-commit Checklist
+
 1. Run `mise run lint-fix` and commit any fixes
 2. Run relevant tests: `mise run test:e2e [test_files]`
 3. Update documentation if needed

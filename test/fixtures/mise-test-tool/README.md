@@ -28,14 +28,16 @@ mise lock --platforms macos-arm64,linux-x64 github:mise-plugins/mise-test-tool
 ## Output
 
 The tool prints:
+
 - Version information from package.json
 - Current platform (OS and architecture)
 - Command line arguments
-- MISE_* environment variables
+- MISE\_\* environment variables
 
 ## Testing Scenarios
 
 This tool enables testing of:
+
 - Multi-platform lockfile generation
 - Platform-specific metadata collection
 - Backend compatibility (github, ubi, aqua, http)
@@ -51,6 +53,7 @@ This tool enables testing of:
 ## Integration
 
 This tool will be:
+
 1. Created as a separate GitHub repository: `mise-plugins/mise-test-tool`
 2. Integrated into mise via `git subtree` at `test/fixtures/mise-test-tool/`
 3. Used for comprehensive lockfile testing across all supported backends
