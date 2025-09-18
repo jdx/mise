@@ -19,6 +19,19 @@ hero:
       text: About
       link: /about
 
+features:
+  - title: Dev Tools
+    link: /dev-tools/
+    icon: 🛠️
+    details: mise is a polyglot tool version manager. It replaces tools like asdf, nvm, pyenv, rbenv, etc.
+  - title: Environments
+    details: mise allows you to switch sets of env vars in different project directories. It can replace direnv.
+    icon: ⚙
+    link: /environments/
+  - title: Tasks
+    link: /tasks/
+    details: mise is a task runner that can replace make, or npm scripts.
+    icon: ⚡
 ---
 
 <div class="quick-setup">
@@ -60,23 +73,6 @@ hero:
     </div>
   </div>
 </div>
-
----
-
-features:
-  - title: Dev Tools
-    link: /dev-tools/
-    icon: 🛠️
-    details: mise is a polyglot tool version manager. It replaces tools like asdf, nvm, pyenv, rbenv, etc.
-  - title: Environments
-    details: mise allows you to switch sets of env vars in different project directories. It can replace direnv.
-    icon: ⚙
-    link: /environments/
-  - title: Tasks
-    link: /tasks/
-    details: mise is a task runner that can replace make, or npm scripts.
-    icon: ⚡
----
 
 <style>
 .formerly {
