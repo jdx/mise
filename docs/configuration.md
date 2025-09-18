@@ -1,5 +1,7 @@
 # Configuration
 
+Learn how to configure mise for your project with `mise.toml` files, environment variables, and various configuration options to manage your development environment.
+
 ## `mise.toml`
 
 `mise.toml` is the config file for mise. They can be at any of the following file paths (in order of precedence, top overrides configuration of lower paths):
