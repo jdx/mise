@@ -240,12 +240,36 @@ h1,
 }
 
 .VPHero .name {
-  background: linear-gradient(135deg, #00d9ff 0%, #52e892 50%, #ff9100 100%);
+  background: linear-gradient(
+    120deg,
+    #00d9ff 0%,
+    #52e892 50%,
+    #ff9100 100%
+  );
+  background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   font-weight: 900;
   letter-spacing: -0.02em;
+  font-size: 5rem !important;
+  line-height: 1.1 !important;
+  animation: shimmer 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 20px rgba(0, 217, 255, 0.3));
+}
+
+/* Light mode hero gradient */
+:root:not(.dark) .VPHero .name {
+  background: linear-gradient(
+    120deg,
+    #00acc1 0%,
+    #4caf50 50%,
+    #ff9800 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .VPHero .tagline {
@@ -539,9 +563,15 @@ div[class*="language-"] .copy:hover {
 }
 
 /* Responsive improvements */
+@media (max-width: 1024px) {
+  .VPHero .name {
+    font-size: 4rem !important;
+  }
+}
+
 @media (max-width: 768px) {
   .VPHero .name {
-    font-size: 3rem !important;
+    font-size: 3.5rem !important;
   }
 
   .VPHero .tagline {
