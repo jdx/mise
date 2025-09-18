@@ -256,22 +256,25 @@ Create a GitHub release for better discoverability:
 ## Changes in v1.2.3
 
 ### Added
+
 - New feature X
 - Support for Y
 
 ### Changed
+
 - Improved performance of Z
 - Updated dependencies
 
 ### Fixed
+
 - Fixed issue with A
 - Resolved bug in B
 
 ### Installation
+
 ```bash
 mise plugin install my-plugin https://github.com/username/my-plugin
 ```
-
 ```
 
 ## Distribution Methods

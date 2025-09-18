@@ -46,6 +46,7 @@ curl https://mise.run/fish | sh
 :::
 
 These shell-specific installers will:
+
 - Install mise using the same logic as the main installer
 - Automatically detect your shell's configuration file
 - Add the activation line if it's not already present

@@ -21,6 +21,7 @@ export default withMermaid(
     },
     themeConfig: {
       // https://vitepress.dev/reference/default-theme-config
+      logo: "/logo.svg",
       outline: "deep",
       nav: [
         { text: "Dev Tools", link: "/dev-tools/" },
@@ -245,6 +246,33 @@ export default withMermaid(
       ],
     },
     head: [
+      // Favicon
+      ["link", { rel: "icon", href: "/logo.svg", type: "image/svg+xml" }],
+      ["link", { rel: "apple-touch-icon", href: "/logo.svg" }],
+      // Google Fonts
+      [
+        "link",
+        {
+          rel: "preconnect",
+          href: "https://fonts.googleapis.com",
+        },
+      ],
+      [
+        "link",
+        {
+          rel: "preconnect",
+          href: "https://fonts.gstatic.com",
+          crossorigin: "",
+        },
+      ],
+      [
+        "link",
+        {
+          href: "https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap",
+          rel: "stylesheet",
+        },
+      ],
+      // Analytics
       [
         "script",
         {

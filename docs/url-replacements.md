@@ -21,7 +21,7 @@ In mise.toml (multiline):
 ```toml
 [settings.url_replacements]
 "github.com" = "nexus.mycompany.net"
-"releases.hashicorp.com" = "artifactory.xmpl.com" 
+"releases.hashicorp.com" = "artifactory.xmpl.com"
 ```
 
 RegEx example:
@@ -39,6 +39,7 @@ and the value is the replacement string. The replacement happens by searching an
 the pattern anywhere in the full URL string (including protocol, hostname, path, and query parameters).
 
 Examples:
+
 - `github.com` -> `nexus.mycompany.net` replaces GitHub hostnames
 - `https://github.com` -> `https://nexus.mycompany.net` with protocol excludes e.g. 'api.github.com'
 - `https://github.com` -> `https://proxy.corp.com/github-mirror` replaces GitHub with corporate proxy
@@ -53,46 +54,54 @@ The value can use capture groups from the regex pattern.
 ### Regex Examples
 
 #### 1. Protocol Conversion (HTTP to HTTPS)
+
 ```toml
 [settings]
-url_replacements = { 
-  "regex:^http://(.+)" = "https://$1" 
+url_replacements = {
+  "regex:^http://(.+)" = "https://$1"
 }
 ```
+
 This converts any HTTP URL to HTTPS by capturing everything after "http://" and replacing it with "https://".
 
 #### 2. GitHub Release Mirroring with Path Restructuring
+
 ```toml
 [settings]
-url_replacements = { 
-  "regex:https://github\\.com/([^/]+)/([^/]+)/releases/download/(.+)" = 
-    "https://hub.corp.com/artifactory/github/$1/$2/$3" 
+url_replacements = {
+  "regex:https://github\\.com/([^/]+)/([^/]+)/releases/download/(.+)" =
+    "https://hub.corp.com/artifactory/github/$1/$2/$3"
 }
 ```
+
 Transforms `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz`
 to `https://hub.corp.com/artifactory/github/owner/repo/v1.0.0/file.tar.gz`
 
 #### 3. Subdomain to Path Conversion
+
 ```toml
 [settings]
-url_replacements = { 
-  "regex:https://([^.]+)\\.cdn\\.example\\.com/(.+)" = 
-    "https://unified-cdn.com/$1/$2" 
+url_replacements = {
+  "regex:https://([^.]+)\\.cdn\\.example\\.com/(.+)" =
+    "https://unified-cdn.com/$1/$2"
 }
 ```
+
 Converts subdomain-based URLs to path-based URLs on a unified CDN.
 
 #### 4. Multiple Replacement Patterns (processed in order)
+
 ```toml
 [settings]
-url_replacements = { 
-  "regex:https://github\\.com/microsoft/(.+)" = 
+url_replacements = {
+  "regex:https://github\\.com/microsoft/(.+)" =
     "https://internal-mirror.com/microsoft/$1",
-  "regex:https://github\\.com/(.+)" = 
+  "regex:https://github\\.com/(.+)" =
     "https://public-mirror.com/github/$1",
   "releases.hashicorp.com" = "hashicorp-mirror.internal.com"
 }
 ```
+
 First regex catches Microsoft repositories specifically, second catches all other GitHub URLs,
 and the simple replacement handles HashiCorp.
 
@@ -100,12 +109,13 @@ and the simple replacement handles HashiCorp.
 
 1. **Corporate Mirrors**: Replace public download URLs with internal corporate mirrors
 2. **Custom Registries**: Redirect package downloads to custom or private registries
-3. **Geographic Optimization**: Route downloads to geographically closer mirrors  
+3. **Geographic Optimization**: Route downloads to geographically closer mirrors
 4. **Protocol Changes**: Convert HTTP URLs to HTTPS or vice versa
 
 ## Regex Syntax
 
 mise uses Rust regex engine which supports:
+
 - `^` and `$` for anchors (start/end of string)
 - `(.+)` for capture groups (use `$1`, `$2`, etc. in replacement)
 - `[^/]+` for character classes (matches any character except `/`)

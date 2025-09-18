@@ -20,12 +20,12 @@ Tool plugins use a hook-based architecture with specific functions for different
 graph TD
     A[User Request] --> B[mise CLI]
     B --> C[Tool Plugin]
-    
+
     C --> D[Available Hook<br/>List Versions]
     C --> E[PreInstall Hook<br/>Download]
     C --> F[PostInstall Hook<br/>Setup]
     C --> G[EnvKeys Hook<br/>Configure]
-    
+
     subgraph "Plugin Files"
         H[metadata.lua]
         I[hooks/available.lua]
@@ -33,7 +33,7 @@ graph TD
         K[hooks/env_keys.lua]
         L[hooks/post_install.lua]
     end
-    
+
     style C fill:#e1f5fe
     style D fill:#e8f5e8
     style E fill:#e8f5e8
@@ -55,7 +55,7 @@ Lists all available versions of the tool:
 -- hooks/available.lua
 function PLUGIN:Available(ctx)
     local args = ctx.args  -- User arguments
-    
+
     -- Return array of available versions
     return {
         {
@@ -85,10 +85,10 @@ Handles pre-installation logic and returns download information:
 function PLUGIN:PreInstall(ctx)
     local version = ctx.version
     local runtimeVersion = ctx.runtimeVersion
-    
+
     -- Determine download URL and checksums
     local url = "https://nodejs.org/dist/v" .. version .. "/node-v" .. version .. "-linux-x64.tar.gz"
-    
+
     return {
         version = version,
         url = url,
@@ -118,7 +118,7 @@ function PLUGIN:EnvKeys(ctx)
     local path = sdkInfo.path
     local version = sdkInfo.version
     local name = sdkInfo.name
-    
+
     return {
         {
             key = "NODE_HOME",
@@ -130,7 +130,7 @@ function PLUGIN:EnvKeys(ctx)
         },
         -- Multiple PATH entries are automatically merged
         {
-            key = "PATH", 
+            key = "PATH",
             value = mainPath .. "/lib/node_modules/.bin"
         }
     }
@@ -153,13 +153,13 @@ function PLUGIN:PostInstall(ctx)
     local sdkInfo = ctx.sdkInfo['nodejs']
     local path = sdkInfo.path
     local version = sdkInfo.version
-    
+
     -- Compile native modules, set permissions, etc.
     local result = os.execute("chmod +x " .. path .. "/bin/*")
     if result ~= 0 then
         error("Failed to set permissions")
     end
-    
+
     -- No return value needed
 end
 ```
@@ -176,12 +176,12 @@ function PLUGIN:PreUse(ctx)
     local installedSdks = ctx.installedSdks
     local cwd = ctx.cwd
     local scope = ctx.scope  -- global/project/session
-    
+
     -- Optionally modify the version
     if version == "latest" then
         version = "20.0.0"  -- Resolve to specific version
     end
-    
+
     return {
         version = version
     }
@@ -198,12 +198,12 @@ function PLUGIN:ParseLegacyFile(ctx)
     local filename = ctx.filename
     local filepath = ctx.filepath
     local versions = ctx:getInstalledVersions()
-    
+
     -- Read and parse the file
     local file = require("file")
     local content = file.read(filepath)
     local version = content:match("v?([%d%.]+)")
-    
+
     return {
         version = version
     }
@@ -230,6 +230,7 @@ git init
 ```
 
 The template includes:
+
 - Pre-configured plugin structure with all required hooks
 - Example implementations with comments
 - Linting configuration (`.luacheckrc`, `stylua.toml`)
@@ -267,7 +268,7 @@ PLUGIN = {
     version = "1.0.0",
     description = "Node.js runtime environment",
     author = "Plugin Author",
-    
+
     -- Legacy version files this plugin can parse
     legacyFilenames = {
         '.nvmrc',
@@ -328,27 +329,27 @@ Here's a complete example based on the vfox-nodejs plugin that demonstrates all 
 function PLUGIN:Available(ctx)
     local http = require("http")
     local json = require("json")
-    
+
     -- Fetch versions from Node.js API
     local resp, err = http.get({
         url = "https://nodejs.org/dist/index.json"
     })
-    
+
     if err ~= nil then
         error("Failed to fetch versions: " .. err)
     end
-    
+
     local versions = json.decode(resp.body)
     local result = {}
-    
+
     for i, v in ipairs(versions) do
         local version = v.version:gsub("^v", "")  -- Remove 'v' prefix
         local note = nil
-        
+
         if v.lts then
             note = "LTS"
         end
-        
+
         table.insert(result, {
             version = version,
             note = note,
@@ -360,7 +361,7 @@ function PLUGIN:Available(ctx)
             }
         })
     end
-    
+
     return result
 end
 ```
@@ -393,16 +394,16 @@ function PLUGIN:PreInstall(ctx)
     end
     local platform = os_token .. "-" .. arch_token
     local extension = (RUNTIME.osType == "Windows") and "zip" or "tar.gz"
-    
+
     -- Build download URL
     local filename = "node-v" .. version .. "-" .. platform .. "." .. extension
     local url = "https://nodejs.org/dist/v" .. version .. "/" .. filename
-    
+
     -- Fetch checksum
     local http = require("http")
     local shasums_url = "https://nodejs.org/dist/v" .. version .. "/SHASUMS256.txt"
     local resp, err = http.get({ url = shasums_url })
-    
+
     local sha256 = nil
     if err == nil then
         -- Extract SHA256 for our file
@@ -413,7 +414,7 @@ function PLUGIN:PreInstall(ctx)
             end
         end
     end
-    
+
     return {
         version = version,
         url = url,
@@ -430,7 +431,7 @@ end
 function PLUGIN:EnvKeys(ctx)
     local mainPath = ctx.path
     local os_type = RUNTIME.osType
-    
+
     local env_vars = {
         {
             key = "NODE_HOME",
@@ -441,18 +442,18 @@ function PLUGIN:EnvKeys(ctx)
             value = mainPath .. "/bin"
         }
     }
-    
+
     -- Add npm global modules to PATH
     local npm_global_path = mainPath .. "/lib/node_modules/.bin"
     if os_type == "Windows" then
         npm_global_path = mainPath .. "/node_modules/.bin"
     end
-    
+
     table.insert(env_vars, {
         key = "PATH",
         value = npm_global_path
     })
-    
+
     return env_vars
 end
 ```
@@ -468,17 +469,17 @@ function PLUGIN:PostInstall(ctx)
     if RUNTIME.osType ~= "Windows" then
         os.execute("chmod +x " .. path .. "/bin/*")
     end
-    
+
     -- Create npm cache directory
     local npm_cache_dir = path .. "/.npm"
     os.execute("mkdir -p " .. npm_cache_dir)
-    
+
     -- Configure npm to use local cache
     local npm_cmd = path .. "/bin/npm"
     if RUNTIME.osType == "Windows" then
         npm_cmd = path .. "/npm.cmd"
     end
-    
+
     os.execute(npm_cmd .. " config set cache " .. npm_cache_dir)
     os.execute(npm_cmd .. " config set prefix " .. path)
 end
@@ -492,16 +493,16 @@ function PLUGIN:ParseLegacyFile(ctx)
     local filename = ctx.filename
     local filepath = ctx.filepath
     local file = require("file")
-    
+
     -- Read file content
     local content = file.read(filepath)
     if not content then
         error("Failed to read " .. filepath)
     end
-    
+
     -- Parse version from different file formats
     local version = nil
-    
+
     if filename == ".nvmrc" then
         -- .nvmrc can contain version with or without 'v' prefix
         version = content:match("v?([%d%.]+)")
@@ -509,12 +510,12 @@ function PLUGIN:ParseLegacyFile(ctx)
         -- .node-version typically contains just the version number
         version = content:match("([%d%.]+)")
     end
-    
+
     -- Remove any whitespace
     if version then
         version = version:gsub("%s+", "")
     end
-    
+
     return {
         version = version
     }
@@ -608,15 +609,15 @@ function PLUGIN:Available(ctx)
     local resp, err = http.get({
         url = "https://api.example.com/versions"
     })
-    
+
     if err ~= nil then
         error("Failed to fetch versions from API: " .. err)
     end
-    
+
     if resp.status_code ~= 200 then
         error("API returned status " .. resp.status_code .. ": " .. resp.body)
     end
-    
+
     -- Process response...
 end
 ```
@@ -645,6 +646,7 @@ return M
 ```
 
 **Note:** The `RUNTIME` object is automatically available in all plugin hooks and provides:
+
 - `RUNTIME.osType`: Operating system type ("Windows", "Linux", "Darwin")
 - `RUNTIME.archType`: Architecture ("amd64", "arm64", "386", etc.)
 
@@ -656,10 +658,10 @@ Normalize versions consistently:
 local function normalize_version(version)
     -- Remove 'v' prefix if present
     version = version:gsub("^v", "")
-    
+
     -- Remove pre-release suffixes
     version = version:gsub("%-.*", "")
-    
+
     return version
 end
 ```
@@ -675,19 +677,19 @@ local cache_ttl = 12 * 60 * 60  -- 12 hours in seconds
 
 function PLUGIN:Available(ctx)
     local now = os.time()
-    
+
     -- Check cache first
     if cache.versions and cache.timestamp and (now - cache.timestamp) < cache_ttl then
         return cache.versions
     end
-    
+
     -- Fetch fresh data
     local versions = fetch_versions_from_api()
-    
+
     -- Update cache
     cache.versions = versions
     cache.timestamp = now
-    
+
     return versions
 end
 ```
@@ -726,22 +728,22 @@ function PLUGIN:PostInstall(ctx)
     local sdkInfo = ctx.sdkInfo['tool-name']
     local path = sdkInfo.path
     local version = sdkInfo.version
-    
+
     -- Change to source directory
     local build_dir = path .. "/src"
-    
+
     -- Configure build
     local configure_result = os.execute("cd " .. build_dir .. " && ./configure --prefix=" .. path)
     if configure_result ~= 0 then
         error("Configure failed")
     end
-    
+
     -- Compile
     local make_result = os.execute("cd " .. build_dir .. " && make -j$(nproc)")
     if make_result ~= 0 then
         error("Compilation failed")
     end
-    
+
     -- Install
     local install_result = os.execute("cd " .. build_dir .. " && make install")
     if install_result ~= 0 then
@@ -758,7 +760,7 @@ Complex environment variable setup:
 function PLUGIN:EnvKeys(ctx)
     local mainPath = ctx.path
     local version = ctx.sdkInfo['tool-name'].version
-    
+
     local env_vars = {
         -- Standard environment variables
         {
@@ -769,7 +771,7 @@ function PLUGIN:EnvKeys(ctx)
             key = "TOOL_VERSION",
             value = version
         },
-        
+
         -- PATH entries
         {
             key = "PATH",
@@ -779,7 +781,7 @@ function PLUGIN:EnvKeys(ctx)
             key = "PATH",
             value = mainPath .. "/scripts"
         },
-        
+
         -- Library paths
         {
             key = "LD_LIBRARY_PATH",
@@ -790,7 +792,7 @@ function PLUGIN:EnvKeys(ctx)
             value = mainPath .. "/lib/pkgconfig"
         }
     }
-    
+
     -- Platform-specific additions
     if RUNTIME.osType == "Darwin" then
         table.insert(env_vars, {
@@ -798,7 +800,7 @@ function PLUGIN:EnvKeys(ctx)
             value = mainPath .. "/lib"
         })
     end
-    
+
     return env_vars
 end
 ```
