@@ -15,6 +15,9 @@ docs/cli
 docs/environments.md
 docs/public/site.webmanifest
 docs/registry.md
+docs/plugin-usage.md
+docs/plugin-publishing.md
+CLAUDE.md
 e2e
 src/assets/bash_zsh_support/
 tasks.md
