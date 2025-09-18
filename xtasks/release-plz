@@ -79,6 +79,33 @@ sed -i.bak "s/^[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\? macos-arm64 (a1b2d3e 
 sed -i.bak "s/^Version: [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/Version: $version/" packaging/rpm/mise.spec
 sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/version = \"$version\";/" default.nix
 
+# Update GitHub star count using gh CLI
+stars_raw="$(gh api repos/jdx/mise --jq '.stargazers_count')"
+if [[ -n "$stars_raw" ]]; then
+	if [[ "$stars_raw" -ge 1000 ]]; then
+		# Format as k notation (e.g., 19346 -> 19.3k)
+		stars_formatted="$(echo "scale=1; $stars_raw / 1000" | bc)k"
+		# Remove trailing .0k
+		stars_formatted="${stars_formatted/.0k/k}"
+	else
+		stars_formatted="$stars_raw"
+	fi
+
+	# Update the stars data file
+	cat > docs/.vitepress/stars.data.ts <<EOF
+// This file is auto-updated by xtasks/release-plz
+// Current star count from GitHub API
+export default {
+  load() {
+    return {
+      stars: "$stars_formatted",
+    };
+  },
+};
+EOF
+	echo "Updated star count to $stars_formatted"
+fi
+
 mise run render ::: lint-fix
 
 rm -rf crates/aqua-registry/aqua-registry
@@ -97,6 +124,7 @@ git add \
 	README.md \
 	crates/aqua-registry/aqua-registry \
 	default.nix \
+	docs/.vitepress/stars.data.ts \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \
 	completions \
