@@ -3242,7 +3242,10 @@ tridentctl.backends = [
 ]
 trivy.description = "Find vulnerabilities, misconfigurations, secrets, SBOM in containers, Kubernetes, code repositories, clouds and more"
 trivy.backends = ["aqua:aquasecurity/trivy", "asdf:zufardhiyaulhaq/asdf-trivy"]
-trufflehog.backends = ["aqua:trufflesecurity/trufflehog", "github:trufflesecurity/trufflehog"]
+trufflehog.backends = [
+    "aqua:trufflesecurity/trufflehog",
+    "github:trufflesecurity/trufflehog"
+]
 trufflehog.test = ["trufflehog --version", "trufflehog {{version}}"]
 trunk.description = "Trunk is a comprehensive code quality tool that runs linters, formatters, and security scanners to help maintain high-quality codebases (https://trunk.io)"
 trunk.backends = ["npm:@trunkio/launcher"]
