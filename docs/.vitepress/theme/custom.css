@@ -221,7 +221,8 @@ h1,
 
 /* Maintain search button width without text */
 .DocSearch-Button {
-  min-width: 64px !important;
+  min-width: 200px !important;
+  padding: 0 16px !important;
 }
 
 /* Adjust h1 size for Bebas Neue's tall characters */
