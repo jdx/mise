@@ -126,7 +126,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                 let p = Path::new(s).canonicalize()?;
                 if let Some(Value::String(join_path)) = args.get("join") {
                     let joined_path = p.join(join_path);
-                    return Ok(Value::String(joined_path.to_string_lossy().to_string()))
+                    return Ok(Value::String(joined_path.to_string_lossy().to_string()));
                 }
                 Ok(Value::String(p.to_string_lossy().to_string()))
             }
@@ -155,7 +155,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
                 let p = Path::new(s).parent().unwrap();
                 if let Some(Value::String(join_path)) = args.get("join") {
                     let joined_path = p.join(join_path);
-                    return Ok(Value::String(joined_path.to_string_lossy().to_string()))
+                    return Ok(Value::String(joined_path.to_string_lossy().to_string()));
                 }
                 Ok(Value::String(p.to_string_lossy().to_string()))
             }
@@ -327,7 +327,7 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
     let mut tera = TERA.clone();
     let dir = dir.map(PathBuf::from);
     tera.register_function("exec", tera_exec(dir.clone(), env::PRISTINE_ENV.clone()));
-    
+
     if let Some(config_root) = dir {
         let config_root_clone = config_root.clone();
         tera.register_function(
@@ -338,9 +338,11 @@ pub fn get_tera(dir: Option<&Path>) -> Tera {
                     Ok(Value::String(joined_path.to_string_lossy().to_string()))
                 } else {
                     // No join parameter, return config_root as-is
-                    Ok(Value::String(config_root_clone.to_string_lossy().to_string()))
+                    Ok(Value::String(
+                        config_root_clone.to_string_lossy().to_string(),
+                    ))
                 }
-            }
+            },
         );
     }
 
@@ -696,13 +698,13 @@ mod tests {
     #[tokio::test]
     async fn test_config_root_function() {
         let _config = Config::get().await.unwrap();
-        
+
         let s = render("{{ config_root() }}");
         assert_eq!(s, "/");
-        
+
         let s = render("{{ config_root(join='mise/tasks') }}");
         assert_eq!(s, "/mise/tasks");
-        
+
         let s = render("{{ config_root(join='mise/setup-token.ts') }}");
         assert_eq!(s, "/mise/setup-token.ts");
     }
@@ -710,22 +712,37 @@ mod tests {
     #[tokio::test]
     async fn test_config_root_function_with_spaces() {
         let _config = Config::get().await.unwrap();
-        
+
         let config_root = Path::new("/Users/test/my projects/project with spaces");
         let mut tera_ctx = BASE_CONTEXT.clone();
         tera_ctx.insert("config_root", &config_root);
-        
+
         let mut tera = get_tera(Some(config_root));
 
-        let result_variable = tera.render_str("{{ config_root | quote }}", &tera_ctx).unwrap();
-        assert_eq!(result_variable, "'/Users/test/my projects/project with spaces'");
+        let result_variable = tera
+            .render_str("{{ config_root | quote }}", &tera_ctx)
+            .unwrap();
+        assert_eq!(
+            result_variable,
+            "'/Users/test/my projects/project with spaces'"
+        );
 
-        let result = tera.render_str("{{ config_root() | quote }}", &tera_ctx).unwrap();
+        let result = tera
+            .render_str("{{ config_root() | quote }}", &tera_ctx)
+            .unwrap();
         assert_eq!(result, "'/Users/test/my projects/project with spaces'");
         assert_eq!(result, result_variable);
-        
-        let result = tera.render_str("{{ config_root(join='mise/setup-token.ts') | quote }}", &tera_ctx).unwrap();
-        assert_eq!(result, "'/Users/test/my projects/project with spaces/mise/setup-token.ts'");
+
+        let result = tera
+            .render_str(
+                "{{ config_root(join='mise/setup-token.ts') | quote }}",
+                &tera_ctx,
+            )
+            .unwrap();
+        assert_eq!(
+            result,
+            "'/Users/test/my projects/project with spaces/mise/setup-token.ts'"
+        );
     }
 
     fn render(s: &str) -> String {
