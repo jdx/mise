@@ -1,13 +1,9 @@
 <div align="center">
 
-<p>
+<h1 align="center">
   <a href="https://mise.jdx.dev">
-    <img src="docs/public/logo.svg" alt="mise" width="120" height="120" />
-  </a>
-</p>
-
-<h1>
-  <a href="https://mise.jdx.dev">
+    <img src="docs/public/logo.svg" alt="mise" width="256" height="256" />
+    <br>
     mise-en-place
   </a>
 </h1>
