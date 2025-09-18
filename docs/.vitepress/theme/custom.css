@@ -141,35 +141,34 @@
 .VPNavBarTitle .title {
   font-weight: 900;
   font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  margin-left: 0.25rem;
+  transition: all 0.3s ease;
+  color: var(--vp-c-text-1);
+}
+
+/* Gradient text on hover only */
+.VPNavBarTitle:hover .title {
+  background: linear-gradient(120deg, #00d9ff 0%, #52e892 50%, #ff9100 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  letter-spacing: -0.02em;
-  margin-left: 0.25rem;
-  transition: all 0.3s ease;
 }
 
-/* Dark mode gradient */
-.dark .VPNavBarTitle .title {
-  background: linear-gradient(120deg, #00d9ff 0%, #52e892 50%, #ff9100 100%);
-}
-
-/* Light mode gradient - more muted colors */
-:root:not(.dark) .VPNavBarTitle .title {
-  background: linear-gradient(120deg, #0097a7 0%, #2e7d32 50%, #ef6c00 100%);
-}
-
-/* Animate and glow on hover */
-.dark .VPNavBarTitle:hover .title {
-  filter: drop-shadow(0 0 8px rgba(0, 217, 255, 0.5));
-  animation: shimmer 2s ease-in-out infinite;
-}
-
-/* Light mode hover effect */
+/* Light mode hover gradient */
 :root:not(.dark) .VPNavBarTitle:hover .title {
-  filter: drop-shadow(0 0 6px rgba(0, 151, 167, 0.3));
+  background: linear-gradient(120deg, #0097a7 0%, #2e7d32 50%, #ef6c00 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Add animation on hover */
+.VPNavBarTitle:hover .title {
   animation: shimmer 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(0, 217, 255, 0.3));
 }
 
 @keyframes shimmer {
