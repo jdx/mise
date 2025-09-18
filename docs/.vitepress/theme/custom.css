@@ -191,6 +191,42 @@
   }
 }
 
+/* GitHub star count badge */
+.VPSocialLinks a[href*="github.com/jdx/mise"] {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+}
+
+.VPSocialLinks .star-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--vp-c-text-2);
+  background: var(--vp-c-bg-soft);
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--vp-c-divider);
+  font-family: var(--vp-font-family-mono);
+  letter-spacing: -0.02em;
+  transition: all 0.3s ease;
+}
+
+.VPSocialLinks a[href*="github.com/jdx/mise"]:hover .star-count {
+  background: var(--vp-c-bg-mute);
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+/* Hide star count on mobile to save space */
+@media (max-width: 640px) {
+  .VPSocialLinks .star-count {
+    display: none;
+  }
+}
+
 /* Apply Bebas Neue to h1 headers, navigation, and key UI elements */
 h1,
 .vp-doc h1,
