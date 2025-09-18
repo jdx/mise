@@ -34,6 +34,7 @@
     "Helvetica Neue", sans-serif;
   --vp-font-family-mono: "JetBrains Mono", "Fira Code", "SF Mono", Monaco,
     "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
+  --vp-font-family-heading: "Bebas Neue", "Inter", sans-serif;
 
   /* Custom spacing for better readability */
   --vp-layout-max-width: 1440px;
@@ -187,6 +188,49 @@
   }
 }
 
+/* Apply Bebas Neue to all headers */
+h1, h2, h3, h4, h5, h6,
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3,
+.vp-doc h4,
+.vp-doc h5,
+.vp-doc h6,
+.VPHero .name,
+.VPHome .name,
+.VPFeature h3,
+.VPNavBarTitle .title {
+  font-family: "Bebas Neue", var(--vp-font-family-base) !important;
+  letter-spacing: 0.02em;
+}
+
+/* Adjust header sizes for Bebas Neue's tall characters */
+.vp-doc h1 {
+  font-size: 3rem;
+  line-height: 1.2;
+}
+
+.vp-doc h2 {
+  font-size: 2.2rem;
+  line-height: 1.3;
+}
+
+.vp-doc h3 {
+  font-size: 1.8rem;
+  line-height: 1.4;
+}
+
+.vp-doc h4 {
+  font-size: 1.5rem;
+  line-height: 1.4;
+}
+
+/* Site title specific adjustment */
+.VPNavBarTitle .title {
+  font-size: 1.3rem;
+  letter-spacing: 0.05em;
+}
+
 /* Hero section enhancement */
 .VPHero {
   padding-bottom: 56px !important;
@@ -243,10 +287,11 @@
 .VPSidebarItem.level-0 > .item {
   padding-top: 2px;
   padding-bottom: 2px;
-  font-weight: 600;
+  font-family: "Bebas Neue", var(--vp-font-family-base);
+  font-weight: 400;
   text-transform: uppercase;
-  letter-spacing: 0.025em;
-  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  font-size: 0.9rem;
   color: var(--vp-c-text-3);
 }
 
