@@ -219,6 +219,11 @@ h1,
   display: none;
 }
 
+/* Maintain search button width without text */
+.DocSearch-Button {
+  min-width: 64px !important;
+}
+
 /* Adjust h1 size for Bebas Neue's tall characters */
 .vp-doc h1 {
   font-size: 3rem;
