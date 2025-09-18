@@ -145,10 +145,16 @@ features:
     height: 32px;
     border-radius: 50%;
     background: linear-gradient(135deg, #00d9ff, #52e892);
-    color: white;
+    color: #000;
     font-weight: 700;
     font-size: 1rem;
     flex-shrink: 0;
+}
+
+/* Dark mode - ensure good contrast */
+.dark .step-number {
+    color: #fff;
+    background: linear-gradient(135deg, #00b8d9, #3dd979);
 }
 
 .step-content {
