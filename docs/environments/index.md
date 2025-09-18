@@ -169,7 +169,7 @@ Note: If you're using [mise-action](https://github.com/jdx/mise-action), it will
 Here's some example config files and their `config_root`:
 
 | Config File                                 | `config_root` |
-|---------------------------------------------|---------------|
+| ------------------------------------------- | ------------- |
 | `~/src/foo/.config/mise/conf.d/config.toml` | `~/src/foo`   |
 | `~/src/foo/.config/mise/config.toml`        | `~/src/foo`   |
 | `~/src/foo/.mise/config.toml`               | `~/src/foo`   |

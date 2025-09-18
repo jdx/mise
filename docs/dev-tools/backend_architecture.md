@@ -104,13 +104,13 @@ terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 
 ## Backend Capabilities Comparison
 
-| Feature | Core | npm/pipx/cargo | aqua | ubi | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
-|---------|------|----------------|------|-----|-----------------|---------------------|-----------------------|
-| **Speed** | ✅ | ⚠️ | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ |
-| **Security** | ✅ | ⚠️ | ✅ | ⚠️ | ⚠️ | ⚠️ | ⚠️ |
-| **Windows Support** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **Env Var Support** | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
-| **Custom Scripts** | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Feature             | Core | npm/pipx/cargo | aqua | ubi | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
+| ------------------- | ---- | -------------- | ---- | --- | --------------- | ------------------- | --------------------- |
+| **Speed**           | ✅   | ⚠️             | ✅   | ✅  | ⚠️              | ⚠️                  | ⚠️                    |
+| **Security**        | ✅   | ⚠️             | ✅   | ⚠️  | ⚠️              | ⚠️                  | ⚠️                    |
+| **Windows Support** | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
+| **Env Var Support** | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
+| **Custom Scripts**  | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
 
 ## When to Use Each Backend
 

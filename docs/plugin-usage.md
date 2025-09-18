@@ -195,7 +195,7 @@ When using plugins, be aware that:
 - **Only install plugins from trusted sources**
 - **Review plugin code** before installation when possible
 - **Use version pinning** to avoid unexpected updates like [`mise.lock`](/dev-tools/mise-lock.md)
-:::
+  :::
 
 ## Troubleshooting
 

@@ -149,7 +149,7 @@ git commit -m "Update tool versions"
 - name: Install tools
   run: |
     mise install  # Uses exact versions from mise.lock
-    
+
 - name: Cache lockfile
   uses: actions/cache@v3
   with:

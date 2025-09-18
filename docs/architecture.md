@@ -1,6 +1,7 @@
 ---
 outline: [1, 3]
 ---
+
 # mise Architecture
 
 This document provides a comprehensive overview of mise's architecture, designed primarily for contributors and those interested in understanding how mise works internally.
@@ -12,7 +13,7 @@ For practical development guidance, see the [Contributing Guide](contributing.md
 mise is a Rust-based tool with a modular architecture centered around three core concepts:
 
 1. **Tool Version Management** - Installing and managing different versions of [development tools](dev-tools/)
-2. **Environment Management** - Setting up [environment variables](environments/) and project contexts  
+2. **Environment Management** - Setting up [environment variables](environments/) and project contexts
 3. **Task Running** - Executing [project tasks](tasks/) with dependency management
 
 These three pillars work together to provide a unified development environment management experience.

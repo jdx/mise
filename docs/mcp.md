@@ -27,24 +27,32 @@ mise mcp
 The MCP server exposes the following read-only resources that AI assistants can query:
 
 ### `mise://tools`
+
 Lists all tools managed by mise in your project, including:
+
 - Tool names and versions
 - Installation status
 - Configuration source
 
 ### `mise://tasks`
+
 Shows all available mise tasks with:
+
 - Task names and descriptions
 - Task dependencies
 - Command definitions
 
 ### `mise://env`
+
 Displays environment variables defined in your mise configuration:
+
 - Variable names and values
 - Environment-specific overrides
 
 ### `mise://config`
+
 Provides information about mise configuration:
+
 - Active configuration files
 - Project root directory
 - Settings and preferences
@@ -54,9 +62,11 @@ Provides information about mise configuration:
 The following tools are available for AI assistants to call (currently stubbed for future implementation):
 
 ### `install_tool`
+
 Install a specific tool version (not yet implemented)
 
 ### `run_task`
+
 Execute a mise task (not yet implemented)
 
 ## Integration with AI Assistants
@@ -84,6 +94,7 @@ To use mise with Claude Desktop, add the following to your Claude configuration 
 ```
 
 After adding this configuration and restarting Claude Desktop, the assistant will be able to:
+
 - Query your installed tools and versions
 - List available tasks in your project
 - Access environment variables from your mise configuration

@@ -103,9 +103,9 @@ Lists all available versions of the tool:
 ```bash
 #!/usr/bin/env bash
 # List all available versions
-curl -s https://api.github.com/repos/owner/repo/releases | 
-  grep '"tag_name":' | 
-  sed -E 's/.*"([^"]+)".*/\1/' | 
+curl -s https://api.github.com/repos/owner/repo/releases |
+  grep '"tag_name":' |
+  sed -E 's/.*"([^"]+)".*/\1/' |
   sort -V
 ```
 
@@ -174,8 +174,8 @@ Get the latest stable version:
 
 ```bash
 #!/usr/bin/env bash
-curl -s https://api.github.com/repos/owner/repo/releases/latest | 
-  grep '"tag_name":' | 
+curl -s https://api.github.com/repos/owner/repo/releases/latest |
+  grep '"tag_name":' |
   sed -E 's/.*"([^"]+)".*/\1/'
 ```
 

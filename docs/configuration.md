@@ -81,7 +81,7 @@ Different configuration sections merge in different ways:
 
 ```toml
 # Global: [tasks.test] = "npm test"
-# Project: [tasks.test] = "yarn test"  
+# Project: [tasks.test] = "yarn test"
 # Result: "yarn test" (completely replaces global)
 ```
 
