@@ -34,7 +34,7 @@ jobs:
         run: |
           VERSION="$(./scripts/get-version.sh)"
           mkdir -p releases/$VERSION
-          
+
           # Download release artifacts from GitHub release
           gh release download "$VERSION" \
             --repo ${{ github.repository }} \
@@ -44,7 +44,7 @@ jobs:
               echo "Failed to download release artifacts"
               exit 1
             }
-          
+
           # Also download to releases/ directory for compatibility
           cp releases/$VERSION/mise-*.tar.gz releases/ || true
           cp releases/$VERSION/mise-*.tar.xz releases/ || true
@@ -54,8 +54,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: '24.x'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: "24.x"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Publish npm packages
         run: |

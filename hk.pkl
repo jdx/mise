@@ -1,5 +1,5 @@
-amends "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Builtins.pkl"
+amends "package://github.com/jdx/hk/releases/download/v1.14.0/hk@1.14.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.14.0/hk@1.14.0#/Builtins.pkl"
 
 local bash_glob = List("*.sh", "xtasks/**", "scripts/**", "e2e/**")
 local bash_exclude = List("*.ps1", "**/*.fish", "*.ts", "*.js", "*.json", "*.bat", "**/.*", "src/assets/bash_zsh_support/**", "e2e/shell/xonsh_script")
@@ -7,6 +7,7 @@ local linters = new Mapping<String, Step> {
     // uses builtin prettier linter config
     ["prettier"] = (Builtins.prettier) {
       batch = false
+      exclude = "crates/aqua-registry/aqua-registry/**"
     }
     //["clippy"] = (Builtins.cargo_clippy) {
     //  check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features -- -Dwarnings"
