@@ -18,7 +18,7 @@
 
   <!-- Main terminal window - larger and centered -->
   <rect x="20" y="30" width="80" height="60" rx="8"
-        fill="#0a0a0b"
+        fill="#1a1a1a"
         stroke="url(#gradient1)"
         stroke-width="3"
         filter="url(#shadow)"/>

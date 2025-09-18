@@ -69,17 +69,45 @@
 
 /* Light mode customizations */
 :root:not(.dark) {
-  --vp-c-bg: #ffffff;
-  --vp-c-bg-soft: #f9f9fb;
-  --vp-c-bg-mute: #f3f4f6;
+  /* Light mode brand colors - more muted for better readability */
+  --vp-c-brand-1: #0097a7; /* Darker cyan for light mode */
+  --vp-c-brand-2: #00838f; /* Even darker on hover */
+  --vp-c-brand-3: #006064; /* Active state */
+  --vp-c-brand-soft: rgba(0, 151, 167, 0.08);
 
-  --vp-c-text-1: #213547;
-  --vp-c-text-2: #476573;
-  --vp-c-text-3: #6b7280;
+  /* Adjusted success colors for light mode */
+  --vp-c-success-1: #2e7d32;
+  --vp-c-success-2: #1b5e20;
+  --vp-c-success-soft: rgba(46, 125, 50, 0.08);
+
+  /* Adjusted warning colors */
+  --vp-c-warning-1: #ef6c00;
+  --vp-c-warning-2: #e65100;
+  --vp-c-warning-soft: rgba(239, 108, 0, 0.08);
+
+  /* Background colors with better contrast */
+  --vp-c-bg: #ffffff;
+  --vp-c-bg-soft: #f8f9fa;
+  --vp-c-bg-mute: #e9ecef;
+  --vp-c-bg-alt: #f1f3f5;
+
+  /* Text colors with better readability */
+  --vp-c-text-1: #1a1a1a;
+  --vp-c-text-2: #4a5568;
+  --vp-c-text-3: #718096;
+  --vp-c-text-4: #a0aec0;
+
+  /* Dividers with more contrast */
+  --vp-c-divider: #e2e8f0;
+  --vp-c-divider-light: #cbd5e0;
 
   /* Light mode code styling */
-  --vp-c-code-bg: #f3f4f6;
-  --vp-c-code-color: #0097a7;
+  --vp-c-code-bg: #f1f3f5;
+  --vp-c-code-color: #006064;
+
+  /* Code blocks in light mode */
+  --vp-code-block-bg: #f8f9fa;
+  --vp-code-block-divider-color: #e2e8f0;
 }
 
 /* Navigation Bar Customization */
@@ -113,7 +141,6 @@
 .VPNavBarTitle .title {
   font-weight: 900;
   font-size: 1.05rem;
-  background: linear-gradient(120deg, #00d9ff 0%, #52e892 50%, #ff9100 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -123,9 +150,25 @@
   transition: all 0.3s ease;
 }
 
+/* Dark mode gradient */
+.dark .VPNavBarTitle .title {
+  background: linear-gradient(120deg, #00d9ff 0%, #52e892 50%, #ff9100 100%);
+}
+
+/* Light mode gradient - more muted colors */
+:root:not(.dark) .VPNavBarTitle .title {
+  background: linear-gradient(120deg, #0097a7 0%, #2e7d32 50%, #ef6c00 100%);
+}
+
 /* Animate and glow on hover */
-.VPNavBarTitle:hover .title {
+.dark .VPNavBarTitle:hover .title {
   filter: drop-shadow(0 0 8px rgba(0, 217, 255, 0.5));
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Light mode hover effect */
+:root:not(.dark) .VPNavBarTitle:hover .title {
+  filter: drop-shadow(0 0 6px rgba(0, 151, 167, 0.3));
   animation: shimmer 2s ease-in-out infinite;
 }
 
@@ -187,6 +230,11 @@
 /* Sidebar enhancements */
 .VPSidebar {
   backdrop-filter: blur(8px);
+}
+
+/* Light mode sidebar background */
+:root:not(.dark) .VPSidebar {
+  background-color: rgba(255, 255, 255, 0.8);
 }
 
 .VPSidebarItem {
