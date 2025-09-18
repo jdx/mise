@@ -194,35 +194,39 @@
 /* GitHub star count badge */
 .VPSocialLinks a[href*="github.com/jdx/mise"] {
   display: inline-flex !important;
+  flex-direction: column;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  gap: 2px;
   position: relative;
+  padding-bottom: 18px !important;
+  margin-bottom: -14px !important;
+}
+
+/* Ensure GitHub icon is visible */
+.VPSocialLinks a[href*="github.com/jdx/mise"] svg {
+  display: block !important;
+  width: 20px;
+  height: 20px;
 }
 
 .VPSocialLinks .star-count {
-  display: inline-block;
-  font-size: 0.7rem;
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.65rem;
   font-weight: 600;
   color: var(--vp-c-text-3);
-  background: var(--vp-c-default-soft);
-  padding: 0 4px;
-  border-radius: 6px;
   font-family: var(--vp-font-family-mono);
-  letter-spacing: -0.03em;
-  transition: all 0.2s ease;
-  margin-left: -6px;
-  line-height: 1.4;
-  vertical-align: middle;
+  letter-spacing: -0.02em;
+  transition: color 0.25s ease;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .VPSocialLinks a[href*="github.com/jdx/mise"]:hover .star-count {
-  background: var(--vp-c-brand-soft);
   color: var(--vp-c-brand-1);
-}
-
-/* Adjust social links spacing */
-.VPSocialLinks {
-  gap: 4px !important;
 }
 
 /* Hide star count on mobile to save space */
