@@ -188,41 +188,20 @@
   }
 }
 
-/* Apply Bebas Neue to all headers */
-h1, h2, h3, h4, h5, h6,
+/* Apply Bebas Neue to h1 headers and site title only */
+h1,
 .vp-doc h1,
-.vp-doc h2,
-.vp-doc h3,
-.vp-doc h4,
-.vp-doc h5,
-.vp-doc h6,
 .VPHero .name,
 .VPHome .name,
-.VPFeature h3,
 .VPNavBarTitle .title {
   font-family: "Bebas Neue", var(--vp-font-family-base) !important;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
 }
 
-/* Adjust header sizes for Bebas Neue's tall characters */
+/* Adjust h1 size for Bebas Neue's tall characters */
 .vp-doc h1 {
   font-size: 3rem;
   line-height: 1.2;
-}
-
-.vp-doc h2 {
-  font-size: 2.2rem;
-  line-height: 1.3;
-}
-
-.vp-doc h3 {
-  font-size: 1.8rem;
-  line-height: 1.4;
-}
-
-.vp-doc h4 {
-  font-size: 1.5rem;
-  line-height: 1.4;
 }
 
 /* Site title specific adjustment */
@@ -287,11 +266,10 @@ h1, h2, h3, h4, h5, h6,
 .VPSidebarItem.level-0 > .item {
   padding-top: 2px;
   padding-bottom: 2px;
-  font-family: "Bebas Neue", var(--vp-font-family-base);
-  font-weight: 400;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: 0.9rem;
+  letter-spacing: 0.025em;
+  font-size: 0.75rem;
   color: var(--vp-c-text-3);
 }
 
