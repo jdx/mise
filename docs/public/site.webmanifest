@@ -1,7 +1,14 @@
 {
-  "name": "",
-  "short_name": "",
+  "name": "mise-en-place",
+  "short_name": "mise",
+  "description": "The front-end to your dev env",
   "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
     {
       "src": "/android-chrome-192x192.png",
       "sizes": "192x192",
@@ -13,7 +20,7 @@
       "type": "image/png"
     }
   ],
-  "theme_color": "#ffffff",
-  "background_color": "#ffffff",
+  "theme_color": "#1a1a1a",
+  "background_color": "#1a1a1a",
   "display": "standalone"
 }

@@ -146,28 +146,31 @@
   margin-left: 0.25rem;
   transition: all 0.3s ease;
   color: var(--vp-c-text-1);
-}
-
-/* Gradient text on hover only */
-.VPNavBarTitle:hover .title {
-  background: linear-gradient(120deg, #00d9ff 0%, #52e892 50%, #ff9100 100%);
+  background-image: linear-gradient(
+    120deg,
+    #00d9ff 0%,
+    #52e892 50%,
+    #ff9100 100%
+  );
   background-size: 200% 100%;
+  background-position: 100% 0;
   -webkit-background-clip: text;
   background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
-/* Light mode hover gradient */
-:root:not(.dark) .VPNavBarTitle:hover .title {
-  background: linear-gradient(120deg, #0097a7 0%, #2e7d32 50%, #ef6c00 100%);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+/* Light mode gradient */
+:root:not(.dark) .VPNavBarTitle .title {
+  background-image: linear-gradient(
+    120deg,
+    #0097a7 0%,
+    #2e7d32 50%,
+    #ef6c00 100%
+  );
 }
 
-/* Add animation on hover */
+/* Gradient text on hover */
 .VPNavBarTitle:hover .title {
+  -webkit-text-fill-color: transparent;
   animation: shimmer 2s ease-in-out infinite;
   filter: drop-shadow(0 0 8px rgba(0, 217, 255, 0.3));
 }
@@ -225,9 +228,9 @@ h1,
   line-height: 1.2;
 }
 
-/* Site title specific adjustment */
+/* Site title specific adjustment - font sizing */
 .VPNavBarTitle .title {
-  font-size: 1.3rem;
+  font-size: 1.3rem !important;
   letter-spacing: 0.05em;
 }
 
