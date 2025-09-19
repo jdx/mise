@@ -1,4 +1,4 @@
-#paths = ["../usage/lib"]
+paths = ["../sigstore-verification"]
 
 [env]
 RUST_TEST_THREADS = '1'
