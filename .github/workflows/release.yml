@@ -75,7 +75,19 @@ jobs:
           path: ~/.cargo/registry/cache
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-registry
-      - run: rustup target add ${{matrix.target}}
+      - name: Install cross-compilation tools
+        if: contains(matrix.target, 'armv7')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+      - name: Setup Rust target
+        run: |
+          rustup target add ${{matrix.target}}
+          if [[ "${{matrix.target}}" == "armv7-unknown-linux-gnueabi" ]]; then
+            echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER=arm-linux-gnueabihf-gcc" >> "$GITHUB_ENV"
+          elif [[ "${{matrix.target}}" == "armv7-unknown-linux-musleabi" ]]; then
+            echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABI_LINKER=arm-linux-gnueabihf-gcc" >> "$GITHUB_ENV"
+          fi
       - name: build-tarball
         uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
         with:
