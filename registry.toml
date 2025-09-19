@@ -1917,7 +1917,7 @@ kubectl-kots.backends = [
 ]
 kubectl-kots.test = ["kots version", "Replicated KOTS {{version}}"]
 kubectl-kuttl.aliases = ["kuttl"]
-kubectl-kuttl.description = "KUbernetes Test TooL (kuttl)"
+kubectl-kuttl.description = "Kubernetes Test TooL (kuttl)"
 kubectl-kuttl.backends = [
     "aqua:kudobuilder/kuttl",
     "asdf:jimmidyson/asdf-kuttl"
@@ -2457,7 +2457,7 @@ periphery.backends = [
 ]
 perl.description = "self-contained, portable perl binaries"
 perl.backends = ["aqua:skaji/relocatable-perl", "asdf:ouest/asdf-perl"]
-php.description = "popular general-purpose scripting language that is especially suited to web development. Fast, flexible and pragmatic, PHP powers everything from your blog to the most popular websites in the worl"
+php.description = "popular general-purpose scripting language that is especially suited to web development. Fast, flexible and pragmatic, PHP powers everything from your blog to the most popular websites in the world"
 php.backends = ["asdf:mise-plugins/asdf-php", "vfox:mise-plugins/vfox-php"]
 pinact.description = "pinact is a CLI to edit GitHub Workflow and Composite action files and pin versions of Actions and Reusable Workflows. pinact can also update their versions and verify version annotations"
 pinact.backends = ["aqua:suzuki-shunsuke/pinact", "ubi:suzuki-shunsuke/pinact"]
