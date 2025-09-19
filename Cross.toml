@@ -1,2 +1,48 @@
 [build.env]
 passthrough = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
+
+[target.armv7-unknown-linux-gnueabi]
+image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:edge"
+dockerfile = """
+FROM ghcr.io/cross-rs/armv7-unknown-linux-gnueabihf:edge
+RUN apt-get update && apt-get install -y libclang-dev
+RUN cargo install --force --locked bindgen-cli
+"""
+
+[target.armv7-unknown-linux-musleabi]
+image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabihf:edge"
+dockerfile = """
+FROM ghcr.io/cross-rs/armv7-unknown-linux-musleabihf:edge
+RUN apt-get update && apt-get install -y libclang-dev
+RUN cargo install --force --locked bindgen-cli
+"""
+
+[target.aarch64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:edge"
+dockerfile = """
+FROM ghcr.io/cross-rs/aarch64-unknown-linux-gnu:edge
+RUN apt-get update && apt-get install -y libclang-dev
+RUN cargo install --force --locked bindgen-cli
+"""
+
+[target.aarch64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:edge"
+dockerfile = """
+FROM ghcr.io/cross-rs/aarch64-unknown-linux-musl:edge
+RUN apt-get update && apt-get install -y libclang-dev
+RUN cargo install --force --locked bindgen-cli
+"""
+
+[target.x86_64-unknown-linux-gnu]
+dockerfile = """
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-gnu:edge
+RUN apt-get update && apt-get install -y libclang-dev
+RUN cargo install --force --locked bindgen-cli
+"""
+
+[target.x86_64-unknown-linux-musl]
+dockerfile = """
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:edge
+RUN apt-get update && apt-get install -y libclang-dev
+RUN cargo install --force --locked bindgen-cli
+"""

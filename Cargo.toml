@@ -54,7 +54,6 @@ opt-level = 3
 [dependencies]
 async-backtrace = "0.2"
 async-trait = "0.1"
-aws-lc-rs = { version = "1", optional = true, features = ["bindgen"] }
 base64 = "0.22"
 bzip2 = "0.6"
 calm_io = "0.1"
@@ -221,7 +220,6 @@ rustls-native-roots = [
   "ubi/rustls-tls-native-roots",
   "vfox/rustls-native-roots",
   "sigstore-verification/rustls-native-roots",
-  "aws-lc-rs",
 ]
 
 [package.metadata.binstall]
