@@ -76,16 +76,20 @@ jobs:
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-registry
       - name: Install cross-compilation tools
-        if: contains(matrix.runs-on, 'arm') && (contains(matrix.target, 'armv7') || contains(matrix.target, 'musl'))
+        if: contains(matrix.target, 'armv7') || contains(matrix.target, 'musl')
         run: |
           sudo apt-get update
-          # For ARMv7 targets
-          case "${{matrix.target}}" in
-            *armv7*)
-              sudo apt-get install -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+          # For ARMv7 targets on ARM runners
+          case "${{matrix.runs-on}}" in
+            *arm*)
+              case "${{matrix.target}}" in
+                *armv7*)
+                  sudo apt-get install -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+                  ;;
+              esac
               ;;
           esac
-          # For musl targets
+          # For musl targets (all platforms)
           case "${{matrix.target}}" in
             *musl*)
               sudo apt-get install -y musl-tools
@@ -106,6 +110,11 @@ jobs:
             aarch64-unknown-linux-musl)
               echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
               echo "CC_aarch64_unknown_linux_musl=musl-gcc" >> "$GITHUB_ENV"
+              echo "CC=musl-gcc" >> "$GITHUB_ENV"
+              ;;
+            x86_64-unknown-linux-musl)
+              echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+              echo "CC_x86_64_unknown_linux_musl=musl-gcc" >> "$GITHUB_ENV"
               echo "CC=musl-gcc" >> "$GITHUB_ENV"
               ;;
           esac
