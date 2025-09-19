@@ -123,6 +123,8 @@ jobs:
               echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABI_LINKER=arm-linux-musleabi-gcc" >> "$GITHUB_ENV"
               echo "CC_armv7_unknown_linux_musleabi=arm-linux-musleabi-gcc" >> "$GITHUB_ENV"
               echo "AR_armv7_unknown_linux_musleabi=arm-linux-musleabi-ar" >> "$GITHUB_ENV"
+              # Set include paths for bindgen to find musl headers
+              echo "BINDGEN_EXTRA_CLANG_ARGS=--sysroot=/opt/arm-linux-musleabi-cross/arm-linux-musleabi" >> "$GITHUB_ENV"
               ;;
             aarch64-unknown-linux-musl)
               echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
