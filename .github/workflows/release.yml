@@ -52,7 +52,7 @@ jobs:
           - os: ubuntu
             name: linux-armv7-musl
             target: armv7-unknown-linux-musleabi
-            runs-on: ubuntu-24.04-arm
+            runs-on: ubuntu-latest
           - os: macos
             name: macos-x64
             target: x86_64-apple-darwin
@@ -94,10 +94,11 @@ jobs:
           case "${{matrix.target}}" in
             *musl*)
               sudo apt-get install -y musl-tools
-              # For ARMv7 musl cross-compilation on ARM64, we need additional setup
+              # For ARMv7 musl cross-compilation on x86_64, download prebuilt toolchain
               if [[ "${{matrix.target}}" == "armv7-unknown-linux-musleabi" ]]; then
-                # Download and setup musl cross-compiler for ARMv7 soft-float
-                wget -qO- https://musl.cc/arm-linux-musleabi-cross.tgz | sudo tar -xz -C /opt
+                wget -q https://musl.cc/arm-linux-musleabi-cross.tgz
+                sudo tar -xzf arm-linux-musleabi-cross.tgz -C /opt
+                rm arm-linux-musleabi-cross.tgz
                 echo "/opt/arm-linux-musleabi-cross/bin" >> "$GITHUB_PATH"
               fi
               ;;
