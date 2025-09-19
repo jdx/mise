@@ -3,7 +3,7 @@ packages:
   - type: github_release
     repo_owner: kudobuilder
     repo_name: kuttl
-    description: KUbernetes Test TooL (kuttl)
+    description: Kubernetes Test TooL (kuttl)
     supported_envs:
       - darwin
       - linux

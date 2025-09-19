@@ -3,7 +3,7 @@ packages:
   - type: github_release
     repo_owner: goark
     repo_name: depm
-    description: Visualize depndency packages and modules
+    description: Visualize dependency packages and modules
     version_constraint: "false"
     version_overrides:
       - version_constraint: semver("<= 0.3.1")

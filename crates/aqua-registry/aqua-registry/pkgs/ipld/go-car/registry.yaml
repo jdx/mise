@@ -3,7 +3,7 @@ packages:
   - type: github_release
     repo_owner: ipld
     repo_name: go-car
-    description: A content addressible archive utility
+    description: A content addressable archive utility
     asset: go-car_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
     format: zip
     files:
