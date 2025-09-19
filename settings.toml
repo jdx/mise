@@ -74,6 +74,17 @@ rust_type = "Vec<String>"
 optional = true
 description = "Extra arguments to pass to cosign when verifying aqua tool signatures."
 
+[aqua.github_attestations]
+env = "MISE_AQUA_GITHUB_ATTESTATIONS"
+type = "Bool"
+default = true
+description = "Enable GitHub Artifact Attestations verification for aqua tools."
+docs = """
+Enable/disable GitHub Artifact Attestations verification for aqua tools.
+When enabled, mise will verify the authenticity and integrity of downloaded tools
+using GitHub's artifact attestation system.
+"""
+
 [aqua.minisign]
 env = "MISE_AQUA_MINISIGN"
 type = "Bool"

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Test native SLSA verification for aqua packages
+
+set -euo pipefail
+
+export MISE_EXPERIMENTAL=1
+export MISE_AQUA_SLSA=true
+export MISE_AQUA_COSIGN=false
+
+echo "=== Testing Native SLSA Verification ==="
+
+# Test: Install sops which has SLSA provenance configured
+echo "Installing sops with native SLSA verification..."
+
+# Capture the installation output to verify the native verification is being used
+output=$(mise install aqua:getsops/sops@3.9.0 2>&1)
+echo "$output"
+
+# Verify the native SLSA verification was used
+if echo "$output" | grep -q "verify slsa"; then
+	echo "✅ Native SLSA verification was used"
+else
+	echo "❌ ERROR: SLSA verification message not found in output"
+	echo "Output was:"
+	echo "$output"
+	exit 1
+fi
+
+# Verify the tool works
+assert_contains "mise x aqua:getsops/sops@3.9.0 -- sops --version" "3.9.0"
+echo "✓ sops installed and working correctly"
+
+# Cleanup
+mise uninstall aqua:getsops/sops@3.9.0 || true
+
+echo ""
+echo "=== Native SLSA Verification Test Passed ✓ ==="

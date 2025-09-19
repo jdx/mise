@@ -351,6 +351,11 @@
                 "type": "string"
               }
             },
+            "github_attestations": {
+              "default": true,
+              "description": "Enable GitHub Artifact Attestations verification for aqua tools.",
+              "type": "boolean"
+            },
             "minisign": {
               "default": true,
               "description": "Use minisign to verify aqua tool signatures.",

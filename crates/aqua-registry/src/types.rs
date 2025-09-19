@@ -47,6 +47,7 @@ pub struct AquaPackage {
     pub checksum: Option<AquaChecksum>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     pub minisign: Option<AquaMinisign>,
+    pub github_artifact_attestations: Option<AquaGithubArtifactAttestations>,
     overrides: Vec<AquaOverride>,
     version_constraint: String,
     version_overrides: Vec<AquaPackage>,
@@ -147,6 +148,12 @@ pub struct AquaMinisign {
     pub public_key: Option<String>,
 }
 
+/// GitHub artifact attestations configuration
+#[derive(Debug, Deserialize, Clone)]
+pub struct AquaGithubArtifactAttestations {
+    pub signer_workflow: Option<String>,
+}
+
 /// Checksum verification configuration
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaChecksum {
@@ -197,6 +204,7 @@ impl Default for AquaPackage {
             checksum: None,
             slsa_provenance: None,
             minisign: None,
+            github_artifact_attestations: None,
             overrides: Vec::new(),
             version_constraint: String::new(),
             version_overrides: Vec::new(),
@@ -573,6 +581,10 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
         let mut minisign = orig.minisign.unwrap_or_else(|| avo_minisign.clone());
         minisign.merge(avo_minisign);
         orig.minisign = Some(minisign);
+    }
+
+    if let Some(avo_attestations) = avo.github_artifact_attestations.clone() {
+        orig.github_artifact_attestations = Some(avo_attestations);
     }
 
     if avo.no_asset {

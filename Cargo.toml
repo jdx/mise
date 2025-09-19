@@ -81,6 +81,7 @@ homedir = "0.3"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
+sigstore-verification = "0.1"
 fslock = "0.2.1"
 fuzzy-matcher = "0.3"
 gix = { version = "<1", features = ["worktree-mutation"] }
@@ -203,6 +204,7 @@ native-tls = [
   "ubi/native-tls",
   "gix/blocking-http-transport-reqwest-native-tls",
   "vfox/native-tls",
+  "sigstore-verification/native-tls",
 ]
 rustls = [
   "reqwest/rustls-tls",
@@ -210,12 +212,14 @@ rustls = [
   "ubi/rustls-tls",
   "gix/blocking-http-transport-reqwest-rust-tls",
   "vfox/rustls",
+  "sigstore-verification/rustls",
 ]
 rustls-native-roots = [
   "reqwest/rustls-tls-native-roots",
   "self_update/rustls",
   "ubi/rustls-tls-native-roots",
   "vfox/rustls-native-roots",
+  "sigstore-verification/rustls-native-roots",
 ]
 
 [package.metadata.binstall]
