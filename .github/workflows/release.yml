@@ -98,7 +98,7 @@ jobs:
               # For ARMv7 musl cross-compilation on x86_64, download prebuilt toolchain
               if [ "${{matrix.target}}" = "armv7-unknown-linux-musleabi" ]; then
                 echo "Downloading ARMv7 musl cross-compiler..."
-                wget -q https://musl.cc/arm-linux-musleabi-cross.tgz || exit 1
+                wget -q https://mise.jdx.dev/arm-linux-musleabi-cross.tgz || exit 1
                 echo "Extracting cross-compiler..."
                 sudo tar -xzf arm-linux-musleabi-cross.tgz -C /opt || exit 1
                 rm arm-linux-musleabi-cross.tgz
