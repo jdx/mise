@@ -78,6 +78,7 @@ jobs:
       - name: Install cross-compilation tools
         if: contains(matrix.target, 'armv7') || contains(matrix.target, 'musl')
         run: |
+          set -x
           sudo apt-get update
           # For ARMv7 targets on ARM runners
           case "${{matrix.runs-on}}" in
@@ -95,11 +96,14 @@ jobs:
             *musl*)
               sudo apt-get install -y musl-tools
               # For ARMv7 musl cross-compilation on x86_64, download prebuilt toolchain
-              if [[ "${{matrix.target}}" == "armv7-unknown-linux-musleabi" ]]; then
-                wget -q https://musl.cc/arm-linux-musleabi-cross.tgz
-                sudo tar -xzf arm-linux-musleabi-cross.tgz -C /opt
+              if [ "${{matrix.target}}" = "armv7-unknown-linux-musleabi" ]; then
+                echo "Downloading ARMv7 musl cross-compiler..."
+                wget -q https://musl.cc/arm-linux-musleabi-cross.tgz || exit 1
+                echo "Extracting cross-compiler..."
+                sudo tar -xzf arm-linux-musleabi-cross.tgz -C /opt || exit 1
                 rm arm-linux-musleabi-cross.tgz
                 echo "/opt/arm-linux-musleabi-cross/bin" >> "$GITHUB_PATH"
+                echo "Cross-compiler setup complete"
               fi
               ;;
           esac
