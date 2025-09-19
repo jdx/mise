@@ -100,7 +100,7 @@ jobs:
                 echo "Downloading ARMv7 musl cross-compiler..."
                 wget -q https://mise.jdx.dev/arm-linux-musleabi-cross.tgz || exit 1
                 echo "Verifying checksum..."
-                echo "b5b39f6bea2dccf7d18d45f0c7a7930c059e19dd665151334d18c84981bc3c18  arm-linux-musleabi-cross.tgz" | sha256sum -c || exit 1
+                echo "d70c607101fee5330083463feacf5992892a85b826d1626094500e0c37ec7d25  arm-linux-musleabi-cross.tgz" | sha256sum -c || exit 1
                 echo "Extracting cross-compiler..."
                 sudo tar -xzf arm-linux-musleabi-cross.tgz -C /opt || exit 1
                 rm arm-linux-musleabi-cross.tgz
