@@ -84,7 +84,8 @@ jobs:
             *arm*)
               case "${{matrix.target}}" in
                 *armv7*)
-                  sudo apt-get install -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+                  # Install both soft-float and hard-float toolchains
+                  sudo apt-get install -y gcc-arm-linux-gnueabi libc6-dev-armel-cross gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
                   ;;
               esac
               ;;
@@ -101,11 +102,16 @@ jobs:
           # Set linkers for cross-compilation
           case "${{matrix.target}}" in
             armv7-unknown-linux-gnueabi)
-              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER=arm-linux-gnueabihf-gcc" >> "$GITHUB_ENV"
+              # Use soft-float compiler for gnueabi target
+              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER=arm-linux-gnueabi-gcc" >> "$GITHUB_ENV"
+              echo "CC_armv7_unknown_linux_gnueabi=arm-linux-gnueabi-gcc" >> "$GITHUB_ENV"
+              echo "AR_armv7_unknown_linux_gnueabi=arm-linux-gnueabi-ar" >> "$GITHUB_ENV"
               ;;
             armv7-unknown-linux-musleabi)
-              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABI_LINKER=arm-linux-gnueabihf-gcc" >> "$GITHUB_ENV"
-              echo "CC_armv7_unknown_linux_musleabi=arm-linux-gnueabihf-gcc" >> "$GITHUB_ENV"
+              # musleabi also uses soft-float
+              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABI_LINKER=arm-linux-gnueabi-gcc" >> "$GITHUB_ENV"
+              echo "CC_armv7_unknown_linux_musleabi=arm-linux-gnueabi-gcc" >> "$GITHUB_ENV"
+              echo "AR_armv7_unknown_linux_musleabi=arm-linux-gnueabi-ar" >> "$GITHUB_ENV"
               ;;
             aarch64-unknown-linux-musl)
               echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
