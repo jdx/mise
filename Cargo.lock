@@ -6961,9 +6961,9 @@ dependencies = [
 
 [[package]]
 name = "sigstore-verification"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ddc11e9e5077f98032d364bf854f0a71c1e987c228fe6c8c55dfa9b294bfaa2"
+checksum = "dcc6164c0e7a8dea3a285357b8c64f2d75aef8e8968138a090abfd7fa9433fc7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
