@@ -1,5 +1,47 @@
 # Changelog
 
+## [2025.9.13](https://github.com/jdx/mise/compare/v2025.9.12..v2025.9.13) - 2025-09-19
+
+### 📦 Registry
+
+- remove deprecated virtualos by @jdx in [166379f](https://github.com/jdx/mise/commit/166379f71c79fccacfc980dd14d4e18642c7d1e5)
+- add trufflehog ([aqua:trufflesecurity/trufflehog](https://github.com/trufflesecurity/trufflehog)) by @risu729 in [#6316](https://github.com/jdx/mise/pull/6316)
+
+### 🚀 Features
+
+- **(aqua)** integrate native sigstore-verification for security verification by @jdx in [#6332](https://github.com/jdx/mise/pull/6332)
+- **(docs)** improve search result readability with lighter teal background by @jdx in [#6328](https://github.com/jdx/mise/pull/6328)
+- **(ui)** update logo as favicon and fix hover transitions by @jdx in [#6325](https://github.com/jdx/mise/pull/6325)
+- **(vfox)** add file.read lua function by @malept in [#6333](https://github.com/jdx/mise/pull/6333)
+- add documentation for "Environment in tasks" #5134 #5638 by @Its-Just-Nans in [#6329](https://github.com/jdx/mise/pull/6329)
+
+### 🐛 Bug Fixes
+
+- **(github)** correctly paginate releases/tags for private repos by @malept in [#6318](https://github.com/jdx/mise/pull/6318)
+- **(hk)** exclude aqua-registry from prettier linting by @jdx in [#6327](https://github.com/jdx/mise/pull/6327)
+- **(ui)** improve GitHub star badge layout and alignment by @jdx in [#6326](https://github.com/jdx/mise/pull/6326)
+
+### 📚 Documentation
+
+- change 'hello.py' to 'main.py' in python.md by @my1e5 in [#6319](https://github.com/jdx/mise/pull/6319)
+- customize VitePress theme with unique branding by @jdx in [#6324](https://github.com/jdx/mise/pull/6324)
+
+### 📦️ Dependency Updates
+
+- update taiki-e/install-action digest to 0aa4f22 by @renovate[bot] in [#6334](https://github.com/jdx/mise/pull/6334)
+- update rust crate comfy-table to v7.2.1 by @renovate[bot] in [#6335](https://github.com/jdx/mise/pull/6335)
+- update rust crate console to v0.16.1 by @renovate[bot] in [#6336](https://github.com/jdx/mise/pull/6336)
+- update rust crate indexmap to v2.11.4 by @renovate[bot] in [#6337](https://github.com/jdx/mise/pull/6337)
+
+### Chore
+
+- fixing typos by @Its-Just-Nans in [#6331](https://github.com/jdx/mise/pull/6331)
+
+### New Contributors
+
+- @Its-Just-Nans made their first contribution in [#6331](https://github.com/jdx/mise/pull/6331)
+- @my1e5 made their first contribution in [#6319](https://github.com/jdx/mise/pull/6319)
+
 ## [2025.9.12](https://github.com/jdx/mise/compare/v2025.9.11..v2025.9.12) - 2025-09-16
 
 ### 🐛 Bug Fixes
@@ -251,10 +293,10 @@
 ### 🐛 Bug Fixes
 
 - **(aqua)** respect order of asset_strs by @risu729 in [#6143](https://github.com/jdx/mise/pull/6143)
-- **(java)** treat freebsd as linux (assuming linux compatibility) by @roele in [#6161](https://github.com/jdx/mise/pull/6161)
+- **(java)** treat freebsd as linux (assuming linux compatability) by @roele in [#6161](https://github.com/jdx/mise/pull/6161)
 - **(nushell/windows)** Fix $env.PATH getting converted to a string by @zackyancey in [#6157](https://github.com/jdx/mise/pull/6157)
 - **(sync)** create uv_versions_path dir if it doesn't exist by @risu729 in [#6142](https://github.com/jdx/mise/pull/6142)
-- **(ubi)** show relevant error messages for v-prefixed tags by @risu729 in [#6183](https://github.com/jdx/mise/pull/6183)
+- **(ubi)** show relevent error messages for v-prefixed tags by @risu729 in [#6183](https://github.com/jdx/mise/pull/6183)
 - remove nodejs/golang alias migrate code by @risu729 in [#6141](https://github.com/jdx/mise/pull/6141)
 - mise activate not working on powershell v5 by @L0RD-ZER0 in [#6168](https://github.com/jdx/mise/pull/6168)
 
@@ -2122,7 +2164,7 @@
 
 ### 🐛 Bug Fixes
 
-- **(ubi)** API URL for GitHub should not have /repos segment by @roele in [#4848](https://github.com/jdx/mise/pull/4848)
+- **(ubi)** API URL for GitHub should not have /repos segement by @roele in [#4848](https://github.com/jdx/mise/pull/4848)
 - **(ubi)** URL syntax fails by @roele in [#4859](https://github.com/jdx/mise/pull/4859)
 - allow to install non-numeric elixir versions by @roele in [#4850](https://github.com/jdx/mise/pull/4850)
 - removed possible single-point-of-failure while running `mise upgrade` by @hitblast in [#4847](https://github.com/jdx/mise/pull/4847)
@@ -2771,7 +2813,7 @@
 ### Chore
 
 - make self_update optional by @jdx in [#4230](https://github.com/jdx/mise/pull/4230)
-- added some default reqwest features by @jdx in [#4232](https://github.com/jdx/mise/pull/4232)
+- added some defaul reqwest features by @jdx in [#4232](https://github.com/jdx/mise/pull/4232)
 
 ### New Contributors
 
@@ -3701,9 +3743,9 @@
 ### 🚀 Features
 
 - add the users PATH to `mise doctor` by @syhol in [#3474](https://github.com/jdx/mise/pull/3474)
-- feat : Add superfile with aqua backend to registry by @yodatak in [#3479](https://github.com/jdx/mise/pull/3479)
+- feat : Add superfile with aqua backend to registery by @yodatak in [#3479](https://github.com/jdx/mise/pull/3479)
 - added `task_auto_install` setting by @jdx in [#3481](https://github.com/jdx/mise/pull/3481)
-- Add yazi with aqua backend to registry by @yodatak in [#3485](https://github.com/jdx/mise/pull/3485)
+- Add yazi with aqua backend to registery by @yodatak in [#3485](https://github.com/jdx/mise/pull/3485)
 - Migrating Terragrunt asdf plugin over to gruntwork-io by @yhakbar in [#3486](https://github.com/jdx/mise/pull/3486)
 - add settings for python venv creation by @jdx in [#3489](https://github.com/jdx/mise/pull/3489)
 - added MISE_ARCH setting by @jdx in [#3490](https://github.com/jdx/mise/pull/3490)

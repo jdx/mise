@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: relusc
+    repo_name: hclconv
+    description: Simple tool to convert JSON files to HCL2 files and vice versa
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        asset: hclconv_{{.OS}}_{{.Arch}}_{{.Version}}.{{.Format}}
+        format: tar.gz
+      - version_constraint: "true"
+        asset: hclconv_{{.OS}}_{{.Arch}}_{{.Version}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: hclconv_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

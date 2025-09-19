@@ -105,18 +105,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [[tools.hk]]
-version = "1.12.1"
+version = "1.14.0"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:2e8d3a27beabb40355f7deb89aa02599769a31513af1df88b6f2509f23274f2d"
-size = 6751013
-url = "https://github.com/jdx/hk/releases/download/v1.12.1/hk-x86_64-unknown-linux-gnu.tar.gz"
-
-[tools.hk.platforms.macos-arm64]
-checksum = "blake3:1d4153f34bc93216980171a07b0e5441d4e99776506f95ca9c3d63603a9d044c"
-size = 5854360
-url = "https://github.com/jdx/hk/releases/download/v1.12.1/hk-aarch64-apple-darwin.tar.gz"
+checksum = "blake3:a02f574ee03c0004869167cc69441b3373dab6aca36140a894808d2133a74fc3"
+size = 6950380
+url = "https://github.com/jdx/hk/releases/download/v1.14.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"
