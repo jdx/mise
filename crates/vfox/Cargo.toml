@@ -52,7 +52,10 @@ default = ["vendored-lua"]
 cli = ["clap", "tokio/full", "env_logger"]
 native-tls = ["xx/native-tls", "reqwest/native-tls"]
 rustls = ["xx/rustls", "reqwest/rustls-tls"]
-rustls-native-roots = ["xx/rustls-native-roots", "reqwest/rustls-tls-native-roots"]
+rustls-native-roots = [
+  "xx/rustls-native-roots",
+  "reqwest/rustls-tls-native-roots",
+]
 vendored-lua = ["mlua/vendored"]
 
 # [workspace.metadata.release] - removed since this is now part of mise workspace
