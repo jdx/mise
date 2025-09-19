@@ -356,6 +356,13 @@ print(full_path)  -- On Unix: /foo/bar/baz.txt, on Windows: \foo\bar\baz.txt
 
 The `file.join_path(...)` function joins any number of path segments using the correct separator for the current operating system. This is the recommended way to construct file paths in cross-platform plugins.
 
+### Read File Contents
+
+```lua
+local file = require("file")
+print(file.read("/path/to/file"))
+```
+
 ### Create Symbolic Links
 
 ```lua

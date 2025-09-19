@@ -27,6 +27,12 @@ pub fn mod_file(lua: &Lua) -> Result<()> {
         "file",
         lua.create_table_from(vec![
             (
+                "read",
+                lua.create_async_function(|_lua: mlua::Lua, input| async move {
+                    read(&_lua, input).await
+                })?,
+            ),
+            (
                 "symlink",
                 lua.create_async_function(|_lua: mlua::Lua, input| async move {
                     symlink(&_lua, input).await
@@ -35,6 +41,15 @@ pub fn mod_file(lua: &Lua) -> Result<()> {
             ("join_path", lua.create_function(join_path)?),
         ])?,
     )?)
+}
+
+async fn read(_lua: &Lua, input: MultiValue) -> mlua::Result<String> {
+    let args: Vec<String> = input
+        .into_iter()
+        .map(|v| v.to_string())
+        .collect::<mlua::Result<_>>()?;
+    let path = Path::new(&args[0]);
+    std::fs::read_to_string(path).into_lua_err()
 }
 
 async fn symlink(_lua: &Lua, input: MultiValue) -> mlua::Result<()> {
@@ -61,6 +76,29 @@ async fn symlink(_lua: &Lua, input: MultiValue) -> mlua::Result<()> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn test_read() {
+        let filepath = "/tmp/vfox-lua-file-read";
+        fs::write(filepath, "hello world").unwrap();
+        let lua = Lua::new();
+        mod_file(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local file = require("file")
+            local success, contents = pcall(file.read, "/tmp/vfox-lua-file-read")
+            if not success then
+                error("Failed to read: " .. contents)
+            end
+            if contents == nil then
+                error("contents should not be nil")
+            elseif contents ~= "hello world" then
+                error("contents expected to be 'hello world', was actually:" .. contents)
+            end
+        })
+        .exec()
+        .unwrap();
+        fs::remove_file(filepath).unwrap();
+    }
 
     #[test]
     fn test_symlink() {
