@@ -70,13 +70,9 @@ linux-arm*)
 	;;
 esac
 
-if command -v cross >/dev/null; then
-	cross build --profile=serious --target "$RUST_TRIPLE" --features rustls-native-roots,openssl/vendored
-elif command -v zig >/dev/null; then
-	cargo zigbuild --profile=serious --target "$RUST_TRIPLE" --features rustls-native-roots,openssl/vendored
-else
-	cargo build --profile=serious --target "$RUST_TRIPLE" --features rustls-native-roots,openssl/vendored
-fi
+features="rustls,rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored"
+
+cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 mkdir -p dist/mise/bin
 mkdir -p dist/mise/man/man1
 mkdir -p dist/mise/share/fish/vendor_conf.d

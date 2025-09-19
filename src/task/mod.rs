@@ -9,7 +9,6 @@ use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
 use console::{Color, measure_text_width, truncate_str};
-use either::Either;
 use eyre::{Result, eyre};
 use globset::GlobBuilder;
 use indexmap::IndexMap;
@@ -141,38 +140,6 @@ pub struct Task {
     // file type
     #[serde(default)]
     pub file: Option<PathBuf>,
-}
-
-#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct EitherStringOrIntOrBool(
-    #[serde(with = "either::serde_untagged")] pub Either<String, EitherIntOrBool>,
-);
-
-#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct EitherIntOrBool(#[serde(with = "either::serde_untagged")] pub Either<i64, bool>);
-
-impl Display for EitherIntOrBool {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.0 {
-            Either::Left(i) => write!(f, "{i}"),
-            Either::Right(b) => write!(f, "{b}"),
-        }
-    }
-}
-
-impl Display for EitherStringOrIntOrBool {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.0 {
-            Either::Left(s) => write!(f, "\"{s}\""),
-            Either::Right(b) => write!(f, "{b}"),
-        }
-    }
-}
-
-impl Debug for EitherStringOrIntOrBool {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{self}")
-    }
 }
 
 impl Task {

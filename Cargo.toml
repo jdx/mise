@@ -3,7 +3,7 @@ members = ["crates/vfox", "crates/aqua-registry"]
 
 [package]
 name = "mise"
-version = "2025.9.12"
+version = "2025.9.13"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -75,13 +75,11 @@ demand = "1"
 digest = "0.10.7"
 dotenvy = "0.15"
 duct = "0.13"
-either = { version = "1", features = ["serde"] }
 homedir = "0.3"
-# expr-lang = { path = "../expr-lang" }
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
-sigstore-verification = "0.1"
+sigstore-verification = { version = "0.1", default-features = false }
 fslock = "0.2.1"
 fuzzy-matcher = "0.3"
 gix = { version = "<1", features = ["worktree-mutation"] }
@@ -114,6 +112,7 @@ reqwest = { version = "0.12", default-features = false, features = [
   "zstd",
   "charset",
   "http2",
+  "rustls-tls-native-roots",
   "macos-system-configuration",
 ] }
 rmcp = { version = "0.3", features = ["server", "transport-io", "schemars"] }
@@ -171,6 +170,7 @@ self_update = { version = "0.42", optional = true, default-features = false, fea
   "archive-tar",
   "compression-flate2",
   "signatures",
+  "rustls",
 ] }
 
 [target.'cfg(windows)'.dependencies]
@@ -178,6 +178,7 @@ self_update = { version = "0.42", optional = true, default-features = false, fea
   "archive-zip",
   "compression-zip-deflate",
   "signatures",
+  "rustls",
 ] }
 sevenz-rust = "0.6"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
