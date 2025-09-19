@@ -70,13 +70,18 @@ linux-arm*)
 	;;
 esac
 
-if command -v cross >/dev/null; then
-	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features rustls,rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored
-elif command -v zig >/dev/null; then
-	cargo zigbuild --profile=serious --target "$RUST_TRIPLE" --no-default-features --features rustls,rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored
-else
-	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features rustls,rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored
-fi
+# Use native-tls with vendored OpenSSL for ARM targets to avoid aws-lc-sys bindgen issues
+case "$RUST_TRIPLE" in
+armv7-* | aarch64-*)
+	echo "Using native-tls with vendored OpenSSL for ARM target: $RUST_TRIPLE"
+	features="native-tls,self_update,vfox/vendored-lua,openssl/vendored"
+	;;
+*)
+	features="rustls,rustls-native-roots,self_update,vfox/vendored-lua"
+	;;
+esac
+
+cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 mkdir -p dist/mise/bin
 mkdir -p dist/mise/man/man1
 mkdir -p dist/mise/share/fish/vendor_conf.d

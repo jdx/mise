@@ -222,6 +222,7 @@ rustls-native-roots = [
   "vfox/rustls-native-roots",
   "sigstore-verification/rustls-native-roots",
 ]
+openssl = ["dep:openssl"]
 
 [package.metadata.binstall]
 bin-dir = "mise/bin/mise"
