@@ -96,9 +96,9 @@ jobs:
               sudo apt-get install -y musl-tools
               # For ARMv7 musl cross-compilation on ARM64, we need additional setup
               if [[ "${{matrix.target}}" == "armv7-unknown-linux-musleabi" ]]; then
-                # Download and setup musl cross-compiler for ARMv7
-                wget -qO- https://musl.cc/armv7l-linux-musleabihf-cross.tgz | sudo tar -xz -C /opt
-                echo "/opt/armv7l-linux-musleabihf-cross/bin" >> "$GITHUB_PATH"
+                # Download and setup musl cross-compiler for ARMv7 soft-float
+                wget -qO- https://musl.cc/arm-linux-musleabi-cross.tgz | sudo tar -xz -C /opt
+                echo "/opt/arm-linux-musleabi-cross/bin" >> "$GITHUB_PATH"
               fi
               ;;
           esac
@@ -114,10 +114,10 @@ jobs:
               echo "AR_armv7_unknown_linux_gnueabi=arm-linux-gnueabi-ar" >> "$GITHUB_ENV"
               ;;
             armv7-unknown-linux-musleabi)
-              # Use the downloaded musl cross-compiler for ARMv7
-              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABI_LINKER=armv7l-linux-musleabihf-gcc" >> "$GITHUB_ENV"
-              echo "CC_armv7_unknown_linux_musleabi=armv7l-linux-musleabihf-gcc" >> "$GITHUB_ENV"
-              echo "AR_armv7_unknown_linux_musleabi=armv7l-linux-musleabihf-ar" >> "$GITHUB_ENV"
+              # Use the downloaded musl cross-compiler for ARMv7 soft-float
+              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABI_LINKER=arm-linux-musleabi-gcc" >> "$GITHUB_ENV"
+              echo "CC_armv7_unknown_linux_musleabi=arm-linux-musleabi-gcc" >> "$GITHUB_ENV"
+              echo "AR_armv7_unknown_linux_musleabi=arm-linux-musleabi-ar" >> "$GITHUB_ENV"
               ;;
             aarch64-unknown-linux-musl)
               echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
