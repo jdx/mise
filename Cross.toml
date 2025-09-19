@@ -3,7 +3,7 @@ passthrough = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
 
 [target.armv7-unknown-linux-gnueabi]
 pre-build = [
-  "apt-get update && apt-get install --assume-yes --no-install-recommends libclang-10-dev clang-10",
+  "apt-get update && apt-get install --assume-yes --no-install-recommends libclang-3.9-dev clang-3.9",
 ]
 
 [target.armv7-unknown-linux-musleabi]
@@ -13,7 +13,7 @@ pre-build = [
 
 [target.aarch64-unknown-linux-gnu]
 pre-build = [
-  "apt-get update && apt-get install --assume-yes --no-install-recommends libclang-10-dev clang-10",
+  "apt-get update && apt-get install --assume-yes --no-install-recommends libclang-3.9-dev clang-3.9",
 ]
 
 [target.aarch64-unknown-linux-musl]
@@ -23,7 +23,7 @@ pre-build = [
 
 [target.x86_64-unknown-linux-gnu]
 pre-build = [
-  "apt-get update && apt-get install --assume-yes --no-install-recommends libclang-10-dev clang-10",
+  "apt-get update && apt-get install --assume-yes --no-install-recommends libclang-3.9-dev clang-3.9",
 ]
 
 [target.x86_64-unknown-linux-musl]

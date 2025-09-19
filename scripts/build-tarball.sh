@@ -71,11 +71,11 @@ linux-arm*)
 esac
 
 if command -v cross >/dev/null; then
-	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features rustls-native-roots,self_update,vfox/vendored-lua
+	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features rustls,rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored
 elif command -v zig >/dev/null; then
-	cargo zigbuild --profile=serious --target "$RUST_TRIPLE" --no-default-features --features rustls-native-roots,self_update,vfox/vendored-lua
+	cargo zigbuild --profile=serious --target "$RUST_TRIPLE" --no-default-features --features rustls,rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored
 else
-	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features rustls-native-roots,self_update,vfox/vendored-lua
+	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features rustls,rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored
 fi
 mkdir -p dist/mise/bin
 mkdir -p dist/mise/man/man1
