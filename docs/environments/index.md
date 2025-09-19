@@ -95,6 +95,16 @@ mise en
 # bar
 ```
 
+## Environment in tasks
+
+Its also possible to define environment inside a task
+
+```toml [mise.toml]
+[tasks.print]
+run = "echo $MY_VAR"
+env = { _.file = '/path/to/file.env', "MY_VAR" = "my variable" }
+```
+
 ## Lazy eval
 
 Environment variables typically are resolved before tools—that way you can configure tool installation
