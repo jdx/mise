@@ -99,12 +99,11 @@ jobs:
               if [ "${{matrix.target}}" = "armv7-unknown-linux-musleabi" ]; then
                 echo "Downloading ARMv7 musl cross-compiler..."
                 wget -q https://mise.jdx.dev/arm-linux-musleabi-cross.tgz || exit 1
-                wget -q https://mise.jdx.dev/arm-linux-musleabi-cross.tgz.sha256 || exit 1
                 echo "Verifying checksum..."
-                sha256sum -c arm-linux-musleabi-cross.tgz.sha256 || exit 1
+                echo "b5b39f6bea2dccf7d18d45f0c7a7930c059e19dd665151334d18c84981bc3c18  arm-linux-musleabi-cross.tgz" | sha256sum -c || exit 1
                 echo "Extracting cross-compiler..."
                 sudo tar -xzf arm-linux-musleabi-cross.tgz -C /opt || exit 1
-                rm arm-linux-musleabi-cross.tgz arm-linux-musleabi-cross.tgz.sha256
+                rm arm-linux-musleabi-cross.tgz
                 echo "/opt/arm-linux-musleabi-cross/bin" >> "$GITHUB_PATH"
                 echo "Cross-compiler setup complete"
               fi
