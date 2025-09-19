@@ -70,7 +70,7 @@ linux-arm*)
 	;;
 esac
 
-features="rustls,rustls-native-roots,self_update,vfox/vendored-lua"
+features="rustls,rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored"
 
 cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 mkdir -p dist/mise/bin

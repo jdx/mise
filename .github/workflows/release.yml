@@ -76,18 +76,39 @@ jobs:
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-registry
       - name: Install cross-compilation tools
-        if: contains(matrix.target, 'armv7')
+        if: contains(matrix.runs-on, 'arm') && (contains(matrix.target, 'armv7') || contains(matrix.target, 'musl'))
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
-      - name: Setup Rust target
+          # For ARMv7 targets
+          case "${{matrix.target}}" in
+            *armv7*)
+              sudo apt-get install -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
+              ;;
+          esac
+          # For musl targets
+          case "${{matrix.target}}" in
+            *musl*)
+              sudo apt-get install -y musl-tools
+              ;;
+          esac
+      - name: Setup Rust target and linkers
         run: |
           rustup target add ${{matrix.target}}
-          if [[ "${{matrix.target}}" == "armv7-unknown-linux-gnueabi" ]]; then
-            echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER=arm-linux-gnueabihf-gcc" >> "$GITHUB_ENV"
-          elif [[ "${{matrix.target}}" == "armv7-unknown-linux-musleabi" ]]; then
-            echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABI_LINKER=arm-linux-gnueabihf-gcc" >> "$GITHUB_ENV"
-          fi
+          # Set linkers for cross-compilation
+          case "${{matrix.target}}" in
+            armv7-unknown-linux-gnueabi)
+              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER=arm-linux-gnueabihf-gcc" >> "$GITHUB_ENV"
+              ;;
+            armv7-unknown-linux-musleabi)
+              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABI_LINKER=arm-linux-gnueabihf-gcc" >> "$GITHUB_ENV"
+              echo "CC_armv7_unknown_linux_musleabi=arm-linux-gnueabihf-gcc" >> "$GITHUB_ENV"
+              ;;
+            aarch64-unknown-linux-musl)
+              echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+              echo "CC_aarch64_unknown_linux_musl=musl-gcc" >> "$GITHUB_ENV"
+              echo "CC=musl-gcc" >> "$GITHUB_ENV"
+              ;;
+          esac
       - name: build-tarball
         uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
         with:
