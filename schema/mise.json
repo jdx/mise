@@ -339,6 +339,11 @@
               "description": "Use baked-in aqua registry.",
               "type": "boolean"
             },
+            "github_attestations": {
+              "default": true,
+              "description": "Enable GitHub Artifact Attestations verification for aqua tools.",
+              "type": "boolean"
+            },
             "cosign": {
               "default": true,
               "description": "Use cosign to verify aqua tool signatures.",

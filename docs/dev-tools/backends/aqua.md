@@ -50,6 +50,47 @@ import Settings from '/components/settings.vue';
 </script>
 <Settings child="aqua" :level="3" />
 
+## Security Verification
+
+Aqua backend supports multiple security verification methods to ensure the integrity and authenticity of downloaded tools:
+
+### GitHub Artifact Attestations
+
+GitHub Artifact Attestations provide cryptographic proof that artifacts were built by specific GitHub Actions workflows. mise verifies these attestations to ensure the authenticity and integrity of downloaded tools.
+
+**Requirements:**
+
+- The tool must have `github_artifact_attestations` configuration in the aqua registry for attestations to be verified
+
+**Configuration:**
+
+```bash
+# Enable/disable GitHub attestations verification (default: true)
+export MISE_AQUA_GITHUB_ATTESTATIONS=true
+```
+
+**Registry Configuration Example:**
+
+```yaml
+packages:
+  - type: github_release
+    repo_owner: cli
+    repo_name: cli
+    github_artifact_attestations:
+      signer_workflow: cli/cli/.github/workflows/deployment.yml
+```
+
+### Other Security Methods
+
+Aqua also supports:
+
+- **Cosign verification**: Uses cosign to verify signatures
+- **SLSA provenance**: Verifies SLSA provenance attestations
+- **Minisign verification**: Uses minisign for signature verification
+- **Checksum verification**: Verifies SHA256/SHA512 checksums
+
+All verification methods run automatically when enabled and the required tools are available. If verification fails, the installation will be aborted.
+
 ## Common aqua issues
 
 Here's some common issues I've seen when working with aqua tools.
