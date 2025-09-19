@@ -611,13 +611,18 @@ impl AquaBackend {
                     return Err(eyre!("SLSA provenance verification failed for {tv}"));
                 }
                 Err(e) => {
-                    // Check if this is just missing attestations vs actual verification failure
-                    if e.to_string().contains("No attestations") {
-                        warn!("No SLSA attestations found for {tv}: {e}");
-                        // For backward compatibility, we might want to allow this to pass
-                        // depending on the package configuration
-                    } else {
-                        return Err(eyre!("SLSA verification error for {tv}: {e}"));
+                    // Use proper error type matching instead of string matching
+                    match &e {
+                        sigstore_verification::AttestationError::NoAttestations => {
+                            // SLSA verification was explicitly configured but attestations are missing
+                            // This should be treated as a security failure, not a warning
+                            return Err(eyre!(
+                                "SLSA verification failed for {tv}: Package configuration requires SLSA provenance but no attestations found"
+                            ));
+                        }
+                        _ => {
+                            return Err(eyre!("SLSA verification error for {tv}: {e}"));
+                        }
                     }
                 }
             }
