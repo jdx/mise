@@ -9,7 +9,7 @@ functionality. As far as general scope however, these are likely going to be foc
   is all features will be GA by the end of 2025.
 - Supply chain hardening - much progress was made here by adopting ubi and aqua and switching to those backends
   for the majority of tools. In 2025, we'll continue migrating more tools where possible away from asdf.
-  Aqua tools also can benefit from further hardening through the use of slsa-verify, cosign and other verification methods.
+  Aqua tools now include native verification support for SLSA provenance, Cosign signatures, and GitHub attestations without requiring external dependencies.
 - Tasks improvements - tasks came out of experimental at the end of 2024 but there are still features
   that I'd like to see from tasks such as prompts and error handling.
 - Hook improvements - hooks are very new in mise and still experimental. I suspect the design of hooks
