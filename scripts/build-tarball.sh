@@ -70,16 +70,7 @@ linux-arm*)
 	;;
 esac
 
-# Use native-tls with vendored OpenSSL for ARM targets to avoid aws-lc-sys bindgen issues
-case "$RUST_TRIPLE" in
-armv7-* | aarch64-*)
-	echo "Using native-tls with vendored OpenSSL for ARM target: $RUST_TRIPLE"
-	features="native-tls,self_update,vfox/vendored-lua,openssl/vendored"
-	;;
-*)
-	features="rustls,rustls-native-roots,self_update,vfox/vendored-lua"
-	;;
-esac
+features="rustls,rustls-native-roots,self_update,vfox/vendored-lua"
 
 cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 mkdir -p dist/mise/bin
