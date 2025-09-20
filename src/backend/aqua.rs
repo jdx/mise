@@ -654,9 +654,7 @@ impl AquaBackend {
         let artifact_path = tv.download_path().join(filename);
 
         // Use our new attestation verification library
-        let token = env::var("GITHUB_TOKEN")
-            .ok()
-            .or_else(|| env::var("GH_TOKEN").ok());
+        let token = env::GITHUB_TOKEN.as_ref().cloned();
 
         // Get expected workflow from registry
         let signer_workflow = pkg
