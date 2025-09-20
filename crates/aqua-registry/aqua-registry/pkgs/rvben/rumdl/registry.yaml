@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rvben
+    repo_name: rumdl
+    description: A Markdown Linter written in Rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.45"
+        no_asset: true
+      - version_constraint: semver("<= 0.0.43")
+        asset: rumdl_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.0.49")
+        asset: rumdl-{{trimV .Version}}-py3-none-many{{.OS}}_2_17_{{.Arch}}.manylinux2014_x86_64.whl
+        format: zip
+        append_ext: false
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: rumdl
+            src: rumdl-{{trimV .Version}}.data/scripts/rumdl
+        replacements:
+          amd64: x86_64
+          darwin: macosx
+          windows: win
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: rumdl-{{trimV .Version}}-py3-none-many{{.OS}}_2_17_{{.Arch}}.manylinux2014_aarch64.whl
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            goarch: amd64
+            asset: rumdl-{{trimV .Version}}-py3-none-{{.OS}}_10_12_{{.Arch}}.whl
+          - goos: darwin
+            goarch: arm64
+            asset: rumdl-{{trimV .Version}}-py3-none-{{.OS}}_11_0_{{.Arch}}.whl
+          - goos: windows
+            asset: rumdl-{{trimV .Version}}-py3-none-{{.OS}}_{{.Arch}}.whl
+            replacements:
+              amd64: amd64
+      - version_constraint: semver("<= 0.0.97")
+        asset: rumdl-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+      - version_constraint: semver("<= 0.0.109")
+        asset: rumdl-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            format: tar.gz
+            asset: rumdl-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+            checksum:
+              type: github_release
+              asset: "{{.Asset}}.sha256"
+              algorithm: sha256
+      - version_constraint: "true"
+        asset: rumdl-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
