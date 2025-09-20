@@ -70,14 +70,16 @@ linux-arm*)
 	;;
 esac
 
-features="rustls-native-roots,self_update,vfox/vendored-lua"
+features="rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored"
+if [[ "$os" == "linux" ]] && [[ "$arch" == "armv7" ]]; then
+	features="$features,aws-lc-rs"
+fi
+if [[ "$os" == "linux" ]] && [[ "$arch" == "arm64" ]]; then
+	export AWS_LC_SYS_NO_ASM=1
+fi
 
 if [[ $os == "linux" ]]; then
-	if command -v cross >/dev/null 2>&1; then
-		cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
-	else
-		cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
-	fi
+	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 else
 	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 fi

@@ -4519,6 +4519,7 @@ dependencies = [
  "aqua-registry",
  "async-backtrace",
  "async-trait",
+ "aws-lc-rs",
  "base64 0.22.1",
  "blake3",
  "built",
@@ -6910,6 +6911,7 @@ dependencies = [
  "rand 0.8.5",
  "regex",
  "reqwest",
+ "ring",
  "rsa",
  "rustls-pki-types",
  "rustls-webpki",
@@ -6945,7 +6947,9 @@ dependencies = [
 
 [[package]]
 name = "sigstore-verification"
-version = "0.1.6"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e24cb0faa5df3c78fde4aaef48e84196d3fba3725781f984d3b256fa0a2175e0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -6955,7 +6959,6 @@ dependencies = [
  "p256",
  "p384",
  "reqwest",
- "ring",
  "serde",
  "serde_json",
  "sha2",
@@ -8903,8 +8906,9 @@ dependencies = [
 
 [[package]]
 name = "xx"
-version = "2.1.2"
-source = "git+https://github.com/jdx/xx.git?rev=3cf78a0#3cf78a0fa0cb3edfe1d858e812703c7404f21b66"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c49281e5e82dafeb26c72c7bf4b1876401ff662c38c7517d84b641053863486d"
 dependencies = [
  "bzip2 0.5.2",
  "duct 1.1.0",

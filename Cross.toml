@@ -3,7 +3,13 @@
 # This ensures compatibility with Amazon Linux 2 (glibc 2.26) and other older systems
 
 [build.env]
-passthrough = ["RUST_BACKTRACE", "CARGO_TERM_COLOR"]
+passthrough = [
+  "RUST_BACKTRACE",
+  "CARGO_TERM_COLOR",
+  "AWS_LC_SYS_NO_ASM",
+  "AWS_LC_SYS_EXTERNAL_BINDGEN",
+  "BINDGEN_EXTRA_CLANG_ARGS",
+]
 
 # Explicitly use 0.2.5 images for GNU targets (Ubuntu 16.04, glibc 2.23)
 [target.x86_64-unknown-linux-gnu]
@@ -14,6 +20,11 @@ image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.5"
 
 [target.armv7-unknown-linux-gnueabi]
 image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabi:0.2.5"
+pre-build = [
+  "dpkg --add-architecture armhf",
+  "apt-get update && apt-get install -y libclang-dev clang llvm-dev pkg-config",
+]
+
 
 # Musl targets for static linking
 [target.x86_64-unknown-linux-musl]

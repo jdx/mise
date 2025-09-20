@@ -524,7 +524,6 @@ impl AquaBackend {
         Ok(())
     }
 
-    #[cfg(feature = "sigstore-verification")]
     async fn verify_slsa(
         &self,
         ctx: &InstallContext,
@@ -631,20 +630,6 @@ impl AquaBackend {
         Ok(())
     }
 
-    #[cfg(not(feature = "sigstore-verification"))]
-    async fn verify_slsa(
-        &self,
-        _ctx: &InstallContext,
-        _tv: &mut ToolVersion,
-        _pkg: &AquaPackage,
-        _v: &str,
-        _filename: &str,
-    ) -> Result<()> {
-        // SLSA verification disabled in this build
-        Ok(())
-    }
-
-    #[cfg(feature = "sigstore-verification")]
     async fn verify_github_attestations(
         &self,
         ctx: &InstallContext,
@@ -718,20 +703,6 @@ impl AquaBackend {
         Ok(())
     }
 
-    #[cfg(not(feature = "sigstore-verification"))]
-    async fn verify_github_attestations(
-        &self,
-        _ctx: &InstallContext,
-        _tv: &ToolVersion,
-        _pkg: &AquaPackage,
-        _v: &str,
-        _filename: &str,
-    ) -> Result<()> {
-        // GitHub attestations verification disabled in this build
-        Ok(())
-    }
-
-    #[cfg(feature = "sigstore-verification")]
     async fn cosign_checksums(
         &self,
         ctx: &InstallContext,
@@ -875,20 +846,6 @@ impl AquaBackend {
                 }
             }
         }
-        Ok(())
-    }
-
-    #[cfg(not(feature = "sigstore-verification"))]
-    async fn cosign_checksums(
-        &self,
-        _ctx: &InstallContext,
-        _pkg: &AquaPackage,
-        _v: &str,
-        _tv: &ToolVersion,
-        _checksum_path: &Path,
-        _download_path: &Path,
-    ) -> Result<()> {
-        // Cosign verification disabled in this build
         Ok(())
     }
 
