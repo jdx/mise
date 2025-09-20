@@ -40,15 +40,15 @@ jobs:
           - os: ubuntu
             name: linux-arm64
             target: aarch64-unknown-linux-gnu
-            runs-on: ubuntu-24.04-arm
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-arm64-musl
             target: aarch64-unknown-linux-musl
-            runs-on: ubuntu-24.04-arm
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-armv7
             target: armv7-unknown-linux-gnueabi
-            runs-on: ubuntu-24.04-arm
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-armv7-musl
             target: armv7-unknown-linux-musleabi
@@ -69,11 +69,10 @@ jobs:
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
       - name: Install cross
-        if: matrix.os == 'ubuntu' && !contains(matrix.runs-on, 'arm')
+        if: matrix.os == 'ubuntu'
         uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
         with:
           tool: cross
-        # Note: ARM64 runners (ubuntu-24.04-arm) don't support cross well
       - name: cache crates
         id: cache-crates
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
