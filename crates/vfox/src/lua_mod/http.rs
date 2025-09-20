@@ -74,29 +74,32 @@ fn get_headers(lua: &Lua, headers: &reqwest::header::HeaderMap) -> Result<Table>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use httpmock::prelude::*;
-    use httpmock::Method::{GET, HEAD};
     use std::fs;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
     async fn test_get() {
         // Start a local mock server
-        let server = MockServer::start();
+        let server = MockServer::start().await;
 
         // Create a mock endpoint
-        let mock = server.mock(|when, then| {
-            when.method(GET).path("/get");
-            then.status(200)
-                .header("content-type", "application/json")
-                .json_body(serde_json::json!({
-                    "message": "test response"
-                }));
-        });
+        Mock::given(method("GET"))
+            .and(path("/get"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "message": "test response"
+                    }))
+                    .insert_header("content-type", "application/json"),
+            )
+            .mount(&server)
+            .await;
 
         let lua = Lua::new();
         mod_http(&lua).unwrap();
 
-        let url = server.url("/get");
+        let url = server.uri() + "/get";
         lua.load(mlua::chunk! {
             local http = require("http")
             local resp = http.get({ url = $url })
@@ -106,26 +109,26 @@ mod tests {
         .exec_async()
         .await
         .unwrap();
-
-        // Verify the mock was called
-        mock.assert();
     }
 
     #[tokio::test]
     async fn test_head() {
-        let server = MockServer::start();
+        let server = MockServer::start().await;
 
-        let mock = server.mock(|when, then| {
-            when.method(HEAD).path("/get");
-            then.status(200)
-                .header("content-type", "application/json")
-                .header("x-test-header", "test-value");
-        });
+        Mock::given(method("HEAD"))
+            .and(path("/get"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "application/json")
+                    .insert_header("x-test-header", "test-value"),
+            )
+            .mount(&server)
+            .await;
 
         let lua = Lua::new();
         mod_http(&lua).unwrap();
 
-        let url = server.url("/get");
+        let url = server.uri() + "/get";
         lua.load(mlua::chunk! {
             local http = require("http")
             local resp = http.head({ url = $url })
@@ -138,23 +141,24 @@ mod tests {
         .exec_async()
         .await
         .unwrap();
-
-        mock.assert();
     }
 
     #[tokio::test]
     async fn test_download_file() {
-        let server = MockServer::start();
+        let server = MockServer::start().await;
 
         // Create test content
         let test_content = r#"{"name": "vfox-nodejs", "version": "1.0.0"}"#;
 
-        let mock = server.mock(|when, then| {
-            when.method(GET).path("/index.json");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body(test_content);
-        });
+        Mock::given(method("GET"))
+            .and(path("/index.json"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(test_content)
+                    .insert_header("content-type", "application/json"),
+            )
+            .mount(&server)
+            .await;
 
         let lua = Lua::new();
         mod_http(&lua).unwrap();
@@ -163,7 +167,7 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let path = temp_dir.path().join("download_file.txt");
         let path_str = path.to_string_lossy().to_string();
-        let url = server.url("/index.json");
+        let url = server.uri() + "/index.json";
 
         lua.load(mlua::chunk! {
             local http = require("http")
@@ -182,6 +186,5 @@ mod tests {
         assert!(content.contains("vfox-nodejs"));
 
         // TempDir automatically cleans up when dropped
-        mock.assert();
     }
 }
