@@ -26,7 +26,6 @@ jobs:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
       MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
     strategy:
-      fail-fast: false
       matrix:
         include:
           - os: ubuntu
@@ -85,11 +84,7 @@ jobs:
           rustup target add ${{matrix.target}}
           # Cross handles linker setup automatically for most targets
       - name: build-tarball
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
-        with:
-          timeout_minutes: 45
-          max_attempts: 3
-          command: scripts/build-tarball.sh ${{matrix.target}}
+        run: scripts/build-tarball.sh ${{matrix.target}}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: tarball-${{matrix.target}}
