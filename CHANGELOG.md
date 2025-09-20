@@ -1,5 +1,19 @@
 # Changelog
 
+## [2025.9.14](https://github.com/jdx/mise/compare/v2025.9.13..v2025.9.14) - 2025-09-20
+
+### 🐛 Bug Fixes
+
+- fix an issue where Swift could not be installed on arm64 Ubuntu by @lish82 in [#6348](https://github.com/jdx/mise/pull/6348)
+
+### Chore
+
+- use cross to build on linux by @jdx in [#6346](https://github.com/jdx/mise/pull/6346)
+
+### New Contributors
+
+- @lish82 made their first contribution in [#6348](https://github.com/jdx/mise/pull/6348)
+
 ## [2025.9.13](https://github.com/jdx/mise/compare/v2025.9.12..v2025.9.13) - 2025-09-19
 
 ### 📦 Registry
