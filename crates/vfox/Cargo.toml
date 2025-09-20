@@ -36,7 +36,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 serde = "1"
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "fs"] }
+tokio = { version = "1", features = ["macros", "fs", "io-util"] }
 url = "2"
 xx = { version = "2", default-features = false, features = ["archive", "hash"] }
 
