@@ -70,7 +70,7 @@ linux-arm*)
 	;;
 esac
 
-features="rustls,rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored"
+features="rustls-native-roots,self_update,vfox/vendored-lua"
 
 if [[ $os == "linux" ]]; then
 	if command -v cross >/dev/null 2>&1; then

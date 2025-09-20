@@ -1,25 +1,26 @@
 # Cross configuration for mise
-# Uses updated Docker images with proper libclang support
+# Use cross 0.2.5 images which are based on Ubuntu 16.04 (glibc 2.23)
+# This ensures compatibility with Amazon Linux 2 (glibc 2.26) and other older systems
 
 [build.env]
 passthrough = ["RUST_BACKTRACE", "CARGO_TERM_COLOR"]
 
-# Use newer cross images from main branch
-# These should have more recent dependencies than the default ones
+# Explicitly use 0.2.5 images for GNU targets (Ubuntu 16.04, glibc 2.23)
 [target.x86_64-unknown-linux-gnu]
-image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main"
-
-[target.x86_64-unknown-linux-musl]
-image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:main"
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:0.2.5"
 
 [target.aarch64-unknown-linux-gnu]
-image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main"
-
-[target.aarch64-unknown-linux-musl]
-image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.5"
 
 [target.armv7-unknown-linux-gnueabi]
-image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabi:main"
+image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabi:0.2.5"
+
+# Musl targets for static linking
+[target.x86_64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5"
+
+[target.aarch64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5"
 
 [target.armv7-unknown-linux-musleabi]
-image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabi:main"
+image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabi:0.2.5"

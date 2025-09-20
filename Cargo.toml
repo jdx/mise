@@ -158,7 +158,7 @@ vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
 walkdir = "2"
 which = "7"
-xx = { version = "2", features = ["glob"] }
+xx = { version = "2", default-features = false, features = ["glob", "rustls-native-roots"] }
 xz2 = "0.1"
 zip = { version = "3", default-features = false, features = ["deflate"] }
 zstd = "0.13"
@@ -219,6 +219,7 @@ rustls-native-roots = [
   "reqwest/rustls-tls-native-roots",
   "self_update/rustls",
   "ubi/rustls-tls-native-roots",
+  "gix/blocking-http-transport-reqwest-rust-tls",
   "vfox/rustls-native-roots",
   "sigstore-verification/rustls-native-roots",
 ]
@@ -246,3 +247,7 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 
 [lints.clippy]
 borrowed_box = "allow"
+
+[patch.crates-io]
+xx = { git = "https://github.com/jdx/xx.git", rev = "3cf78a0" }
+sigstore-verification = { path = "/home/jdx/src/sigstore-verification" }

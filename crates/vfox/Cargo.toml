@@ -36,7 +36,7 @@ serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "fs"] }
 url = "2"
-xx = { version = "2", features = ["archive", "hash", "http"] }
+xx = { version = "2", default-features = false, features = ["archive", "hash"] }
 
 # cli dependencies
 env_logger = { version = "0.11", optional = true }
@@ -50,10 +50,11 @@ insta = "1"
 [features]
 default = ["vendored-lua"]
 cli = ["clap", "tokio/full", "env_logger"]
-native-tls = ["xx/native-tls", "reqwest/native-tls"]
-rustls = ["xx/rustls", "reqwest/rustls-tls"]
+native-tls = ["xx/native-tls", "xx/http", "reqwest/native-tls"]
+rustls = ["xx/rustls", "xx/http", "reqwest/rustls-tls"]
 rustls-native-roots = [
   "xx/rustls-native-roots",
+  "xx/http",
   "reqwest/rustls-tls-native-roots",
 ]
 vendored-lua = ["mlua/vendored"]
