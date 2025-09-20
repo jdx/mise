@@ -6,7 +6,6 @@
 passthrough = [
   "RUST_BACKTRACE",
   "CARGO_TERM_COLOR",
-  "AWS_LC_SYS_NO_ASM",
   "AWS_LC_SYS_EXTERNAL_BINDGEN",
   "BINDGEN_EXTRA_CLANG_ARGS",
 ]
@@ -16,7 +15,15 @@ passthrough = [
 image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:0.2.5"
 
 [target.aarch64-unknown-linux-gnu]
-image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.5"
+# Use newer image for aarch64 to get assembler that supports ARMv8.2-A crypto instructions
+# This is based on Ubuntu 20.04 (glibc 2.31) but should still be compatible with Amazon Linux 2
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main"
+pre-build = [
+  "apt-get update && apt-get install --assume-yes --no-install-recommends libclang-dev clang curl",
+  "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable",
+  ". ~/.cargo/env && cargo install --force --locked bindgen-cli",
+  "ln -s ~/.cargo/bin/bindgen /usr/local/bin/bindgen",
+]
 
 [target.armv7-unknown-linux-gnueabi]
 image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabi:0.2.5"
