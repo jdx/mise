@@ -68,6 +68,11 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+      - name: Install cross
+        if: matrix.os == 'ubuntu'
+        uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
+        with:
+          tool: cross
       - name: cache crates
         id: cache-crates
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4

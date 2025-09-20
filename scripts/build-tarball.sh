@@ -72,7 +72,11 @@ esac
 
 features="rustls,rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored"
 
-cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
+if [[ "$os" == "linux" ]]; then
+	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
+else
+	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
+fi
 mkdir -p dist/mise/bin
 mkdir -p dist/mise/man/man1
 mkdir -p dist/mise/share/fish/vendor_conf.d
