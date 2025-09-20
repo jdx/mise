@@ -114,9 +114,9 @@ mod tests {
         mod_cmd(&lua).unwrap();
         lua.load(mlua::chunk! {
             local cmd = require("cmd")
-            // Test with working directory
+            -- Test with working directory
             local result = cmd.exec("pwd", {cwd = $temp_dir_str})
-            // Check that result contains the expected path (handles trailing slashes/newlines)
+            -- Check that result contains the expected path (handles trailing slashes/newlines)
             assert(result:find($expected_path) ~= nil, "Expected result to contain: " .. $expected_path .. " but got: " .. result)
         })
         .exec()
