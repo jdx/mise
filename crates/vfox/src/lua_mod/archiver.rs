@@ -41,25 +41,21 @@ mod tests {
 
     #[test]
     fn test_zip() {
-        let temp_dir = std::env::temp_dir();
-        let dst_path = temp_dir.join("test_zip_dst");
-        let dst_path_str = dst_path.to_string_lossy();
-        let _ = std::fs::remove_dir_all(&dst_path);
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let dst_path = temp_dir.path().join("unzip");
+        let dst_path_str = dst_path.to_string_lossy().to_string();
         let lua = Lua::new();
         mod_archiver(&lua).unwrap();
-        lua.load(format!(
-            r#"
+        lua.load(mlua::chunk! {
             local archiver = require("archiver")
-            archiver.decompress("test/data/foo.zip", "{}")
-        "#,
-            dst_path_str
-        ))
+            archiver.decompress("test/data/foo.zip", $dst_path_str)
+        })
         .exec()
         .unwrap();
         assert_eq!(
             std::fs::read_to_string(dst_path.join("foo/test.txt")).unwrap(),
             "yep\n"
         );
-        std::fs::remove_dir_all(&dst_path).unwrap();
+        // TempDir automatically cleans up when dropped
     }
 }

@@ -79,16 +79,15 @@ mod tests {
 
     #[test]
     fn test_read() {
-        let temp_dir = std::env::temp_dir();
-        let filepath = temp_dir.join("vfox-lua-file-read");
-        let filepath_str = filepath.to_string_lossy();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("file-read.txt");
+        let filepath_str = filepath.to_string_lossy().to_string();
         fs::write(&filepath, "hello world").unwrap();
         let lua = Lua::new();
         mod_file(&lua).unwrap();
-        lua.load(format!(
-            r#"
+        lua.load(mlua::chunk! {
             local file = require("file")
-            local success, contents = pcall(file.read, "{}")
+            local success, contents = pcall(file.read, $filepath_str)
             if not success then
                 error("Failed to read: " .. contents)
             end
@@ -97,34 +96,28 @@ mod tests {
             elseif contents ~= "hello world" then
                 error("contents expected to be 'hello world', was actually:" .. contents)
             end
-        "#,
-            filepath_str
-        ))
+        })
         .exec()
         .unwrap();
-        fs::remove_file(filepath).unwrap();
+        // TempDir automatically cleans up when dropped
     }
 
     #[test]
     fn test_symlink() {
-        let temp_dir = std::env::temp_dir();
-        let src_path = temp_dir.join("test_symlink_src");
-        let dst_path = temp_dir.join("test_symlink_dst");
-        let src_path_str = src_path.to_string_lossy();
-        let dst_path_str = dst_path.to_string_lossy();
-        let _ = fs::remove_file(&dst_path);
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let src_path = temp_dir.path().join("symlink_src");
+        let dst_path = temp_dir.path().join("symlink_dst");
+        let src_path_str = src_path.to_string_lossy().to_string();
+        let dst_path_str = dst_path.to_string_lossy().to_string();
         let lua = Lua::new();
         mod_file(&lua).unwrap();
-        lua.load(format!(
-            r#"
+        lua.load(mlua::chunk! {
             local file = require("file")
-            file.symlink("{}", "{}")
-        "#,
-            src_path_str, dst_path_str
-        ))
+            file.symlink($src_path_str, $dst_path_str)
+        })
         .exec()
         .unwrap();
         assert_eq!(fs::read_link(&dst_path).unwrap(), src_path);
-        fs::remove_file(&dst_path).unwrap();
+        // TempDir automatically cleans up when dropped
     }
 }

@@ -97,15 +97,12 @@ mod tests {
         mod_http(&lua).unwrap();
 
         let url = server.url("/get");
-        lua.load(format!(
-            r#"
+        lua.load(mlua::chunk! {
             local http = require("http")
-            local resp = http.get({{ url = "{}" }})
+            local resp = http.get({ url = $url })
             assert(resp.status_code == 200)
             assert(type(resp.body) == "string")
-        "#,
-            url
-        ))
+        })
         .exec_async()
         .await
         .unwrap();
@@ -129,18 +126,15 @@ mod tests {
         mod_http(&lua).unwrap();
 
         let url = server.url("/get");
-        lua.load(format!(
-            r#"
+        lua.load(mlua::chunk! {
             local http = require("http")
-            local resp = http.head({{ url = "{}" }})
+            local resp = http.head({ url = $url })
             assert(resp.status_code == 200)
             assert(type(resp.headers) == "table")
             assert(resp.headers["content-type"] == "application/json")
             assert(resp.headers["x-test-header"] == "test-value")
             assert(resp.content_length == nil)
-        "#,
-            url
-        ))
+        })
         .exec_async()
         .await
         .unwrap();
@@ -165,23 +159,20 @@ mod tests {
         let lua = Lua::new();
         mod_http(&lua).unwrap();
 
-        // Use temp_dir for cross-platform compatibility
-        let temp_dir = std::env::temp_dir();
-        let path = temp_dir.join("vfox_test_download_file.txt");
-        let path_str = path.to_string_lossy();
+        // Use isolated temp directory for test isolation
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let path = temp_dir.path().join("download_file.txt");
+        let path_str = path.to_string_lossy().to_string();
         let url = server.url("/index.json");
 
-        lua.load(format!(
-            r#"
+        lua.load(mlua::chunk! {
             local http = require("http")
-            err = http.download_file({{
-                url = "{}",
-                headers = {{}}
-            }}, "{}")
+            err = http.download_file({
+                url = $url,
+                headers = {}
+            }, $path_str)
             assert(err == nil, [[must be nil]])
-        "#,
-            url, path_str
-        ))
+        })
         .exec_async()
         .await
         .unwrap();
@@ -190,9 +181,7 @@ mod tests {
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("vfox-nodejs"));
 
-        // Clean up
-        tokio::fs::remove_file(path).await.unwrap();
-
+        // TempDir automatically cleans up when dropped
         mock.assert();
     }
 }
