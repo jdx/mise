@@ -563,7 +563,11 @@ impl Task {
         self.name.replace(':', path::MAIN_SEPARATOR_STR).into()
     }
 
-    pub async fn render_env(&self, config: &Arc<Config>, ts: &Toolset) -> Result<EnvMap> {
+    pub async fn render_env(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+    ) -> Result<(EnvMap, Vec<(String, String)>)> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         let mut env = ts.full_env(config).await?;
         if let Some(root) = &config.project_root {
@@ -591,9 +595,9 @@ impl Task {
             },
         )
         .await?;
-
+        let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
         // Apply the resolved environment variables
-        env.extend(env_results.env.into_iter().map(|(k, (v, _))| (k, v)));
+        env.extend(task_env.clone());
 
         // Remove environment variables that were explicitly unset
         for key in &env_results.env_remove {
@@ -611,7 +615,7 @@ impl Task {
             env.insert(env::PATH_KEY.to_string(), path_env.to_string());
         }
 
-        Ok(env)
+        Ok((env, task_env.collect()))
     }
 }
 
