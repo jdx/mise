@@ -2,10 +2,7 @@
 # Uses updated Docker images with proper libclang support
 
 [build.env]
-passthrough = [
-    "RUST_BACKTRACE",
-    "CARGO_TERM_COLOR",
-]
+passthrough = ["RUST_BACKTRACE", "CARGO_TERM_COLOR"]
 
 # Use newer cross images that have updated libclang
 [target.x86_64-unknown-linux-gnu]
