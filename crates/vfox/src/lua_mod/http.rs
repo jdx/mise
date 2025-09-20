@@ -75,14 +75,34 @@ fn get_headers(lua: &Lua, headers: &reqwest::header::HeaderMap) -> Result<Table>
 mod tests {
     use super::*;
     use std::fs;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
     async fn test_get() {
+        // Start a local mock server
+        let server = MockServer::start().await;
+
+        // Create a mock endpoint
+        Mock::given(method("GET"))
+            .and(path("/get"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "message": "test response"
+                    }))
+                    .insert_header("content-type", "application/json"),
+            )
+            .mount(&server)
+            .await;
+
         let lua = Lua::new();
         mod_http(&lua).unwrap();
+
+        let url = server.uri() + "/get";
         lua.load(mlua::chunk! {
             local http = require("http")
-            local resp = http.get({ url = "https://httpbin.org/get" })
+            local resp = http.get({ url = $url })
             assert(resp.status_code == 200)
             assert(type(resp.body) == "string")
         })
@@ -93,15 +113,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_head() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("HEAD"))
+            .and(path("/get"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "application/json")
+                    .insert_header("x-test-header", "test-value"),
+            )
+            .mount(&server)
+            .await;
+
         let lua = Lua::new();
         mod_http(&lua).unwrap();
+
+        let url = server.uri() + "/get";
         lua.load(mlua::chunk! {
             local http = require("http")
-            local resp = http.head({ url = "https://httpbin.org/get" })
-            print(resp.headers)
+            local resp = http.head({ url = $url })
             assert(resp.status_code == 200)
             assert(type(resp.headers) == "table")
             assert(resp.headers["content-type"] == "application/json")
+            assert(resp.headers["x-test-header"] == "test-value")
             assert(resp.content_length == nil)
         })
         .exec_async()
@@ -110,24 +144,47 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // TODO: find out why this often fails in CI
     async fn test_download_file() {
+        let server = MockServer::start().await;
+
+        // Create test content
+        let test_content = r#"{"name": "vfox-nodejs", "version": "1.0.0"}"#;
+
+        Mock::given(method("GET"))
+            .and(path("/index.json"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(test_content)
+                    .insert_header("content-type", "application/json"),
+            )
+            .mount(&server)
+            .await;
+
         let lua = Lua::new();
         mod_http(&lua).unwrap();
-        let path = "test/data/test_download_file.txt";
+
+        // Use isolated temp directory for test isolation
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let path = temp_dir.path().join("download_file.txt");
+        let path_str = path.to_string_lossy().to_string();
+        let url = server.uri() + "/index.json";
+
         lua.load(mlua::chunk! {
             local http = require("http")
             err = http.download_file({
-                url = "https://vfox-plugins.lhan.me/index.json",
+                url = $url,
                 headers = {}
-            }, $path)
+            }, $path_str)
             assert(err == nil, [[must be nil]])
         })
         .exec_async()
         .await
         .unwrap();
-        // TODO: figure out why this fails on gha
-        assert!(fs::read_to_string(path).unwrap().contains("vfox-nodejs"));
-        tokio::fs::remove_file(path).await.unwrap();
+
+        // Verify file was downloaded correctly
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("vfox-nodejs"));
+
+        // TempDir automatically cleans up when dropped
     }
 }

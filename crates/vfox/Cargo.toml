@@ -47,6 +47,7 @@ tempfile = "3"
 
 [dev-dependencies]
 insta = "1"
+wiremock = "0.6"
 #pretty_assertions = "1.4.0"
 
 [features]
