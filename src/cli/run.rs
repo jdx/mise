@@ -743,8 +743,7 @@ impl Run {
             self.exec_task_run_entries(
                 config,
                 task,
-                &env,
-                &task_env,
+                (&env, &task_env),
                 &prefix,
                 rendered_run_scripts,
                 sched_tx,
@@ -777,12 +776,12 @@ impl Run {
         &self,
         config: &Arc<Config>,
         task: &Task,
-        env: &BTreeMap<String, String>,
-        task_env: &[(String, String)],
+        full_env: (&BTreeMap<String, String>, &[(String, String)]),
         prefix: &str,
         rendered_scripts: Vec<(String, Vec<String>)>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
     ) -> Result<()> {
+        let (env, task_env) = full_env;
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
         for entry in task.run() {
