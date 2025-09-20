@@ -74,60 +74,122 @@ fn get_headers(lua: &Lua, headers: &reqwest::header::HeaderMap) -> Result<Table>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use httpmock::prelude::*;
+    use httpmock::Method::{GET, HEAD};
     use std::fs;
 
     #[tokio::test]
     async fn test_get() {
+        // Start a local mock server
+        let server = MockServer::start();
+
+        // Create a mock endpoint
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/get");
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(serde_json::json!({
+                    "message": "test response"
+                }));
+        });
+
         let lua = Lua::new();
         mod_http(&lua).unwrap();
-        lua.load(mlua::chunk! {
+
+        let url = server.url("/get");
+        lua.load(format!(
+            r#"
             local http = require("http")
-            local resp = http.get({ url = "https://httpbin.org/get" })
+            local resp = http.get({{ url = "{}" }})
             assert(resp.status_code == 200)
             assert(type(resp.body) == "string")
-        })
+        "#,
+            url
+        ))
         .exec_async()
         .await
         .unwrap();
+
+        // Verify the mock was called
+        mock.assert();
     }
 
     #[tokio::test]
     async fn test_head() {
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method(HEAD).path("/get");
+            then.status(200)
+                .header("content-type", "application/json")
+                .header("x-test-header", "test-value");
+        });
+
         let lua = Lua::new();
         mod_http(&lua).unwrap();
-        lua.load(mlua::chunk! {
+
+        let url = server.url("/get");
+        lua.load(format!(
+            r#"
             local http = require("http")
-            local resp = http.head({ url = "https://httpbin.org/get" })
-            print(resp.headers)
+            local resp = http.head({{ url = "{}" }})
             assert(resp.status_code == 200)
             assert(type(resp.headers) == "table")
             assert(resp.headers["content-type"] == "application/json")
+            assert(resp.headers["x-test-header"] == "test-value")
             assert(resp.content_length == nil)
-        })
+        "#,
+            url
+        ))
         .exec_async()
         .await
         .unwrap();
+
+        mock.assert();
     }
 
     #[tokio::test]
-    #[ignore] // TODO: find out why this often fails in CI
     async fn test_download_file() {
+        let server = MockServer::start();
+
+        // Create test content
+        let test_content = r#"{"name": "vfox-nodejs", "version": "1.0.0"}"#;
+
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/index.json");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(test_content);
+        });
+
         let lua = Lua::new();
         mod_http(&lua).unwrap();
-        let path = "test/data/test_download_file.txt";
-        lua.load(mlua::chunk! {
+
+        let path = "/tmp/vfox_test_download_file.txt";
+        let url = server.url("/index.json");
+
+        lua.load(format!(
+            r#"
             local http = require("http")
-            err = http.download_file({
-                url = "https://vfox-plugins.lhan.me/index.json",
-                headers = {}
-            }, $path)
+            err = http.download_file({{
+                url = "{}",
+                headers = {{}}
+            }}, "{}")
             assert(err == nil, [[must be nil]])
-        })
+        "#,
+            url, path
+        ))
         .exec_async()
         .await
         .unwrap();
-        // TODO: figure out why this fails on gha
-        assert!(fs::read_to_string(path).unwrap().contains("vfox-nodejs"));
+
+        // Verify file was downloaded correctly
+        let content = fs::read_to_string(path).unwrap();
+        assert!(content.contains("vfox-nodejs"));
+
+        // Clean up
         tokio::fs::remove_file(path).await.unwrap();
+
+        mock.assert();
     }
 }

@@ -22,3 +22,5 @@ chmod +x /usr/local/bin/mise
 
 echo "Mise development shim created at /usr/local/bin/mise"
 echo "You can now run 'mise' commands which will use 'cargo run' under the hood" 
+
+mise --cd /workspaces/mise install

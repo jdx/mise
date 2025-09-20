@@ -23,10 +23,13 @@ RUN    apt-get update \
     && apt-get install -y --no-install-recommends \
     bison \
     build-essential \
+    clang \
     cmake \
     direnv \
     fd-find \
     fish \
+    libclang-dev \
+    pkg-config \
     python3-venv \
     pipx \
     && ln -s /usr/bin/{fdfind,fd} \
