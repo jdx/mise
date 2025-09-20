@@ -843,8 +843,7 @@ impl Run {
                     match rx.try_recv() {
                         Ok(Some(task)) => {
                             any = true;
-                            let mut task = task.clone();
-                            task.env.0.extend_from_slice(&task_env_directives.clone());
+                            let task = task.derive_env(&task_env_directives.clone());
                             trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
                             let _ = sched_tx.send((task, sub_deps_clone.clone()));
                         }
@@ -875,8 +874,7 @@ impl Run {
                                 task.name,
                                 task.args.join(" ")
                             );
-                            let mut task = task.clone();
-                            task.env.0.extend_from_slice(&task_env_directives);
+                            let task = task.derive_env(&task_env_directives);
                             let _ = sched_tx.send((task, sub_deps_clone.clone()));
                         }
                         None => {
