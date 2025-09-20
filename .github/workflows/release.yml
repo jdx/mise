@@ -40,15 +40,15 @@ jobs:
           - os: ubuntu
             name: linux-arm64
             target: aarch64-unknown-linux-gnu
-            runs-on: ubuntu-24.04-arm
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-arm64-musl
             target: aarch64-unknown-linux-musl
-            runs-on: ubuntu-24.04-arm
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-armv7
             target: armv7-unknown-linux-gnueabi
-            runs-on: ubuntu-24.04-arm
+            runs-on: ubuntu-latest
           - os: ubuntu
             name: linux-armv7-musl
             target: armv7-unknown-linux-musleabi
@@ -68,6 +68,11 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+      - name: Install cross
+        if: matrix.os == 'ubuntu'
+        uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
+        with:
+          tool: cross
       - name: cache crates
         id: cache-crates
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
@@ -75,71 +80,10 @@ jobs:
           path: ~/.cargo/registry/cache
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-registry
-      - name: Install cross-compilation tools
-        if: contains(matrix.target, 'armv7') || contains(matrix.target, 'musl')
-        run: |
-          set -x
-          sudo apt-get update
-          # For ARMv7 targets on ARM runners
-          case "${{matrix.runs-on}}" in
-            *arm*)
-              case "${{matrix.target}}" in
-                *armv7*)
-                  # Install both soft-float and hard-float toolchains
-                  sudo apt-get install -y gcc-arm-linux-gnueabi libc6-dev-armel-cross gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
-                  ;;
-              esac
-              ;;
-          esac
-          # For musl targets (all platforms)
-          case "${{matrix.target}}" in
-            *musl*)
-              sudo apt-get install -y musl-tools
-              # For ARMv7 musl cross-compilation on x86_64, download prebuilt toolchain
-              if [ "${{matrix.target}}" = "armv7-unknown-linux-musleabi" ]; then
-                echo "Downloading ARMv7 musl cross-compiler..."
-                wget -q https://mise.jdx.dev/arm-linux-musleabi-cross.tgz || exit 1
-                echo "Verifying checksum..."
-                echo "d70c607101fee5330083463feacf5992892a85b826d1626094500e0c37ec7d25  arm-linux-musleabi-cross.tgz" | sha256sum -c || exit 1
-                echo "Extracting cross-compiler..."
-                sudo tar -xzf arm-linux-musleabi-cross.tgz -C /opt || exit 1
-                rm arm-linux-musleabi-cross.tgz
-                echo "/opt/arm-linux-musleabi-cross/bin" >> "$GITHUB_PATH"
-                echo "Cross-compiler setup complete"
-              fi
-              ;;
-          esac
-      - name: Setup Rust target and linkers
-        run: |
-          rustup target add ${{matrix.target}}
-          # Set linkers for cross-compilation
-          case "${{matrix.target}}" in
-            armv7-unknown-linux-gnueabi)
-              # Use soft-float compiler for gnueabi target
-              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER=arm-linux-gnueabi-gcc" >> "$GITHUB_ENV"
-              echo "CC_armv7_unknown_linux_gnueabi=arm-linux-gnueabi-gcc" >> "$GITHUB_ENV"
-              echo "AR_armv7_unknown_linux_gnueabi=arm-linux-gnueabi-ar" >> "$GITHUB_ENV"
-              ;;
-            armv7-unknown-linux-musleabi)
-              # Use the downloaded musl cross-compiler for ARMv7 soft-float
-              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABI_LINKER=arm-linux-musleabi-gcc" >> "$GITHUB_ENV"
-              echo "CC_armv7_unknown_linux_musleabi=arm-linux-musleabi-gcc" >> "$GITHUB_ENV"
-              echo "AR_armv7_unknown_linux_musleabi=arm-linux-musleabi-ar" >> "$GITHUB_ENV"
-              # Set include paths for bindgen to find musl headers
-              echo "BINDGEN_EXTRA_CLANG_ARGS=--sysroot=/opt/arm-linux-musleabi-cross/arm-linux-musleabi" >> "$GITHUB_ENV"
-              ;;
-            aarch64-unknown-linux-musl)
-              echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
-              echo "CC_aarch64_unknown_linux_musl=musl-gcc" >> "$GITHUB_ENV"
-              echo "CC=musl-gcc" >> "$GITHUB_ENV"
-              ;;
-            x86_64-unknown-linux-musl)
-              echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
-              echo "CC_x86_64_unknown_linux_musl=musl-gcc" >> "$GITHUB_ENV"
-              echo "CC=musl-gcc" >> "$GITHUB_ENV"
-              ;;
-          esac
-      - name: build-tarball
+      - name: Setup Rust target
+        run: rustup target add ${{matrix.target}}
+        if: matrix.os != 'ubuntu'
+      - name: build-tarball ${{matrix.target}}
         uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
         with:
           timeout_minutes: 45
