@@ -1,0 +1,64 @@
+# Cross configuration for mise
+# Uses updated Docker images with proper libclang support
+
+[build.env]
+passthrough = [
+    "RUST_BACKTRACE",
+    "CARGO_TERM_COLOR",
+]
+
+# Use newer cross images that have updated libclang
+[target.x86_64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main"
+
+[target.x86_64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:main"
+
+[target.aarch64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main"
+
+[target.aarch64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:main"
+
+[target.armv7-unknown-linux-gnueabi]
+image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabi:main"
+
+[target.armv7-unknown-linux-musleabi]
+image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabi:main"
+
+# Install additional dependencies needed for aws-lc-sys
+[target.x86_64-unknown-linux-gnu.dockerfile]
+content = """
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main
+RUN apt-get update && apt-get install -y clang libclang-dev && rm -rf /var/lib/apt/lists/*
+"""
+
+[target.x86_64-unknown-linux-musl.dockerfile]
+content = """
+FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:main
+RUN apt-get update && apt-get install -y clang libclang-dev && rm -rf /var/lib/apt/lists/*
+"""
+
+[target.aarch64-unknown-linux-gnu.dockerfile]
+content = """
+FROM ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main
+RUN apt-get update && apt-get install -y clang libclang-dev && rm -rf /var/lib/apt/lists/*
+"""
+
+[target.aarch64-unknown-linux-musl.dockerfile]
+content = """
+FROM ghcr.io/cross-rs/aarch64-unknown-linux-musl:main
+RUN apt-get update && apt-get install -y clang libclang-dev && rm -rf /var/lib/apt/lists/*
+"""
+
+[target.armv7-unknown-linux-gnueabi.dockerfile]
+content = """
+FROM ghcr.io/cross-rs/armv7-unknown-linux-gnueabi:main
+RUN apt-get update && apt-get install -y clang libclang-dev && rm -rf /var/lib/apt/lists/*
+"""
+
+[target.armv7-unknown-linux-musleabi.dockerfile]
+content = """
+FROM ghcr.io/cross-rs/armv7-unknown-linux-musleabi:main
+RUN apt-get update && apt-get install -y clang libclang-dev && rm -rf /var/lib/apt/lists/*
+"""
