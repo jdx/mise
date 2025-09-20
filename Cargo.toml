@@ -54,7 +54,9 @@ opt-level = 3
 [dependencies]
 async-backtrace = "0.2"
 async-trait = "0.1"
-aws-lc-rs = { version = "1", optional = true, features = ["bindgen"] }
+aws-lc-rs = { version = "1", optional = true, features = [
+  "bindgen",
+] } # TODO: this is only for armv7 currently
 base64 = "0.22"
 bzip2 = "0.6"
 calm_io = "0.1"
@@ -241,7 +243,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ ar
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
 
 [package.metadata.cargo-machete]
-ignored = ["built", "openssl", "cfg_aliases", "rmcp-macros"]
+ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl", "rmcp-macros"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = [

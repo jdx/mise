@@ -82,12 +82,12 @@ else
 fi
 
 # Check glibc compatibility for x86_64-unknown-linux-gnu (Amazon Linux 2 requirement: glibc <= 2.26)
-if [[ "$RUST_TRIPLE" == "x86_64-unknown-linux-gnu" ]]; then
+if [[ $RUST_TRIPLE == "x86_64-unknown-linux-gnu" ]]; then
 	echo "Checking glibc compatibility for Amazon Linux 2..."
 	# Use CARGO_TARGET_DIR if set, otherwise default to target
 	target_dir="${CARGO_TARGET_DIR:-target}"
 	binary_path="$target_dir/$RUST_TRIPLE/serious/mise"
-	if [[ -f "$binary_path" ]]; then
+	if [[ -f $binary_path ]]; then
 		max_glibc=$(objdump -p "$binary_path" | grep 'GLIBC_' | sed 's/.*GLIBC_//' | sort -V | tail -1)
 		echo "Maximum glibc version required: $max_glibc"
 
