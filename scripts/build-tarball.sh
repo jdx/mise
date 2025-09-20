@@ -73,7 +73,11 @@ esac
 features="rustls,rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored"
 
 if [[ $os == "linux" ]]; then
-	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
+	if command -v cross >/dev/null 2>&1; then
+		cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
+	else
+		cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
+	fi
 else
 	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
 fi
