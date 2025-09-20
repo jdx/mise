@@ -830,6 +830,8 @@ impl Run {
 
         // Pump subgraph into scheduler and signal completion via oneshot when done
         let (done_tx, done_rx) = oneshot::channel::<()>();
+        let task_env_directives: Vec<EnvDirective> =
+            task_env.iter().cloned().map(Into::into).collect();
         {
             let sub_deps_clone = sub_deps.clone();
             let sched_tx = sched_tx.clone();
@@ -842,9 +844,7 @@ impl Run {
                         Ok(Some(task)) => {
                             any = true;
                             let mut task = task.clone();
-                            let env_directives: Vec<EnvDirective> =
-                                task_env.iter().cloned().map(Into::into).collect();
-                            task.env.0.extend_from_slice(&env_directives);
+                            task.env.0.extend_from_slice(&task_env_directives.clone());
                             trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
                             let _ = sched_tx.send((task, sub_deps_clone.clone()));
                         }
@@ -875,6 +875,8 @@ impl Run {
                                 task.name,
                                 task.args.join(" ")
                             );
+                            let mut task = task.clone();
+                            task.env.0.extend_from_slice(&task_env_directives);
                             let _ = sched_tx.send((task, sub_deps_clone.clone()));
                         }
                         None => {
