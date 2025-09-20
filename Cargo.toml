@@ -3,7 +3,7 @@ members = ["crates/vfox", "crates/aqua-registry"]
 
 [package]
 name = "mise"
-version = "2025.9.13"
+version = "2025.9.14"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -54,6 +54,9 @@ opt-level = 3
 [dependencies]
 async-backtrace = "0.2"
 async-trait = "0.1"
+aws-lc-rs = { version = "1", optional = true, features = [
+  "bindgen",
+] } # TODO: this is only for armv7 currently
 base64 = "0.22"
 bzip2 = "0.6"
 calm_io = "0.1"
@@ -112,7 +115,6 @@ reqwest = { version = "0.12", default-features = false, features = [
   "zstd",
   "charset",
   "http2",
-  "rustls-tls-native-roots",
   "macos-system-configuration",
 ] }
 rmcp = { version = "0.3", features = ["server", "transport-io", "schemars"] }
@@ -158,7 +160,7 @@ vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
 walkdir = "2"
 which = "7"
-xx = { version = "2", features = ["glob"] }
+xx = { version = "2", default-features = false, features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "3", default-features = false, features = ["deflate"] }
 zstd = "0.13"
@@ -201,26 +203,30 @@ test-log = "0.2"
 [features]
 default = ["native-tls", "vfox/vendored-lua", "self_update"]
 native-tls = [
-  "reqwest/native-tls",
-  "ubi/native-tls",
   "gix/blocking-http-transport-reqwest-native-tls",
-  "vfox/native-tls",
+  "reqwest/native-tls",
   "sigstore-verification/native-tls",
+  "ubi/native-tls",
+  "vfox/native-tls",
+  "xx/native-tls",
 ]
 rustls = [
+  "gix/blocking-http-transport-reqwest-rust-tls",
   "reqwest/rustls-tls",
   "self_update/rustls",
-  "ubi/rustls-tls",
-  "gix/blocking-http-transport-reqwest-rust-tls",
-  "vfox/rustls",
   "sigstore-verification/rustls",
+  "ubi/rustls-tls",
+  "vfox/rustls",
+  "xx/rustls",
 ]
 rustls-native-roots = [
+  "gix/blocking-http-transport-reqwest-rust-tls",
   "reqwest/rustls-tls-native-roots",
   "self_update/rustls",
+  "sigstore-verification/rustls-native-roots",
   "ubi/rustls-tls-native-roots",
   "vfox/rustls-native-roots",
-  "sigstore-verification/rustls-native-roots",
+  "xx/rustls-native-roots",
 ]
 
 [package.metadata.binstall]
@@ -237,7 +243,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ ar
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
 
 [package.metadata.cargo-machete]
-ignored = ["built", "openssl", "cfg_aliases", "rmcp-macros"]
+ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl", "rmcp-macros"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = [
