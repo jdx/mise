@@ -73,6 +73,7 @@ jobs:
         uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
         with:
           tool: cross
+        # Note: ARM64 runners (ubuntu-24.04-arm) don't support cross well
       - name: cache crates
         id: cache-crates
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
@@ -80,38 +81,10 @@ jobs:
           path: ~/.cargo/registry/cache
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-registry
-      - name: Install cross-compilation tools
-        if: contains(matrix.target, 'armv7') && !contains(matrix.runs-on, 'arm')
-        run: |
-          set -x
-          sudo apt-get update
-          # For ARMv7 targets on x86_64 runners (cross handles this better)
-          case "${{matrix.target}}" in
-            *armv7*)
-              # Install basic cross-compilation tools - cross handles most of this
-              sudo apt-get install -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
-              ;;
-          esac
-      - name: Setup Rust target and linkers
+      - name: Setup Rust target
         run: |
           rustup target add ${{matrix.target}}
-          # Set linkers for cross-compilation (cross handles most of this automatically)
-          case "${{matrix.target}}" in
-            armv7-unknown-linux-gnueabi)
-              # Use soft-float compiler for gnueabi target (cross handles this better)
-              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER=arm-linux-gnueabi-gcc" >> "$GITHUB_ENV"
-              echo "CC_armv7_unknown_linux_gnueabi=arm-linux-gnueabi-gcc" >> "$GITHUB_ENV"
-              echo "AR_armv7_unknown_linux_gnueabi=arm-linux-gnueabi-ar" >> "$GITHUB_ENV"
-              ;;
-            armv7-unknown-linux-musleabi)
-              # Use the downloaded musl cross-compiler for ARMv7 soft-float
-              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABI_LINKER=arm-linux-musleabi-gcc" >> "$GITHUB_ENV"
-              echo "CC_armv7_unknown_linux_musleabi=arm-linux-musleabi-gcc" >> "$GITHUB_ENV"
-              echo "AR_armv7_unknown_linux_musleabi=arm-linux-musleabi-ar" >> "$GITHUB_ENV"
-              # Set include paths for bindgen to find musl headers
-              echo "BINDGEN_EXTRA_CLANG_ARGS=--sysroot=/opt/arm-linux-musleabi-cross/arm-linux-musleabi" >> "$GITHUB_ENV"
-              ;;
-          esac
+          # Cross handles linker setup automatically for most targets
       - name: build-tarball
         uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
         with:
