@@ -165,7 +165,10 @@ mod tests {
         let lua = Lua::new();
         mod_http(&lua).unwrap();
 
-        let path = "/tmp/vfox_test_download_file.txt";
+        // Use temp_dir for cross-platform compatibility
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("vfox_test_download_file.txt");
+        let path_str = path.to_string_lossy();
         let url = server.url("/index.json");
 
         lua.load(format!(
@@ -177,14 +180,14 @@ mod tests {
             }}, "{}")
             assert(err == nil, [[must be nil]])
         "#,
-            url, path
+            url, path_str
         ))
         .exec_async()
         .await
         .unwrap();
 
         // Verify file was downloaded correctly
-        let content = fs::read_to_string(path).unwrap();
+        let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("vfox-nodejs"));
 
         // Clean up

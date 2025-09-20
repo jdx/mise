@@ -79,13 +79,16 @@ mod tests {
 
     #[test]
     fn test_read() {
-        let filepath = "/tmp/vfox-lua-file-read";
-        fs::write(filepath, "hello world").unwrap();
+        let temp_dir = std::env::temp_dir();
+        let filepath = temp_dir.join("vfox-lua-file-read");
+        let filepath_str = filepath.to_string_lossy();
+        fs::write(&filepath, "hello world").unwrap();
         let lua = Lua::new();
         mod_file(&lua).unwrap();
-        lua.load(mlua::chunk! {
+        lua.load(format!(
+            r#"
             local file = require("file")
-            local success, contents = pcall(file.read, "/tmp/vfox-lua-file-read")
+            local success, contents = pcall(file.read, "{}")
             if not success then
                 error("Failed to read: " .. contents)
             end
@@ -94,7 +97,9 @@ mod tests {
             elseif contents ~= "hello world" then
                 error("contents expected to be 'hello world', was actually:" .. contents)
             end
-        })
+        "#,
+            filepath_str
+        ))
         .exec()
         .unwrap();
         fs::remove_file(filepath).unwrap();
@@ -102,19 +107,24 @@ mod tests {
 
     #[test]
     fn test_symlink() {
-        let _ = fs::remove_file("/tmp/test_symlink_dst");
+        let temp_dir = std::env::temp_dir();
+        let src_path = temp_dir.join("test_symlink_src");
+        let dst_path = temp_dir.join("test_symlink_dst");
+        let src_path_str = src_path.to_string_lossy();
+        let dst_path_str = dst_path.to_string_lossy();
+        let _ = fs::remove_file(&dst_path);
         let lua = Lua::new();
         mod_file(&lua).unwrap();
-        lua.load(mlua::chunk! {
+        lua.load(format!(
+            r#"
             local file = require("file")
-            file.symlink("/tmp/test_symlink_src", "/tmp/test_symlink_dst")
-        })
+            file.symlink("{}", "{}")
+        "#,
+            src_path_str, dst_path_str
+        ))
         .exec()
         .unwrap();
-        assert_eq!(
-            fs::read_link("/tmp/test_symlink_dst").unwrap(),
-            Path::new("/tmp/test_symlink_src")
-        );
-        fs::remove_file("/tmp/test_symlink_dst").unwrap();
+        assert_eq!(fs::read_link(&dst_path).unwrap(), src_path);
+        fs::remove_file(&dst_path).unwrap();
     }
 }
