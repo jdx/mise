@@ -51,7 +51,7 @@ wiremock = "0.6"
 #pretty_assertions = "1.4.0"
 
 [features]
-default = ["vendored-lua"]
+default = ["vendored-lua", "native-tls"]
 cli = ["clap", "tokio/full", "env_logger"]
 native-tls = ["xx/native-tls", "xx/http", "reqwest/native-tls"]
 rustls = ["xx/rustls", "xx/http", "reqwest/rustls-tls"]
