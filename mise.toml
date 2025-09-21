@@ -22,7 +22,6 @@ hk = "latest"
 "npm:markdownlint-cli" = "latest"
 "npm:prettier" = "3"
 "npm:ajv-cli" = "latest"
-"pipx:toml-sort" = "latest"
 pkl = "latest"
 pre-commit = "latest"
 #"python" = { version = "latest", virtualenv = "{{env.HOME}}/.cache/venv" }
