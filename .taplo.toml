@@ -25,4 +25,4 @@ schema.path = "./schema/mise-settings.json"
 
 [rule.formatting]
 reorder_keys = true
-reorder_arrays = true
+reorder_arrays = false

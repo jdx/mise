@@ -1,5 +1,3 @@
-#:schema ./schema/mise-settings.json
-
 # This file generates code and documentation for settings in mise
 # When this file is updated, run `mise run render` to update generated files
 
@@ -600,7 +598,7 @@ type = "Bool"
 [log_level]
 default = "info"
 description = "Show more/less output."
-enum = [["debug"], ["error"], ["info"], ["trace"], ["warn"]]
+enum = [["trace"], ["debug"], ["info"], ["warn"], ["error"]]
 env = "MISE_LOG_LEVEL"
 hide = true
 type = "String"
@@ -1109,32 +1107,32 @@ Change output style when executing tasks. This controls the output of `mise run`
 """
 enum = [
   [
-    "(default if jobs == 1 or all tasks run sequentially) print output as it comes in",
-    "interleave",
+    "prefix",
+    "(default if jobs > 1) print by line with the prefix of the task name",
   ],
   [
-    "(default if jobs > 1) print by line with the prefix of the task name",
-    "prefix",
+    "interleave",
+    "(default if jobs == 1 or all tasks run sequentially) print output as it comes in",
   ],
   [
     "keep-order",
     "print output from tasks in the order they are defined",
   ],
   [
-    "only show stdout lines that take longer than 1s to complete",
-    "timed",
-  ],
-  [
-    "print nothing from tasks or mise",
-    "silent",
-  ],
-  [
-    "print only stdout/stderr from tasks and nothing from mise",
-    "quiet",
-  ],
-  [
-    "replace stdout each time a line is printed-this uses similar logic as `mise install`",
     "replacing",
+    "replace stdout each time a line is printed-this uses similar logic as `mise install`",
+  ],
+  [
+    "timed",
+    "only show stdout lines that take longer than 1s to complete",
+  ],
+  [
+    "quiet",
+    "print only stdout/stderr from tasks and nothing from mise",
+  ],
+  [
+    "silent",
+    "print nothing from tasks or mise",
   ],
 ]
 env = "MISE_TASK_OUTPUT"
@@ -1268,7 +1266,7 @@ env = "MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS"
 type = "String"
 
 [windows_executable_extensions]
-default = ["bat", "cmd", "com", "exe", "ps1", "vbs"]
+default = ["exe", "bat", "cmd", "com", "ps1", "vbs"]
 description = "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on."
 env = "MISE_WINDOWS_EXECUTABLE_EXTENSIONS"
 parse_env = "list_by_comma"
