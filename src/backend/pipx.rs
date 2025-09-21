@@ -164,7 +164,7 @@ impl Backend for PIPXBackend {
             && tv.request.options().get("uvx") != Some(&"false".to_string());
 
         if !use_uvx {
-            self.ensure_dependency(
+            self.warn_if_dependency_missing(
                 &ctx.config,
                 "pipx",
                 "To use pipx packages with mise, you need to install pipx first:\n\
@@ -172,7 +172,7 @@ impl Backend for PIPXBackend {
                 Alternatively, you can use uv/uvx by installing uv:\n\
                   mise use uv@latest",
             )
-            .await?;
+            .await;
         }
 
         let pipx_request = self
