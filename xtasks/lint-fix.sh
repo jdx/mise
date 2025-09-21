@@ -5,7 +5,6 @@
 set -euxo pipefail
 
 markdownlint --fix .
-taplo fmt
 SHELLCHECK_OPTS="--exclude=SC1090 --exclude=SC2046 --exclude=SC2086 --exclude=SC2129" actionlint
 
 cat >rustfmt.toml <<EOF
