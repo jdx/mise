@@ -6,16 +6,11 @@
 MISE_DIR="${CARGO_TARGET_DIR:-$ROOT/target}/debug"
 export PATH="$MISE_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
 
-# Ensure mise is available
-if ! command -v mise >/dev/null 2>&1; then
-	echo "ERROR: mise should be available in test environment"
-	exit 1
-fi
-
 # Test npm backend
 echo "Testing npm backend with missing npm..."
 if command -v npm >/dev/null 2>&1; then
-	echo "WARNING: npm is still in PATH, skipping npm test"
+	echo "ERROR: npm is found in PATH, test cannot verify missing dependency behavior"
+	exit 1
 else
 	# Test listing versions - should show helpful error
 	output=$(mise ls-remote npm:test-package 2>&1 || true)
@@ -47,7 +42,8 @@ fi
 # Test npm backend with bun mode
 echo "Testing npm backend with bun mode enabled but bun missing..."
 if command -v bun >/dev/null 2>&1; then
-	echo "WARNING: bun is still in PATH, skipping bun test"
+	echo "ERROR: bun is found in PATH, test cannot verify missing dependency behavior"
+	exit 1
 else
 	export MISE_NPM_BUN=true
 	output=$(mise ls-remote npm:test-package 2>&1 || true)
@@ -84,7 +80,8 @@ done
 export PATH="$NEW_PATH"
 
 if command -v cargo >/dev/null 2>&1; then
-	echo "WARNING: cargo is still in PATH, skipping cargo test"
+	echo "ERROR: cargo is found in PATH, test cannot verify missing dependency behavior"
+	exit 1
 else
 	output=$(mise install cargo:test-crate@latest 2>&1 || true)
 	if [[ $output == *"cargo is required but not found"* ]]; then
@@ -112,7 +109,8 @@ done
 export PATH="$NEW_PATH"
 
 if command -v go >/dev/null 2>&1; then
-	echo "WARNING: go is still in PATH, skipping go test"
+	echo "ERROR: go is found in PATH, test cannot verify missing dependency behavior"
+	exit 1
 else
 	output=$(mise ls-remote go:github.com/test/test 2>&1 || true)
 	if [[ $output == *"go is required but not found"* ]]; then
