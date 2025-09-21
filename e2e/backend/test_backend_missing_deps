@@ -36,113 +36,91 @@ test_error_message() {
 	fi
 }
 
-# Helper function to remove a command from PATH
-remove_from_path() {
-	local cmd=$1
-	local new_path=""
-	local IFS=':'
-	read -ra PATHS <<<"$PATH"
-	for p in "${PATHS[@]}"; do
-		if [[ ! -x "$p/$cmd" ]]; then
-			if [[ -z $new_path ]]; then
-				new_path="$p"
-			else
-				new_path="$new_path:$p"
-			fi
-		fi
-	done
-	export PATH="$new_path"
-}
-
-# Generic function to test a backend command that should fail
-test_backend_command() {
+# Helper function to test a command that should fail with expected error
+test_backend_error() {
 	local backend_name=$1
 	local command=$2
 	local expected_error=$3
-	shift 3
-	local additional_checks=("$@")
 
 	local output
-	if output=$($command 2>&1); then
+	if output=$(eval "$command" 2>&1); then
 		echo "ERROR: $backend_name command should have failed but succeeded"
 		TEST_FAILED=1
 		return 1
 	else
-		# Capture stderr to check error message
-		output=$($command 2>&1 || true)
-		test_error_message "$backend_name shows correct error" "$output" "$expected_error" || true
-
-		# Check any additional expected messages
-		for check in "${additional_checks[@]}"; do
-			test_error_message "$backend_name ${check%%:*}" "$output" "${check#*:}" || true
-		done
+		output=$(eval "$command" 2>&1 || true)
+		test_error_message "$backend_name shows correct error" "$output" "$expected_error"
 	fi
 }
 
-# Generic function to test a backend with missing dependency
-test_missing_dependency() {
-	local backend_name=$1
-	local dep_command=$2
-	local test_commands=$3
-	local expected_error=$4
-	shift 4
-	local additional_checks=("$@")
-
-	echo "Testing $backend_name backend with missing $dep_command..."
-
-	# Remove from PATH if needed
-	if [[ $dep_command == *cargo* ]] || [[ $dep_command == *go* ]]; then
-		remove_from_path "$dep_command"
-	fi
-
-	check_command_missing "$dep_command"
-
-	# Parse and execute test commands
-	IFS='|' read -ra COMMANDS <<<"$test_commands"
-	for cmd in "${COMMANDS[@]}"; do
-		test_backend_command "$backend_name" "$cmd" "$expected_error" "${additional_checks[@]}"
-	done
-}
-
-# Run backend tests using the generic helpers
-run_tests() {
-	# Define test cases: backend_name|dep_command|test_commands|expected_error|additional_checks...
-	local test_cases=(
-		"npm|npm|mise ls-remote npm:test-package,mise install npm:test-package@latest|npm is required but not found|suggests installing node:mise use node@latest|mentions npm is needed for queries:npm is required for querying package information"
-		"cargo|cargo|mise install cargo:tiny@latest|cargo is required but not found"
-		"go|go|mise ls-remote go:github.com/test/test|go is required but not found"
-	)
-
-	# Run each test case
-	for test_case in "${test_cases[@]}"; do
-		IFS='|' read -r backend dep commands error checks <<<"$test_case"
-
-		# Convert comma-separated commands to pipe-separated for test_missing_dependency
-		commands="${commands//,/|}"
-
-		# Parse additional checks if present
-		local additional_checks=()
-		if [[ -n $checks ]]; then
-			IFS='|' read -ra additional_checks <<<"$checks"
-		fi
-
-		test_missing_dependency "$backend" "$dep" "$commands" "$error" "${additional_checks[@]}"
-	done
-
-	# Special case: npm backend with bun mode
-	echo "Testing npm backend with bun mode enabled but npm missing..."
+# Test npm backend
+test_npm() {
+	echo "Testing npm backend with missing npm..."
 	check_command_missing "npm"
+
+	# Test ls-remote
+	test_backend_error "npm" "mise ls-remote npm:test-package" "npm is required but not found"
+
+	# Check for helpful install instructions
+	local output
+	output=$(mise ls-remote npm:test-package 2>&1 || true)
+	test_error_message "npm suggests installing node" "$output" "mise use node@latest"
+	test_error_message "npm mentions npm is needed for queries" "$output" "npm is required for querying package information"
+
+	# Test install
+	test_backend_error "npm" "mise install npm:test-package@latest" "npm is required but not found"
+
+	# Test with bun mode enabled but npm still missing
+	echo "Testing npm backend with bun mode enabled but npm missing..."
 	export MISE_NPM_BUN=true
-	test_backend_command \
-		"npm (bun mode)" \
-		"mise install npm:test-package@latest" \
-		"npm is required but not found" \
-		"shows npm is required even in bun mode:npm is required for querying package information"
+	test_backend_error "npm (bun mode)" "mise ls-remote npm:test-package" "npm is required but not found"
+	output=$(mise ls-remote npm:test-package 2>&1 || true)
+	test_error_message "npm (bun mode) shows npm is required for queries" "$output" "npm is required for querying package information"
 	unset MISE_NPM_BUN
 }
 
+# Test cargo backend
+test_cargo() {
+	echo "Testing cargo backend with missing cargo..."
+
+	# Remove cargo from PATH if it exists
+	local new_path=""
+	local IFS=':'
+	read -ra PATHS <<<"$PATH"
+	for p in "${PATHS[@]}"; do
+		if [[ ! -x "$p/cargo" ]]; then
+			[[ -z $new_path ]] && new_path="$p" || new_path="$new_path:$p"
+		fi
+	done
+	export PATH="$new_path"
+
+	check_command_missing "cargo"
+	test_backend_error "cargo" "mise install cargo:tiny@latest" "cargo is required but not found"
+}
+
+# Test go backend
+test_go() {
+	echo "Testing go backend with missing go..."
+
+	# Remove go from PATH if it exists
+	local new_path=""
+	local IFS=':'
+	read -ra PATHS <<<"$PATH"
+	for p in "${PATHS[@]}"; do
+		if [[ ! -x "$p/go" ]]; then
+			[[ -z $new_path ]] && new_path="$p" || new_path="$new_path:$p"
+		fi
+	done
+	export PATH="$new_path"
+
+	check_command_missing "go"
+	test_backend_error "go" "mise ls-remote go:github.com/test/test" "go is required but not found"
+}
+
 # Run all tests
-run_tests
+test_npm
+test_cargo
+test_go
 
 if [ $TEST_FAILED -eq 0 ]; then
 	echo "✓ backend dependency error test passed"
