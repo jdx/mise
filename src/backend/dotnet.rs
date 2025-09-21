@@ -65,14 +65,14 @@ impl Backend for DotnetBackend {
         Settings::get().ensure_experimental("dotnet backend")?;
 
         // Check if dotnet is available
-        self.ensure_dependency(
+        self.warn_if_dependency_missing(
             &ctx.config,
             "dotnet",
             "To use dotnet tools with mise, you need to install .NET SDK first:\n\
               mise use dotnet@latest\n\n\
             Or install .NET SDK via https://dotnet.microsoft.com/download",
         )
-        .await?;
+        .await;
 
         let mut cli = CmdLineRunner::new("dotnet")
             .arg("tool")

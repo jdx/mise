@@ -41,7 +41,7 @@ impl Backend for NPMBackend {
         // Currently bun info requires a package.json file, so we always use npm.
         // Once bun provides a way to query registry without package.json, we can
         // switch to using bun when npm.bun=true
-        self.ensure_npm_for_version_check(config).await?;
+        self.ensure_npm_for_version_check(config).await;
         timeout::run_with_timeout_async(
             async || {
                 // Always use npm for listing versions since bun info requires package.json
@@ -60,7 +60,7 @@ impl Backend for NPMBackend {
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         // TODO: Add bun support for getting latest version without npm
         // See TODO in _list_remote_versions for details
-        self.ensure_npm_for_version_check(config).await?;
+        self.ensure_npm_for_version_check(config).await;
         let cache = self.latest_version_cache.lock().await;
         let this = self;
         timeout::run_with_timeout_async(
@@ -88,7 +88,7 @@ impl Backend for NPMBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        self.check_install_deps(&ctx.config).await?;
+        self.check_install_deps(&ctx.config).await;
         if Settings::get().npm.bun {
             CmdLineRunner::new("bun")
                 .arg("install")
@@ -156,12 +156,12 @@ impl NPMBackend {
     }
 
     /// Check dependencies for version checking (always needs npm)
-    async fn ensure_npm_for_version_check(&self, config: &Arc<Config>) -> Result<()> {
+    async fn ensure_npm_for_version_check(&self, config: &Arc<Config>) {
         // We always need npm for querying package versions
         // TODO: Once bun supports querying packages without package.json, this can be updated
-        self.ensure_dependency(
+        self.warn_if_dependency_missing(
             config,
-            NPM_PROGRAM,
+            "npm", // Use "npm" for dependency check, which will check npm.cmd on Windows
             "To use npm packages with mise, you need to install Node.js first:\n\
               mise use node@latest\n\n\
             Note: npm is required for querying package information, even when using bun for installation.",
@@ -170,10 +170,10 @@ impl NPMBackend {
     }
 
     /// Check dependencies for package installation (npm or bun based on settings)
-    async fn check_install_deps(&self, config: &Arc<Config>) -> Result<()> {
+    async fn check_install_deps(&self, config: &Arc<Config>) {
         if Settings::get().npm.bun {
             // In bun mode, only bun is required for installation
-            self.ensure_dependency(
+            self.warn_if_dependency_missing(
                 config,
                 "bun",
                 "To use npm packages with bun, you need to install bun first:\n\
@@ -184,9 +184,9 @@ impl NPMBackend {
             .await
         } else {
             // In npm mode, npm is required
-            self.ensure_dependency(
+            self.warn_if_dependency_missing(
                 config,
-                NPM_PROGRAM,
+                "npm", // Use "npm" for dependency check, which will check npm.cmd on Windows
                 "To use npm packages with mise, you need to install Node.js first:\n\
                   mise use node@latest\n\n\
                 Alternatively, you can use bun instead of npm by setting:\n\

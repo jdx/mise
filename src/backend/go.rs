@@ -33,14 +33,14 @@ impl Backend for GoBackend {
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         // Check if go is available
-        self.ensure_dependency(
+        self.warn_if_dependency_missing(
             config,
             "go",
             "To use go packages with mise, you need to install Go first:\n\
               mise use go@latest\n\n\
             Or install Go via https://go.dev/dl/",
         )
-        .await?;
+        .await;
 
         timeout::run_with_timeout_async(
             async || {
@@ -100,14 +100,14 @@ impl Backend for GoBackend {
         Settings::get().ensure_experimental("go backend")?;
 
         // Check if go is available
-        self.ensure_dependency(
+        self.warn_if_dependency_missing(
             &ctx.config,
             "go",
             "To use go packages with mise, you need to install Go first:\n\
               mise use go@latest\n\n\
             Or install Go via https://go.dev/dl/",
         )
-        .await?;
+        .await;
 
         let opts = self.ba.opts();
 
