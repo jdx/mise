@@ -323,9 +323,9 @@ description = "CLI tool to build, test, debug, and deploy Serverless application
 aliases = ["aws-sam-cli"]
 test = ["SAM CLI, version {{version}}", "sam --version"]
 
-  [[tools.aws-sam.backends]]
-  full = "aqua:aws/aws-sam-cli"
-  platforms = ["linux", "macos"]
+[[tools.aws-sam.backends]]
+full = "aqua:aws/aws-sam-cli"
+platforms = ["linux", "macos"]
 
 [tools.aws-sso]
 description = "A powerful tool for using AWS Identity Center for the CLI and web console"
@@ -1654,9 +1654,9 @@ description = "A modern, maintained replacement for ls"
 
 test = ["eza --version", "v{{version}}"]
 
-  [[tools.eza.backends]]
-  full = "aqua:eza-community/eza"
-  platforms = ["linux"]
+[[tools.eza.backends]]
+full = "aqua:eza-community/eza"
+platforms = ["linux"]
 
 [tools.fastfetch]
 description = "An actively maintained, feature-rich and performance oriented, neofetch like system information tool"
@@ -1979,13 +1979,13 @@ description = "gitlab cli"
 
 test = ["glab version", "glab {{version}}"]
 
-  [[tools.glab.backends]]
-  full = "ubi:gitlab-org/cli[provider=gitlab,exe=glab]"
-  platforms = ["linux", "macos"]
+[[tools.glab.backends]]
+full = "ubi:gitlab-org/cli[provider=gitlab,exe=glab]"
+platforms = ["linux", "macos"]
 
-  [[tools.glab.backends]]
-  full = "ubi:gitlab-org/cli[provider=gitlab,exe=glab,matching_regex=^glab\\.exe$]"
-  platforms = ["windows"]
+[[tools.glab.backends]]
+full = "ubi:gitlab-org/cli[provider=gitlab,exe=glab,matching_regex=^glab\\.exe$]"
+platforms = ["windows"]
 
 [tools.gleam]
 description = "A friendly language for building type-safe, scalable systems"
@@ -2126,13 +2126,13 @@ description = "A golang formatter that fixes long lines"
 
 test = ["golines --version", "golines v{{version}}"]
 
-  [[tools.golines.backends]]
-  full = "aqua:segmentio/golines"
-  platforms = ["linux", "macos"]
+[[tools.golines.backends]]
+full = "aqua:segmentio/golines"
+platforms = ["linux", "macos"]
 
-  [[tools.golines.backends]]
-  full = "ubi:segmentio/golines"
-  platforms = ["linux", "macos"]
+[[tools.golines.backends]]
+full = "ubi:segmentio/golines"
+platforms = ["linux", "macos"]
 
 [tools.gomigrate]
 description = "Database migrations. CLI and Golang library"
@@ -5400,17 +5400,17 @@ description = "A specification for CLIs"
 os = ["freebsd", "linux", "macos"]
 test = ["usage --version", "usage-cli {{version}}"]
 
-  [[tools.usage.backends]]
-  full = "aqua:jdx/usage"
-  platforms = ["linux", "macos"]
+[[tools.usage.backends]]
+full = "aqua:jdx/usage"
+platforms = ["linux", "macos"]
 
-  [[tools.usage.backends]]
-  full = "ubi:jdx/usage"
-  platforms = ["linux", "macos"]
+[[tools.usage.backends]]
+full = "ubi:jdx/usage"
+platforms = ["linux", "macos"]
 
-  [[tools.usage.backends]]
-  full = "asdf:mise-plugins/mise-usage"
-  platforms = ["linux", "macos"]
+[[tools.usage.backends]]
+full = "asdf:mise-plugins/mise-usage"
+platforms = ["linux", "macos"]
 
 [tools.usql]
 description = "Universal command-line interface for SQL databases"
