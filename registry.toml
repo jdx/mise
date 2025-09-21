@@ -22,7 +22,8 @@ action-validator.description = "Tool to validate GitHub Action and Workflow YAML
 action-validator.backends = [
     "aqua:mpalmer/action-validator",
     "ubi:mpalmer/action-validator",
-    "asdf:mpalmer/action-validator"
+    "asdf:mpalmer/action-validator",
+    "cargo:action-validator"
 ]
 action-validator.os = ["linux", "macos"]
 action-validator.test = [
@@ -51,7 +52,8 @@ age.test = ["age --version", "v{{version}}"]
 age-plugin-yubikey.description = "age-plugin-yubikey is a plugin for age clients like age and rage, which enables files to be encrypted to age identities stored on YubiKeys"
 age-plugin-yubikey.backends = [
     "github:str4d/age-plugin-yubikey",
-    "asdf:joke/asdf-age-plugin-yubikey"
+    "asdf:joke/asdf-age-plugin-yubikey",
+    "cargo:age-plugin-yubikey"
 ]
 # test seems to fail on linux
 # age-plugin-yubikey.test = ["age-plugin-yubikey --version", "age-plugin-yubikey {{version}}"]
@@ -176,7 +178,7 @@ atmos.backends = ["aqua:cloudposse/atmos", "asdf:cloudposse/asdf-atmos"]
 atmos.idiomatic_files = [".atmos-version"]
 atmos.test = ["atmos version", "Atmos {{version}}"]
 atuin.description = "✨ Magical shell history"
-atuin.backends = ["aqua:atuinsh/atuin", "ubi:atuinsh/atuin"]
+atuin.backends = ["aqua:atuinsh/atuin", "ubi:atuinsh/atuin", "cargo:atuin"]
 atuin.test = ["atuin --version", "atuin {{version}}"]
 auto-doc.description = "Github action that turns your reusable workflows and custom actions into easy to read markdown tables"
 auto-doc.backends = [
@@ -366,7 +368,11 @@ bosh-backup-and-restore.test = [
     "bbr version {{version}}"
 ]
 bottom.description = "Yet another cross-platform graphical process/system monitor"
-bottom.backends = ["aqua:ClementTsang/bottom", "asdf:carbonteq/asdf-btm"]
+bottom.backends = [
+    "aqua:ClementTsang/bottom",
+    "asdf:carbonteq/asdf-btm",
+    "cargo:bottom"
+]
 bottom.test = ["btm --version", "bottom {{version}}"]
 boundary.description = "Boundary enables identity-based access management for dynamic infrastructure"
 boundary.backends = [
@@ -437,7 +443,8 @@ cargo-make.description = "Rust task runner and build tool"
 cargo-make.backends = [
     "aqua:sagiegurari/cargo-make",
     "ubi:sagiegurari/cargo-make",
-    "asdf:mise-plugins/asdf-cargo-make"
+    "asdf:mise-plugins/asdf-cargo-make",
+    "cargo:cargo-make"
 ]
 cargo-make.test = ["makers --version", "cargo-make {{version}}"]
 carp.description = "Carp Language"
@@ -851,7 +858,8 @@ difftastic.description = "a structural diff that understands syntax"
 difftastic.backends = [
     "aqua:Wilfred/difftastic",
     "ubi:Wilfred/difftastic[exe=difft]",
-    "asdf:volf52/asdf-difftastic"
+    "asdf:volf52/asdf-difftastic",
+    "cargo:difftastic"
 ]
 difftastic.test = ["difft --version", "Difftastic {{version}}"]
 digdag.description = "Simple, Open Source, Multi-Cloud Workflow Engine"
@@ -930,7 +938,8 @@ dotenv-linter.description = "Lightning-fast linter for .env files. Written in Ru
 dotenv-linter.backends = [
     "aqua:dotenv-linter/dotenv-linter",
     "ubi:dotenv-linter/dotenv-linter",
-    "asdf:wesleimp/asdf-dotenv-linter"
+    "asdf:wesleimp/asdf-dotenv-linter",
+    "cargo:dotenv-linter"
 ]
 dotenv-linter.test = ["dotenv-linter --version", "dotenv-linter {{version}}"]
 dotenvx.description = "a secure dotenv–from the creator of `dotenv`"
@@ -969,7 +978,11 @@ dtm.backends = [
     "asdf:zhenyuanlau/asdf-dtm"
 ]
 dua.description = "View disk space usage and delete unwanted data, fast"
-dua.backends = ["aqua:Byron/dua-cli", "ubi:Byron/dua-cli[exe=dua]"]
+dua.backends = [
+    "aqua:Byron/dua-cli",
+    "ubi:Byron/dua-cli[exe=dua]",
+    "cargo:dua-cli"
+]
 dua.test = ["dua --version", "dua {{version}}"]
 duckdb.description = "DuckDB is an analytical in-process SQL database management system"
 duckdb.backends = ["aqua:duckdb/duckdb", "ubi:duckdb/duckdb"]
@@ -980,7 +993,8 @@ dust.description = "A more intuitive version of du in rust"
 dust.backends = [
     "aqua:bootandy/dust",
     "ubi:bootandy/dust",
-    "asdf:looztra/asdf-dust"
+    "asdf:looztra/asdf-dust",
+    "cargo:du-dust"
 ]
 dust.test = ["dust --version", "Dust {{version}}"]
 dvc.description = "Data Versioning and ML Experiments"
@@ -1264,7 +1278,11 @@ gitu.description = "A TUI Git client inspired by Magit"
 gitu.backends = ["aqua:altsem/gitu", "ubi:altsem/gitu", "cargo:gitu"]
 gitu.test = ["gitu --version", "gitu v{{version}}"]
 gitui.description = "Blazing 💥 fast terminal-ui for git written in rust"
-gitui.backends = ["aqua:extrawurst/gitui", "asdf:looztra/asdf-gitui"]
+gitui.backends = [
+    "aqua:extrawurst/gitui",
+    "asdf:looztra/asdf-gitui",
+    "cargo:gitui"
+]
 gitversion.description = "From git log to SemVer in no time"
 gitversion.backends = ["aqua:gittools/gitversion", "ubi:gittools/gitversion"]
 glab.description = "gitlab cli"
@@ -1428,7 +1446,7 @@ graphite.description = "Code review for the age of AI"
 graphite.backends = ["npm:@withgraphite/graphite-cli"]
 graphite.test = ["gt --version", "{{version}}"]
 grex.description = "A command-line tool and library for generating regular expressions from user-provided test cases"
-grex.backends = ["aqua:pemistahl/grex", "asdf:ouest/asdf-grex"]
+grex.backends = ["aqua:pemistahl/grex", "asdf:ouest/asdf-grex", "cargo:grex"]
 grex.test = ["grex --version", "grex {{version}}"]
 gron.description = "Make JSON greppable"
 gron.backends = ["aqua:tomnomnom/gron", "ubi:tomnomnom/gron"]
@@ -1548,7 +1566,7 @@ heroku.aliases = ["heroku-cli"]
 heroku.description = "The Heroku Command Line Interface (CLI) is an essential part of using Heroku. With it, you can create and manage Heroku apps directly from the terminal"
 heroku.backends = ["asdf:mise-plugins/mise-heroku-cli"]
 hexyl.description = "A command-line hex viewer"
-hexyl.backends = ["aqua:sharkdp/hexyl", "ubi:sharkdp/hexyl"]
+hexyl.backends = ["aqua:sharkdp/hexyl", "ubi:sharkdp/hexyl", "cargo:hexyl"]
 hexyl.test = ["hexyl --version", "hexyl {{version}}"]
 hey.description = "HTTP load generator, ApacheBench (ab) replacement"
 hey.backends = ["asdf:mise-plugins/mise-hey"]
@@ -1578,7 +1596,7 @@ hls.backends = ["asdf:mise-plugins/mise-ghcup"]
 hostctl.description = "Your dev tool to manage /etc/hosts like a pro"
 hostctl.backends = ["aqua:guumaster/hostctl", "asdf:svenluijten/asdf-hostctl"]
 htmlq.description = "Like jq, but for HTML"
-htmlq.backends = ["aqua:mgdm/htmlq", "ubi:mgdm/htmlq"]
+htmlq.backends = ["aqua:mgdm/htmlq", "ubi:mgdm/htmlq", "cargo:htmlq"]
 htmlq.test = ["htmlq --version", "htmlq {{version}}"]
 httpie-go.description = "httpie-like HTTP client written in Go"
 httpie-go.backends = ["aqua:nojima/httpie-go", "asdf:abatilo/asdf-httpie-go"]
@@ -1596,7 +1614,11 @@ hugo.backends = [
 hugo-extended.description = "The world’s fastest framework for building websites"
 hugo-extended.backends = ["aqua:gohugoio/hugo/hugo-extended"]
 hurl.description = "Hurl, run and test HTTP requests with plain text"
-hurl.backends = ["aqua:Orange-OpenSource/hurl", "asdf:raimon49/asdf-hurl"]
+hurl.backends = [
+    "aqua:Orange-OpenSource/hurl",
+    "asdf:raimon49/asdf-hurl",
+    "cargo:hurl"
+]
 hwatch.description = "A modern alternative to the watch command, records the differences in execution results and can check this differences at after"
 hwatch.backends = [
     "aqua:blacknon/hwatch",
@@ -1610,7 +1632,8 @@ hyperfine.description = "A command-line benchmarking tool"
 hyperfine.backends = [
     "aqua:sharkdp/hyperfine",
     "ubi:sharkdp/hyperfine",
-    "asdf:volf52/asdf-hyperfine"
+    "asdf:volf52/asdf-hyperfine",
+    "cargo:hyperfine"
 ]
 iam-policy-json-to-terraform.description = "Small tool to convert an IAM Policy in JSON format into a Terraform aws_iam_policy_document"
 iam-policy-json-to-terraform.backends = [
@@ -1670,13 +1693,17 @@ jiq.description = "jid on jq - interactive JSON query tool using jq expressions"
 jiq.backends = ["aqua:fiatjaf/jiq", "asdf:chessmango/asdf-jiq"]
 jj.aliases = ["jujutsu"]
 jj.description = "A Git-compatible VCS that is both simple and powerful"
-jj.backends = ["aqua:jj-vcs/jj", "ubi:jj-vcs/jj"]
+jj.backends = ["aqua:jj-vcs/jj", "ubi:jj-vcs/jj", "cargo:jj-cli"]
 jjui.description = "Jujutsu UI (jjui) is a Text User Interface (TUI) designed for interacting with the Jujutsu version control system"
 jjui.backends = ["aqua:idursun/jjui", "ubi:idursun/jjui"]
 jjui.test = ["jjui --version", "{{version}}"]
 jjui.aliases = ["jujutsu-ui"]
 jless.description = "jless is a command-line JSON viewer designed for reading, exploring, and searching through JSON data"
-jless.backends = ["aqua:PaulJuliusMartinez/jless", "asdf:jc00ke/asdf-jless"]
+jless.backends = [
+    "aqua:PaulJuliusMartinez/jless",
+    "asdf:jc00ke/asdf-jless",
+    "cargo:jless"
+]
 jmespath.description = "Command line interface to JMESPath - http://jmespath.org"
 jmespath.backends = ["aqua:jmespath/jp", "asdf:skyzyx/asdf-jmespath"]
 jmespath.test = ["jp --version", "jp version {{version}}"]
@@ -1716,7 +1743,8 @@ just.description = "Just a command runner"
 just.backends = [
     "aqua:casey/just",
     "ubi:casey/just",
-    "asdf:olofvndrhr/asdf-just"
+    "asdf:olofvndrhr/asdf-just",
+    "cargo:just"
 ]
 just.test = ["just --version", "just {{version}}"]
 jwt.description = "A super fast CLI tool to decode and encode JWTs built in Rust"
@@ -1797,7 +1825,11 @@ ki.backends = [
 ]
 ki.test = ["ki --version", "{{version}}"]
 killport.description = "A command-line tool to easily kill processes running on a specified port"
-killport.backends = ["aqua:jkfran/killport", "ubi:jkfran/killport"]
+killport.backends = [
+    "aqua:jkfran/killport",
+    "ubi:jkfran/killport",
+    "cargo:killport"
+]
 killport.test = ["killport --version", "killport {{version}}"]
 kind.description = "Kubernetes IN Docker - local clusters for testing Kubernetes"
 kind.backends = [
@@ -2107,7 +2139,7 @@ ls-lint.backends = [
 ]
 ls-lint.test = ["ls-lint --version", "ls-lint v{{version}}"]
 lsd.description = "The next gen ls command"
-lsd.backends = ["aqua:lsd-rs/lsd", "asdf:mise-plugins/asdf-lsd"]
+lsd.backends = ["aqua:lsd-rs/lsd", "asdf:mise-plugins/asdf-lsd", "cargo:lsd"]
 lua.description = "Lua language"
 lua.backends = ["asdf:mise-plugins/mise-lua"]
 lua-language-server.description = "A language server that offers Lua language support - programmed in Lua"
@@ -2172,12 +2204,17 @@ maven.backends = [
 mc.description = "Unix like utilities for object store (minio)"
 mc.backends = ["asdf:mise-plugins/mise-mc"]
 mdbook.description = "Create book from markdown files. Like Gitbook but implemented in Rust"
-mdbook.backends = ["aqua:rust-lang/mdBook", "asdf:cipherstash/asdf-mdbook"]
+mdbook.backends = [
+    "aqua:rust-lang/mdBook",
+    "asdf:cipherstash/asdf-mdbook",
+    "cargo:mdbook"
+]
 mdbook.test = ["mdbook --version", "mdbook v{{version}}"]
 mdbook-linkcheck.description = "A backend for `mdbook` which will check your links for you"
 mdbook-linkcheck.backends = [
     "ubi:Michael-F-Bryan/mdbook-linkcheck",
-    "asdf:mise-plugins/mise-mdbook-linkcheck"
+    "asdf:mise-plugins/mise-mdbook-linkcheck",
+    "cargo:mdbook-linkcheck"
 ]
 mdbook-linkcheck.test = [
     "mdbook-linkcheck --version",
@@ -2273,7 +2310,7 @@ nano.backends = ["asdf:mise-plugins/mise-nano"]
 nasm.description = "Netwide Assembler (NASM), an assembler for the x86 CPU architecture portable to nearly every modern platform, and with code generation for many platforms old and new"
 nasm.backends = ["asdf:mise-plugins/mise-nasm"]
 navi.description = "An interactive cheatsheet tool for the command-line"
-navi.backends = ["aqua:denisidoro/navi", "ubi:denisidoro/navi"]
+navi.backends = ["aqua:denisidoro/navi", "ubi:denisidoro/navi", "cargo:navi"]
 navi.test = ["navi --version", "navi {{version}}"]
 neko.description = "The Neko Virtual Machine"
 neko.backends = ["github:HaxeFoundation/neko", "asdf:asdf-community/asdf-neko"]
@@ -2320,7 +2357,11 @@ nova.backends = ["aqua:FairwindsOps/nova", "asdf:elementalvoid/asdf-nova"]
 nsc.description = "Tool for creating nkey/jwt based configurations"
 nsc.backends = ["github:nats-io/nsc", "asdf:dex4er/asdf-nsc"]
 numbat.description = "A statically typed programming language for scientific computations with first class support for physical dimensions and units"
-numbat.backends = ["aqua:sharkdp/numbat", "ubi:sharkdp/numbat"]
+numbat.backends = [
+    "aqua:sharkdp/numbat",
+    "ubi:sharkdp/numbat",
+    "cargo:numbat-cli"
+]
 numbat.test = ["numbat --version", "numbat {{version}}"]
 oapi-codegen.description = "oapi-codegen is a command-line tool and library to convert OpenAPI specifications to Go code, be it server-side implementations, API clients, or simply HTTP models"
 oapi-codegen.backends = [
@@ -2419,7 +2460,7 @@ overmind.backends = [
     "go:github.com/DarthSim/overmind/v2"
 ]
 oxipng.description = "Multithreaded PNG optimizer written in Rust"
-oxipng.backends = ["aqua:shssoichiro/oxipng"]
+oxipng.backends = ["aqua:shssoichiro/oxipng", "cargo:oxipng"]
 oxker.description = "A simple tui to view & control docker containers"
 oxker.backends = [
     "aqua:mrjackwills/oxker",
@@ -2647,7 +2688,7 @@ rabbitmq.backends = ["asdf:mise-plugins/asdf-rabbitmq"]
 racket.description = "Racket, the Programming Language"
 racket.backends = ["asdf:mise-plugins/mise-racket"]
 railway.description = "Railway CLI"
-railway.backends = ["github:railwayapp/cli[exe=railway]"]
+railway.backends = ["github:railwayapp/cli[exe=railway]", "cargo:railwayapp"]
 railway.test = ["railway --version", "railway {{version}}"]
 raku.description = "The Raku Programming Language"
 raku.backends = ["asdf:mise-plugins/mise-raku"]
@@ -2718,7 +2759,7 @@ restish.backends = [
 ]
 # restish.test = ["restish --version", "restish version {{version}}"] # disable until the versions host will be updated
 resvg.description = "An SVG rendering library."
-resvg.backends = ["aqua:linebender/resvg"]
+resvg.backends = ["aqua:linebender/resvg", "cargo:resvg"]
 resvg.test = ["resvg --version", "{{version}}"]
 revive.description = "~6x faster, stricter, configurable, extensible, and beautiful drop-in replacement for golint"
 revive.backends = ["aqua:mgechev/revive", "asdf:bjw-s/asdf-revive"]
@@ -2770,10 +2811,14 @@ rust-analyzer.backends = [
     "asdf:Xyven1/asdf-rust-analyzer"
 ]
 rustic.description = "rustic - fast, encrypted, and deduplicated backups powered by Rust"
-rustic.backends = ["aqua:rustic-rs/rustic", "ubi:rustic-rs/rustic"]
+rustic.backends = [
+    "aqua:rustic-rs/rustic",
+    "ubi:rustic-rs/rustic",
+    "cargo:rustic-rs"
+]
 rustic.test = ["rustic --version", "rustic v{{version}}"]
 rye.description = "a Hassle-Free Python Experience"
-rye.backends = ["aqua:astral-sh/rye", "asdf:Azuki-bar/asdf-rye"]
+rye.backends = ["aqua:astral-sh/rye", "asdf:Azuki-bar/asdf-rye", "cargo:rye"]
 saml2aws.description = "CLI tool which enables you to login and retrieve AWS temporary credentials using a SAML IDP"
 saml2aws.backends = [
     "aqua:Versent/saml2aws",
@@ -2817,7 +2862,8 @@ sccache.description = "sccache is ccache with cloud storage"
 sccache.backends = [
     "aqua:mozilla/sccache",
     "ubi:mozilla/sccache",
-    "asdf:emersonmx/asdf-sccache"
+    "asdf:emersonmx/asdf-sccache",
+    "cargo:sccache"
 ]
 sccache.test = ["sccache --version", "sccache {{version}}"]
 schemacrawler.description = "Free database schema discovery and comprehension tool"
@@ -2997,7 +3043,8 @@ starship.description = "The minimal, blazing-fast, and infinitely customizable p
 starship.backends = [
     "aqua:starship/starship",
     "ubi:starship/starship",
-    "asdf:gr1m0h/asdf-starship"
+    "asdf:gr1m0h/asdf-starship",
+    "cargo:starship"
 ]
 starship.test = ["starship --version", "starship {{version}}"]
 staticcheck.description = "Staticcheck - The advanced Go linter"
@@ -3016,7 +3063,11 @@ stripe.aliases = ["stripe-cli"]
 stripe.description = "A command-line tool for Stripe"
 stripe.backends = ["aqua:stripe/stripe-cli", "asdf:offbyone/asdf-stripe"]
 stylua.description = "A Lua code formatter"
-stylua.backends = ["aqua:JohnnyMorganz/StyLua", "asdf:jc00ke/asdf-stylua"]
+stylua.backends = [
+    "aqua:JohnnyMorganz/StyLua",
+    "asdf:jc00ke/asdf-stylua",
+    "cargo:stylua"
+]
 stylua.test = ["stylua --version", "stylua {{version}}"]
 sui.description = "ui, a next-generation smart contract platform with high throughput, low latency, and an asset-oriented programming model powered by the Move programming language"
 sui.backends = ["github:MystenLabs/sui", "asdf:placeholder-soft/asdf-sui"]
@@ -3211,7 +3262,8 @@ tokei.description = "Count your code, quickly"
 tokei.backends = [
     "aqua:XAMPPRocky/tokei",
     "ubi:XAMPPRocky/tokei",
-    "asdf:gasuketsu/asdf-tokei"
+    "asdf:gasuketsu/asdf-tokei",
+    "cargo:tokei"
 ]
 tokei.test = ["tokei --version", "tokei {{version}}"]
 tomcat.description = "The Apache Tomcat® software is an open source implementation of the Jakarta Servlet, Jakarta Pages, Jakarta Expression Language, Jakarta WebSocket, Jakarta Annotations and Jakarta Authentication specifications. These specifications are part of the Jakarta EE platform"
@@ -3342,6 +3394,7 @@ uv.backends = [
     "aqua:astral-sh/uv",
     "ubi:astral-sh/uv",
     "asdf:asdf-community/asdf-uv",
+    # "cargo:uv" disabled until published
     "pipx:uv"
 ]
 uv.test = ["uv --version", "uv {{version}}"]
@@ -3389,7 +3442,7 @@ viddy.backends = ["aqua:sachaos/viddy", "asdf:ryodocx/asdf-viddy"]
 vim.description = "Vim is an advanced text editor that seeks to provide the power of the de-facto Unix editor 'Vi', with a more complete feature set. It's useful whether you're already using vi or using a different editor"
 vim.backends = ["asdf:mise-plugins/mise-vim"]
 vivid.description = "A themeable LS_COLORS generator with a rich filetype datebase"
-vivid.backends = ["aqua:sharkdp/vivid", "ubi:sharkdp/vivid"]
+vivid.backends = ["aqua:sharkdp/vivid", "ubi:sharkdp/vivid", "cargo:vivid"]
 vivid.test = ["vivid --version", "vivid {{version}}"]
 vlang.description = "The V Programming Language. Simple, fast, safe, compiled. For developing maintainable software"
 vlang.backends = ["vfox:mise-plugins/vfox-vlang"]
@@ -3440,7 +3493,11 @@ weave-gitops.backends = [
     "asdf:deas/asdf-weave-gitops"
 ]
 websocat.description = "Command-line client for WebSockets, like netcat (or curl) for ws:// with advanced socat-like functions"
-websocat.backends = ["aqua:vi/websocat", "asdf:bdellegrazie/asdf-websocat"]
+websocat.backends = [
+    "aqua:vi/websocat",
+    "asdf:bdellegrazie/asdf-websocat",
+    "cargo:websocat"
+]
 wren.description = "A command line tool for the Wren programming language"
 wren.aliases = ["wren-cli"]
 wren.backends = [
@@ -3512,7 +3569,7 @@ yarn.test = ["yarn --version", "{{version}}"]
 yay.description = "Yet another Yogurt - An AUR Helper written in Go"
 yay.backends = ["asdf:mise-plugins/mise-yay"]
 yazi.description = "Blazing fast terminal file manager written in Rust, based on async I/O"
-yazi.backends = ["aqua:sxyazi/yazi"]
+yazi.backends = ["aqua:sxyazi/yazi", "cargo:yazi-fm"]
 yazi.test = ["yazi --version", "Yazi {{version}}"]
 yj.description = "CLI - Convert between YAML, TOML, JSON, and HCL. Preserves map order"
 yj.backends = ["aqua:sclevine/yj", "ubi:sclevine/yj", "asdf:ryodocx/asdf-yj"]
@@ -3544,7 +3601,8 @@ zellij.description = "A terminal workspace with batteries included"
 zellij.backends = [
     "aqua:zellij-org/zellij",
     "ubi:zellij-org/zellij",
-    "asdf:chessmango/asdf-zellij"
+    "asdf:chessmango/asdf-zellij",
+    "cargo:zellij"
 ]
 zellij.test = ["zellij --version", "zellij {{version}}"]
 zephyr.description = "Tree shaking breeze for PureScript CoreFn AST"
@@ -3577,7 +3635,11 @@ zola.backends = [
 ]
 zola.test = ["zola --version", "zola {{version}}"]
 zoxide.description = "A smarter cd command. Supports all major shells"
-zoxide.backends = ["aqua:ajeetdsouza/zoxide", "ubi:ajeetdsouza/zoxide"]
+zoxide.backends = [
+    "aqua:ajeetdsouza/zoxide",
+    "ubi:ajeetdsouza/zoxide",
+    "cargo:zoxide"
+]
 zoxide.test = ["zoxide --version", "zoxide {{version}}"]
 zprint.description = "Executables, uberjar, and library to beautifully format Clojure and Clojurescript source code and s-expressions"
 zprint.backends = ["asdf:mise-plugins/mise-zprint"]
