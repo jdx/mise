@@ -671,7 +671,7 @@
           "default": "info",
           "description": "Show more/less output.",
           "type": "string",
-          "enum": ["debug", "error", "info", "trace", "warn"]
+          "enum": ["trace", "debug", "info", "warn", "error"]
         },
         "node": {
           "type": "object",
@@ -1031,13 +1031,13 @@
           "description": "Change output style when executing tasks.",
           "type": "string",
           "enum": [
-            "(default if jobs == 1 or all tasks run sequentially) print output as it comes in",
-            "(default if jobs > 1) print by line with the prefix of the task name",
+            "prefix",
+            "interleave",
             "keep-order",
-            "only show stdout lines that take longer than 1s to complete",
-            "print nothing from tasks or mise",
-            "print only stdout/stderr from tasks and nothing from mise",
-            "replace stdout each time a line is printed-this uses similar logic as `mise install`"
+            "replacing",
+            "timed",
+            "quiet",
+            "silent"
           ]
         },
         "task_remote_no_cache": {
@@ -1127,7 +1127,7 @@
           "type": "string"
         },
         "windows_executable_extensions": {
-          "default": ["bat", "cmd", "com", "exe", "ps1", "vbs"],
+          "default": ["exe", "bat", "cmd", "com", "ps1", "vbs"],
           "description": "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on.",
           "type": "array",
           "items": {
