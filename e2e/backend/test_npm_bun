@@ -8,7 +8,7 @@ if ! command -v npm >/dev/null 2>&1; then
 	echo "npm not available in test environment, installing node..."
 	# Disable GPG verification for faster test
 	export MISE_GPG_VERIFY=false
-	if ! mise install node@20 >/dev/null 2>&1; then
+	if ! mise use node@20 >/dev/null 2>&1; then
 		echo "ERROR: Failed to install node/npm for testing"
 		exit 1
 	fi
@@ -17,7 +17,7 @@ fi
 # Ensure bun is available
 if ! command -v bun >/dev/null 2>&1; then
 	echo "bun not available in test environment, installing..."
-	if ! mise install bun@latest >/dev/null 2>&1; then
+	if ! mise use bun@latest >/dev/null 2>&1; then
 		echo "ERROR: Failed to install bun for testing"
 		exit 1
 	fi
