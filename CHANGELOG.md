@@ -1,5 +1,39 @@
 # Changelog
 
+## [2025.9.15](https://github.com/jdx/mise/compare/v2025.9.14..v2025.9.15) - 2025-09-21
+
+### 📦 Registry
+
+- add missing cargo backends by @jayvdb in [#6307](https://github.com/jdx/mise/pull/6307)
+
+### 🚀 Features
+
+- add env propagation by @Its-Just-Nans in [#6342](https://github.com/jdx/mise/pull/6342)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** improve GitHub token handling for sigstore verification by @jdx in [#6351](https://github.com/jdx/mise/pull/6351)
+- **(backend)** change dependency checks to warnings instead of errors by @jdx in [#6363](https://github.com/jdx/mise/pull/6363)
+- **(npm)** improve error message when npm/bun is not installed by @jdx in [#6359](https://github.com/jdx/mise/pull/6359)
+- **(vfox)** enable TLS support for reqwest to fix CI tests by @jdx in [#6356](https://github.com/jdx/mise/pull/6356)
+
+### 🚜 Refactor
+
+- **(registry)** convert to nested TOML sections format by @jdx in [#6361](https://github.com/jdx/mise/pull/6361)
+
+### 🧪 Testing
+
+- **(e2e)** resolve mise via PATH in backend missing deps test by @jdx in [#6362](https://github.com/jdx/mise/pull/6362)
+- **(vfox)** replace flaky external HTTP tests with local mock server by @jdx in [#6354](https://github.com/jdx/mise/pull/6354)
+
+### 📦️ Dependency Updates
+
+- pin dependencies by @renovate[bot] in [#6243](https://github.com/jdx/mise/pull/6243)
+
+### Chore
+
+- **(install.sh)** add `MISE_INSTALL_MUSL` to force installing musl variants on Linux by @malept in [#6355](https://github.com/jdx/mise/pull/6355)
+
 ## [2025.9.14](https://github.com/jdx/mise/compare/v2025.9.13..v2025.9.14) - 2025-09-20
 
 ### 🐛 Bug Fixes
