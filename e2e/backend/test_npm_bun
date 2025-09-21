@@ -8,19 +8,13 @@ if ! command -v npm >/dev/null 2>&1; then
 	echo "npm not available in test environment, installing node..."
 	# Disable GPG verification for faster test
 	export MISE_GPG_VERIFY=false
-	if ! mise use node@20 >/dev/null 2>&1; then
-		echo "ERROR: Failed to install node/npm for testing"
-		exit 1
-	fi
+	assert_succeed "mise use node@20"
 fi
 
 # Ensure bun is available
 if ! command -v bun >/dev/null 2>&1; then
 	echo "bun not available in test environment, installing..."
-	if ! mise use bun@latest >/dev/null 2>&1; then
-		echo "ERROR: Failed to install bun for testing"
-		exit 1
-	fi
+	assert_succeed "mise use bun@latest"
 fi
 
 # Test 1: With npm available but bun mode disabled (default)
@@ -28,17 +22,11 @@ echo "Testing npm backend with npm available..."
 unset MISE_NPM_BUN
 
 # Test listing versions - should succeed
-if ! mise ls-remote npm:tiny >/dev/null 2>&1; then
-	echo "ERROR: Failed to list versions with npm"
-	exit 1
-fi
+assert_succeed "mise ls-remote npm:tiny >/dev/null"
 echo "✓ npm backend lists versions using npm"
 
 # Test latest version - should succeed
-if ! mise latest npm:tiny >/dev/null 2>&1; then
-	echo "ERROR: Failed to get latest version with npm"
-	exit 1
-fi
+assert_succeed "mise latest npm:tiny >/dev/null"
 echo "✓ npm backend gets latest version using npm"
 
 # Test 2: With bun mode enabled - npm backend should still use npm for version queries
@@ -47,17 +35,11 @@ export MISE_NPM_BUN=true
 
 # The npm backend always uses npm for version queries (bun info requires package.json)
 # This is documented in the TODOs in src/backend/npm.rs
-if ! mise ls-remote npm:tiny >/dev/null 2>&1; then
-	echo "ERROR: Failed to list versions - npm backend should use npm for version queries"
-	exit 1
-fi
+assert_succeed "mise ls-remote npm:tiny >/dev/null"
 echo "✓ npm backend uses npm for version queries even in bun mode"
 
 # Test latest version - should succeed
-if ! mise latest npm:tiny >/dev/null 2>&1; then
-	echo "ERROR: Failed to get latest version - npm backend should use npm for version queries"
-	exit 1
-fi
+assert_succeed "mise latest npm:tiny >/dev/null"
 echo "✓ npm backend gets latest version using npm even in bun mode"
 
 unset MISE_NPM_BUN
@@ -70,17 +52,11 @@ export MISE_NPM_BUN=true
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
 # Install a small package using bun
-if ! mise install npm:tiny@latest >/dev/null 2>&1; then
-	echo "ERROR: Failed to install npm package with bun mode enabled"
-	exit 1
-fi
+assert_succeed "mise install npm:tiny@latest >/dev/null 2>&1"
 echo "✓ npm backend successfully installs package using bun"
 
 # Verify the package was installed by executing it
-if ! mise exec npm:tiny@latest -- tiny --version >/dev/null 2>&1; then
-	echo "ERROR: Package installed but cannot be executed"
-	exit 1
-fi
+assert_succeed "mise exec npm:tiny@latest -- tiny --version >/dev/null"
 echo "✓ Installed package can be executed"
 
 # Clean up
@@ -95,10 +71,7 @@ echo "Testing npm package installation with npm (default)..."
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
 # Install using npm (default)
-if ! mise install npm:tiny@latest >/dev/null 2>&1; then
-	echo "ERROR: Failed to install npm package with npm"
-	exit 1
-fi
+assert_succeed "mise install npm:tiny@latest >/dev/null 2>&1"
 echo "✓ npm backend successfully installs package using npm"
 
 # Clean up
