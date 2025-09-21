@@ -173,12 +173,6 @@ Lint using ripgrep
 
 Lint schemas
 
-## `lint:toml`
-
-- **Usage**: `lint:toml`
-
-Lint TOML files
-
 ## `pre-commit`
 
 - **Usage**: `pre-commit`
