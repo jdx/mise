@@ -42,12 +42,14 @@ get_os() {
 
 get_arch() {
   musl=""
-  if [ "${MISE_INSTALL_MUSL-}" = "1" ] || [ "${MISE_INSTALL_MUSL-}" = "true" ]; then
-    musl="-musl"
-  elif type ldd >/dev/null 2>/dev/null; then
-    libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
-    if [ -n "$libc" ]; then
+  if type ldd >/dev/null 2>/dev/null; then
+    if [ "${MISE_INSTALL_MUSL-}" = "1" ] || [ "${MISE_INSTALL_MUSL-}" = "true" ]; then
       musl="-musl"
+    else
+      libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
+      if [ -n "$libc" ]; then
+        musl="-musl"
+      fi
     fi
   fi
   arch="$(uname -m)"
