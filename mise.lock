@@ -139,10 +139,6 @@ backend = "npm:markdownlint-cli"
 version = "3.6.2"
 backend = "npm:prettier"
 
-[[tools."pipx:toml-sort"]]
-version = "0.24.3"
-backend = "pipx:toml-sort"
-
 [[tools.pkl]]
 version = "0.29.1"
 backend = "aqua:apple/pkl"
