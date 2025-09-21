@@ -16,8 +16,7 @@ schema.path = "./schema/mise-registry.json"
 
 [rule.formatting]
 reorder_keys = true
-reorder_arrays = true
-indent_tables = true
+reorder_arrays = false
 
 [[rule]]
 include = ["settings.toml"]
