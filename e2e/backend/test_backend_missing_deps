@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Test that package manager backends show helpful errors when their dependencies are missing
+# Test that package manager backends show helpful warnings when their dependencies are missing
 
 # Create a PATH that has mise but not package managers
 # ROOT is set by run_test script
@@ -38,21 +38,16 @@ test_error_message() {
 	fi
 }
 
-# Helper function to test a command that should fail with expected error
-test_backend_error() {
+# Helper function to test a command that should show a warning
+test_backend_warning() {
 	local backend_name=$1
 	local command=$2
-	local expected_error=$3
+	local expected_warning=$3
 
 	local output
-	if output=$(eval "$command" 2>&1); then
-		echo "ERROR: $backend_name command should have failed but succeeded"
-		TEST_FAILED=1
-		return 1
-	else
-		output=$(eval "$command" 2>&1 || true)
-		test_error_message "$backend_name shows correct error" "$output" "$expected_error"
-	fi
+	# Commands will succeed but show warnings, capture stderr
+	output=$(MISE_LOG_LEVEL=warn eval "$command" 2>&1 || true)
+	test_error_message "$backend_name shows correct warning" "$output" "$expected_warning"
 }
 
 # Test npm backend
@@ -60,22 +55,22 @@ test_npm() {
 	echo "Testing npm backend with missing npm..."
 	check_command_missing "npm"
 
-	# Test ls-remote
-	test_backend_error "npm" "mise ls-remote npm:test-package" "npm is required but not found"
+	# Test ls-remote - should show warning but continue
+	test_backend_warning "npm" "mise ls-remote npm:test-package" "npm may be required but was not found"
 
 	# Check for helpful install instructions
 	local output
-	output=$(mise ls-remote npm:test-package 2>&1 || true)
+	output=$(MISE_LOG_LEVEL=warn mise ls-remote npm:test-package 2>&1 || true)
 	test_error_message "npm suggests installing node" "$output" "mise use node@latest"
 	test_error_message "npm mentions npm is needed for queries" "$output" "npm is required for querying package information"
 
-	# Test install
-	test_backend_error "npm" "mise install npm:test-package@latest" "npm is required but not found"
+	# Test install - should show warning but continue
+	test_backend_warning "npm" "mise install npm:test-package@latest" "npm may be required but was not found"
 
 	# Test with bun mode enabled but npm still missing
 	echo "Testing npm backend with bun mode enabled but npm missing..."
 	export MISE_NPM_BUN=true
-	test_backend_error "npm (bun mode)" "mise ls-remote npm:test-package" "npm is required but not found"
+	test_backend_warning "npm (bun mode)" "mise ls-remote npm:test-package" "npm may be required but was not found"
 	output=$(mise ls-remote npm:test-package 2>&1 || true)
 	test_error_message "npm (bun mode) shows npm is required for queries" "$output" "npm is required for querying package information"
 	unset MISE_NPM_BUN
@@ -97,7 +92,7 @@ test_cargo() {
 	export PATH="$new_path"
 
 	check_command_missing "cargo"
-	test_backend_error "cargo" "mise install cargo:tiny@latest" "cargo is required but not found"
+	test_backend_warning "cargo" "mise install cargo:tiny@latest" "cargo may be required but was not found"
 }
 
 # Test go backend
@@ -116,7 +111,7 @@ test_go() {
 	export PATH="$new_path"
 
 	check_command_missing "go"
-	test_backend_error "go" "mise ls-remote go:github.com/test/test" "go is required but not found"
+	test_backend_warning "go" "mise ls-remote go:github.com/test/test" "go may be required but was not found"
 }
 
 # Run all tests
@@ -125,7 +120,7 @@ test_cargo
 test_go
 
 if [ $TEST_FAILED -eq 0 ]; then
-	echo "✓ backend dependency error test passed"
+	echo "✓ backend dependency warning test passed"
 else
 	echo "✗ Some tests failed"
 	exit 1

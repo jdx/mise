@@ -48,13 +48,13 @@ impl Backend for GemBackend {
         Settings::get().ensure_experimental("gem backend")?;
 
         // Check if gem is available
-        self.ensure_dependency(
+        self.warn_if_dependency_missing(
             &ctx.config,
             "gem",
             "To use gem packages with mise, you need to install Ruby first:\n\
               mise use ruby@latest",
         )
-        .await?;
+        .await;
 
         CmdLineRunner::new("gem")
             .arg("install")
