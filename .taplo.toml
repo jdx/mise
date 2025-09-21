@@ -1,0 +1,15 @@
+# Taplo configuration for mise
+
+[formatting]
+align_entries = false
+array_auto_collapse = false
+array_auto_expand = true
+indent_tables = false
+reorder_keys = false
+
+[[rule]]
+include = ["registry.toml"]
+
+[rule.formatting]
+reorder_keys = false
+indent_tables = true
