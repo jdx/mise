@@ -9,7 +9,6 @@ use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
 use async_trait::async_trait;
-use eyre::bail;
 use serde_json::Value;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
@@ -39,9 +38,14 @@ impl Backend for NPMBackend {
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         self.check_npm_available(config).await?;
+        let program = if Settings::get().npm.bun {
+            "bun"
+        } else {
+            NPM_PROGRAM
+        };
         timeout::run_with_timeout_async(
             async || {
-                let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
+                let raw = cmd!(program, "view", self.tool_name(), "versions", "--json")
                     .full_env(self.dependency_env(config).await?)
                     .read()?;
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
@@ -54,16 +58,20 @@ impl Backend for NPMBackend {
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         self.check_npm_available(config).await?;
+        let program = if Settings::get().npm.bun {
+            "bun"
+        } else {
+            NPM_PROGRAM
+        };
         let cache = self.latest_version_cache.lock().await;
         let this = self;
         timeout::run_with_timeout_async(
             async || {
                 cache
                     .get_or_try_init_async(async || {
-                        let raw =
-                            cmd!(NPM_PROGRAM, "view", this.tool_name(), "dist-tags", "--json")
-                                .full_env(this.dependency_env(config).await?)
-                                .read()?;
+                        let raw = cmd!(program, "view", this.tool_name(), "dist-tags", "--json")
+                            .full_env(this.dependency_env(config).await?)
+                            .read()?;
                         let dist_tags: Value = serde_json::from_str(&raw)?;
                         match dist_tags["latest"] {
                             Value::String(ref s) => Ok(Some(s.clone())),
@@ -147,33 +155,26 @@ impl NPMBackend {
     }
 
     async fn check_npm_available(&self, config: &Arc<Config>) -> Result<()> {
-        // Check if npm/bun is available via dependency_which which includes
-        // tools installed via mise
-        let program = if Settings::get().npm.bun {
-            "bun"
+        if Settings::get().npm.bun {
+            self.ensure_dependency(
+                config,
+                "bun",
+                "To use npm packages with bun, you need to install bun first:\n\
+                  mise use bun@latest\n\n\
+                Or switch back to npm by setting:\n\
+                  mise settings npm.bun=false",
+            )
+            .await
         } else {
-            NPM_PROGRAM
-        };
-
-        if self.dependency_which(config, program).await.is_none() {
-            if Settings::get().npm.bun {
-                bail!(
-                    "bun is required but not found.\n\n\
-                    To use npm packages with bun, you need to install bun first:\n\
-                      mise use bun@latest\n\n\
-                    Or switch back to npm by setting:\n\
-                      mise settings npm.bun=false"
-                );
-            } else {
-                bail!(
-                    "npm is required but not found.\n\n\
-                    To use npm packages with mise, you need to install Node.js first:\n\
-                      mise use node@latest\n\n\
-                    Alternatively, you can use bun instead of npm by setting:\n\
-                      mise settings npm.bun=true"
-                );
-            }
+            self.ensure_dependency(
+                config,
+                NPM_PROGRAM,
+                "To use npm packages with mise, you need to install Node.js first:\n\
+                  mise use node@latest\n\n\
+                Alternatively, you can use bun instead of npm by setting:\n\
+                  mise settings npm.bun=true",
+            )
+            .await
         }
-        Ok(())
     }
 }

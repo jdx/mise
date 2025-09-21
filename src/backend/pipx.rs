@@ -11,7 +11,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, timeout};
 use async_trait::async_trait;
-use eyre::{Result, bail, eyre};
+use eyre::{Result, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use regex::Regex;
@@ -163,14 +163,16 @@ impl Backend for PIPXBackend {
             && Settings::get().pipx.uvx != Some(false)
             && tv.request.options().get("uvx") != Some(&"false".to_string());
 
-        if !use_uvx && self.dependency_which(&ctx.config, "pipx").await.is_none() {
-            bail!(
-                "pipx is required but not found.\n\n\
-                To use pipx packages with mise, you need to install pipx first:\n\
+        if !use_uvx {
+            self.ensure_dependency(
+                &ctx.config,
+                "pipx",
+                "To use pipx packages with mise, you need to install pipx first:\n\
                   mise use pipx@latest\n\n\
                 Alternatively, you can use uv/uvx by installing uv:\n\
-                  mise use uv@latest"
-            );
+                  mise use uv@latest",
+            )
+            .await?;
         }
 
         let pipx_request = self

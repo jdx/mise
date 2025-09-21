@@ -6,6 +6,67 @@
 MISE_DIR="${CARGO_TARGET_DIR:-$ROOT/target}/debug"
 export PATH="$MISE_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
 
+# Ensure mise is available
+if ! command -v mise >/dev/null 2>&1; then
+	echo "ERROR: mise should be available in test environment"
+	exit 1
+fi
+
+# Test npm backend
+echo "Testing npm backend with missing npm..."
+if command -v npm >/dev/null 2>&1; then
+	echo "WARNING: npm is still in PATH, skipping npm test"
+else
+	# Test listing versions - should show helpful error
+	output=$(mise ls-remote npm:test-package 2>&1 || true)
+	if [[ $output == *"npm is required but not found"* ]]; then
+		echo "✓ npm backend shows correct error for ls-remote"
+	else
+		echo "ERROR: Expected error message about missing npm"
+		echo "Got: $output"
+	fi
+
+	# Check for helpful suggestions
+	if [[ $output == *"mise use node@latest"* ]] && [[ $output == *"mise settings npm.bun=true"* ]]; then
+		echo "✓ npm backend shows helpful suggestions"
+	else
+		echo "ERROR: Error message should suggest installing node and mention bun alternative"
+		echo "Got: $output"
+	fi
+
+	# Test installing - should show helpful error
+	output=$(mise install npm:test-package@latest 2>&1 || true)
+	if [[ $output == *"npm is required but not found"* ]]; then
+		echo "✓ npm backend shows correct error for install"
+	else
+		echo "ERROR: Expected error message about missing npm on install"
+		echo "Got: $output"
+	fi
+fi
+
+# Test npm backend with bun mode
+echo "Testing npm backend with bun mode enabled but bun missing..."
+if command -v bun >/dev/null 2>&1; then
+	echo "WARNING: bun is still in PATH, skipping bun test"
+else
+	export MISE_NPM_BUN=true
+	output=$(mise ls-remote npm:test-package 2>&1 || true)
+	if [[ $output == *"bun is required but not found"* ]]; then
+		echo "✓ npm backend shows correct error for missing bun"
+	else
+		echo "ERROR: Expected error message about missing bun"
+		echo "Got: $output"
+	fi
+
+	if [[ $output == *"mise use bun@latest"* ]]; then
+		echo "✓ npm backend shows helpful suggestion for bun"
+	else
+		echo "ERROR: Error message should suggest installing bun"
+		echo "Got: $output"
+	fi
+	unset MISE_NPM_BUN
+fi
+
 # Test cargo backend
 echo "Testing cargo backend with missing cargo..."
 # Remove cargo from path if it exists

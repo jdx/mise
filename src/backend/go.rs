@@ -1,13 +1,13 @@
+use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::Config;
 use crate::config::Settings;
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
-use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
-use eyre::bail;
 use itertools::Itertools;
 use std::{fmt::Debug, sync::Arc};
 use xx::regex;
@@ -33,14 +33,14 @@ impl Backend for GoBackend {
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
         // Check if go is available
-        if self.dependency_which(config, "go").await.is_none() {
-            bail!(
-                "go is required but not found.\n\n\
-                To use go packages with mise, you need to install Go first:\n\
-                  mise use go@latest\n\n\
-                Or install Go via https://go.dev/dl/"
-            );
-        }
+        self.ensure_dependency(
+            config,
+            "go",
+            "To use go packages with mise, you need to install Go first:\n\
+              mise use go@latest\n\n\
+            Or install Go via https://go.dev/dl/",
+        )
+        .await?;
 
         timeout::run_with_timeout_async(
             async || {
@@ -100,14 +100,14 @@ impl Backend for GoBackend {
         Settings::get().ensure_experimental("go backend")?;
 
         // Check if go is available
-        if self.dependency_which(&ctx.config, "go").await.is_none() {
-            bail!(
-                "go is required but not found.\n\n\
-                To use go packages with mise, you need to install Go first:\n\
-                  mise use go@latest\n\n\
-                Or install Go via https://go.dev/dl/"
-            );
-        }
+        self.ensure_dependency(
+            &ctx.config,
+            "go",
+            "To use go packages with mise, you need to install Go first:\n\
+              mise use go@latest\n\n\
+            Or install Go via https://go.dev/dl/",
+        )
+        .await?;
 
         let opts = self.ba.opts();
 

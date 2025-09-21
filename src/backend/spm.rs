@@ -8,7 +8,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{dirs, file, github};
 use async_trait::async_trait;
-use eyre::{WrapErr, bail};
+use eyre::WrapErr;
 use serde::Deserializer;
 use serde::de::{MapAccess, Visitor};
 use serde_derive::Deserialize;
@@ -58,14 +58,14 @@ impl Backend for SPMBackend {
         settings.ensure_experimental("spm backend")?;
 
         // Check if swift is available
-        if self.dependency_which(&ctx.config, "swift").await.is_none() {
-            bail!(
-                "swift is required but not found.\n\n\
-                To use Swift Package Manager (spm) tools with mise, you need to install Swift first:\n\
-                  mise use swift@latest\n\n\
-                Or install Swift via https://swift.org/download/"
-            );
-        }
+        self.ensure_dependency(
+            &ctx.config,
+            "swift",
+            "To use Swift Package Manager (spm) tools with mise, you need to install Swift first:\n\
+              mise use swift@latest\n\n\
+            Or install Swift via https://swift.org/download/",
+        )
+        .await?;
 
         let repo = SwiftPackageRepo::new(&self.tool_name())?;
         let revision = if tv.version == "latest" {

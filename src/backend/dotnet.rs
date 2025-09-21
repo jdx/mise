@@ -7,7 +7,7 @@ use crate::config::Settings;
 use crate::http::HTTP_FETCH;
 use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
-use eyre::{bail, eyre};
+use eyre::eyre;
 
 #[derive(Debug)]
 pub struct DotnetBackend {
@@ -65,14 +65,14 @@ impl Backend for DotnetBackend {
         Settings::get().ensure_experimental("dotnet backend")?;
 
         // Check if dotnet is available
-        if self.dependency_which(&ctx.config, "dotnet").await.is_none() {
-            bail!(
-                "dotnet is required but not found.\n\n\
-                To use dotnet tools with mise, you need to install .NET SDK first:\n\
-                  mise use dotnet@latest\n\n\
-                Or install .NET SDK via https://dotnet.microsoft.com/download"
-            );
-        }
+        self.ensure_dependency(
+            &ctx.config,
+            "dotnet",
+            "To use dotnet tools with mise, you need to install .NET SDK first:\n\
+              mise use dotnet@latest\n\n\
+            Or install .NET SDK via https://dotnet.microsoft.com/download",
+        )
+        .await?;
 
         let mut cli = CmdLineRunner::new("dotnet")
             .arg("tool")
