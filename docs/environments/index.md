@@ -97,7 +97,7 @@ mise en
 
 ## Environment in tasks
 
-Its also possible to define environment inside a task
+It is also possible to define environment inside a task
 
 ```toml [mise.toml]
 [tasks.print]

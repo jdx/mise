@@ -1,7 +1,7 @@
 use crate::cli::version::VERSION;
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
-use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
+use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
 use crate::path_env::PathEnv;
 use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
@@ -230,6 +230,12 @@ impl Task {
             .unwrap_or_default();
         task.render(config, config_root).await?;
         Ok(task)
+    }
+
+    pub fn derive_env(&self, env_directives: &[EnvDirective]) -> Self {
+        let mut new_task = self.clone();
+        new_task.env.0.extend_from_slice(env_directives);
+        new_task
     }
 
     /// prints the task name without an extension
@@ -563,7 +569,11 @@ impl Task {
         self.name.replace(':', path::MAIN_SEPARATOR_STR).into()
     }
 
-    pub async fn render_env(&self, config: &Arc<Config>, ts: &Toolset) -> Result<EnvMap> {
+    pub async fn render_env(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+    ) -> Result<(EnvMap, Vec<(String, String)>)> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         let mut env = ts.full_env(config).await?;
         if let Some(root) = &config.project_root {
@@ -591,9 +601,9 @@ impl Task {
             },
         )
         .await?;
-
+        let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
         // Apply the resolved environment variables
-        env.extend(env_results.env.into_iter().map(|(k, (v, _))| (k, v)));
+        env.extend(task_env.clone());
 
         // Remove environment variables that were explicitly unset
         for key in &env_results.env_remove {
@@ -611,7 +621,7 @@ impl Task {
             env.insert(env::PATH_KEY.to_string(), path_env.to_string());
         }
 
-        Ok(env)
+        Ok((env, task_env.collect()))
     }
 }
 

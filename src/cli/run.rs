@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
@@ -687,7 +687,7 @@ impl Run {
             ts_build_start.elapsed().as_millis()
         );
         let env_render_start = std::time::Instant::now();
-        let mut env = task.render_env(config, &ts).await?;
+        let (mut env, task_env) = task.render_env(config, &ts).await?;
         trace!(
             "task {} render_env took {}ms",
             task.name,
@@ -740,8 +740,15 @@ impl Run {
                 .await?;
 
             let exec_start = std::time::Instant::now();
-            self.exec_task_run_entries(config, task, &env, &prefix, rendered_run_scripts, sched_tx)
-                .await?;
+            self.exec_task_run_entries(
+                config,
+                task,
+                (&env, &task_env),
+                &prefix,
+                rendered_run_scripts,
+                sched_tx,
+            )
+            .await?;
             trace!(
                 "task {} exec_task_run_entries took {}ms (total {}ms)",
                 task.name,
@@ -769,11 +776,12 @@ impl Run {
         &self,
         config: &Arc<Config>,
         task: &Task,
-        env: &BTreeMap<String, String>,
+        full_env: (&BTreeMap<String, String>, &[(String, String)]),
         prefix: &str,
         rendered_scripts: Vec<(String, Vec<String>)>,
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
     ) -> Result<()> {
+        let (env, task_env) = full_env;
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
         for entry in task.run() {
@@ -784,11 +792,11 @@ impl Run {
                     }
                 }
                 RunEntry::SingleTask { task: spec } => {
-                    self.inject_and_wait(config, &[spec.to_string()], sched_tx.clone())
+                    self.inject_and_wait(config, &[spec.to_string()], task_env, sched_tx.clone())
                         .await?;
                 }
                 RunEntry::TaskGroup { tasks } => {
-                    self.inject_and_wait(config, tasks, sched_tx.clone())
+                    self.inject_and_wait(config, tasks, task_env, sched_tx.clone())
                         .await?;
                 }
             }
@@ -800,6 +808,7 @@ impl Run {
         &self,
         config: &Arc<Config>,
         specs: &[String],
+        task_env: &[(String, String)],
         sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
     ) -> Result<()> {
         trace!("inject start: {}", specs.join(", "));
@@ -821,6 +830,8 @@ impl Run {
 
         // Pump subgraph into scheduler and signal completion via oneshot when done
         let (done_tx, done_rx) = oneshot::channel::<()>();
+        let task_env_directives: Vec<EnvDirective> =
+            task_env.iter().cloned().map(Into::into).collect();
         {
             let sub_deps_clone = sub_deps.clone();
             let sched_tx = sched_tx.clone();
@@ -832,6 +843,7 @@ impl Run {
                     match rx.try_recv() {
                         Ok(Some(task)) => {
                             any = true;
+                            let task = task.derive_env(&task_env_directives);
                             trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
                             let _ = sched_tx.send((task, sub_deps_clone.clone()));
                         }
@@ -862,6 +874,7 @@ impl Run {
                                 task.name,
                                 task.args.join(" ")
                             );
+                            let task = task.derive_env(&task_env_directives);
                             let _ = sched_tx.send((task, sub_deps_clone.clone()));
                         }
                         None => {
