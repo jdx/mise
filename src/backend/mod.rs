@@ -715,6 +715,24 @@ pub trait Backend: Debug + Send + Sync {
         b.which(config, &tv, bin).await.ok().flatten()
     }
 
+    /// Check if a required dependency is available and return a helpful error if not.
+    /// This provides a consistent error message format across all backends.
+    async fn ensure_dependency(
+        &self,
+        config: &Arc<Config>,
+        program: &str,
+        install_instructions: &str,
+    ) -> eyre::Result<()> {
+        if self.dependency_which(config, program).await.is_none() {
+            bail!(
+                "{} is required but not found.\n\n{}",
+                program,
+                install_instructions
+            );
+        }
+        Ok(())
+    }
+
     async fn dependency_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
         self.dependency_toolset(config)
             .await?

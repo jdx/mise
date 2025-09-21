@@ -61,6 +61,16 @@ impl Backend for CargoBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        // Check if cargo is available
+        self.ensure_dependency(
+            &ctx.config,
+            "cargo",
+            "To use cargo packages with mise, you need to install Rust first:\n\
+              mise use rust@latest\n\n\
+            Or install Rust via https://rustup.rs/",
+        )
+        .await?;
+
         let config = ctx.config.clone();
         let install_arg = format!("{}@{}", self.tool_name(), tv.version);
         let registry_name = &Settings::get().cargo.registry_name;
