@@ -1,6 +1,6 @@
 # Taplo configuration for mise
 
-exclude = ["docs/registry.toml"]
+exclude = ["docs/registry.toml", "docs/settings.toml"]
 
 
 [formatting]
