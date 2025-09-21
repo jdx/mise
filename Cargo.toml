@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/vfox", "crates/aqua-registry"]
+members = ["crates/vfox", "crates/aqua-registry", "convert_registry_tool"]
 
 [package]
 name = "mise"
