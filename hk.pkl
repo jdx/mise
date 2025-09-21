@@ -1,5 +1,5 @@
-amends "package://github.com/jdx/hk/releases/download/v1.14.0/hk@1.14.0#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v1.14.0/hk@1.14.0#/Builtins.pkl"
+amends "package://github.com/jdx/hk/releases/download/v1.15.1/hk@1.15.1#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.15.1/hk@1.15.1#/Builtins.pkl"
 
 local bash_glob = List("*.sh", "xtasks/**", "scripts/**", "e2e/**")
 local bash_exclude = List("*.ps1", "**/*.fish", "*.ts", "*.js", "*.json", "*.bat", "**/.*", "src/assets/bash_zsh_support/**", "e2e/shell/xonsh_script")
@@ -39,6 +39,14 @@ fi
     ["pkl"] {
         glob = "*.pkl"
         check = "pkl eval {{files}} >/dev/null"
+    }
+
+    // uses taplo for TOML formatting and validation
+    ["taplo"] {
+        glob = List("*.toml")
+        exclude = List("docs/registry.toml") // exclude docs/registry.toml symlink
+        check = "taplo fmt --check {{files}} && taplo check {{files}}"
+        fix = "taplo fmt {{files}} && taplo check {{files}}"
     }
 }
 
