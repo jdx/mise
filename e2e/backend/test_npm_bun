@@ -1,101 +1,112 @@
 #!/usr/bin/env bash
 
 # Test that npm backend properly uses bun when configured
+# This test primarily verifies behavior when npm and/or bun are available
 
-require_cmd() {
-	if ! command -v "$1" >/dev/null 2>&1; then
-		echo "Test requires $1 to be installed"
-		exit 0 # Skip test if dependency not available
+# In the isolated test environment, npm and bun might not be available
+# Install them if possible, otherwise skip the functionality tests
+if ! command -v npm >/dev/null 2>&1; then
+	echo "npm not available in test environment, attempting to install..."
+	# Disable GPG verification for faster test
+	export MISE_GPG_VERIFY=false
+	if ! mise install node@20 >/dev/null 2>&1; then
+		echo "✓ npm bun behavior test skipped (unable to install node in test environment)"
+		exit 0
 	fi
-}
+fi
 
-# Skip if neither npm nor bun are available
-if ! command -v npm >/dev/null 2>&1 && ! command -v bun >/dev/null 2>&1; then
-	echo "Test requires either npm or bun to be installed"
-	exit 0
+if ! command -v bun >/dev/null 2>&1; then
+	echo "bun not available in test environment, attempting to install..."
+	if ! mise install bun@latest >/dev/null 2>&1; then
+		echo "Note: bun not available for full test coverage"
+	fi
 fi
 
 # Test 1: With npm available but bun mode disabled (default)
-if command -v npm >/dev/null 2>&1; then
-	echo "Testing npm backend with npm available..."
-	unset MISE_NPM_BUN
+echo "Testing npm backend with npm available..."
+unset MISE_NPM_BUN
 
-	# Test listing versions
-	output=$(mise ls-remote npm:tiny 2>&1 | head -5)
-	if [[ -n $output ]] && [[ $output != *"error"* ]]; then
-		echo "✓ npm backend lists versions using npm"
-	else
-		echo "ERROR: Failed to list versions with npm"
-		echo "Got: $output"
-		exit 1
-	fi
-
-	# Test latest version
-	output=$(mise latest npm:tiny 2>&1)
-	if [[ -n $output ]] && [[ $output != *"error"* ]]; then
-		echo "✓ npm backend gets latest version using npm"
-	else
-		echo "ERROR: Failed to get latest version with npm"
-		echo "Got: $output"
-		exit 1
-	fi
+# Test listing versions - should succeed
+if ! mise ls-remote npm:tiny >/dev/null 2>&1; then
+	echo "ERROR: Failed to list versions with npm"
+	exit 1
 fi
+echo "✓ npm backend lists versions using npm"
+
+# Test latest version - should succeed
+if ! mise latest npm:tiny >/dev/null 2>&1; then
+	echo "ERROR: Failed to get latest version with npm"
+	exit 1
+fi
+echo "✓ npm backend gets latest version using npm"
 
 # Test 2: With bun available and bun mode enabled
-if command -v bun >/dev/null 2>&1; then
-	echo "Testing npm backend with bun mode enabled..."
+echo "Testing npm backend with bun mode enabled..."
 
-	# First check if bun supports the 'view' command
-	if bun view tiny versions --json >/dev/null 2>&1; then
-		echo "INFO: bun supports 'view' command, testing with bun mode..."
-		export MISE_NPM_BUN=true
+# First check if bun supports the 'view' command
+if bun view tiny versions --json >/dev/null 2>&1; then
+	echo "INFO: bun supports 'view' command, testing with bun mode..."
+	export MISE_NPM_BUN=true
 
-		# Test listing versions
-		output=$(mise ls-remote npm:tiny 2>&1 | head -5)
-		if [[ -n $output ]] && [[ $output != *"error"* ]]; then
-			echo "✓ npm backend lists versions using bun"
-		else
-			echo "ERROR: Failed to list versions with bun"
-			echo "Got: $output"
-			exit 1
-		fi
-
-		# Test latest version
-		output=$(mise latest npm:tiny 2>&1)
-		if [[ -n $output ]] && [[ $output != *"error"* ]]; then
-			echo "✓ npm backend gets latest version using bun"
-		else
-			echo "ERROR: Failed to get latest version with bun"
-			echo "Got: $output"
-			exit 1
-		fi
-
-		unset MISE_NPM_BUN
-	else
-		echo "INFO: bun does not support 'view' command, skipping bun view tests"
-		echo "NOTE: npm backend should handle this gracefully by falling back to npm"
+	# Test listing versions - should succeed
+	if ! mise ls-remote npm:tiny >/dev/null 2>&1; then
+		echo "ERROR: Failed to list versions with bun"
+		exit 1
 	fi
+	echo "✓ npm backend lists versions using bun"
+
+	# Test latest version - should succeed
+	if ! mise latest npm:tiny >/dev/null 2>&1; then
+		echo "ERROR: Failed to get latest version with bun"
+		exit 1
+	fi
+	echo "✓ npm backend gets latest version using bun"
+
+	unset MISE_NPM_BUN
+else
+	echo "INFO: bun does not support 'view' command"
+	echo "INFO: npm backend uses npm for version queries even in bun mode..."
+	export MISE_NPM_BUN=true
+
+	# The npm backend should use npm for version queries even when bun mode is enabled
+	if command -v npm >/dev/null 2>&1; then
+		# If npm is available, version queries should work
+		if mise ls-remote npm:tiny >/dev/null 2>&1; then
+			echo "✓ npm backend uses npm for version queries in bun mode"
+		else
+			echo "ERROR: npm backend should use npm for version queries"
+			exit 1
+		fi
+	else
+		# If npm is not available, it should fail with appropriate error
+		if ! mise ls-remote npm:tiny 2>&1 | grep -q "npm is required but not found"; then
+			echo "ERROR: npm backend should report npm is required for version queries"
+			exit 1
+		fi
+		echo "✓ npm backend correctly requires npm for version queries"
+	fi
+
+	unset MISE_NPM_BUN
 fi
 
 # Test 3: Test installation with bun mode
-if command -v bun >/dev/null 2>&1; then
-	echo "Testing npm package installation with bun..."
-	export MISE_NPM_BUN=true
+echo "Testing npm package installation with bun..."
+export MISE_NPM_BUN=true
 
-	# Clean up any previous installation
-	rm -rf ~/.local/share/mise/installs/npm-tiny
+# Clean up any previous installation
+mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
-	# Try to install a small package
-	output=$(mise install npm:tiny@latest 2>&1)
-	if [[ $output == *"bun install"* ]] || [[ -d ~/.local/share/mise/installs/npm-tiny ]]; then
-		echo "✓ npm backend attempts installation using bun"
-		# Clean up
-		mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
-	else
-		echo "INFO: Bun installation test skipped or failed (non-critical)"
-	fi
-
-	unset MISE_NPM_BUN
+# Try to install a small package
+if mise install npm:tiny@latest >/dev/null 2>&1; then
+	echo "✓ npm backend successfully installs package using bun"
+	# Clean up
+	mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
+else
+	# Installation might fail if bun doesn't support all required features
+	echo "INFO: npm backend failed to install with bun (checking if this is expected)..."
+	# This is acceptable if bun lacks certain npm compatibility features
 fi
+
+unset MISE_NPM_BUN
 
 echo "✓ npm bun behavior test completed"

@@ -37,15 +37,16 @@ impl Backend for NPMBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        self.check_npm_available(config).await?;
-        let program = if Settings::get().npm.bun {
-            "bun"
-        } else {
-            NPM_PROGRAM
-        };
+        // TODO: Add bun support for listing package versions without npm
+        // Currently bun info requires a package.json file, so we always use npm.
+        // Once bun provides a way to query registry without package.json, we can
+        // switch to using bun when npm.bun=true
+        self.ensure_npm_for_version_check(config).await?;
         timeout::run_with_timeout_async(
             async || {
-                let raw = cmd!(program, "view", self.tool_name(), "versions", "--json")
+                // Always use npm for listing versions since bun info requires package.json
+                // bun is only used for actual package installation
+                let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
                     .full_env(self.dependency_env(config).await?)
                     .read()?;
                 let versions: Vec<String> = serde_json::from_str(&raw)?;
@@ -57,21 +58,21 @@ impl Backend for NPMBackend {
     }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
-        self.check_npm_available(config).await?;
-        let program = if Settings::get().npm.bun {
-            "bun"
-        } else {
-            NPM_PROGRAM
-        };
+        // TODO: Add bun support for getting latest version without npm
+        // See TODO in _list_remote_versions for details
+        self.ensure_npm_for_version_check(config).await?;
         let cache = self.latest_version_cache.lock().await;
         let this = self;
         timeout::run_with_timeout_async(
             async || {
                 cache
                     .get_or_try_init_async(async || {
-                        let raw = cmd!(program, "view", this.tool_name(), "dist-tags", "--json")
-                            .full_env(this.dependency_env(config).await?)
-                            .read()?;
+                        // Always use npm for getting version info since bun info requires package.json
+                        // bun is only used for actual package installation
+                        let raw =
+                            cmd!(NPM_PROGRAM, "view", this.tool_name(), "dist-tags", "--json")
+                                .full_env(this.dependency_env(config).await?)
+                                .read()?;
                         let dist_tags: Value = serde_json::from_str(&raw)?;
                         match dist_tags["latest"] {
                             Value::String(ref s) => Ok(Some(s.clone())),
@@ -87,7 +88,7 @@ impl Backend for NPMBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        self.check_npm_available(&ctx.config).await?;
+        self.check_install_deps(&ctx.config).await?;
         if Settings::get().npm.bun {
             CmdLineRunner::new("bun")
                 .arg("install")
@@ -154,8 +155,24 @@ impl NPMBackend {
         }
     }
 
-    async fn check_npm_available(&self, config: &Arc<Config>) -> Result<()> {
+    /// Check dependencies for version checking (always needs npm)
+    async fn ensure_npm_for_version_check(&self, config: &Arc<Config>) -> Result<()> {
+        // We always need npm for querying package versions
+        // TODO: Once bun supports querying packages without package.json, this can be updated
+        self.ensure_dependency(
+            config,
+            NPM_PROGRAM,
+            "To use npm packages with mise, you need to install Node.js first:\n\
+              mise use node@latest\n\n\
+            Note: npm is required for querying package information, even when using bun for installation.",
+        )
+        .await
+    }
+
+    /// Check dependencies for package installation (npm or bun based on settings)
+    async fn check_install_deps(&self, config: &Arc<Config>) -> Result<()> {
         if Settings::get().npm.bun {
+            // In bun mode, only bun is required for installation
             self.ensure_dependency(
                 config,
                 "bun",
@@ -166,6 +183,7 @@ impl NPMBackend {
             )
             .await
         } else {
+            // In npm mode, npm is required
             self.ensure_dependency(
                 config,
                 NPM_PROGRAM,
