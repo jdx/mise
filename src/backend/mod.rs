@@ -724,7 +724,28 @@ pub trait Backend: Debug + Send + Sync {
         program: &str,
         install_instructions: &str,
     ) {
-        if self.dependency_which(config, program).await.is_none() {
+        let found = if self.dependency_which(config, program).await.is_some() {
+            true
+        } else if cfg!(windows) {
+            // On Windows, also check for program with Windows executable extensions
+            let settings = Settings::get();
+            let mut found = false;
+            for ext in &settings.windows_executable_extensions {
+                if self
+                    .dependency_which(config, &format!("{}.{}", program, ext))
+                    .await
+                    .is_some()
+                {
+                    found = true;
+                    break;
+                }
+            }
+            found
+        } else {
+            false
+        };
+
+        if !found {
             warn!(
                 "{} may be required but was not found.\n\n{}",
                 program, install_instructions

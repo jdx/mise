@@ -161,7 +161,7 @@ impl NPMBackend {
         // TODO: Once bun supports querying packages without package.json, this can be updated
         self.warn_if_dependency_missing(
             config,
-            NPM_PROGRAM,
+            "npm", // Use "npm" for dependency check, which will check npm.cmd on Windows
             "To use npm packages with mise, you need to install Node.js first:\n\
               mise use node@latest\n\n\
             Note: npm is required for querying package information, even when using bun for installation.",
@@ -186,7 +186,7 @@ impl NPMBackend {
             // In npm mode, npm is required
             self.warn_if_dependency_missing(
                 config,
-                NPM_PROGRAM,
+                "npm", // Use "npm" for dependency check, which will check npm.cmd on Windows
                 "To use npm packages with mise, you need to install Node.js first:\n\
                   mise use node@latest\n\n\
                 Alternatively, you can use bun instead of npm by setting:\n\
