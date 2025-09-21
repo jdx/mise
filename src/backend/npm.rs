@@ -9,6 +9,7 @@ use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
 use async_trait::async_trait;
+use eyre::bail;
 use serde_json::Value;
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
@@ -37,6 +38,7 @@ impl Backend for NPMBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        self.check_npm_available(config).await?;
         timeout::run_with_timeout_async(
             async || {
                 let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
@@ -51,6 +53,7 @@ impl Backend for NPMBackend {
     }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        self.check_npm_available(config).await?;
         let cache = self.latest_version_cache.lock().await;
         let this = self;
         timeout::run_with_timeout_async(
@@ -76,6 +79,7 @@ impl Backend for NPMBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        self.check_npm_available(&ctx.config).await?;
         if Settings::get().npm.bun {
             CmdLineRunner::new("bun")
                 .arg("install")
@@ -140,5 +144,36 @@ impl NPMBackend {
             ),
             ba: Arc::new(ba),
         }
+    }
+
+    async fn check_npm_available(&self, config: &Arc<Config>) -> Result<()> {
+        // Check if npm/bun is available via dependency_which which includes
+        // tools installed via mise
+        let program = if Settings::get().npm.bun {
+            "bun"
+        } else {
+            NPM_PROGRAM
+        };
+
+        if self.dependency_which(config, program).await.is_none() {
+            if Settings::get().npm.bun {
+                bail!(
+                    "bun is required but not found.\n\n\
+                    To use npm packages with bun, you need to install bun first:\n\
+                      mise use bun@latest\n\n\
+                    Or switch back to npm by setting:\n\
+                      mise settings npm.bun=false"
+                );
+            } else {
+                bail!(
+                    "npm is required but not found.\n\n\
+                    To use npm packages with mise, you need to install Node.js first:\n\
+                      mise use node@latest\n\n\
+                    Alternatively, you can use bun instead of npm by setting:\n\
+                      mise settings npm.bun=true"
+                );
+            }
+        }
+        Ok(())
     }
 }
