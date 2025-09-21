@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::fs;
@@ -51,7 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     toml_output.push_str("# [tool-name] = [long-names...]\n");
     toml_output.push_str("# multiple are allowed for each tool because some backends may be disabled, like on windows we don't use asdf, for example\n");
     toml_output.push_str("# or a backend may be disabled via MISE_DISABLE_BACKENDS=ubi\n");
-    toml_output.push_str("\n");
+    toml_output.push('\n');
 
     // Convert the registry tools back to TOML with nested format
     let mut toml_table = Table::new();
