@@ -4,7 +4,9 @@
 
 # Create a PATH that has mise but not package managers
 # ROOT is set by run_test script
-MISE_DIR="${CARGO_TARGET_DIR:-$ROOT/target}/debug"
+# Resolve the mise binary from PATH (release e2e ensures it's installed)
+MISE_BIN="$(command -v mise)"
+MISE_DIR="$(dirname "$MISE_BIN")"
 export PATH="$MISE_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # Track overall test status
