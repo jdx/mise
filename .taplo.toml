@@ -11,5 +11,13 @@ reorder_keys = false
 include = ["registry.toml"]
 
 [rule.formatting]
-reorder_keys = false
+reorder_keys = true
+reorder_arrays = true
 indent_tables = true
+
+[[rule]]
+include = ["settings.toml"]
+
+[rule.formatting]
+reorder_keys = true
+reorder_arrays = true

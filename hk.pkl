@@ -40,6 +40,14 @@ fi
         glob = "*.pkl"
         check = "pkl eval {{files}} >/dev/null"
     }
+
+    // uses taplo for TOML formatting and validation
+    ["taplo"] {
+        glob = List("*.toml")
+        exclude = List("docs/**") // exclude docs/
+        check = "taplo check {{files}}"
+        fix = "taplo format {{files}} && taplo check {{files}}"
+    }
 }
 
 hooks {
