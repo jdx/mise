@@ -3,72 +3,47 @@
 
 [activate_aggressive]
 description = "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence."
-docs = """
-Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence. For example, if you have the following in your `mise.toml`:
 
-```toml
-[tools]
-node = '20'
-python = '3.12'
-```
-
-But you also have this in your `~/.zshrc`:
-
-```sh
-eval "$(mise activate zsh)"
-PATH="/some/other/python:$PATH"
-```
-
-What will happen is `/some/other/python` will be used instead of the python installed by mise. This
-means
-you typically want to put `mise activate` at the end of your shell config so nothing overrides it.
-
-If you want to always use the mise versions of tools despite what is in your shell config, set this
-to `true`.
-In that case, using this example again, `/some/other/python` will be after mise's python in PATH.
-"""
+docs = "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence. For example, if you have the following in your `mise.toml`:\n\n```toml\n[tools]\nnode = '20'\npython = '3.12'\n```\n\nBut you also have this in your `~/.zshrc`:\n\n```sh\neval \"$(mise activate zsh)\"\nPATH=\"/some/other/python:$PATH\"\n```\n\nWhat will happen is `/some/other/python` will be used instead of the python installed by mise. This\nmeans\nyou typically want to put `mise activate` at the end of your shell config so nothing overrides it.\n\nIf you want to always use the mise versions of tools despite what is in your shell config, set this\nto `true`.\nIn that case, using this example again, `/some/other/python` will be after mise's python in PATH.\n"
 env = "MISE_ACTIVATE_AGGRESSIVE"
 type = "Bool"
 
 [all_compile]
 description = "do not use precompiled binaries for any tool"
-docs = """
-Default: false unless running NixOS or Alpine (let me know if others should be added)
 
-Do not use precompiled binaries for all languages. Useful if running on a Linux distribution
-like Alpine that does not use glibc and therefore likely won't be able to run precompiled binaries.
-
-Note that this needs to be setup for each language. File a ticket if you notice a language that is
-not
-working with this config.
-"""
+docs = "Default: false unless running NixOS or Alpine (let me know if others should be added)\n\nDo not use precompiled binaries for all languages. Useful if running on a Linux distribution\nlike Alpine that does not use glibc and therefore likely won't be able to run precompiled binaries.\n\nNote that this needs to be setup for each language. File a ticket if you notice a language that is\nnot\nworking with this config.\n"
 env = "MISE_ALL_COMPILE"
 type = "Bool"
 
 [always_keep_download]
 description = "should mise keep downloaded files after installation"
+
 env = "MISE_ALWAYS_KEEP_DOWNLOAD"
 type = "Bool"
 
 [always_keep_install]
 description = "should mise keep install files after installation even if the installation fails"
+
 env = "MISE_ALWAYS_KEEP_INSTALL"
 type = "Bool"
 
 [aqua.baked_registry]
 default = true
 description = "Use baked-in aqua registry."
+
 env = "MISE_AQUA_BAKED_REGISTRY"
 type = "Bool"
 
 [aqua.cosign]
 default = true
 description = "Use cosign to verify aqua tool signatures."
+
 env = "MISE_AQUA_COSIGN"
 type = "Bool"
 
 [aqua.cosign_extra_args]
 description = "Extra arguments to pass to cosign when verifying aqua tool signatures."
+
 env = "MISE_AQUA_COSIGN_EXTRA_ARGS"
 optional = true
 rust_type = "Vec<String>"
@@ -77,29 +52,22 @@ type = "ListString"
 [aqua.github_attestations]
 default = true
 description = "Enable GitHub Artifact Attestations verification for aqua tools."
-docs = """
-Enable/disable GitHub Artifact Attestations verification for aqua tools.
-When enabled, mise will verify the authenticity and integrity of downloaded tools
-using GitHub's artifact attestation system.
-"""
+
+docs = "Enable/disable GitHub Artifact Attestations verification for aqua tools.\nWhen enabled, mise will verify the authenticity and integrity of downloaded tools\nusing GitHub's artifact attestation system.\n"
 env = "MISE_AQUA_GITHUB_ATTESTATIONS"
 type = "Bool"
 
 [aqua.minisign]
 default = true
 description = "Use minisign to verify aqua tool signatures."
+
 env = "MISE_AQUA_MINISIGN"
 type = "Bool"
 
 [aqua.registry_url]
 description = "URL to fetch aqua registry from."
-docs = """
-URL to fetch aqua registry from. This is used to install tools from the aqua registry.
 
-If this is set, the baked-in aqua registry is not used.
-
-By default, the official aqua registry is used: https://github.com/aquaproj/aqua-registry
-"""
+docs = "URL to fetch aqua registry from. This is used to install tools from the aqua registry.\n\nIf this is set, the baked-in aqua registry is not used.\n\nBy default, the official aqua registry is used: https://github.com/aquaproj/aqua-registry\n"
 env = "MISE_AQUA_REGISTRY_URL"
 optional = true
 type = "Url"
@@ -107,200 +75,179 @@ type = "Url"
 [aqua.slsa]
 default = true
 description = "Use SLSA to verify aqua tool signatures."
+
 env = "MISE_AQUA_SLSA"
 type = "Bool"
 
 [arch]
-default_docs = '"x86_64" | "aarch64" | "arm" | "loongarch64" | "riscv64"'
 description = "Architecture to use for precompiled binaries."
-docs = """
-Architecture to use for precompiled binaries. This is used to determine which precompiled binaries
-to download. If unset, mise will use the system's architecture.
-"""
+
+docs = "Architecture to use for precompiled binaries. This is used to determine which precompiled binaries\nto download. If unset, mise will use the system's architecture.\n"
 env = "MISE_ARCH"
-optional = true
 type = "String"
+optional = true
+default_docs = "\"x86_64\" | \"aarch64\" | \"arm\" | \"loongarch64\" | \"riscv64\""
 
 [asdf]
-deprecated = "Use disable_backends instead."
 description = "use asdf as a default plugin backend"
-docs = """
-Use asdf as a default plugin backend. This means running something like `mise use cmake` will
-default to using an asdf plugin for cmake.
-"""
+
+docs = "Use asdf as a default plugin backend. This means running something like `mise use cmake` will\ndefault to using an asdf plugin for cmake.\n"
 env = "MISE_ASDF"
-hide = true
-optional = true
 type = "Bool"
+optional = true
+hide = true
+deprecated = "Use disable_backends instead."
 
 [asdf_compat]
-deprecated = "no longer supported"
 description = "set to true to ensure .tool-versions will be compatible with asdf"
-docs = """
-Only output `.tool-versions` files in `mise local|global` which will be usable by asdf.
-This disables mise functionality that would otherwise make these files incompatible with asdf such
-as non-pinned versions.
 
-This will also change the default global tool config to be `~/.tool-versions` instead
-of `~/.config/mise/config.toml`.
-"""
+docs = "Only output `.tool-versions` files in `mise local|global` which will be usable by asdf.\nThis disables mise functionality that would otherwise make these files incompatible with asdf such\nas non-pinned versions.\n\nThis will also change the default global tool config to be `~/.tool-versions` instead\nof `~/.config/mise/config.toml`.\n"
 env = "MISE_ASDF_COMPAT"
-hide = true
 type = "Bool"
+hide = true
+deprecated = "no longer supported"
 
 [auto_install]
-default = true
 description = "Automatically install missing tools when running `mise x`, `mise run`, or as part of the 'not found' handler."
+
 env = "MISE_AUTO_INSTALL"
+default = true
 type = "Bool"
 
 [auto_install_disable_tools]
 description = "List of tools to skip automatically installing when running `mise x`, `mise run`, or as part of the 'not found' handler."
+
 env = "MISE_AUTO_INSTALL_DISABLE_TOOLS"
+type = "ListString"
+rust_type = "Vec<String>"
 optional = true
 parse_env = "list_by_comma"
-rust_type = "Vec<String>"
-type = "ListString"
 
 [cache_prune_age]
-default = "30d"
 description = "Delete files in cache that have not been accessed in this duration"
-docs = """
-The age of the cache before it is considered stale. mise will occasionally delete cache files which
-have not been accessed in this amount of time.
 
-Set to `0s` to keep cache files indefinitely.
-"""
+docs = "The age of the cache before it is considered stale. mise will occasionally delete cache files which\nhave not been accessed in this amount of time.\n\nSet to `0s` to keep cache files indefinitely.\n"
 env = "MISE_CACHE_PRUNE_AGE"
+default = "30d"
 type = "Duration"
 
 [cargo.binstall]
 default = true
 description = "Use cargo-binstall instead of cargo install if available"
-docs = """
-If true, mise will use `cargo binstall` instead of `cargo install` if
-[`cargo-binstall`](https://crates.io/crates/cargo-binstall) is installed and on PATH.
-This makes installing CLIs with cargo _much_ faster by downloading precompiled binaries.
 
-You can install it with mise:
-
-```sh
-mise use -g cargo-binstall
-```
-"""
+docs = "If true, mise will use `cargo binstall` instead of `cargo install` if\n[`cargo-binstall`](https://crates.io/crates/cargo-binstall) is installed and on PATH.\nThis makes installing CLIs with cargo _much_ faster by downloading precompiled binaries.\n\nYou can install it with mise:\n\n```sh\nmise use -g cargo-binstall\n```\n"
 env = "MISE_CARGO_BINSTALL"
 type = "Bool"
 
 [cargo.registry_name]
 description = "Name of the cargo registry to use."
-docs = """
-Packages are installed from the official cargo registry.
 
-You can set this to a different registry name if you have a custom feed or want to use a different source.
-
-Please follow the [cargo alternative registries documentation](https://doc.rust-lang.org/cargo/reference/registries.html#using-an-alternate-registry) to configure your registry.
-"""
+docs = "Packages are installed from the official cargo registry.\n\nYou can set this to a different registry name if you have a custom feed or want to use a different source.\n\nPlease follow the [cargo alternative registries documentation](https://doc.rust-lang.org/cargo/reference/registries.html#using-an-alternate-registry) to configure your registry.\n"
 env = "MISE_CARGO_REGISTRY_NAME"
 optional = true
 type = "String"
 
 [cargo_binstall]
-deprecated = "Use cargo.binstall instead."
 description = "Use cargo-binstall instead of cargo install if available"
-hide = true
-optional = true
+
 type = "Bool"
+optional = true
+hide = true
+deprecated = "Use cargo.binstall instead."
 
 [cd]
 description = "Path to change to after launching mise"
+
 env = "MISE_CD"
-hide = true
-optional = true
 type = "Path"
+optional = true
+hide = true
 
 [ci]
-default = "false"
 description = "Set to true if running in a CI environment"
-deserialize_with = "bool_string"
+
 env = "CI"
-hide = true
+default = "false"
 type = "Bool"
+hide = true
+deserialize_with = "bool_string"
 
 [color]
-default = true
 description = "Use color in mise terminal output"
+
 env = "MISE_COLOR"
+default = true
 type = "Bool"
 
 [debug]
 description = "Sets log level to debug"
+
 env = "MISE_DEBUG"
-hide = true
 type = "Bool"
+hide = true
 
 [default_config_filename]
-default = "mise.toml"
 description = "The default config filename read. `mise use` and other commands that create new config files will use this value. This must be an env var."
+
 env = "MISE_DEFAULT_CONFIG_FILENAME"
+default = "mise.toml"
 type = "String"
 
 [default_tool_versions_filename]
-default = ".tool-versions"
 description = "The default .tool-versions filename read. This will not ignore .tool-versions—use override_tool_versions_filename for that. This must be an env var."
+
 env = "MISE_DEFAULT_TOOL_VERSIONS_FILENAME"
+default = ".tool-versions"
 type = "String"
 
 [disable_backends]
-default = []
 description = "Backends to disable such as `asdf` or `pipx`"
+
 env = "MISE_DISABLE_BACKENDS"
-parse_env = "list_by_comma"
-rust_type = "Vec<String>"
+default = []
 type = "ListString"
+rust_type = "Vec<String>"
+parse_env = "list_by_comma"
 
 [disable_default_registry]
 description = "Disable the default mapping of short tool names like `php` -> `asdf:mise-plugins/asdf-php`. This parameter disables only for the backends `vfox` and `asdf`."
+
 env = "MISE_DISABLE_DEFAULT_REGISTRY"
 type = "Bool"
 
 [disable_default_shorthands]
-deprecated = "Replaced with `disable_default_registry`"
 description = "Disables built-in shorthands to asdf/vfox plugins"
-docs = """
-Disables the shorthand aliases for installing plugins. You will have to specify full URLs when
-installing plugins, e.g.: `mise plugin install node https://github.com/asdf-vm/asdf-node.git`
-"""
+
+docs = "Disables the shorthand aliases for installing plugins. You will have to specify full URLs when\ninstalling plugins, e.g.: `mise plugin install node https://github.com/asdf-vm/asdf-node.git`\n"
 env = "MISE_DISABLE_DEFAULT_SHORTHANDS"
-hide = true
-optional = true
 type = "Bool"
+optional = true
+hide = true
+deprecated = "Replaced with `disable_default_registry`"
 
 [disable_hints]
-default = []
 description = "Turns off helpful hints when using different mise features"
+
 env = "MISE_DISABLE_HINTS"
-parse_env = "set_by_comma"
-rust_type = "BTreeSet<String>"
+default = []
 type = "SetString"
+rust_type = "BTreeSet<String>"
+parse_env = "set_by_comma"
 
 [disable_tools]
-default = []
 description = "Tools defined in mise.toml that should be ignored"
+
 env = "MISE_DISABLE_TOOLS"
-parse_env = "set_by_comma"
-rust_type = "BTreeSet<String>"
+default = []
 type = "SetString"
+rust_type = "BTreeSet<String>"
+parse_env = "set_by_comma"
 
 [dotnet.package_flags]
 default = []
 description = "Extends dotnet search and install abilities."
-docs = """
-This is a list of flags to extend the search and install abilities of dotnet tools.
 
-Here are the available flags:
-
-- 'prerelease' : include prerelease versions in search and install
-"""
+docs = "This is a list of flags to extend the search and install abilities of dotnet tools.\n\nHere are the available flags:\n\n- 'prerelease' : include prerelease versions in search and install\n"
 env = "MISE_DOTNET_PACKAGE_FLAGS"
 parse_env = "list_by_comma"
 rust_type = "Vec<String>"
@@ -309,481 +256,420 @@ type = "ListString"
 [dotnet.registry_url]
 default = "https://api.nuget.org/v3/index.json"
 description = "URL to fetch dotnet tools from."
-docs = """
-URL to fetch dotnet tools from. This is used when installing dotnet tools.
 
-By default, mise will use the [nuget](https://api.nuget.org/v3/index.json) API to fetch.
-
-However, you can set this to a different URL if you have a custom feed or want to use a different source.
-"""
+docs = "URL to fetch dotnet tools from. This is used when installing dotnet tools.\n\nBy default, mise will use the [nuget](https://api.nuget.org/v3/index.json) API to fetch.\n\nHowever, you can set this to a different URL if you have a custom feed or want to use a different source.\n"
 env = "MISE_DOTNET_REGISTRY_URL"
 type = "Url"
 
 [enable_tools]
-default = []
 description = "Tools defined in mise.toml that should be used - all other tools are ignored"
+
 env = "MISE_ENABLE_TOOLS"
-parse_env = "set_by_comma"
-rust_type = "BTreeSet<String>"
+default = []
 type = "SetString"
+rust_type = "BTreeSet<String>"
+parse_env = "set_by_comma"
 
 [env]
-default = []
 description = "Env to use for mise.<MISE_ENV>.toml files."
-docs = """
-Enables profile-specific config files such as `.mise.development.toml`.
-Use this for different env vars or different tool versions in
-development/staging/production environments. See
-[Configuration Environments](/configuration/environments.html) for more on how
-to use this feature.
 
-Multiple envs can be set by separating them with a comma, e.g. `MISE_ENV=ci,test`.
-They will be read in order, with the last one taking precedence.
-"""
+docs = "Enables profile-specific config files such as `.mise.development.toml`.\nUse this for different env vars or different tool versions in\ndevelopment/staging/production environments. See\n[Configuration Environments](/configuration/environments.html) for more on how\nto use this feature.\n\nMultiple envs can be set by separating them with a comma, e.g. `MISE_ENV=ci,test`.\nThey will be read in order, with the last one taking precedence.\n"
 env = "MISE_ENV"
-parse_env = "list_by_comma"
+default = []
 type = "ListString"
+parse_env = "list_by_comma"
 
 [env_file]
 description = "Path to a file containing environment variables to automatically load."
+
 env = "MISE_ENV_FILE"
-optional = true
 type = "Path"
+optional = true
 
 [erlang.compile]
 description = "If true, compile erlang from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
+
 env = "MISE_ERLANG_COMPILE"
 optional = true
 type = "Bool"
 
 [exec_auto_install]
-default = true
 description = "Automatically install missing tools when running `mise x`."
+
 env = "MISE_EXEC_AUTO_INSTALL"
+default = true
 type = "Bool"
 
 [experimental]
 description = "Enable experimental mise features which are incomplete or unstable—breakings changes may occur"
-docs = """
-Enables experimental features. I generally will publish new features under
-this config which needs to be enabled to use them. While a feature is marked
-as "experimental" its behavior may change or even disappear in any release.
 
-The idea is experimental features can be iterated on this way so we can get
-the behavior right, but once that label goes away you shouldn't expect things
-to change without a proper deprecation—and even then it's unlikely.
-
-Also, I very often will use experimental as a beta flag as well. New
-functionality that I want to test with a smaller subset of users I will often
-push out under experimental mode even if it's not related to an experimental
-feature.
-
-If you'd like to help me out, consider enabling it even if you don't have
-a particular feature you'd like to try. Also, if something isn't working
-right, try disabling it if you can.
-"""
+docs = "Enables experimental features. I generally will publish new features under\nthis config which needs to be enabled to use them. While a feature is marked\nas \"experimental\" its behavior may change or even disappear in any release.\n\nThe idea is experimental features can be iterated on this way so we can get\nthe behavior right, but once that label goes away you shouldn't expect things\nto change without a proper deprecation—and even then it's unlikely.\n\nAlso, I very often will use experimental as a beta flag as well. New\nfunctionality that I want to test with a smaller subset of users I will often\npush out under experimental mode even if it's not related to an experimental\nfeature.\n\nIf you'd like to help me out, consider enabling it even if you don't have\na particular feature you'd like to try. Also, if something isn't working\nright, try disabling it if you can.\n"
 env = "MISE_EXPERIMENTAL"
 type = "Bool"
 
 [fetch_remote_versions_cache]
-default = "1h"
 description = "How long to cache remote versions for tools."
-docs = """
-duration that remote version cache is kept for
-"fast" commands (represented by PREFER_STALE), these are always
-cached. For "slow" commands like `mise ls-remote` or `mise install`:
-- if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that
-- if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY
-"""
+
+docs = "duration that remote version cache is kept for\n\"fast\" commands (represented by PREFER_STALE), these are always\ncached. For \"slow\" commands like `mise ls-remote` or `mise install`:\n- if MISE_FETCH_REMOTE_VERSIONS_CACHE is set, use that\n- if MISE_FETCH_REMOTE_VERSIONS_CACHE is not set, use HOURLY\n"
 env = "MISE_FETCH_REMOTE_VERSIONS_CACHE"
+default = "1h"
 type = "Duration"
 
 [fetch_remote_versions_timeout]
-aliases = ["fetch_remote_version_timeout"]
-default = "10s"
 description = "Timeout in seconds for HTTP requests to fetch new tool versions in mise."
+
 env = "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT"
+default = "10s"
 type = "Duration"
+aliases = [
+    "fetch_remote_version_timeout",
+]
 
 [gix]
-default = true
 description = "Use gix for git operations, set to false to shell out to git."
-docs = """
-Use gix for git operations. This is generally faster but may not be as compatible if the
-system's gix is not the same version as the one used by mise.
-"""
+
+docs = "Use gix for git operations. This is generally faster but may not be as compatible if the\nsystem's gix is not the same version as the one used by mise.\n"
 env = "MISE_GIX"
-hide = true
+default = true
 type = "Bool"
+hide = true
 
 [global_config_file]
 description = "Path to the global mise config file. Default is `~/.config/mise/config.toml`. This must be an env var."
+
 env = "MISE_GLOBAL_CONFIG_FILE"
-optional = true
 type = "Path"
+optional = true
 
 [global_config_root]
 description = "Path which is used as `{{config_root}}` for the global config file. Default is `$HOME`. This must be an env var."
+
 env = "MISE_GLOBAL_CONFIG_ROOT"
-optional = true
 type = "Path"
+optional = true
 
 [go_default_packages_file]
-default = "~/.default-go-packages"
 description = "Path to a file containing default go packages to install when installing go"
+
 env = "MISE_GO_DEFAULT_PACKAGES_FILE"
+default = "~/.default-go-packages"
 type = "Path"
 
 [go_download_mirror]
-default = "https://dl.google.com/go"
 description = "Mirror to download go sdk tarballs from."
+
 env = "MISE_GO_DOWNLOAD_MIRROR"
+default = "https://dl.google.com/go"
 type = "String"
 
 [go_repo]
-default = "https://github.com/golang/go"
 description = "URL to fetch go from."
+
 env = "MISE_GO_REPO"
+default = "https://github.com/golang/go"
 type = "Url"
 
 [go_set_gobin]
 description = "Changes where `go install` installs binaries to."
-docs = """
-Defaults to `~/.local/share/mise/installs/go/.../bin`.
-Set to `true` to override GOBIN if previously set.
-Set to `false` to not set GOBIN (default is `${GOPATH:-$HOME/go}/bin`).
-"""
+
+docs = "Defaults to `~/.local/share/mise/installs/go/.../bin`.\nSet to `true` to override GOBIN if previously set.\nSet to `false` to not set GOBIN (default is `${GOPATH:-$HOME/go}/bin`).\n"
 env = "MISE_GO_SET_GOBIN"
-optional = true
 type = "Bool"
+optional = true
 
 [go_set_gopath]
-deprecated = "Use env._go.set_goroot instead."
 description = "[deprecated] Set to true to set GOPATH=~/.local/share/mise/installs/go/.../packages."
+
 env = "MISE_GO_SET_GOPATH"
 type = "Bool"
+deprecated = "Use env._go.set_goroot instead."
 
 [go_set_goroot]
-default = true
 description = "Sets GOROOT=~/.local/share/mise/installs/go/.../."
+
 env = "MISE_GO_SET_GOROOT"
+default = true
 type = "Bool"
 
 [go_skip_checksum]
 description = "Set to true to skip checksum verification when downloading go sdk tarballs."
+
 env = "MISE_GO_SKIP_CHECKSUM"
 type = "Bool"
 
 [gpg_verify]
 description = "Use gpg to verify all tool signatures."
+
 env = "MISE_GPG_VERIFY"
-optional = true
 type = "Bool"
+optional = true
 
 [http_timeout]
-default = "30s"
 description = "Timeout in seconds for all HTTP requests in mise."
+
 env = "MISE_HTTP_TIMEOUT"
+default = "30s"
 type = "Duration"
 
 [idiomatic_version_file]
-default = true
-deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
 description = "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc."
-docs = """
-Plugins can read the versions files used by other version managers (if enabled by the plugin)
-for example, `.nvmrc` in the case of node's nvm. See [idiomatic version files](/configuration.html#idiomatic-version-files)
-for more
-information.
 
-Set to "false" to disable idiomatic version file parsing.
-"""
+docs = "Plugins can read the versions files used by other version managers (if enabled by the plugin)\nfor example, `.nvmrc` in the case of node's nvm. See [idiomatic version files](/configuration.html#idiomatic-version-files)\nfor more\ninformation.\n\nSet to \"false\" to disable idiomatic version file parsing.\n"
 env = "MISE_IDIOMATIC_VERSION_FILE"
+default = true
 type = "Bool"
+deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
 
 [idiomatic_version_file_disable_tools]
-default = []
-deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
 description = "Specific tools to disable idiomatic version files for."
+
 env = "MISE_IDIOMATIC_VERSION_FILE_DISABLE_TOOLS"
-parse_env = "set_by_comma"
-rust_type = "BTreeSet<String>"
+default = []
 type = "SetString"
+rust_type = "BTreeSet<String>"
+deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
+parse_env = "set_by_comma"
 
 [idiomatic_version_file_enable_tools]
 description = "Specific tools to enable idiomatic version files for like .node-version, .ruby-version, etc."
+
 env = "MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS"
-parse_env = "set_by_comma"
-rust_type = "Option<BTreeSet<String>>"
 type = "SetString"
+rust_type = "Option<BTreeSet<String>>"
+parse_env = "set_by_comma"
 
 [ignored_config_paths]
-default = []
 description = "This is a list of config paths that mise will ignore."
+
 env = "MISE_IGNORED_CONFIG_PATHS"
-parse_env = "list_by_colon"
-rust_type = "BTreeSet<PathBuf>"
+default = []
 type = "ListPath"
+rust_type = "BTreeSet<PathBuf>"
+parse_env = "list_by_colon"
 
 [jobs]
-default = 8
 description = "How many jobs to run concurrently such as tool installs."
+
 env = "MISE_JOBS"
-rust_type = "usize"
+default = 8
 type = "Integer"
+rust_type = "usize"
 
 [legacy_version_file]
-default = true
-deprecated = "Use idiomatic_version_file instead."
 description = "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc."
+
 env = "MISE_LEGACY_VERSION_FILE"
-hide = true
+default = true
 type = "Bool"
+hide = true
+deprecated = "Use idiomatic_version_file instead."
 
 [legacy_version_file_disable_tools]
-default = []
-deprecated = "Use idiomatic_version_file_disable_tools instead."
 description = "Specific tools to disable idiomatic version files for."
+
 env = "MISE_LEGACY_VERSION_FILE_DISABLE_TOOLS"
-hide = true
-parse_env = "set_by_comma"
-rust_type = "BTreeSet<String>"
+default = []
 type = "SetString"
+rust_type = "BTreeSet<String>"
+hide = true
+deprecated = "Use idiomatic_version_file_disable_tools instead."
+parse_env = "set_by_comma"
 
 [libgit2]
-default = true
 description = "Use libgit2 for git operations, set to false to shell out to git."
-docs = """
-Use libgit2 for git operations. This is generally faster but may not be as compatible if the
-system's libgit2 is not the same version as the one used by mise.
-"""
+
+docs = "Use libgit2 for git operations. This is generally faster but may not be as compatible if the\nsystem's libgit2 is not the same version as the one used by mise.\n"
 env = "MISE_LIBGIT2"
-hide = true
+default = true
 type = "Bool"
+hide = true
 
 [lockfile]
-default = true
 description = "Create and read lockfiles for tool versions."
-docs = """
 
-> [!NOTE]
-> This feature is [experimental](#experimental) and may change in the future.
-
-Read/update lockfiles for tool versions. This is useful when you'd like to have loose versions in mise.toml like this:
-
-```toml
-[tools]
-node = "22"
-gh = "latest"
-```
-
-But you'd like the versions installed to be consistent within a project. When this is enabled, mise will update mise.lock
-files next to mise.toml files containing pinned versions. When installing tools, mise will reference this lockfile if it exists and this setting is enabled to resolve versions.
-
-The lockfiles are not created automatically. To generate them, run the following (assuming the config file is `mise.toml`):
-
-```sh
-touch mise.lock && mise install
-```
-
-The lockfile is named the same as the config file but with `.lock` instead of `.toml` as the extension, e.g.:
-
-- `mise.toml` -> `mise.lock`
-- `mise.local.toml` -> `mise.local.lock`
-- `.config/mise.toml` -> `.config/mise.lock`
-"""
+docs = "> [!NOTE]\n> This feature is [experimental](#experimental) and may change in the future.\n\nRead/update lockfiles for tool versions. This is useful when you'd like to have loose versions in mise.toml like this:\n\n```toml\n[tools]\nnode = \"22\"\ngh = \"latest\"\n```\n\nBut you'd like the versions installed to be consistent within a project. When this is enabled, mise will update mise.lock\nfiles next to mise.toml files containing pinned versions. When installing tools, mise will reference this lockfile if it exists and this setting is enabled to resolve versions.\n\nThe lockfiles are not created automatically. To generate them, run the following (assuming the config file is `mise.toml`):\n\n```sh\ntouch mise.lock && mise install\n```\n\nThe lockfile is named the same as the config file but with `.lock` instead of `.toml` as the extension, e.g.:\n\n- `mise.toml` -> `mise.lock`\n- `mise.local.toml` -> `mise.local.lock`\n- `.config/mise.toml` -> `.config/mise.lock`\n"
 env = "MISE_LOCKFILE"
+default = true
 type = "Bool"
 
 [log_level]
-default = "info"
 description = "Show more/less output."
-enum = [["debug"], ["error"], ["info"], ["trace"], ["warn"]]
+
 env = "MISE_LOG_LEVEL"
-hide = true
+default = "info"
 type = "String"
+hide = true
+enum = [
+    [
+        "debug",
+    ],
+    [
+        "error",
+    ],
+    [
+        "info",
+    ],
+    [
+        "trace",
+    ],
+    [
+        "warn",
+    ],
+]
 
 [node.compile]
 description = "Compile node from source."
+
 env = "MISE_NODE_COMPILE"
 optional = true
 type = "Bool"
 
 [node.flavor]
 description = "Install a specific node flavor like glibc-217 or musl. Use with unofficial node build repo."
+
 env = "MISE_NODE_FLAVOR"
 optional = true
 type = "String"
 
 [node.gpg_verify]
 description = "Use gpg to verify node tool signatures."
+
 env = "MISE_NODE_GPG_VERIFY"
 optional = true
 type = "Bool"
 
 [node.mirror_url]
 description = "Mirror to download node tarballs from."
+
 env = "MISE_NODE_MIRROR_URL"
 optional = true
 type = "Url"
 
 [not_found_auto_install]
-default = true
 description = "Set to false to disable the \"command not found\" handler to autoinstall missing tool versions."
-docs = """
-Set to false to disable the "command not found" handler to autoinstall missing tool versions.
-Disable this if experiencing strange behavior in your shell when a command is not found.
-
-**Important limitation**: This handler only installs missing versions of tools that already have 
-at least one version installed. mise cannot determine which tool provides a binary without having 
-the tool installed first, so it cannot auto-install completely new tools.
-
-This also runs in shims if the terminal is interactive.
-"""
+docs = "Set to false to disable the \"command not found\" handler to autoinstall missing tool versions.\nDisable this if experiencing strange behavior in your shell when a command is not found.\n\n**Important limitation**: This handler only installs missing versions of tools that already have \nat least one version installed. mise cannot determine which tool provides a binary without having \nthe tool installed first, so it cannot auto-install completely new tools.\n\nThis also runs in shims if the terminal is interactive.\n"
 env = "MISE_NOT_FOUND_AUTO_INSTALL"
+default = true
 type = "Bool"
 
 [npm.bun]
 description = "Use bun instead of npm if bun is installed and on PATH."
-docs = """
-If true, mise will use `bun` instead of `npm` if
-[`bun`](https://bun.sh/) is installed and on PATH.
-This makes installing CLIs faster by using `bun` as the package manager.
 
-You can install it with mise:
-
-```sh
-mise use -g bun
-```
-"""
+docs = "If true, mise will use `bun` instead of `npm` if\n[`bun`](https://bun.sh/) is installed and on PATH.\nThis makes installing CLIs faster by using `bun` as the package manager.\n\nYou can install it with mise:\n\n```sh\nmise use -g bun\n```\n"
 env = "MISE_NPM_BUN"
 type = "Bool"
 
 [os]
-default_docs = '"linux" | "macos" | "windows"'
 description = "OS to use for precompiled binaries."
+
 env = "MISE_OS"
-optional = true
 type = "String"
+optional = true
+default_docs = "\"linux\" | \"macos\" | \"windows\""
 
 [override_config_filenames]
-default = []
 description = "If set, mise will ignore default config files like `mise.toml` and use these filenames instead. This must be an env var."
+
 env = "MISE_OVERRIDE_CONFIG_FILENAMES"
-parse_env = "list_by_colon"
+default = []
 type = "ListString"
+parse_env = "list_by_colon"
 
 [override_tool_versions_filenames]
-default = []
 description = "If set, mise will ignore .tool-versions files and use these filenames instead. Can be set to `none` to disable .tool-versions. This must be an env var."
+
 env = "MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES"
-parse_env = "list_by_colon"
+default = []
 type = "ListString"
+parse_env = "list_by_colon"
 
 [paranoid]
 description = "Enables extra-secure behavior."
-docs = """
-Enables extra-secure behavior. See [Paranoid](/paranoid.html).
-"""
+
+docs = "Enables extra-secure behavior. See [Paranoid](/paranoid.html).\n"
 env = "MISE_PARANOID"
 type = "Bool"
 
 [pin]
 description = "Default to pinning versions when running `mise use` in mise.toml files."
-docs = """
-This sets `--pin` by default when running `mise use` in mise.toml files. This can be overridden by
-passing `--fuzzy` on the command line.
-"""
+
+docs = "This sets `--pin` by default when running `mise use` in mise.toml files. This can be overridden by\npassing `--fuzzy` on the command line.\n"
 env = "MISE_PIN"
 type = "Bool"
 
 [pipx.registry_url]
 default = "https://pypi.org/pypi/{}/json"
 description = "URL to use for pipx registry."
-docs = """
-URL to use for pipx registry.
 
-This is used to fetch the latest version of a package from the pypi registry.
-
-The default is `https://pypi.org/pypi/{}/json` which is the JSON endpoint for the pypi
-registry.
-
-You can also use the HTML endpoint by setting this to `https://pypi.org/simple/{}/`.
-"""
+docs = "URL to use for pipx registry.\n\nThis is used to fetch the latest version of a package from the pypi registry.\n\nThe default is `https://pypi.org/pypi/{}/json` which is the JSON endpoint for the pypi\nregistry.\n\nYou can also use the HTML endpoint by setting this to `https://pypi.org/simple/{}/`.\n"
 env = "MISE_PIPX_REGISTRY_URL"
 type = "String"
 
 [pipx.uvx]
 default_docs = "true"
 description = "Use uvx instead of pipx if uv is installed and on PATH."
-docs = """
-If true, mise will use `uvx` instead of `pipx` if
-[`uv`](https://docs.astral.sh/uv/) is installed and on PATH.
-This makes installing CLIs _much_ faster by using `uv` as the package manager.
 
-You can install it with mise:
-
-```sh
-mise use -g uv
-```
-"""
+docs = "If true, mise will use `uvx` instead of `pipx` if\n[`uv`](https://docs.astral.sh/uv/) is installed and on PATH.\nThis makes installing CLIs _much_ faster by using `uv` as the package manager.\n\nYou can install it with mise:\n\n```sh\nmise use -g uv\n```\n"
 env = "MISE_PIPX_UVX"
 optional = true
 type = "Bool"
 
 [pipx_uvx]
 description = "Use uvx instead of pipx if uv is installed and on PATH."
-hide = true
-optional = true
+
 type = "Bool"
+optional = true
+hide = true
 
 [plugin_autoupdate_last_check_duration]
-default = "7d"
 description = "How long to wait before updating plugins automatically (note this isn't currently implemented)."
+
 env = "MISE_PLUGIN_AUTOUPDATE_LAST_CHECK_DURATION"
+default = "7d"
 type = "String"
 
 [profile]
-deprecated = "Use MISE_ENV_FILE instead."
 description = "Profile to use for mise.${MISE_PROFILE}.toml files."
+
 env = "MISE_PROFILE"
-hide = true
-optional = true
 type = "String"
+optional = true
+hide = true
+deprecated = "Use MISE_ENV_FILE instead."
 
 [python.compile]
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
-docs = """
-* Values:
-  * `true` - always compile with python-build instead of downloading [precompiled binaries](/lang/python.html#precompiled-python-binaries).
-  * `false` - always download precompiled binaries.
-  * [undefined] - use precompiled binary if one is available for the current platform, compile otherwise.
-"""
+
+docs = "* Values:\n  * `true` - always compile with python-build instead of downloading [precompiled binaries](/lang/python.html#precompiled-python-binaries).\n  * `false` - always download precompiled binaries.\n  * [undefined] - use precompiled binary if one is available for the current platform, compile otherwise.\n"
 env = "MISE_PYTHON_COMPILE"
 optional = true
 type = "Bool"
 
 [python.default_packages_file]
 description = "Path to a file containing default python packages to install when installing a python version."
+
 env = "MISE_PYTHON_DEFAULT_PACKAGES_FILE"
 optional = true
 type = "Path"
 
 [python.patch_url]
 description = "URL to fetch python patches from to pass to python-build."
+
 env = "MISE_PYTHON_PATCH_URL"
 optional = true
 type = "Url"
 
 [python.patches_directory]
 description = "Directory to fetch python patches from."
+
 env = "MISE_PYTHON_PATCHES_DIRECTORY"
 optional = true
 type = "Path"
 
 [python.precompiled_arch]
-default_docs = '"apple-darwin" | "unknown-linux-gnu" | "unknown-linux-musl"'
+default_docs = "\"apple-darwin\" | \"unknown-linux-gnu\" | \"unknown-linux-musl\""
 description = "Specify the architecture to use for precompiled binaries."
+
 env = "MISE_PYTHON_PRECOMPILED_ARCH"
 optional = true
 type = "String"
@@ -791,21 +677,17 @@ type = "String"
 [python.precompiled_flavor]
 default_docs = "install_only_stripped"
 description = "Specify the flavor to use for precompiled binaries."
-docs = """
-Specify the flavor to use for precompiled binaries.
 
-Options are available here: <https://gregoryszorc.com/docs/python-build-standalone/main/running.html>
-"""
+docs = "Specify the flavor to use for precompiled binaries.\n\nOptions are available here: <https://gregoryszorc.com/docs/python-build-standalone/main/running.html>\n"
 env = "MISE_PYTHON_PRECOMPILED_FLAVOR"
 optional = true
 type = "String"
 
 [python.precompiled_os]
-default_docs = '"x86_64_v3" | "aarch64"'
+default_docs = "\"x86_64_v3\" | \"aarch64\""
 description = "Specify the OS to use for precompiled binaries."
-docs = """
-Specify the architecture to use for precompiled binaries. If on an old CPU, you may want to set this to "x86_64" for the most compatible binaries. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information.
-"""
+
+docs = "Specify the architecture to use for precompiled binaries. If on an old CPU, you may want to set this to \"x86_64\" for the most compatible binaries. See https://gregoryszorc.com/docs/python-build-standalone/main/running.html for more information.\n"
 env = "MISE_PYTHON_PRECOMPILED_OS"
 optional = true
 type = "String"
@@ -813,16 +695,19 @@ type = "String"
 [python.pyenv_repo]
 default = "https://github.com/pyenv/pyenv.git"
 description = "URL to fetch pyenv from for compiling python with python-build."
+
 env = "MISE_PYENV_REPO"
 type = "String"
 
 [python.uv_venv_auto]
 description = "Integrate with uv to automatically create/source venvs if uv.lock is present."
+
 env = "MISE_PYTHON_UV_VENV_AUTO"
 type = "Bool"
 
 [python.uv_venv_create_args]
 description = "Arguments to pass to uv when creating a venv."
+
 env = "MISE_PYTHON_UV_VENV_CREATE_ARGS"
 optional = true
 parse_env = "list_by_colon"
@@ -832,12 +717,14 @@ type = "ListString"
 [python.venv_auto_create]
 deprecated = "Use env._python.venv instead."
 description = "Automatically create virtualenvs for python tools."
+
 env = "MISE_PYTHON_VENV_AUTO_CREATE"
 hide = true
 type = "Bool"
 
 [python.venv_create_args]
 description = "Arguments to pass to python when creating a venv. (not used for uv venv creation)"
+
 env = "MISE_PYTHON_VENV_CREATE_ARGS"
 optional = true
 parse_env = "list_by_colon"
@@ -846,84 +733,97 @@ type = "ListString"
 
 [python.venv_stdlib]
 description = "Prefer to use venv from Python's standard library."
+
 env = "MISE_VENV_STDLIB"
 type = "Bool"
 
 [python_compile]
-deprecated = "Use python.compile instead."
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
-hide = true
-optional = true
+
 type = "Bool"
+optional = true
+hide = true
+deprecated = "Use python.compile instead."
 
 [python_default_packages_file]
-deprecated = "Use python.default_packages_file instead."
 description = "Path to a file containing default python packages to install when installing python."
-hide = true
-optional = true
+
 type = "Path"
+optional = true
+hide = true
+deprecated = "Use python.default_packages_file instead."
 
 [python_patch_url]
-deprecated = "Use python.patch_url instead."
 description = "URL to fetch python patches from."
-hide = true
-optional = true
+
 type = "String"
+optional = true
+hide = true
+deprecated = "Use python.patch_url instead."
 
 [python_patches_directory]
-deprecated = "Use python.patch_url instead."
 description = "Directory to fetch python patches from."
-hide = true
-optional = true
+
 type = "Path"
+optional = true
+hide = true
+deprecated = "Use python.patch_url instead."
 
 [python_precompiled_arch]
-deprecated = "Use python.precompiled_arch instead."
 description = "Specify the architecture to use for precompiled binaries."
-hide = true
-optional = true
+
 type = "String"
+optional = true
+hide = true
+deprecated = "Use python.precompiled_arch instead."
 
 [python_precompiled_os]
-deprecated = "Use python.precompiled_os instead."
 description = "Specify the OS to use for precompiled binaries."
-hide = true
-optional = true
+
 type = "String"
+optional = true
+hide = true
+deprecated = "Use python.precompiled_os instead."
 
 [python_pyenv_repo]
-deprecated = "Use python.pyenv_repo instead."
 description = "URL to fetch pyenv from for compiling python."
-hide = true
-optional = true
+
 type = "String"
+optional = true
+hide = true
+deprecated = "Use python.pyenv_repo instead."
 
 [python_venv_auto_create]
-deprecated = "Use env._python.venv instead."
 description = "Automatically create virtualenvs for python tools."
-hide = true
-optional = true
+
 type = "Bool"
+optional = true
+hide = true
+deprecated = "Use env._python.venv instead."
 
 [python_venv_stdlib]
-deprecated = "Use python.venv_stdlib instead."
 description = "Prefer to use venv from Python's standard library."
-hide = true
-optional = true
+
 type = "Bool"
+optional = true
+hide = true
+deprecated = "Use python.venv_stdlib instead."
 
 [quiet]
 description = "Suppress all output except errors."
+
 env = "MISE_QUIET"
 type = "Bool"
 
 [raw]
 description = "Connect stdin/stdout/stderr to child processes."
+
 env = "MISE_RAW"
 type = "Bool"
 
 [ruby.apply_patches]
 description = "A list of patch files or URLs to apply to ruby source."
+
 env = "MISE_RUBY_APPLY_PATCHES"
 optional = true
 type = "String"
@@ -931,11 +831,13 @@ type = "String"
 [ruby.default_packages_file]
 default = "~/.default-gems"
 description = "Path to a file containing default ruby gems to install when installing ruby."
+
 env = "MISE_RUBY_DEFAULT_PACKAGES_FILE"
 type = "String"
 
 [ruby.ruby_build_opts]
 description = "Options to pass to ruby-build."
+
 env = "MISE_RUBY_BUILD_OPTS"
 optional = true
 type = "String"
@@ -943,16 +845,19 @@ type = "String"
 [ruby.ruby_build_repo]
 default = "https://github.com/rbenv/ruby-build.git"
 description = "URL to fetch ruby-build from."
+
 env = "MISE_RUBY_BUILD_REPO"
 type = "String"
 
 [ruby.ruby_install]
 description = "Use ruby-install instead of ruby-build."
+
 env = "MISE_RUBY_INSTALL"
 type = "Bool"
 
 [ruby.ruby_install_opts]
 description = "Options to pass to ruby-install."
+
 env = "MISE_RUBY_INSTALL_OPTS"
 optional = true
 type = "String"
@@ -960,57 +865,48 @@ type = "String"
 [ruby.ruby_install_repo]
 default = "https://github.com/postmodern/ruby-install.git"
 description = "URL to fetch ruby-install from."
+
 env = "MISE_RUBY_INSTALL_REPO"
 type = "String"
 
 [ruby.verbose_install]
 description = "Set to true to enable verbose output during ruby installation."
+
 env = "MISE_RUBY_VERBOSE_INSTALL"
 optional = true
 type = "Bool"
 
 [rust.cargo_home]
 description = "Path to the cargo home directory. Defaults to `~/.cargo` or `%USERPROFILE%\\.cargo`"
+
 env = "MISE_CARGO_HOME"
 optional = true
 type = "Path"
 
 [rust.rustup_home]
 description = "Path to the rustup home directory. Defaults to `~/.rustup` or `%USERPROFILE%\\.rustup`"
+
 env = "MISE_RUSTUP_HOME"
 optional = true
 type = "Path"
 
 [shorthands_file]
 description = "Path to a file containing custom tool shorthands."
-docs = """
-Use a custom file for the shorthand aliases. This is useful if you want to share plugins within
-an organization.
 
-Shorthands make it so when a user runs something like `mise install elixir` mise will
-automatically install the [asdf-elixir](https://github.com/asdf-vm/asdf-elixir) plugin. By
-default, it uses the shorthands in
-[`registry.toml`](https://github.com/jdx/mise/blob/main/registry.toml).
-
-The file should be in this toml format:
-
-```toml
-elixir = "https://github.com/my-org/mise-elixir.git"
-node = "https://github.com/my-org/mise-node.git"
-```
-
-"""
+docs = "Use a custom file for the shorthand aliases. This is useful if you want to share plugins within\nan organization.\n\nShorthands make it so when a user runs something like `mise install elixir` mise will\nautomatically install the [asdf-elixir](https://github.com/asdf-vm/asdf-elixir) plugin. By\ndefault, it uses the shorthands in\n[`registry.toml`](https://github.com/jdx/mise/blob/main/registry.toml).\n\nThe file should be in this toml format:\n\n```toml\nelixir = \"https://github.com/my-org/mise-elixir.git\"\nnode = \"https://github.com/my-org/mise-node.git\"\n```\n\n"
 env = "MISE_SHORTHANDS_FILE"
-optional = true
 type = "Path"
+optional = true
 
 [silent]
 description = "Suppress all `mise run|watch` output except errors—including what tasks output."
+
 env = "MISE_SILENT"
 type = "Bool"
 
 [sops.age_key]
 description = "The age private key to use for sops secret decryption."
+
 env = "MISE_SOPS_AGE_KEY"
 optional = true
 type = "String"
@@ -1018,12 +914,14 @@ type = "String"
 [sops.age_key_file]
 default_docs = "~/.config/mise/age.txt"
 description = "Path to the age private key file to use for sops secret decryption."
+
 env = "MISE_SOPS_AGE_KEY_FILE"
 optional = true
 type = "Path"
 
 [sops.age_recipients]
 description = "The age public keys to use for sops secret encryption."
+
 env = "MISE_SOPS_AGE_RECIPIENTS"
 optional = true
 type = "String"
@@ -1031,261 +929,262 @@ type = "String"
 [sops.rops]
 default = true
 description = "Use rops to decrypt sops files. Disable to shell out to `sops` which will slow down mise but sops may offer features not available in rops."
+
 env = "MISE_SOPS_ROPS"
 type = "Bool"
 
 [sops.strict]
 default = true
 description = "If true, fail when sops decryption fails (including when sops is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases."
+
 env = "MISE_SOPS_STRICT"
 type = "Bool"
 
 [status.missing_tools]
 default = "if_other_versions_installed"
 description = "Show a warning if tools are not installed when entering a directory with a mise.toml file."
-docs = """
-| Choice                                  | Description                                                                |
-|-----------------------------------------|----------------------------------------------------------------------------|
-| `if_other_versions_installed` [default] | Show the warning only when the tool has at least 1 other version installed |
-| `always`                                | Always show the warning                                                    |
-| `never`                                 | Never show the warning                                                     |
 
-Show a warning if tools are not installed when entering a directory with a `mise.toml` file.
-
-Disable tools with [`disable_tools`](#disable_tools).
-"""
+docs = "| Choice                                  | Description                                                                |\n|-----------------------------------------|----------------------------------------------------------------------------|\n| `if_other_versions_installed` [default] | Show the warning only when the tool has at least 1 other version installed |\n| `always`                                | Always show the warning                                                    |\n| `never`                                 | Never show the warning                                                     |\n\nShow a warning if tools are not installed when entering a directory with a `mise.toml` file.\n\nDisable tools with [`disable_tools`](#disable_tools).\n"
 env = "MISE_STATUS_MESSAGE_MISSING_TOOLS"
 type = "String"
 
 [status.show_env]
 description = "Show configured env vars when entering a directory with a mise.toml file."
+
 env = "MISE_STATUS_MESSAGE_SHOW_ENV"
 type = "Bool"
 
 [status.show_tools]
 description = "Show configured tools when entering a directory with a mise.toml file."
+
 env = "MISE_STATUS_MESSAGE_SHOW_TOOLS"
 type = "Bool"
 
 [status.truncate]
 default = true
 description = "Truncate status messages."
+
 env = "MISE_STATUS_MESSAGE_TRUNCATE"
 type = "Bool"
 
 [swift.gpg_verify]
 description = "Use gpg to verify swift tool signatures."
+
 env = "MISE_SWIFT_GPG_VERIFY"
 optional = true
 type = "Bool"
 
 [swift.platform]
-default_docs = '"osx" | "windows10" | "ubuntu20.04" | "ubuntu22.04" | "ubuntu24.04" | "amazonlinux2" | "ubi9" | "fedora39"'
+default_docs = "\"osx\" | \"windows10\" | \"ubuntu20.04\" | \"ubuntu22.04\" | \"ubuntu24.04\" | \"amazonlinux2\" | \"ubi9\" | \"fedora39\""
 description = "Override the platform to use for precompiled binaries."
+
 env = "MISE_SWIFT_PLATFORM"
 optional = true
 type = "String"
 
 [system_config_file]
 description = "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var."
+
 env = "MISE_SYSTEM_CONFIG_FILE"
-optional = true
 type = "Path"
+optional = true
 
 [task_disable_paths]
-default = []
 description = "Paths that mise will not look for tasks in."
+
 env = "MISE_TASK_DISABLE_PATHS"
-parse_env = "list_by_colon"
-rust_type = "BTreeSet<PathBuf>"
+default = []
 type = "ListPath"
+rust_type = "BTreeSet<PathBuf>"
+parse_env = "list_by_colon"
 
 [task_output]
 description = "Change output style when executing tasks."
-docs = """
-Change output style when executing tasks. This controls the output of `mise run`.
-"""
-enum = [
-  [
-    "(default if jobs == 1 or all tasks run sequentially) print output as it comes in",
-    "interleave",
-  ],
-  [
-    "(default if jobs > 1) print by line with the prefix of the task name",
-    "prefix",
-  ],
-  [
-    "keep-order",
-    "print output from tasks in the order they are defined",
-  ],
-  [
-    "only show stdout lines that take longer than 1s to complete",
-    "timed",
-  ],
-  [
-    "print nothing from tasks or mise",
-    "silent",
-  ],
-  [
-    "print only stdout/stderr from tasks and nothing from mise",
-    "quiet",
-  ],
-  [
-    "replace stdout each time a line is printed-this uses similar logic as `mise install`",
-    "replacing",
-  ],
-]
+
+docs = "Change output style when executing tasks. This controls the output of `mise run`.\n"
 env = "MISE_TASK_OUTPUT"
-optional = true
-rust_type = "crate::cli::run::TaskOutput"
 type = "String"
+rust_type = "crate::cli::run::TaskOutput"
+optional = true
+enum = [
+    [
+        "(default if jobs == 1 or all tasks run sequentially) print output as it comes in",
+        "interleave",
+    ],
+    [
+        "(default if jobs > 1) print by line with the prefix of the task name",
+        "prefix",
+    ],
+    [
+        "keep-order",
+        "print output from tasks in the order they are defined",
+    ],
+    [
+        "only show stdout lines that take longer than 1s to complete",
+        "timed",
+    ],
+    [
+        "print nothing from tasks or mise",
+        "silent",
+    ],
+    [
+        "print only stdout/stderr from tasks and nothing from mise",
+        "quiet",
+    ],
+    [
+        "replace stdout each time a line is printed-this uses similar logic as `mise install`",
+        "replacing",
+    ],
+]
 
 [task_remote_no_cache]
 description = "Mise will always fetch the latest tasks from the remote, by default the cache is used."
+
 env = "MISE_TASK_REMOTE_NO_CACHE"
-optional = true
 type = "Bool"
+optional = true
 
 [task_run_auto_install]
-default = true
 description = "Automatically install missing tools when executing tasks."
+
 env = "MISE_TASK_RUN_AUTO_INSTALL"
+default = true
 type = "Bool"
 
 [task_skip]
-default = []
 description = "Tasks to skip when running `mise run`."
+
 env = "MISE_TASK_SKIP"
-parse_env = "set_by_comma"
-rust_type = "BTreeSet<String>"
+default = []
 type = "SetString"
+rust_type = "BTreeSet<String>"
+parse_env = "set_by_comma"
 
 [task_timeout]
 description = "Default timeout for tasks. Can be overridden by individual tasks."
+
 env = "MISE_TASK_TIMEOUT"
-optional = true
 type = "Duration"
+optional = true
 
 [task_timings]
 description = "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`."
+
 env = "MISE_TASK_TIMINGS"
-optional = true
 type = "Bool"
+optional = true
 
 [trace]
 description = "Sets log level to trace"
+
 env = "MISE_TRACE"
-hide = true
 type = "Bool"
+hide = true
 
 [trusted_config_paths]
-default = []
 description = "This is a list of config paths that mise will automatically mark as trusted."
+
 env = "MISE_TRUSTED_CONFIG_PATHS"
-parse_env = "list_by_colon"
-rust_type = "BTreeSet<PathBuf>"
+default = []
 type = "ListPath"
+rust_type = "BTreeSet<PathBuf>"
+parse_env = "list_by_colon"
 
 [unix_default_file_shell_args]
-default = "sh"
 description = "List of default shell arguments for unix to be used with `file`. For example `sh`."
+
 env = "MISE_UNIX_DEFAULT_FILE_SHELL_ARGS"
+default = "sh"
 type = "String"
 
 [unix_default_inline_shell_args]
-default = "sh -c -o errexit"
 description = "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh."
+
 env = "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS"
+default = "sh -c -o errexit"
 type = "String"
 
 [url_replacements]
 description = "Map of URL patterns to replacement URLs applied to all requests."
-docs = '''
-Map of URL patterns to replacement URLs. This feature supports both simple hostname replacements
-and advanced regex-based URL transformations for download mirroring and custom registries.
 
-See [URL Replacements](/url-replacements.html) for more information.
-'''
+docs = "Map of URL patterns to replacement URLs. This feature supports both simple hostname replacements\nand advanced regex-based URL transformations for download mirroring and custom registries.\n\nSee [URL Replacements](/url-replacements.html) for more information.\n"
 env = "MISE_URL_REPLACEMENTS"
+type = "IndexMap<String, String>"
 optional = true
 parse_env = "parse_url_replacements"
-type = "IndexMap<String, String>"
 
 [use_file_shell_for_executable_tasks]
-default = false
 description = "Determines whether to use a specified shell for executing tasks in the tasks directory. When set to true, the shell defined in the file will be used, or the default shell specified by `windows_default_file_shell_args` or `unix_default_file_shell_args` will be applied. If set to false, tasks will be executed directly as programs."
+
 env = "MISE_USE_FILE_SHELL_FOR_EXECUTABLE_TASKS"
+default = false
 type = "Bool"
 
 [use_versions_host]
-default = true
 description = "Set to false to disable using the mise-versions API as a quick way for mise to query for new versions."
-docs = """
-Set to "false" to disable using [mise-versions](https://mise-versions.jdx.dev) as
-a quick way for mise to query for new versions. This host regularly grabs all the
-latest versions of core and community plugins. It's faster than running a plugin's
-`list-all` command and gets around GitHub rate limiting problems when using it.
 
-mise-versions itself also struggles with rate limits but you can help it to fetch more frequently by authenticating
-with its [GitHub app](https://github.com/apps/mise-versions). It does not require any permissions since it simply
-fetches public repository information.
-
-See [Troubleshooting](/troubleshooting.html#new-version-of-a-tool-is-not-available) for more information.
-"""
+docs = "Set to \"false\" to disable using [mise-versions](https://mise-versions.jdx.dev) as\na quick way for mise to query for new versions. This host regularly grabs all the\nlatest versions of core and community plugins. It's faster than running a plugin's\n`list-all` command and gets around GitHub rate limiting problems when using it.\n\nmise-versions itself also struggles with rate limits but you can help it to fetch more frequently by authenticating\nwith its [GitHub app](https://github.com/apps/mise-versions). It does not require any permissions since it simply\nfetches public repository information.\n\nSee [Troubleshooting](/troubleshooting.html#new-version-of-a-tool-is-not-available) for more information.\n"
 env = "MISE_USE_VERSIONS_HOST"
+default = true
 type = "Bool"
 
 [verbose]
 description = "Shows more verbose output such as installation logs when installing tools."
+
 env = "MISE_VERBOSE"
 type = "Bool"
 
 [vfox]
-deprecated = "Use disable_backends instead."
 description = "Use vfox as a default plugin backend instead of asdf."
-docs = """
-Use vfox as a default plugin backend. This means running something like `mise use cmake` will
-default to using a vfox plugin for cmake.
-"""
+
+docs = "Use vfox as a default plugin backend. This means running something like `mise use cmake` will\ndefault to using a vfox plugin for cmake.\n"
 env = "MISE_VFOX"
-hide = true
-optional = true
 type = "Bool"
+optional = true
+hide = true
+deprecated = "Use disable_backends instead."
 
 [windows_default_file_shell_args]
-default = "cmd /c"
 description = "List of default shell arguments for Windows to be used for file commands. For example, `cmd`, `/c` for cmd.exe."
+
 env = "MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS"
-rust_type = "String"
+default = "cmd /c"
 type = "ListString"
+rust_type = "String"
 
 [windows_default_inline_shell_args]
-default = "cmd /c"
 description = "List of default shell arguments for Windows to be used for inline commands. For example, `cmd`, `/c` for cmd.exe."
+
 env = "MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS"
+default = "cmd /c"
 type = "String"
 
 [windows_executable_extensions]
-default = ["bat", "cmd", "com", "exe", "ps1", "vbs"]
 description = "List of executable extensions for Windows. For example, `exe` for .exe files, `bat` for .bat files, and so on."
+
 env = "MISE_WINDOWS_EXECUTABLE_EXTENSIONS"
-parse_env = "list_by_comma"
-rust_type = "Vec<String>"
+default = [
+    "bat",
+    "cmd",
+    "com",
+    "exe",
+    "ps1",
+    "vbs",
+]
 type = "ListString"
+rust_type = "Vec<String>"
+parse_env = "list_by_comma"
 
 [windows_shim_mode]
-default = "file"
 description = "Shim file mode for Windows. Options: `file`, `hardlink`, `symlink`."
-docs = """
-* values:
-  * `file`: Creates a file with the content `mise exec`.
-  * `hardlink`: Uses Windows NTFS Hardlink, required on same filesystems. Need run `mise reshim --force` after upgrade mise.
-  * `symlink`: Uses Windows NTFS SymbolicLink. Requires Windows Vista or later with admin privileges or enabling "Developer Mode" in Windows 10/11.
-"""
+
+docs = "* values:\n  * `file`: Creates a file with the content `mise exec`.\n  * `hardlink`: Uses Windows NTFS Hardlink, required on same filesystems. Need run `mise reshim --force` after upgrade mise.\n  * `symlink`: Uses Windows NTFS SymbolicLink. Requires Windows Vista or later with admin privileges or enabling \"Developer Mode\" in Windows 10/11.\n"
 env = "MISE_WINDOWS_SHIM_MODE"
+default = "file"
 type = "String"
 
 [yes]
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."
+
 env = "MISE_YES"
 type = "Bool"

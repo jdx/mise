@@ -2,7 +2,7 @@
 
 [formatting]
 align_entries = false
-array_auto_collapse = false
+array_auto_collapse = true
 array_auto_expand = true
 indent_tables = false
 reorder_keys = false
@@ -11,13 +11,15 @@ reorder_keys = false
 include = ["registry.toml"]
 
 [rule.formatting]
-reorder_keys = true
+reorder_keys = false
 reorder_arrays = true
 indent_tables = true
+allowed_blank_lines = 1
 
 [[rule]]
 include = ["settings.toml"]
 
 [rule.formatting]
-reorder_keys = true
+reorder_keys = false
 reorder_arrays = true
+allowed_blank_lines = 1
