@@ -1,5 +1,8 @@
 # Taplo configuration for mise
 
+exclude = ["docs/registry.toml"]
+
+
 [formatting]
 align_entries = false
 array_auto_collapse = true
@@ -9,6 +12,7 @@ reorder_keys = false
 
 [[rule]]
 include = ["registry.toml"]
+schema.path = "./schema/mise-registry.json"
 
 [rule.formatting]
 reorder_keys = true
@@ -17,6 +21,7 @@ indent_tables = true
 
 [[rule]]
 include = ["settings.toml"]
+schema.path = "./schema/mise-settings.json"
 
 [rule.formatting]
 reorder_keys = true
