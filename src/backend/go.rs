@@ -7,6 +7,7 @@ use crate::timeout;
 use crate::toolset::ToolVersion;
 use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
+use eyre::bail;
 use itertools::Itertools;
 use std::{fmt::Debug, sync::Arc};
 use xx::regex;
@@ -31,6 +32,16 @@ impl Backend for GoBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        // Check if go is available
+        if self.dependency_which(config, "go").await.is_none() {
+            bail!(
+                "go is required but not found.\n\n\
+                To use go packages with mise, you need to install Go first:\n\
+                  mise use go@latest\n\n\
+                Or install Go via https://go.dev/dl/"
+            );
+        }
+
         timeout::run_with_timeout_async(
             async || {
                 let tool_name = self.tool_name();
@@ -87,6 +98,17 @@ impl Backend for GoBackend {
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         Settings::get().ensure_experimental("go backend")?;
+
+        // Check if go is available
+        if self.dependency_which(&ctx.config, "go").await.is_none() {
+            bail!(
+                "go is required but not found.\n\n\
+                To use go packages with mise, you need to install Go first:\n\
+                  mise use go@latest\n\n\
+                Or install Go via https://go.dev/dl/"
+            );
+        }
+
         let opts = self.ba.opts();
 
         let install = async |v| {

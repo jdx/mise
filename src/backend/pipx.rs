@@ -11,7 +11,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, timeout};
 use async_trait::async_trait;
-use eyre::{Result, eyre};
+use eyre::{Result, bail, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use regex::Regex;
@@ -158,15 +158,27 @@ impl Backend for PIPXBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        // Check if pipx is available (unless uvx is being used)
+        let use_uvx = self.uv_is_installed(&ctx.config).await
+            && Settings::get().pipx.uvx != Some(false)
+            && tv.request.options().get("uvx") != Some(&"false".to_string());
+
+        if !use_uvx && self.dependency_which(&ctx.config, "pipx").await.is_none() {
+            bail!(
+                "pipx is required but not found.\n\n\
+                To use pipx packages with mise, you need to install pipx first:\n\
+                  mise use pipx@latest\n\n\
+                Alternatively, you can use uv/uvx by installing uv:\n\
+                  mise use uv@latest"
+            );
+        }
+
         let pipx_request = self
             .tool_name()
             .parse::<PipxRequest>()?
             .pipx_request(&tv.version, &tv.request.options());
 
-        if self.uv_is_installed(&ctx.config).await
-            && Settings::get().pipx.uvx != Some(false)
-            && tv.request.options().get("uvx") != Some(&"false".to_string())
-        {
+        if use_uvx {
             ctx.pr
                 .set_message(format!("uv tool install {pipx_request}"));
             let mut cmd = Self::uvx_cmd(

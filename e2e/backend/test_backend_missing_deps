@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+# Test that package manager backends show helpful errors when their dependencies are missing
+
+# Create a PATH that has mise but not package managers
+MISE_DIR="${CARGO_TARGET_DIR:-$ROOT/target}/debug"
+export PATH="$MISE_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
+
+# Test cargo backend
+echo "Testing cargo backend with missing cargo..."
+# Remove cargo from path if it exists
+NEW_PATH=""
+IFS=':' read -ra PATHS <<<"$PATH"
+for p in "${PATHS[@]}"; do
+	if [[ ! -x "$p/cargo" ]]; then
+		if [[ -z $NEW_PATH ]]; then
+			NEW_PATH="$p"
+		else
+			NEW_PATH="$NEW_PATH:$p"
+		fi
+	fi
+done
+export PATH="$NEW_PATH"
+
+if command -v cargo >/dev/null 2>&1; then
+	echo "WARNING: cargo is still in PATH, skipping cargo test"
+else
+	output=$(mise install cargo:test-crate@latest 2>&1 || true)
+	if [[ $output == *"cargo is required but not found"* ]]; then
+		echo "✓ cargo backend shows correct error"
+	else
+		echo "ERROR: cargo backend did not show expected error"
+		echo "Got: $output"
+	fi
+fi
+
+# Test go backend (checking list-remote since it also needs go)
+echo "Testing go backend with missing go..."
+# Remove go from path if it exists
+NEW_PATH=""
+IFS=':' read -ra PATHS <<<"$PATH"
+for p in "${PATHS[@]}"; do
+	if [[ ! -x "$p/go" ]]; then
+		if [[ -z $NEW_PATH ]]; then
+			NEW_PATH="$p"
+		else
+			NEW_PATH="$NEW_PATH:$p"
+		fi
+	fi
+done
+export PATH="$NEW_PATH"
+
+if command -v go >/dev/null 2>&1; then
+	echo "WARNING: go is still in PATH, skipping go test"
+else
+	output=$(mise ls-remote go:github.com/test/test 2>&1 || true)
+	if [[ $output == *"go is required but not found"* ]]; then
+		echo "✓ go backend shows correct error"
+	else
+		echo "ERROR: go backend did not show expected error"
+		echo "Got: $output"
+	fi
+fi
+
+echo "✓ backend dependency error test passed"

@@ -9,6 +9,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{Result, config::Config};
 use async_trait::async_trait;
+use eyre::bail;
 use indoc::formatdoc;
 use std::{fmt::Debug, sync::Arc};
 use url::Url;
@@ -46,6 +47,15 @@ impl Backend for GemBackend {
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         Settings::get().ensure_experimental("gem backend")?;
+
+        // Check if gem is available
+        if self.dependency_which(&ctx.config, "gem").await.is_none() {
+            bail!(
+                "gem is required but not found.\n\n\
+                To use gem packages with mise, you need to install Ruby first:\n\
+                  mise use ruby@latest"
+            );
+        }
 
         CmdLineRunner::new("gem")
             .arg("install")
