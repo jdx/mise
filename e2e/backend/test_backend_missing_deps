@@ -7,6 +7,9 @@
 MISE_DIR="${CARGO_TARGET_DIR:-$ROOT/target}/debug"
 export PATH="$MISE_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
 
+# Track overall test status
+TEST_FAILED=0
+
 # Helper function to check if a command exists in PATH
 check_command_missing() {
 	local cmd=$1
@@ -15,9 +18,6 @@ check_command_missing() {
 		exit 1
 	fi
 }
-
-# Track overall test status
-TEST_FAILED=0
 
 # Helper function to test an expected error message
 test_error_message() {
@@ -54,97 +54,95 @@ remove_from_path() {
 	export PATH="$new_path"
 }
 
-# Test npm backend
-test_npm_backend() {
-	echo "Testing npm backend with missing npm..."
-	check_command_missing "npm"
+# Generic function to test a backend command that should fail
+test_backend_command() {
+	local backend_name=$1
+	local command=$2
+	local expected_error=$3
+	shift 3
+	local additional_checks=("$@")
 
-	# Test listing versions - should fail with proper error
 	local output
-	if output=$(mise ls-remote npm:test-package 2>&1); then
-		echo "ERROR: npm ls-remote should have failed but succeeded"
+	if output=$($command 2>&1); then
+		echo "ERROR: $backend_name command should have failed but succeeded"
 		TEST_FAILED=1
+		return 1
 	else
-		# Capture stderr to check error message (ignore warnings about null bytes)
-		output=$(mise ls-remote npm:test-package 2>&1 || true)
-		test_error_message "npm backend shows correct error for ls-remote" "$output" "npm is required but not found" || true
-		test_error_message "npm backend suggests installing node" "$output" "mise use node@latest" || true
-		# Note: The error message now mentions npm is needed for querying, not bun alternative
-		test_error_message "npm backend mentions npm is needed for queries" "$output" "npm is required for querying package information" || true
-	fi
+		# Capture stderr to check error message
+		output=$($command 2>&1 || true)
+		test_error_message "$backend_name shows correct error" "$output" "$expected_error" || true
 
-	# Test installing - should fail with proper error
-	if output=$(mise install npm:test-package@latest 2>&1); then
-		echo "ERROR: npm install should have failed but succeeded"
-		TEST_FAILED=1
-	else
-		# Capture stderr to check error message (ignore warnings about null bytes)
-		output=$(mise install npm:test-package@latest 2>&1 || true)
-		test_error_message "npm backend shows correct error for install" "$output" "npm is required but not found" || true
+		# Check any additional expected messages
+		for check in "${additional_checks[@]}"; do
+			test_error_message "$backend_name ${check%%:*}" "$output" "${check#*:}" || true
+		done
 	fi
 }
 
-# Test npm backend with bun mode but npm missing (npm is always required)
-test_npm_bun_backend() {
-	echo "Testing npm backend with bun mode enabled but npm missing..."
-	# npm is always required for version queries, even in bun mode
-	check_command_missing "npm"
+# Generic function to test a backend with missing dependency
+test_missing_dependency() {
+	local backend_name=$1
+	local dep_command=$2
+	local test_commands=$3
+	local expected_error=$4
+	shift 4
+	local additional_checks=("$@")
 
-	export MISE_NPM_BUN=true
-	local output
-	# Should fail because npm is required for version resolution
-	if output=$(mise install npm:test-package@latest 2>&1); then
-		echo "ERROR: npm install should have failed when npm is missing"
-		TEST_FAILED=1
-	else
-		output=$(mise install npm:test-package@latest 2>&1 || true)
-		# Should show npm is required (for version resolution)
-		test_error_message "npm backend shows npm is required even in bun mode" "$output" "npm is required but not found" || true
-		test_error_message "npm backend mentions npm is needed for queries" "$output" "npm is required for querying package information" || true
+	echo "Testing $backend_name backend with missing $dep_command..."
+
+	# Remove from PATH if needed
+	if [[ $dep_command == *cargo* ]] || [[ $dep_command == *go* ]]; then
+		remove_from_path "$dep_command"
 	fi
+
+	check_command_missing "$dep_command"
+
+	# Parse and execute test commands
+	IFS='|' read -ra COMMANDS <<<"$test_commands"
+	for cmd in "${COMMANDS[@]}"; do
+		test_backend_command "$backend_name" "$cmd" "$expected_error" "${additional_checks[@]}"
+	done
+}
+
+# Run backend tests using the generic helpers
+run_tests() {
+	# Define test cases: backend_name|dep_command|test_commands|expected_error|additional_checks...
+	local test_cases=(
+		"npm|npm|mise ls-remote npm:test-package,mise install npm:test-package@latest|npm is required but not found|suggests installing node:mise use node@latest|mentions npm is needed for queries:npm is required for querying package information"
+		"cargo|cargo|mise install cargo:tiny@latest|cargo is required but not found"
+		"go|go|mise ls-remote go:github.com/test/test|go is required but not found"
+	)
+
+	# Run each test case
+	for test_case in "${test_cases[@]}"; do
+		IFS='|' read -r backend dep commands error checks <<<"$test_case"
+
+		# Convert comma-separated commands to pipe-separated for test_missing_dependency
+		commands="${commands//,/|}"
+
+		# Parse additional checks if present
+		local additional_checks=()
+		if [[ -n $checks ]]; then
+			IFS='|' read -ra additional_checks <<<"$checks"
+		fi
+
+		test_missing_dependency "$backend" "$dep" "$commands" "$error" "${additional_checks[@]}"
+	done
+
+	# Special case: npm backend with bun mode
+	echo "Testing npm backend with bun mode enabled but npm missing..."
+	check_command_missing "npm"
+	export MISE_NPM_BUN=true
+	test_backend_command \
+		"npm (bun mode)" \
+		"mise install npm:test-package@latest" \
+		"npm is required but not found" \
+		"shows npm is required even in bun mode:npm is required for querying package information"
 	unset MISE_NPM_BUN
 }
 
-# Test cargo backend
-test_cargo_backend() {
-	echo "Testing cargo backend with missing cargo..."
-	remove_from_path "cargo"
-	check_command_missing "cargo"
-
-	local output
-	# Use a valid crate name (tiny is a real crate)
-	if output=$(mise install cargo:tiny@latest 2>&1); then
-		echo "ERROR: cargo install should have failed but succeeded"
-		TEST_FAILED=1
-	else
-		# Capture stderr to check error message (ignore warnings about null bytes)
-		output=$(mise install cargo:tiny@latest 2>&1 || true)
-		test_error_message "cargo backend shows correct error" "$output" "cargo is required but not found" || true
-	fi
-}
-
-# Test go backend
-test_go_backend() {
-	echo "Testing go backend with missing go..."
-	remove_from_path "go"
-	check_command_missing "go"
-
-	local output
-	if output=$(mise ls-remote go:github.com/test/test 2>&1); then
-		echo "ERROR: go ls-remote should have failed but succeeded"
-		TEST_FAILED=1
-	else
-		# Capture stderr to check error message (ignore warnings about null bytes)
-		output=$(mise ls-remote go:github.com/test/test 2>&1 || true)
-		test_error_message "go backend shows correct error" "$output" "go is required but not found" || true
-	fi
-}
-
 # Run all tests
-test_npm_backend
-test_npm_bun_backend
-test_cargo_backend
-test_go_backend
+run_tests
 
 if [ $TEST_FAILED -eq 0 ]; then
 	echo "✓ backend dependency error test passed"
