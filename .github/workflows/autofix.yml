@@ -23,7 +23,7 @@ env:
 
 jobs:
   autofix:
-    if: github.actor != 'renovate[bot]'
+    if: github.actor != 'renovate[bot]' && github.actor != 'mend[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
