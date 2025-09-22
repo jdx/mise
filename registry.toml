@@ -762,8 +762,8 @@ test = ["cli53 --version", "cli53 version {{version}}"]
 
 [tools.clickhouse]
 backends = [
-    # "ubi:ClickHouse/ClickHouse", # ubi not working on linux
-    "asdf:mise-plugins/mise-clickhouse",
+  # "ubi:ClickHouse/ClickHouse", # ubi not working on linux
+  "asdf:mise-plugins/mise-clickhouse",
 ]
 description = "ClickHouse® is a high-performance, column-oriented SQL database management system (DBMS) for online analytical processing (OLAP)"
 test = ["clickhouse --version", "ClickHouse local version {{version}}"]
@@ -1617,7 +1617,10 @@ test = ["ghalint version", "{{version}}"]
 [tools.ghc]
 backends = ["asdf:mise-plugins/mise-ghcup"]
 description = "GHCup is the main installer for the general purpose language Haskell."
-test = ["ghc --version", "The Glorious Glasgow Haskell Compilation System, version {{version}}"]
+test = [
+  "ghc --version",
+  "The Glorious Glasgow Haskell Compilation System, version {{version}}",
+]
 
 [tools.ghcup]
 backends = [
@@ -2632,7 +2635,10 @@ description = "Faster way to switch between clusters and namespaces in kubectl"
 [tools.kubefedctl]
 backends = ["aqua:kubernetes-retired/kubefed", "asdf:kvokka/asdf-kubefedctl"]
 description = "kubefedctl controls a Kubernetes Cluster Federation"
-test = ["kubefedctl version", "kubefedctl version:"] # may not have version in output
+test = [
+  "kubefedctl version",
+  "kubefedctl version:",
+] # may not have version in output
 
 [tools.kubefirst]
 backends = ["github:konstructio/kubefirst", "asdf:Claywd/asdf-kubefirst"]
@@ -3903,9 +3909,9 @@ description = "Semantic Tagging Script for Git"
 
 [tools.semver]
 backends = [
-    # "aqua:fsaintjacques/semver-tool", # see https://github.com/jdx/mise/discussions/5833
-    "vfox:mise-plugins/mise-semver",
-    "asdf:mathew-fleisch/asdf-semver",
+  # "aqua:fsaintjacques/semver-tool", # see https://github.com/jdx/mise/discussions/5833
+  "vfox:mise-plugins/mise-semver",
+  "asdf:mathew-fleisch/asdf-semver",
 ]
 description = "semver bash implementation"
 test = ["semver --version", "semver: {{version}}"]
@@ -4509,7 +4515,10 @@ test = ["trufflehog --version", "trufflehog {{version}}"]
 [tools.trunk]
 backends = ["npm:@trunkio/launcher"]
 description = "Trunk is a comprehensive code quality tool that runs linters, formatters, and security scanners to help maintain high-quality codebases (https://trunk.io)"
-test = ["trunk --help", "trunk [flags] [subcommand]"] # --version can't be used because we know the launcher version, but we get the binary version
+test = [
+  "trunk --help",
+  "trunk [flags] [subcommand]",
+] # --version can't be used because we know the launcher version, but we get the binary version
 
 [tools.trzsz-ssh]
 aliases = ["tssh"]
