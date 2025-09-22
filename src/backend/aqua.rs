@@ -53,10 +53,6 @@ impl Backend for AquaBackend {
         &self.ba
     }
 
-    fn get_optional_dependencies(&self) -> Result<Vec<&str>> {
-        Ok(vec!["cosign", "slsa-verifier"])
-    }
-
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let version_tags = self.get_version_tags().await;
         let mut versions = Vec::new();
