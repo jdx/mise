@@ -1,5 +1,25 @@
 # Changelog
 
+## [2025.9.16](https://github.com/jdx/mise/compare/v2025.9.15..v2025.9.16) - 2025-09-22
+
+### 📦 Registry
+
+- use npm backend for zbctl by @risu729 in [#6379](https://github.com/jdx/mise/pull/6379)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** remove blake3 support from aqua checksum algorithms by @risu729 in [#6370](https://github.com/jdx/mise/pull/6370)
+- **(aqua)** remove cosign and slsa-verifier dependencies by @risu729 in [#6371](https://github.com/jdx/mise/pull/6371)
+- **(aqua)** remove cosign.experimental by @risu729 in [#6376](https://github.com/jdx/mise/pull/6376)
+
+### 📚 Documentation
+
+- minisign doesn't require cli by @risu729 in [#6369](https://github.com/jdx/mise/pull/6369)
+
+### Chore
+
+- ignore renovate new bot name by @risu729 in [#6364](https://github.com/jdx/mise/pull/6364)
+
 ## [2025.9.15](https://github.com/jdx/mise/compare/v2025.9.14..v2025.9.15) - 2025-09-21
 
 ### 📦 Registry
