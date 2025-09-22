@@ -117,7 +117,7 @@ impl MiseToml {
     pub fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
         trust_check(path)?;
         trace!("parsing: {}", display_path(path));
-        let des = toml::Deserializer::new(body);
+        let des = toml::Deserializer::parse(body)?;
         let mut rf: MiseToml = serde_ignored::deserialize(des, |p| {
             warn!("unknown field in {}: {p}", display_path(path));
         })?;
