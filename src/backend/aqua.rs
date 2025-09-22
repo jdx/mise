@@ -378,6 +378,7 @@ impl AquaBackend {
         v: &str,
         filename: &str,
     ) -> Result<()> {
+        self.verify_cosign(ctx, tv, pkg, v, filename).await?;
         self.verify_slsa(ctx, tv, pkg, v, filename).await?;
         self.verify_minisign(ctx, tv, pkg, v, filename).await?;
         self.verify_github_attestations(ctx, tv, pkg, v, filename)
@@ -516,6 +517,35 @@ impl AquaBackend {
             let data = file::read(tv.download_path().join(filename))?;
             let sig = file::read_to_string(sig_path)?;
             minisign::verify(&minisign.public_key(pkg, v, os(), arch())?, &data, &sig)?;
+        }
+        Ok(())
+    }
+
+    async fn verify_cosign(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        pkg: &AquaPackage,
+        v: &str,
+        filename: &str,
+    ) -> Result<()> {
+        if !Settings::get().aqua.cosign {
+            return Ok(());
+        }
+        if let Some(cosign) = pkg.checksum.as_ref().and_then(|c| c.cosign.as_ref()) {
+            if cosign.enabled == Some(false) {
+                debug!("cosign is disabled for {tv}");
+                return Ok(());
+            }
+
+            ctx.pr
+                .set_message("verify checksums with cosign".to_string());
+
+            let checksum_path = tv.download_path().join(format!("{filename}.checksum"));
+            let download_path = tv.download_path();
+
+            self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
+                .await?;
         }
         Ok(())
     }

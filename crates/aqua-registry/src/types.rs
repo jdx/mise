@@ -45,6 +45,7 @@ pub struct AquaPackage {
     version_filter_expr: Option<Program>,
     pub version_source: Option<String>,
     pub checksum: Option<AquaChecksum>,
+    pub cosign: Option<AquaCosign>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     pub minisign: Option<AquaMinisign>,
     pub github_artifact_attestations: Option<AquaGithubArtifactAttestations>,
@@ -201,6 +202,7 @@ impl Default for AquaPackage {
             version_filter_expr: None,
             version_source: None,
             checksum: None,
+            cosign: None,
             slsa_provenance: None,
             minisign: None,
             github_artifact_attestations: None,
@@ -568,6 +570,17 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
         orig.checksum = Some(checksum);
     }
 
+    if let Some(avo_cosign) = avo.cosign.clone() {
+        match &mut orig.cosign {
+            Some(orig_cosign) => {
+                orig_cosign.merge(avo_cosign);
+            }
+            None => {
+                orig.cosign = Some(avo_cosign);
+            }
+        }
+    }
+
     if let Some(avo_slsa_provenance) = avo.slsa_provenance.clone() {
         let mut slsa_provenance = orig
             .slsa_provenance
@@ -664,10 +677,14 @@ impl AquaChecksum {
             self.file_format = Some(file_format);
         }
         if let Some(cosign) = other.cosign {
-            if self.cosign.is_none() {
-                self.cosign = Some(cosign.clone());
+            match &mut self.cosign {
+                Some(orig_cosign) => {
+                    orig_cosign.merge(cosign);
+                }
+                None => {
+                    self.cosign = Some(cosign);
+                }
             }
-            self.cosign.as_mut().unwrap().merge(cosign);
         }
     }
 }
