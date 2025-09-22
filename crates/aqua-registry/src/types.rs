@@ -565,31 +565,47 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     }
 
     if let Some(avo_checksum) = avo.checksum.clone() {
-        let mut checksum = orig.checksum.unwrap_or_else(|| avo_checksum.clone());
-        checksum.merge(avo_checksum);
-        orig.checksum = Some(checksum);
+        match &mut orig.checksum {
+            Some(checksum) => {
+                checksum.merge(avo_checksum.clone());
+            }
+            None => {
+                orig.checksum = Some(avo_checksum.clone());
+            }
+        }
     }
 
     if let Some(avo_slsa_provenance) = avo.slsa_provenance.clone() {
-        let mut slsa_provenance = orig
-            .slsa_provenance
-            .unwrap_or_else(|| avo_slsa_provenance.clone());
-        slsa_provenance.merge(avo_slsa_provenance);
-        orig.slsa_provenance = Some(slsa_provenance);
+        match &mut orig.slsa_provenance {
+            Some(slsa_provenance) => {
+                slsa_provenance.merge(avo_slsa_provenance.clone());
+            }
+            None => {
+                orig.slsa_provenance = Some(avo_slsa_provenance.clone());
+            }
+        }
     }
 
     if let Some(avo_minisign) = avo.minisign.clone() {
-        let mut minisign = orig.minisign.unwrap_or_else(|| avo_minisign.clone());
-        minisign.merge(avo_minisign);
-        orig.minisign = Some(minisign);
+        match &mut orig.minisign {
+            Some(minisign) => {
+                minisign.merge(avo_minisign.clone());
+            }
+            None => {
+                orig.minisign = Some(avo_minisign.clone());
+            }
+        }
     }
 
-    if let Some(avo_github_artifact_attestations) = avo.github_artifact_attestations.clone() {
-        let mut github_artifact_attestations = orig
-            .github_artifact_attestations
-            .unwrap_or_else(|| avo_github_artifact_attestations.clone());
-        github_artifact_attestations.merge(avo_github_artifact_attestations);
-        orig.github_artifact_attestations = Some(github_artifact_attestations);
+    if let Some(avo_attestations) = avo.github_artifact_attestations.clone() {
+        match &mut orig.github_artifact_attestations {
+            Some(orig_attestations) => {
+                orig_attestations.merge(avo_attestations.clone());
+            }
+            None => {
+                orig.github_artifact_attestations = Some(avo_attestations.clone());
+            }
+        }
     }
 
     if avo.no_asset {
