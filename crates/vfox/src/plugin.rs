@@ -106,7 +106,7 @@ impl Plugin {
     // Backend plugin methods
     fn load(&self) -> Result<&Metadata> {
         self.metadata.get_or_try_init(|| {
-            debug!("Getting metadata for {self}");
+            debug!("[vfox] Getting metadata for {self}");
             set_paths(
                 &self.lua,
                 &[
