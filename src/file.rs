@@ -767,35 +767,20 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
         }
     }
 
-    let mut system_tar_stripped = false;
     if needs_system_tar {
         // Use system tar for archives with problematic sparse files
         // The tar crate doesn't properly handle certain GNU sparse formats
         debug!("Using system tar for: {}", archive.display());
 
-        if opts.strip_components > 0 {
-            cmd!(
-                "tar",
-                "-xf",
-                archive,
-                "-C",
-                dest,
-                "--strip-components",
-                opts.strip_components.to_string()
-            )
+        cmd!("tar", "-xf", archive, "-C", dest)
             .run()
-        } else {
-            cmd!("tar", "-xf", archive, "-C", dest).run()
-        }
-        .wrap_err_with(|| format!("Failed to extract {} using system tar", archive.display()))?;
-        // If we asked system tar to strip, record that so we don't strip again below
-        system_tar_stripped = opts.strip_components > 0;
+            .wrap_err_with(|| {
+                format!("Failed to extract {} using system tar", archive.display())
+            })?;
     }
 
-    // Only strip manually if system tar didn't already do it or if we didn't fall back
-    if !system_tar_stripped {
-        strip_archive_path_components(dest, opts.strip_components).wrap_err_with(err)?;
-    }
+    // Always use our manual strip to ensure consistent behavior across backends
+    strip_archive_path_components(dest, opts.strip_components).wrap_err_with(err)?;
     Ok(())
 }
 
