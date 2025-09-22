@@ -77,7 +77,6 @@ pub struct AquaFile {
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum AquaChecksumAlgorithm {
-    Blake3,
     Sha1,
     Sha256,
     Sha512,
