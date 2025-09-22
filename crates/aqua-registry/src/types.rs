@@ -151,6 +151,7 @@ pub struct AquaMinisign {
 /// GitHub artifact attestations configuration
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaGithubArtifactAttestations {
+    pub enabled: Option<bool>,
     pub signer_workflow: Option<String>,
 }
 
@@ -583,8 +584,12 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
         orig.minisign = Some(minisign);
     }
 
-    if let Some(avo_attestations) = avo.github_artifact_attestations.clone() {
-        orig.github_artifact_attestations = Some(avo_attestations);
+    if let Some(avo_github_artifact_attestations) = avo.github_artifact_attestations.clone() {
+        let mut github_artifact_attestations = orig
+            .github_artifact_attestations
+            .unwrap_or_else(|| avo_github_artifact_attestations.clone());
+        github_artifact_attestations.merge(avo_github_artifact_attestations);
+        orig.github_artifact_attestations = Some(github_artifact_attestations);
     }
 
     if avo.no_asset {
@@ -874,6 +879,17 @@ impl AquaMinisign {
         }
         if let Some(public_key) = other.public_key {
             self.public_key = Some(public_key);
+        }
+    }
+}
+
+impl AquaGithubArtifactAttestations {
+    fn merge(&mut self, other: Self) {
+        if let Some(enabled) = other.enabled {
+            self.enabled = Some(enabled);
+        }
+        if let Some(signer_workflow) = other.signer_workflow {
+            self.signer_workflow = Some(signer_workflow);
         }
     }
 }
