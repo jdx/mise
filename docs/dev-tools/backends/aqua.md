@@ -111,7 +111,7 @@ export MISE_AQUA_SLSA=true
 Aqua also supports:
 
 - **Minisign verification**: Uses minisign for signature verification (requires minisign CLI)
-- **Checksum verification**: Verifies SHA256/SHA512 checksums (always enabled)
+- **Checksum verification**: Verifies SHA256/SHA512/SHA1/MD5 checksums (always enabled)
 
 ### Verification Process
 
