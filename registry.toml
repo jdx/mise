@@ -4893,7 +4893,9 @@ backends = ["aqua:carvel-dev/ytt", "asdf:vmware-tanzu/asdf-carvel"]
 description = "YAML templating tool that works on YAML structure instead of text"
 
 [tools.zbctl]
-backends = ["asdf:mise-plugins/mise-zbctl"]
+backends = ["npm:zbctl"]
+description = "zbctl is a command line interface designed to create and read resources inside zeebe broker."
+test = ["zbctl version", "zbctl {{version}}"]
 
 [tools.zellij]
 backends = [
