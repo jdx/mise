@@ -28,14 +28,14 @@ vendor to reduce surface area.
 
 ## Native Security Verification
 
-mise provides **native Rust implementation** for security verification of tools, eliminating the need for external dependencies like `cosign`, `slsa-verifier`, or `gh` CLI tools. This applies to tools using the aqua backend.
+mise provides **native Rust implementation** for security verification of tools, eliminating the need for external dependencies like `cosign`, `slsa-verifier`, `minisign`, or `gh` CLI tools. This applies to tools using the aqua backend.
 
 ### Supported Verification Methods
 
-- **Cosign signatures**: Native keyless and key-based signature verification
-- **SLSA provenance**: Native verification of Supply-chain Levels for Software Artifacts (SLSA) attestations
-- **GitHub Artifact Attestations**: Native verification of GitHub's artifact attestation system
-- **Minisign verification**: Uses the `minisign` CLI tool (external dependency)
+- **Cosign signatures**: Keyless and key-based signature verification
+- **SLSA provenance**: Verification of Supply-chain Levels for Software Artifacts (SLSA) attestations
+- **GitHub Artifact Attestations**: Verification of GitHub's artifact attestation system
+- **Minisign verification**: Verification of minisign signatures
 - **Checksum verification**: Always enabled for supported backends
 
 ### Configuration

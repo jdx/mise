@@ -2,8 +2,7 @@
 
 [Aqua](https://aquaproj.github.io/) tools may be used natively in mise. aqua is the ideal backend
 to use for new tools since they don't require plugins, they work on windows, they offer security
-features like cosign/slsa verification in addition to checksums. aqua installs also show more progress
-bars, which is nice.
+features in addition to checksums. aqua installs also show more progress bars, which is nice.
 
 You do not need to separately install aqua. The aqua CLI is not used in mise at all. What is used is
 the [aqua registry](https://github.com/aquaproj/aqua-registry) which is a bunch of yaml files that get compiled into the mise binary on release.
@@ -110,7 +109,7 @@ export MISE_AQUA_SLSA=true
 
 Aqua also supports:
 
-- **Minisign verification**: Uses minisign for signature verification (requires minisign CLI)
+- **Minisign verification**: Uses minisign for signature verification
 - **Checksum verification**: Verifies SHA256/SHA512 checksums (always enabled)
 
 ### Verification Process

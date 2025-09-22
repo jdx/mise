@@ -63,7 +63,7 @@ feel like defeats the purpose of having a dedicated org in the first place. By t
 would like for there to no longer be any asdf plugins in the registry that aren't owned by me.
 
 I've also been adopting extra security verification steps when vendors offer that ability such as
-gpg verification on node installs, and native SLSA/Cosign/GitHub attestation verification for aqua tools.
+gpg verification on node installs, and native Cosign/SLSA/Minisign/GitHub attestation verification for aqua tools.
 
 ## UX
 
@@ -152,7 +152,7 @@ that provide the underlying tool.
 Where possible, mise does not use asdf plugins and instead uses backends like aqua and ubi which do
 not require separate plugins.
 
-Aqua tools include native cosign/SLSA/GitHub attestation verification built into mise.
+Aqua tools include native Cosign/SLSA/Minisign/GitHub attestation verification built into mise.
 See [SECURITY](https://github.com/jdx/mise/blob/main/SECURITY.md) for more information.
 
 ## Command Compatibility
