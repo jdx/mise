@@ -812,32 +812,6 @@ impl AquaBackend {
                         }
                     }
                 }
-            } else if cosign.experimental == Some(true) {
-                // Keyless verification with experimental mode
-                // This would need to download the signature/bundle from a default location
-                let sig_or_bundle_path = checksum_path.with_extension("bundle");
-                if sig_or_bundle_path.exists() {
-                    match sigstore_verification::verify_cosign_signature(
-                        checksum_path,
-                        &sig_or_bundle_path,
-                    )
-                    .await
-                    {
-                        Ok(true) => {
-                            ctx.pr.set_message(
-                                "✓ Cosign keyless verification successful".to_string(),
-                            );
-                            debug!("Cosign keyless verification successful for {tv}");
-                        }
-                        Ok(false) => {
-                            return Err(eyre!("Cosign keyless verification failed for {tv}"));
-                        }
-                        Err(e) => {
-                            // If keyless fails, it might not have the bundle, which is OK
-                            debug!("Cosign keyless verification not available for {tv}: {e}");
-                        }
-                    }
-                }
             }
         }
         Ok(())
