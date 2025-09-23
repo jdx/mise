@@ -303,15 +303,31 @@ impl ToolRequest {
 /// subtracts sub from orig and removes suffix
 /// e.g. version_sub("18.2.3", "2") -> "16"
 /// e.g. version_sub("18.2.3", "0.1") -> "18.1"
+/// e.g. version_sub("2.79.0", "0.0.1") -> "2.78" (underflow, returns prefix)
 pub fn version_sub(orig: &str, sub: &str) -> String {
     let mut orig = Version::new(orig).unwrap();
     let sub = Version::new(sub).unwrap();
     while orig.chunks.0.len() > sub.chunks.0.len() {
         orig.chunks.0.pop();
     }
-    for (i, orig_chunk) in orig.clone().chunks.0.iter().enumerate() {
+    for i in 0..orig.chunks.0.len() {
         let m = sub.nth(i).unwrap();
-        orig.chunks.0[i] = Chunk::Numeric(orig_chunk.single_digit().unwrap() - m);
+        let orig_val = orig.chunks.0[i].single_digit().unwrap();
+
+        if orig_val < m {
+            // Handle underflow with borrowing from higher digits
+            for j in (0..i).rev() {
+                let prev_val = orig.chunks.0[j].single_digit().unwrap();
+                if prev_val > 0 {
+                    orig.chunks.0[j] = Chunk::Numeric(prev_val - 1);
+                    orig.chunks.0.truncate(j + 1);
+                    return orig.to_string();
+                }
+            }
+            return "0".to_string();
+        }
+
+        orig.chunks.0[i] = Chunk::Numeric(orig_val - m);
     }
     orig.to_string()
 }
@@ -332,5 +348,17 @@ mod tests {
     fn test_version_sub() {
         assert_str_eq!(version_sub("18.2.3", "2"), "16");
         assert_str_eq!(version_sub("18.2.3", "0.1"), "18.1");
+        assert_str_eq!(version_sub("18.2.3", "0.0.1"), "18.2.2");
+    }
+
+    #[test]
+    fn test_version_sub_underflow() {
+        // Test cases that would cause underflow return prefix for higher digit
+        assert_str_eq!(version_sub("2.0.0", "0.0.1"), "1");
+        assert_str_eq!(version_sub("2.79.0", "0.0.1"), "2.78");
+        assert_str_eq!(version_sub("1.0.0", "0.1.0"), "0");
+        assert_str_eq!(version_sub("0.1.0", "1"), "0");
+        assert_str_eq!(version_sub("1.2.3", "0.2.4"), "0");
+        assert_str_eq!(version_sub("1.3.3", "0.2.4"), "1.0");
     }
 }
