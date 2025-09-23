@@ -1586,11 +1586,12 @@ description = "historical CLI of getenvoy"
 test = ["getenvoy --version", "getenvoy version {{version}}"]
 
 [tools.gettext]
-backends = [
-    "github:lucasew/mise-gettext-dagger"
-]
+backends = ["github:lucasew/mise-gettext-dagger"]
 description = "Well integrated set of translation tools and documentation"
-test = ["xgettext --version", "xgettext (GNU gettext-tools) {{version}}\nCopyright (C) 1995-2025 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\nWritten by Ulrich Drepper."]
+test = [
+  "xgettext --version",
+  "xgettext (GNU gettext-tools) {{version}}\nCopyright (C) 1995-2025 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.\nWritten by Ulrich Drepper.",
+]
 
 [tools.ghalint]
 backends = ["aqua:suzuki-shunsuke/ghalint", "ubi:suzuki-shunsuke/ghalint"]
