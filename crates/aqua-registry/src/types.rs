@@ -113,7 +113,6 @@ pub struct AquaCosignSignature {
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaCosign {
     pub enabled: Option<bool>,
-    pub experimental: Option<bool>,
     pub signature: Option<AquaCosignSignature>,
     pub key: Option<AquaCosignSignature>,
     pub certificate: Option<AquaCosignSignature>,
@@ -683,9 +682,6 @@ impl AquaCosign {
     fn merge(&mut self, other: Self) {
         if let Some(enabled) = other.enabled {
             self.enabled = Some(enabled);
-        }
-        if let Some(experimental) = other.experimental {
-            self.experimental = Some(experimental);
         }
         if let Some(signature) = other.signature.clone() {
             if self.signature.is_none() {
