@@ -47,14 +47,24 @@ When mise needs configuration, it follows this process:
 
 ```
 /
-├── etc/mise/config.toml              # System-wide config (highest precedence)
+├── etc/mise/                          # System-wide config (highest precedence)
+│   ├── conf.d/*.toml                 # System fragments, loaded alphabetically
+│   ├── config.toml                   # System defaults
+│   └── config.<env>.toml             # Env-specific system config (MISE_ENV or -E)
 └── home/user/
-    ├── .config/mise/config.toml      # Global user config
+    ├── .config/mise/
+    │   ├── conf.d/*.toml             # User fragments, loaded alphabetically
+    │   ├── config.toml               # Global user config
+    │   ├── config.<env>.toml         # Env-specific user config
+    │   ├── config.local.toml         # User-local overrides
+    │   └── config.<env>.local.toml   # Env-specific user-local overrides
     └── work/
         ├── mise.toml                 # Work-wide settings
         └── myproject/
             ├── mise.local.toml       # Local overrides (git-ignored)
             ├── mise.toml             # Project config
+            ├── mise.<env>.toml       # Env-specific project config
+            ├── mise.<env>.local.toml # Env-specific project local overrides
             └── backend/
                 └── mise.toml         # Service-specific config (lowest precedence)
 ```
