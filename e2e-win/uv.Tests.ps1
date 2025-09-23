@@ -35,6 +35,6 @@ Describe 'uv' {
 
     mise x -- cowsay -t $randomString | Out-String | Should -BeLikeExactly "*$randomString*"
 
-    mise x -- python -c "import sys; print(sys.executable)" | Should -BeLikeExactly "*my_env\Scripts\python.exe"
+    mise x -- python -c "import sys; print(sys.executable)" | Should -BeLikeExactly "*my_venv\Scripts\python.exe"
   }
 }
