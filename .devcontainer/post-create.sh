@@ -3,6 +3,12 @@
 # Setup script for mise development shim
 # This creates a shim that allows running mise via 'cargo run'
 
+# Install OpenSSL development libraries if they're missing
+if ! pkg-config --exists openssl 2>/dev/null; then
+    echo "Installing OpenSSL development libraries..."
+    apt-get update && apt-get install -y libssl-dev
+fi
+
 echo "Ensuring Rust is up to date for edition 2024 support..."
 
 # Install rustup if not already installed

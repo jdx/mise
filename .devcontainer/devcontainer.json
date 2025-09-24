@@ -3,12 +3,13 @@
 {
   "name": "Rust",
 
-  "image": "ghcr.io/jdx/mise:dev",
+  // "image": "ghcr.io/jdx/mise:dev",
 
   // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-  // "build": {
-  //   "dockerfile": "Dockerfile",
-  // },
+  "build": {
+    "dockerfile": "../packaging/dev/Dockerfile",
+    "context": ".."
+  },
 
   // Use 'mounts' to make the cargo cache persistent in a Docker Volume.
   // "mounts": [
