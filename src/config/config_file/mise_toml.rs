@@ -21,7 +21,8 @@ use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trus
 use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap};
+use crate::config::{Alias, AliasMap, Config};
+use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, Hooks};
 use crate::redactions::Redactions;
@@ -279,6 +280,42 @@ impl MiseToml {
             })?;
         Ok(output)
     }
+
+    fn render_tool_version(
+        &self,
+        context: &TeraContext,
+        version: &ToolVersionType,
+    ) -> eyre::Result<String> {
+        let version_src = version.to_string();
+        if !version_src.contains("{{") && !version_src.contains("{%") && !version_src.contains("{#")
+        {
+            return Ok(version_src);
+        }
+
+        get_tera(self.path.parent())
+            .render_str(&version_src, context)
+            .wrap_err_with(|| eyre!("failed to render tool version template: {version_src}"))
+    }
+}
+
+fn tool_version_context(base: &TeraContext) -> TeraContext {
+    let mut ctx = base.clone();
+    if ctx.get("env").is_none() {
+        ctx.insert("env", &EnvMap::new());
+    }
+
+    if let Some(config) = Config::maybe_get() {
+        if let Some(vars_results) = config.vars_results_cached() {
+            let vars = vars_results
+                .vars
+                .iter()
+                .map(|(k, (v, _))| (k.clone(), v.clone()))
+                .collect::<IndexMap<_, _>>();
+            ctx.insert("vars", &vars);
+        }
+    }
+
+    ctx
 }
 
 impl ConfigFile for MiseToml {
@@ -481,64 +518,13 @@ impl ConfigFile for MiseToml {
     }
 
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
-        // First, resolve vars locally for this config file
-        let mut context = self.context.clone();
-
-        // Simple resolution of vars - just do direct substitution, no complex resolution
-        // This is a temporary context just for parsing tool versions
-        let mut vars_map = HashMap::new();
-        for var_directive in &self.vars.0 {
-            if let EnvDirective::Val(k, v, _) = var_directive {
-                vars_map.insert(k.clone(), v.clone());
-            }
-        }
-
-        // Do multiple passes to resolve nested vars
-        for _ in 0..5 {
-            let mut changed = false;
-            let mut new_vars = HashMap::new();
-            for (k, v) in &vars_map {
-                if v.contains("{{vars.") {
-                    let mut temp_ctx = context.clone();
-                    temp_ctx.insert("vars", &vars_map);
-                    match get_tera(self.path.parent()).render_str(v, &temp_ctx) {
-                        Ok(rendered) if rendered != *v => {
-                            new_vars.insert(k.clone(), rendered);
-                            changed = true;
-                        }
-                        _ => {
-                            new_vars.insert(k.clone(), v.clone());
-                        }
-                    }
-                } else {
-                    new_vars.insert(k.clone(), v.clone());
-                }
-            }
-            vars_map = new_vars;
-            if !changed {
-                break;
-            }
-        }
-
-        context.insert("vars", &vars_map);
-
         let source = ToolSource::MiseToml(self.path.clone());
         let mut trs = ToolRequestSet::new();
         let tools = self.tools.lock().unwrap();
+        let context = tool_version_context(&self.context);
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
-                // Use the context with resolved vars
-                let version = if tool.tt.to_string().contains("{{") {
-                    get_tera(self.path.parent())
-                        .render_str(&tool.tt.to_string(), &context)
-                        .unwrap_or_else(|e| {
-                            warn!("Failed to render tool version template: {}", e);
-                            tool.tt.to_string()
-                        })
-                } else {
-                    tool.tt.to_string()
-                };
-
+                let version = self.render_tool_version(&context, &tool.tt)?;
                 let tvr = if let Some(mut options) = tool.options.clone() {
                     for v in options.opts.values_mut() {
                         *v = self.parse_template(v)?;
