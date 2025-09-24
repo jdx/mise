@@ -21,7 +21,7 @@ use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trus
 use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap};
+use crate::config::{Alias, AliasMap, Config};
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, Hooks};
@@ -281,54 +281,6 @@ impl MiseToml {
         Ok(output)
     }
 
-    fn resolve_local_vars(&self) -> eyre::Result<IndexMap<String, String>> {
-        let mut ctx = self.context.clone();
-        if ctx.get("env").is_none() {
-            ctx.insert("env", &EnvMap::new());
-        }
-
-        let mut resolved: IndexMap<String, String> = IndexMap::new();
-        if self.vars.0.is_empty() {
-            return Ok(resolved);
-        }
-
-        let mut tera = get_tera(self.path.parent());
-        for _ in 0..10 {
-            let mut changed = false;
-            for directive in &self.vars.0 {
-                if let EnvDirective::Val(key, value, _) = directive {
-                    let mut render_ctx = ctx.clone();
-                    render_ctx.insert("vars", &resolved);
-                    let rendered = tera.render_str(value, &render_ctx).wrap_err_with(|| {
-                        let p = display_path(&self.path);
-                        eyre!("failed to render var '{key}' in {p}")
-                    })?;
-                    if resolved.get(key) != Some(&rendered) {
-                        resolved.insert(key.clone(), rendered);
-                        changed = true;
-                    }
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
-
-        Ok(resolved)
-    }
-
-    fn local_vars_context(&self) -> eyre::Result<TeraContext> {
-        let mut ctx = self.context.clone();
-        if ctx.get("env").is_none() {
-            ctx.insert("env", &EnvMap::new());
-        }
-        let vars = self.resolve_local_vars()?;
-        if !vars.is_empty() {
-            ctx.insert("vars", &vars);
-        }
-        Ok(ctx)
-    }
-
     fn render_tool_version(
         &self,
         context: &TeraContext,
@@ -549,7 +501,24 @@ impl ConfigFile for MiseToml {
         let source = ToolSource::MiseToml(self.path.clone());
         let mut trs = ToolRequestSet::new();
         let tools = self.tools.lock().unwrap();
-        let context = self.local_vars_context()?;
+        let mut context = self.context.clone();
+        if context.get("env").is_none() {
+            context.insert("env", &EnvMap::new());
+        }
+        if context.get("vars").is_none() {
+            if let Some(config) = Config::maybe_get() {
+                if let Some(vars_results) = config.vars_results_cached() {
+                    let vars = vars_results
+                        .vars
+                        .iter()
+                        .map(|(k, (v, _))| (k.clone(), v.clone()))
+                        .collect::<IndexMap<_, _>>();
+                    context.insert("vars", &vars);
+                } else if !config.vars.is_empty() {
+                    context.insert("vars", &config.vars);
+                }
+            }
+        }
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
                 let version = self.render_tool_version(&context, &tool.tt)?;
