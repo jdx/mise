@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+# Test 1: Verify test-tool cleans existing installations before running
+echo "=== Test 1: Clean existing installations ==="
+
+# Install multiple versions first
+mise install shellcheck@0.9.0
+mise install shellcheck@0.10.0
+
+# Verify both versions are installed
+mise ls shellcheck | grep "0.9.0"
+mise ls shellcheck | grep "0.10.0"
+[ -d "$MISE_DATA_DIR/installs/shellcheck/0.9.0" ]
+[ -d "$MISE_DATA_DIR/installs/shellcheck/0.10.0" ]
+
+# Create a marker file to verify directories are cleaned
+touch "$MISE_DATA_DIR/installs/shellcheck/marker.txt"
+touch "$MISE_CACHE_DIR/shellcheck/marker.txt" 2>/dev/null || true
+
+# Run test-tool which should clean everything first and succeed
+mise test-tool shellcheck
+
+# Verify the marker files are gone (directories were cleaned)
+if [ -f "$MISE_DATA_DIR/installs/shellcheck/marker.txt" ]; then
+	echo "ERROR: installs directory was not cleaned"
+	exit 1
+fi
+
+# Verify test-tool installed the latest version
+mise ls shellcheck | grep -E "0\.[0-9]+\.[0-9]+"
+[ -d "$MISE_DATA_DIR/installs/shellcheck" ]
+
+# Test 2: Verify cache directory is cleaned
+echo "=== Test 2: Cache directory cleaning ==="
+
+# Create cache content
+mkdir -p "$MISE_CACHE_DIR/shellcheck"
+echo "cached data" >"$MISE_CACHE_DIR/shellcheck/test.cache"
+
+# Run test-tool again
+mise test-tool shellcheck
+
+# Verify cache was cleaned and recreated
+[ -d "$MISE_CACHE_DIR/shellcheck" ]
+if [ -f "$MISE_CACHE_DIR/shellcheck/test.cache" ]; then
+	echo "ERROR: cache directory was not cleaned"
+	exit 1
+fi
+
+echo "Test passed: test-tool correctly cleans all directories before installing"
