@@ -148,6 +148,40 @@ impl TestTool {
         cmd: &str,
         expected: &str,
     ) -> Result<()> {
+        // First, uninstall all existing versions and clear cache
+        let backend = tool.ba.backend()?;
+        let pr = crate::ui::multi_progress_report::MultiProgressReport::get()
+            .add(&format!("cleaning {}", tool.short));
+
+        // List and uninstall all installed versions
+        let installed_versions = backend.list_installed_versions();
+        debug!("Backend short name: {}", tool.ba.short);
+        debug!("Tool short name: {}", tool.short);
+        info!(
+            "Found {} installed versions for {}",
+            installed_versions.len(),
+            tool.short
+        );
+        for version in installed_versions {
+            info!("Uninstalling {} version {}", tool.short, version);
+            let request = crate::toolset::ToolRequest::Version {
+                backend: tool.ba.clone(),
+                version: version.clone(),
+                options: Default::default(),
+                source: crate::toolset::ToolSource::Unknown,
+            };
+            let tv = crate::toolset::ToolVersion::new(request, version);
+            backend.uninstall_version(config, &tv, &pr, false).await?;
+        }
+
+        // Clear the cache directory for this backend
+        if tool.ba.cache_path.exists() {
+            info!("Clearing cache directory: {}", tool.ba.cache_path.display());
+            file::remove_all(&tool.ba.cache_path)?;
+        }
+
+        pr.finish();
+
         let mut args = vec![tool.clone()];
         args.extend(
             tool.ba

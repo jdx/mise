@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+# Install a tool first
+mise install tiny@3.1.0
+
+# Verify it's installed
+mise ls tiny | grep "3.1.0"
+[ -d "$MISE_DATA_DIR/installs/tiny" ]
+[ -d "$MISE_CACHE_DIR/tiny" ]
+
+# Run test-tool which should clean everything first
+mise test-tool tiny
+
+# Verify the tool is still installed (test-tool should have reinstalled it)
+mise ls tiny | grep -E "3\.[0-9]+\.[0-9]+"
+
+# Install another version
+mise install tiny@2.0.0
+
+# Verify both versions are installed
+mise ls tiny | grep "2.0.0"
+mise ls tiny | grep "3"
+
+# Run test-tool again - it should uninstall all versions first
+mise test-tool tiny
+
+# Check that only the latest version remains
+versions_count=$(mise ls tiny | wc -l)
+if [ "$versions_count" -ne 1 ]; then
+	echo "ERROR: Expected only 1 version after test-tool, but found $versions_count"
+	mise ls tiny
+	exit 1
+fi
+
+# Verify latest version is installed
+mise ls tiny | grep -E "3\.[0-9]+\.[0-9]+"
+
+echo "Test passed: test-tool correctly uninstalls all versions before installing"
