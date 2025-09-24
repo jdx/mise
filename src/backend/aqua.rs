@@ -640,57 +640,51 @@ impl AquaBackend {
             return Ok(());
         }
 
-        // Check if this package expects attestations
-        let expects_attestations = pkg.github_artifact_attestations.is_some();
+        if let Some(github_attestations) = &pkg.github_artifact_attestations {
+            if github_attestations.enabled == Some(false) {
+                debug!("GitHub attestations verification is disabled for {tv}");
+                return Ok(());
+            }
 
-        if expects_attestations {
             ctx.pr.set_message("verify GitHub attestations".to_string());
-        }
 
-        let artifact_path = tv.download_path().join(filename);
+            let artifact_path = tv.download_path().join(filename);
 
-        // Use our new attestation verification library
-        let token = env::GITHUB_TOKEN.as_ref().cloned();
+            // Get expected workflow from registry
+            let signer_workflow = pkg
+                .github_artifact_attestations
+                .as_ref()
+                .and_then(|att| att.signer_workflow.clone());
 
-        // Get expected workflow from registry
-        let signer_workflow = pkg
-            .github_artifact_attestations
-            .as_ref()
-            .and_then(|att| att.signer_workflow.clone());
-
-        match sigstore_verification::verify_github_attestation(
-            &artifact_path,
-            &pkg.repo_owner,
-            &pkg.repo_name,
-            token.as_deref(),
-            signer_workflow.as_deref(),
-        )
-        .await
-        {
-            Ok(true) => {
-                ctx.pr
-                    .set_message("✓ GitHub attestations verified".to_string());
-                debug!("GitHub attestations verified successfully for {tv}");
-            }
-            Ok(false) => {
-                return Err(eyre!(
-                    "GitHub attestations verification returned false for {tv}"
-                ));
-            }
-            Err(sigstore_verification::AttestationError::NoAttestations) => {
-                if expects_attestations {
-                    // Package is configured to have attestations but none were found
+            match sigstore_verification::verify_github_attestation(
+                &artifact_path,
+                &pkg.repo_owner,
+                &pkg.repo_name,
+                env::GITHUB_TOKEN.as_deref(),
+                signer_workflow.as_deref(),
+            )
+            .await
+            {
+                Ok(true) => {
+                    ctx.pr
+                        .set_message("✓ GitHub attestations verified".to_string());
+                    debug!("GitHub attestations verified successfully for {tv}");
+                }
+                Ok(false) => {
+                    return Err(eyre!(
+                        "GitHub attestations verification returned false for {tv}"
+                    ));
+                }
+                Err(sigstore_verification::AttestationError::NoAttestations) => {
                     return Err(eyre!(
                         "No GitHub attestations found for {tv}, but attestations are expected per aqua registry configuration"
                     ));
-                } else {
-                    debug!("No GitHub attestations found for {tv}");
                 }
-            }
-            Err(e) => {
-                return Err(eyre!(
-                    "GitHub attestations verification failed for {tv}: {e}"
-                ));
+                Err(e) => {
+                    return Err(eyre!(
+                        "GitHub attestations verification failed for {tv}: {e}"
+                    ));
+                }
             }
         }
 
