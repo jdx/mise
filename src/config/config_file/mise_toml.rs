@@ -109,10 +109,6 @@ impl MiseToml {
         }
     }
 
-    pub fn set_context(&mut self, ctx: TeraContext) {
-        self.context = ctx;
-    }
-
     pub fn from_file(path: &Path) -> eyre::Result<Self> {
         let body = file::read_to_string(path)?;
         Self::from_str(&body, path)
