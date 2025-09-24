@@ -22,7 +22,6 @@ use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config};
-use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, Hooks};
 use crate::redactions::Redactions;
@@ -296,14 +295,7 @@ impl MiseToml {
         context: &TeraContext,
         version: &ToolVersionType,
     ) -> eyre::Result<String> {
-        let version_src = version.to_string();
-        if !Self::contains_template_syntax(&version_src) {
-            return Ok(version_src);
-        }
-
-        get_tera(self.path.parent())
-            .render_str(&version_src, context)
-            .wrap_err_with(|| eyre!("failed to render tool version template: {version_src}"))
+        self.parse_template_with_context(context, &version.to_string())
     }
 }
 
@@ -511,9 +503,6 @@ impl ConfigFile for MiseToml {
         let mut trs = ToolRequestSet::new();
         let tools = self.tools.lock().unwrap();
         let mut context = self.context.clone();
-        if context.get("env").is_none() {
-            context.insert("env", &EnvMap::new());
-        }
         if context.get("vars").is_none() {
             if let Some(config) = Config::maybe_get() {
                 if let Some(vars_results) = config.vars_results_cached() {
