@@ -47,5 +47,32 @@ EOF
 MISE_TINY_VERSION=3.1.0 mise install >/dev/null 2>&1 || true
 MISE_TINY_VERSION=3.1.0 assert_contains "mise ls tiny" "3.1.0"
 
+# Test vars that contain templates themselves
+cat <<EOF >mise.toml
+[vars]
+BASE_VERSION = "3"
+TINY_VERSION = "{{vars.BASE_VERSION}}.1.0"
+
+[tools]
+tiny = "{{vars.TINY_VERSION}}"
+EOF
+
+# This should resolve to 3.1.0
+assert_contains "mise ls tiny" "3.1.0"
+
+# Test more complex nested templating
+cat <<EOF >mise.toml
+[vars]
+MAJOR = "20"
+MINOR = "11"
+NODE_VERSION = "{{vars.MAJOR}}.{{vars.MINOR}}.0"
+
+[tools]
+node = "{{vars.NODE_VERSION}}"
+EOF
+
+# This should resolve to 20.11.0
+assert_contains "mise ls node" "20.11.0"
+
 # Cleanup
 rm -f mise.toml

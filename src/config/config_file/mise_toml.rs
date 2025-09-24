@@ -125,16 +125,6 @@ impl MiseToml {
         rf.context
             .insert("config_root", path.parent().unwrap().to_str().unwrap());
         rf.path = path.to_path_buf();
-
-        // Add vars from this file to the context immediately
-        let mut vars_map = HashMap::new();
-        for var_directive in &rf.vars.0 {
-            if let EnvDirective::Val(k, v, _) = var_directive {
-                vars_map.insert(k.clone(), v.clone());
-            }
-        }
-        rf.context.insert("vars", &vars_map);
-
         let project_root = rf.project_root().map(|p| p.to_path_buf());
         for task in rf.tasks.0.values_mut() {
             task.config_source.clone_from(&rf.path);
@@ -491,12 +481,64 @@ impl ConfigFile for MiseToml {
     }
 
     fn to_tool_request_set(&self) -> eyre::Result<ToolRequestSet> {
+        // First, resolve vars locally for this config file
+        let mut context = self.context.clone();
+
+        // Simple resolution of vars - just do direct substitution, no complex resolution
+        // This is a temporary context just for parsing tool versions
+        let mut vars_map = HashMap::new();
+        for var_directive in &self.vars.0 {
+            if let EnvDirective::Val(k, v, _) = var_directive {
+                vars_map.insert(k.clone(), v.clone());
+            }
+        }
+
+        // Do multiple passes to resolve nested vars
+        for _ in 0..5 {
+            let mut changed = false;
+            let mut new_vars = HashMap::new();
+            for (k, v) in &vars_map {
+                if v.contains("{{vars.") {
+                    let mut temp_ctx = context.clone();
+                    temp_ctx.insert("vars", &vars_map);
+                    match get_tera(self.path.parent()).render_str(v, &temp_ctx) {
+                        Ok(rendered) if rendered != *v => {
+                            new_vars.insert(k.clone(), rendered);
+                            changed = true;
+                        }
+                        _ => {
+                            new_vars.insert(k.clone(), v.clone());
+                        }
+                    }
+                } else {
+                    new_vars.insert(k.clone(), v.clone());
+                }
+            }
+            vars_map = new_vars;
+            if !changed {
+                break;
+            }
+        }
+
+        context.insert("vars", &vars_map);
+
         let source = ToolSource::MiseToml(self.path.clone());
         let mut trs = ToolRequestSet::new();
         let tools = self.tools.lock().unwrap();
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
-                let version = self.parse_template(&tool.tt.to_string())?;
+                // Use the context with resolved vars
+                let version = if tool.tt.to_string().contains("{{") {
+                    get_tera(self.path.parent())
+                        .render_str(&tool.tt.to_string(), &context)
+                        .unwrap_or_else(|e| {
+                            warn!("Failed to render tool version template: {}", e);
+                            tool.tt.to_string()
+                        })
+                } else {
+                    tool.tt.to_string()
+                };
+
                 let tvr = if let Some(mut options) = tool.options.clone() {
                     for v in options.opts.values_mut() {
                         *v = self.parse_template(v)?;
