@@ -550,7 +550,7 @@ pub trait Backend: Debug + Send + Sync {
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .with_pr(&ctx.pr)
-            .arg("-c")
+            .arg(env::SHELL_COMMAND_FLAG)
             .arg(script)
             .envs(self.exec_env(&ctx.config, &ctx.ts, tv).await?)
             .execute()?;
