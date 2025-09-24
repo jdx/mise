@@ -268,16 +268,22 @@ impl MiseToml {
     }
 
     fn parse_template(&self, input: &str) -> eyre::Result<String> {
+        self.parse_template_with_context(&self.context, input)
+    }
+
+    fn parse_template_with_context(
+        &self,
+        context: &TeraContext,
+        input: &str,
+    ) -> eyre::Result<String> {
         if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
             return Ok(input.to_string());
         }
         let dir = self.path.parent();
-        let output = get_tera(dir)
-            .render_str(input, &self.context)
-            .wrap_err_with(|| {
-                let p = display_path(&self.path);
-                eyre!("failed to parse template {input} in {p}")
-            })?;
+        let output = get_tera(dir).render_str(input, context).wrap_err_with(|| {
+            let p = display_path(&self.path);
+            eyre!("failed to parse template {input} in {p}")
+        })?;
         Ok(output)
     }
 
@@ -524,7 +530,7 @@ impl ConfigFile for MiseToml {
                 let version = self.render_tool_version(&context, &tool.tt)?;
                 let tvr = if let Some(mut options) = tool.options.clone() {
                     for v in options.opts.values_mut() {
-                        *v = self.parse_template(v)?;
+                        *v = self.parse_template_with_context(&context, v)?;
                     }
                     let mut ba = ba.clone();
                     let mut ba_opts = ba.opts().clone();
