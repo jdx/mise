@@ -148,7 +148,7 @@ impl TestTool {
         cmd: &str,
         expected: &str,
     ) -> Result<()> {
-        // First, uninstall all existing versions and clear cache
+        // First, uninstall all existing versions and clear all backend data
         let backend = tool.ba.backend()?;
         let pr = crate::ui::multi_progress_report::MultiProgressReport::get()
             .add(&format!("cleaning {}", tool.short));
@@ -162,6 +162,8 @@ impl TestTool {
             installed_versions.len(),
             tool.short
         );
+
+        let uninstalled_any = !installed_versions.is_empty();
         for version in installed_versions {
             info!("Uninstalling {} version {}", tool.short, version);
             let request = crate::toolset::ToolRequest::Version {
@@ -174,13 +176,26 @@ impl TestTool {
             backend.uninstall_version(config, &tv, &pr, false).await?;
         }
 
-        // Clear the cache directory for this backend
+        // Clear all backend directories to reset metadata completely
+        // This includes cache (with metadata files) and downloads
         if tool.ba.cache_path.exists() {
             info!("Clearing cache directory: {}", tool.ba.cache_path.display());
             file::remove_all(&tool.ba.cache_path)?;
         }
+        if tool.ba.downloads_path.exists() {
+            info!(
+                "Clearing downloads directory: {}",
+                tool.ba.downloads_path.display()
+            );
+            file::remove_all(&tool.ba.downloads_path)?;
+        }
 
         pr.finish();
+
+        // Reset the config to clear in-memory backend metadata caches if we uninstalled anything
+        if uninstalled_any {
+            *config = Config::reset().await?;
+        }
 
         let mut args = vec![tool.clone()];
         args.extend(
