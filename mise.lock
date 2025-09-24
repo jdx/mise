@@ -113,6 +113,11 @@ checksum = "blake3:dbfd6f2b7d0f399f6ec8cd251a76656c27af25aa327c015ef1acf4307c6a4
 size = 6984984
 url = "https://github.com/jdx/hk/releases/download/v1.15.5/hk-x86_64-unknown-linux-gnu.tar.gz"
 
+[tools.hk.platforms.macos-arm64]
+checksum = "blake3:98c9e44790bcff4b4988e6a13f9524272164e98fd475dc43f364cfb41bb4e897"
+size = 6016496
+url = "https://github.com/jdx/hk/releases/download/v1.15.5/hk-aarch64-apple-darwin.tar.gz"
+
 [[tools.jq]]
 version = "1.8.1"
 backend = "aqua:jqlang/jq"

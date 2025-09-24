@@ -303,7 +303,8 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
 pub fn get_tera(dir: Option<&Path>) -> Tera {
     let mut tera = TERA.clone();
     let dir = dir.map(PathBuf::from);
-    tera.register_function("exec", tera_exec(dir, env::PRISTINE_ENV.clone()));
+    tera.register_function("exec", tera_exec(dir.clone(), env::PRISTINE_ENV.clone()));
+    tera.register_function("read_file", tera_read_file(dir));
 
     tera
 }
@@ -370,6 +371,32 @@ pub fn tera_exec(
                 Ok(Value::String(result))
             }
             _ => Err("exec command must be a string".into()),
+        }
+    }
+}
+
+pub fn tera_read_file(
+    dir: Option<PathBuf>,
+) -> impl Fn(&HashMap<String, Value>) -> tera::Result<Value> {
+    move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+        match args.get("path") {
+            Some(Value::String(path_str)) => {
+                let path = if let Some(ref base_dir) = dir {
+                    // Resolve relative to config directory
+                    base_dir.join(path_str)
+                } else {
+                    // Use path as-is if no directory context
+                    PathBuf::from(path_str)
+                };
+
+                match std::fs::read_to_string(&path) {
+                    Ok(contents) => Ok(Value::String(contents)),
+                    Err(e) => {
+                        Err(format!("Failed to read file '{}': {}", path.display(), e).into())
+                    }
+                }
+            }
+            _ => Err("read_file path must be a string".into()),
         }
     }
 }
@@ -652,6 +679,15 @@ mod tests {
             r#"{% set p = "1.10.2" %}{% if p is semver_matching("^1.10.0") %} ok {% endif %}"#,
         );
         assert_eq!(s.trim(), "ok");
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_read_file() {
+        let _config = Config::get().await.unwrap();
+        let s = render(r#"{{ read_file(path="../fixtures/shorthands.toml") }}"#);
+        assert!(s.contains("elixir"));
+        assert!(s.contains("nodejs"));
     }
 
     fn render(s: &str) -> String {
