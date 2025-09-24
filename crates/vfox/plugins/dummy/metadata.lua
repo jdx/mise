@@ -22,5 +22,5 @@ PLUGIN.notes = {}
 --- List legacy configuration filenames for determining the specified version of the tool.
 --- such as ".node-version", ".nvmrc", etc.
 PLUGIN.legacyFilenames = {
-    ".dummy-version",
+    ".dummy-version"
 }
