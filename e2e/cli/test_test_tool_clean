@@ -6,48 +6,45 @@ set -euxo pipefail
 echo "=== Test 1: Clean existing installations ==="
 
 # Install multiple versions first
-mise install tiny@2.0.0
-mise install tiny@3.1.0
+mise install shellcheck@0.9.0
+mise install shellcheck@0.10.0
 
 # Verify both versions are installed
-mise ls tiny | grep "2.0.0"
-mise ls tiny | grep "3.1.0"
-[ -d "$MISE_DATA_DIR/installs/tiny/2.0.0" ]
-[ -d "$MISE_DATA_DIR/installs/tiny/3.1.0" ]
+mise ls shellcheck | grep "0.9.0"
+mise ls shellcheck | grep "0.10.0"
+[ -d "$MISE_DATA_DIR/installs/shellcheck/0.9.0" ]
+[ -d "$MISE_DATA_DIR/installs/shellcheck/0.10.0" ]
 
 # Create a marker file to verify directories are cleaned
-touch "$MISE_DATA_DIR/installs/tiny/marker.txt"
-touch "$MISE_CACHE_DIR/tiny/marker.txt" 2>/dev/null || true
+touch "$MISE_DATA_DIR/installs/shellcheck/marker.txt"
+touch "$MISE_CACHE_DIR/shellcheck/marker.txt" 2>/dev/null || true
 
-# Run test-tool which should clean everything first
-# Note: tiny doesn't have a test definition so we need --include-non-defined
-# Also, the tool name is rtx-tiny not tiny, so the test will fail, but that's ok
-# We're only testing the cleaning behavior here
-mise test-tool tiny --include-non-defined 2>&1 | grep -E "(Removing|cleaning)" || true
+# Run test-tool which should clean everything first and succeed
+mise test-tool shellcheck
 
 # Verify the marker files are gone (directories were cleaned)
-if [ -f "$MISE_DATA_DIR/installs/tiny/marker.txt" ]; then
+if [ -f "$MISE_DATA_DIR/installs/shellcheck/marker.txt" ]; then
 	echo "ERROR: installs directory was not cleaned"
 	exit 1
 fi
 
-# Verify test-tool installed the latest version (even though the test itself failed)
-mise ls tiny | grep -E "3\.[0-9]+\.[0-9]+"
-[ -d "$MISE_DATA_DIR/installs/tiny" ]
+# Verify test-tool installed the latest version
+mise ls shellcheck | grep -E "0\.[0-9]+\.[0-9]+"
+[ -d "$MISE_DATA_DIR/installs/shellcheck" ]
 
 # Test 2: Verify cache directory is cleaned
 echo "=== Test 2: Cache directory cleaning ==="
 
 # Create cache content
-mkdir -p "$MISE_CACHE_DIR/tiny"
-echo "cached data" >"$MISE_CACHE_DIR/tiny/test.cache"
+mkdir -p "$MISE_CACHE_DIR/shellcheck"
+echo "cached data" >"$MISE_CACHE_DIR/shellcheck/test.cache"
 
-# Run test-tool again (allow it to fail since we're only testing cleaning)
-mise test-tool tiny --include-non-defined 2>&1 | grep -E "(Removing|cleaning)" || true
+# Run test-tool again
+mise test-tool shellcheck
 
 # Verify cache was cleaned and recreated
-[ -d "$MISE_CACHE_DIR/tiny" ]
-if [ -f "$MISE_CACHE_DIR/tiny/test.cache" ]; then
+[ -d "$MISE_CACHE_DIR/shellcheck" ]
+if [ -f "$MISE_CACHE_DIR/shellcheck/test.cache" ]; then
 	echo "ERROR: cache directory was not cleaned"
 	exit 1
 fi
