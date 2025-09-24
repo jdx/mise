@@ -246,7 +246,7 @@ test = ["auto-doc --help", "auto-doc [flags]"]
 [tools.aws-amplify]
 aliases = ["amplify"]
 backends = [
-  "github:aws-amplify/amplify-cli[exe=amplify]",
+  "ubi:aws-amplify/amplify-cli[exe=amplify-pkg,rename_exe=amplify]",
   "asdf:LozanoMatheus/asdf-aws-amplify-cli",
 ]
 description = "The AWS Amplify CLI is a toolchain for simplifying serverless web and mobile development"
