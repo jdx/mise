@@ -97,6 +97,10 @@ impl EnvList {
 }
 
 impl MiseToml {
+    fn contains_template_syntax(input: &str) -> bool {
+        input.contains("{{") || input.contains("{%") || input.contains("{#")
+    }
+
     pub fn init(path: &Path) -> Self {
         let mut context = BASE_CONTEXT.clone();
         context.insert(
@@ -276,7 +280,7 @@ impl MiseToml {
         context: &TeraContext,
         input: &str,
     ) -> eyre::Result<String> {
-        if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
+        if !Self::contains_template_syntax(input) {
             return Ok(input.to_string());
         }
         let dir = self.path.parent();
@@ -293,8 +297,7 @@ impl MiseToml {
         version: &ToolVersionType,
     ) -> eyre::Result<String> {
         let version_src = version.to_string();
-        if !version_src.contains("{{") && !version_src.contains("{%") && !version_src.contains("{#")
-        {
+        if !Self::contains_template_syntax(&version_src) {
             return Ok(version_src);
         }
 
