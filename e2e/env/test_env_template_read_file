@@ -68,48 +68,51 @@ EOF
 assert_contains "mise env -s bash | grep RAW_CONTENT" "export RAW_CONTENT='{{ env.USER }}'"
 
 # Test read_file is relative to config_root (not CWD)
-mkdir -p project/config
-cat <<EOF >project/config/version.txt
-2.0.0
-EOF
+# Create a nested project structure with config files at different levels
+TEST_ROOT=$PWD
+mkdir -p project/subdir
+cd project
 
-cat <<EOF >project/config/mise.toml
+# Create version files at each level
+echo "1.0.0" >version.txt
+echo "2.0.0" >subdir/version.txt
+
+# Create a data file only in parent
+echo "parent-only-data" >parent-data.txt
+
+# Create mise.toml in parent directory
+cat <<EOF >mise.toml
 [env]
-PROJECT_VERSION = "{{ read_file(path='version.txt') | trim }}"
+PARENT_VERSION = "{{ read_file(path='version.txt') | trim }}"
+PARENT_DATA = "{{ read_file(path='parent-data.txt') | trim }}"
 EOF
 
-# Save current directory
-ORIG_DIR=$PWD
+# Create mise.toml in subdirectory that reads its own version.txt
+cat <<EOF >subdir/mise.toml
+[env]
+SUB_VERSION = "{{ read_file(path='version.txt') | trim }}"
+# This should fail if uncommented - file doesn't exist relative to subdir:
+# SUB_PARENT_DATA = "{{ read_file(path='parent-data.txt') | trim }}"
+EOF
 
-# Run mise from a different directory to verify read_file is relative to config_root
+# Test from parent directory - should read parent's version.txt (1.0.0)
+assert_contains "mise env -s bash | grep PARENT_VERSION" "export PARENT_VERSION=1.0.0"
+assert_contains "mise env -s bash | grep PARENT_DATA" "export PARENT_DATA=parent-only-data"
+
+# Test from subdirectory - should read both configs, each with their own files
+cd subdir
+assert_contains "mise env -s bash | grep PARENT_VERSION" "export PARENT_VERSION=1.0.0"
+assert_contains "mise env -s bash | grep SUB_VERSION" "export SUB_VERSION=2.0.0"
+assert_contains "mise env -s bash | grep PARENT_DATA" "export PARENT_DATA=parent-only-data"
+
+# Now test that running mise from a completely different directory still works
+PROJECT_DIR=$TEST_ROOT/project
 cd /tmp
-assert_contains "mise env -s bash -C $ORIG_DIR/project/config | grep PROJECT_VERSION" "export PROJECT_VERSION=2.0.0"
-cd "$ORIG_DIR"
+assert_contains "mise env -s bash -C $PROJECT_DIR | grep PARENT_VERSION" "export PARENT_VERSION=1.0.0"
+assert_contains "mise env -s bash -C $PROJECT_DIR/subdir | grep SUB_VERSION" "export SUB_VERSION=2.0.0"
 
-# Test nested config with read_file relative to its own directory
-mkdir -p project/sub
-cat <<EOF >project/data.txt
-parent-data
-EOF
-cat <<EOF >project/sub/data.txt
-sub-data
-EOF
-
-cat <<EOF >project/mise.toml
-[env]
-PARENT_DATA = "{{ read_file(path='data.txt') | trim }}"
-EOF
-
-cat <<EOF >project/sub/mise.toml
-[env]
-SUB_DATA = "{{ read_file(path='data.txt') | trim }}"
-EOF
-
-# Check from parent directory
-assert_contains "mise env -s bash -C project | grep PARENT_DATA" "export PARENT_DATA=parent-data"
-
-# Check from sub directory (should use sub's data.txt)
-assert_contains "mise env -s bash -C project/sub | grep SUB_DATA" "export SUB_DATA=sub-data"
+# Go back to original test directory
+cd "$TEST_ROOT"
 
 # Cleanup
 rm -f test_version.txt multiline.txt config.txt template_test.txt
