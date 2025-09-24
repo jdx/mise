@@ -684,10 +684,32 @@ mod tests {
     #[tokio::test]
     #[cfg(unix)]
     async fn test_read_file() {
+        use std::fs;
+        use tempfile::TempDir;
+
         let _config = Config::get().await.unwrap();
-        let s = render(r#"{{ read_file(path="../fixtures/shorthands.toml") }}"#);
-        assert!(s.contains("elixir"));
-        assert!(s.contains("nodejs"));
+
+        // Create a temp directory and test file
+        let temp_dir = TempDir::new().unwrap();
+        let test_file_path = temp_dir.path().join("test.txt");
+        fs::write(&test_file_path, "test content\nwith multiple lines").unwrap();
+
+        // Test with the temp file
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("config_root", &temp_dir.path().to_str().unwrap());
+        tera_ctx.insert("cwd", temp_dir.path().to_str().unwrap());
+        let mut tera = get_tera(Some(temp_dir.path()));
+
+        let s = tera
+            .render_str(r#"{{ read_file(path="test.txt") }}"#, &tera_ctx)
+            .unwrap();
+        assert_eq!(s, "test content\nwith multiple lines");
+
+        // Test with trim filter
+        let s = tera
+            .render_str(r#"{{ read_file(path="test.txt") | trim }}"#, &tera_ctx)
+            .unwrap();
+        assert_eq!(s, "test content\nwith multiple lines");
     }
 
     fn render(s: &str) -> String {
