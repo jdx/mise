@@ -36,13 +36,6 @@ EOF
 mise use ubi:kscripting/kscript@4.2.3
 assert_contains "mise x ubi:kscripting/kscript@4.2.3 -- which kscript" "/4.2.3/bin/kscript"
 
-cat <<EOF >mise.toml
-[tools]
-"ubi:aws-amplify/amplify-cli" = { version = "13.0.1", exe = "amplify-pkg", rename_exe = "amplify" }
-EOF
-mise use ubi:aws-amplify/amplify-cli@13.0.1
-assert_contains "mise x ubi:aws-amplify/amplify-cli@13.0.1 -- which amplify" "/13.0.1/amplify"
-
 MISE_USE_VERSIONS_HOST=0 assert_not_contains "mise ls-remote cargo-binstall" "binstalk"
 
 # the following tests that tool options from ubi are still retained even if the default backend changes to aqua

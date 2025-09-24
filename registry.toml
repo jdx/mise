@@ -250,6 +250,7 @@ backends = [
   "asdf:LozanoMatheus/asdf-aws-amplify-cli",
 ]
 description = "The AWS Amplify CLI is a toolchain for simplifying serverless web and mobile development"
+test = ["amplify --version", "{{version}}"]
 
 [tools.aws-cli]
 aliases = ["aws", "awscli"]
