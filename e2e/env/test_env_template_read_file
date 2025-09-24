@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# Test basic read_file functionality
+cat <<EOF >test_version.txt
+1.2.3
+EOF
+
+cat <<EOF >mise.toml
+[env]
+VERSION = "{{ read_file(path='test_version.txt') | trim }}"
+EOF
+
+assert_contains "mise env -s bash | grep VERSION" "export VERSION=1.2.3"
+
+# Test read_file with relative path
+mkdir -p subdir
+cat <<EOF >subdir/info.txt
+test-content
+EOF
+
+cat <<EOF >mise.toml
+[env]
+CONTENT = "{{ read_file(path='subdir/info.txt') | trim }}"
+EOF
+
+assert_contains "mise env -s bash | grep CONTENT" "export CONTENT=test-content"
+
+# Test read_file with multiple lines
+cat <<EOF >multiline.txt
+line1
+line2
+line3
+EOF
+
+cat <<EOF >mise.toml
+[env]
+MULTILINE = "{{ read_file(path='multiline.txt') | replace(from='\n', to=' ') | trim }}"
+EOF
+
+assert_contains "mise env -s bash | grep MULTILINE" "export MULTILINE='line1 line2 line3'"
+
+# Test read_file with vars
+cat <<EOF >config.txt
+production
+EOF
+
+cat <<EOF >mise.toml
+[vars]
+CONFIG_FILE = "config.txt"
+
+[env]
+ENVIRONMENT = "{{ read_file(path=vars.CONFIG_FILE) | trim }}"
+EOF
+
+assert_contains "mise env -s bash | grep ENVIRONMENT" "export ENVIRONMENT=production"
+
+# Test read_file with templated content (should read raw content)
+cat <<EOF >template_test.txt
+{{ env.USER }}
+EOF
+
+cat <<EOF >mise.toml
+[env]
+RAW_CONTENT = "{{ read_file(path='template_test.txt') | trim }}"
+EOF
+
+assert_contains "mise env -s bash | grep RAW_CONTENT" "export RAW_CONTENT='{{ env.USER }}'"
+
+# Test read_file is relative to config_root (not CWD)
+# Create a nested project structure with config files at different levels
+TEST_ROOT=$PWD
+mkdir -p project/subdir
+cd project
+
+# Create version files at each level
+echo "1.0.0" >version.txt
+echo "2.0.0" >subdir/version.txt
+
+# Create a data file only in parent
+echo "parent-only-data" >parent-data.txt
+
+# Create mise.toml in parent directory
+cat <<EOF >mise.toml
+[env]
+PARENT_VERSION = "{{ read_file(path='version.txt') | trim }}"
+PARENT_DATA = "{{ read_file(path='parent-data.txt') | trim }}"
+EOF
+
+# Create mise.toml in subdirectory that reads its own version.txt
+cat <<EOF >subdir/mise.toml
+[env]
+SUB_VERSION = "{{ read_file(path='version.txt') | trim }}"
+# This should fail if uncommented - file doesn't exist relative to subdir:
+# SUB_PARENT_DATA = "{{ read_file(path='parent-data.txt') | trim }}"
+EOF
+
+# Test from parent directory - should read parent's version.txt (1.0.0)
+assert_contains "mise env -s bash | grep PARENT_VERSION" "export PARENT_VERSION=1.0.0"
+assert_contains "mise env -s bash | grep PARENT_DATA" "export PARENT_DATA=parent-only-data"
+
+# Test from subdirectory - should read both configs, each with their own files
+cd subdir
+assert_contains "mise env -s bash | grep PARENT_VERSION" "export PARENT_VERSION=1.0.0"
+assert_contains "mise env -s bash | grep SUB_VERSION" "export SUB_VERSION=2.0.0"
+assert_contains "mise env -s bash | grep PARENT_DATA" "export PARENT_DATA=parent-only-data"
+
+# Now test that running mise from a completely different directory still works
+PROJECT_DIR=$TEST_ROOT/project
+cd /tmp
+assert_contains "mise env -s bash -C $PROJECT_DIR | grep PARENT_VERSION" "export PARENT_VERSION=1.0.0"
+assert_contains "mise env -s bash -C $PROJECT_DIR/subdir | grep SUB_VERSION" "export SUB_VERSION=2.0.0"
+
+# Go back to original test directory
+cd "$TEST_ROOT"
+
+# Cleanup
+rm -f test_version.txt multiline.txt config.txt template_test.txt
+rm -rf subdir project
