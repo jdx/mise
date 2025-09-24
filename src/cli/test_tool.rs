@@ -148,52 +148,43 @@ impl TestTool {
         cmd: &str,
         expected: &str,
     ) -> Result<()> {
-        // First, uninstall all existing versions and clear all backend data
-        let backend = tool.ba.backend()?;
+        // First, clean all backend data by removing directories
         let pr = crate::ui::multi_progress_report::MultiProgressReport::get()
             .add(&format!("cleaning {}", tool.short));
 
-        // List and uninstall all installed versions
-        let installed_versions = backend.list_installed_versions();
-        debug!("Backend short name: {}", tool.ba.short);
-        debug!("Tool short name: {}", tool.short);
-        info!(
-            "Found {} installed versions for {}",
-            installed_versions.len(),
-            tool.short
-        );
+        let mut cleaned_any = false;
 
-        let uninstalled_any = !installed_versions.is_empty();
-        for version in installed_versions {
-            info!("Uninstalling {} version {}", tool.short, version);
-            let request = crate::toolset::ToolRequest::Version {
-                backend: tool.ba.clone(),
-                version: version.clone(),
-                options: Default::default(),
-                source: crate::toolset::ToolSource::Unknown,
-            };
-            let tv = crate::toolset::ToolVersion::new(request, version);
-            backend.uninstall_version(config, &tv, &pr, false).await?;
+        // Remove entire installs directory for this tool
+        if tool.ba.installs_path.exists() {
+            info!(
+                "Removing installs directory: {}",
+                tool.ba.installs_path.display()
+            );
+            file::remove_all(&tool.ba.installs_path)?;
+            cleaned_any = true;
         }
 
-        // Clear all backend directories to reset metadata completely
-        // This includes cache (with metadata files) and downloads
+        // Clear cache directory (contains metadata)
         if tool.ba.cache_path.exists() {
-            info!("Clearing cache directory: {}", tool.ba.cache_path.display());
+            info!("Removing cache directory: {}", tool.ba.cache_path.display());
             file::remove_all(&tool.ba.cache_path)?;
+            cleaned_any = true;
         }
+
+        // Clear downloads directory
         if tool.ba.downloads_path.exists() {
             info!(
-                "Clearing downloads directory: {}",
+                "Removing downloads directory: {}",
                 tool.ba.downloads_path.display()
             );
             file::remove_all(&tool.ba.downloads_path)?;
+            cleaned_any = true;
         }
 
         pr.finish();
 
-        // Reset the config to clear in-memory backend metadata caches if we uninstalled anything
-        if uninstalled_any {
+        // Reset the config to clear in-memory backend metadata caches if we cleaned anything
+        if cleaned_any {
             *config = Config::reset().await?;
         }
 
