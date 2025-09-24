@@ -289,14 +289,6 @@ impl MiseToml {
         })?;
         Ok(output)
     }
-
-    fn render_tool_version(
-        &self,
-        context: &TeraContext,
-        version: &ToolVersionType,
-    ) -> eyre::Result<String> {
-        self.parse_template_with_context(context, &version.to_string())
-    }
 }
 
 impl ConfigFile for MiseToml {
@@ -519,7 +511,7 @@ impl ConfigFile for MiseToml {
         }
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
-                let version = self.render_tool_version(&context, &tool.tt)?;
+                let version = self.parse_template_with_context(&context, &tool.tt.to_string())?;
                 let tvr = if let Some(mut options) = tool.options.clone() {
                     for v in options.opts.values_mut() {
                         *v = self.parse_template_with_context(&context, v)?;
