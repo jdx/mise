@@ -109,6 +109,10 @@ impl MiseToml {
         }
     }
 
+    pub fn set_context(&mut self, ctx: TeraContext) {
+        self.context = ctx;
+    }
+
     pub fn from_file(path: &Path) -> eyre::Result<Self> {
         let body = file::read_to_string(path)?;
         Self::from_str(&body, path)
@@ -125,6 +129,16 @@ impl MiseToml {
         rf.context
             .insert("config_root", path.parent().unwrap().to_str().unwrap());
         rf.path = path.to_path_buf();
+
+        // Add vars from this file to the context immediately
+        let mut vars_map = HashMap::new();
+        for var_directive in &rf.vars.0 {
+            if let EnvDirective::Val(k, v, _) = var_directive {
+                vars_map.insert(k.clone(), v.clone());
+            }
+        }
+        rf.context.insert("vars", &vars_map);
+
         let project_root = rf.project_root().map(|p| p.to_path_buf());
         for task in rf.tasks.0.values_mut() {
             task.config_source.clone_from(&rf.path);
