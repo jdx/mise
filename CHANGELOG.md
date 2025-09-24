@@ -1,5 +1,45 @@
 # Changelog
 
+## [2025.9.17](https://github.com/jdx/mise/compare/v2025.9.16..v2025.9.17) - 2025-09-24
+
+### 🚀 Features
+
+- **(java)** add support for Liberica NIK releases by @roele in [#6382](https://github.com/jdx/mise/pull/6382)
+
+### 🐛 Bug Fixes
+
+- **(toolset)** handle underflow in version_sub function by @koh-sh in [#6389](https://github.com/jdx/mise/pull/6389)
+
+### 📚 Documentation
+
+- document MISE_ENV behavior for global/system configs by @jdx in [#6385](https://github.com/jdx/mise/pull/6385)
+
+### New Contributors
+
+- @jc00ke made their first contribution in [#6386](https://github.com/jdx/mise/pull/6386)
+- @koh-sh made their first contribution in [#6389](https://github.com/jdx/mise/pull/6389)
+
+## [2025.9.16](https://github.com/jdx/mise/compare/v2025.9.15..v2025.9.16) - 2025-09-22
+
+### 📦 Registry
+
+- use npm backend for zbctl by @risu729 in [#6379](https://github.com/jdx/mise/pull/6379)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** remove blake3 support from aqua checksum algorithms by @risu729 in [#6370](https://github.com/jdx/mise/pull/6370)
+- **(aqua)** remove cosign and slsa-verifier dependencies by @risu729 in [#6371](https://github.com/jdx/mise/pull/6371)
+- **(aqua)** remove cosign.experimental by @risu729 in [#6376](https://github.com/jdx/mise/pull/6376)
+- **(file)** handle GNU sparse files and tar crate extraction issues by @jdx in [#6380](https://github.com/jdx/mise/pull/6380)
+
+### 📚 Documentation
+
+- minisign doesn't require cli by @risu729 in [#6369](https://github.com/jdx/mise/pull/6369)
+
+### Chore
+
+- ignore renovate new bot name by @risu729 in [#6364](https://github.com/jdx/mise/pull/6364)
+
 ## [2025.9.15](https://github.com/jdx/mise/compare/v2025.9.14..v2025.9.15) - 2025-09-21
 
 ### 📦 Registry

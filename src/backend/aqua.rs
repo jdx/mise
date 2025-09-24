@@ -53,10 +53,6 @@ impl Backend for AquaBackend {
         &self.ba
     }
 
-    fn get_optional_dependencies(&self) -> Result<Vec<&str>> {
-        Ok(vec!["cosign", "slsa-verifier"])
-    }
-
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         let version_tags = self.get_version_tags().await;
         let mut versions = Vec::new();
@@ -807,32 +803,6 @@ impl AquaBackend {
                         }
                         Err(e) => {
                             return Err(eyre!("Cosign bundle verification error for {tv}: {e}"));
-                        }
-                    }
-                }
-            } else if cosign.experimental == Some(true) {
-                // Keyless verification with experimental mode
-                // This would need to download the signature/bundle from a default location
-                let sig_or_bundle_path = checksum_path.with_extension("bundle");
-                if sig_or_bundle_path.exists() {
-                    match sigstore_verification::verify_cosign_signature(
-                        checksum_path,
-                        &sig_or_bundle_path,
-                    )
-                    .await
-                    {
-                        Ok(true) => {
-                            ctx.pr.set_message(
-                                "✓ Cosign keyless verification successful".to_string(),
-                            );
-                            debug!("Cosign keyless verification successful for {tv}");
-                        }
-                        Ok(false) => {
-                            return Err(eyre!("Cosign keyless verification failed for {tv}"));
-                        }
-                        Err(e) => {
-                            // If keyless fails, it might not have the bundle, which is OK
-                            debug!("Cosign keyless verification not available for {tv}: {e}");
                         }
                     }
                 }
