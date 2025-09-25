@@ -313,6 +313,7 @@
     },
     "settings": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "activate_aggressive": {
           "description": "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.",
@@ -1729,7 +1730,6 @@
     },
     "settings": {
       "$ref": "#/$defs/settings",
-      "additionalProperties": false,
       "description": "mise settings",
       "type": "object"
     },
