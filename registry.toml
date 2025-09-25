@@ -2354,8 +2354,9 @@ description = "Little helper to run CNCF's k3s in Docker"
 test = ["k3d --version", "k3d version v{{version}}"]
 
 [tools.k3kcli]
-backends = ['github:rancher/k3k[tag_regex=v\d]', "asdf:xanmanning/asdf-k3kcli"]
+backends = ['ubi:rancher/k3k[tag_regex=v\d]', "asdf:xanmanning/asdf-k3kcli"]
 description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to create and manage isolated K3s clusters within your existing Kubernetes environment"
+test = ["k3k version", "k3k version {{version}}"]
 
 [tools.k3s]
 backends = ["asdf:mise-plugins/mise-k3s"]
