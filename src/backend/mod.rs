@@ -546,13 +546,23 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         script: &str,
     ) -> eyre::Result<()> {
+        // Get pre-tools environment variables from config
+        let mut env_vars = self.exec_env(&ctx.config, &ctx.ts, tv).await?;
+
+        // Add pre-tools environment variables from config if available
+        if let Some(config_env) = ctx.config.env_maybe() {
+            for (k, v) in config_env {
+                env_vars.entry(k).or_insert(v);
+            }
+        }
+
         CmdLineRunner::new(&*env::SHELL)
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
             .with_pr(&ctx.pr)
             .arg(env::SHELL_COMMAND_FLAG)
             .arg(script)
-            .envs(self.exec_env(&ctx.config, &ctx.ts, tv).await?)
+            .envs(env_vars)
             .execute()?;
         Ok(())
     }
