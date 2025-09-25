@@ -1136,10 +1136,12 @@ test = ["dive --version", "dive {{version}}"]
 
 [tools.djinni]
 backends = [
-  "github:cross-language-cpp/djinni-generator",
+  "ubi:cross-language-cpp/djinni-generator[exe=djinni]",
   "asdf:cross-language-cpp/asdf-djinni",
 ]
 description = "Command-line tool that generates gluecode from a djinni-IDL file"
+test = ["djinni --version", "djinni generator version {{version}}"]
+
 
 [tools.dmd]
 backends = ["asdf:mise-plugins/mise-dmd"]
@@ -1595,7 +1597,7 @@ test = ["ghalint version", "{{version}}"]
 
 [tools.ghc]
 backends = ["asdf:mise-plugins/mise-ghcup"]
-description = "GHCup is the main installer for the general purpose language Haskell."
+description = "The Glorious Glasgow Haskell Compiler."
 
 [tools.ghcup]
 backends = [
@@ -2089,7 +2091,7 @@ description = "An hledger/ledger-cli workflow focusing on automated statement im
 
 [tools.hls]
 backends = ["asdf:mise-plugins/mise-ghcup"]
-description = "haskell language-server"
+description = "Official Haskell IDE support via the language server protocol (LSP)"
 
 [tools.hostctl]
 backends = ["aqua:guumaster/hostctl", "asdf:svenluijten/asdf-hostctl"]
@@ -4396,6 +4398,18 @@ description = "Timoni is a package manager for Kubernetes, powered by CUE and in
 [tools.tiny]
 backends = ["asdf:mise-plugins/mise-tiny"]
 description = "rtx-tiny is mostly a fake plugin to check mise in CI"
+
+[tools.tinymist]
+backends = [
+  "aqua:Myriad-Dreamin/tinymist",
+  "ubi:Myriad-Dreamin/tinymist",
+  "cargo:tinymist",
+]
+description = "Tinymist is an integrated language service for Typst."
+test = [
+  "tinymist --version | grep 'Build Git Describe:' | cut -d':' -f2 | tr -d ' '",
+  "v{{version}}",
+]
 
 [tools.tinytex]
 backends = ["asdf:mise-plugins/mise-tinytex"]
