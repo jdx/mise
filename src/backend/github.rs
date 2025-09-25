@@ -45,6 +45,10 @@ impl Backend for UnifiedGitBackend {
             let releases = gitlab::list_releases_from_url(api_url.as_str(), &repo).await?;
             Ok(releases
                 .into_iter()
+                .filter(|r| {
+                    opts.get("version_prefix")
+                        .map_or(true, |p| r.tag_name.starts_with(p))
+                })
                 .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
                 .collect())
@@ -52,6 +56,10 @@ impl Backend for UnifiedGitBackend {
             let releases = github::list_releases_from_url(api_url.as_str(), &repo).await?;
             Ok(releases
                 .into_iter()
+                .filter(|r| {
+                    opts.get("version_prefix")
+                        .map_or(true, |p| r.tag_name.starts_with(p))
+                })
                 .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
                 .collect())
