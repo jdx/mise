@@ -4393,6 +4393,18 @@ description = "Timoni is a package manager for Kubernetes, powered by CUE and in
 backends = ["asdf:mise-plugins/mise-tiny"]
 description = "rtx-tiny is mostly a fake plugin to check mise in CI"
 
+[tools.tinymist]
+backends = [
+  "aqua:Myriad-Dreamin/tinymist",
+  "ubi:Myriad-Dreamin/tinymist",
+  "cargo:tinymist",
+]
+description = "Tinymist is an integrated language service for Typst."
+test = [
+  "tinymist --version | grep 'Build Git Describe:' | cut -d':' -f2 | tr -d ' '",
+  "v{{version}}",
+]
+
 [tools.tinytex]
 backends = ["asdf:mise-plugins/mise-tinytex"]
 description = "A lightweight, cross-platform, portable, and easy-to-maintain LaTeX distribution based on TeX Live"
