@@ -114,6 +114,25 @@ assert_contains "mise env -s bash -C $PROJECT_DIR/subdir | grep SUB_VERSION" "ex
 # Go back to original test directory
 cd "$TEST_ROOT"
 
+# Test read_file with chomp=true to remove trailing newlines
+cat <<EOF >newline_test.txt
+content with newline
+EOF
+
+cat <<EOF >mise.toml
+[env]
+# Test with chomp=true - should remove trailing newlines
+CONTENT_CHOMPED = "{{ read_file(path='newline_test.txt', chomp=true) }}"
+# Test with chomp=false - should preserve trailing newlines (same as default)
+CONTENT_NOT_CHOMPED = "{{ read_file(path='newline_test.txt', chomp=false) }}"
+# Test default behavior - should preserve trailing newlines
+CONTENT_DEFAULT = "{{ read_file(path='newline_test.txt') }}"
+EOF
+
+assert_contains "mise env -s bash | grep CONTENT_CHOMPED" "export CONTENT_CHOMPED='content with newline'"
+assert_contains "mise env -s bash | grep CONTENT_NOT_CHOMPED" "export CONTENT_NOT_CHOMPED='content with newline"
+assert_contains "mise env -s bash | grep CONTENT_DEFAULT" "export CONTENT_DEFAULT='content with newline"
+
 # Cleanup
-rm -f test_version.txt multiline.txt config.txt template_test.txt
+rm -f test_version.txt multiline.txt config.txt template_test.txt newline_test.txt
 rm -rf subdir project

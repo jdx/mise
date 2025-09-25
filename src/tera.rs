@@ -379,24 +379,39 @@ pub fn tera_read_file(
     dir: Option<PathBuf>,
 ) -> impl Fn(&HashMap<String, Value>) -> tera::Result<Value> {
     move |args: &HashMap<String, Value>| -> tera::Result<Value> {
-        match args.get("path") {
-            Some(Value::String(path_str)) => {
-                let path = if let Some(ref base_dir) = dir {
-                    // Resolve relative to config directory
-                    base_dir.join(path_str)
-                } else {
-                    // Use path as-is if no directory context
-                    PathBuf::from(path_str)
-                };
+        let path_str = match args.get("path") {
+            Some(Value::String(path_str)) => path_str,
+            _ => return Err("read_file path must be a string".into()),
+        };
 
-                match std::fs::read_to_string(&path) {
-                    Ok(contents) => Ok(Value::String(contents)),
-                    Err(e) => {
-                        Err(format!("Failed to read file '{}': {}", path.display(), e).into())
+        // Extract chomp parameter (defaults to false to maintain backward compatibility)
+        let chomp = match args.get("chomp") {
+            Some(Value::Bool(chomp)) => *chomp,
+            Some(_) => return Err("read_file chomp must be a boolean".into()),
+            None => false,
+        };
+
+        let path = if let Some(ref base_dir) = dir {
+            // Resolve relative to config directory
+            base_dir.join(path_str)
+        } else {
+            // Use path as-is if no directory context
+            PathBuf::from(path_str)
+        };
+
+        match std::fs::read_to_string(&path) {
+            Ok(mut contents) => {
+                if chomp {
+                    // Remove trailing newlines (chomp behavior)
+                    while contents.ends_with('\n') || contents.ends_with('\r') {
+                        contents.pop();
                     }
                 }
+                Ok(Value::String(contents))
             }
-            _ => Err("read_file path must be a string".into()),
+            Err(e) => {
+                Err(format!("Failed to read file '{}': {}", path.display(), e).into())
+            }
         }
     }
 }
@@ -689,10 +704,18 @@ mod tests {
 
         let _config = Config::get().await.unwrap();
 
-        // Create a temp directory and test file
+        // Create a temp directory and test files
         let temp_dir = TempDir::new().unwrap();
         let test_file_path = temp_dir.path().join("test.txt");
         fs::write(&test_file_path, "test content\nwith multiple lines").unwrap();
+        
+        // Create a test file with trailing newlines  
+        let test_file_newline_path = temp_dir.path().join("test_newline.txt");
+        fs::write(&test_file_newline_path, "content with newline\n").unwrap();
+        
+        // Create a test file with multiple trailing newlines
+        let test_file_multi_newline_path = temp_dir.path().join("test_multi_newline.txt");
+        fs::write(&test_file_multi_newline_path, "content\n\n").unwrap();
 
         // Test with the temp file
         let mut tera_ctx = BASE_CONTEXT.clone();
@@ -700,12 +723,37 @@ mod tests {
         tera_ctx.insert("cwd", temp_dir.path().to_str().unwrap());
         let mut tera = get_tera(Some(temp_dir.path()));
 
+        // Test default behavior (no chomp)
         let s = tera
             .render_str(r#"{{ read_file(path="test.txt") }}"#, &tera_ctx)
             .unwrap();
         assert_eq!(s, "test content\nwith multiple lines");
 
-        // Test with trim filter
+        // Test with chomp=false (explicit default)
+        let s = tera
+            .render_str(r#"{{ read_file(path="test.txt", chomp=false) }}"#, &tera_ctx)
+            .unwrap();
+        assert_eq!(s, "test content\nwith multiple lines");
+
+        // Test with chomp=true on file with trailing newline
+        let s = tera
+            .render_str(r#"{{ read_file(path="test_newline.txt", chomp=true) }}"#, &tera_ctx)
+            .unwrap();
+        assert_eq!(s, "content with newline");
+
+        // Test with chomp=false on file with trailing newline  
+        let s = tera
+            .render_str(r#"{{ read_file(path="test_newline.txt", chomp=false) }}"#, &tera_ctx)
+            .unwrap();
+        assert_eq!(s, "content with newline\n");
+
+        // Test with chomp=true on file with multiple trailing newlines
+        let s = tera
+            .render_str(r#"{{ read_file(path="test_multi_newline.txt", chomp=true) }}"#, &tera_ctx)
+            .unwrap();
+        assert_eq!(s, "content");
+
+        // Test with trim filter (still works)
         let s = tera
             .render_str(r#"{{ read_file(path="test.txt") | trim }}"#, &tera_ctx)
             .unwrap();

@@ -175,8 +175,8 @@ Mise offers additional functions:
 - `choice(n, alphabet)` - Generate a string of `n` with random sample with replacement
   of `alphabet`. For example, `choice(64, HEX)` will generate a random
   64-character lowercase hex string.
-- `read_file(path) -> String` – Reads the contents of a file at the given path and returns
-  it as a string.
+- `read_file(path, chomp=false) -> String` – Reads the contents of a file at the given path and returns
+  it as a string. If `chomp=true`, trailing newlines will be removed from the content.
 
 Examples of functions:
 
@@ -188,6 +188,8 @@ current = "{{ exec(command='node --version') }}"
 # Using read_file to include content from a file
 [env]
 VERSION = "{{ read_file(path='VERSION') | trim }}"
+# Or use chomp to remove trailing newlines directly
+VERSION = "{{ read_file(path='VERSION', chomp=true) }}"
 ```
 
 ### Exec Options
