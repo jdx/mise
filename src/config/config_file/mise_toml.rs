@@ -21,7 +21,7 @@ use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trus
 use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap};
+use crate::config::{Alias, AliasMap, Config};
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, Hooks};
 use crate::redactions::Redactions;
@@ -96,6 +96,10 @@ impl EnvList {
 }
 
 impl MiseToml {
+    fn contains_template_syntax(input: &str) -> bool {
+        input.contains("{{") || input.contains("{%") || input.contains("{#")
+    }
+
     pub fn init(path: &Path) -> Self {
         let mut context = BASE_CONTEXT.clone();
         context.insert(
@@ -267,16 +271,22 @@ impl MiseToml {
     }
 
     fn parse_template(&self, input: &str) -> eyre::Result<String> {
-        if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
+        self.parse_template_with_context(&self.context, input)
+    }
+
+    fn parse_template_with_context(
+        &self,
+        context: &TeraContext,
+        input: &str,
+    ) -> eyre::Result<String> {
+        if !Self::contains_template_syntax(input) {
             return Ok(input.to_string());
         }
         let dir = self.path.parent();
-        let output = get_tera(dir)
-            .render_str(input, &self.context)
-            .wrap_err_with(|| {
-                let p = display_path(&self.path);
-                eyre!("failed to parse template {input} in {p}")
-            })?;
+        let output = get_tera(dir).render_str(input, context).wrap_err_with(|| {
+            let p = display_path(&self.path);
+            eyre!("failed to parse template {input} in {p}")
+        })?;
         Ok(output)
     }
 }
@@ -484,12 +494,27 @@ impl ConfigFile for MiseToml {
         let source = ToolSource::MiseToml(self.path.clone());
         let mut trs = ToolRequestSet::new();
         let tools = self.tools.lock().unwrap();
+        let mut context = self.context.clone();
+        if context.get("vars").is_none() {
+            if let Some(config) = Config::maybe_get() {
+                if let Some(vars_results) = config.vars_results_cached() {
+                    let vars = vars_results
+                        .vars
+                        .iter()
+                        .map(|(k, (v, _))| (k.clone(), v.clone()))
+                        .collect::<IndexMap<_, _>>();
+                    context.insert("vars", &vars);
+                } else if !config.vars.is_empty() {
+                    context.insert("vars", &config.vars);
+                }
+            }
+        }
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
-                let version = self.parse_template(&tool.tt.to_string())?;
+                let version = self.parse_template_with_context(&context, &tool.tt.to_string())?;
                 let tvr = if let Some(mut options) = tool.options.clone() {
                     for v in options.opts.values_mut() {
-                        *v = self.parse_template(v)?;
+                        *v = self.parse_template_with_context(&context, v)?;
                     }
                     let mut ba = ba.clone();
                     let mut ba_opts = ba.opts().clone();
