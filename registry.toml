@@ -3217,8 +3217,9 @@ backends = ["aqua:open-policy-agent/opa", "asdf:tochukwuvictor/asdf-opa"]
 description = "Open Policy Agent (OPA) is an open source, general-purpose policy engine"
 
 [tools.opam]
-backends = ["github:ocaml/opam", "asdf:asdf-community/asdf-opam"]
+backends = ["ubi:ocaml/opam", "asdf:asdf-community/asdf-opam"]
 description = "(ocaml) opam is a source-based package manager. It supports multiple simultaneous compiler installations, flexible package constraints, and a Git-friendly development workflow"
+test = ["opam --version", "{{version}}"]
 
 [tools.openbao]
 backends = ["github:openbao/openbao[exe=bao]"]
