@@ -47,7 +47,7 @@ impl Backend for UnifiedGitBackend {
                 .into_iter()
                 .filter(|r| {
                     opts.get("version_prefix")
-                        .map_or(true, |p| r.tag_name.starts_with(p))
+                        .is_none_or(|p| r.tag_name.starts_with(p))
                 })
                 .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
@@ -58,7 +58,7 @@ impl Backend for UnifiedGitBackend {
                 .into_iter()
                 .filter(|r| {
                     opts.get("version_prefix")
-                        .map_or(true, |p| r.tag_name.starts_with(p))
+                        .is_none_or(|p| r.tag_name.starts_with(p))
                 })
                 .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
