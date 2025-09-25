@@ -85,20 +85,22 @@ impl Backend for UbiBackend {
 
             Ok(versions
                 .into_iter()
+                .filter(|v| {
+                    if let Some(re) = opts.get("tag_regex") {
+                        let re = tag_regex.get_or_init(|| Regex::new(re).unwrap());
+                        let result = re.is_match(v);
+                        debug!("filter {v} by tag_regex {re}: {result}");
+                        result
+                    } else {
+                        true
+                    }
+                })
                 // trim 'v' prefixes if they exist
                 .map(|t| match regex!(r"^v[0-9]").is_match(&t) {
                     true => t[1..].to_string(),
                     false => t,
                 })
                 .sorted_by_cached_key(|v| !regex!(r"^[0-9]").is_match(v))
-                .filter(|v| {
-                    if let Some(re) = opts.get("tag_regex") {
-                        let re = tag_regex.get_or_init(|| Regex::new(re).unwrap());
-                        re.is_match(v)
-                    } else {
-                        true
-                    }
-                })
                 .rev()
                 .collect())
         }
