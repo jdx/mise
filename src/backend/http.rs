@@ -318,7 +318,6 @@ impl Backend for HttpBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        Settings::get().ensure_experimental("http backend")?;
         let opts = tv.request.options();
 
         // Use the new helper to get platform-specific URL first, then fall back to general URL

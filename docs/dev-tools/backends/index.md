@@ -13,10 +13,10 @@ Below is a list of the available backends in mise:
 - [cargo](/dev-tools/backends/cargo)
 - [dotnet](/dev-tools/backends/dotnet) <Badge type="warning" text="experimental" />
 - [gem](/dev-tools/backends/gem) <Badge type="warning" text="experimental" />
-- [github](/dev-tools/backends/github) <Badge type="warning" text="experimental" />
+- [github](/dev-tools/backends/github)
 - [gitlab](/dev-tools/backends/gitlab) <Badge type="warning" text="experimental" />
 - [go](/dev-tools/backends/go) <Badge type="warning" text="experimental" />
-- [http](/dev-tools/backends/http) <Badge type="warning" text="experimental" />
+- [http](/dev-tools/backends/http)
 - [npm](/dev-tools/backends/npm)
 - [pipx](/dev-tools/backends/pipx)
 - [spm](/dev-tools/backends/spm) <Badge type="warning" text="experimental" />
