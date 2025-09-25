@@ -31,6 +31,10 @@ pub static MISE_SHELL: Lazy<Option<ShellType>> = Lazy::new(|| {
         .parse()
         .ok()
 });
+#[cfg(unix)]
+pub static SHELL_COMMAND_FLAG: &str = "-c";
+#[cfg(windows)]
+pub static SHELL_COMMAND_FLAG: &str = "/c";
 
 // paths and directories
 #[cfg(test)]

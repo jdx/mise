@@ -42,9 +42,13 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
 
 async fn get_or_create_venv(ts: &Toolset, venv_path: PathBuf, uv_path: PathBuf) -> Result<Venv> {
     Settings::get().ensure_experimental("uv venv auto")?;
+    #[cfg(windows)]
+    let venv_bin_dir = "Scripts";
+    #[cfg(not(windows))]
+    let venv_bin_dir = "bin";
     let mut venv = Venv {
         env: Default::default(),
-        venv_path: venv_path.join("bin"),
+        venv_path: venv_path.join(venv_bin_dir),
     };
     if let Some(python_tv) = ts
         .versions

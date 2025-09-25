@@ -1,5 +1,47 @@
 # Changelog
 
+## [2025.9.18](https://github.com/jdx/mise/compare/v2025.9.17..v2025.9.18) - 2025-09-24
+
+### 📦 Registry
+
+- replace amplify-cli github backend with ubi by @eggplants in [#6396](https://github.com/jdx/mise/pull/6396)
+
+### 🚀 Features
+
+- **(template)** add read_file() function by @jdx in [#6400](https://github.com/jdx/mise/pull/6400)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** support github_artifact_attestations.enabled by @risu729 in [#6372](https://github.com/jdx/mise/pull/6372)
+- use /c instead of -c on windows in postinstall hook by @risu729 in [#6397](https://github.com/jdx/mise/pull/6397)
+
+### 🧪 Testing
+
+- **(test-tool)** uninstall all versions and clear cache before installation by @jdx in [#6393](https://github.com/jdx/mise/pull/6393)
+
+### New Contributors
+
+- @eggplants made their first contribution in [#6396](https://github.com/jdx/mise/pull/6396)
+
+## [2025.9.17](https://github.com/jdx/mise/compare/v2025.9.16..v2025.9.17) - 2025-09-24
+
+### 🚀 Features
+
+- **(java)** add support for Liberica NIK releases by @roele in [#6382](https://github.com/jdx/mise/pull/6382)
+
+### 🐛 Bug Fixes
+
+- **(toolset)** handle underflow in version_sub function by @koh-sh in [#6389](https://github.com/jdx/mise/pull/6389)
+
+### 📚 Documentation
+
+- document MISE_ENV behavior for global/system configs by @jdx in [#6385](https://github.com/jdx/mise/pull/6385)
+
+### New Contributors
+
+- @jc00ke made their first contribution in [#6386](https://github.com/jdx/mise/pull/6386)
+- @koh-sh made their first contribution in [#6389](https://github.com/jdx/mise/pull/6389)
+
 ## [2025.9.16](https://github.com/jdx/mise/compare/v2025.9.15..v2025.9.16) - 2025-09-22
 
 ### 📦 Registry
@@ -11,6 +53,7 @@
 - **(aqua)** remove blake3 support from aqua checksum algorithms by @risu729 in [#6370](https://github.com/jdx/mise/pull/6370)
 - **(aqua)** remove cosign and slsa-verifier dependencies by @risu729 in [#6371](https://github.com/jdx/mise/pull/6371)
 - **(aqua)** remove cosign.experimental by @risu729 in [#6376](https://github.com/jdx/mise/pull/6376)
+- **(file)** handle GNU sparse files and tar crate extraction issues by @jdx in [#6380](https://github.com/jdx/mise/pull/6380)
 
 ### 📚 Documentation
 
