@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: hashicorp
+    repo_name: vault
+    description: A tool for secrets management, encryption as a service, and privileged access management
+    version_filter: Version matches "^v\\d+\\.\\d+\\.\\d+"
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    url: https://releases.hashicorp.com/vault/{{trimV .Version}}/vault_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    checksum:
+      type: http
+      url: https://releases.hashicorp.com/vault/{{trimV .Version}}/vault_{{trimV .Version}}_SHA256SUMS
+      algorithm: sha256

@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: grafana/mimir/mimir
+    type: github_release
+    repo_owner: grafana
+    repo_name: mimir
+    description: Grafana Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "mimir-2.2.0-rc.0"
+        asset: mimir-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: mimir-{{.OS}}-{{.Arch}}
+        format: raw
+        overrides:
+          - goos: windows
+            asset: mimirtool-{{.OS}}-{{.Arch}}

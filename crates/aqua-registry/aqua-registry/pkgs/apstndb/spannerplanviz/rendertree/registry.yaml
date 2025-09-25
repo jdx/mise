@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: apstndb/spannerplanviz/rendertree
+    type: go_install
+    repo_owner: apstndb
+    repo_name: spannerplanviz
+    path: github.com/apstndb/spannerplanviz/cmd/rendertree
+    description: This tool render YAML or JSON representation of Cloud Spanner query plan as ascii format
+    version_source: github_tag

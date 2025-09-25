@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Ladicle
+    repo_name: kubectl-rolesum
+    description: Summarize Kubernetes RBAC roles for the specified subjects
+    supported_envs:
+      - windows
+      - darwin
+      - linux/amd64
+    rosetta2: true
+    asset: kubectl-rolesum_{{.OS}}-{{.Arch}}.tar.gz
+    files:
+      - name: kubectl-rolesum
+        src: kubectl-rolesum_{{.OS}}-{{.Arch}}/kubectl-rolesum
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

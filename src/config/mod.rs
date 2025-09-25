@@ -62,6 +62,8 @@ pub struct Config {
     tasks: OnceCell<BTreeMap<String, Task>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
+    vars_loader: Option<Arc<Config>>,
+    vars_results: OnceCell<EnvResults>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -83,6 +85,9 @@ impl Config {
             return Ok(config.clone());
         }
         measure!("load config", { Self::load().await })
+    }
+    pub fn maybe_get() -> Option<Arc<Self>> {
+        _CONFIG.read().unwrap().as_ref().cloned()
     }
     pub fn get_() -> Arc<Self> {
         (*_CONFIG.read().unwrap()).clone().unwrap()
@@ -140,6 +145,8 @@ impl Config {
             project_root: Default::default(),
             repo_urls: Default::default(),
             vars: Default::default(),
+            vars_loader: None,
+            vars_results: OnceCell::new(),
         };
         let vars_config = Arc::new(Self {
             tera_ctx: config.tera_ctx.clone(),
@@ -156,9 +163,15 @@ impl Config {
             project_root: config.project_root.clone(),
             repo_urls: config.repo_urls.clone(),
             vars: config.vars.clone(),
+            vars_loader: None,
+            vars_results: OnceCell::new(),
         });
         let vars_results = measure!("config::load vars_results", {
-            load_vars(&vars_config).await?
+            let results = load_vars(&vars_config).await?;
+            vars_config.vars_results.set(results.clone()).ok();
+            config.vars_results.set(results.clone()).ok();
+            config.vars_loader = Some(vars_config.clone());
+            results
         });
         let vars: IndexMap<String, String> = vars_results
             .vars
@@ -262,6 +275,21 @@ impl Config {
         self.env
             .get_or_try_init(|| async { self.load_env().await })
             .await
+    }
+
+    pub async fn vars_results(self: &Arc<Self>) -> Result<&EnvResults> {
+        if let Some(loader) = &self.vars_loader {
+            if let Some(results) = loader.vars_results.get() {
+                return Ok(results);
+            }
+        }
+        self.vars_results
+            .get_or_try_init(|| async move { load_vars(self).await })
+            .await
+    }
+
+    pub fn vars_results_cached(&self) -> Option<&EnvResults> {
+        self.vars_results.get()
     }
     pub async fn path_dirs(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results().await?.env_paths)

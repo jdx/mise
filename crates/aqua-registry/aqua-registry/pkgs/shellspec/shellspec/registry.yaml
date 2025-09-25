@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_archive
+    repo_owner: shellspec
+    repo_name: shellspec
+    description: A full-featured BDD unit testing framework for bash, ksh, zsh, dash and all POSIX shells
+    files:
+      - name: shellspec
+        src: shellspec-{{.Version}}/shellspec

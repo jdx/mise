@@ -103,9 +103,9 @@ Lists all available versions of the tool:
 ```bash
 #!/usr/bin/env bash
 # List all available versions
-curl -s https://api.github.com/repos/owner/repo/releases | 
-  grep '"tag_name":' | 
-  sed -E 's/.*"([^"]+)".*/\1/' | 
+curl -s https://api.github.com/repos/owner/repo/releases |
+  grep '"tag_name":' |
+  sed -E 's/.*"([^"]+)".*/\1/' |
   sort -V
 ```
 
@@ -174,8 +174,8 @@ Get the latest stable version:
 
 ```bash
 #!/usr/bin/env bash
-curl -s https://api.github.com/repos/owner/repo/releases/latest | 
-  grep '"tag_name":' | 
+curl -s https://api.github.com/repos/owner/repo/releases/latest |
+  grep '"tag_name":' |
   sed -E 's/.*"([^"]+)".*/\1/'
 ```
 
@@ -324,14 +324,15 @@ Consider migrating from asdf plugins to modern alternatives:
 
 1. **Check if tool is available in [aqua registry](https://aquaproj.github.io/aqua-registry/)**
 2. **Use [ubi backend](dev-tools/backends/ubi.md) for simple GitHub releases**
-3. **Create a [mise plugin](tool-plugin-development.md) for complex tools**
+3. **Create a [mise plugin](tool-plugin-development.md) for complex tools** - use the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) for a quick start
 4. **Use language-specific package managers** (npm, pipx, cargo, gem)
 
 ## Community Resources
 
 - **[asdf Plugin List](https://github.com/asdf-vm/asdf-plugins)** - Official asdf plugin registry
 - **[mise-plugins Organization](https://github.com/mise-plugins)** - Community-maintained plugins
-- **[Plugin Template](https://github.com/asdf-vm/asdf-plugin-template)** - Template for creating new plugins
+- **[Plugin Template (asdf)](https://github.com/asdf-vm/asdf-plugin-template)** - Template for creating asdf plugins
+- **[Plugin Template (mise)](https://github.com/jdx/mise-tool-plugin-template)** - Modern template for creating mise plugins with Lua
 
 ## Security Considerations
 

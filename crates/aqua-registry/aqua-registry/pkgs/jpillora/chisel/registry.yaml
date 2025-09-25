@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jpillora
+    repo_name: chisel
+    description: A fast TCP/UDP tunnel over HTTP
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.1.3")
+        asset: chisel_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: chisel
+            src: "{{.AssetWithoutExt}}/chisel"
+        replacements:
+          arm64: arm
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: chisel
+      - version_constraint: semver("<= 1.3.1")
+        asset: chisel_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: chisel
+            src: "{{.AssetWithoutExt}}"
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: arm
+          - goos: windows
+            asset: chisel_{{.OS}}_{{.Arch}}.exe.{{.Format}}
+      - version_constraint: semver("<= 1.7.4")
+        asset: chisel_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: chisel
+            src: "{{.AssetWithoutExt}}"
+        checksum:
+          type: github_release
+          asset: chisel_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.7.6")
+        asset: chisel_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        windows_arm_emulation: true
+        files:
+          - name: chisel
+            src: "{{.AssetWithoutExt}}"
+        checksum:
+          type: github_release
+          asset: chisel_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.10.1")
+        asset: chisel_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        files:
+          - name: chisel
+            src: "{{.AssetWithoutExt}}"
+        checksum:
+          type: github_release
+          asset: chisel_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: chisel_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: gz
+        files:
+          - name: chisel
+            src: "{{.AssetWithoutExt}}"
+        checksum:
+          type: github_release
+          asset: chisel_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: chisel

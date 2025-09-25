@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: git-town
+    repo_name: git-town
+    description: Git workflow automation to keep branches in sync and reduce merge conflicts
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 3.1.0")
+        no_asset: true
+      - version_constraint: semver("<= 7.3.0")
+        asset: git-town-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 7.6.0")
+        asset: git-town_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          darwin: macos
+          amd64: intel_64
+          arm64: arm_64
+      - version_constraint: semver("<= 10.0.2")
+        asset: git-town_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          darwin: macos
+          amd64: intel_64
+          arm64: arm_64
+      - version_constraint: "true"
+        asset: git-town_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          darwin: macos
+          arm64: arm_64
+          amd64: intel_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

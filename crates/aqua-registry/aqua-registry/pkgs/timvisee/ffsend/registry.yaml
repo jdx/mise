@@ -1,0 +1,159 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: timvisee
+    repo_name: ffsend
+    description: Easily and securely share files from the command line. A fully featured Firefox Send client
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.2.13", "v0.2.75"]
+        asset: ffsend-{{.Version}}-{{.OS}}-{{.Arch}}-static
+        format: raw
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version in ["v0.2.60", "v0.2.69"]
+        asset: ffsend-{{.Version}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            asset: ffsend-{{.Version}}-{{.OS}}-{{.Arch}}-static
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: Version == "v0.2.47"
+        asset: ffsend-{{.Version}}-{{.OS}}-{{.Arch}}-static
+        format: raw
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: ffsend-{{.Version}}-{{.OS}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.0.9"
+        asset: ffsend-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x64
+          darwin: osx
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 0.0.2")
+        asset: ffsend-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.0.3"
+        asset: ffsend-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: Version == "v0.0.4"
+        asset: ffsend-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x64
+          darwin: osx
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.1.2")
+        asset: ffsend-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x64
+          darwin: osx
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.2.9")
+        asset: ffsend-{{.Version}}-{{.OS}}-{{.Arch}}-static
+        format: raw
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.2.17")
+        asset: ffsend-{{.Version}}-{{.OS}}-{{.Arch}}-static
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: semver("<= 0.2.22")
+        asset: ffsend-{{.Version}}-{{.OS}}-{{.Arch}}-static
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: ffsend-{{.Version}}-{{.OS}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.2.24")
+        asset: ffsend-{{.Version}}-{{.OS}}-{{.Arch}}-static
+        format: raw
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: ffsend-{{.Version}}-{{.OS}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: ffsend-{{.Version}}-{{.OS}}-{{.Arch}}-static
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            asset: ffsend-{{.Version}}-{{.OS}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

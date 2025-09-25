@@ -24,15 +24,6 @@ something with the aliasing is acting up, submit a ticket or just stick to using
 Under the hood, when mise reads a config file or takes CLI input it will swap out "nodejs" and
 "golang".
 
-While this change is rolling out, there is some migration code that will move installs/plugins from
-the "nodejs" and "golang" directories to the new names. If this runs for you you'll see a message
-but it should not run again unless there is some kind of problem. In this case, it's probably
-easiest to just
-run
-`rm -rf ~/.local/share/mise/installs/{golang,nodejs} ~/.local/share/mise/plugins/{golang,nodejs}`.
-
-Once most users have migrated over this migration code will be removed.
-
 ## What does `mise activate` do?
 
 It registers a shell hook to run `mise hook-env` every time the shell prompt is displayed.

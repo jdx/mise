@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: exercism
+    repo_name: cli
+    description: A Go based command line tool for exercism.org
+    asset: exercism-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: exercism
+    replacements:
+      amd64: x86_64
+    checksum:
+      type: github_release
+      asset: exercism_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 3.2.0")
+    version_overrides:
+      - version_constraint: semver(">= 3.0.13")
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver(">= 3.0.0")
+        asset: exercism-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tgz
+        replacements:
+          amd64: 64bit
+          darwin: mac
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 1.7.3")
+        asset: exercism-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tgz
+        replacements:
+          amd64: 64bit
+          darwin: mac
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 1.7.2")
+        asset: exercism-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tgz
+        overrides: []
+        replacements:
+          amd64: 64bit
+          darwin: mac
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          enabled: false
+      - version_constraint: semver("< 1.7.2")
+        asset: exercism-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tgz
+        overrides: []
+        replacements: {}
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          enabled: false

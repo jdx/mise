@@ -155,7 +155,7 @@ authenticate with the API.
 ### `ubi` resolver can't find os/arch
 
 Sometimes vendors use strange formats for their releases that ubi can't figure out, possibly for a
-specific os/arch combination. For example this recently happend in [this ticket](https://github.com/houseabsolute/ubi/issues/79) because a vendor used
+specific os/arch combination. For example this recently happened in [this ticket](https://github.com/houseabsolute/ubi/issues/79) because a vendor used
 "mac" instead of the more common "macos" or "darwin" tags.
 
 Try using ubi by itself to see if the issue is related to mise or ubi:

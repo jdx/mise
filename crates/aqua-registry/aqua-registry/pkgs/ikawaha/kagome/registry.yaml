@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ikawaha
+    repo_name: kagome
+    description: Self-contained Japanese Morphological Analyzer written in pure Go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v2.9.6", "v2.9.9"]
+        no_asset: true
+      - version_constraint: semver("<= 0.1.0")
+        asset: kagome_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: kagome
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        files:
+          - name: kagome
+            src: kagome_{{.OS}}_{{.Arch}}/kagome
+      - version_constraint: semver("<= 2.2.0")
+        no_asset: true
+      - version_constraint: semver("<= 2.6.0")
+        asset: kagome_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: kagome_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 2.6.3")
+        asset: kagome_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: kagome_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 2.9.2")
+        asset: kagome_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: kagome_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: kagome_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: kagome_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: kagome_{{trimV .Version}}_{{.OS}}_all.{{.Format}}

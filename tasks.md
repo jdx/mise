@@ -167,11 +167,11 @@ Lint Markdown files
 
 Lint using ripgrep
 
-## `lint:toml`
+## `lint:schema`
 
-- **Usage**: `lint:toml`
+- **Usage**: `lint:schema`
 
-Lint TOML files
+Lint schemas
 
 ## `pre-commit`
 
@@ -231,13 +231,13 @@ Render help documentation
 
 Generate man pages
 
-## `render:settings`
+## `render:schema`
 
 - Depends: docs:setup
 
-- **Usage**: `render:settings`
+- **Usage**: `render:schema`
 
-Render settings documentation
+Render JSON schema
 
 ## `render:usage`
 

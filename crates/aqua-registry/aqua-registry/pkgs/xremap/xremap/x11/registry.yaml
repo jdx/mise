@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: xremap/xremap/x11
+    aliases:
+      - name: k0kubun/xremap/x11
+    type: github_release
+    repo_owner: xremap
+    repo_name: xremap
+    description: Key remapper for X11 and Wayland (for X11)
+    asset: xremap-{{.OS}}-{{.Arch}}-x11.{{.Format}}
+    format: zip
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+    supported_envs:
+      - linux
+    files:
+      - name: xremap
+    version_constraint: semver(">= 0.5.0")
+    version_overrides:
+      - version_constraint: semver("< 0.5.0")
+        supported_envs:
+          - linux/amd64

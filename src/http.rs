@@ -3,8 +3,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use eyre::{Report, Result, bail, ensure};
+use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
-use reqwest::{ClientBuilder, IntoUrl, Response};
+use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use std::sync::LazyLock as Lazy;
 use url::Url;
 
@@ -12,29 +13,48 @@ use crate::cli::version;
 use crate::config::Settings;
 use crate::file::display_path;
 use crate::ui::progress_report::SingleReport;
+use crate::ui::time::format_duration;
 use crate::{env, file};
 
 #[cfg(not(test))]
 pub static HTTP_VERSION_CHECK: Lazy<Client> =
-    Lazy::new(|| Client::new(Duration::from_secs(3)).unwrap());
+    Lazy::new(|| Client::new(Duration::from_secs(3), ClientKind::VersionCheck).unwrap());
 
-pub static HTTP: Lazy<Client> = Lazy::new(|| Client::new(Settings::get().http_timeout()).unwrap());
+pub static HTTP: Lazy<Client> =
+    Lazy::new(|| Client::new(Settings::get().http_timeout(), ClientKind::Http).unwrap());
 
-pub static HTTP_FETCH: Lazy<Client> =
-    Lazy::new(|| Client::new(Settings::get().fetch_remote_versions_timeout()).unwrap());
+pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
+    Client::new(
+        Settings::get().fetch_remote_versions_timeout(),
+        ClientKind::Fetch,
+    )
+    .unwrap()
+});
 
 #[derive(Debug)]
 pub struct Client {
     reqwest: reqwest::Client,
+    timeout: Duration,
+    kind: ClientKind,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ClientKind {
+    Http,
+    Fetch,
+    #[allow(dead_code)]
+    VersionCheck,
 }
 
 impl Client {
-    fn new(timeout: Duration) -> Result<Self> {
+    fn new(timeout: Duration, kind: ClientKind) -> Result<Self> {
         Ok(Self {
             reqwest: Self::_new()
                 .read_timeout(timeout)
                 .connect_timeout(timeout)
                 .build()?,
+            timeout,
+            kind,
         })
     }
 
@@ -65,30 +85,10 @@ impl Client {
         headers: &HeaderMap,
     ) -> Result<Response> {
         ensure!(!*env::OFFLINE, "offline mode is enabled");
-        let get = |url: Url| async move {
-            debug!("GET {}", &url);
-            let mut req = self.reqwest.get(url.clone());
-            req = req.headers(headers.clone());
-            let resp = req.send().await?;
-            if *env::MISE_LOG_HTTP {
-                eprintln!("GET {url} {}", resp.status());
-            }
-            debug!("GET {url} {}", resp.status());
-            display_github_rate_limit(&resp);
-            resp.error_for_status_ref()?;
-            Ok(resp)
-        };
-        let mut url = url.into_url().unwrap();
-        let resp = match get(url.clone()).await {
-            Ok(resp) => resp,
-            Err(_) if url.scheme() == "http" => {
-                // try with https since http may be blocked
-                url.set_scheme("https").unwrap();
-                get(url).await?
-            }
-            Err(err) => return Err(err),
-        };
-
+        let url = url.into_url().unwrap();
+        let resp = self
+            .send_with_https_fallback(Method::GET, url, headers, "GET")
+            .await?;
         resp.error_for_status_ref()?;
         Ok(resp)
     }
@@ -105,30 +105,10 @@ impl Client {
         headers: &HeaderMap,
     ) -> Result<Response> {
         ensure!(!*env::OFFLINE, "offline mode is enabled");
-        let head = |url: Url| async move {
-            debug!("HEAD {}", &url);
-            let mut req = self.reqwest.head(url.clone());
-            req = req.headers(headers.clone());
-            let resp = req.send().await?;
-            if *env::MISE_LOG_HTTP {
-                eprintln!("HEAD {url} {}", resp.status());
-            }
-            debug!("HEAD {url} {}", resp.status());
-            display_github_rate_limit(&resp);
-            resp.error_for_status_ref()?;
-            Ok(resp)
-        };
-        let mut url = url.into_url().unwrap();
-        let resp = match head(url.clone()).await {
-            Ok(resp) => resp,
-            Err(_) if url.scheme() == "http" => {
-                // try with https since http may be blocked
-                url.set_scheme("https").unwrap();
-                head(url).await?
-            }
-            Err(err) => return Err(err),
-        };
-
+        let url = url.into_url().unwrap();
+        let resp = self
+            .send_with_https_fallback(Method::HEAD, url, headers, "HEAD")
+            .await?;
         resp.error_for_status_ref()?;
         Ok(resp)
     }
@@ -241,6 +221,79 @@ impl Client {
         file.persist(path)?;
         Ok(())
     }
+
+    async fn send_with_https_fallback(
+        &self,
+        method: Method,
+        url: Url,
+        headers: &HeaderMap,
+        verb_label: &str,
+    ) -> Result<Response> {
+        match self
+            .send_once(method.clone(), url.clone(), headers, verb_label)
+            .await
+        {
+            Ok(resp) => Ok(resp),
+            Err(_) if url.scheme() == "http" => {
+                let mut url = url;
+                url.set_scheme("https").unwrap();
+                self.send_once(method, url, headers, verb_label).await
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    async fn send_once(
+        &self,
+        method: Method,
+        mut url: Url,
+        headers: &HeaderMap,
+        verb_label: &str,
+    ) -> Result<Response> {
+        apply_url_replacements(&mut url);
+        debug!("{} {}", verb_label, &url);
+        let mut req = self.reqwest.request(method, url.clone());
+        req = req.headers(headers.clone());
+        let resp = match req.send().await {
+            Ok(resp) => resp,
+            Err(err) => {
+                if err.is_timeout() {
+                    let (setting, env_var) = match self.kind {
+                        ClientKind::Http => ("http_timeout", "MISE_HTTP_TIMEOUT"),
+                        ClientKind::Fetch => (
+                            "fetch_remote_versions_timeout",
+                            "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT",
+                        ),
+                        ClientKind::VersionCheck => ("version_check_timeout", ""),
+                    };
+                    let hint = if env_var.is_empty() {
+                        format!(
+                            "HTTP timed out after {} for {}.",
+                            format_duration(self.timeout),
+                            url
+                        )
+                    } else {
+                        format!(
+                            "HTTP timed out after {} for {} (change with `{}` or env `{}`).",
+                            format_duration(self.timeout),
+                            url,
+                            setting,
+                            env_var
+                        )
+                    };
+                    bail!(hint);
+                }
+                return Err(err.into());
+            }
+        };
+        if *env::MISE_LOG_HTTP {
+            eprintln!("{} {url} {}", verb_label, resp.status());
+        }
+        debug!("{} {url} {}", verb_label, resp.status());
+        display_github_rate_limit(&resp);
+        resp.error_for_status_ref()?;
+        Ok(resp)
+    }
 }
 
 pub fn error_code(e: &Report) -> Option<u16> {
@@ -270,6 +323,60 @@ fn github_headers(url: &Url) -> HeaderMap {
         }
     }
     headers
+}
+
+/// Apply URL replacements based on settings configuration
+/// Supports both simple string replacement and regex patterns (prefixed with "regex:")
+pub fn apply_url_replacements(url: &mut Url) {
+    let settings = Settings::get();
+    if let Some(replacements) = &settings.url_replacements {
+        let url_string = url.to_string();
+
+        for (pattern, replacement) in replacements {
+            if let Some(pattern_without_prefix) = pattern.strip_prefix("regex:") {
+                // Regex replacement
+                if let Ok(regex) = Regex::new(pattern_without_prefix) {
+                    let new_url_string = regex.replace(&url_string, replacement.as_str());
+                    // Only proceed if the URL actually changed
+                    if new_url_string != url_string {
+                        if let Ok(new_url) = new_url_string.parse() {
+                            *url = new_url;
+                            trace!(
+                                "Replaced URL using regex '{}': {} -> {}",
+                                pattern_without_prefix,
+                                url_string,
+                                url.as_str()
+                            );
+                            return; // Apply only the first matching replacement
+                        }
+                    }
+                } else {
+                    warn!(
+                        "Invalid regex pattern in URL replacement: {}",
+                        pattern_without_prefix
+                    );
+                }
+            } else {
+                // Simple string replacement
+                if url_string.contains(pattern) {
+                    let new_url_string = url_string.replace(pattern, replacement);
+                    // Only proceed if the URL actually changed
+                    if new_url_string != url_string {
+                        if let Ok(new_url) = new_url_string.parse() {
+                            *url = new_url;
+                            trace!(
+                                "Replaced URL using string replacement '{}': {} -> {}",
+                                pattern,
+                                url_string,
+                                url.as_str()
+                            );
+                            return; // Apply only the first matching replacement
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn display_github_rate_limit(resp: &Response) {
@@ -306,5 +413,288 @@ fn display_github_rate_limit(resp: &Response) {
                 retry_after
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use confique::Partial;
+    use indexmap::IndexMap;
+    use url::Url;
+
+    // Mutex to ensure tests don't interfere with each other when modifying global settings
+    static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    // Helper to create test settings with specific URL replacements
+    fn with_test_settings<F, R>(replacements: IndexMap<String, String>, test_fn: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        // Lock to prevent parallel tests from interfering with global settings
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+
+        // Create settings with custom URL replacements
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.url_replacements = Some(replacements);
+
+        // Set settings for this test
+        crate::config::Settings::reset(Some(settings));
+
+        // Run test
+        let result = test_fn();
+
+        // Clean up after test
+        crate::config::Settings::reset(None);
+
+        result
+    }
+
+    #[test]
+    fn test_simple_string_replacement() {
+        let mut replacements = IndexMap::new();
+        replacements.insert("github.com".to_string(), "my-proxy.com".to_string());
+
+        with_test_settings(replacements, || {
+            let mut url = Url::parse("https://github.com/owner/repo").unwrap();
+            apply_url_replacements(&mut url);
+            assert_eq!(url.as_str(), "https://my-proxy.com/owner/repo");
+        });
+    }
+
+    #[test]
+    fn test_full_url_string_replacement() {
+        let mut replacements = IndexMap::new();
+        replacements.insert(
+            "https://github.com".to_string(),
+            "https://my-proxy.com/artifactory/github-remote".to_string(),
+        );
+
+        with_test_settings(replacements, || {
+            let mut url = Url::parse("https://github.com/owner/repo").unwrap();
+            apply_url_replacements(&mut url);
+            assert_eq!(
+                url.as_str(),
+                "https://my-proxy.com/artifactory/github-remote/owner/repo"
+            );
+        });
+    }
+
+    #[test]
+    fn test_protocol_specific_replacement() {
+        let mut replacements = IndexMap::new();
+        replacements.insert(
+            "https://github.com".to_string(),
+            "https://secure-proxy.com".to_string(),
+        );
+
+        with_test_settings(replacements.clone(), || {
+            // HTTPS gets replaced
+            let mut url1 = Url::parse("https://github.com/owner/repo").unwrap();
+            apply_url_replacements(&mut url1);
+            assert_eq!(url1.as_str(), "https://secure-proxy.com/owner/repo");
+        });
+
+        with_test_settings(replacements, || {
+            // HTTP does not get replaced (no match)
+            let mut url2 = Url::parse("http://github.com/owner/repo").unwrap();
+            apply_url_replacements(&mut url2);
+            assert_eq!(url2.as_str(), "http://github.com/owner/repo");
+        });
+    }
+
+    #[test]
+    fn test_regex_replacement() {
+        let mut replacements = IndexMap::new();
+        replacements.insert(
+            r"regex:https://github\.com".to_string(),
+            "https://my-proxy.com".to_string(),
+        );
+
+        with_test_settings(replacements, || {
+            let mut url = Url::parse("https://github.com/owner/repo").unwrap();
+            apply_url_replacements(&mut url);
+            assert_eq!(url.as_str(), "https://my-proxy.com/owner/repo");
+        });
+    }
+
+    #[test]
+    fn test_regex_with_capture_groups() {
+        let mut replacements = IndexMap::new();
+        replacements.insert(
+            r"regex:https://github\.com/([^/]+)/([^/]+)".to_string(),
+            "https://my-proxy.com/mirror/$1/$2".to_string(),
+        );
+
+        with_test_settings(replacements, || {
+            let mut url = Url::parse("https://github.com/owner/repo/releases").unwrap();
+            apply_url_replacements(&mut url);
+            assert_eq!(
+                url.as_str(),
+                "https://my-proxy.com/mirror/owner/repo/releases"
+            );
+        });
+    }
+
+    #[test]
+    fn test_regex_invalid_replacement_url() {
+        let mut replacements = IndexMap::new();
+        replacements.insert(
+            r"regex:https://github\.com/([^/]+)".to_string(),
+            "not-a-valid-url".to_string(),
+        );
+
+        with_test_settings(replacements, || {
+            // Invalid result URL should be ignored, original URL unchanged
+            let mut url = Url::parse("https://github.com/owner/repo").unwrap();
+            let original = url.clone();
+            apply_url_replacements(&mut url);
+            assert_eq!(url.as_str(), original.as_str());
+        });
+    }
+
+    #[test]
+    fn test_multiple_replacements_first_match_wins() {
+        let mut replacements = IndexMap::new();
+        replacements.insert("github.com".to_string(), "first-proxy.com".to_string());
+        replacements.insert("github".to_string(), "second-proxy.com".to_string());
+
+        with_test_settings(replacements, || {
+            let mut url = Url::parse("https://github.com/owner/repo").unwrap();
+            apply_url_replacements(&mut url);
+            // First replacement should win
+            assert_eq!(url.as_str(), "https://first-proxy.com/owner/repo");
+        });
+    }
+
+    #[test]
+    fn test_no_replacements_configured() {
+        let replacements = IndexMap::new(); // Empty
+
+        with_test_settings(replacements, || {
+            let mut url = Url::parse("https://github.com/owner/repo").unwrap();
+            let original = url.clone();
+            apply_url_replacements(&mut url);
+            assert_eq!(url.as_str(), original.as_str());
+        });
+    }
+
+    #[test]
+    fn test_regex_complex_patterns() {
+        let mut replacements = IndexMap::new();
+        // Convert GitHub releases to JFrog Artifactory
+        replacements.insert(
+            r"regex:https://github\.com/([^/]+)/([^/]+)/releases/download/([^/]+)/(.+)".to_string(),
+            "https://artifactory.company.com/artifactory/github-releases/$1/$2/$3/$4".to_string(),
+        );
+
+        with_test_settings(replacements, || {
+            let mut url =
+                Url::parse("https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz")
+                    .unwrap();
+            apply_url_replacements(&mut url);
+            assert_eq!(
+                url.as_str(),
+                "https://artifactory.company.com/artifactory/github-releases/owner/repo/v1.0.0/file.tar.gz"
+            );
+        });
+    }
+
+    #[test]
+    fn test_no_settings_configured() {
+        // Test the real apply_url_replacements function with no settings override
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        crate::config::Settings::reset(None);
+
+        let mut url = Url::parse("https://github.com/owner/repo").unwrap();
+        let original = url.clone();
+
+        // This should not crash and should leave URL unchanged
+        apply_url_replacements(&mut url);
+        assert_eq!(url.as_str(), original.as_str());
+    }
+
+    #[test]
+    fn test_replacement_affects_full_url_not_just_hostname() {
+        // Test that replacement works on the full URL string, not just hostname
+        let mut replacements = IndexMap::new();
+        replacements.insert(
+            "github.com/owner".to_string(),
+            "proxy.com/mirror".to_string(),
+        );
+
+        with_test_settings(replacements, || {
+            let mut url = Url::parse("https://github.com/owner/repo").unwrap();
+            apply_url_replacements(&mut url);
+            // This demonstrates that replacement happens on full URL, not just hostname
+            assert_eq!(url.as_str(), "https://proxy.com/mirror/repo");
+        });
+    }
+
+    #[test]
+    fn test_path_replacement_example() {
+        // Test replacing part of the path, proving it's not hostname-only
+        let mut replacements = IndexMap::new();
+        replacements.insert("/releases/download/".to_string(), "/artifacts/".to_string());
+
+        with_test_settings(replacements, || {
+            let mut url =
+                Url::parse("https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz")
+                    .unwrap();
+            apply_url_replacements(&mut url);
+            // Path component was replaced, proving it's full URL replacement
+            assert_eq!(
+                url.as_str(),
+                "https://github.com/owner/repo/artifacts/v1.0.0/file.tar.gz"
+            );
+        });
+    }
+
+    #[test]
+    fn test_documentation_examples() {
+        // Test the examples from the documentation to ensure they work correctly
+
+        // Example 1: Simple hostname replacement
+        let mut replacements = IndexMap::new();
+        replacements.insert("github.com".to_string(), "myregistry.net".to_string());
+
+        with_test_settings(replacements, || {
+            let mut url = Url::parse("https://github.com/user/repo").unwrap();
+            apply_url_replacements(&mut url);
+            assert_eq!(url.as_str(), "https://myregistry.net/user/repo");
+        });
+
+        // Example 2: Protocol + hostname replacement
+        let mut replacements2 = IndexMap::new();
+        replacements2.insert(
+            "https://github.com".to_string(),
+            "https://proxy.corp.com/github-mirror".to_string(),
+        );
+
+        with_test_settings(replacements2, || {
+            let mut url = Url::parse("https://github.com/user/repo").unwrap();
+            apply_url_replacements(&mut url);
+            assert_eq!(
+                url.as_str(),
+                "https://proxy.corp.com/github-mirror/user/repo"
+            );
+        });
+
+        // Example 3: Domain + path replacement
+        let mut replacements3 = IndexMap::new();
+        replacements3.insert(
+            "github.com/releases/download/".to_string(),
+            "cdn.example.com/artifacts/".to_string(),
+        );
+
+        with_test_settings(replacements3, || {
+            let mut url =
+                Url::parse("https://github.com/releases/download/v1.0.0/file.tar.gz").unwrap();
+            apply_url_replacements(&mut url);
+            assert_eq!(
+                url.as_str(),
+                "https://cdn.example.com/artifacts/v1.0.0/file.tar.gz"
+            );
+        });
     }
 }

@@ -178,6 +178,9 @@ export const commands: { [key: string]: Command } = {
   "ls-remote": {
     hide: false,
   },
+  mcp: {
+    hide: false,
+  },
   outdated: {
     hide: false,
   },

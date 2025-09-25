@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: luau-lang
+    repo_name: luau
+    description: A fast, small, safe, gradually typed embeddable scripting language derived from Lua
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.622")
+        asset: luau-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        supported_envs:
+          - darwin
+          - linux
+          - windows/amd64
+        files:
+          - name: luau
+          - name: luau-analyze
+          - name: luau-compile
+      - version_constraint: semver("<= 0.644")
+        asset: luau-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        supported_envs:
+          - darwin/arm64
+          - linux
+          - windows
+        files:
+          - name: luau
+          - name: luau-analyze
+          - name: luau-compile
+      - version_constraint: "true"
+        asset: luau-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+          linux: ubuntu
+        supported_envs:
+          - darwin/arm64
+          - linux
+          - windows
+        files:
+          - name: luau
+          - name: luau-analyze
+          - name: luau-ast
+          - name: luau-compile

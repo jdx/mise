@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    name: golang.org/x/tools/gopls
+    aliases:
+      - name: golang/tools/gopls
+    path: golang.org/x/tools/gopls
+    repo_owner: golang
+    repo_name: tools
+    description: Go language server
+    go_version_path: golang.org/x/tools/gopls
+    files:
+      - name: gopls

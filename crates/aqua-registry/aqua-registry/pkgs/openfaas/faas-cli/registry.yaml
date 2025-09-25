@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: openfaas
+    repo_name: faas-cli
+    format: raw
+    description: Official CLI for OpenFaaS
+    asset: faas-cli-{{.Arch}}
+    overrides:
+      - goos: darwin
+        asset: faas-cli-darwin
+      - goarch: amd64
+        asset: faas-cli
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256

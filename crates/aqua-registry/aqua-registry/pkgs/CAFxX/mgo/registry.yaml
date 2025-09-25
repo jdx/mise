@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: CAFxX
+    repo_name: mgo
+    description: Build and bundle multiple GOAMD64 variants in a single executable

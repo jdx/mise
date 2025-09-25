@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: twistedpair
+    repo_name: google-cloud-sdk
+    description: CLI for interacting with Google Cloud products and services
+    version_source: github_tag
+    url: https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    files:
+      - name: gcloud
+        src: google-cloud-sdk/bin/gcloud
+      - name: gsutil
+        src: google-cloud-sdk/bin/gsutil
+      - name: docker-credential-gcloud
+        src: google-cloud-sdk/bin/docker-credential-gcloud
+      - name: bq
+        src: google-cloud-sdk/bin/bq
+    replacements:
+      amd64: x86_64
+      arm64: arm
+    supported_envs:
+      - darwin
+      - linux

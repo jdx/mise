@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tailor-platform
+    repo_name: tailorctl
+    description: Command line tool for Tailor Platform
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.9.4", "v0.12.1", "v1.19.0"]
+        no_asset: true
+      - version_constraint: semver("<= 0.7.8")
+        asset: tailorctl_{{.OS}}_{{.Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: tailorctl_{{.OS}}_{{.Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: zip

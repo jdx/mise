@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bojand
+    repo_name: ghz
+    asset: ghz-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: Simple gRPC benchmarking and load testing tool
+    replacements:
+      amd64: x86_64
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: ghz-{{.OS}}-{{.Arch}}.{{.Format}}.sha256
+      algorithm: sha256

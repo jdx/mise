@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ipfs
+    repo_name: kubo
+    aliases:
+      - name: ipfs/go-ipfs
+    description: IPFS is a global, versioned, peer-to-peer filesystem
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    version_constraint: semver(">= 0.14.0")
+    asset: kubo_{{.Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+    files:
+      - name: ipfs
+        src: kubo/ipfs
+    version_overrides:
+      - version_constraint: "true"
+        asset: go-ipfs_{{.Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        files:
+          - name: ipfs
+            src: go-ipfs/ipfs
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha512"
+      algorithm: sha512

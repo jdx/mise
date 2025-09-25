@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sxyazi
+    repo_name: yazi
+    description: Blazing fast terminal file manager written in Rust, based on async I/O
+    files:
+      - name: yazi
+      - name: ya
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.3")
+        asset: yazi-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        files:
+          - name: yazi
+            src: yazi-{{.Arch}}-{{.OS}}
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.1.4"
+        asset: yazi-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: yazi
+            src: yazi-{{.Arch}}-{{.OS}}
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-gnu
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.2.3")
+        asset: yazi-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        files:
+          - name: yazi
+            src: yazi-{{.Arch}}-{{.OS}}/yazi
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+      - version_constraint: Version == "v0.2.4"
+        asset: yazi-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        files:
+          - name: yazi
+            src: yazi-{{.Arch}}-{{.OS}}/yazi
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+      - version_constraint: "true"
+        asset: yazi-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        files:
+          - name: yazi
+            src: yazi-{{.Arch}}-{{.OS}}/yazi
+          - name: ya
+            src: yazi-{{.Arch}}-{{.OS}}/ya
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc

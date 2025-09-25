@@ -1,0 +1,54 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: alexellis
+    repo_name: arkade
+    description: Open Source Marketplace For Developer Tools
+    files:
+      - name: ark
+      - name: arkade
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["0.6.6", "0.6.26", "0.6.32", "0.6.34", "0.7.2"]
+        no_asset: true
+      - version_constraint: Version == "0.1.0"
+        asset: bazaar
+        format: raw
+        files:
+          - name: bazaar
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: bazaar-arm64
+          - goos: darwin
+            asset: bazaar-darwin
+      - version_constraint: semver("<= 0.8.12")
+        asset: arkade
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: arkade-arm64
+          - goos: darwin
+            asset: arkade-darwin
+      - version_constraint: "true"
+        asset: arkade
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: arkade-arm64
+          - goos: darwin
+            goarch: amd64
+            asset: arkade-darwin
+          - goos: darwin
+            goarch: arm64
+            asset: arkade-darwin-arm64

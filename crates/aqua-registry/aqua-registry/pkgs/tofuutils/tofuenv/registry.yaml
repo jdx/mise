@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_archive
+    repo_owner: tofuutils
+    repo_name: tofuenv
+    description: OpenTofu version manager
+    supported_envs:
+      - darwin
+      - linux
+    files:
+      - name: tofuenv
+        src: tofuenv-{{trimV .Version}}/bin/tofuenv
+      - name: tofu
+        src: tofuenv-{{trimV .Version}}/bin/tofu

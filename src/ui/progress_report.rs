@@ -1,8 +1,11 @@
 #![allow(unknown_lints)]
 #![allow(clippy::literal_string_with_formatting_args)]
 
-use std::sync::Mutex;
 use std::time::Duration;
+use std::{
+    fmt::{Display, Formatter},
+    sync::Mutex,
+};
 
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::LazyLock as Lazy;
@@ -10,21 +13,47 @@ use std::sync::LazyLock as Lazy;
 use crate::ui::style;
 use crate::{backend, env, ui};
 
-pub trait SingleReport: Send + Sync {
+#[derive(Debug, Clone, Copy)]
+pub enum ProgressIcon {
+    Success,
+    Skipped,
+    Warning,
+    Error,
+}
+
+impl Display for ProgressIcon {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProgressIcon::Success => write!(f, "{}", style::egreen("✓").bright()),
+            ProgressIcon::Skipped => write!(f, "{}", style::eyellow("⇢").bright()),
+            ProgressIcon::Warning => write!(f, "{}", style::eyellow("⚠").bright()),
+            ProgressIcon::Error => write!(f, "{}", style::ered("✗").bright()),
+        }
+    }
+}
+
+pub trait SingleReport: Send + Sync + std::fmt::Debug {
     fn println(&self, _message: String) {}
     fn set_message(&self, _message: String) {}
     fn inc(&self, _delta: u64) {}
     fn set_position(&self, _delta: u64) {}
     fn set_length(&self, _length: u64) {}
     fn abandon(&self) {}
-    fn finish(&self) {}
-    fn finish_with_message(&self, _message: String) {}
+    fn finish(&self) {
+        self.finish_with_message(String::new());
+    }
+    fn finish_with_message(&self, message: String) {
+        self.finish_with_icon(message, ProgressIcon::Success);
+    }
+    fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {}
 }
 
 static SPIN_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     let tmpl = "{prefix} {wide_msg} {spinner:.blue} {elapsed:>3.dim.italic}";
     ProgressStyle::with_template(tmpl).unwrap()
 });
+
+const TICK_INTERVAL: Duration = Duration::from_millis(250);
 
 static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     let tmpl = match *env::TERM_WIDTH {
@@ -38,16 +67,19 @@ static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     ProgressStyle::with_template(tmpl).unwrap()
 });
 
-static SUCCESS_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
-    let tmpl = format!("{{prefix}} {} {{wide_msg}}", style::egreen("✓").bright());
-    ProgressStyle::with_template(tmpl.as_str()).unwrap()
+static HEADER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
+    let width = match *env::TERM_WIDTH {
+        0..=79 => 10,
+        80..=99 => 15,
+        _ => 20,
+    };
+    let tmpl = format!(r#"{{prefix}} {{bar:{width}.cyan/blue}} {{pos}}/{{len:2}}"#);
+    ProgressStyle::with_template(&tmpl).unwrap()
 });
 
 #[derive(Debug)]
 pub struct ProgressReport {
     pub pb: ProgressBar,
-    prefix: String,
-    pad: usize,
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
@@ -68,11 +100,6 @@ fn normal_prefix(pad: usize, prefix: &str) -> String {
     pad_prefix(pad, &prefix)
 }
 
-fn success_prefix(pad: usize, prefix: &str) -> String {
-    let prefix = format!("{} {prefix}", style::egreen("mise"));
-    pad_prefix(pad, &prefix)
-}
-
 impl ProgressReport {
     pub fn new(prefix: String) -> ProgressReport {
         ui::ctrlc::show_cursor_after_ctrl_c();
@@ -80,14 +107,26 @@ impl ProgressReport {
         let pb = ProgressBar::new(100)
             .with_style(SPIN_TEMPLATE.clone())
             .with_prefix(normal_prefix(pad, &prefix));
-        pb.enable_steady_tick(Duration::from_millis(250));
-        ProgressReport { prefix, pb, pad }
+        pb.enable_steady_tick(TICK_INTERVAL);
+        ProgressReport { pb }
+    }
+
+    pub fn new_header(prefix: String, length: u64, message: String) -> ProgressReport {
+        ui::ctrlc::show_cursor_after_ctrl_c();
+        let pad = *LONGEST_PLUGIN_NAME;
+        let pb = ProgressBar::new(length)
+            .with_style(HEADER_TEMPLATE.clone())
+            .with_prefix(normal_prefix(pad, &prefix))
+            .with_message(message);
+        pb.enable_steady_tick(TICK_INTERVAL);
+        ProgressReport { pb }
     }
 }
 
 impl SingleReport for ProgressReport {
     fn println(&self, message: String) {
-        self.pb.suspend(|| {
+        // Suspend the entire MultiProgress to prevent header duplication
+        crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
             eprintln!("{message}");
         });
     }
@@ -98,7 +137,7 @@ impl SingleReport for ProgressReport {
         self.pb.inc(delta);
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
-            self.pb.enable_steady_tick(Duration::from_millis(250));
+            self.pb.enable_steady_tick(TICK_INTERVAL);
         }
     }
     fn set_position(&self, pos: u64) {
@@ -117,20 +156,12 @@ impl SingleReport for ProgressReport {
     fn abandon(&self) {
         self.pb.abandon();
     }
-    fn finish(&self) {
-        self.pb.set_style(SUCCESS_TEMPLATE.clone());
-        self.pb
-            .set_prefix(success_prefix(self.pad - 2, &self.prefix));
-        self.pb.finish()
-    }
-    fn finish_with_message(&self, message: String) {
-        self.pb.set_style(SUCCESS_TEMPLATE.clone());
-        self.pb
-            .set_prefix(success_prefix(self.pad - 2, &self.prefix));
-        self.pb.finish_with_message(message);
+    fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {
+        self.pb.finish_and_clear();
     }
 }
 
+#[derive(Debug)]
 pub struct QuietReport {}
 
 impl QuietReport {
@@ -141,6 +172,7 @@ impl QuietReport {
 
 impl SingleReport for QuietReport {}
 
+#[derive(Debug)]
 pub struct VerboseReport {
     prefix: String,
     prev_message: Mutex<String>,
@@ -173,10 +205,9 @@ impl SingleReport for VerboseReport {
     fn finish(&self) {
         self.finish_with_message(style::egreen("done").to_string());
     }
-    fn finish_with_message(&self, message: String) {
+    fn finish_with_icon(&self, message: String, icon: ProgressIcon) {
         let prefix = pad_prefix(self.pad - 2, &self.prefix);
-        let ico = style::egreen("✓").bright();
-        log::info!("{prefix} {ico} {message}");
+        log::info!("{prefix} {icon} {message}");
     }
 }
 

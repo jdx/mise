@@ -232,6 +232,7 @@ impl Plugin for AsdfPlugin {
         config: &Arc<Config>,
         mpr: &MultiProgressReport,
         force: bool,
+        dry_run: bool,
     ) -> Result<()> {
         let settings = Settings::try_get()?;
         if !force {
@@ -261,9 +262,13 @@ impl Plugin for AsdfPlugin {
             }
         }
         let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
-        let pr = mpr.add(&prefix);
-        let _lock = lock_file::get(&self.plugin_path, force)?;
-        self.install(config, &pr).await
+        let pr = mpr.add_with_options(&prefix, dry_run);
+        if !dry_run {
+            let _lock = lock_file::get(&self.plugin_path, force)?;
+            self.install(config, &pr).await
+        } else {
+            Ok(())
+        }
     }
 
     async fn update(&self, pr: &Box<dyn SingleReport>, gitref: Option<String>) -> Result<()> {

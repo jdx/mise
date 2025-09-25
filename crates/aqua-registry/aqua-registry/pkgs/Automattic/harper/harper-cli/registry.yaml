@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: Automattic/harper/harper-cli
+    type: github_release
+    repo_owner: Automattic
+    repo_name: harper
+    description: The Grammar Checker for Developers
+    version_filter: semver(">= 0.13.0")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.13.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: harper-cli-{{.Arch}}-{{.OS}}.{{.Format}}
+        # harper-cli-aarch64-apple-darwin.tar.gz
+        # harper-cli-aarch64-unknown-linux-gnu.tar.gz
+        # harper-cli-x86_64-apple-darwin.tar.gz
+        # harper-cli-x86_64-pc-windows-msvc.zip
+        # harper-cli-x86_64-unknown-linux-gnu.tar.gz
+        format: tar.gz
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc

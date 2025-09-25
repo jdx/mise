@@ -545,16 +545,11 @@ fn shell() -> String {
 }
 
 fn aqua_registry_count() -> usize {
-    crate::aqua::aqua_registry::AQUA_STANDARD_REGISTRY_FILES.len()
+    aqua_registry::AQUA_STANDARD_REGISTRY_FILES.len()
 }
 
 fn aqua_registry_count_str() -> String {
-    let aqua_count = aqua_registry_count();
-    if aqua_count > 0 {
-        format!("baked in registry tools: {aqua_count}")
-    } else {
-        "baked in registry tools: 0 – aqua registry tools are not compiled into mise, will be fetched dynamically from https://mise-versions.jdx.dev".to_string()
-    }
+    format!("baked in registry tools: {}", aqua_registry_count())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

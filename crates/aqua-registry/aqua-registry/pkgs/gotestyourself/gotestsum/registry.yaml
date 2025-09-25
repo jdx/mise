@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gotestyourself
+    repo_name: gotestsum
+    description: "'go test' runner with output optimized for humans, JUnit XML for CI integration, and a summary of the test results"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.2"
+        no_asset: true
+      - version_constraint: Version == "v0.1"
+        asset: gotestsum_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: gotestsum-{{trimV .Version}}-checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.10.0"
+        asset: gotestsum_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: gotestsum-{{trimV .Version}}-checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.5.1")
+        asset: gotestsum_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: gotestsum-{{trimV .Version}}-checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.6.2")
+        asset: gotestsum_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: gotestsum-{{trimV .Version}}-checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.7.0")
+        asset: gotestsum_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: gotestsum-{{trimV .Version}}-checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: gotestsum_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: gotestsum-{{trimV .Version}}-checksums.txt
+          algorithm: sha256

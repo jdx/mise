@@ -57,6 +57,16 @@ impl Backend for SPMBackend {
         let settings = Settings::get();
         settings.ensure_experimental("spm backend")?;
 
+        // Check if swift is available
+        self.warn_if_dependency_missing(
+            &ctx.config,
+            "swift",
+            "To use Swift Package Manager (spm) tools with mise, you need to install Swift first:\n\
+              mise use swift@latest\n\n\
+            Or install Swift via https://swift.org/download/",
+        )
+        .await;
+
         let repo = SwiftPackageRepo::new(&self.tool_name())?;
         let revision = if tv.version == "latest" {
             self.latest_stable_version(&ctx.config)

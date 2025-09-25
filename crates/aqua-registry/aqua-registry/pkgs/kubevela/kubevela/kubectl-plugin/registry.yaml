@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: kubevela/kubevela/kubectl-plugin
+    type: github_release
+    repo_owner: kubevela
+    repo_name: kubevela
+    aliases:
+      - name: oam-dev/kubevela/kubectl-plugin
+    description: The Modern Application Deployment System Based on OAM
+    complete_windows_ext: false
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: kubectl-vela-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    files:
+      - name: kubectl-vela
+        src: "{{.OS}}-{{.Arch}}/kubectl-vela"
+    version_constraint: semver(">= 1.10.3")
+    checksum:
+      type: github_release
+      asset: sha256sums.txt
+      algorithm: sha256
+      cosign:
+        opts:
+          - --certificate-identity
+          - https://github.com/kubevela/kubevela/.github/workflows/release.yml@refs/tags/{{.Version}}
+          - --certificate-oidc-issuer
+          - https://token.actions.githubusercontent.com
+          - --signature
+          - https://github.com/kubevela/kubevela/releases/download/{{.Version}}/sha256sums.txt-keyless.sig
+          - --certificate
+          - https://github.com/kubevela/kubevela/releases/download/{{.Version}}/sha256sums.txt-keyless.pem
+    slsa_provenance:
+      type: github_release
+      asset: multiple.intoto.jsonl
+    version_overrides:
+      - version_constraint: semver(">= 1.10.2")
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+        slsa_provenance:
+          enabled: false
+      - version_constraint: semver(">= 1.2.0")
+        checksum:
+          # https://github.com/kubevela/kubevela/issues/4822
+          enabled: false
+        slsa_provenance:
+          enabled: false
+      - version_constraint: "true"
+        checksum:
+          # https://github.com/kubevela/kubevela/issues/4822
+          enabled: false
+        slsa_provenance:
+          enabled: false
+        rosetta2: true
+        complete_windows_ext: true
+        asset: kubectl-vela-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+        supported_envs:
+          - darwin
+          - amd64

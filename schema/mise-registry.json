@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mise.jdx.dev/schema/mise-registry.json",
+  "title": "mise registry schema",
+  "description": "Schema for the mise tool registry",
+  "type": "object",
+  "properties": {
+    "tools": {
+      "type": "object",
+      "description": "Registry of all available tools",
+      "patternProperties": {
+        "^[a-zA-Z0-9_.-]+$": {
+          "$ref": "#/definitions/tool"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["tools"],
+  "additionalProperties": false,
+  "definitions": {
+    "tool": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "A brief description of the tool"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Alternative names for the tool"
+        },
+        "backends": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Backend specification as a string (e.g., 'asdf:plugin-name')"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "full": {
+                    "type": "string",
+                    "description": "Full backend specification"
+                  },
+                  "platforms": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Specific platforms this backend supports"
+                  }
+                },
+                "required": ["full"],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "description": "List of backends that can install this tool",
+          "minItems": 1
+        },
+        "test": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Command to test the tool installation [command, expected_output]",
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "os": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "linux",
+              "macos",
+              "windows",
+              "freebsd",
+              "openbsd",
+              "netbsd",
+              "dragonfly",
+              "solaris",
+              "android",
+              "ios"
+            ]
+          },
+          "description": "Operating systems this tool supports (empty means all)"
+        },
+        "depends": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Other tools this tool depends on"
+        },
+        "idiomatic_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Files that indicate this tool should be used in a project"
+        }
+      },
+      "required": ["backends"],
+      "additionalProperties": false
+    }
+  }
+}

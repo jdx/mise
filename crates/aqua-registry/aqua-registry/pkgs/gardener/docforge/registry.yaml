@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gardener
+    repo_name: docforge
+    asset: docforge-{{.OS}}-{{.Arch}}
+    format: raw
+    description: Scalable build tool for distributed documentation sources
+    supported_envs:
+      - linux/amd64
+      - darwin
+    rosetta2: true

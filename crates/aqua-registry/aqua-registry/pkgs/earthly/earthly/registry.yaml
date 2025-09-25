@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: earthly
+    repo_name: earthly
+    description: Repeatable builds
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: earthly-{{.OS}}-{{.Arch}}

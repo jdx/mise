@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# fixes https://github.com/jdx/mise/discussions/5999
+
+set -euo pipefail
+
+export MISE_EXPERIMENTAL=1
+
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12.3"
+uv = "0.5.4"
+tiny = "3"
+
+[settings]
+python.uv_venv_auto = true
+EOF
+
+# Ensure tiny plugin is available
+mise plugin install tiny >/dev/null 2>&1 || true
+
+# Simulate uv project to trigger uv_venv_auto
+touch uv.lock
+
+mise i
+
+# Validate that uv venv takes precedence when executing via another tool
+assert "mise x tiny@3 -- which python" "$PWD/.venv/bin/python"

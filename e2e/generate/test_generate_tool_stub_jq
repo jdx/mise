@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+mise g tool-stub ./bin/jq \
+	--platform-url https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64 \
+	--platform-url linux-x64:https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64
+
+assert "./bin/jq -V" "jq-1.8.1"
+assert "cat ./bin/jq" '#!/usr/bin/env -S mise tool-stub
+
+[platforms.macos-arm64]
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
+checksum = "blake3:d7f94364d8375d9004ac8169fdbb665f61360c2bcc7cceed1d7306dc6f8958b7"
+size = 841408 # 821.69 KiB
+
+[platforms.linux-x64]
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64"
+checksum = "blake3:b0419e57743765a9682d7924816269862890716d7bd3c1b78b2a3dd1f311a7f9"
+size = 2255816 # 2.15 MiB'
+
+mise cache clear
+
+cat >./bin/jq <<EOF
+#! /usr/bin/env -S mise tool-stub
+platforms.macos-arm64.url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
+platforms.linux-x64.url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64"
+EOF
+assert "./bin/jq -V" "jq-1.8.1"
+
+# Test 404 error handling
+assert_fail "mise g tool-stub ./bin/jq-404 \
+	--platform-url macos-arm64:https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64 \
+	--platform-url linux-x64:https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-x64-does-not-exist"
+
+# Test --fetch flag
+cat >./bin/jq-fetch <<EOF
+#!/usr/bin/env -S mise tool-stub
+
+[platforms.macos-arm64]
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
+
+[platforms.linux-x64]
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64"
+EOF
+
+mise g tool-stub ./bin/jq-fetch --fetch
+
+assert "cat ./bin/jq-fetch" '#!/usr/bin/env -S mise tool-stub
+
+[platforms.macos-arm64]
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
+checksum = "blake3:d7f94364d8375d9004ac8169fdbb665f61360c2bcc7cceed1d7306dc6f8958b7"
+size = 841408 # 821.69 KiB
+
+[platforms.linux-x64]
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64"
+checksum = "blake3:b0419e57743765a9682d7924816269862890716d7bd3c1b78b2a3dd1f311a7f9"
+size = 2255816 # 2.15 MiB'
+
+# Test --fetch with partial existing checksums (should only fetch missing ones)
+cat >./bin/jq-partial <<EOF
+#!/usr/bin/env -S mise tool-stub
+
+[platforms.macos-arm64]
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
+checksum = "blake3:existing_checksum_should_not_change"
+size = 123456
+
+[platforms.linux-x64]
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64"
+EOF
+
+mise g tool-stub ./bin/jq-partial --fetch
+
+assert_contains "cat ./bin/jq-partial" 'checksum = "blake3:existing_checksum_should_not_change"'
+assert_contains "cat ./bin/jq-partial" 'size = 123456'
+assert_contains "cat ./bin/jq-partial" '[platforms.linux-x64]
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64"
+checksum = "blake3:b0419e57743765a9682d7924816269862890716d7bd3c1b78b2a3dd1f311a7f9"
+size = 2255816'

@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: birdayz
+    repo_name: kaf
+    description: Modern CLI for Apache Kafka, written in Go
+    asset: kaf_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.2.6")
+    version_overrides:
+      - version_constraint: semver(">= 0.2.5")
+        asset: kaf_.{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 0.2.4")
+        asset: kaf_{{.OS}}_{{.Arch}}.{{.Format}}
+      - version_constraint: semver(">= 0.1.44")
+      - version_constraint: semver(">= 0.1.43")
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+      - version_constraint: semver(">= 0.1.6")
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver("< 0.1.6")
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true

@@ -62,6 +62,10 @@ pub struct Use {
     #[clap(short, long, overrides_with_all = & ["path", "env"])]
     global: bool,
 
+    /// Perform a dry run, showing what would be installed and modified without making changes
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    dry_run: bool,
+
     /// Create/modify an environment-specific config file like .mise.<env>.toml
     #[clap(long, short, overrides_with_all = & ["global", "path"])]
     env: Option<String>,
@@ -139,9 +143,11 @@ impl Use {
                 &mut config,
                 versions.clone(),
                 &InstallOptions {
+                    reason: "use".to_string(),
                     force: self.force,
                     jobs: self.jobs,
                     raw: self.raw,
+                    dry_run: self.dry_run,
                     resolve_options,
                     ..Default::default()
                 },
@@ -183,18 +189,20 @@ impl Use {
         for plugin_name in &self.remove {
             cf.remove_tool(plugin_name)?;
         }
-        cf.save()?;
 
-        for tv in &mut versions {
-            // update the source so the lockfile is updated correctly
-            tv.request.set_source(cf.source());
+        if !self.dry_run {
+            cf.save()?;
+            for tv in &mut versions {
+                // update the source so the lockfile is updated correctly
+                tv.request.set_source(cf.source());
+            }
+
+            let config = Config::reset().await?;
+            let ts = config.get_toolset().await?;
+            config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
         }
 
-        let config = Config::reset().await?;
-        let ts = config.get_toolset().await?;
-        config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
-
-        self.render_success_message(cf.as_ref(), &versions)?;
+        self.render_success_message(cf.as_ref(), &versions, &self.remove)?;
         Ok(())
     }
 
@@ -246,14 +254,53 @@ impl Use {
         }
     }
 
-    fn render_success_message(&self, cf: &dyn ConfigFile, versions: &[ToolVersion]) -> Result<()> {
+    fn render_success_message(
+        &self,
+        cf: &dyn ConfigFile,
+        versions: &[ToolVersion],
+        remove: &[BackendArg],
+    ) -> Result<()> {
         let path = display_path(cf.get_path());
-        let tools = versions.iter().map(|t| t.style()).join(", ");
-        miseprintln!(
-            "{} {} tools: {tools}",
-            style("mise").green(),
-            style(path).cyan().for_stderr(),
-        );
+
+        if self.dry_run {
+            let mut messages = vec![];
+
+            if !versions.is_empty() {
+                let tools = versions.iter().map(|t| t.style()).join(", ");
+                messages.push(format!("add: {tools}"));
+            }
+
+            if !remove.is_empty() {
+                let tools_to_remove = remove.iter().map(|r| r.to_string()).join(", ");
+                messages.push(format!("remove: {tools_to_remove}"));
+            }
+
+            if !messages.is_empty() {
+                miseprintln!(
+                    "{} would update {} ({})",
+                    style("mise").green(),
+                    style(&path).cyan().for_stderr(),
+                    messages.join(", ")
+                );
+            }
+        } else {
+            if !versions.is_empty() {
+                let tools = versions.iter().map(|t| t.style()).join(", ");
+                miseprintln!(
+                    "{} {} tools: {tools}",
+                    style("mise").green(),
+                    style(&path).cyan().for_stderr(),
+                );
+            }
+            if !remove.is_empty() {
+                let tools_to_remove = remove.iter().map(|r| r.to_string()).join(", ");
+                miseprintln!(
+                    "{} {} removed: {tools_to_remove}",
+                    style("mise").green(),
+                    style(&path).cyan().for_stderr(),
+                );
+            }
+        }
         Ok(())
     }
 

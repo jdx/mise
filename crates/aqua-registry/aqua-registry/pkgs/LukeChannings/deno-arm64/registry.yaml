@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: LukeChannings
+    repo_name: deno-arm64
+    asset: deno-linux-arm64.zip
+    supported_envs:
+      - linux/arm64
+    description: A Docker image for Deno
+    files:
+      - name: deno

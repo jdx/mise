@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    name: dev.yorhel.nl/ncdu
+    description: Ncdu is a disk usage analyzer with an ncurses interface
+    link: https://dev.yorhel.nl/ncdu
+    url: https://dev.yorhel.nl/download/ncdu-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    replacements:
+      arm64: aarch64
+      amd64: x86_64
+    supported_envs:
+      - linux
+    search_words:
+      - Linux Only
+    files:
+      # https://github.com/aquaproj/aqua-registry/pull/15293#issuecomment-1712422083
+      - name: ncdu

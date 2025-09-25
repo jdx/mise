@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: SimonTheLeg
+    repo_name: konf-go
+    description: konf is a lightweight kubeconfig manager. With konf you can use different kubeconfigs at the same time. And because it does not need subshells, konf is blazing fast
+    files:
+      - name: konf-go
+      - name: konf
+        src: konf-go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: konf-go_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: konf-go_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

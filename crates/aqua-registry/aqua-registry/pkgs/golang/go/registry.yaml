@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - repo_owner: golang
+    repo_name: go
+    type: http
+    url: https://golang.org/dl/go{{trimPrefix "go" .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+    description: The Go programming language
+    format: tar.gz
+    version_source: github_tag
+    version_filter: Version startsWith "go" and not (Version contains "rc" or Version contains "beta")
+    files:
+      - name: go
+        src: go/bin/go
+      - name: gofmt
+        src: go/bin/gofmt
+    overrides:
+      - goos: windows
+        format: zip

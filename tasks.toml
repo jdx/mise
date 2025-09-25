@@ -97,11 +97,6 @@ mise completion zsh > completions/_mise
 mise completion fish > completions/mise.fish
 '''
 
-["render:settings"]
-description = 'Render settings documentation'
-run = "tsx xtasks/render/settings.ts"
-depends = ['docs:setup']
-
 ["render:mangen"]
 description = 'Generate man pages'
 depends = ["build"]

@@ -95,6 +95,16 @@ mise en
 # bar
 ```
 
+## Environment in tasks
+
+It is also possible to define environment inside a task
+
+```toml [mise.toml]
+[tasks.print]
+run = "echo $MY_VAR"
+env = { _.file = '/path/to/file.env', "MY_VAR" = "my variable" }
+```
+
 ## Lazy eval
 
 Environment variables typically are resolved before tools—that way you can configure tool installation
@@ -115,6 +125,77 @@ Variables can be redacted from the output by setting `redact = true`:
 [env]
 SECRET = { value = "my_secret", redact = true }
 _.file = { path = ".env.json", redact = true }
+```
+
+You can also use the `redactions` array to mark multiple environment variables as sensitive:
+
+```toml
+redactions = ["SECRET_*", "*_TOKEN", "PASSWORD"]
+[env]
+SECRET_KEY = "sensitive_value"
+API_TOKEN = "token_123"
+PASSWORD = "my_password"
+```
+
+### Viewing Redacted Environment Variables
+
+The `mise env` command provides flags to work with redacted variables:
+
+```bash
+# Show only redacted environment variables
+mise env --redacted
+
+# Show only values (useful for piping)
+mise env --values
+
+# Show only values of redacted variables
+mise env --redacted --values
+```
+
+::: danger
+Because mise may output sensitive values that could show up in CI logs you'll need to be configure your CI setup
+to know which values are sensitive.
+
+For example, when using GitHub Actions, you should use `::add-mask::` to prevent secrets from appearing in logs:
+
+```bash
+# In a GitHub Actions workflow
+for value in $(mise env --redacted --values); do
+  echo "::add-mask::$value"
+done
+```
+
+Note: If you're using [mise-action](https://github.com/jdx/mise-action), it will automatically redact values marked with `redact = true` or matching patterns in the `redactions` array.
+:::
+
+## `config_root`
+
+`config_root` is the canonical project root directory that mise uses when resolving relative paths inside configuration files. Generally, when you use relative paths in mise you're referring to this directory.
+
+- When your config lives at nested paths like `.config/mise/config.toml` or `.mise/config.toml`, `config_root` points to the project directory that contains those files (for example, `/path/to/project`).
+- When your config lives at the project root (for example, `mise.toml`), `config_root` is simply the current directory.
+- Relative paths in environment directives are resolved against `config_root` so they behave consistently regardless of where the config file itself lives.
+
+Here's some example config files and their `config_root`:
+
+| Config File                                 | `config_root` |
+| ------------------------------------------- | ------------- |
+| `~/src/foo/.config/mise/conf.d/config.toml` | `~/src/foo`   |
+| `~/src/foo/.config/mise/config.toml`        | `~/src/foo`   |
+| `~/src/foo/.mise/config.toml`               | `~/src/foo`   |
+| `~/src/foo/mise.toml`                       | `~/src/foo`   |
+
+You can see the implementation in [config_root.rs](https://github.com/jdx/mise/blob/main/src/config/config_file/config_root.rs).
+
+Examples:
+
+```toml
+[env]
+# These are equivalent and both resolve against the project root
+_.path = ["tools/bin", "{{config_root}}/tools/bin"]
+
+# Likewise, a relative source path resolves against the project root
+_.source = "scripts/env.sh"          # == "{{config_root}}/scripts/env.sh"
 ```
 
 ## `env._` directives
@@ -207,14 +288,14 @@ _.path = { path = ["{{env.GEM_HOME}}/bin"], tools = true }
 _.path = [
     # adds an absolute path
     "~/.local/share/bin",
-    # adds paths relative to directory in which this file was found (see below for details), not PWD
+    # adds a path relative to the project root (config_root)
     "{{config_root}}/node_modules/.bin",
-    # adds paths relative to the exact file that this is found in (not PWD)
+    # adds a relative path (equivalent to "{{config_root}}/tools/bin")
     "tools/bin",
 ]
 ```
 
-Adding a relative path like `tools/bin` or `./tools/bin` is similar to adding a path rooted at <span v-pre>`{{config_root}}`</span>, but behaves differently if your config file is nested in a subdirectory like `/path/to/project/.config/mise/config.toml`. Including `tools/bin` will add the path `/path/to/project/.config/mise/tools/bin`, whereas including <span v-pre>`{{config_root}}/tools/bin`</span> will add the path `/path/to/project/tools/bin`.
+Relative paths like `tools/bin` or `./tools/bin` are resolved against <span v-pre>`{{config_root}}`</span>. For example, with a config file at `/path/to/project/.config/mise/config.toml`, `tools/bin` resolves to `/path/to/project/tools/bin`.
 
 ### `env._.source`
 
@@ -257,11 +338,11 @@ _.source = { path = "my/env.sh", tools = true }
 ```toml
 [env]
 _.source = [
-    # Sources the file relative to this config file
+    # Sources the file relative to the config root
     './scripts/base.sh',
     # Sources a file at an absolute path
     '/User/bob/env.sh',
-    # Sources the file relative to this config file and redacts the values
+    # Sources the file relative to the config root and redacts the values
     { path = ".secrets.sh", redact = true }
 ]
 ```

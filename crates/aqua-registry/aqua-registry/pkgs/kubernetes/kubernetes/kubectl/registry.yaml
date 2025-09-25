@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: kubernetes/kubernetes/kubectl
+    aliases:
+      - name: kubernetes/kubectl
+    type: http
+    repo_owner: kubernetes
+    repo_name: kubernetes
+    description: The kubectl command line tool lets you control Kubernetes clusters
+    link: https://kubernetes.io/docs/reference/kubectl/
+    version_filter: not (Version matches "-(alpha|beta|rc)")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.2.7")
+        url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - amd64
+      - version_constraint: semver("<= 1.15.3")
+        url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 1.20.15")
+        url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: http
+          url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl.sha256
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            checksum:
+              type: http
+              url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl.exe.sha256
+              algorithm: sha256
+      - version_constraint: semver("<= 1.22.17")
+        url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: http
+          url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl.sha256
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            checksum:
+              type: http
+              url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl.exe.sha256
+              algorithm: sha256
+      - version_constraint: semver("<= 1.25.4")
+        url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl
+        format: raw
+        checksum:
+          type: http
+          url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl.sha256
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            checksum:
+              type: http
+              url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl.exe.sha256
+              algorithm: sha256
+      - version_constraint: "true"
+        url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl
+        format: raw
+        checksum:
+          type: http
+          url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl.sha256
+          algorithm: sha256
+        cosign:
+          opts:
+            - --signature
+            - https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl.sig
+            - --certificate
+            - https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl.cert
+            - --certificate-identity
+            - "krel-staging@k8s-releng-prod.iam.gserviceaccount.com"
+            - --certificate-oidc-issuer
+            - "https://accounts.google.com"
+        overrides:
+          - goos: windows
+            checksum:
+              type: http
+              url: https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl.exe.sha256
+              algorithm: sha256
+            cosign:
+              opts:
+                - --signature
+                - https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl.exe.sig
+                - --certificate
+                - https://dl.k8s.io/{{.Version}}/bin/{{.OS}}/{{.Arch}}/kubectl.exe.cert
+                - --certificate-identity
+                - "krel-staging@k8s-releng-prod.iam.gserviceaccount.com"
+                - --certificate-oidc-issuer
+                - "https://accounts.google.com"

@@ -1,0 +1,235 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gitui-org
+    repo_name: gitui
+    aliases:
+      - name: extrawurst/gitui
+    description: Blazing  fast terminal-ui for git written in rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.7")
+        asset: gitui-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: mac
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "v0.1.8"
+        asset: gitui-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: mac
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.1.11")
+        asset: gitui-{{.OS}}-musl.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: darwin
+            asset: gitui-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.8.1")
+        asset: gitui-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+          windows: win
+        overrides:
+          - goos: linux
+            asset: gitui-{{.OS}}-musl.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.9.0"
+        asset: gitui-{{.OS}}-musl.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: darwin
+            asset: gitui-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.9.1"
+        asset: gitui-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+          windows: win
+        overrides:
+          - goos: linux
+            asset: gitui-{{.OS}}-musl.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.10.0"
+        asset: gitui-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+          windows: win
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: Version == "v0.10.1"
+        asset: gitui-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+          windows: win
+        overrides:
+          - goos: linux
+            asset: gitui-{{.OS}}-musl.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.11.0-rc1"
+        asset: gitui-{{.OS}}-musl.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: darwin
+            asset: gitui-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.11.0")
+        asset: gitui-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+          windows: win
+        overrides:
+          - goos: linux
+            asset: gitui-{{.OS}}-musl.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.12.0-rc1"
+        asset: gitui-{{.OS}}-musl.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: darwin
+            asset: gitui-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.19.0")
+        asset: gitui-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+          windows: win
+        overrides:
+          - goos: linux
+            asset: gitui-{{.OS}}-musl.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.20.0"
+        asset: gitui-{{.OS}}-musl.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: darwin
+            asset: gitui-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.21.0")
+        asset: gitui-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+          windows: win
+        overrides:
+          - goos: linux
+            asset: gitui-{{.OS}}-musl.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.25.2")
+        asset: gitui-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+          windows: win
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: gitui-{{.OS}}-arm.{{.Format}}
+          - goos: linux
+            goarch: arm64
+            asset: gitui-{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              arm64: aarch64
+      - version_constraint: Version == "v0.26.0"
+        asset: gitui-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+          - goos: darwin
+            asset: gitui-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: gitui-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: mac
+          windows: win
+        overrides:
+          - goos: linux
+            asset: gitui-{{.OS}}-{{.Arch}}.{{.Format}}
+            replacements:
+              amd64: x86_64
+              arm64: aarch64

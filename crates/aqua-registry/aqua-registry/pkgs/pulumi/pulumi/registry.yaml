@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: pulumi
+    repo_name: pulumi
+    description: "Pulumi - Infrastructure as Code in any programming language"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v3.0.0-rc.1"
+        no_asset: true
+      - version_constraint: Version in ["v2.11.0", "v2.15.1", "v2.15.5", "v2.16.1"]
+        asset: pulumi-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: pulumi-{{trimV .Version}}-checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v3.39.4"
+        asset: pulumi-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: pulumi
+                src: pulumi/bin/pulumi.exe
+        files:
+          - name: pulumi
+            src: pulumi/pulumi
+      - version_constraint: semver("<= 2.20.0")
+        no_asset: true
+      - version_constraint: semver("<= 2.22.0")
+        asset: pulumi-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: pulumi-{{trimV .Version}}-checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+        files:
+          - name: pulumi
+            src: pulumi/pulumi
+      - version_constraint: semver("<= 3.2.1")
+        asset: pulumi-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: pulumi-{{trimV .Version}}-checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+        files:
+          - name: pulumi
+            src: pulumi/pulumi
+      - version_constraint: semver("<= 3.39.3")
+        asset: pulumi-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: pulumi-{{trimV .Version}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: pulumi
+                src: pulumi/bin/pulumi.exe
+        files:
+          - name: pulumi
+            src: pulumi/pulumi
+      - version_constraint: "true"
+        asset: pulumi-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: SHA512SUMS
+          algorithm: sha512
+          cosign:
+            bundle:
+              type: github_release
+              asset: SHA512SUMS.sig
+            opts:
+              - --certificate-identity-regexp
+              - '^https://github\.com/pulumi/pulumi/\.github/workflows/sign\.yml@refs/heads/gh-readonly-queue/'
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: pulumi
+                src: pulumi/bin/pulumi.exe
+        files:
+          - name: pulumi
+            src: pulumi/pulumi

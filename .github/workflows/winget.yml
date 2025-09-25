@@ -7,10 +7,10 @@ jobs:
   publish:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
         with:
           repository: jdx/winget-pkgs
-          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          token: ${{ secrets.MISE_GH_TOKEN }}
           fetch-depth: 0
       - run: git config user.name mise-en-dev
       - run: git config user.email release@mise.jdx.dev
@@ -21,4 +21,4 @@ jobs:
         with:
           identifier: jdx.mise
           max-versions-to-keep: 5
-          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
+          token: ${{ secrets.MISE_GH_TOKEN }}

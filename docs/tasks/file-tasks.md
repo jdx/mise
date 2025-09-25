@@ -8,7 +8,7 @@ In addition to defining tasks through the configuration, they can also be define
 - `.mise/tasks/:task_name`
 - `.config/mise/tasks/:task_name`
 
-Note that you can include additional directories using the [task_config](/tasks/task-configuration.html#task-config-options) section.
+Note that you can configure directories using the [task_config](/tasks/task-configuration.html#task-config-options) section.
 
 Here is an example of a file task that builds a Rust CLI:
 
@@ -48,6 +48,12 @@ You can provide additional configuration for file tasks by adding `#MISE` commen
 ```
 
 Assuming that file was located in `mise-tasks/build`, it can then be run with `mise run build` (or with its alias: `mise run b`).
+
+:::tip
+Beware of formatters changing `#MISE` to `# MISE`.
+It's intentionally ignored by mise to avoid unintentional configuration.
+To workaround this, use the alternative: `# [MISE]`.
+:::
 
 ## Shebang
 

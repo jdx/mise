@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ipld
+    repo_name: go-car
+    description: A content addressible archive utility
+    asset: go-car_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    files:
+      - name: car
+    overrides:
+      - goos: darwin
+        asset: go-car_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+        files:
+          - name: car
+            src: go-car
+      - goos: linux
+        format: tar.gz
+    checksum:
+      type: github_release
+      asset: go-car_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

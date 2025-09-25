@@ -158,15 +158,29 @@ impl Backend for PIPXBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        // Check if pipx is available (unless uvx is being used)
+        let use_uvx = self.uv_is_installed(&ctx.config).await
+            && Settings::get().pipx.uvx != Some(false)
+            && tv.request.options().get("uvx") != Some(&"false".to_string());
+
+        if !use_uvx {
+            self.warn_if_dependency_missing(
+                &ctx.config,
+                "pipx",
+                "To use pipx packages with mise, you need to install pipx first:\n\
+                  mise use pipx@latest\n\n\
+                Alternatively, you can use uv/uvx by installing uv:\n\
+                  mise use uv@latest",
+            )
+            .await;
+        }
+
         let pipx_request = self
             .tool_name()
             .parse::<PipxRequest>()?
             .pipx_request(&tv.version, &tv.request.options());
 
-        if self.uv_is_installed(&ctx.config).await
-            && Settings::get().pipx.uvx != Some(false)
-            && tv.request.options().get("uvx") != Some(&"false".to_string())
-        {
+        if use_uvx {
             ctx.pr
                 .set_message(format!("uv tool install {pipx_request}"));
             let mut cmd = Self::uvx_cmd(

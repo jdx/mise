@@ -3,6 +3,7 @@
 use std::fmt::{Display, Formatter};
 
 use crate::config::Settings;
+use crate::env::{self};
 use crate::shell::{ActivateOptions, Shell};
 use indoc::formatdoc;
 use shell_escape::unix::escape;
@@ -126,10 +127,28 @@ impl Shell for Fish {
         format!("set -gx {k} {v}\n")
     }
 
-    fn prepend_env(&self, key: &str, v: &str) -> String {
+    fn prepend_env(&self, key: &str, value: &str) -> String {
         let k = escape(key.into());
-        let v = escape(v.into());
-        format!("set -gx {k} {v} ${k}\n")
+
+        match key {
+            env_key if env_key == *env::PATH_KEY => env::split_paths(value)
+                .filter_map(|path| {
+                    let path_str = path.to_str()?;
+                    if path_str.is_empty() {
+                        None
+                    } else {
+                        Some(format!(
+                            "fish_add_path --global --move --path {}\n",
+                            escape(path_str.into())
+                        ))
+                    }
+                })
+                .collect::<String>(),
+            _ => {
+                let v = escape(value.into());
+                format!("set -gx {k} {v} ${k}\n")
+            }
+        }
     }
 
     fn unset_env(&self, k: &str) -> String {
@@ -143,7 +162,7 @@ impl Display for Fish {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 mod tests {
     use insta::assert_snapshot;
     use std::path::Path;

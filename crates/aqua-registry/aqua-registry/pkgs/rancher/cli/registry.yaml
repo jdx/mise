@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rancher
+    repo_name: cli
+    description: Rancher CLI
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - amd64
+    asset: rancher-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: rancher
+        src: rancher-{{.Version}}/rancher
+    checksum:
+      type: github_release
+      asset: sha256sum.txt
+      algorithm: sha256

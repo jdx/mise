@@ -484,6 +484,8 @@ impl Backend for JavaPlugin {
 fn os() -> &'static str {
     if cfg!(target_os = "macos") {
         "macosx"
+    } else if OS.as_str() == "freebsd" {
+        "linux"
     } else {
         &OS
     }
@@ -508,7 +510,7 @@ struct JavaMetadata {
     file_type: Option<String>,
     // filename: String,
     image_type: Option<String>,
-    // java_version: String,
+    java_version: String,
     jvm_impl: String,
     // os: String,
     // release_type: String,
@@ -539,6 +541,14 @@ impl Display for JavaMetadata {
         }
         if self.jvm_impl == "openj9" {
             v.push(self.jvm_impl.clone());
+        }
+        if self.vendor == "liberica-nik" {
+            let major = self
+                .java_version
+                .split('.')
+                .next()
+                .unwrap_or(&self.java_version);
+            v.push(format!("openjdk{}", major));
         }
         v.push(self.version.clone());
         write!(f, "{}", v.join("-"))

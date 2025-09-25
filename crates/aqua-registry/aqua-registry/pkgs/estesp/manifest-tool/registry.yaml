@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: estesp
+    repo_name: manifest-tool
+    description: Command line tool to create and query container image manifest list/indexes
+    format: tar.gz
+    asset: binaries-manifest-tool-{{trimV .Version}}.{{.Format}}
+    files:
+      - name: manifest-tool
+        src: manifest-tool-{{.OS}}-{{.Arch}}
+    supported_envs:
+      - darwin
+      - linux
+      - windows/amd64
+    checksum:
+      type: github_release
+      asset: binaries-manifest-tool-{{trimV .Version}}.tar.gz.sha256sum
+      algorithm: sha256

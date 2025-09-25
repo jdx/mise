@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Azure
+    repo_name: draft
+    description: A day 0 tool for getting your app on k8s fast
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.3")
+        asset: draftv2-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: draftv2
+        overrides:
+          - goos: darwin
+            goarch: arm64
+            asset: draft-v2{{.OS}}-{{.Arch}}
+      - version_constraint: semver("<= 0.0.7")
+        asset: draftv2-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: draftv2
+      - version_constraint: semver("<= 0.0.21")
+        asset: draft-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+      - version_constraint: "true"
+        asset: draft-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true

@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: pvolok
+    repo_name: mprocs
+    description: Run multiple commands in parallel
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.1")
+        asset: mprocs-{{.OS}}-{{.Arch}}.{{.Format}}
+        files:
+          - name: mprocs
+            src: dist/{{.OS}}-{{.Arch}}/mprocs
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.1.0"
+        asset: mprocs-{{trimV .Version}}-{{.OS}}64.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+          windows: win64
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x64
+          - goos: windows
+            format: zip
+            asset: mprocs-{{trimV .Version}}-{{.OS}}-upx.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.6.4")
+        asset: mprocs-{{trimV .Version}}-{{.OS}}64.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+          windows: win64
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x64
+          - goos: windows
+            format: zip
+            asset: mprocs-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: mprocs-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        overrides:
+          - goos: linux
+            asset: mprocs-{{trimV .Version}}-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+          - goos: windows
+            format: zip

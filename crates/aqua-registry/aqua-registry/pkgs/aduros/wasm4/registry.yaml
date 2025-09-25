@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: aduros
+    repo_name: wasm4
+    description: Build retro games using WebAssembly for a fantasy console
+    files:
+      - name: w4
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.9"
+        asset: wasm4-{{.OS}}.{{.Format}}
+        format: zip
+        files:
+          - name: w4
+            src: wasm4-{{.OS}}/w4
+        replacements:
+          darwin: mac
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: w4-{{.OS}}.{{.Format}}
+        format: zip
+        files:
+          - name: w4
+        replacements:
+          darwin: mac
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

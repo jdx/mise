@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: grafana
+    repo_name: xk6
+    asset: xk6_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: Build k6 with extensions
+    replacements:
+      darwin: mac
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: xk6_{{trimV .Version}}_checksums.txt
+      algorithm: sha512
+    version_constraint: semver("< 0.9.0")
+    version_overrides:
+      - version_constraint: semver(">= 0.9.0")
+        error_message: |
+          From version xk6 v0.9.0 there are no more binaries published.
+
+          https://github.com/grafana/xk6/issues/60

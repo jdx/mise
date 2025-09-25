@@ -38,28 +38,21 @@ Built directly into mise, written in Rust for performance and reliability:
 - **Benefits**: Fastest performance, no external dependencies, best integration
 - **Drawbacks**: Require much more maintenance; new core tool contributions are likely to be rejected unless they're for very popular tools like Node.js, Python, or Go
 
-**Note**: Core tools like Node.js and Java are implemented as backends even though they represent single tools. This consistent backend architecture allows mise to handle all tools uniformly, whether they're complex ecosystems or individual tools.
+::: info
+Core tools like Node.js and Java are implemented as backends even though they represent single tools. This consistent backend architecture allows mise to handle all tools uniformly, whether they're complex ecosystems or individual tools.
+:::
 
 ### Language Package Managers
 
 Leverage existing language ecosystems:
 
-- **npm** - Node.js packages (`npm:prettier`, `npm:typescript`)
+- **npm** - npm packages (`npm:prettier`, `npm:typescript`)
 - **pipx** - Python packages (`pipx:black`, `pipx:poetry`)
-- **cargo** - Rust packages (`cargo:ripgrep`, `cargo:fd-find`)
-- **gem** - Ruby packages (`gem:bundler`, `gem:rails`)
-- **go** - Go packages (`go:github.com/golangci/golangci-lint/cmd/golangci-lint`)
+- **cargo** - Rust crates (`cargo:ripgrep`, `cargo:fd-find`)
+- **gem** - Ruby gems (`gem:bundler`, `gem:rails`)
+- **go** - Go modules (`go:github.com/golangci/golangci-lint/cmd/golangci-lint`)
 
 ### Universal Installers
-
-#### ubi - Universal Binary Installer
-
-Zero-configuration installer that works with any GitHub/GitLab repository following standard conventions:
-
-- **Usage**: `ubi:BurntSushi/ripgrep`
-- **Requirements**: Repository must follow standard release tarball conventions
-- **Sources**: Primarily GitHub releases, with GitLab support (rarely used in mise)
-- **Configuration**: None required - automatically detects and downloads appropriate binaries
 
 #### aqua - Comprehensive Package Manager
 
@@ -69,6 +62,15 @@ Registry-based package manager with strong security features:
 - **Requirements**: Tools must be available in the [aqua registry](https://github.com/aquaproj/aqua-registry)
 - **Sources**: Primarily GitHub but supports other sources through registry configuration
 - **Security**: Comprehensive checksums, signatures, and verification
+
+#### ubi - Universal Binary Installer
+
+Zero-configuration installer that works with any GitHub/GitLab repository following standard conventions:
+
+- **Usage**: `ubi:BurntSushi/ripgrep`
+- **Requirements**: Repository must follow standard release tarball conventions
+- **Sources**: Primarily GitHub releases, with GitLab support (rarely used in mise)
+- **Configuration**: None required - automatically detects and downloads appropriate binaries
 
 ### Plugin Systems
 
@@ -102,13 +104,13 @@ terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 
 ## Backend Capabilities Comparison
 
-| Feature | Core | npm/pipx/cargo | ubi | aqua | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
-|---------|------|----------------|-----|------|---------------|-------------|-------------|
-| **Speed** | ✅ | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ |
-| **Security** | ✅ | ⚠️ | ⚠️ | ✅ | ⚠️ | ⚠️ | ⚠️ |
-| **Windows Support** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **Env Var Support** | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
-| **Custom Scripts** | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
+| Feature             | Core | npm/pipx/cargo | aqua | ubi | Backend Plugins | Tool Plugins (vfox) | asdf Plugins (legacy) |
+| ------------------- | ---- | -------------- | ---- | --- | --------------- | ------------------- | --------------------- |
+| **Speed**           | ✅   | ⚠️             | ✅   | ✅  | ⚠️              | ⚠️                  | ⚠️                    |
+| **Security**        | ✅   | ⚠️             | ✅   | ⚠️  | ⚠️              | ⚠️                  | ⚠️                    |
+| **Windows Support** | ✅   | ✅             | ✅   | ✅  | ✅              | ✅                  | ❌                    |
+| **Env Var Support** | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
+| **Custom Scripts**  | ✅   | ❌             | ❌   | ❌  | ✅              | ✅                  | ✅                    |
 
 ## When to Use Each Backend
 
@@ -118,21 +120,13 @@ terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 - You want the fastest performance
 - You're using major programming languages
 
-**Note**: Core tools should generally always be used when available, as they provide the best performance and integration with mise.
+Core tools should generally always be used when available, as they provide the best performance and integration with mise.
 
 ### Use **Language Package Managers** when
 
 - Installing tools specific to that language ecosystem
 - The tool is primarily distributed through that package manager
 - You want automatic dependency management
-
-### Use **ubi** when
-
-- Installing pre-compiled binaries from GitHub/GitLab releases
-- The repository follows standard conventions for release tarballs
-- You want zero configuration - no registry setup required
-- You need simple, fast binary installation
-- The tool doesn't require complex build processes or environment setup
 
 ### Use **aqua** when
 
@@ -141,6 +135,14 @@ terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 - You need Windows support
 - The tool is already available in the [aqua registry](https://github.com/aquaproj/aqua-registry)
 - You're willing to contribute tools to the aqua registry for tools not yet available
+
+### Use **ubi** when
+
+- Installing pre-compiled binaries from GitHub/GitLab releases
+- The repository follows standard conventions for release tarballs
+- You want zero configuration - no registry setup required
+- You need simple, fast binary installation
+- The tool doesn't require complex build processes or environment setup
 
 ### Use **Backend Plugins** when
 
@@ -175,12 +177,12 @@ Some backends have dependencies on others:
 ```mermaid
 graph TD
     A[npm backend] --> B[Node.js]
-    C[pipx backend] --> D[Python]
+    C[pipx backend] --> D[pipx]
     E[cargo backend] --> F[Rust]
     G[gem backend] --> H[Ruby]
 ```
 
-mise automatically handles these dependencies, installing Node.js before npm tools, Python before pipx tools, etc.
+mise automatically handles these dependencies, installing Node.js before npm tools, pipx before pipx tools, etc.
 
 ## Configuration and Overrides
 
@@ -189,7 +191,7 @@ mise automatically handles these dependencies, installing Node.js before npm too
 ```toml
 # ~/.config/mise/config.toml
 [settings]
-disable_backends = ["asdf", "vfox"]  # Don't use these backends
+disable_backends = ["asdf", "vfox"] # Don't use these backends
 ```
 
 ### Force Backend for Tool
@@ -197,8 +199,8 @@ disable_backends = ["asdf", "vfox"]  # Don't use these backends
 ```toml
 # mise.toml
 [tools]
-node = "core:node@20"     # Explicitly use core backend
-prettier = "npm:prettier" # Use npm backend instead of default
+"core:node" = "20"     # Explicitly use core backend
+"aqua:yarn" = "latest" # Use aqua backend instead of default (vfox)
 ```
 
 ### Backend-Specific Settings

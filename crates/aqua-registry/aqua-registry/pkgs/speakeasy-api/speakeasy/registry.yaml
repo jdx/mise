@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: speakeasy-api
+    repo_name: speakeasy
+    description: Build APIs your users love  with Speakeasy.  Polished and type-safe SDKs.  Terraform providers and Contract Tests for your API. OpenAPI native
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: speakeasy_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

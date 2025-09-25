@@ -11,7 +11,7 @@ mkdir -p dist/mise/bin
 cp "target/$Target/release/mise.exe" dist/mise/bin/mise.exe
 cp README.md dist/mise/README.md
 cp LICENSE dist/mise/LICENSE
-cd dist
+Set-Location dist
 7z a -tzip "$BaseName.zip" mise
-cd ..
+Set-Location ..
 7z l "dist/$BaseName.zip"

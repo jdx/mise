@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       chroots:
-        description: 'COPR chroots to target (space-separated)'
+        description: "COPR chroots to target (space-separated)"
         required: false
-        default: 'fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-42-aarch64 fedora-42-x86_64 fedora-41-aarch64 fedora-41-x86_64 epel-10-aarch64 epel-10-x86_64 epel-9-aarch64 epel-9-x86_64'
+        default: "fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-42-aarch64 fedora-42-x86_64 fedora-41-aarch64 fedora-41-x86_64 epel-10-aarch64 epel-10-x86_64 epel-9-aarch64 epel-9-x86_64"
         type: string
       use_serious_profile:
         description: 'Use the "serious" profile for optimized builds (LTO enabled)'
@@ -24,25 +24,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     container:
-      image: ghcr.io/jdx/mise:copr
-    
+      image: ghcr.io/jdx/mise:copr@sha256:4276ecd5f8e845010c2827499c737c1226a0a1f1d5893efbe3e0342754e5ad44
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
         with:
           fetch-depth: 0
-          submodules: true
 
       - name: Set up environment variables
         run: |
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
-          
+
           if [ "${{ github.event_name }}" = "release" ]; then
             CHROOTS="fedora-rawhide-aarch64 fedora-rawhide-x86_64 fedora-42-aarch64 fedora-42-x86_64 fedora-41-aarch64 fedora-41-x86_64 epel-10-aarch64 epel-10-x86_64 epel-9-aarch64 epel-9-x86_64"
           else
             CHROOTS="${{ inputs.chroots }}"
           fi
-          
+
           {
             echo "VERSION=${VERSION}"
             echo "CHROOTS=${CHROOTS}"
@@ -52,7 +51,7 @@ jobs:
             echo "COPR_OWNER=${{ vars.COPR_OWNER || 'jdxcode' }}"
             echo "COPR_PROJECT=${{ vars.COPR_PROJECT || 'mise' }}"
           } >> "$GITHUB_ENV"
-          
+
           # Set build profile
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.use_serious_profile }}" = "true" ]; then
             echo "BUILD_PROFILE=serious" >> "$GITHUB_ENV"

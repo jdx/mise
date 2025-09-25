@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Test native Cosign verification for aqua packages
+
+set -euo pipefail
+
+export MISE_EXPERIMENTAL=1
+export MISE_AQUA_COSIGN=true
+export MISE_AQUA_SLSA=false
+
+echo "=== Testing Native Cosign Verification ==="
+
+# Test: Install sops which has cosign signatures configured (v3.8.0+)
+echo "Installing sops with native Cosign verification..."
+
+# Capture the installation output to verify the native verification is being used
+output=$(mise install aqua:getsops/sops@3.9.0 2>&1)
+echo "$output"
+
+# Verify the native Cosign verification was used
+if echo "$output" | grep -q "verify checksums with cosign"; then
+	echo "✅ Native Cosign verification was used"
+else
+	echo "❌ ERROR: Cosign verification message not found in output"
+	echo "Output was:"
+	echo "$output"
+	exit 1
+fi
+
+# Verify the tool works
+assert_contains "mise x aqua:getsops/sops@3.9.0 -- sops --version" "3.9.0"
+echo "✓ sops installed and working correctly"
+
+# Cleanup
+mise uninstall aqua:getsops/sops@3.9.0 || true
+
+echo ""
+echo "=== Native Cosign Verification Test Passed ✓ ==="

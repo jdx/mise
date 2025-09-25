@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Azure
+    repo_name: azure-dev
+    asset: azd-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: zip
+    description: The Azure Developer CLI is a developer-centric command-line interface tool for creating Azure applications
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: azd
+        src: azd-{{.OS}}-{{.Arch}}
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true

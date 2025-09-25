@@ -60,12 +60,17 @@ pub static ARCH: Lazy<String> = Lazy::new(|| {
     .to_string()
 });
 
-pub static VERSION: Lazy<String> = Lazy::new(|| {
+pub static VERSION_PLAIN: Lazy<String> = Lazy::new(|| {
     let mut v = V.to_string();
     if cfg!(debug_assertions) {
         v.push_str("-DEBUG");
     };
+    v
+});
+
+pub static VERSION: Lazy<String> = Lazy::new(|| {
     let build_time = BUILD_TIME.format("%Y-%m-%d");
+    let v = &*VERSION_PLAIN;
     format!("{v} {os}-{arch} ({build_time})", os = *OS, arch = *ARCH)
 });
 
@@ -141,8 +146,14 @@ async fn get_latest_version(duration: Duration) -> Option<String> {
     let version_file_path = dirs::CACHE.join("latest-version");
     if let Ok(metadata) = modified_duration(&version_file_path) {
         if metadata < duration {
-            if let Ok(version) = file::read_to_string(&version_file_path) {
-                return Some(version.trim().to_string());
+            if let Some(version) = file::read_to_string(&version_file_path)
+                .ok()
+                .map(|s| s.trim().to_string())
+                .and_then(Versioning::new)
+            {
+                if *V <= version {
+                    return Some(version.to_string());
+                }
             }
         }
     }

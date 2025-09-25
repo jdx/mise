@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: helm
+    repo_name: helm
+    url: https://get.helm.sh/helm-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    description: The Kubernetes Package Manager
+    files:
+      - name: helm
+        src: "{{.OS}}-{{.Arch}}/helm"
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: http
+      url: https://get.helm.sh/helm-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz.sha256sum
+      algorithm: sha256
+    version_constraint: semver(">= 3.6.0")
+    version_overrides:
+      - version_constraint: semver(">= 3.1.0")
+        rosetta2: true
+      - version_constraint: semver("< 3.1.0")
+        rosetta2: true
+        checksum:
+          type: http
+          url: https://get.helm.sh/helm-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz.sha256
+          algorithm: sha256

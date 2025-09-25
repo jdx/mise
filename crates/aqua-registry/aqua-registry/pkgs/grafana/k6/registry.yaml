@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: grafana
+    repo_name: k6
+    description: A modern load testing tool, using Go and JavaScript
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: k6-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    files:
+      - name: k6
+        src: k6-{{.Version}}-{{.OS}}-{{.Arch}}/k6
+    replacements:
+      darwin: macos
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    checksum:
+      type: github_release
+      asset: k6-{{.Version}}-checksums.txt
+      algorithm: sha256

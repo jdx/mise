@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: takumin
+    repo_name: gjson
+    description: Golang JSON Tool
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.1"
+        asset: gjson_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: gjson_sha256sums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: gjson_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: gjson_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: gjson_sha256sums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cortesi
+    repo_name: modd
+    description: A flexible developer tool that runs processes and responds to filesystem changes
+    asset: modd-{{.Version|trimV}}-{{.OS}}{{.Arch}}.{{.Format}}
+    format: tgz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      darwin: osx
+      amd64: "64"
+    files:
+      - name: modd
+        src: modd-{{.Version|trimV}}-{{.OS}}{{.Arch}}/modd
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - amd64

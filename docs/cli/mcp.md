@@ -1,0 +1,51 @@
+# `mise mcp`
+
+- **Usage**: `mise mcp`
+- **Source code**: [`src/cli/mcp.rs`](https://github.com/jdx/mise/blob/main/src/cli/mcp.rs)
+
+[experimental] Run Model Context Protocol (MCP) server
+
+This command starts an MCP server that exposes mise functionality
+to AI assistants over stdin/stdout using JSON-RPC protocol.
+
+The MCP server provides access to:
+- Installed and available tools
+- Task definitions and execution
+- Environment variables
+- Configuration information
+
+Resources available:
+- mise://tools - List all tools (use ?include_inactive=true to include inactive tools)
+- mise://tasks - List all tasks with their configurations
+- mise://env - List all environment variables
+- mise://config - Show configuration files and project root
+
+Note: This is primarily intended for integration with AI assistants like Claude,
+Cursor, or other tools that support the Model Context Protocol.
+
+Examples:
+
+```
+# Start the MCP server (typically used by AI assistant tools)
+$ mise mcp
+
+# Example integration with Claude Desktop (add to claude_desktop_config.json):
+{
+  "mcpServers": {
+    "mise": {
+      "command": "mise",
+      "args": ["mcp"]
+    }
+  }
+}
+
+# Interactive testing with JSON-RPC commands:
+$ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | mise mcp
+
+# Resources you can query:
+- mise://tools - List active tools
+- mise://tools?include_inactive=true - List all installed tools
+- mise://tasks - List all tasks
+- mise://env - List environment variables
+- mise://config - Show configuration info
+```

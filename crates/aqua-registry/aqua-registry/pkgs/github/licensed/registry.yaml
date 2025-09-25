@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: github
+    repo_name: licensed
+    asset: licensed-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    description: A Ruby gem to cache and verify the licenses of dependencies
+    replacements:
+      amd64: x64
+    supported_envs:
+      - linux/amd64
+      - darwin
+    rosetta2: true
+    version_constraint: semver("< 4.0.0")
+    version_overrides:
+      - version_constraint: semver(">= 4.0.0")
+        error_message: |
+          https://github.com/github/licensed/issues/585
+
+          Licensed v4 no longer provides a self-contained executable build of licensed

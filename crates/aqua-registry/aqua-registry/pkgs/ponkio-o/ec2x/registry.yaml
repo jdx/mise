@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ponkio-o
+    repo_name: ec2x
+    description: A cli tool of connect to ec2 instance with Session Manager
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.4"
+        no_asset: true
+      - version_constraint: "true"
+        asset: ec2x_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

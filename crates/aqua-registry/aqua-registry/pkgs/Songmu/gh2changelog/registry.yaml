@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Songmu
+    repo_name: gh2changelog
+    asset: gh2changelog_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    supported_envs:
+      - linux
+      - darwin
+    files:
+      - name: gh2changelog
+        src: gh2changelog_{{.Version}}_{{.OS}}_{{.Arch}}/gh2changelog
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256

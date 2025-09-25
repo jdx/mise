@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Songmu
+    repo_name: tagpr
+    description: The tagpr automatically creates and updates a pull request for unreleased items, tag them when they are merged, and create releases
+    asset: tagpr_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    supported_envs:
+      - linux
+      - darwin
+    files:
+      - name: tagpr
+        src: tagpr_{{.Version}}_{{.OS}}_{{.Arch}}/tagpr
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256

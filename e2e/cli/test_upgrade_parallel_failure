@@ -31,7 +31,7 @@ echo "1.0.0" >"$MISE_DATA_DIR/installs/tiny/1.0.0/version"
 # Now `mise up` should try to install/upgrade both:
 # - dummy: install other-dummy (will fail)
 # - tiny: upgrade to latest 3.1.0 (will succeed)
-assert_fail "mise up" "Failed to install tool: dummy@other-dummy"
+assert_fail "mise up" "Failed to install asdf:dummy@other-dummy"
 
 # Verify tiny was upgraded successfully despite dummy failure
 assert_contains "mise ls --installed tiny" "3.1.0"

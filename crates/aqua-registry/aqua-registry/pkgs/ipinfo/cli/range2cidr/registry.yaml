@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    name: ipinfo/cli/range2cidr
+    repo_owner: ipinfo
+    repo_name: cli
+    description: Official Command Line Interface for the IPinfo API (IP geolocation and other types of IP data)
+    version_filter: Version startsWith "range2cidr-"
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: range2cidr_{{trimPrefix "range2cidr-" .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+        files:
+          - name: range2cidr
+            src: range2cidr_{{trimPrefix "range2cidr-" .Version}}_{{.OS}}_{{.Arch}}.exe
+    files:
+      - name: range2cidr
+        src: range2cidr_{{trimPrefix "range2cidr-" .Version}}_{{.OS}}_{{.Arch}}

@@ -2,7 +2,7 @@
 #MISE depends=["test:build-perf-workspace"]
 #MISE description="Run performance tests"
 # shellcheck disable=SC2086,SC2129
-set -xeuo pipefail
+set -euo pipefail
 
 runs="${RUNS:-1}"
 cd perf-workspace

@@ -1,0 +1,128 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Qovery
+    repo_name: Replibyte
+    description: Seed your development database with real data
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.8")
+        asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: replibyte
+        overrides:
+          - goos: linux
+            format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}.sha256sum
+          algorithm: sha256
+      - version_constraint: Version == "v0.2.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.4.1")
+        asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: replibyte
+        overrides:
+          - goos: linux
+            format: tar.gz
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        supported_envs:
+          - linux/amd64
+          - windows
+        checksum:
+          type: github_release
+          asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}.sha256sum
+          algorithm: sha256
+      - version_constraint: Version == "v0.4.2"
+        asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: replibyte
+            src: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.exe.{{.Format}}
+            checksum:
+              type: github_release
+              asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.exe.sha256sum
+              algorithm: sha256
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.sha256sum
+          algorithm: sha256
+      - version_constraint: Version == "v0.4.3"
+        asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.exe.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: replibyte
+            src: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}
+        replacements:
+          amd64: x86_64
+          windows: pc-windows-gnu
+        supported_envs:
+          - windows/amd64
+        checksum:
+          type: github_release
+          asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.exe.{{.Format}}.sha256sum
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: replibyte
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.exe.{{.Format}}
+            checksum:
+              type: github_release
+              asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.exe.{{.Format}}.sha256sum
+              algorithm: sha256
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: replibyte_{{.Version}}_{{.Arch}}-{{.OS}}.{{.Format}}.sha256sum
+          algorithm: sha256

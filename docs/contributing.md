@@ -1,29 +1,25 @@
 ---
 outline: [1, 3]
 ---
+
 # Contributing
 
-Before submitting a PR, unless it's something obvious, consider filing an issue
+Before submitting a PR, unless it's something obvious, consider creating a
+[discussion](https://github.com/jdx/mise/discussions)
 or simply mention what you plan to do in the
 [Discord](https://discord.gg/UBa7pJUN7Z).
 PRs are often either rejected or need to change significantly after submission
 so make sure before you start working on something it won't be a wasted effort.
 
-Issues ideal for contributors can be found with the
-["help wanted"](https://github.com/jdx/mise/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)
-and
-["good first issue"](https://github.com/jdx/mise/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22)
-labels. These are issues that I feel are self-contained therefore don't require
-super in-depth understanding of the codebase or that require knowledge about
-something I don't understand very well myself.
+Do not attempt to open a GitHub issue. New GitHub issues will be automatically closed.
+For context, see [jdx/mise#3859](https://github.com/jdx/mise/issues/3859).
 
 ## Contributing Guidelines
 
-1. **Before starting**: File an issue or discuss in Discord for non-obvious changes
-2. **Look for issues**: Check "help wanted" and "good first issue" labels
-3. **Test thoroughly**: Ensure both unit and E2E tests pass
-4. **Follow conventions**: Use existing code style and patterns
-5. **Update documentation**: Add/update docs for new features
+1. **Before starting**: Create a discussion or discuss in Discord for non-obvious changes
+2. **Test thoroughly**: Ensure both unit and E2E tests pass
+3. **Follow conventions**: Use existing code style and patterns
+4. **Update documentation**: Add/update docs for new features
 
 ### Pull Request Workflow
 
@@ -634,6 +630,7 @@ of the full backend specification.
 ### Quick Start
 
 1. **Choose the right backend** for your tool:
+
    - **[aqua](dev-tools/backends/aqua.md)** - Preferred for GitHub releases with security
      features
    - **[ubi](dev-tools/backends/ubi.md)** - Simple GitHub/GitLab releases following
@@ -742,7 +739,7 @@ If you need a custom backend:
    creating a [discussion](https://github.com/jdx/mise/discussions)
 2. **Consider if existing backends** (ubi, aqua, npm, pipx, etc.) can meet your
    needs
-3. **Create a plugin** - use the [plugin system](tool-plugin-development.md) to create plugins for private/custom tools without core changes
+3. **Create a plugin** - use the [plugin system](tool-plugin-development.md) to create plugins for private/custom tools without core changes. Start with the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) for a quick setup
 
 Most tool installation needs can be met by existing backends, especially
 [ubi](dev-tools/backends/ubi.md) for GitHub releases and
@@ -772,33 +769,34 @@ across different installation systems.
    ```rust
    use crate::backend::{Backend, BackendType};
    use crate::install_context::InstallContext;
-   
+
    #[derive(Debug)]
    pub struct MyBackend {
        // backend-specific fields
    }
-   
+
    impl Backend for MyBackend {
        fn get_type(&self) -> BackendType { BackendType::MyBackend }
-       
+
        async fn list_remote_versions(&self) -> Result<Vec<String>> {
            // Implementation for listing available versions
        }
-       
-       async fn install_version(&self, ctx: &InstallContext, 
+
+       async fn install_version(&self, ctx: &InstallContext,
                                  tv: &ToolVersion) -> Result<()> {
            // Implementation for installing a specific version
        }
-       
+
        async fn uninstall_version(&self, tv: &ToolVersion) -> Result<()> {
            // Implementation for uninstalling a version
        }
-       
+
        // ... other required methods
    }
    ```
 
 3. **Register the backend** in `src/backend/mod.rs`:
+
    - Add your backend to the imports
    - Add it to the backend registry/factory function
    - Add the `BackendType` enum variant

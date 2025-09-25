@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: MaybeJustJames
+    repo_name: zephyr
+    description: Tree shaking breeze for PureScript CoreFn AST
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.1")
+        asset: "{{.OS}}.{{.Format}}"
+        format: tar.gz
+        replacements:
+          linux: linux64
+          darwin: macos
+          windows: win64
+        checksum:
+          type: github_release
+          asset: "{{.OS}}.sha"
+          algorithm: sha1
+        overrides:
+          - goos: windows
+            checksum:
+              type: github_release
+              asset: "{{.OS}}.sha"
+              file_format: regexp
+              algorithm: sha1
+              pattern:
+                checksum: (\b[A-Fa-f0-9]{40}\b)
+        files:
+          - name: zephyr
+            src: zephyr/zephyr
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.2.2"
+        asset: "{{.Arch}}-{{.OS}}.{{.Format}}"
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        files:
+          - name: zephyr
+            src: zephyr/zephyr
+        checksum:
+          type: github_release
+          asset: "{{.Arch}}-{{.OS}}.sha"
+          algorithm: sha1
+        overrides:
+          - goos: windows
+            checksum:
+              type: github_release
+              asset: "{{.Arch}}-{{.OS}}.sha"
+              file_format: regexp
+              algorithm: sha1
+              pattern:
+                checksum: (\b[A-Fa-f0-9]{40}\b)
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: "{{.OS}}.{{.Format}}"
+        format: tar.gz
+        replacements:
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        files:
+          - name: zephyr
+            src: zephyr/zephyr
+        checksum:
+          type: github_release
+          asset: "{{.OS}}.sha"
+          algorithm: sha1
+        overrides:
+          - goos: windows
+            checksum:
+              type: github_release
+              asset: "{{.OS}}.sha"
+              file_format: regexp
+              algorithm: sha1
+              pattern:
+                checksum: (\b[A-Fa-f0-9]{40}\b)
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

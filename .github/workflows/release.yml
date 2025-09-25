@@ -13,9 +13,9 @@ env:
   CARGO_TERM_COLOR: always
   DRY_RUN: ${{ startsWith(github.event.ref, 'refs/tags/v') && '0' || '1' }}
   RUST_BACKTRACE: 1
-  GITHUB_API_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
-  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
-  GH_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_API_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  GH_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
   build-tarball:
@@ -63,26 +63,27 @@ jobs:
             runs-on: macos-latest
     steps:
       - if: matrix.os == 'macos'
-        uses: apple-actions/import-codesign-certs@65cfbc37e1464d733524cb555b724878f278b8c3 # v5
+        uses: apple-actions/import-codesign-certs@95e84a1a18f2bdbc5c6ab9b7f4429372e4b13a8b # v5
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+      - name: Install cross
+        if: matrix.os == 'ubuntu'
+        uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
         with:
-          submodules: true
+          tool: cross
       - name: cache crates
         id: cache-crates
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
         with:
           path: ~/.cargo/registry/cache
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-registry
-      - if: matrix.runs-on != 'ubuntu-latest'
+      - name: Setup Rust target
         run: rustup target add ${{matrix.target}}
-      - if: matrix.runs-on == 'ubuntu-latest'
-        uses: taiki-e/install-action@7fbb30f035445d55e5f819679e8e16009832db89 # v2
-        with: { tool: cross }
-      - name: build-tarball
+        if: matrix.os != 'ubuntu'
+      - name: build-tarball ${{matrix.target}}
         uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
         with:
           timeout_minutes: 45
@@ -96,7 +97,7 @@ jobs:
             dist/mise-*.tar.gz
             dist/mise-*.tar.zst
           if-no-files-found: error
-      - uses: taiki-e/install-action@7fbb30f035445d55e5f819679e8e16009832db89 # v2
+      - uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
         with: { tool: cargo-cache }
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
@@ -113,7 +114,7 @@ jobs:
           - arch: x64
             target: x86_64-pc-windows-msvc
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
       - run: rustup target add ${{matrix.target}}
       - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
@@ -138,11 +139,9 @@ jobs:
       matrix:
         tranche: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
-        with:
-          submodules: true
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
       - name: Install zsh/fish/direnv/fd
-        run: sudo apt-get update; sudo apt-get install zsh fish direnv fd-find
+        run: sudo apt-get update; sudo apt-get install zsh fish direnv fd-find liblzma-dev libbz2-dev
       - name: Install fd-find
         run: |
           mkdir -p "$HOME/.local/bin"
@@ -152,7 +151,7 @@ jobs:
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: taiki-e/install-action@7fbb30f035445d55e5f819679e8e16009832db89 # v2
+      - uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
         with:
           tool: usage-cli
       - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
@@ -174,9 +173,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-tarball]
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm
+    container: ghcr.io/jdx/mise:rpm@sha256:5f944c8356690cb4df4ed1596f9c0d24a90c5962488c1c3ecfe3e2b06d84dfe2
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
       - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
@@ -197,10 +196,10 @@ jobs:
   deb:
     runs-on: ubuntu-latest
     needs: [build-tarball]
-    container: ghcr.io/jdx/mise:deb
+    container: ghcr.io/jdx/mise:deb@sha256:f78098bf3c413699948d4e0c0e6f37d980b8ad03c08d4c98d3da5a34a8f54d9a
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
       - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
@@ -229,7 +228,9 @@ jobs:
       - e2e-linux
       - build-tarball-windows
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        with:
+          fetch-depth: 0
       - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
@@ -237,7 +238,7 @@ jobs:
           git_commit_gpgsign: true
       - name: cache zipsign
         id: cache-zipsign
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
         with:
           path: ~/.cargo/bin/zipsign
           key: cargo-zipsign
@@ -251,10 +252,6 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: "22.x"
-          registry-url: "https://registry.npmjs.org"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with: { path: artifacts }
       - run: ls -R artifacts
@@ -275,20 +272,32 @@ jobs:
           path: dist
       - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
       - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
+      - run: which mise && mise -v && mise i
       - run: mise x -- scripts/release.sh
+      - name: Create Draft GitHub Release
+        if: startsWith(github.event.ref, 'refs/tags/v')
+        run: |
+          VERSION="$(./scripts/get-version.sh)"
+          mise x -- git-cliff --strip all --latest >/tmp/release-notes.txt
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes-file /tmp/release-notes.txt \
+            --verify-tag \
+            --draft \
+            releases/$VERSION/*
+        env:
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+      - name: Publish Release Assets to CDN
+        if: startsWith(github.event.ref, 'refs/tags/v')
+        run: mise x -- scripts/publish-release.sh
         env:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: GitHub Release Assets
-        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2
+      - name: Publish GitHub Release
         if: startsWith(github.event.ref, 'refs/tags/v')
-        with:
-          fail_on_unmatched_files: true
-          draft: false
-          files: releases/${{github.ref_name}}/*
-          generate_release_notes: true
-          token: ${{ secrets.RTX_GITHUB_BOT_TOKEN }}
-      - run: gh release edit --draft=false "$(./scripts/get-version.sh)"
-        if: startsWith(github.event.ref, 'refs/tags/v')
+        run: |
+          VERSION="$(./scripts/get-version.sh)"
+          gh release edit "$VERSION" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}

@@ -8,7 +8,7 @@ assert "mise current dummy" "1.0.0"
 assert_contains "mise use dummy@2" "dummy@2."
 assert "mise current dummy" "2.0.0"
 
-assert_not_contains "mise use --rm dummy" "dummy"
+assert_contains "mise use --rm dummy" "removed: dummy"
 assert "mise current dummy" ""
 
 assert_contains "mise use --env local dummy@2" "dummy@2."

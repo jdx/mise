@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: wren-lang
+    repo_name: wren-cli
+    description: A command line tool for the Wren programming language
+    files:
+      - name: wren_cli
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.3.0"
+        asset: wren_cli-{{.OS}}-{{.Version}}.{{.Format}}
+        format: zip
+        files:
+          - name: wren_cli
+            src: "{{.AssetWithoutExt}}/wren_cli"
+        overrides:
+          - goos: darwin
+            files:
+              - name: wren_cli
+            replacements:
+              darwin: mac
+          - goos: windows
+            files:
+              - name: wren_cli
+                src: wren_cli-{{.Version}}.exe
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: wren-cli-{{.OS}}-{{.Version}}.{{.Format}}
+        format: zip
+        files:
+          - name: wren_cli
+            src: "{{.AssetWithoutExt}}/wren_cli"
+        replacements:
+          darwin: mac
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

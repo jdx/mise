@@ -4,7 +4,7 @@
 - **Aliases**: `add`, `create`
 - **Source code**: [`src/cli/alias/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/set.rs)
 
-Add/update an alias for a plugin
+Add/update an alias for a backend/plugin
 
 This modifies the contents of ~/.config/mise/config.toml
 
@@ -12,18 +12,19 @@ This modifies the contents of ~/.config/mise/config.toml
 
 ### `<PLUGIN>`
 
-The plugin to set the alias for
+The backend/plugin to set the alias for
 
 ### `<ALIAS>`
 
 The alias to set
 
-### `<VALUE>`
+### `[VALUE]`
 
 The value to set the alias to
 
 Examples:
 
 ```
+mise alias set maven asdf:mise-plugins/mise-maven
 mise alias set node lts-jod 22.0.0
 ```

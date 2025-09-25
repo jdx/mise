@@ -8,4 +8,5 @@ pub struct InstallContext {
     pub ts: Arc<Toolset>,
     pub pr: Box<dyn SingleReport>,
     pub force: bool,
+    pub dry_run: bool,
 }

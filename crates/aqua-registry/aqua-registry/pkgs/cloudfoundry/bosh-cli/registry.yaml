@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloudfoundry
+    repo_name: bosh-cli
+    description: The bosh CLI is the command line tool used for interacting with all things BOSH, from deployment operations to software release management
+    rosetta2: true
+    format: raw
+    supported_envs:
+      - darwin
+      - amd64
+    asset: bosh-cli-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+    files:
+      - name: bosh

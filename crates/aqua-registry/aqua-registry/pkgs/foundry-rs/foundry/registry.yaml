@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: foundry-rs
+    repo_name: foundry
+    description: Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust
+    files:
+      - name: anvil
+      - name: cast
+      - name: chisel
+      - name: forge
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version startsWith "nightly-"
+        asset: foundry_nightly_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          windows: win32
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: foundry_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          windows: win32
+        overrides:
+          - goos: windows
+            format: zip

@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: liamg
+    repo_name: memit
+    description: ":no_entry_sign::floppy_disk: Run binaries straight from memory in Linux"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: memit-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: memit_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux

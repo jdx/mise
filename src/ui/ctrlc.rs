@@ -10,19 +10,21 @@ static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
 
 pub fn init() {
     tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.unwrap();
-        if SHOW_CURSOR.load(Ordering::Relaxed) {
-            let _ = Term::stderr().show_cursor();
-        }
-        CmdLineRunner::kill_all(nix::sys::signal::SIGINT);
-        if EXIT.swap(true, Ordering::Relaxed) {
-            debug!("Ctrl-C pressed, exiting...");
-            exit(1);
-        } else {
-            eprintln!();
-            warn!(
-                "Ctrl-C pressed, please wait for tasks to finish or press Ctrl-C again to force exit"
-            );
+        loop {
+            tokio::signal::ctrl_c().await.unwrap();
+            if SHOW_CURSOR.load(Ordering::Relaxed) {
+                let _ = Term::stderr().show_cursor();
+            }
+            CmdLineRunner::kill_all(nix::sys::signal::SIGINT);
+            if EXIT.swap(true, Ordering::Relaxed) {
+                debug!("Ctrl-C pressed, exiting...");
+                exit(1);
+            } else {
+                eprintln!();
+                warn!(
+                    "Ctrl-C pressed, please wait for tasks to finish or press Ctrl-C again to force exit"
+                );
+            }
         }
     });
 }

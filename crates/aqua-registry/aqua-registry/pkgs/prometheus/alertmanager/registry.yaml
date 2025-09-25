@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: prometheus
+    repo_name: alertmanager
+    asset: alertmanager-{{trimV .Version}}.{{.OS}}-{{.Arch}}.tar.gz
+    description: Prometheus Alertmanager
+    checksum:
+      type: github_release
+      asset: sha256sums.txt
+      algorithm: sha256
+    files:
+      - name: alertmanager
+        src: alertmanager-{{trimV .Version}}.{{.OS}}-{{.Arch}}/alertmanager
+      - name: amtool
+        src: alertmanager-{{trimV .Version}}.{{.OS}}-{{.Arch}}/amtool

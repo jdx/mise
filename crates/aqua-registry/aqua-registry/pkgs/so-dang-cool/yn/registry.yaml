@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: so-dang-cool
+    repo_name: yn
+    files:
+      - name: Yn
+      - name: yN
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: yn-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+          linux: linux-gnu
+        overrides:
+          - goos: darwin
+            asset: yn-{{.Arch}}-{{.OS}}-none.{{.Format}}
+            files:
+              - name: Yn
+        supported_envs:
+          - linux
+          - darwin

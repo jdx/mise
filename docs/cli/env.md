@@ -29,6 +29,10 @@ Output in JSON format with additional information (source, tool)
 
 Output in dotenv format
 
+### `--redacted`
+
+Only show redacted environment variables
+
 ### `-s --shell <SHELL>`
 
 Shell type to generate environment variables for
@@ -42,6 +46,10 @@ Shell type to generate environment variables for
 - `xonsh`
 - `zsh`
 - `pwsh`
+
+### `--values`
+
+Only show values of environment variables
 
 Examples:
 

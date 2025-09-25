@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: eficode
+    repo_name: wait-for
+    description: ./wait-for is a script to wait for another service to become available
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: wait-for
+        supported_envs:
+          - linux
+          - darwin

@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: TaKO8Ki
+    repo_name: gobang
+    asset: gobang-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    description: A cross-platform TUI database management tool written in Rust
+    replacements:
+      amd64: x86_64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+      windows: pc-windows-msvc
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    files:
+      - name: gobang
+        src: gobang-{{trimV .Version}}-{{.Arch}}-{{.OS}}/gobang

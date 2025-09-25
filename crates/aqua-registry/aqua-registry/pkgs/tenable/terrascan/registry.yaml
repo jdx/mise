@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tenable
+    repo_name: terrascan
+    aliases:
+      - name: accurics/terrascan
+    asset: terrascan_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    description: Detect compliance and security violations across Infrastructure as Code to mitigate risk before provisioning cloud native infrastructure
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+      386: i386
+      amd64: x86_64
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

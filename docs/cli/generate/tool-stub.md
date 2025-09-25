@@ -57,6 +57,12 @@ If not specified and the archive is downloaded, will auto-detect the most likely
 
 Skip downloading for checksum and binary path detection (faster but less informative)
 
+### `--fetch`
+
+Fetch checksums and sizes for an existing tool stub file
+
+This reads an existing stub file and fills in any missing checksum/size fields by downloading the files. URLs must already be present in the stub.
+
 ### `--http <HTTP>`
 
 HTTP backend type to use
@@ -92,4 +98,8 @@ $ mise generate tool-stub ./bin/tool \
 
 Generate without downloading (faster):
 $ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --skip-download
+
+Fetch checksums for an existing stub:
+$ mise generate tool-stub ./bin/jq --fetch
+# This will read the existing stub and download files to fill in any missing checksums/sizes
 ```

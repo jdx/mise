@@ -18,7 +18,7 @@ There are a few ways to make `mise` work with your editor:
 IDEs work better with [shims](./dev-tools/shims) than they do environment variable modifications. The simplest way is
 to add the mise shim directory to `PATH`.
 
-For IntelliJ and VSCode—and likely others, you can modify your default shell's profile
+For IntelliJ and VSCode—and likely others, you can modify your default shell's login (aka "profile")
 script. Your default shell can be found with:
 
 ::: code-group
@@ -59,6 +59,14 @@ end
 
 :::
 
+::: warning
+Do not use /bin/bash or /usr/bin/bash on macOS. bash is complicated, decades old, and mise isn't able to use as many features.
+Unless you consider yourself an expert on bash and know why I (and Apple for that matter) admonish using bash, just use zsh on macOS.
+:::
+
+On Linux this is read when logging into the machine, so changing it requires logging out and back in for it to work. See #vscode below
+for how to get VSCode to read the login file.
+
 This assumes that `mise` is on `PATH`. If it is not, you'll need to use the absolute path (
 e.g.: `eval "$($HOME/.local/bin/mise activate zsh --shims)"`).
 
@@ -83,10 +91,6 @@ Here are some community plugins that have been developed to work with `mise`:
 - Emacs: [mise.el](https://github.com/liuyinz/mise.el)
 - IntelliJ: [intellij-mise](https://github.com/134130/intellij-mise)
 - VSCode: [mise-vscode](https://github.com/hverlin/mise-vscode)
-
-If you want to build a custom plugin for your editor, have a look at the existing plugins or take a look at existing direnv extensions and see if you can modify it to
-work for `mise`.`direnv` and `mise` work similarly and there should be a direnv extension that can be used as a starting
-point.
 
 ## Vim
 
@@ -160,6 +164,22 @@ Or in the case of node (possibly other languages), it's under "Languages & Frame
 
 ## VSCode
 
+### VSCode Automation Profile for macOS
+
+Unlike Linux, macOS does not read the login shell profile (`~/.profile`, or `~/.zprofile`) when logging into the machine. You'll likely
+want to add this setting to VSCode config in order to have it load your shims:
+
+```json
+    "terminal.integrated.automationProfile.osx": {
+        "path": "/usr/bin/zsh",
+        "args": ["--login"]
+    }
+```
+
+:::tip
+You can also use `["--login", "--interactive"]` if you want to include `~/.zshrc`.
+:::
+
 ### VSCode Plugin
 
 There is a [VSCode plugin](https://marketplace.visualstudio.com/items?itemName=hverlin.mise-vscode) which can configure other extensions for you, without having to modify your shell profile to add the shims to `PATH`.
@@ -219,16 +239,3 @@ eval "$($HOME/.local/bin/mise activate -C $SRCROOT bash --shims)"
 
 swiftlint
 ```
-
-## [YOUR IDE HERE]
-
-I am not a heavy IDE user. I use JetBrains products but I don't actually
-like to execute code directly inside of them often so I don't have much
-personal advice to offer for IDEs generally. That said, people often
-ask about how to get their IDE to work with mise so if you've done this
-for your IDE, please consider sending a PR to this page with some
-instructions (however rough they are, starting somewhere is better than
-nothing).
-
-Also if you've found a setup that you prefer to what is listed here consider
-adding it as a suggestion.

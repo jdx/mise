@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: peco
+    repo_name: peco
+    asset: peco_{{.OS}}_{{.Arch}}.{{.Format}}
+    description: Simplistic interactive filtering tool
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: peco
+        src: peco_{{.OS}}_{{.Arch}}/peco
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz

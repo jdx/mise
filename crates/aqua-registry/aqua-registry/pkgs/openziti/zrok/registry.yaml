@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: openziti
+    repo_name: zrok
+    description: Geo-scale, next-generation peer-to-peer sharing platform built on top of OpenZiti
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.10")
+        asset: zrok_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: zrok_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.3.0")
+        asset: zrok_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha1
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.4.48") or (Version startsWith "v1.0.0-rc")
+        asset: zrok_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha1
+      # TODO support GitHub Artifact Attestation
+      # https://github.com/openziti/zrok/releases/tag/v0.4.49
+      # > CHANGE: Release binary and text artifacts are now accompanied by provenance attestations
+      # github_artifact_attestations:
+      #   signer_workflow:
+      - version_constraint: "true"
+        asset: zrok_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.sha256.txt
+          algorithm: sha256

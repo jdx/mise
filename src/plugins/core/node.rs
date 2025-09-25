@@ -1,4 +1,4 @@
-use crate::backend::{Backend, VersionCacheManager};
+use crate::backend::{Backend, VersionCacheManager, platform_target::PlatformTarget};
 use crate::build_time::built_info;
 use crate::cache::CacheManagerBuilder;
 use crate::cli::args::BackendArg;
@@ -27,6 +27,11 @@ pub struct NodePlugin {
     ba: Arc<BackendArg>,
 }
 
+enum FetchOutcome {
+    Downloaded,
+    NotFound,
+}
+
 impl NodePlugin {
     pub fn new() -> Self {
         Self {
@@ -34,13 +39,15 @@ impl NodePlugin {
         }
     }
 
-    async fn install_precompiled(
+    async fn fetch_binary(
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
         opts: &BuildOpts,
-    ) -> Result<()> {
-        let settings = Settings::get();
+        extract: impl FnOnce() -> Result<()>,
+    ) -> Result<FetchOutcome> {
+        debug!("{:?}: we will fetch a precompiled version", self);
+
         match self
             .fetch_tarball(
                 ctx,
@@ -52,54 +59,30 @@ impl NodePlugin {
             )
             .await
         {
-            Err(e)
-                if settings.node.compile != Some(false)
-                    && matches!(http::error_code(&e), Some(404)) =>
-            {
-                debug!("precompiled node not found");
-                return self.install_compiled(ctx, tv, opts).await;
+            Ok(()) => {
+                debug!("{:?}: successfully downloaded node archive", self);
             }
-            e => e,
-        }?;
+            Err(e) if matches!(http::error_code(&e), Some(404)) => {
+                debug!("{:?}: precompiled node archive not found {e}", self);
+                return Ok(FetchOutcome::NotFound);
+            }
+            Err(e) => return Err(e),
+        };
+
         let tarball_name = &opts.binary_tarball_name;
         ctx.pr.set_message(format!("extract {tarball_name}"));
-        file::remove_all(&opts.install_path)?;
-        file::untar(
-            &opts.binary_tarball_path,
-            &opts.install_path,
-            &TarOptions {
-                format: TarFormat::TarGz,
-                strip_components: 1,
-                pr: Some(&ctx.pr),
-            },
-        )?;
-        Ok(())
+        debug!("{:?}: extracting precompiled node", self);
+
+        if let Err(e) = extract() {
+            debug!("{:?}: extraction failed: {e}", self);
+            return Err(e);
+        }
+
+        debug!("{:?}: precompiled node extraction was successful", self);
+        Ok(FetchOutcome::Downloaded)
     }
 
-    async fn install_windows(
-        &self,
-        ctx: &InstallContext,
-        tv: &mut ToolVersion,
-        opts: &BuildOpts,
-    ) -> Result<()> {
-        match self
-            .fetch_tarball(
-                ctx,
-                tv,
-                &ctx.pr,
-                &opts.binary_tarball_url,
-                &opts.binary_tarball_path,
-                &opts.version,
-            )
-            .await
-        {
-            Err(e) if matches!(http::error_code(&e), Some(404)) => {
-                bail!("precompiled node not found {e}");
-            }
-            e => e,
-        }?;
-        let tarball_name = &opts.binary_tarball_name;
-        ctx.pr.set_message(format!("extract {tarball_name}"));
+    fn extract_zip(&self, opts: &BuildOpts, _ctx: &InstallContext) -> Result<()> {
         let tmp_extract_path = tempdir_in(opts.install_path.parent().unwrap())?;
         file::unzip(
             &opts.binary_tarball_path,
@@ -114,12 +97,60 @@ impl NodePlugin {
         Ok(())
     }
 
-    async fn install_compiled(
+    async fn install_precompiled(
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
         opts: &BuildOpts,
     ) -> Result<()> {
+        match self
+            .fetch_binary(ctx, tv, opts, || {
+                file::untar(
+                    &opts.binary_tarball_path,
+                    &opts.install_path,
+                    &TarOptions {
+                        format: TarFormat::TarGz,
+                        strip_components: 1,
+                        pr: Some(&ctx.pr),
+                    },
+                )?;
+                Ok(())
+            })
+            .await?
+        {
+            FetchOutcome::Downloaded => Ok(()),
+            FetchOutcome::NotFound => {
+                if Settings::get().node.compile != Some(false) {
+                    self.install_compiling(ctx, tv, opts).await
+                } else {
+                    bail!("precompiled node archive not found and compilation is disabled")
+                }
+            }
+        }
+    }
+
+    async fn install_windows(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        opts: &BuildOpts,
+    ) -> Result<()> {
+        match self
+            .fetch_binary(ctx, tv, opts, || self.extract_zip(opts, ctx))
+            .await?
+        {
+            FetchOutcome::Downloaded => Ok(()),
+            FetchOutcome::NotFound => bail!("precompiled node archive not found (404)"),
+        }
+    }
+
+    async fn install_compiling(
+        &self,
+        ctx: &InstallContext,
+        tv: &mut ToolVersion,
+        opts: &BuildOpts,
+    ) -> Result<()> {
+        debug!("{:?}: we will fetch the source and compile", self);
         let tarball_name = &opts.source_tarball_name;
         self.fetch_tarball(
             ctx,
@@ -342,10 +373,10 @@ impl NodePlugin {
     ) -> Result<()> {
         pr.set_message("npm -v".into());
         CmdLineRunner::new(self.npm_path(tv))
-            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .with_pr(pr)
             .arg("-v")
             .envs(config.env().await?)
+            .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .execute()
     }
 
@@ -454,10 +485,11 @@ impl Backend for NodePlugin {
         if cfg!(windows) {
             self.install_windows(ctx, &mut tv, &opts).await?;
         } else if settings.node.compile == Some(true) {
-            self.install_compiled(ctx, &mut tv, &opts).await?;
+            self.install_compiling(ctx, &mut tv, &opts).await?;
         } else {
             self.install_precompiled(ctx, &mut tv, &opts).await?;
         }
+        debug!("{:?}: checking installation is working as expected", self);
         self.test_node(&ctx.config, &tv, &ctx.pr).await?;
         if !cfg!(windows) {
             self.install_npm_shim(&tv)?;
@@ -501,6 +533,75 @@ impl Backend for NodePlugin {
                 .into()
             })
             .clone()
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_tarball_url(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        let version = &tv.version;
+        let settings = Settings::get();
+
+        // Build platform-specific filename like Node.js does
+        let slug = self.build_platform_slug(version, target);
+        let filename = if target.os_name() == "windows" {
+            format!("{slug}.zip")
+        } else {
+            format!("{slug}.tar.gz")
+        };
+
+        // Use Node.js mirror URL to construct download URL
+        let url = settings
+            .node
+            .mirror_url()
+            .join(&format!("v{version}/{filename}"))
+            .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
+
+        Ok(Some(url.to_string()))
+    }
+}
+
+impl NodePlugin {
+    /// Map OS name from Platform to Node.js convention
+    fn map_os(os_name: &str) -> &str {
+        match os_name {
+            "macos" => "darwin",
+            "linux" => "linux",
+            "windows" => "win",
+            other => other,
+        }
+    }
+
+    /// Map arch name from Platform to Node.js convention
+    fn map_arch(arch_name: &str) -> &str {
+        match arch_name {
+            "x86" => "x86",
+            "x64" => "x64",
+            "arm" => "armv7l",
+            "arm64" => "arm64",
+            "aarch64" => "arm64",
+            "loongarch64" => "loong64",
+            "riscv64" => "riscv64",
+            other => other,
+        }
+    }
+
+    /// Build platform-specific slug for Node.js downloads
+    /// This mirrors the logic from BuildOpts::new() and slug() function
+    fn build_platform_slug(&self, version: &str, target: &PlatformTarget) -> String {
+        let settings = Settings::get();
+
+        let os = Self::map_os(target.os_name());
+        let arch = Self::map_arch(target.arch_name());
+
+        if let Some(flavor) = &settings.node.flavor {
+            format!("node-v{version}-{os}-{arch}-{flavor}")
+        } else {
+            format!("node-v{version}-{os}-{arch}")
+        }
     }
 }
 
@@ -588,38 +689,16 @@ fn make_install_cmd() -> String {
 }
 
 fn os() -> &'static str {
-    if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "macos") {
-        "darwin"
-    } else if cfg!(target_os = "windows") {
-        "win"
-    } else {
-        built_info::CFG_OS
-    }
+    NodePlugin::map_os(built_info::CFG_OS)
 }
 
 fn arch(settings: &Settings) -> &str {
     let arch = settings.arch();
-    if arch == "x86" {
-        "x86"
-    } else if arch == "x64" {
-        "x64"
-    } else if arch == "arm" {
-        if cfg!(target_feature = "v6") {
-            "armv6l"
-        } else {
-            "armv7l"
-        }
-    } else if arch == "loongarch64" {
-        "loong64"
-    } else if arch == "riscv64" {
-        "riscv64"
-    } else if arch == "aarch64" {
-        "arm64"
-    } else {
-        arch
+    // Special handling for ARM with target features
+    if arch == "arm" && cfg!(target_feature = "v6") {
+        return "armv6l";
     }
+    NodePlugin::map_arch(arch)
 }
 
 fn slug(v: &str) -> String {

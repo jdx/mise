@@ -208,8 +208,8 @@ fn platform_directory() -> String {
     } else if let Ok(os_release) = &*os_release::OS_RELEASE {
         let settings = Settings::get();
         let arch = settings.arch();
-        if os_release.id == "ubuntu" && arch == "aarch64" {
-            let retval = format!("{}{}-{}", os_release.id, os_release.version_id, arch);
+        if os_release.id == "ubuntu" && arch == "arm64" {
+            let retval = format!("{}{}-aarch64", os_release.id, os_release.version_id);
             retval.replace(".", "")
         } else {
             platform().replace(".", "")
@@ -254,8 +254,12 @@ fn extension() -> &'static str {
 
 fn architecture(settings: &Settings) -> Option<&str> {
     let arch = settings.arch();
-    if cfg!(target_os = "linux") && arch != "x64" {
-        return Some(arch);
+    if cfg!(target_os = "linux") {
+        return match arch {
+            "x64" => None,
+            "arm64" => Some("aarch64"),
+            _ => Some(arch),
+        };
     } else if cfg!(windows) && arch == "arm64" {
         return Some("arm64");
     }

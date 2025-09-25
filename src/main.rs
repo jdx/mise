@@ -63,12 +63,14 @@ mod minisign;
 pub(crate) mod parallel;
 mod path;
 mod path_env;
+mod platform;
 mod plugins;
 mod rand;
 mod redactions;
 mod registry;
 pub(crate) mod result;
 mod runtime_symlinks;
+mod semver;
 mod shell;
 mod shims;
 mod shorthands;
@@ -102,7 +104,16 @@ fn main() -> eyre::Result<()> {
 }
 
 async fn main_() -> eyre::Result<()> {
-    color_eyre::install()?;
+    // Configure color-eyre based on color preferences
+    if *env::CLICOLOR == Some(false) {
+        // Use blank theme (no colors) when colors are disabled
+        color_eyre::config::HookBuilder::new()
+            .theme(color_eyre::config::Theme::new())
+            .install()?;
+    } else {
+        // Use default installation with colors
+        color_eyre::install()?;
+    }
     install_panic_hook();
     if std::env::current_dir().is_ok() {
         unsafe {
@@ -132,9 +143,7 @@ fn handle_err(err: Report) -> eyre::Result<()> {
         }
     }
     show_github_rate_limit_err(&err);
-    if *env::MISE_FRIENDLY_ERROR
-        || (!cfg!(debug_assertions) && log::max_level() < log::LevelFilter::Debug)
-    {
+    if *env::MISE_FRIENDLY_ERROR {
         display_friendly_err(&err);
         exit(1);
     }

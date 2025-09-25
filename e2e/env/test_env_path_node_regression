@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+
+# Test for regression reported in https://github.com/jdx/mise/discussions/5913
+# In version 2025.8.4, using _.path = ["/foo"] breaks mise use node
+
+# Disable GPG verification for this test
+export MISE_GPG_VERIFY=false
+
+# Create dummy system node/npm that always fail to ensure we're testing mise's node
+mkdir -p "$HOME/bin"
+cat >"$HOME/bin/node" <<'EOF'
+#!/usr/bin/env bash
+echo "CALL TO SYSTEM node! args: $*" >&2
+exit 1
+EOF
+chmod +x "$HOME/bin/node"
+export PATH="$HOME/bin:$PATH"
+
+# Create a mise.toml with env._.path configuration
+cat <<'EOF' >mise.toml
+[env]
+_.path = ["/foo"]
+EOF
+
+# Debug: Check initial PATH
+echo "Initial PATH: $PATH"
+
+# Debug: Check what mise env shows before installation
+mise env -s bash | grep -E "^(export )?PATH=" || echo "No PATH in mise env"
+
+# This should succeed even with _.path set
+mise use node@20.18.0
+
+# Verify node is installed and available
+assert_contains "mise ls node" "20.18.0"
+
+# The node binary should be accessible through mise
+assert_contains "mise x -- node --version" "v20.18.0"
+
+# Also test that the path directive is still working
+assert_contains "mise dr path" "/foo"
+
+# Test 2: Legitimate use case - env._.path providing a build dependency
+# Clean up from previous test
+rm -f mise.toml
+mise uninstall node@20.18.0 || true
+
+# Create a fake build tool that node "requires" during installation
+mkdir -p build-tools
+cat >"build-tools/required-build-tool" <<'EOF'
+#!/usr/bin/env bash
+echo "Build tool executed successfully"
+exit 0
+EOF
+chmod +x build-tools/required-build-tool
+
+# Create a custom node plugin that requires the build tool
+mkdir -p custom-node-plugin/bin
+cat >"custom-node-plugin/bin/install" <<'EOF'
+#!/usr/bin/env bash
+set -e
+
+# Check if required-build-tool is available
+if ! command -v required-build-tool &> /dev/null; then
+    echo "ERROR: required-build-tool not found in PATH!" >&2
+    exit 1
+fi
+
+echo "Found required build tool, proceeding with installation..."
+required-build-tool
+
+# Simulate a successful installation by creating dummy binaries
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+echo '#!/usr/bin/env bash
+echo "v20.18.0"' > "$ASDF_INSTALL_PATH/bin/node"
+chmod +x "$ASDF_INSTALL_PATH/bin/node"
+
+echo '#!/usr/bin/env bash
+echo "10.8.2"' > "$ASDF_INSTALL_PATH/bin/npm"
+chmod +x "$ASDF_INSTALL_PATH/bin/npm"
+
+echo "Custom node installation complete!"
+EOF
+chmod +x custom-node-plugin/bin/install
+
+cat >"custom-node-plugin/bin/list-all" <<'EOF'
+#!/usr/bin/env bash
+echo "20.18.0"
+EOF
+chmod +x custom-node-plugin/bin/list-all
+
+# Configure mise to use the custom plugin and add build-tools to PATH
+cat <<EOF >mise.toml
+[env]
+_.path = ["./build-tools"]
+
+[tools]
+node = "20.18.0"
+EOF
+
+# Install the custom plugin
+export MISE_NODE_REPO="file://$PWD/custom-node-plugin"
+export MISE_NODE_OVERRIDE_REPO="file://$PWD/custom-node-plugin"
+
+# This should succeed because build-tools is in PATH via env._.path
+mise install node@20.18.0
+
+# Verify the installation worked
+assert_contains "mise x -- node --version" "v20.18.0"
+assert_contains "mise x -- npm --version" "10.8.2"
+
+# Clean up
+unset MISE_NODE_REPO MISE_NODE_OVERRIDE_REPO
+rm -rf build-tools custom-node-plugin

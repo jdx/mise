@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: spacelift-io
+    repo_name: spacectl
+    description: Spacelift client and CLI
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        asset: spacelift-cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+          - windows
+        files:
+          - name: spacelift-cli
+            src: "{{.AssetWithoutExt}}"
+      - version_constraint: Version == "v0.2.0"
+        asset: spacectl-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.8.1")
+        asset: spacectl_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: spacectl_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: spacectl_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: spacectl_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256

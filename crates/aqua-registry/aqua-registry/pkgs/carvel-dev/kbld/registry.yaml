@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: carvel-dev
+    repo_name: kbld
+    aliases:
+      - name: vmware-tanzu/carvel-kbld
+    description: kbld seamlessly incorporates image building and image pushing into your development and deployment workflows
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.31.0"
+        asset: kbld-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+      - version_constraint: Version == "v0.32.0"
+        asset: kbld-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v0.32.2"
+        asset: kbld-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.30.0")
+        asset: kbld-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("< 0.39.0")
+        asset: kbld-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: kbld-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/carvel-dev/kbld/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/carvel-dev/kbld/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/carvel-dev/kbld/releases/download/{{.Version}}/checksums.txt.pem

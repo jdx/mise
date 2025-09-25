@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: hirose31
+    repo_name: s3surfer
+    description: s3surfer is CLI tool for browsing S3 bucket and download objects interactively
+    asset: s3surfer_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: s3surfer
+        src: s3surfer_{{.Version}}_{{.OS}}_{{.Arch}}/s3surfer

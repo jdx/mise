@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: pulumi
+    repo_name: tf2pulumi
+    asset: tf2pulumi-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: A tool to convert Terraform projects to Pulumi TypeScript programs
+    replacements:
+      amd64: x64
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: tf2pulumi_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

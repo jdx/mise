@@ -11,6 +11,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `mise run test:e2e` - Run end-to-end tests only
 - `mise run snapshots` - Update test snapshots with `cargo insta`
 
+### Debugging
+- Use `MISE_DEBUG=1` or `MISE_TRACE=1` environment variables to enable debug output (not `RUST_LOG`)
+
 ### Code Quality and Testing
 - `mise run lint` - Run all linting tasks
 - `mise run lint-fix` - Run linting and automatically fix issues
@@ -129,7 +132,7 @@ When implementing new tool backends, follow the pattern in `src/backend/mod.rs`.
 - Plugin metadata is defined in `mise.plugin.toml` files
 
 ### Configuration Parsing
-The configuration system supports multiple file formats and environment-specific configs. Changes to settings require updating `settings.toml` and running `mise run render:settings`.
+The configuration system supports multiple file formats and environment-specific configs. Changes to settings require updating `settings.toml` and running `mise run render:schema`.
 
 ### Testing Strategy
 - E2E tests are organized by feature area (cli/, config/, backend/, etc.)

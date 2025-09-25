@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Zxilly
+    repo_name: go-size-analyzer
+    description: A tool for analyzing the size of compiled Go binaries, offering cross-platform support, detailed breakdowns, and multiple output formats
+    files:
+      - name: gsa
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.0")
+        no_asset: true
+      - version_constraint: semver("< 1.2.3")
+        asset: go-size-analyzer_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("< 1.3.4")
+        asset: go-size-analyzer_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: Zxilly/go-size-analyzer/.github/workflows/build-gsa.yml
+      - version_constraint: semver("<= 1.9.1")
+        asset: go-size-analyzer_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        # Disable slsa_provenance
+        # FAILED: SLSA verification failed: untrusted reusable workflow: https://github.com/Zxilly/go-size-analyzer/.github/workflows/release.yml with builderID provided: false
+        github_artifact_attestations:
+          signer_workflow: Zxilly/go-size-analyzer/.github/workflows/release.yml
+      - version_constraint: "true"
+        asset: go-size-analyzer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: Zxilly/go-size-analyzer/.github/workflows/release.yml
+        # Disable slsa_provenance
+        # FAILED: SLSA verification failed: untrusted reusable workflow: https://github.com/Zxilly/go-size-analyzer/.github/workflows/release.yml with builderID provided: false

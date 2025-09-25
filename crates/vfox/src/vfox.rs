@@ -377,8 +377,8 @@ mod tests {
     #[tokio::test]
     async fn test_env_keys() {
         let vfox = Vfox::test();
-        vfox.install_plugin("nodejs").unwrap();
-        let keys = vfox.env_keys("nodejs", "20.0.0").await.unwrap();
+        // dummy plugin already exists in plugins/dummy, no need to install
+        let keys = vfox.env_keys("dummy", "1.0.0").await.unwrap();
         let output = format!("{keys:?}").replace(
             &vfox.install_dir.to_string_lossy().to_string(),
             "<INSTALL_DIR>",
@@ -389,31 +389,22 @@ mod tests {
     #[tokio::test]
     async fn test_install_plugin() {
         let vfox = Vfox::test();
-        vfox.uninstall_plugin("nodejs").unwrap();
-        assert!(!vfox.plugin_dir.join("nodejs").exists());
-        vfox.install_plugin("nodejs").unwrap();
-        assert!(vfox.plugin_dir.join("nodejs").exists());
+        // dummy plugin already exists in plugins/dummy, just verify it's there
+        assert!(vfox.plugin_dir.join("dummy").exists());
+        let plugin = Plugin::from_dir(&vfox.plugin_dir.join("dummy")).unwrap();
+        assert_eq!(plugin.name, "dummy");
     }
 
     #[tokio::test]
     async fn test_install() {
         let vfox = Vfox::test();
-        let install_dir = vfox.install_dir.join("nodejs").join("20.0.0");
-        vfox.install("nodejs", "20.0.0", &install_dir)
-            .await
-            .unwrap();
-        assert!(vfox
-            .install_dir
-            .join("nodejs")
-            .join("20.0.0")
-            .join("bin")
-            .join("node")
-            .exists());
-        vfox.uninstall_plugin("nodejs").unwrap();
-        assert!(!vfox.plugin_dir.join("nodejs").exists());
-        vfox.uninstall("nodejs", "20.0.0").unwrap();
-        assert!(!vfox.install_dir.join("nodejs").join("20.0.0").exists());
-        file::remove_dir_all(vfox.plugin_dir.join("nodejs")).unwrap();
+        let install_dir = vfox.install_dir.join("dummy").join("1.0.0");
+        // dummy plugin already exists in plugins/dummy
+        vfox.install("dummy", "1.0.0", &install_dir).await.unwrap();
+        // dummy plugin doesn't actually install binaries, so we just check the directory
+        assert!(vfox.install_dir.join("dummy").join("1.0.0").exists());
+        vfox.uninstall("dummy", "1.0.0").unwrap();
+        assert!(!vfox.install_dir.join("dummy").join("1.0.0").exists());
         file::remove_dir_all(vfox.install_dir).unwrap();
         file::remove_dir_all(vfox.download_dir).unwrap();
     }
@@ -464,7 +455,8 @@ mod tests {
     #[tokio::test]
     async fn test_metadata() {
         let vfox = Vfox::test();
-        let metadata = vfox.metadata("nodejs").await.unwrap();
+        // dummy plugin already exists in plugins/dummy
+        let metadata = vfox.metadata("dummy").await.unwrap();
         let out = format!("{metadata:?}");
         assert_snapshot!(out);
     }

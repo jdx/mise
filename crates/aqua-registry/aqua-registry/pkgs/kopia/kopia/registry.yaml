@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kopia
+    repo_name: kopia
+    asset: kopia-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: Cross-platform backup tool for Windows, macOS & Linux with fast, incremental backups, client-side end-to-end encryption, compression and data deduplication. CLI and GUI included
+    replacements:
+      amd64: x64
+      darwin: macOS
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: kopia
+        src: kopia-{{trimV .Version}}-{{.OS}}-{{.Arch}}/kopia
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

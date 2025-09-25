@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: aquaproj
+    repo_name: registry-tool
+    description: CLI to develop aqua Registry
+    asset: registry-tool_{{.OS}}_{{.Arch}}.tar.gz
+    files:
+      - name: aqua-registry
+    checksum:
+      type: github_release
+      asset: registry-tool_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+      cosign:
+        opts:
+          - --certificate-identity-regexp
+          - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+          - --certificate-oidc-issuer
+          - "https://token.actions.githubusercontent.com"
+          - --signature
+          - https://github.com/aquaproj/registry-tool/releases/download/{{.Version}}/registry-tool_{{trimV .Version}}_checksums.txt.sig
+          - --certificate
+          - https://github.com/aquaproj/registry-tool/releases/download/{{.Version}}/registry-tool_{{trimV .Version}}_checksums.txt.pem
+    slsa_provenance:
+      type: github_release
+      asset: multiple.intoto.jsonl
+    version_constraint: semver(">= 0.1.6")
+    version_overrides:
+      - version_constraint: "true"
+        slsa_provenance:
+          enabled: false
+        checksum:
+          type: github_release
+          asset: registry-tool_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

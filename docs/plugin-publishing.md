@@ -22,7 +22,23 @@ Before publishing your plugin, ensure you have:
 
 ### 1. Initialize Repository
 
-Create a Git repository for your plugin:
+The easiest way to start is with the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template):
+
+```bash
+# Clone the template
+git clone https://github.com/jdx/mise-tool-plugin-template my-plugin
+cd my-plugin
+
+# Remove template history and set up your own repository
+rm -rf .git
+git init
+git remote add origin https://github.com/username/my-plugin.git
+
+# Customize for your plugin
+# Edit metadata.lua, hooks/*.lua, README.md, etc.
+```
+
+Alternatively, create a repository from scratch:
 
 ```bash
 # Create plugin directory
@@ -240,22 +256,25 @@ Create a GitHub release for better discoverability:
 ## Changes in v1.2.3
 
 ### Added
+
 - New feature X
 - Support for Y
 
 ### Changed
+
 - Improved performance of Z
 - Updated dependencies
 
 ### Fixed
+
 - Fixed issue with A
 - Resolved bug in B
 
 ### Installation
+
 ```bash
 mise plugin install my-plugin https://github.com/username/my-plugin
 ```
-
 ```
 
 ## Distribution Methods

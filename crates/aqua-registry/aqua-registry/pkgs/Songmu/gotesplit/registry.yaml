@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Songmu
+    repo_name: gotesplit
+    asset: gotesplit_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    description: Splits the testing in Go into a subset and run it. It is useful for the CI environment
+    files:
+      - name: gotesplit
+        src: gotesplit_{{.Version}}_{{.OS}}_{{.Arch}}/gotesplit
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256

@@ -5,7 +5,7 @@ use once_cell::sync::OnceCell;
 use serde::de::Visitor;
 use serde::{Deserializer, de};
 use serde_derive::Deserialize;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::{
@@ -17,11 +17,11 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value}
 use versions::Versioning;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
-use crate::config::config_file::toml::deserialize_arr;
 use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
+use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap};
+use crate::config::{Alias, AliasMap, Config};
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, Hooks};
 use crate::redactions::Redactions;
@@ -32,7 +32,7 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions
 use crate::watch_files::WatchFile;
 use crate::{dirs, file};
 
-use super::{ConfigFileType, config_root};
+use super::ConfigFileType;
 
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
@@ -83,12 +83,6 @@ pub struct MiseTomlTool {
     pub options: Option<ToolVersionOptions>,
 }
 
-#[derive(Debug, Clone)]
-pub struct MiseTomlEnvDirective {
-    pub value: String,
-    pub options: EnvDirectiveOptions,
-}
-
 #[derive(Debug, Default, Clone)]
 pub struct Tasks(pub BTreeMap<String, Task>);
 
@@ -102,9 +96,16 @@ impl EnvList {
 }
 
 impl MiseToml {
+    fn contains_template_syntax(input: &str) -> bool {
+        input.contains("{{") || input.contains("{%") || input.contains("{#")
+    }
+
     pub fn init(path: &Path) -> Self {
         let mut context = BASE_CONTEXT.clone();
-        context.insert("config_root", config_root(path).to_str().unwrap());
+        context.insert(
+            "config_root",
+            config_root::config_root(path).to_str().unwrap(),
+        );
         Self {
             path: path.to_path_buf(),
             context,
@@ -153,6 +154,18 @@ impl MiseToml {
         Ok(self.doc.lock().unwrap())
     }
 
+    pub fn set_backend_alias(&mut self, fa: &BackendArg, to: &str) -> eyre::Result<()> {
+        self.doc_mut()?
+            .get_mut()
+            .unwrap()
+            .entry("alias")
+            .or_insert_with(table)
+            .as_table_like_mut()
+            .unwrap()
+            .insert(&fa.short, value(to));
+        Ok(())
+    }
+
     pub fn set_alias(&mut self, fa: &BackendArg, from: &str, to: &str) -> eyre::Result<()> {
         self.alias
             .entry(fa.short.to_string())
@@ -175,6 +188,18 @@ impl MiseToml {
             .as_table_like_mut()
             .unwrap()
             .insert(from, value(to));
+        Ok(())
+    }
+
+    pub fn remove_backend_alias(&mut self, fa: &BackendArg) -> eyre::Result<()> {
+        let mut doc = self.doc_mut()?;
+        let doc = doc.get_mut().unwrap();
+        if let Some(aliases) = doc.get_mut("alias").and_then(|v| v.as_table_mut()) {
+            aliases.remove(&fa.short);
+            if aliases.is_empty() {
+                doc.as_table_mut().remove("alias");
+            }
+        }
         Ok(())
     }
 
@@ -246,16 +271,22 @@ impl MiseToml {
     }
 
     fn parse_template(&self, input: &str) -> eyre::Result<String> {
-        if !input.contains("{{") && !input.contains("{%") && !input.contains("{#") {
+        self.parse_template_with_context(&self.context, input)
+    }
+
+    fn parse_template_with_context(
+        &self,
+        context: &TeraContext,
+        input: &str,
+    ) -> eyre::Result<String> {
+        if !Self::contains_template_syntax(input) {
             return Ok(input.to_string());
         }
         let dir = self.path.parent();
-        let output = get_tera(dir)
-            .render_str(input, &self.context)
-            .wrap_err_with(|| {
-                let p = display_path(&self.path);
-                eyre!("failed to parse template {input} in {p}")
-            })?;
+        let output = get_tera(dir).render_str(input, context).wrap_err_with(|| {
+            let p = display_path(&self.path);
+            eyre!("failed to parse template {input} in {p}")
+        })?;
         Ok(output)
     }
 }
@@ -463,12 +494,27 @@ impl ConfigFile for MiseToml {
         let source = ToolSource::MiseToml(self.path.clone());
         let mut trs = ToolRequestSet::new();
         let tools = self.tools.lock().unwrap();
+        let mut context = self.context.clone();
+        if context.get("vars").is_none() {
+            if let Some(config) = Config::maybe_get() {
+                if let Some(vars_results) = config.vars_results_cached() {
+                    let vars = vars_results
+                        .vars
+                        .iter()
+                        .map(|(k, (v, _))| (k.clone(), v.clone()))
+                        .collect::<IndexMap<_, _>>();
+                    context.insert("vars", &vars);
+                } else if !config.vars.is_empty() {
+                    context.insert("vars", &config.vars);
+                }
+            }
+        }
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
-                let version = self.parse_template(&tool.tt.to_string())?;
+                let version = self.parse_template_with_context(&context, &tool.tt.to_string())?;
                 let tvr = if let Some(mut options) = tool.options.clone() {
                     for v in options.opts.values_mut() {
-                        *v = self.parse_template(v)?;
+                        *v = self.parse_template_with_context(&context, v)?;
                     }
                     let mut ba = ba.clone();
                     let mut ba_opts = ba.opts().clone();
@@ -748,6 +794,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                 }
                 Ok(EnvList(env))
             }
+
             fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
@@ -756,6 +803,33 @@ impl<'de> de::Deserialize<'de> for EnvList {
                 while let Some(key) = map.next_key::<String>()? {
                     match key.as_str() {
                         "_" | "mise" => {
+                            #[derive(Deserialize)]
+                            #[serde(untagged)]
+                            enum MiseTomlEnvDirective {
+                                Single {
+                                    #[serde(alias = "path")]
+                                    value: String,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                                Multiple {
+                                    #[serde(alias = "value", alias = "path", alias = "paths")]
+                                    values: Vec<String>,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                            }
+
+                            impl FromStr for MiseTomlEnvDirective {
+                                type Err = String;
+                                fn from_str(s: &str) -> Result<Self, Self::Err> {
+                                    Ok(MiseTomlEnvDirective::Single {
+                                        value: s.to_string(),
+                                        options: Default::default(),
+                                    })
+                                }
+                            }
+
                             struct EnvDirectivePythonVenv {
                                 path: String,
                                 create: bool,
@@ -874,17 +948,29 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 }
                             }
 
+                            fn flatten_directives<F>(
+                                directives: Vec<MiseTomlEnvDirective>,
+                                constructor: F,
+                            ) -> impl Iterator<Item = EnvDirective>
+                            where
+                                F: Fn(String, EnvDirectiveOptions) -> EnvDirective + 'static,
+                            {
+                                directives.into_iter().flat_map(move |d| match d {
+                                    MiseTomlEnvDirective::Single { value, options } => {
+                                        vec![constructor(value, options)]
+                                    }
+                                    MiseTomlEnvDirective::Multiple { values, options } => values
+                                        .into_iter()
+                                        .map(|v| constructor(v, options.clone()))
+                                        .collect(),
+                                })
+                            }
+
                             let directives = map.next_value::<EnvDirectives>()?;
                             // TODO: parse these in the order they're defined somehow
-                            for d in directives.path {
-                                env.push(EnvDirective::Path(d.value, d.options));
-                            }
-                            for d in directives.file {
-                                env.push(EnvDirective::File(d.value, d.options));
-                            }
-                            for d in directives.source {
-                                env.push(EnvDirective::Source(d.value, d.options));
-                            }
+                            env.extend(flatten_directives(directives.path, EnvDirective::Path));
+                            env.extend(flatten_directives(directives.file, EnvDirective::File));
+                            env.extend(flatten_directives(directives.source, EnvDirective::Source));
                             for (key, value) in directives.other {
                                 env.push(EnvDirective::Module(key, value, Default::default()));
                             }
@@ -903,161 +989,38 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             }
                         }
                         _ => {
-                            enum Val {
-                                Int(i64),
+                            #[derive(Deserialize)]
+                            #[serde(untagged)]
+                            pub enum PrimitiveVal {
                                 Str(String),
+                                Int(i64),
                                 Bool(bool),
+                            }
+                            #[derive(Deserialize)]
+                            #[serde(untagged)]
+                            enum Val {
+                                Primitive(PrimitiveVal),
                                 Map {
-                                    value: Box<Val>,
-                                    tools: bool,
-                                    redact: bool,
+                                    value: PrimitiveVal,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
                                 },
                             }
-                            impl Display for Val {
-                                fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-                                    match self {
-                                        Val::Int(i) => write!(f, "{i}"),
-                                        Val::Str(s) => write!(f, "{s}"),
-                                        Val::Bool(b) => write!(f, "{b}"),
-                                        Val::Map {
-                                            value,
-                                            tools,
-                                            redact,
-                                        } => {
-                                            write!(f, "{value}")?;
-                                            if *tools {
-                                                write!(f, " tools")?;
-                                            }
-                                            if *redact {
-                                                write!(f, " redact")?;
-                                            }
-                                            Ok(())
-                                        }
-                                    }
+                            let (value, options) = match map.next_value::<Val>()? {
+                                Val::Primitive(p) => (p, EnvDirectiveOptions::default()),
+                                Val::Map { value, options } => (value, options),
+                            };
+                            let directive = match value {
+                                PrimitiveVal::Str(s) => EnvDirective::Val(key, s, options),
+                                PrimitiveVal::Int(i) => {
+                                    EnvDirective::Val(key, i.to_string(), options)
                                 }
-                            }
-
-                            impl<'de> de::Deserialize<'de> for Val {
-                                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-                                where
-                                    D: Deserializer<'de>,
-                                {
-                                    struct ValVisitor;
-
-                                    impl<'de> Visitor<'de> for ValVisitor {
-                                        type Value = Val;
-                                        fn expecting(
-                                            &self,
-                                            formatter: &mut Formatter,
-                                        ) -> std::fmt::Result
-                                        {
-                                            formatter.write_str("env value")
-                                        }
-
-                                        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(Val::Bool(v))
-                                        }
-
-                                        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(Val::Int(v))
-                                        }
-
-                                        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-                                        where
-                                            E: de::Error,
-                                        {
-                                            Ok(Val::Str(v.to_string()))
-                                        }
-
-                                        fn visit_map<A>(
-                                            self,
-                                            mut map: A,
-                                        ) -> Result<Self::Value, A::Error>
-                                        where
-                                            A: de::MapAccess<'de>,
-                                        {
-                                            let mut value: Option<Val> = None;
-                                            let mut tools = None;
-                                            let mut redact = None;
-                                            while let Some((key, val)) =
-                                                map.next_entry::<String, Val>()?
-                                            {
-                                                match key.as_str() {
-                                                    "value" => {
-                                                        value = Some(val);
-                                                    }
-                                                    "tools" => {
-                                                        tools = Some(val);
-                                                    }
-                                                    "redact" => {
-                                                        redact = Some(val);
-                                                    }
-                                                    _ => {
-                                                        return Err(de::Error::unknown_field(
-                                                            &key,
-                                                            &["value", "tools", "redact"],
-                                                        ));
-                                                    }
-                                                }
-                                            }
-                                            let value = value
-                                                .ok_or_else(|| de::Error::missing_field("value"))?;
-                                            let tools = if let Some(Val::Bool(tools)) = tools {
-                                                tools
-                                            } else {
-                                                false
-                                            };
-                                            Ok(Val::Map {
-                                                value: Box::new(value),
-                                                tools,
-                                                redact: redact
-                                                    .map(|r| {
-                                                        if let Val::Bool(b) = r { b } else { false }
-                                                    })
-                                                    .unwrap_or_default(),
-                                            })
-                                        }
-                                    }
-
-                                    deserializer.deserialize_any(ValVisitor)
+                                PrimitiveVal::Bool(true) => {
+                                    EnvDirective::Val(key, "true".to_string(), options)
                                 }
-                            }
-
-                            let value = map.next_value::<Val>()?;
-                            match value {
-                                Val::Int(i) => {
-                                    env.push(EnvDirective::Val(
-                                        key,
-                                        i.to_string(),
-                                        Default::default(),
-                                    ));
-                                }
-                                Val::Str(s) => {
-                                    env.push(EnvDirective::Val(key, s, Default::default()));
-                                }
-                                Val::Bool(true) => env.push(EnvDirective::Val(
-                                    key,
-                                    "true".into(),
-                                    Default::default(),
-                                )),
-                                Val::Bool(false) => {
-                                    env.push(EnvDirective::Rm(key, Default::default()))
-                                }
-                                Val::Map {
-                                    value,
-                                    tools,
-                                    redact,
-                                } => {
-                                    let opts = EnvDirectiveOptions { tools, redact };
-                                    env.push(EnvDirective::Val(key, value.to_string(), opts));
-                                }
-                            }
+                                PrimitiveVal::Bool(false) => EnvDirective::Rm(key, options),
+                            };
+                            env.push(directive);
                         }
                     }
                 }
@@ -1202,74 +1165,6 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
     }
 }
 
-impl FromStr for MiseTomlEnvDirective {
-    type Err = eyre::Report;
-
-    fn from_str(s: &str) -> eyre::Result<Self> {
-        Ok(MiseTomlEnvDirective {
-            value: s.into(),
-            options: Default::default(),
-        })
-    }
-}
-
-impl<'de> de::Deserialize<'de> for MiseTomlEnvDirective {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        struct MiseTomlEnvDirectiveVisitor;
-
-        impl<'de> Visitor<'de> for MiseTomlEnvDirectiveVisitor {
-            type Value = MiseTomlEnvDirective;
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("env directive")
-            }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(MiseTomlEnvDirective {
-                    value: v.into(),
-                    options: Default::default(),
-                })
-            }
-
-            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
-            where
-                M: de::MapAccess<'de>,
-            {
-                let mut options: EnvDirectiveOptions = Default::default();
-                let mut value = None;
-                while let Some((k, v)) = map.next_entry::<String, toml::Value>()? {
-                    match k.as_str() {
-                        "value" | "path" => {
-                            value = Some(v.as_str().unwrap().to_string());
-                        }
-                        "tools" => {
-                            options.tools = v.as_bool().unwrap();
-                        }
-                        "redact" => {
-                            options.redact = v.as_bool().unwrap();
-                        }
-                        _ => {
-                            return Err(de::Error::custom("invalid key"));
-                        }
-                    }
-                }
-                if let Some(value) = value {
-                    Ok(MiseTomlEnvDirective { value, options })
-                } else {
-                    Err(de::Error::custom("missing value"))
-                }
-            }
-        }
-
-        deserializer.deserialize_any(MiseTomlEnvDirectiveVisitor)
-    }
-}
-
 impl<'de> de::Deserialize<'de> for MiseTomlTool {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -1398,7 +1293,7 @@ impl<'de> de::Deserialize<'de> for Tasks {
                                 E: de::Error,
                             {
                                 Ok(TaskDef(Task {
-                                    run: vec![v.to_string()],
+                                    run: vec![crate::task::RunEntry::Script(v.to_string())],
                                     ..Default::default()
                                 }))
                             }
@@ -1408,7 +1303,7 @@ impl<'de> de::Deserialize<'de> for Tasks {
                                 S: de::SeqAccess<'de>,
                             {
                                 let mut run = vec![];
-                                while let Some(s) = seq.next_element::<String>()? {
+                                while let Some(s) = seq.next_element::<crate::task::RunEntry>()? {
                                     run.push(s);
                                 }
                                 Ok(TaskDef(Task {

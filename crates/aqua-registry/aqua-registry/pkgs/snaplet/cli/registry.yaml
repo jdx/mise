@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: snaplet/cli
+    type: http
+    description: Seed your PostgreSQL database with production-like data so you can code, debug, and test with ease
+    link: https://www.snaplet.dev/
+    # See https://app.snaplet.dev/get-cli/ for URL structure
+    url: https://snaplet-public.s3-accelerate.amazonaws.com/cli/beta/snaplet-{{.OS}}-{{.Arch}}-{{.Version}}
+    overrides:
+      - goos: darwin
+        goarch: arm64
+        replacements:
+          arm64: x64
+    supported_envs:
+      - linux
+      - darwin
+      - windows/amd64
+    replacements:
+      windows: win
+      darwin: macos
+      amd64: x64
+    files:
+      - name: snaplet
+    format: raw

@@ -1,0 +1,238 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: godotengine
+    repo_name: godot
+    description: Godot Engine – Multi-platform 2D and 3D game engine
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "1.0-stable"
+        no_asset: true
+      - version_constraint: semver("<= 2.0.2-stable")
+        asset: Godot_v{{replace "-" "_" .Version}}_{{.OS}}.exe.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: godot
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          windows: win64
+        supported_envs:
+          - windows
+      - version_constraint: Version == "2.0.3-stable"
+        asset: Godot_v{{replace "-" "_" .Version}}_{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: godot
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          darwin: osx64
+          windows: win64
+        overrides:
+          - goos: darwin
+            files:
+              - name: godot
+                src: Godot64.app/Contents/MacOS/Godot
+            replacements:
+              amd64: x64
+          - goos: windows
+            asset: Godot_v{{replace "-" "_" .Version}}_{{.OS}}.exe.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+      - version_constraint: Version == "2.0.4.1-stable"
+        asset: Godot_v{{replace "-" "_" .Version}}_{{.OS}}.fat.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: godot
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          darwin: osx
+          windows: win64
+        overrides:
+          - goos: windows
+            asset: Godot_v{{replace "-" "_" .Version}}_{{.OS}}.exe.{{.Format}}
+          - goos: darwin
+            files:
+              - name: godot
+                src: Godot.app/Contents/MacOS/Godot
+        supported_envs:
+          - darwin
+          - windows
+      - version_constraint: semver("<= 3.0.6-stable")
+        asset: Godot_v{{.Version}}_{{.OS}}.fat.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: godot
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          darwin: osx
+          windows: win64
+        overrides:
+          - goos: darwin
+            files:
+              - name: godot
+                src: Godot.app/Contents/MacOS/Godot
+          - goos: windows
+            asset: Godot_v{{.Version}}_{{.OS}}.exe.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+      - version_constraint: semver("<= 3.2.3-stable")
+        asset: Godot_v{{.Version}}_{{.OS}}.64.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: godot
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          darwin: osx
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA512-SUMS.txt
+          algorithm: sha512
+        overrides:
+          - goos: darwin
+            files:
+              - name: godot
+                src: Godot.app/Contents/MacOS/Godot
+          - goos: windows
+            asset: Godot_v{{.Version}}_{{.OS}}.exe.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+      - version_constraint: semver("<= 3.5.3-stable")
+        asset: Godot_v{{.Version}}_{{.OS}}.universal.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: godot
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          darwin: osx
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA512-SUMS.txt
+          algorithm: sha512
+        overrides:
+          - goos: darwin
+            files:
+              - name: godot
+                src: Godot.app/Contents/MacOS/Godot
+          - goos: windows
+            asset: Godot_v{{.Version}}_{{.OS}}.exe.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+      - version_constraint: semver("<= 3.6.1-stable")
+        asset: Godot_v{{.Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: godot
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          darwin: osx
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA512-SUMS.txt
+          algorithm: sha512
+        overrides:
+          - goos: darwin
+            asset: Godot_v{{.Version}}_{{.OS}}.universal.{{.Format}}
+            files:
+              - name: godot
+                src: Godot.app/Contents/MacOS/Godot
+          - goos: windows
+            asset: Godot_v{{.Version}}_{{.OS}}.exe.{{.Format}}
+        supported_envs:
+          - linux/arm64
+          - darwin
+          - windows
+      - version_constraint: semver("<= 4.1.4-stable")
+        asset: Godot_v{{.Version}}_{{.OS}}.exe.{{.Format}}
+        format: zip
+        files:
+          - name: godot
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          darwin: macos
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA512-SUMS.txt
+          algorithm: sha512
+        overrides:
+          - goos: linux
+            asset: Godot_v{{.Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            asset: Godot_v{{.Version}}_{{.OS}}.universal.{{.Format}}
+            files:
+              - name: godot
+                src: Godot.app/Contents/MacOS/Godot
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 4.2.2-stable")
+        asset: Godot_v{{.Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+        windows_arm_emulation: true
+        format: zip
+        files:
+          - name: godot
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          darwin: macos
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA512-SUMS.txt
+          algorithm: sha512
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            asset: Godot_v{{.Version}}_{{.OS}}.universal.{{.Format}}
+            files:
+              - name: godot
+                src: Godot.app/Contents/MacOS/Godot
+          - goos: windows
+            asset: Godot_v{{.Version}}_{{.OS}}.exe.{{.Format}}
+      - version_constraint: "true"
+        asset: Godot_v{{.Version}}_{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: godot
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA512-SUMS.txt
+          algorithm: sha512
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            asset: Godot_v{{.Version}}_{{.OS}}.universal.{{.Format}}
+            files:
+              - name: godot
+                src: Godot.app/Contents/MacOS/Godot
+          - goos: windows
+            goarch: amd64
+            asset: Godot_v{{.Version}}_{{.OS}}.exe.{{.Format}}
+            replacements:
+              windows: win64
+          - goos: windows
+            goarch: arm64
+            asset: Godot_v{{.Version}}_{{.OS}}_{{.Arch}}.exe.{{.Format}}

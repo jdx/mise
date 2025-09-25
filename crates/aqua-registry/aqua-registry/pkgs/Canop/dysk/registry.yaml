@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Canop
+    repo_name: dysk
+    description: A linux utility to get information on filesystems, like df but better
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.10.0")
+        asset: dysk_{{trimV .Version}}.{{.Format}}
+        format: zip
+        files:
+          - name: dysk
+            src: build/{{.Arch}}-{{.OS}}/dysk
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+      - version_constraint: "true"
+        asset: dysk_{{trimV .Version}}.{{.Format}}
+        format: zip
+        files:
+          - name: dysk
+            src: build/{{.Arch}}-{{.OS}}/dysk
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux

@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: aws
+    repo_name: amazon-ec2-instance-selector
+    description: A CLI tool and go library which recommends instance types based on resource criteria like vcpus and memory
+    files:
+      - name: ec2-instance-selector
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.8.0"
+        asset: ec2-instance-selector-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+      - version_constraint: semver("<= 0.8.2")
+        no_asset: true
+      - version_constraint: semver("<= 1.3.0")
+        asset: ec2-instance-selector-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+      - version_constraint: semver("<= 2.0.2")
+        asset: ec2-instance-selector-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: "true"
+        asset: ec2-instance-selector-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true

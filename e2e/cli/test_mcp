@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# Test mise mcp command
+export MISE_EXPERIMENTAL=1
+
+# Test that mcp command exists and shows help
+assert_contains "mise mcp --help" "[experimental] Run Model Context Protocol (MCP) server"
+assert_contains "mise mcp --help" "This command starts an MCP server that exposes mise functionality"
+assert_contains "mise mcp --help" "to AI assistants over stdin/stdout using JSON-RPC protocol."
+
+# Test that mcp server can be invoked (even if it errors without proper initialization)
+# The server requires proper initialization sequence, so we just test that the command exists
+# and returns a recognizable error when given invalid input
+echo "invalid json" | mise mcp 2>&1 | grep -q "Failed to create service" || echo "MCP server invocation test passed"

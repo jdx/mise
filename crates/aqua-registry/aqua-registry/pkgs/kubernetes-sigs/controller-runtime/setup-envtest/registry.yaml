@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: kubernetes-sigs/controller-runtime/setup-envtest
+    type: github_release
+    repo_owner: kubernetes-sigs
+    repo_name: controller-runtime
+    description: Repo for the controller-runtime subproject of kubebuilder (sig-apimachinery)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.18.7")
+        no_asset: true
+      - version_constraint: "true"
+        asset: setup-envtest-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true

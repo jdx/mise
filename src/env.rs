@@ -31,6 +31,10 @@ pub static MISE_SHELL: Lazy<Option<ShellType>> = Lazy::new(|| {
         .parse()
         .ok()
 });
+#[cfg(unix)]
+pub static SHELL_COMMAND_FLAG: &str = "-c";
+#[cfg(windows)]
+pub static SHELL_COMMAND_FLAG: &str = "/c";
 
 // paths and directories
 #[cfg(test)]
@@ -73,8 +77,17 @@ pub static XDG_DATA_HOME: Lazy<PathBuf> = Lazy::new(|| {
 pub static XDG_STATE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local").join("state")));
 
-/// always display "friendly" errors even in debug mode
-pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| var_is_true("MISE_FRIENDLY_ERROR"));
+/// control display of "friendly" errors - defaults to release mode behavior unless overridden
+pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| {
+    if var_is_true("MISE_FRIENDLY_ERROR") {
+        true
+    } else if var_is_false("MISE_FRIENDLY_ERROR") {
+        false
+    } else {
+        // default behavior: friendly in release mode unless debug logging
+        !cfg!(debug_assertions) && log::max_level() < log::LevelFilter::Debug
+    }
+});
 pub static MISE_TOOL_STUB: Lazy<bool> =
     Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("tool-stub"));
 pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
@@ -157,7 +170,6 @@ pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         })
         .unwrap_or_default()
 });
-pub static MISE_TASK_LEVEL: Lazy<u8> = Lazy::new(|| var_u8("MISE_TASK_LEVEL"));
 pub static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| !var_is_false("MISE_USE_TOML"));
 pub static MISE_LIST_ALL_VERSIONS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LIST_ALL_VERSIONS"));
 pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
@@ -257,12 +269,17 @@ pub static CLICOLOR_FORCE: Lazy<Option<bool>> =
 pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
     if *CLICOLOR_FORCE == Some(true) {
         Some(true)
+    } else if *NO_COLOR {
+        Some(false)
     } else if let Ok(v) = var("CLICOLOR") {
         Some(v != "0")
     } else {
         None
     }
 });
+
+/// Disable color output - https://no-color.org/
+pub static NO_COLOR: Lazy<bool> = Lazy::new(|| var("NO_COLOR").is_ok_and(|v| !v.is_empty()));
 
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =

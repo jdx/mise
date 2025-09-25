@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gopinath-langote
+    repo_name: 1build
+    description: Frictionless way of managing project-specific commands
+    asset: 1build_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+    supported_envs:
+      - linux/amd64
+      - darwin
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 1.2.0")
+    # 1build was migrated from Python to Go at v1.2.0
+    # https://github.com/gopinath-langote/1build/commit/a692bdce2643c726915950622ec46fbf4ce02816
+    version_overrides:
+      - version_constraint: semver("< 1.2.0")
+        no_asset: true

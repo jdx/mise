@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mercari
+    repo_name: hcledit
+    asset: hcledit_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    description: Go package to edit HCL configuration
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    rosetta2: true
+    files:
+      - name: hcledit
+        src: bin/hcledit
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

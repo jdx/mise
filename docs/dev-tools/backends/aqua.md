@@ -2,8 +2,7 @@
 
 [Aqua](https://aquaproj.github.io/) tools may be used natively in mise. aqua is the ideal backend
 to use for new tools since they don't require plugins, they work on windows, they offer security
-features like cosign/slsa verification in addition to checksums. aqua installs also show more progress
-bars, which is nice.
+features in addition to checksums. aqua installs also show more progress bars, which is nice.
 
 You do not need to separately install aqua. The aqua CLI is not used in mise at all. What is used is
 the [aqua registry](https://github.com/aquaproj/aqua-registry) which is a bunch of yaml files that get compiled into the mise binary on release.
@@ -49,6 +48,110 @@ to use the aqua backend. To see these tools, run `mise registry | grep aqua:`.
 import Settings from '/components/settings.vue';
 </script>
 <Settings child="aqua" :level="3" />
+
+## Security Verification
+
+Aqua backend supports multiple security verification methods to ensure the integrity and authenticity of downloaded tools. mise provides **native Rust implementation** for all verification methods, eliminating the need for external CLI tools like `cosign`, `slsa-verifier`, or `gh`.
+
+### GitHub Artifact Attestations
+
+GitHub Artifact Attestations provide cryptographic proof that artifacts were built by specific GitHub Actions workflows. mise verifies these attestations natively to ensure the authenticity and integrity of downloaded tools.
+
+**Requirements:**
+
+- The tool must have `github_artifact_attestations` configuration in the aqua registry for attestations to be verified
+- No external tools required - verification is handled natively by mise
+
+**Configuration:**
+
+```bash
+# Enable/disable GitHub attestations verification (default: true)
+export MISE_AQUA_GITHUB_ATTESTATIONS=true
+```
+
+**Registry Configuration Example:**
+
+```yaml
+packages:
+  - type: github_release
+    repo_owner: cli
+    repo_name: cli
+    github_artifact_attestations:
+      signer_workflow: cli/cli/.github/workflows/deployment.yml
+```
+
+### Cosign Verification
+
+mise natively verifies Cosign signatures without requiring the `cosign` CLI tool to be installed.
+
+**Configuration:**
+
+```bash
+# Enable/disable Cosign verification (default: true)
+export MISE_AQUA_COSIGN=true
+
+# Pass extra arguments to the verification process
+export MISE_AQUA_COSIGN_EXTRA_ARGS="--key /path/to/key.pub"
+```
+
+### SLSA Provenance Verification
+
+mise natively verifies SLSA (Supply-chain Levels for Software Artifacts) provenance without requiring the `slsa-verifier` CLI tool.
+
+**Configuration:**
+
+```bash
+# Enable/disable SLSA verification (default: true)
+export MISE_AQUA_SLSA=true
+```
+
+### Other Security Methods
+
+Aqua also supports:
+
+- **Minisign verification**: Uses minisign for signature verification
+- **Checksum verification**: Verifies SHA256/SHA512/SHA1/MD5 checksums (always enabled)
+
+### Verification Process
+
+During tool installation, mise will:
+
+1. Download the tool and any signature/attestation files
+2. Perform native verification using the configured methods
+3. Display verification status with progress indicators
+4. Abort installation if any verification fails
+
+**Example output during installation:**
+
+```
+✓ Downloaded cli/cli v2.50.0
+✓ GitHub attestations verified
+✓ Tool installed successfully
+```
+
+### Troubleshooting
+
+If verification fails:
+
+1. **Check network connectivity**: Verification requires downloading attestation data
+2. **Verify tool configuration**: Ensure the aqua registry has correct verification settings
+3. **Disable specific verification**: Temporarily disable problematic verification methods
+4. **Enable debug logging**: Use `MISE_DEBUG=1` to see detailed verification logs
+
+**Common issues:**
+
+- **No attestations found**: The tool may not have attestations configured in the registry
+- **Verification timeout**: Network issues or slow attestation services
+- **Certificate validation**: Clock skew or certificate chain issues
+
+To disable all verification temporarily:
+
+```bash
+export MISE_AQUA_GITHUB_ATTESTATIONS=false
+export MISE_AQUA_COSIGN=false
+export MISE_AQUA_SLSA=false
+export MISE_AQUA_MINISIGN=false
+```
 
 ## Common aqua issues
 

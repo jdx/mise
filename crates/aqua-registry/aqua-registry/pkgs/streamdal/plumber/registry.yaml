@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: streamdal
+    repo_name: plumber
+    aliases:
+      - name: batchcorp/plumber
+    description: A swiss army knife CLI tool for interacting with Kafka, RabbitMQ and other messaging systems
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.3")
+        asset: plumber-{{.OS}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.6.1")
+        asset: plumber-{{.OS}}
+        format: raw
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: plumber-{{.OS}}
+        format: raw
+        overrides:
+          - goos: darwin
+            goarch: arm64
+            asset: plumber-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

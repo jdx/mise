@@ -150,6 +150,7 @@ impl Upgrade {
         }
 
         let opts = InstallOptions {
+            reason: "upgrade".to_string(),
             // TODO: can we remove this without breaking e2e/cli/test_upgrade? it may be causing tools to re-install
             force: true,
             jobs: self.jobs,

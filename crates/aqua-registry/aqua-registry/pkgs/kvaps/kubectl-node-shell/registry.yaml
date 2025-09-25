@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_content
+    repo_owner: kvaps
+    repo_name: kubectl-node-shell
+    path: kubectl-node_shell
+    description: Exec into node via kubectl
+    files:
+      - name: kubectl-node_shell

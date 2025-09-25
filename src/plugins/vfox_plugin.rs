@@ -130,13 +130,16 @@ impl Plugin for VfoxPlugin {
         _config: &Arc<Config>,
         mpr: &MultiProgressReport,
         _force: bool,
+        dry_run: bool,
     ) -> Result<()> {
         if !self.plugin_path.exists() {
             let url = self.get_repo_url()?;
             trace!("Cloning vfox plugin: {url}");
-            let pr = mpr.add(&format!("clone vfox plugin {url}"));
-            self.repo()
-                .clone(url.as_str(), CloneOptions::default().pr(&pr))?;
+            let pr = mpr.add_with_options(&format!("clone vfox plugin {url}"), dry_run);
+            if !dry_run {
+                self.repo()
+                    .clone(url.as_str(), CloneOptions::default().pr(&pr))?;
+            }
         }
         Ok(())
     }

@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: optiv
+    repo_name: Mangle
+    description: Mangle is a tool that manipulates aspects of compiled executables (.exe or DLL) to avoid detection from EDRs
+    files:
+      - name: mangle
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: Mangle_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: Mangle_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

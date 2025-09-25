@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    name: golang/tools/stringer
+    path: golang.org/x/tools/cmd/stringer
+    repo_owner: golang
+    repo_name: tools
+    description: Stringer is a tool to automate the creation of methods that satisfy the fmt.Stringer interface
+    link: https://pkg.go.dev/golang.org/x/tools/cmd/stringer
+    version_source: github_tag
+    version_filter: not (Version startsWith "gopls/")
+    files:
+      - name: stringer

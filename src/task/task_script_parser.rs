@@ -11,6 +11,13 @@ use std::iter::once;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+type TeraSpecParsingResult = (
+    tera::Tera,
+    Arc<Mutex<HashMap<String, usize>>>,
+    Arc<Mutex<Vec<usage::SpecArg>>>,
+    Arc<Mutex<Vec<usage::SpecFlag>>>,
+);
+
 pub struct TaskScriptParser {
     dir: Option<PathBuf>,
 }
@@ -24,14 +31,87 @@ impl TaskScriptParser {
         get_tera(self.dir.as_deref())
     }
 
-    fn setup_tera_for_spec_parsing(
-        &self,
-    ) -> (
-        tera::Tera,
-        Arc<Mutex<HashMap<String, usize>>>,
-        Arc<Mutex<Vec<usage::SpecArg>>>,
-        Arc<Mutex<Vec<usage::SpecFlag>>>,
-    ) {
+    fn render_script_with_context(
+        tera: &mut tera::Tera,
+        script: &str,
+        ctx: &tera::Context,
+    ) -> Result<String> {
+        tera.render_str(script.trim(), ctx)
+            .with_context(|| format!("Failed to render task script: {}", script))
+    }
+
+    // Helper functions for tera error handling
+    fn expect_string(value: &tera::Value, param_name: &str) -> tera::Result<String> {
+        value.as_str().map(|s| s.to_string()).ok_or_else(|| {
+            tera::Error::msg(format!(
+                "expected string for '{}', got {:?}",
+                param_name, value
+            ))
+        })
+    }
+
+    fn expect_opt_string(
+        value: Option<&tera::Value>,
+        param_name: &str,
+    ) -> tera::Result<Option<String>> {
+        value
+            .map(|v| Self::expect_string(v, param_name))
+            .transpose()
+    }
+
+    fn expect_opt_bool(
+        value: Option<&tera::Value>,
+        param_name: &str,
+    ) -> tera::Result<Option<bool>> {
+        value.map(|v| Self::expect_bool(v, param_name)).transpose()
+    }
+
+    fn expect_bool(value: &tera::Value, param_name: &str) -> tera::Result<bool> {
+        value.as_bool().ok_or_else(|| {
+            tera::Error::msg(format!(
+                "expected boolean for '{}', got {:?}",
+                param_name, value
+            ))
+        })
+    }
+
+    fn expect_i64(value: &tera::Value, param_name: &str) -> tera::Result<i64> {
+        value.as_i64().ok_or_else(|| {
+            tera::Error::msg(format!(
+                "expected integer for '{}', got {:?}",
+                param_name, value
+            ))
+        })
+    }
+
+    fn expect_opt_i64(value: Option<&tera::Value>, param_name: &str) -> tera::Result<Option<i64>> {
+        value.map(|v| Self::expect_i64(v, param_name)).transpose()
+    }
+
+    fn expect_array<'a>(
+        value: &'a tera::Value,
+        param_name: &str,
+    ) -> tera::Result<&'a Vec<tera::Value>> {
+        value.as_array().ok_or_else(|| {
+            tera::Error::msg(format!(
+                "expected array for '{}', got {:?}",
+                param_name, value
+            ))
+        })
+    }
+
+    fn expect_opt_array<'a>(
+        value: Option<&'a tera::Value>,
+        param_name: &str,
+    ) -> tera::Result<Option<&'a Vec<tera::Value>>> {
+        value.map(|v| Self::expect_array(v, param_name)).transpose()
+    }
+
+    fn lock_error(e: impl std::fmt::Display) -> tera::Error {
+        tera::Error::msg(format!("failed to lock: {}", e))
+    }
+
+    fn setup_tera_for_spec_parsing(&self) -> TeraSpecParsingResult {
         let mut tera = self.get_tera();
         let arg_order = Arc::new(Mutex::new(HashMap::new()));
         let input_args = Arc::new(Mutex::new(vec![]));
@@ -43,52 +123,68 @@ impl TaskScriptParser {
             let input_args = input_args.clone();
             let arg_order = arg_order.clone();
             move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
-                let i = args
-                    .get("i")
-                    .map(|i| i.as_i64().unwrap() as usize)
-                    .unwrap_or_else(|| input_args.lock().unwrap().len());
-                let required = args
-                    .get("required")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(true);
-                let var = args
-                    .get("var")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(false);
-                let name = args
-                    .get("name")
-                    .map(|n| n.as_str().unwrap().to_string())
-                    .unwrap_or(i.to_string());
-                let mut arg_order = arg_order.lock().unwrap();
+                let i = Self::expect_i64(
+                    args.get("i").unwrap_or(&tera::Value::from(
+                        input_args.lock().map_err(Self::lock_error)?.len(),
+                    )),
+                    "i",
+                )? as usize;
+
+                let required =
+                    Self::expect_opt_bool(args.get("required"), "required")?.unwrap_or(true);
+                let var = Self::expect_opt_bool(args.get("var"), "var")?.unwrap_or(false);
+                let name =
+                    Self::expect_opt_string(args.get("name"), "name")?.unwrap_or(i.to_string());
+
+                let mut arg_order = arg_order.lock().map_err(Self::lock_error)?;
+
                 if arg_order.contains_key(&name) {
                     trace!("already seen {name}");
                     return Ok(tera::Value::Null);
                 }
                 arg_order.insert(name.clone(), i);
-                let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
-                let help = args.get("help").map(|r| r.to_string());
-                let help_long = args.get("help_long").map(|r| r.to_string());
-                let help_md = args.get("help_md").map(|r| r.to_string());
-                let var_min = args.get("var_min").map(|r| r.as_i64().unwrap() as usize);
-                let var_max = args.get("var_max").map(|r| r.as_i64().unwrap() as usize);
-                let hide = args
-                    .get("hide")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(false);
-                let default = args.get("default").map(|d| d.as_str().unwrap().to_string());
-                let choices = args.get("choices").map(|c| {
-                    let choices = c
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|c| c.as_str().unwrap().to_string())
-                        .collect();
-                    usage::SpecChoices { choices }
-                });
+
+                let usage =
+                    Self::expect_opt_string(args.get("usage"), "usage")?.unwrap_or_default();
+                let help = Self::expect_opt_string(args.get("help"), "help")?;
+                let help_long = Self::expect_opt_string(args.get("help_long"), "help_long")?;
+                let help_md = Self::expect_opt_string(args.get("help_md"), "help_md")?;
+
+                let var_min =
+                    Self::expect_opt_i64(args.get("var_min"), "var_min")?.map(|v| v as usize);
+                let var_max =
+                    Self::expect_opt_i64(args.get("var_max"), "var_max")?.map(|v| v as usize);
+
+                let hide = Self::expect_opt_bool(args.get("hide"), "hide")?.unwrap_or(false);
+
+                let default = Self::expect_opt_string(args.get("default"), "default")?;
+
+                let choices = Self::expect_opt_array(args.get("choices"), "choices")?
+                    .map(|array| {
+                        tera::Result::Ok(usage::SpecChoices {
+                            choices: array
+                                .iter()
+                                .map(|v| Self::expect_string(v, "choice"))
+                                .collect::<Result<Vec<String>, tera::Error>>()?,
+                        })
+                    })
+                    .transpose()?;
+
+                let help_first_line = match &help {
+                    Some(h) => {
+                        if h.is_empty() {
+                            None
+                        } else {
+                            h.lines().next().map(|line| line.to_string())
+                        }
+                    }
+                    None => None,
+                };
+
                 let mut arg = usage::SpecArg {
                     name: name.clone(),
                     usage,
-                    help_first_line: help.clone().map(|h| h.lines().next().unwrap().to_string()),
+                    help_first_line,
                     help,
                     help_long,
                     help_md,
@@ -102,7 +198,9 @@ impl TaskScriptParser {
                     ..Default::default()
                 };
                 arg.usage = arg.usage();
-                input_args.lock().unwrap().push(arg);
+
+                input_args.lock().map_err(Self::lock_error)?.push(arg);
+
                 Ok(tera::Value::Null)
             }
         });
@@ -110,60 +208,73 @@ impl TaskScriptParser {
         tera.register_function("option", {
             let input_flags = input_flags.clone();
             move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
-                let name = args
-                    .get("name")
-                    .map(|n| n.as_str().unwrap().to_string())
-                    .unwrap();
+                let name = match args.get("name") {
+                    Some(n) => Self::expect_string(n, "name")?,
+                    None => return Err(tera::Error::msg("missing required 'name' parameter")),
+                };
+
                 let short = args
                     .get("short")
                     .map(|s| s.to_string().chars().collect())
                     .unwrap_or_default();
-                let long = args
-                    .get("long")
-                    .map(|l| {
-                        l.as_str()
-                            .unwrap()
-                            .split_whitespace()
-                            .map(|s| s.to_string())
-                            .collect()
-                    })
-                    .unwrap_or_else(|| vec![name.clone()]);
-                let default = args.get("default").map(|d| d.as_str().unwrap().to_string());
-                let var = args
-                    .get("var")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(false);
-                let deprecated = args.get("deprecated").map(|r| r.to_string());
-                let help = args.get("help").map(|r| r.to_string());
-                let help_long = args.get("help_long").map(|r| r.to_string());
-                let help_md = args.get("help_md").map(|r| r.to_string());
-                let hide = args
-                    .get("hide")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(false);
-                let global = args
-                    .get("global")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(false);
-                let count = args
-                    .get("count")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(false);
-                let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
-                let required = args
-                    .get("required")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(false);
-                let negate = args.get("negate").map(|r| r.to_string());
-                let choices = args.get("choices").map(|c| {
-                    let choices = c
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .map(|c| c.as_str().unwrap().to_string())
-                        .collect();
-                    usage::SpecChoices { choices }
-                });
+
+                let long = match args.get("long") {
+                    Some(l) => {
+                        let s = Self::expect_string(l, "long")?;
+                        s.split_whitespace().map(|s| s.to_string()).collect()
+                    }
+                    None => vec![name.clone()],
+                };
+
+                let default = Self::expect_opt_string(args.get("default"), "default")?;
+
+                let var = Self::expect_opt_bool(args.get("var"), "var")?.unwrap_or(false);
+
+                let deprecated = Self::expect_opt_string(args.get("deprecated"), "deprecated")?;
+                let help = Self::expect_opt_string(args.get("help"), "help")?;
+                let help_long = Self::expect_opt_string(args.get("help_long"), "help_long")?;
+                let help_md = Self::expect_opt_string(args.get("help_md"), "help_md")?;
+
+                let hide = Self::expect_opt_bool(args.get("hide"), "hide")?.unwrap_or(false);
+
+                let global = Self::expect_opt_bool(args.get("global"), "global")?.unwrap_or(false);
+
+                let count = Self::expect_opt_bool(args.get("count"), "count")?.unwrap_or(false);
+
+                let usage =
+                    Self::expect_opt_string(args.get("usage"), "usage")?.unwrap_or_default();
+
+                let required =
+                    Self::expect_opt_bool(args.get("required"), "required")?.unwrap_or(false);
+
+                let negate = Self::expect_opt_string(args.get("negate"), "negate")?;
+
+                let choices = match args.get("choices") {
+                    Some(c) => {
+                        let array = Self::expect_array(c, "choices")?;
+                        let mut choices_vec = Vec::new();
+                        for choice in array {
+                            let s = Self::expect_string(choice, "choice")?;
+                            choices_vec.push(s);
+                        }
+                        Some(usage::SpecChoices {
+                            choices: choices_vec,
+                        })
+                    }
+                    None => None,
+                };
+
+                let help_first_line = match &help {
+                    Some(h) => {
+                        if h.is_empty() {
+                            None
+                        } else {
+                            h.lines().next().map(|line| line.to_string())
+                        }
+                    }
+                    None => None,
+                };
+
                 let mut flag = usage::SpecFlag {
                     name: name.clone(),
                     short,
@@ -174,7 +285,7 @@ impl TaskScriptParser {
                     global,
                     count,
                     deprecated,
-                    help_first_line: help.clone().map(|h| h.lines().next().unwrap().to_string()),
+                    help_first_line,
                     help,
                     usage,
                     help_long,
@@ -189,7 +300,9 @@ impl TaskScriptParser {
                     }),
                 };
                 flag.usage = flag.usage();
-                input_flags.lock().unwrap().push(flag);
+
+                input_flags.lock().map_err(Self::lock_error)?.push(flag);
+
                 Ok(tera::Value::Null)
             }
         });
@@ -197,51 +310,58 @@ impl TaskScriptParser {
         tera.register_function("flag", {
             let input_flags = input_flags.clone();
             move |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
-                let name = args
-                    .get("name")
-                    .map(|n| n.as_str().unwrap().to_string())
-                    .unwrap();
+                let name = match args.get("name") {
+                    Some(n) => Self::expect_string(n, "name")?,
+                    None => return Err(tera::Error::msg("missing required 'name' parameter")),
+                };
+
                 let short = args
                     .get("short")
                     .map(|s| s.to_string().chars().collect())
                     .unwrap_or_default();
-                let long = args
-                    .get("long")
-                    .map(|l| {
-                        l.as_str()
-                            .unwrap()
-                            .split_whitespace()
-                            .map(|s| s.to_string())
-                            .collect()
-                    })
-                    .unwrap_or_else(|| vec![name.clone()]);
-                let default = args.get("default").map(|d| d.as_str().unwrap().to_string());
-                let var = args
-                    .get("var")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(false);
-                let deprecated = args.get("deprecated").map(|r| r.to_string());
-                let help = args.get("help").map(|r| r.to_string());
-                let help_long = args.get("help_long").map(|r| r.to_string());
-                let help_md = args.get("help_md").map(|r| r.to_string());
-                let hide = args
-                    .get("hide")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(false);
-                let global = args
-                    .get("global")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(false);
-                let count = args
-                    .get("count")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(false);
-                let usage = args.get("usage").map(|r| r.to_string()).unwrap_or_default();
-                let required = args
-                    .get("required")
-                    .map(|r| r.as_bool().unwrap())
-                    .unwrap_or(false);
-                let negate = args.get("negate").map(|r| r.to_string());
+
+                let long = match args.get("long") {
+                    Some(l) => {
+                        let s = Self::expect_string(l, "long")?;
+                        s.split_whitespace().map(|s| s.to_string()).collect()
+                    }
+                    None => vec![name.clone()],
+                };
+
+                let default = Self::expect_opt_string(args.get("default"), "default")?;
+
+                let var = Self::expect_opt_bool(args.get("var"), "var")?.unwrap_or(false);
+
+                let deprecated = Self::expect_opt_string(args.get("deprecated"), "deprecated")?;
+                let help = Self::expect_opt_string(args.get("help"), "help")?;
+                let help_long = Self::expect_opt_string(args.get("help_long"), "help_long")?;
+                let help_md = Self::expect_opt_string(args.get("help_md"), "help_md")?;
+
+                let hide = Self::expect_opt_bool(args.get("hide"), "hide")?.unwrap_or(false);
+
+                let global = Self::expect_opt_bool(args.get("global"), "global")?.unwrap_or(false);
+
+                let count = Self::expect_opt_bool(args.get("count"), "count")?.unwrap_or(false);
+
+                let usage =
+                    Self::expect_opt_string(args.get("usage"), "usage")?.unwrap_or_default();
+
+                let required =
+                    Self::expect_opt_bool(args.get("required"), "required")?.unwrap_or(false);
+
+                let negate = Self::expect_opt_string(args.get("negate"), "negate")?;
+
+                let help_first_line = match &help {
+                    Some(h) => {
+                        if h.is_empty() {
+                            None
+                        } else {
+                            h.lines().next().map(|line| line.to_string())
+                        }
+                    }
+                    None => None,
+                };
+
                 let mut flag = usage::SpecFlag {
                     name: name.clone(),
                     short,
@@ -252,7 +372,7 @@ impl TaskScriptParser {
                     global,
                     count,
                     deprecated,
-                    help_first_line: help.clone().map(|h| h.lines().next().unwrap().to_string()),
+                    help_first_line,
                     help,
                     usage,
                     help_long,
@@ -262,7 +382,9 @@ impl TaskScriptParser {
                     arg: None,
                 };
                 flag.usage = flag.usage();
-                input_flags.lock().unwrap().push(flag);
+
+                input_flags.lock().map_err(Self::lock_error)?.push(flag);
+
                 Ok(tera::Value::Null)
             }
         });
@@ -281,8 +403,7 @@ impl TaskScriptParser {
         // Don't insert env for spec-only parsing to avoid expensive environment rendering
         // Render scripts to trigger spec collection via Tera template functions (arg/option/flag), but discard the results
         for script in scripts {
-            tera.render_str(script.trim(), &tera_ctx)
-                .wrap_err_with(|| script.to_string())?;
+            Self::render_script_with_context(&mut tera, script, &tera_ctx)?;
         }
         let mut cmd = usage::SpecCommand::default();
         // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
@@ -320,10 +441,7 @@ impl TaskScriptParser {
         tera_ctx.insert("env", &env);
         let scripts = scripts
             .iter()
-            .map(|s| {
-                tera.render_str(s.trim(), &tera_ctx)
-                    .wrap_err_with(|| s.to_string())
-            })
+            .map(|s| Self::render_script_with_context(&mut tera, s, &tera_ctx))
             .collect::<Result<Vec<String>>>()?;
         let mut cmd = usage::SpecCommand::default();
         // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
@@ -443,10 +561,9 @@ impl TaskScriptParser {
             tera.register_function("flag", flag_func(false.to_string()));
             let mut tera_ctx = task.tera_ctx(config).await?;
             tera_ctx.insert("env", &env);
-            out.push(
-                tera.render_str(script, &tera_ctx)
-                    .wrap_err_with(|| script.clone())?,
-            );
+            out.push(Self::render_script_with_context(
+                &mut tera, script, &tera_ctx,
+            )?);
         }
         Ok(out)
     }
@@ -662,5 +779,48 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo TRUE"]);
+    }
+
+    #[tokio::test]
+    async fn test_task_parse_empty_help() {
+        let config = Config::get().await.unwrap();
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+
+        // Test with empty help string for arg
+        let scripts = vec!["echo {{ arg(name='foo', help='') }}".to_string()];
+        let (parsed_scripts, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo "]);
+        let arg = spec.cmd.args.first().unwrap();
+        assert_eq!(arg.name, "foo");
+        assert_eq!(arg.help, Some("".to_string()));
+        assert_eq!(arg.help_first_line, None);
+
+        // Test with empty help string for option
+        let scripts = vec!["echo {{ option(name='bar', help='') }}".to_string()];
+        let (parsed_scripts, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo "]);
+        let option = spec.cmd.flags.iter().find(|f| &f.name == "bar").unwrap();
+        assert_eq!(&option.name, "bar");
+        assert_eq!(option.help, Some("".to_string()));
+        assert_eq!(option.help_first_line, None);
+
+        // Test with empty help string for flag
+        let scripts = vec!["echo {{ flag(name='baz', help='') }}".to_string()];
+        let (parsed_scripts, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo "]);
+        let flag = spec.cmd.flags.iter().find(|f| &f.name == "baz").unwrap();
+        assert_eq!(&flag.name, "baz");
+        assert_eq!(flag.help, Some("".to_string()));
+        assert_eq!(flag.help_first_line, None);
     }
 }

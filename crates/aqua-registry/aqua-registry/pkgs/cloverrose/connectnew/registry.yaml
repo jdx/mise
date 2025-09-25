@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloverrose
+    repo_name: connectnew
+    description: |
+      Go linter checking if &connect.Request or &connect.Response are used.
+      Instead connect.NewRequest or connect.NewResponse should be used
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: connectnew_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: connectnew
+            src: connectnew_{{.OS}}_{{.Arch}}/connectnew
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: connectnew_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

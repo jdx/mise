@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_content
+    repo_owner: jamesob
+    repo_name: desk
+    path: desk
+    description: A lightweight workspace manager for the shell

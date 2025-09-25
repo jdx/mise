@@ -1,9 +1,9 @@
 [workspace]
-members = ["crates/vfox"]
+members = ["crates/vfox", "crates/aqua-registry"]
 
 [package]
 name = "mise"
-version = "2025.8.4"
+version = "2025.9.19"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -27,7 +27,6 @@ include = [
   "/src/**/*.rs",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
-  "/aqua-registry/pkgs/**/registry.yaml",
 ]
 build = "build.rs"
 rust-version = "1.85"
@@ -55,6 +54,9 @@ opt-level = 3
 [dependencies]
 async-backtrace = "0.2"
 async-trait = "0.1"
+aws-lc-rs = { version = "1", optional = true, features = [
+  "bindgen",
+] } # TODO: this is only for armv7 currently
 base64 = "0.22"
 bzip2 = "0.6"
 calm_io = "0.1"
@@ -76,13 +78,11 @@ demand = "1"
 digest = "0.10.7"
 dotenvy = "0.15"
 duct = "0.13"
-either = { version = "1", features = ["serde"] }
 homedir = "0.3"
-# expr-lang = { path = "../expr-lang" }
-expr-lang = "0.3"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
+sigstore-verification = { version = "0.1", default-features = false }
 fslock = "0.2.1"
 fuzzy-matcher = "0.3"
 gix = { version = "<1", features = ["worktree-mutation"] }
@@ -92,7 +92,7 @@ heck = "0.5"
 humansize = "2"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
-indicatif = { version = "0.18", features = ["default", "improved_unicode"] }
+indicatif = { version = "0.18", features = ["improved_unicode"] }
 indoc = "2"
 itertools = "0.14"
 jiff = "0.2"
@@ -117,6 +117,8 @@ reqwest = { version = "0.12", default-features = false, features = [
   "http2",
   "macos-system-configuration",
 ] }
+rmcp = { version = "0.3", features = ["server", "transport-io", "schemars"] }
+rmcp-macros = "0.3"
 rmp-serde = "1"
 rops = { version = "0.1", default-features = false, features = [
   "aes-gcm",
@@ -149,15 +151,16 @@ thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 toml = { version = "0.8", features = ["parse"] }
 toml_edit = { version = "0.22", features = ["parse"] }
-ubi = { version = "0.7.1", default-features = false }
+ubi = { version = "0.7.3", default-features = false }
 url = "2"
 urlencoding = "2.1.3"
 usage-lib = { version = "2", features = ["clap", "docs"] }
 versions = { version = "6", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
+aqua-registry = { path = "crates/aqua-registry" }
 walkdir = "2"
 which = "7"
-xx = { version = "2", features = ["glob"] }
+xx = { version = "2", default-features = false, features = ["glob"] }
 xz2 = "0.1"
 zip = { version = "3", default-features = false, features = ["deflate"] }
 zstd = "0.13"
@@ -169,6 +172,7 @@ self_update = { version = "0.42", optional = true, default-features = false, fea
   "archive-tar",
   "compression-flate2",
   "signatures",
+  "rustls",
 ] }
 
 [target.'cfg(windows)'.dependencies]
@@ -176,6 +180,7 @@ self_update = { version = "0.42", optional = true, default-features = false, fea
   "archive-zip",
   "compression-zip-deflate",
   "signatures",
+  "rustls",
 ] }
 sevenz-rust = "0.6"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
@@ -186,6 +191,7 @@ cfg_aliases = "0.2"
 heck = "0.5"
 toml = "0.8"
 indexmap = "2"
+serde_yaml = "0.9"
 
 [dev-dependencies]
 ctor = "0.4"
@@ -197,23 +203,30 @@ test-log = "0.2"
 [features]
 default = ["native-tls", "vfox/vendored-lua", "self_update"]
 native-tls = [
-  "reqwest/native-tls",
-  "ubi/native-tls",
   "gix/blocking-http-transport-reqwest-native-tls",
+  "reqwest/native-tls",
+  "sigstore-verification/native-tls",
+  "ubi/native-tls",
   "vfox/native-tls",
+  "xx/native-tls",
 ]
 rustls = [
+  "gix/blocking-http-transport-reqwest-rust-tls",
   "reqwest/rustls-tls",
   "self_update/rustls",
+  "sigstore-verification/rustls",
   "ubi/rustls-tls",
-  "gix/blocking-http-transport-reqwest-rust-tls",
   "vfox/rustls",
+  "xx/rustls",
 ]
 rustls-native-roots = [
+  "gix/blocking-http-transport-reqwest-rust-tls",
   "reqwest/rustls-tls-native-roots",
   "self_update/rustls",
+  "sigstore-verification/rustls-native-roots",
   "ubi/rustls-tls-native-roots",
   "vfox/rustls-native-roots",
+  "xx/rustls-native-roots",
 ]
 
 [package.metadata.binstall]
@@ -230,7 +243,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ ar
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
 
 [package.metadata.cargo-machete]
-ignored = ["built", "openssl", "cfg_aliases"]
+ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl", "rmcp-macros"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = [

@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: shenwei356
+    repo_name: csvtk
+    asset: csvtk_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: A cross-platform, efficient and practical CSV/TSV toolkit in Golang
+    overrides:
+      - goos: windows
+        asset: csvtk_{{.OS}}_{{.Arch}}.exe.{{.Format}}
+    supported_envs:
+      - darwin
+      - linux
+      - amd64

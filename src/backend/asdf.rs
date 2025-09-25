@@ -387,6 +387,7 @@ impl Backend for AsdfBackend {
         ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<EnvMap> {
+        let total_start = std::time::Instant::now();
         if matches!(tv.request, ToolRequest::System { .. }) {
             return Ok(BTreeMap::new());
         }
@@ -395,11 +396,18 @@ impl Backend for AsdfBackend {
             // the second is to prevent infinite loops
             return Ok(BTreeMap::new());
         }
-        self.cache
+        let res = self
+            .cache
             .exec_env(config, self, tv, async || {
                 self.fetch_exec_env(config, ts, tv).await
             })
-            .await
+            .await;
+        trace!(
+            "exec_env cache.get_or_try_init_async for {} finished in {}ms",
+            self.name,
+            total_start.elapsed().as_millis()
+        );
+        res
     }
 }
 

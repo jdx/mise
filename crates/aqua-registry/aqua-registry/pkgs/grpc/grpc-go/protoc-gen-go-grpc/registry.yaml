@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: grpc/grpc-go/protoc-gen-go-grpc
+    type: github_release
+    repo_owner: grpc
+    repo_name: grpc-go
+    description: The Go language implementation of gRPC. HTTP/2 based RPC
+    version_prefix: cmd/protoc-gen-go-grpc/
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "cmd/protoc-gen-go-grpc/v1.0.0"
+        no_asset: true
+      - version_constraint: semver("<= 1.2.0")
+        asset: protoc-gen-go-grpc.{{.SemVer}}.{{.OS}}.{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: protoc-gen-go-grpc.{{.SemVer}}.{{.OS}}.{{.Arch}}.{{.Format}}
+        format: tar.gz

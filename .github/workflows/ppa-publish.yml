@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       distributions:
-        description: 'Ubuntu distributions to target (space-separated)'
+        description: "Ubuntu distributions to target (space-separated)"
         required: false
-        default: 'jammy noble'
+        default: "jammy noble"
         type: string
       use_serious_profile:
         description: 'Use the "serious" profile for optimized builds (LTO enabled)'
@@ -16,9 +16,9 @@ on:
         default: false
         type: boolean
       build_revision:
-        description: 'Build revision number (increment for packaging fixes of same version)'
+        description: "Build revision number (increment for packaging fixes of same version)"
         required: false
-        default: '1'
+        default: "1"
         type: string
 
 env:
@@ -29,18 +29,17 @@ jobs:
     runs-on: ubuntu-latest
     environment: ppa-publishing
     timeout-minutes: 45
-    
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
         with:
           fetch-depth: 0
-          submodules: true
 
       - name: Set up environment variables
         run: |
           VERSION=$(./scripts/get-version.sh | sed 's/^v//')
-          
+
           if [ "${{ github.event_name }}" = "release" ]; then
             DISTRIBUTIONS="jammy noble"
             BUILD_REVISION="1"
@@ -48,7 +47,7 @@ jobs:
             DISTRIBUTIONS="${{ inputs.distributions }}"
             BUILD_REVISION="${{ inputs.build_revision || '1' }}"
           fi
-          
+
           {
             echo "VERSION=${VERSION}"
             echo "DISTRIBUTIONS=${DISTRIBUTIONS}"
@@ -58,7 +57,7 @@ jobs:
             echo "MAINTAINER_EMAIL=${{ vars.PPA_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}"
             echo "PPA_NAME=${{ vars.PPA_NAME || 'ppa:jdxcode/mise' }}"
           } >> "$GITHUB_ENV"
-          
+
           # Set build profile
           if [ "${{ github.event_name }}" = "release" ] || [ "${{ inputs.use_serious_profile }}" = "true" ]; then
             echo "BUILD_PROFILE=serious" >> "$GITHUB_ENV"
@@ -115,7 +114,7 @@ jobs:
           # List available keys
           echo "Available GPG keys:"
           gpg --list-secret-keys --with-colons
-          
+
           # Get the key ID  
           KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^sec:' | cut -d: -f5 | head -1)
           if [ -n "$KEY_ID" ]; then
@@ -144,46 +143,37 @@ jobs:
 
       - name: Create source package for each distribution
         run: |
-          
-          # Store the original working directory
-          ORIG_DIR="$(pwd)"
-          
-          # Create original tarball with submodules (needed for aqua-registry)
+          # Create tarball
           git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar"
-          
-          # Add aqua-registry submodule to the tarball (required for build)
-          cd aqua-registry
-          git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/aqua-registry/" HEAD >> "../../${PACKAGE_NAME}_${VERSION}.orig.tar"
-          cd "$ORIG_DIR"
-          
+
           # Compress the tarball
           gzip "../${PACKAGE_NAME}_${VERSION}.orig.tar"
-          
+
           # Create working directory
           WORK_DIR="/tmp/ppa-build"
           mkdir -p "$WORK_DIR"
-          
+
           # Copy the tarball to the working directory (where debuild expects it to be in parent of source dir)
           cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "$WORK_DIR/${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
-          
+
           cd "$WORK_DIR"
-          
+
           # Extract source
           tar -xzf "${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
           cd "${PACKAGE_NAME}-${VERSION}"
-          
+
           # Create debian directory structure
           mkdir -p debian/source
-          
+
           echo "3.0 (quilt)" > debian/source/format
-          
+
           # Create debian/watch file for upstream monitoring
           cat > debian/watch << EOF
           version=4
           opts="filenamemangle=s/.+\/v?(\d\S+)\.tar\.gz/${PACKAGE_NAME}-\$1\.tar\.gz/" \\
           https://github.com/jdx/mise/tags .*/v?(\d\S+)\.tar\.gz
           EOF
-          
+
           # Create basic debian files
           cat > debian/control << EOF
           Source: ${PACKAGE_NAME}
@@ -195,7 +185,7 @@ jobs:
           Homepage: https://mise.jdx.dev
           Vcs-Git: https://github.com/jdx/mise.git
           Vcs-Browser: https://github.com/jdx/mise
-          
+
           Package: ${PACKAGE_NAME}
           Architecture: any
           Depends: \${shlibs:Depends}, \${misc:Depends}
@@ -204,18 +194,18 @@ jobs:
            environment variables, and tasks. It's a replacement for tools like nvm, rbenv,
            pyenv, etc. and works with any language.
           EOF
-          
+
           cat > debian/rules << 'EOF'
           #!/usr/bin/make -f
-          
+
           %:
           	dh $@
-          
+
           override_dh_auto_build:
           	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           	. ~/.cargo/env
           	cargo build --profile ${BUILD_PROFILE} --locked --bin mise
-          
+
           override_dh_auto_install:
           	mkdir -p debian/mise/usr/bin
           	cp target/${BUILD_PROFILE}/mise debian/mise/usr/bin/
@@ -229,22 +219,22 @@ jobs:
           	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
           	mkdir -p debian/mise/usr/lib/mise
           	touch debian/mise/usr/lib/mise/.disable-self-update
-          
+
           override_dh_auto_clean:
           	cargo clean || true
           EOF
-          
+
           chmod +x debian/rules
-          
+
           cat > debian/copyright << EOF
           Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
           Upstream-Name: ${PACKAGE_NAME}
           Source: https://github.com/jdx/mise
-          
+
           Files: *
           Copyright: 2023-2025 Jeff Dickey
           License: MIT
-          
+
           License: MIT
            Permission is hereby granted, free of charge, to any person obtaining a
            copy of this software and associated documentation files (the "Software"),
@@ -264,10 +254,10 @@ jobs:
            TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
            SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
           EOF
-          
+
           # Ensure original tarball is available for all builds
           cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz.backup"
-          
+
           # Build source packages for each distribution
           for DIST in ${DISTRIBUTIONS}; do
             echo "Building source package for $DIST"
@@ -281,9 +271,9 @@ jobs:
             # Create changelog
             cat > debian/changelog << EOF
           ${PACKAGE_NAME} (${DIST_VERSION}) ${DIST}; urgency=medium
-          
+
             * New upstream release ${VERSION}
-          
+
            -- ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>  $(date -R)
           EOF
             
@@ -300,14 +290,14 @@ jobs:
             # Clean for next distribution
             rm -f ../mise_"${DIST_VERSION}"*
           done
-          
+
           # Move original source tarball to packages directory (after all distributions are built)
           mv "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "/tmp/packages/" 2>/dev/null || true
 
       - name: Upload source packages to PPA
         run: |
           cd /tmp/packages
-          
+
           # Configure dput
           cat > ~/.dput.cf << EOF
           [mise-ppa]
@@ -317,7 +307,7 @@ jobs:
           login = anonymous
           allow_unsigned_uploads = 0
           EOF
-          
+
           # Upload each changes file
           for changes_file in *.changes; do
             echo "Uploading $changes_file to PPA..."

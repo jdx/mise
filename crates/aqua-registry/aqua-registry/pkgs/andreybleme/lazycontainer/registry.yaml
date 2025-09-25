@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: andreybleme
+    repo_name: lazycontainer
+    description: Fancy terminal UI for Apple Containers
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: lazycontainer_{{.OS}}_{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin

@@ -1,0 +1,123 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: yitsushi
+    repo_name: totp-cli
+    description: Authy/Google Authenticator like TOTP CLI tool written in Go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.5")
+        asset: totp-cli-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.1.3")
+        asset: totp-cli_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: totp-cli_{{.Version}}_{{.OS}}_{{.Arch}}_checksum.txt
+          algorithm: md5
+      - version_constraint: Version == "v1.1.4"
+        asset: totp-cli_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux/amd64
+        checksum:
+          type: github_release
+          asset: totp-cli_{{.Version}}_{{.OS}}_{{.Arch}}_checksum.txt
+          algorithm: md5
+      - version_constraint: semver("<= 1.1.9")
+        asset: totp-cli_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+        checksum:
+          type: github_release
+          asset: totp-cli_{{.Version}}_{{.OS}}_{{.Arch}}_checksum.txt
+          algorithm: md5
+      - version_constraint: Version == "v1.1.10"
+        asset: totp-cli_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux/amd64
+        checksum:
+          type: github_release
+          asset: totp-cli_{{.Version}}_{{.OS}}_{{.Arch}}_checksum.txt
+          algorithm: md5
+      - version_constraint: semver("<= 1.1.17")
+        asset: totp-cli-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+      - version_constraint: semver("<= 1.2.1")
+        no_asset: true
+      - version_constraint: semver("<= 1.8.5")
+        asset: totp-cli-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+      - version_constraint: Version == "v1.8.6"
+        asset: totp-cli_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: totp-cli_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: totp-cli_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: totp-cli_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

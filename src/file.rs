@@ -25,7 +25,7 @@ use zip::ZipArchive;
 #[cfg(windows)]
 use crate::config::Settings;
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env};
+use crate::{cmd, dirs, env};
 
 pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
     let path = path.as_ref();
@@ -731,17 +731,55 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     //     }
     // }
     create_dir_all(dest).wrap_err_with(err)?;
+
+    // Try to extract using the tar crate, detecting sparse files during extraction
+    let mut needs_system_tar = false;
     for entry in Archive::new(tar).entries().wrap_err_with(err)? {
         let mut entry = entry.wrap_err_with(err)?;
+
+        // Check if this is a GNU sparse file
+        if entry.header().entry_type().is_gnu_sparse() {
+            debug!("Detected GNU sparse file, falling back to system tar");
+            needs_system_tar = true;
+            // Clean up any partial extraction
+            remove_all(dest)?;
+            create_dir_all(dest)?;
+            break;
+        }
+
         trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
         entry.unpack_in(dest).wrap_err_with(err)?;
         if let Some(pr) = &opts.pr {
             pr.set_length(entry.raw_file_position());
         }
     }
-    // if let Some(pr) = &opts.pr {
-    //     pr.set_position(total);
-    // }
+
+    // Check for the GNUSparseFile.0 directory which indicates the tar crate
+    // incorrectly handled a sparse file
+    if !needs_system_tar {
+        let sparse_dir = dest.join("GNUSparseFile.0");
+        if sparse_dir.exists() && sparse_dir.is_dir() {
+            debug!("Found GNUSparseFile.0 directory, using system tar");
+            needs_system_tar = true;
+            // Clean up the bad extraction
+            remove_all(dest)?;
+            create_dir_all(dest)?;
+        }
+    }
+
+    if needs_system_tar {
+        // Use system tar for archives with problematic sparse files
+        // The tar crate doesn't properly handle certain GNU sparse formats
+        debug!("Using system tar for: {}", archive.display());
+
+        cmd!("tar", "-xf", archive, "-C", dest)
+            .run()
+            .wrap_err_with(|| {
+                format!("Failed to extract {} using system tar", archive.display())
+            })?;
+    }
+
+    // Always use our manual strip to ensure consistent behavior across backends
     strip_archive_path_components(dest, opts.strip_components).wrap_err_with(err)?;
     Ok(())
 }

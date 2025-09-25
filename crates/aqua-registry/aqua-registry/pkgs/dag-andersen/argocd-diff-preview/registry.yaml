@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dag-andersen
+    repo_name: argocd-diff-preview
+    description: Tool for rendering manifest changes on pull requests
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.0.6"
+        asset: argocd-diff-preview-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        overrides:
+          - goos: linux
+            asset: argocd-diff-preview-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.0.35")
+        asset: argocd-diff-preview-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: Darwin
+          linux: Linux
+        overrides:
+          - goos: darwin
+            asset: argocd-diff-preview-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: argocd-diff-preview-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: Darwin
+          linux: Linux
+        supported_envs:
+          - linux
+          - darwin

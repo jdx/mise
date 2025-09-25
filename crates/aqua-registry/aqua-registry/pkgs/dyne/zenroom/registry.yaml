@@ -1,0 +1,118 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dyne
+    repo_name: zenroom
+    description: Embedded no-code VM executing human-like language to manipulate data and process cryptographic operations
+    files:
+      - name: zenroom
+      - name: zencode-exec
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 3.10.0")
+        error_message: |
+          Please update to 3.10.1 or newer.
+      - version_constraint: semver("<= 4.27.1")
+        asset: zenroom
+        format: raw
+        files:
+          - name: zenroom
+        supported_envs:
+          - darwin
+          - linux/amd64
+          - windows
+        overrides:
+          - goos: darwin
+            asset: zenroom.command
+      - version_constraint: semver("<= 5.10.4")
+        asset: zenroom
+        format: raw
+        files:
+          - name: zenroom
+        supported_envs:
+          - darwin/arm64
+          - linux/amd64
+          - windows
+        overrides:
+          - goos: darwin
+            asset: zenroom.command
+      - version_constraint: semver("<= 5.25.0")
+        asset: zenroom-{{.OS}}.{{.Format}}
+        format: zip
+        files:
+          - name: zenroom
+            src: zenroom-{{.OS}}/zenroom
+          - name: zencode-exec
+            src: zenroom-{{.OS}}/zencode-exec
+        replacements:
+          darwin: osx
+          windows: win64
+        supported_envs:
+          - darwin/arm64
+          - linux/amd64
+          - windows
+        overrides:
+          - goos: darwin
+            files:
+              - name: zenroom
+                src: zenroom-{{.OS}}/zenroom.command
+              - name: zencode-exec
+                src: zenroom-{{.OS}}/zencode-exec.command
+      - version_constraint: semver("<= 5.25.3")
+        asset: zenroom-{{.OS}}.{{.Format}}
+        format: zip
+        files:
+          - name: zenroom
+            src: zenroom-{{.Arch}}-{{.OS}}/zenroom
+          - name: zencode-exec
+            src: zenroom-{{.Arch}}-{{.OS}}/zencode-exec
+        replacements:
+          darwin: osx
+          windows: win64
+          amd64: x86_64
+        supported_envs:
+          - darwin/arm64
+          - linux/amd64
+          - windows
+        overrides:
+          - goos: windows
+            files:
+              - name: zenroom
+                src: zenroom-{{.OS}}/zenroom
+              - name: zencode-exec
+                src: zenroom-{{.OS}}/zencode-exec
+          - goos: darwin
+            files:
+              - name: zenroom
+                src: zenroom-{{.OS}}/zenroom.command
+              - name: zencode-exec
+                src: zenroom-{{.OS}}/zencode-exec.command
+      - version_constraint: "true"
+        asset: zenroom-{{.OS}}.{{.Format}}
+        format: zip
+        files:
+          - name: zenroom
+            src: zenroom-{{.Arch}}-{{.OS}}/zenroom
+          - name: zencode-exec
+            src: zenroom-{{.Arch}}-{{.OS}}/zencode-exec
+        replacements:
+          darwin: osx
+          windows: win64
+          amd64: x86_64
+        supported_envs:
+          - darwin/arm64
+          - linux/amd64
+          - windows
+        overrides:
+          - goos: windows
+            files:
+              - name: zenroom
+                src: zenroom-{{.OS}}/zenroom
+              - name: zencode-exec
+                src: zenroom-{{.OS}}/zencode-exec
+          - goos: darwin
+            files:
+              - name: zenroom
+                src: zenroom-{{.OS}}/zenroom
+              - name: zencode-exec
+                src: zenroom-{{.OS}}/zencode-exec

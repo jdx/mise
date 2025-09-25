@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: zaghaghi
+    repo_name: openapi-tui
+    description: Terminal UI to list, browse and run APIs defined with openapi spec
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.5.0")
+        asset: openapi-tui-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: openapi-tui-{{.Version}}-{{.OS}}-{{.Arch}}.sha256
+          algorithm: sha256
+      - version_constraint: Version == "0.6.0"
+        asset: openapi-tui-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: openapi-tui-{{.Version}}-{{.OS}}-{{.Arch}}.sha256
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+      - version_constraint: "true"
+        asset: openapi-tui-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: openapi-tui-{{.Version}}-{{.OS}}-{{.Arch}}.sha256
+          algorithm: sha256

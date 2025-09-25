@@ -1,10 +1,10 @@
 # `mise alias unset`
 
-- **Usage**: `mise alias unset <PLUGIN> <ALIAS>`
+- **Usage**: `mise alias unset <PLUGIN> [ALIAS]`
 - **Aliases**: `rm`, `remove`, `delete`, `del`
 - **Source code**: [`src/cli/alias/unset.rs`](https://github.com/jdx/mise/blob/main/src/cli/alias/unset.rs)
 
-Clears an alias for a plugin
+Clears an alias for a backend/plugin
 
 This modifies the contents of ~/.config/mise/config.toml
 
@@ -12,14 +12,15 @@ This modifies the contents of ~/.config/mise/config.toml
 
 ### `<PLUGIN>`
 
-The plugin to remove the alias from
+The backend/plugin to remove the alias from
 
-### `<ALIAS>`
+### `[ALIAS]`
 
 The alias to remove
 
 Examples:
 
 ```
+mise alias unset maven
 mise alias unset node lts-jod
 ```

@@ -1,0 +1,148 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cli
+    repo_name: cli
+    description: GitHub’s official command line tool
+    files:
+      - name: gh
+        src: gh_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/gh
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.4.0")
+        asset: gh_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: raw
+            asset: gh_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+            checksum:
+              enabled: false
+        replacements:
+          darwin: macOS
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: gh_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.5.2")
+        asset: gh_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          darwin: macOS
+        supported_envs:
+          - linux/amd64
+          - darwin
+        checksum:
+          type: github_release
+          asset: gh_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.5.5")
+        asset: gh_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: gh
+                src: bin/gh.exe
+        replacements:
+          darwin: macOS
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: gh_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 2.20.0")
+        asset: gh_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: gh
+                src: bin/gh.exe
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: gh_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 2.23.0")
+        asset: gh_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: gh
+                src: bin/gh.exe
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: gh_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 2.27.0")
+        asset: gh_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: gh
+                src: bin/gh.exe
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: gh_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("< 2.50.0")
+        asset: gh_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: gh
+                src: bin/gh.exe
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: gh_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: gh_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: gh
+                src: bin/gh.exe
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: gh_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: cli/cli/.github/workflows/deployment.yml

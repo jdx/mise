@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: crates.io/skim
+    type: cargo
+    repo_owner: skim-rs
+    repo_name: skim
+    description: Fuzzy Finder in rust!
+    crate: skim
+    files:
+      - name: sk

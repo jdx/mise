@@ -104,6 +104,9 @@ impl SyncPython {
             };
             let dst = uv_versions_path.join(format!("cpython-{v}-{os}-{arch}"));
             if !dst.exists() {
+                if !uv_versions_path.exists() {
+                    file::create_dir_all(uv_versions_path)?;
+                }
                 // TODO: uv doesn't support symlinked dirs
                 // https://github.com/astral-sh/uv/blob/e65a273f1b6b7c3ab129d902e93adeda4da20636/crates/uv-python/src/managed.rs#L196
                 file::clone_dir(&src, &dst)?;

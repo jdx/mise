@@ -90,9 +90,22 @@ impl PythonPlugin {
             "Updating python-build in {}",
             self.python_build_path().display()
         );
-        let git = Git::new(self.python_build_path());
-        plugins::core::run_fetch_task_with_timeout(move || git.update(None))?;
-        Ok(())
+        let pyenv_path = self.python_build_path();
+        let git = Git::new(pyenv_path.clone());
+        match plugins::core::run_fetch_task_with_timeout(move || git.update(None)) {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                warn!(
+                    "failed to update python-build repo ({}), attempting self-repair by recloning",
+                    err
+                );
+                // The cached pyenv repo can get corrupted (e.g. unable to read sha1 file).
+                // Repair by removing the cache and performing a fresh clone.
+                file::remove_all(&pyenv_path)?;
+                // Safe to reinstall without a context; progress reporting is optional here.
+                self.install_python_build(None)
+            }
+        }
     }
 
     async fn fetch_precompiled_remote_versions(

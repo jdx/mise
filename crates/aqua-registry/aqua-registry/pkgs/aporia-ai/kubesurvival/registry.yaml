@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: aporia-ai
+    repo_name: kubesurvival
+    description: Significantly reduce Kubernetes costs by finding the cheapest machine types that can run your workloads
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: KubeSurvival_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: kubesurvival_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

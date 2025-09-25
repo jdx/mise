@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ipinfo
+    repo_name: cli
+    description: Official Command Line Interface for the IPinfo API (IP geolocation and other types of IP data)
+    version_filter: Version startsWith "ipinfo-"
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: ipinfo_{{trimPrefix "ipinfo-" .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+        files:
+          - name: ipinfo
+            src: ipinfo_{{trimPrefix "ipinfo-" .Version}}_{{.OS}}_{{.Arch}}.exe
+    files:
+      - name: ipinfo
+        src: ipinfo_{{trimPrefix "ipinfo-" .Version}}_{{.OS}}_{{.Arch}}

@@ -41,7 +41,7 @@ depends = ["lint", "build"]
 run = "npm test"
 ```
 
-#### `depends_post` - Cleanup Tasks  
+#### `depends_post` - Cleanup Tasks
 
 Tasks that run after this task completes (whether successful or failed):
 
@@ -94,7 +94,7 @@ depends = ["lint"]
 run = "npm run test:unit"
 
 [tasks.test-integration]
-depends = ["lint"] 
+depends = ["lint"]
 run = "npm run test:integration"
 
 [tasks.build]
@@ -118,7 +118,7 @@ Time →
 mise discovers tasks from multiple sources in this order:
 
 1. **File tasks**: Executable files in task directories
-2. **TOML tasks**: Defined in `mise.toml` files  
+2. **TOML tasks**: Defined in `mise.toml` files
 3. **Inherited tasks**: From parent directories
 
 ### Task Resolution Process
@@ -185,7 +185,7 @@ Reference tasks from other directories:
 [tasks.deploy-all]
 depends = [
   "../api:build",
-  "../frontend:build", 
+  "../frontend:build",
   "deploy-infrastructure"
 ]
 run = "echo 'All services deployed'"

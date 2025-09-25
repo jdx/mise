@@ -1,15 +1,15 @@
 # `mise test-tool`
 
-- **Usage**: `mise test-tool [FLAGS] [TOOL]`
+- **Usage**: `mise test-tool [FLAGS] [TOOLS]…`
 - **Source code**: [`src/cli/test_tool.rs`](https://github.com/jdx/mise/blob/main/src/cli/test_tool.rs)
 
 Test a tool installs and executes
 
 ## Arguments
 
-### `[TOOL]`
+### `[TOOLS]…`
 
-Tool name to test
+Tool(s) to test
 
 ## Flags
 

@@ -22,6 +22,10 @@ Tool(s) to install e.g.: node@20
 
 ## Flags
 
+### `-n --dry-run`
+
+Show what would be installed without actually installing
+
 ### `-f --force`
 
 Force reinstall even if already installed

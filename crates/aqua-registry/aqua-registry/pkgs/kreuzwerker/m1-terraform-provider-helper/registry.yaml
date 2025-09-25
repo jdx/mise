@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kreuzwerker
+    repo_name: m1-terraform-provider-helper
+    description: CLI to support with downloading and compiling terraform providers for Mac with M1 chip
+    supported_envs:
+      - darwin
+      - linux
+    asset: m1-terraform-provider-helper_{{.Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    replacements:
+      darwin: Darwin
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

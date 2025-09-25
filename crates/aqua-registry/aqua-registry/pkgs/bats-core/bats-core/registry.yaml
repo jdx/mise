@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_archive
+    repo_owner: bats-core
+    repo_name: bats-core
+    description: Bash Automated Testing System
+    supported_envs:
+      - darwin
+      - linux
+    files:
+      - name: bats
+        src: bats-core-{{trimV .Version}}/bin/bats

@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: fwdcloudsec
+    repo_name: granted
+    aliases:
+      - name: common-fate/granted
+    description: The easiest way to access your cloud
+    url: https://releases.commonfate.io/granted/{{.Version}}/granted_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: granted
+      - name: assume
+      - name: assumego
+    replacements:
+      amd64: x86_64
+    overrides:
+      - goos: windows
+        format: zip
+      - goos: darwin
+        files:
+          - name: granted
+          - name: assume
+          - name: assumego
+            src: granted
+            link: assumego

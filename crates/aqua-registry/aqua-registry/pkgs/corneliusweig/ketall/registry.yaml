@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: corneliusweig
+    repo_name: ketall
+    description: Like `kubectl get all`, but get really all resources
+    supported_envs:
+      - darwin
+      - amd64
+    files:
+      - name: ketall
+        src: ketall-{{.Arch}}-{{.OS}}
+      - name: kubectl-get_all
+        src: ketall-{{.Arch}}-{{.OS}}
+    asset: ketall-{{.Arch}}-{{.OS}}.tar.gz
+    overrides:
+      - goos: windows
+        asset: ketall-amd64-windows.zip
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloudspannerecosystem
+    repo_name: yo
+    asset: yo-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: yo is a command-line tool to generate Go code for Google Cloud Spanner
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: yo
+        src: yo-{{trimV .Version}}-{{.OS}}-{{.Arch}}/yo
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

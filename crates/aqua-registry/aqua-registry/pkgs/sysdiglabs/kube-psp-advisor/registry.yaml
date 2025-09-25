@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sysdiglabs
+    repo_name: kube-psp-advisor
+    description: Help building an adaptive and fine-grained pod security policy
+    supported_envs:
+      - darwin
+      - linux/amd64
+    asset: kube-psp-advisor_{{.Version}}_{{.OS}}_amd64.tar.gz
+    files:
+      - name: kubectl-advise_psp
+        src: kubectl-advise-psp
+      - name: kube-psp-advisor
+        src: kubectl-advise-psp
+    checksum:
+      type: github_release
+      asset: kube-psp-advisor_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

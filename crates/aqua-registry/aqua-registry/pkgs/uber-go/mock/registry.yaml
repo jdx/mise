@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: uber-go
+    repo_name: mock
+    description: GoMock is a mocking framework for the Go programming language
+    path: go.uber.org/mock/mockgen
+    files:
+      - name: mockgen

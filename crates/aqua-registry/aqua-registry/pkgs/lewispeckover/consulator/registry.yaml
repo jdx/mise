@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: lewispeckover
+    repo_name: consulator
+    description: Import and synchronize your Consul KV data from JSON and YAML
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: consulator_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64

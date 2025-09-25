@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: docker
+    repo_name: buildx
+    description: Docker CLI plugin for extended build capabilities with BuildKit
+    files:
+      - name: docker-cli-plugin-docker-buildx
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.5.0-rc1")
+        asset: buildx-{{.Version}}.{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.5.1")
+        asset: buildx-{{.Version}}.{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.6.3")
+        asset: buildx-{{.Version}}.{{.OS}}-{{.Arch}}
+        format: raw
+      - version_constraint: semver("<= 0.10.0-rc1")
+        asset: buildx-{{.Version}}.{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            checksum:
+              enabled: false # https://github.com/docker/buildx/issues/945
+      - version_constraint: "true"
+        asset: buildx-{{.Version}}.{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            checksum:
+              enabled: false # https://github.com/docker/buildx/issues/945

@@ -1,9 +1,8 @@
-use crate::config::config_file::{config_root, trust_check};
+use crate::config::config_file::trust_check;
 use crate::dirs;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::path_env::PathEnv;
 use crate::tera::{get_tera, tera_exec};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
@@ -22,9 +21,11 @@ mod path;
 mod source;
 mod venv;
 
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EnvDirectiveOptions {
+    #[serde(default)]
     pub(crate) tools: bool,
+    #[serde(default)]
     pub(crate) redact: bool,
 }
 
@@ -122,6 +123,7 @@ pub struct EnvResults {
     pub env_paths: Vec<PathBuf>,
     pub env_scripts: Vec<PathBuf>,
     pub redactions: Vec<String>,
+    pub tool_add_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -163,6 +165,7 @@ impl EnvResults {
             env_paths: Vec::new(),
             env_scripts: Vec::new(),
             redactions: Vec::new(),
+            tool_add_paths: Vec::new(),
         };
         let normalize_path = |config_root: &Path, p: PathBuf| {
             let p = p.strip_prefix("./").unwrap_or(&p);
@@ -216,7 +219,7 @@ impl EnvResults {
             //     &directive,
             //     &source
             // );
-            let config_root = config_root(&source);
+            let config_root = crate::config::config_file::config_root::config_root(&source);
             ctx.insert("cwd", &*dirs::CWD);
             ctx.insert("config_root", &config_root);
             let env_vars = env
@@ -260,14 +263,8 @@ impl EnvResults {
                 EnvDirective::Path(input_str, _opts) => {
                     let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str).await?;
                     paths.push((path.clone(), source.clone()));
-                    let env_path = env.get(&*env::PATH_KEY).cloned().unwrap_or_default().0;
-                    let mut env_path: PathEnv = env_path.parse()?;
-                    env_path.add(path);
-                    // Use the directive source for PATH values so they get included in env_results
-                    env.insert(
-                        env::PATH_KEY.to_string(),
-                        (env_path.to_string(), Some(source.clone())),
-                    );
+                    // Don't modify PATH in env - just add to env_paths
+                    // This allows consumers to control PATH ordering
                 }
                 EnvDirective::File(input, _opts) => {
                     let files = Self::file(
@@ -365,22 +362,21 @@ impl EnvResults {
         // trace!("resolve: paths: {:#?}", &paths);
         // trace!("resolve: ctx.env: {:#?}", &ctx.get("env"));
         for (source, paths) in &paths.iter().chunk_by(|(_, source)| source) {
-            let config_root = source
-                .parent()
-                .map(Path::to_path_buf)
-                .or_else(|| dirs::CWD.clone())
-                .unwrap_or_default();
+            // Use the computed config_root (project root for nested configs) for path resolution
+            // to be consistent with other env directives like _.source and _.file
+            let config_root = crate::config::config_file::config_root::config_root(source);
             let paths = paths.map(|(p, _)| p).collect_vec();
-            let paths = paths
+            let mut paths = paths
                 .iter()
                 .rev()
                 .flat_map(|path| env::split_paths(path))
                 .map(|s| normalize_path(&config_root, s))
                 .collect::<Vec<_>>();
-            r.env_paths.extend(paths);
+            // r.env_paths is already reversed and paths should prepend r.env_paths
+            paths.reverse();
+            paths.extend(r.env_paths);
+            r.env_paths = paths;
         }
-
-        r.env_paths.reverse();
 
         Ok(r)
     }
@@ -409,6 +405,7 @@ impl EnvResults {
             && self.env_files.is_empty()
             && self.env_paths.is_empty()
             && self.env_scripts.is_empty()
+            && self.tool_add_paths.is_empty()
     }
 }
 
@@ -432,6 +429,9 @@ impl Debug for EnvResults {
         }
         if !self.env_scripts.is_empty() {
             ds.field("env_scripts", &self.env_scripts);
+        }
+        if !self.tool_add_paths.is_empty() {
+            ds.field("tool_add_paths", &self.tool_add_paths);
         }
         ds.finish()
     }

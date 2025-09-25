@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 #MISE description="Lint HK files"
 #MISE wait_for=["build"]
-HK_FAIL_FAST=0 exec hk check --all
+HK_FAIL_FAST=0 exec hk check --all --exclude aqua-registry

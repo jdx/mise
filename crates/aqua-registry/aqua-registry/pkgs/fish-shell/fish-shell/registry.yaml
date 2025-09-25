@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: fish-shell
+    repo_name: fish-shell
+    description: The user-friendly command line shell
+    files:
+      - name: fish
+      - name: fish_indent
+      - name: fish_key_reader
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 4.0.0")
+        # https://github.com/fish-shell/fish-shell/releases/tag/4.0.0
+        # > fish’s core code has been ported from C++ to Rust
+        no_asset: true
+      - version_constraint: Version == "4.0.1"
+        asset: fish-static-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.xz
+        replacements:
+          arm64: aarch64
+          amd64: x86_64
+        overrides:
+          - goos: darwin
+            asset: fish-{{.Version}}.pkg
+            format: pkg
+            files:
+              - name: fish
+                src: fish.pkg/Payload/usr/local/bin/fish
+              - name: fish_indent
+                src: fish.pkg/Payload/usr/local/bin/fish_indent
+              - name: fish_key_reader
+                src: fish.pkg/Payload/usr/local/bin/fish_key_reader
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 4.0.2")
+        asset: fish-static-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.xz
+        replacements:
+          arm64: aarch64
+        overrides:
+          - goos: darwin
+            asset: fish-{{.Version}}.pkg
+            format: pkg
+            files:
+              - name: fish
+                src: fish.pkg/Payload/usr/local/bin/fish
+              - name: fish_indent
+                src: fish.pkg/Payload/usr/local/bin/fish_indent
+              - name: fish_key_reader
+                src: fish.pkg/Payload/usr/local/bin/fish_key_reader
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: fish-{{.Version}}-linux-{{.Arch}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: fish
+        replacements:
+          arm64: aarch64
+          amd64: x86_64
+        overrides:
+          - goos: darwin
+            asset: fish-{{.Version}}.pkg
+            format: pkg
+            files:
+              - name: fish
+                src: fish.pkg/Payload/usr/local/bin/fish
+              - name: fish_indent
+                src: fish.pkg/Payload/usr/local/bin/fish_indent
+              - name: fish_key_reader
+                src: fish.pkg/Payload/usr/local/bin/fish_key_reader
+        supported_envs:
+          - linux
+          - darwin

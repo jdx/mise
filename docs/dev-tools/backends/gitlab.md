@@ -62,7 +62,8 @@ asset_pattern = "gitlab-runner-linux-x64"
 Specifies a custom version prefix for release tags. By default, mise handles the common `v` prefix (e.g., `v1.0.0`), but some repositories use different prefixes like `release-`, `version-`, or no prefix at all.
 
 When `version_prefix` is configured, mise will:
-- Strip the prefix when listing available versions
+
+- Filter available versions with the prefix and strip it
 - Add the prefix when searching for releases
 - Try both prefixed and non-prefixed versions during installation
 
@@ -72,6 +73,7 @@ When `version_prefix` is configured, mise will:
 ```
 
 **Examples:**
+
 - With `version_prefix = "release-"`:
   - User specifies `1.0.0` → mise searches for `release-1.0.0` tag
   - Available versions show as `1.0.0` (prefix stripped)
@@ -103,7 +105,7 @@ asset_pattern = "tool-1.0.0-x64.tar.gz"
 checksum = "sha256:a1b2c3d4e5f6789..."
 ```
 
-*Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mise-lock) to manage checksums.*
+_Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mise-lock) to manage checksums._
 
 ### Platform-specific Checksums
 
@@ -149,6 +151,21 @@ Number of directory components to strip when extracting archives:
 
 ::: info
 If `strip_components` is not explicitly set, mise will automatically detect when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
+:::
+
+### `bin`
+
+Rename the downloaded binary to a specific name. This is useful when downloading single binaries that have platform-specific names:
+
+```toml
+[tools."gitlab:myorg/mytool"]
+version = "1.0.0"
+asset_pattern = "mytool-linux-x86_64"
+bin = "mytool"  # Rename from mytool-linux-x86_64 to mytool
+```
+
+::: info
+When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `mytool-linux-x86_64` becomes `mytool` automatically. Use the `bin` option only when you need a specific custom name.
 :::
 
 ### `bin_path`

@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jubako
+    repo_name: arx
+    description: Store files and directory in an archive. Like tar, but faster and with direct random access
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: arx-{{.Version}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: arx
+            src: arx-{{.Version}}-{{.OS}}/arx
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            checksum:
+              type: github_release
+              file_format: regexp
+              asset: "{{.Asset}}.sha256"
+              algorithm: sha256
+              pattern:
+                checksum: ^(\b[A-Fa-f0-9]{64}\b)
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

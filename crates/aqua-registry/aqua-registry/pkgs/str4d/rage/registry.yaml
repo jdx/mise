@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: str4d
+    repo_name: rage
+    description: A simple, secure and modern file encryption tool (and Rust library) with small explicit keys, no config options, and UNIX-style composability
+    files:
+      - name: rage
+        src: rage/{{.FileName}}
+      - name: rage-keygen
+        src: rage/{{.FileName}}
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        no_asset: true
+      - version_constraint: Version == "v0.1.1"
+        asset: rage-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: zip
+          - goos: linux
+            goarch: amd64
+            files:
+              - name: rage
+                src: rage/{{.FileName}}
+              - name: rage-keygen
+                src: rage/{{.FileName}}
+              - name: rage-mount
+                src: rage/{{.FileName}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.10.1")
+        asset: rage-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: zip
+          - goos: linux
+            goarch: amd64
+            files:
+              - name: rage
+                src: rage/{{.FileName}}
+              - name: rage-keygen
+                src: rage/{{.FileName}}
+              - name: rage-mount
+                src: rage/{{.FileName}}
+      - version_constraint: "true"
+        asset: rage-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            format: zip
+          - goos: linux
+            goarch: amd64
+            files:
+              - name: rage
+                src: rage/{{.FileName}}
+              - name: rage-keygen
+                src: rage/{{.FileName}}
+              - name: rage-mount
+                src: rage/{{.FileName}}

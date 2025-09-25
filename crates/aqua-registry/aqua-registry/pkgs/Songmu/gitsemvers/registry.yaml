@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Songmu
+    repo_name: gitsemvers
+    description: Retrieve semvers from git tags
+    asset: gitsemvers_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: git-semvers
+        src: gitsemvers_{{.Version}}_{{.OS}}_{{.Arch}}/git-semvers

@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: replicatedhq
+    repo_name: outdated
+    description: Kubectl plugin to find and report outdated images running in a Kubernetes cluster
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: outdated_{{.OS}}_{{.Arch}}.{{.Format}}
+    files:
+      - name: kubectl-outdated
+        src: outdated
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: outdated_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

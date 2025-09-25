@@ -46,7 +46,7 @@ mise install my-plugin:some-tool@1.0.0
 mise use my-plugin:some-tool@latest
 ```
 
-See [Backend Plugin Development](backend-plugin-development.md) for creating backend plugins.
+See [Backend Plugin Development](backend-plugin-development.md) for creating backend plugins. You can start quickly with the [mise-backend-plugin-template](https://github.com/jdx/mise-backend-plugin-template).
 
 ## Tool Plugins
 
@@ -68,7 +68,7 @@ mise install my-tool@1.0.0
 mise use my-tool@latest
 ```
 
-See [Tool Plugin Development](tool-plugin-development.md) for creating tool plugins.
+See [Tool Plugin Development](tool-plugin-development.md) for creating tool plugins. The [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) provides a ready-to-use starting point.
 
 ## General Plugin Usage
 

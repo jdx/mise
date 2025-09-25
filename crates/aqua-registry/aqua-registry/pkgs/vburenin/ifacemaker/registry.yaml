@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: vburenin
+    repo_name: ifacemaker
+    description: Generate interfaces from structure methods
+    version_constraint: semver(">= 1.2.0")
+    version_overrides:
+      - version_constraint: "true"
+        type: github_release
+        rosetta2: true
+        asset: ifacemaker_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+        replacements:
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: arm64
+            type: go_install
+            asset: ""
+            replacements: {}
+            checksum:
+              enabled: false
+          - goos: windows
+            goarch: arm64
+            type: go_install
+            asset: ""
+            replacements: {}
+            checksum:
+              enabled: false

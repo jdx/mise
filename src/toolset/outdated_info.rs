@@ -1,3 +1,4 @@
+use crate::semver::{chunkify_version, split_version_prefix};
 use crate::toolset;
 use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
 use crate::{Result, config::Config};
@@ -7,7 +8,7 @@ use std::{
     sync::Arc,
 };
 use tabled::Tabled;
-use versions::{Mess, Version, Versioning};
+use versions::Version;
 
 #[derive(Debug, Serialize, Clone, Tabled)]
 pub struct OutdatedInfo {
@@ -55,11 +56,10 @@ impl OutdatedInfo {
     ) -> eyre::Result<Option<Self>> {
         let t = tv.backend()?;
         // prefix is something like "temurin-" or "corretto-"
-        let prefix = xx::regex!(r"^[a-zA-Z-]+-")
-            .find(&tv.request.version())
-            .map(|m| m.as_str().to_string());
+        let (prefix, _) = split_version_prefix(&tv.request.version());
         let latest_result = if bump {
-            t.latest_version(config, prefix.clone()).await
+            t.latest_version(config, Some(prefix.clone()).filter(|s| !s.is_empty()))
+                .await
         } else {
             tv.latest_version(config).await.map(Option::from)
         };
@@ -84,7 +84,6 @@ impl OutdatedInfo {
             return Ok(None);
         }
         if bump {
-            let prefix = prefix.unwrap_or_default();
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or_default();
             let new = oi.latest.strip_prefix(&prefix).unwrap_or_default();
@@ -196,34 +195,6 @@ fn check_semver_bump(old: &str, new: &str) -> Option<String> {
     } else {
         Some(new.to_string())
     }
-}
-
-/// split a version number into chunks
-/// given v: "1.2-3a4" return ["1", ".2", "-3", "a4"]
-fn chunkify_version(v: &str) -> Vec<String> {
-    fn chunkify(m: &Mess, sep0: &str, chunks: &mut Vec<String>) {
-        for (i, chunk) in m.chunks.iter().enumerate() {
-            let sep = if i == 0 { sep0 } else { "." };
-            chunks.push(format!("{sep}{chunk}"));
-        }
-        if let Some((next_sep, next_mess)) = &m.next {
-            chunkify(next_mess, next_sep.to_string().as_ref(), chunks)
-        }
-    }
-
-    let mut chunks = vec![];
-    // don't parse "latest", otherwise bump from latest to any version would have one chunk only
-    if v != "latest" {
-        if let Some(v) = Versioning::new(v) {
-            let m = match v {
-                Versioning::Ideal(sem_ver) => sem_ver.to_mess(),
-                Versioning::General(version) => version.to_mess(),
-                Versioning::Complex(mess) => mess,
-            };
-            chunkify(&m, "", &mut chunks);
-        }
-    }
-    chunks
 }
 
 pub fn is_outdated_version(current: &str, latest: &str) -> bool {

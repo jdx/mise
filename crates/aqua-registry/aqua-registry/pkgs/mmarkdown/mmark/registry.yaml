@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mmarkdown
+    repo_name: mmark
+    asset: mmark_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tgz
+    description: A powerful markdown processor in Go geared towards the IETF
+    supported_envs:
+      - darwin
+      - linux
+      - amd64

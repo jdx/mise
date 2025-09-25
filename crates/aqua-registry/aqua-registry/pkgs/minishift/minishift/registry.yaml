@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: minishift
+    repo_name: minishift
+    description: Run OpenShift 3.x locally
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - amd64
+    asset: minishift-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tgz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: minishift
+        src: minishift-{{trimV .Version}}-{{.OS}}-{{.Arch}}/minishift
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256

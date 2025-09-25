@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: kesonan
+    repo_name: github-compare
+    aliases:
+      - name: anqiansong/github-compare
+    description: A Command-line statistics tool to compare the GitHub repositories
+    path: github.com/anqiansong/github-compare

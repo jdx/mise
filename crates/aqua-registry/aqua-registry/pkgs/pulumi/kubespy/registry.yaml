@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: pulumi
+    repo_name: kubespy
+    description: Tools for observing Kubernetes resources in real time, powered by Pulumi
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - amd64
+    asset: kubespy-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 0.6.1")
+    version_overrides:
+      - version_constraint: "true"
+        overrides:
+          - goos: windows
+            asset: kubespy.exe-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz

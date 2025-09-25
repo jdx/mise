@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubernetes-sigs
+    repo_name: cluster-api
+    description: Home for Cluster API, a subproject of sig-cluster-lifecycle
+    files:
+      - name: clusterctl
+        src: clusterctl-{{.OS}}-{{.Arch}}
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.0-alpha.2")
+        asset: clusterctl-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: clusterctl_{{.Version}}_SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.1.10")
+        no_asset: true
+      - version_constraint: semver("<= 0.3.23")
+        asset: clusterctl-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.3.25")
+        asset: clusterctl-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.4.0")
+        asset: clusterctl-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.0.5")
+        asset: clusterctl-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: clusterctl-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true

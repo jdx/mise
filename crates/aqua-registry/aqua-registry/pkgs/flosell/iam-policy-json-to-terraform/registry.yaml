@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: flosell
+    repo_name: iam-policy-json-to-terraform
+    description: Small tool to convert an IAM Policy in JSON format into a Terraform aws_iam_policy_document
+    format: raw
+    supported_envs:
+      - darwin
+      - amd64
+    asset: iam-policy-json-to-terraform_{{.OS}}_{{.Arch}}
+    replacements:
+      arm64: arm
+    overrides:
+      - goos: windows
+        asset: iam-policy-json-to-terraform.exe
+      - goos: linux
+        asset: iam-policy-json-to-terraform_amd64
+      - goos: darwin
+        goarch: amd64
+        asset: iam-policy-json-to-terraform_darwin
+      - goos: darwin
+        goarch: arm64
+        asset: iam-policy-json-to-terraform_darwin_arm
+    version_constraint: semver(">= 1.7.0")
+    version_overrides:
+      - version_constraint: "true"
+        overrides:
+          - goos: windows
+            asset: iam-policy-json-to-terraform.exe
+          - goos: linux
+            asset: iam-policy-json-to-terraform_amd64
+          - goos: darwin
+            asset: iam-policy-json-to-terraform_darwin

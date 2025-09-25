@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: unfrl
+    repo_name: dug
+    description: A global DNS propagation checker that gives pretty output. Written in dotnet core
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.74")
+        asset: dug-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: osx
+        overrides:
+          - goos: linux
+            goarch: amd64
+            format: tar.gz
+            asset: dug.{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            asset: dug
+      - version_constraint: Version == "0.0.75"
+        asset: dug.{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: osx
+        overrides:
+          - goos: linux
+            goarch: arm64
+            format: raw
+            asset: dug-{{.OS}}-{{.Arch}}
+          - goos: darwin
+            asset: dug.0.0.1.{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: raw
+            asset: dug
+      - version_constraint: "true"
+        asset: dug.{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: osx
+        overrides:
+          - goos: linux
+            goarch: arm64
+            format: raw
+            asset: dug-{{.OS}}-{{.Arch}}
+          - goos: windows
+            format: raw
+            asset: dug
