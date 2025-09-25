@@ -415,10 +415,12 @@ test = ["bw --version", "{{version}}"]
 
 [tools.bitwarden-secrets-manager]
 backends = [
-  "github:bitwarden/sdk[tag_regex=^bws,exe=bws]",
+  "github:bitwarden/sdk[version_prefix=bws-v]",
   "asdf:asdf-community/asdf-bitwarden-secrets-manager",
 ]
 description = "CLI for interacting with the Bitwarden Secrets Manager"
+# TODO: enable test when versions host is updated
+# test = ["bws --version", "bws {{version}}"]
 
 [tools.black]
 backends = ["aqua:psf/black"]
@@ -1881,10 +1883,12 @@ description = "A powerful Groovy-based web application framework for the JVM bui
 
 [tools.grain]
 backends = [
-  "github:grain-lang/grain[tag_regex=^grain-]",
+  "github:grain-lang/grain[version_prefix=grain-v]",
   "asdf:mise-plugins/mise-grain",
 ]
 description = "The Grain compiler toolchain and CLI. Home of the modern web staple"
+# TODO: enable test when versions host is updated
+# test = ["grain --version", "{{version}}"]
 
 [tools.granted]
 backends = ["aqua:common-fate/granted", "asdf:dex4er/asdf-granted"]
@@ -2743,10 +2747,12 @@ description = "Lisp Flavoured Erlang (LFE)"
 
 [tools.libsql-server]
 backends = [
-  "github:tursodatabase/libsql[tag_regex=libsql-server,exe=sqld]",
+  "github:tursodatabase/libsql[version_prefix=libsql-server-v]",
   "asdf:jonasb/asdf-libsql-server",
 ]
 description = "server mode of libSQL, which is a fork of SQLite that is both Open Source, and Open Contributions"
+# TODO: enable test when versions host is updated
+# test = ["sqld --version", "sqld sqld {{version}}"]
 
 [tools.license-plist]
 backends = [
