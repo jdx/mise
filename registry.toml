@@ -1593,7 +1593,7 @@ test = ["ghalint version", "{{version}}"]
 
 [tools.ghc]
 backends = ["asdf:mise-plugins/mise-ghcup"]
-description = "GHCup is the main installer for the general purpose language Haskell."
+description = "The Glorious Glasgow Haskell Compiler."
 
 [tools.ghcup]
 backends = [
@@ -2086,7 +2086,7 @@ description = "An hledger/ledger-cli workflow focusing on automated statement im
 
 [tools.hls]
 backends = ["asdf:mise-plugins/mise-ghcup"]
-description = "haskell language-server"
+description = "Official Haskell IDE support via the language server protocol (LSP)"
 
 [tools.hostctl]
 backends = ["aqua:guumaster/hostctl", "asdf:svenluijten/asdf-hostctl"]
