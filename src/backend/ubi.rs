@@ -88,9 +88,7 @@ impl Backend for UbiBackend {
                 .filter(|v| {
                     if let Some(re) = opts.get("tag_regex") {
                         let re = tag_regex.get_or_init(|| Regex::new(re).unwrap());
-                        let result = re.is_match(v);
-                        debug!("filter {v} by tag_regex {re}: {result}");
-                        result
+                        re.is_match(v)
                     } else {
                         true
                     }
