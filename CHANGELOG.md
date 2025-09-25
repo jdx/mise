@@ -1,5 +1,28 @@
 # Changelog
 
+## [2025.9.18](https://github.com/jdx/mise/compare/v2025.9.17..v2025.9.18) - 2025-09-24
+
+### 📦 Registry
+
+- replace amplify-cli github backend with ubi by @eggplants in [#6396](https://github.com/jdx/mise/pull/6396)
+
+### 🚀 Features
+
+- **(template)** add read_file() function by @jdx in [#6400](https://github.com/jdx/mise/pull/6400)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** support github_artifact_attestations.enabled by @risu729 in [#6372](https://github.com/jdx/mise/pull/6372)
+- use /c instead of -c on windows in postinstall hook by @risu729 in [#6397](https://github.com/jdx/mise/pull/6397)
+
+### 🧪 Testing
+
+- **(test-tool)** uninstall all versions and clear cache before installation by @jdx in [#6393](https://github.com/jdx/mise/pull/6393)
+
+### New Contributors
+
+- @eggplants made their first contribution in [#6396](https://github.com/jdx/mise/pull/6396)
+
 ## [2025.9.17](https://github.com/jdx/mise/compare/v2025.9.16..v2025.9.17) - 2025-09-24
 
 ### 🚀 Features
