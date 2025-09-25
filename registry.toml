@@ -1134,7 +1134,7 @@ test = ["dive --version", "dive {{version}}"]
 
 [tools.djinni]
 backends = [
-  "github:cross-language-cpp/djinni-generator",
+  "ubi:cross-language-cpp/djinni-generator",
   "asdf:cross-language-cpp/asdf-djinni",
 ]
 description = "Command-line tool that generates gluecode from a djinni-IDL file"
