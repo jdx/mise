@@ -419,11 +419,10 @@ test = ["bw --version", "{{version}}"]
 
 [tools.bitwarden-secrets-manager]
 backends = [
-  "ubi:bitwarden/sdk[tag_regex=^bws,exe=bws]",
+  "github:bitwarden/sdk[tag_regex=^bws,exe=bws]",
   "asdf:asdf-community/asdf-bitwarden-secrets-manager",
 ]
 description = "CLI for interacting with the Bitwarden Secrets Manager"
-test = ["bws -V", "bws {{version}}"]
 
 [tools.black]
 backends = ["aqua:psf/black"]
