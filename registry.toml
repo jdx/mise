@@ -415,10 +415,12 @@ test = ["bw --version", "{{version}}"]
 
 [tools.bitwarden-secrets-manager]
 backends = [
-  "github:bitwarden/sdk[tag_regex=^bws,exe=bws]",
+  "github:bitwarden/sdk[version_prefix=bws-v]",
   "asdf:asdf-community/asdf-bitwarden-secrets-manager",
 ]
 description = "CLI for interacting with the Bitwarden Secrets Manager"
+# TODO: remove MISE_USE_VERSIONS_HOST=false when versions host is updated
+test = ["MISE_USE_VERSIONS_HOST=false bws --version", "bws {{version}}"]
 
 [tools.black]
 backends = ["aqua:psf/black"]
