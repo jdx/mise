@@ -827,9 +827,13 @@ fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
         fs::rename(&path, &temp_path)?;
 
         for entry in ls(&temp_path)? {
-            let dest_path = dir.join(entry.file_name().unwrap());
-            fs::rename(entry, dest_path)?;
-        }
+            if let Some(file_name) = entry.file_name() {
+                let dest_path = dir.join(file_name);
+                fs::rename(entry, dest_path)?;
+            } else {
+                // Skip entries with no file name (e.g., paths ending in `..`)
+                continue;
+            }
 
         remove_dir(temp_path)?;
     }
