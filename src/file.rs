@@ -820,7 +820,10 @@ fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
         }
 
         // rename the directory to a temp name to avoid conflicts when moving files
-        let temp_path = path.with_extension("tmp_strip");
+        let temp_path = path.with_file_name(format!(
+            "{}_tmp_strip",
+            path.file_name().unwrap().to_string_lossy()
+        ));
         fs::rename(&path, &temp_path)?;
 
         for entry in ls(&temp_path)? {
