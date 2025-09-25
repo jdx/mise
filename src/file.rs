@@ -833,6 +833,7 @@ fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
             } else {
                 continue;
             }
+        }
 
         remove_dir(temp_path)?;
     }
