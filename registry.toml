@@ -767,7 +767,7 @@ backends = [
   "asdf:mise-plugins/mise-clickhouse",
 ]
 description = "ClickHouse® is a high-performance, column-oriented SQL database management system (DBMS) for online analytical processing (OLAP)"
-test = ["clickhouse --version", "ClickHouse local version {{version}}"]
+test = ["clickhouse --version", "ClickHouse local version {{version | trim_end_matches(\"-lts\")}}"]
 
 [tools.clj-kondo]
 backends = ["github:clj-kondo/clj-kondo", "asdf:rynkowsg/asdf-clj-kondo"]
@@ -4984,6 +4984,7 @@ test = ["zigmod version", "{{version}}"]
 [tools.zizmor]
 backends = ["aqua:zizmorcore/zizmor", "ubi:zizmorcore/zizmor", "cargo:zizmor"]
 description = "Static analysis for GitHub Actions"
+test = ["zizmor --version", "zizmor {{version}}"]
 
 [tools.zls]
 backends = ["aqua:zigtools/zls", "ubi:zigtools/zls"]
