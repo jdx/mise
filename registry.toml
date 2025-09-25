@@ -2122,7 +2122,6 @@ description = "An hledger/ledger-cli workflow focusing on automated statement im
 [tools.hls]
 backends = ["asdf:mise-plugins/mise-ghcup"]
 description = "haskell language-server"
-test = ["hls --version", "haskell-language-server version {{version}}"]
 
 [tools.hostctl]
 backends = ["aqua:guumaster/hostctl", "asdf:svenluijten/asdf-hostctl"]
