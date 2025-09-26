@@ -2365,8 +2365,10 @@ description = "Little helper to run CNCF's k3s in Docker"
 test = ["k3d --version", "k3d version v{{version}}"]
 
 [tools.k3kcli]
-backends = ['github:rancher/k3k[tag_regex=v\d]', "asdf:xanmanning/asdf-k3kcli"]
+backends = ['ubi:rancher/k3k[tag_regex=v\d]', "asdf:xanmanning/asdf-k3kcli"]
 description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to create and manage isolated K3s clusters within your existing Kubernetes environment"
+# TODO: enable tests after versions host update
+# test = ["k3k version", "k3k version {{version}}"]
 
 [tools.k3s]
 backends = ["asdf:mise-plugins/mise-k3s"]
@@ -3230,8 +3232,9 @@ backends = ["aqua:open-policy-agent/opa", "asdf:tochukwuvictor/asdf-opa"]
 description = "Open Policy Agent (OPA) is an open source, general-purpose policy engine"
 
 [tools.opam]
-backends = ["github:ocaml/opam", "asdf:asdf-community/asdf-opam"]
+backends = ["ubi:ocaml/opam", "asdf:asdf-community/asdf-opam"]
 description = "(ocaml) opam is a source-based package manager. It supports multiple simultaneous compiler installations, flexible package constraints, and a Git-friendly development workflow"
+test = ["opam --version", "{{version}}"]
 
 [tools.openbao]
 backends = ["github:openbao/openbao[exe=bao]"]
