@@ -829,7 +829,7 @@ impl Run {
         let sub_deps = Arc::new(Mutex::new(sub_deps));
 
         // Pump subgraph into scheduler and signal completion via oneshot when done
-        let (done_tx, done_rx) = oneshot::channel::<()>();
+        let (done_tx, mut done_rx) = oneshot::channel::<()>();
         let task_env_directives: Vec<EnvDirective> =
             task_env.iter().cloned().map(Into::into).collect();
         {
@@ -887,10 +887,40 @@ impl Run {
             });
         }
 
-        // Wait for completion
-        done_rx.await.map_err(|e| eyre!(e))?;
+        // Wait for completion with a check for early stopping
+        loop {
+            // Check if we should stop early due to failure
+            if self.is_stopping() && !self.continue_on_error {
+                trace!("inject_and_wait: stopping early due to failure");
+                // Clean up the dependency graph to ensure completion
+                let mut deps = sub_deps.lock().await;
+                let tasks_to_remove: Vec<Task> = deps.all().cloned().collect();
+                for task in tasks_to_remove {
+                    deps.remove(&task);
+                }
+                drop(deps);
+                // Give a short time for the spawned task to finish cleanly
+                let _ = tokio::time::timeout(Duration::from_millis(100), done_rx).await;
+                return Err(eyre!("task sequence aborted due to failure"));
+            }
 
-        // Check if we failed during the execution
+            // Try to receive the done signal with a short timeout
+            match tokio::time::timeout(Duration::from_millis(100), &mut done_rx).await {
+                Ok(Ok(())) => {
+                    trace!("inject_and_wait: received done signal");
+                    break;
+                }
+                Ok(Err(e)) => {
+                    return Err(eyre!(e));
+                }
+                Err(_) => {
+                    // Timeout, check again if we should stop
+                    continue;
+                }
+            }
+        }
+
+        // Final check if we failed during the execution
         if self.is_stopping() && !self.continue_on_error {
             return Err(eyre!("task sequence aborted due to failure"));
         }
