@@ -444,7 +444,7 @@ impl TaskScriptParser {
                                     Err(error) => {
                                         let source = error.path().display();
                                         warn!(
-                                            "tera::render::resolve_task_sources including '{source}' in resolved task sources despite: {:#?}",
+                                            "tera::render::resolve_task_sources omitting '{source}' from resolved task sources due to: {:#?}",
                                             error.error()
                                         );
                                     }
