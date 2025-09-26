@@ -200,9 +200,7 @@ pub static MISE_SELF_UPDATE_INSTRUCTIONS: Lazy<Option<PathBuf>> = Lazy::new(|| {
     if let Some(p) = var_path("MISE_SELF_UPDATE_INSTRUCTIONS") {
         return Some(p);
     }
-    let Some(base) = mise_install_base() else {
-        return None;
-    };
+    let base = mise_install_base()?;
     // search lib/, lib/mise/, lib64/mise/
     find_in_tree(
         &base,
@@ -223,9 +221,7 @@ pub static MISE_SELF_UPDATE_AVAILABLE: Lazy<Option<bool>> = Lazy::new(|| {
     }
 });
 pub static MISE_SELF_UPDATE_DISABLED_PATH: Lazy<Option<PathBuf>> = Lazy::new(|| {
-    let Some(base) = mise_install_base() else {
-        return None;
-    };
+    let base = mise_install_base()?;
     find_in_tree(
         &base,
         &[

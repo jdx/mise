@@ -39,6 +39,18 @@ pub fn upgrade_instructions_text() -> Option<String> {
     None
 }
 
+/// Appends self-update guidance and packaging instructions (if any) to a message.
+pub fn append_self_update_instructions(mut message: String) -> String {
+    if SelfUpdate::is_available() {
+        message.push_str("\nRun `mise self-update` to update mise");
+    }
+    if let Some(instructions) = upgrade_instructions_text() {
+        message.push('\n');
+        message.push_str(&instructions);
+    }
+    message
+}
+
 /// Updates mise itself.
 ///
 /// Uses the GitHub Releases API to find the latest release and binary.

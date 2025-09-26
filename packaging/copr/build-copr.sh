@@ -235,7 +235,9 @@ cp completions/mise.fish %{buildroot}%{_datadir}/fish/vendor_completions.d/
 
 # Disable self-update for package manager installations
 mkdir -p %{buildroot}%{_libdir}/mise
-echo 'message = "To update, use your package manager (dnf/yum)."' > %{buildroot}%{_libdir}/mise/mise-self-update-instructions.toml
+cat > %{buildroot}%{_libdir}/mise/mise-self-update-instructions.toml <<'TOML'
+message = "To update mise from COPR, run:\n\n  sudo dnf upgrade mise\n"
+TOML
 
 %files
 %license LICENSE

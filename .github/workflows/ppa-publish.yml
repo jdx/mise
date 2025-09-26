@@ -218,7 +218,7 @@ jobs:
           	mkdir -p debian/mise/usr/share/fish/vendor_completions.d
           	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
           	mkdir -p debian/mise/usr/lib/mise
-          	echo 'message = "To update, use your package manager (apt)."' > debian/mise/usr/lib/mise/mise-self-update-instructions.toml
+          	echo 'message = "To update, run:\n\n  sudo apt update && sudo apt install --only-upgrade mise\n"' > debian/mise/usr/lib/mise/mise-self-update-instructions.toml
 
           override_dh_auto_clean:
           	cargo clean || true

@@ -35,11 +35,11 @@ impl MinVersionSpec {
         self.hard.is_none() && self.soft.is_none()
     }
 
-    pub fn hard_violation<'a>(&'a self, current: &Versioning) -> Option<&'a Versioning> {
+    pub fn hard_violation(&self, current: &Versioning) -> Option<&Versioning> {
         self.hard().filter(|required| current < *required)
     }
 
-    pub fn soft_violation<'a>(&'a self, current: &Versioning) -> Option<&'a Versioning> {
+    pub fn soft_violation(&self, current: &Versioning) -> Option<&Versioning> {
         self.soft().filter(|recommended| current < *recommended)
     }
 

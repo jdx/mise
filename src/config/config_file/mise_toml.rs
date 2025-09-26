@@ -96,6 +96,34 @@ impl EnvList {
 }
 
 impl MiseToml {
+    fn enforce_min_version_fallback(body: &str) -> eyre::Result<()> {
+        if let Ok(val) = toml::from_str::<toml::Value>(body) {
+            if let Some(min_val) = val.get("min_version") {
+                let mut hard_req: Option<versions::Versioning> = None;
+                let mut soft_req: Option<versions::Versioning> = None;
+                match min_val {
+                    toml::Value::String(s) => {
+                        hard_req = versions::Versioning::new(s);
+                    }
+                    toml::Value::Table(t) => {
+                        if let Some(toml::Value::String(s)) = t.get("hard") {
+                            hard_req = versions::Versioning::new(s);
+                        }
+                        if let Some(toml::Value::String(s)) = t.get("soft") {
+                            soft_req = versions::Versioning::new(s);
+                        }
+                    }
+                    _ => {}
+                }
+                if let Some(spec) = crate::config::config_file::min_version::MinVersionSpec::new(
+                    hard_req, soft_req,
+                ) {
+                    crate::config::Config::enforce_min_version_spec(&spec)?;
+                }
+            }
+        }
+        Ok(())
+    }
     fn contains_template_syntax(input: &str) -> bool {
         input.contains("{{") || input.contains("{%") || input.contains("{#")
     }
@@ -122,9 +150,16 @@ impl MiseToml {
         trust_check(path)?;
         trace!("parsing: {}", display_path(path));
         let des = toml::Deserializer::new(body);
-        let mut rf: MiseToml = serde_ignored::deserialize(des, |p| {
+        let de_res = serde_ignored::deserialize(des, |p| {
             warn!("unknown field in {}: {p}", display_path(path));
-        })?;
+        });
+        let mut rf: MiseToml = match de_res {
+            Ok(rf) => rf,
+            Err(err) => {
+                Self::enforce_min_version_fallback(body)?;
+                return Err(err.into());
+            }
+        };
         rf.context = BASE_CONTEXT.clone();
         rf.context
             .insert("config_root", path.parent().unwrap().to_str().unwrap());

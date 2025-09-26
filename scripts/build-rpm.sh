@@ -4,7 +4,9 @@ set -euxo pipefail
 MISE_VERSION=$(./scripts/get-version.sh)
 
 mkdir -p mise/lib
-echo 'message = "To update, use your package manager (dnf/yum)."' >mise/lib/mise-self-update-instructions.toml
+cat >mise/lib/mise-self-update-instructions.toml <<'TOML'
+message = "To update mise from the RPM repository, run:\n\n  sudo dnf upgrade mise\n"
+TOML
 
 tar -xvJf "dist/mise-$MISE_VERSION-linux-x64.tar.xz"
 fpm -s dir -t rpm \
