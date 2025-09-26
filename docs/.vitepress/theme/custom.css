@@ -29,12 +29,11 @@
   --vp-c-danger-soft: rgba(255, 82, 82, 0.14);
 
   /* Typography - Modern monospace-first approach */
-  --vp-font-family-base:
-    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-    Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
-  --vp-font-family-mono:
-    "JetBrains Mono", "Fira Code", "SF Mono", Monaco, "Cascadia Code",
-    "Roboto Mono", Consolas, "Courier New", monospace;
+  --vp-font-family-base: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans",
+    "Helvetica Neue", sans-serif;
+  --vp-font-family-mono: "JetBrains Mono", "Fira Code", "SF Mono", Monaco,
+    "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
   --vp-font-family-heading: "Bebas Neue", "Inter", sans-serif;
 
   /* Custom spacing for better readability */

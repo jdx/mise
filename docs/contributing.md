@@ -630,6 +630,7 @@ of the full backend specification.
 ### Quick Start
 
 1. **Choose the right backend** for your tool:
+
    - **[aqua](dev-tools/backends/aqua.md)** - Preferred for GitHub releases with security
      features
    - **[ubi](dev-tools/backends/ubi.md)** - Simple GitHub/GitLab releases following
@@ -795,6 +796,7 @@ across different installation systems.
    ```
 
 3. **Register the backend** in `src/backend/mod.rs`:
+
    - Add your backend to the imports
    - Add it to the backend registry/factory function
    - Add the `BackendType` enum variant
