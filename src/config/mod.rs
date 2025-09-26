@@ -450,7 +450,9 @@ impl Config {
                 Ok(cf) => {
                     config_files.insert(path, cf);
                 }
-                Err(err) => error!("Error loading config file: {:#}", err),
+                Err(err) => {
+                    error!("Error loading config file: {:?}", err);
+                }
             }
         }
         Ok(config_files)
