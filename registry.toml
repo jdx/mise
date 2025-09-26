@@ -2209,6 +2209,11 @@ test = ["istioctl version", "{{version}}"]
 backends = ["asdf:mise-plugins/mise-janet"]
 description = "Janet is a functional and imperative programming language"
 
+[tools.jaq]
+backends = ["aqua:01mf02/jaq", "ubi:01mf02/jaq", "cargo:jaq"]
+description = "A jq clone focussed on correctness, speed, and simplicity"
+test = ["jaq --version", "jaq {{version}}"]
+
 [tools.java]
 backends = ["core:java"]
 description = "jdk java"
