@@ -971,7 +971,7 @@ mod tests {
             .unwrap();
 
         #[cfg(windows)]
-        let expected = expected.replace("/", r"\\");  // 🙄
+        let expected = expected.replace("/", r"\\"); // 🙄
 
         assert_eq!(parsed, vec![expected]);
     }
