@@ -176,6 +176,59 @@ pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string(
 pub static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
 pub static MISE_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_LOG_FILE"));
 pub static MISE_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
+fn find_in_tree(base: &Path, rels: &[&[&str]]) -> Option<PathBuf> {
+    for rel in rels {
+        let mut p = base.to_path_buf();
+        for part in *rel {
+            p = p.join(part);
+        }
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+fn mise_install_base() -> Option<PathBuf> {
+    std::fs::canonicalize(&*MISE_BIN)
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+}
+
+pub static MISE_SELF_UPDATE_INSTRUCTIONS: Lazy<Option<PathBuf>> = Lazy::new(|| {
+    if let Some(p) = var_path("MISE_SELF_UPDATE_INSTRUCTIONS") { return Some(p); }
+    let Some(base) = mise_install_base() else { return None; };
+    // search lib/, lib/mise/, lib64/mise/
+    find_in_tree(
+        &base,
+        &[
+            &["lib", "self-update-instructions.toml"],
+            &["lib", "mise", "self-update-instructions.toml"],
+            &["lib64", "mise", "self-update-instructions.toml"],
+        ],
+    )
+});
+pub static MISE_SELF_UPDATE_AVAILABLE: Lazy<Option<bool>> = Lazy::new(|| {
+    if var_is_true("MISE_SELF_UPDATE_AVAILABLE") {
+        Some(true)
+    } else if var_is_false("MISE_SELF_UPDATE_AVAILABLE") {
+        Some(false)
+    } else {
+        None
+    }
+});
+pub static MISE_SELF_UPDATE_DISABLED_PATH: Lazy<Option<PathBuf>> = Lazy::new(|| {
+    let Some(base) = mise_install_base() else { return None; };
+    find_in_tree(
+        &base,
+        &[
+            &["lib", ".disable-self-update"],
+            &["lib", "mise", ".disable-self-update"],
+            &["lib64", "mise", ".disable-self-update"],
+        ],
+    )
+});
 pub static MISE_LOG_HTTP: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LOG_HTTP"));
 
 pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());

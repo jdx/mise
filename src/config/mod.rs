@@ -474,19 +474,33 @@ impl Config {
 
     fn validate(&self) -> eyre::Result<()> {
         for cf in self.config_files.values() {
-            if let Some(min) = cf.min_version() {
+            if let Some(spec) = cf.min_version() {
                 let cur = &*version::V;
-                if cur < min {
-                    let min = style::eyellow(min);
+                if let Some(required) = spec.hard_violation(cur) {
+                    let min = style::eyellow(required);
                     let cur = style::eyellow(cur);
+                    let mut msg = format!("mise version {min} is required, but you are using {cur}");
                     if SelfUpdate::is_available() {
-                        bail!(
-                            "mise version {min} is required, but you are using {cur}\n\
-                            Run `mise self-update` to update mise",
-                        );
-                    } else {
-                        bail!("mise version {min} is required, but you are using {cur}");
+                        msg.push_str("\nRun `mise self-update` to update mise");
                     }
+                    if let Some(instructions) = crate::cli::self_update::upgrade_instructions_text() {
+                        msg.push('\n');
+                        msg.push_str(&instructions);
+                    }
+                    bail!(msg);
+                } else if let Some(recommended) = spec.soft_violation(cur) {
+                    let min = style::eyellow(recommended);
+                    let cur = style::eyellow(cur);
+                    let mut msg = format!(
+                        "mise version {min} is recommended, but you are using {cur}"
+                    );
+                    if SelfUpdate::is_available() {
+                        msg.push_str("\nRun `mise self-update` to update mise");
+                    } else if let Some(instructions) = crate::cli::self_update::upgrade_instructions_text() {
+                        msg.push('\n');
+                        msg.push_str(&instructions);
+                    }
+                    warn!("{msg}");
                 }
             }
         }

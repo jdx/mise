@@ -13,9 +13,8 @@ use idiomatic_version::IdiomaticVersionFile;
 use serde_derive::Deserialize;
 use std::sync::LazyLock as Lazy;
 use tool_versions::ToolVersions;
-use versions::Versioning;
-
 use crate::cli::args::{BackendArg, ToolArg};
+use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
 use crate::config::{AliasMap, Settings, settings};
@@ -34,6 +33,7 @@ use super::Config;
 
 pub mod config_root;
 pub mod idiomatic_version;
+pub mod min_version;
 pub mod mise_toml;
 pub mod toml;
 pub mod tool_versions;
@@ -47,8 +47,8 @@ pub enum ConfigFileType {
 
 pub trait ConfigFile: Debug + Send + Sync {
     fn get_path(&self) -> &Path;
-    fn min_version(&self) -> &Option<Versioning> {
-        &None
+    fn min_version(&self) -> Option<&MinVersionSpec> {
+        None
     }
     /// gets the project directory for the config
     /// if it's a global/system config, returns None
