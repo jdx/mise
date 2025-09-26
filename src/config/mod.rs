@@ -479,11 +479,13 @@ impl Config {
                 if let Some(required) = spec.hard_violation(cur) {
                     let min = style::eyellow(required);
                     let cur = style::eyellow(cur);
-                    let mut msg = format!("mise version {min} is required, but you are using {cur}");
+                    let mut msg =
+                        format!("mise version {min} is required, but you are using {cur}");
                     if SelfUpdate::is_available() {
                         msg.push_str("\nRun `mise self-update` to update mise");
                     }
-                    if let Some(instructions) = crate::cli::self_update::upgrade_instructions_text() {
+                    if let Some(instructions) = crate::cli::self_update::upgrade_instructions_text()
+                    {
                         msg.push('\n');
                         msg.push_str(&instructions);
                     }
@@ -491,12 +493,13 @@ impl Config {
                 } else if let Some(recommended) = spec.soft_violation(cur) {
                     let min = style::eyellow(recommended);
                     let cur = style::eyellow(cur);
-                    let mut msg = format!(
-                        "mise version {min} is recommended, but you are using {cur}"
-                    );
+                    let mut msg =
+                        format!("mise version {min} is recommended, but you are using {cur}");
                     if SelfUpdate::is_available() {
                         msg.push_str("\nRun `mise self-update` to update mise");
-                    } else if let Some(instructions) = crate::cli::self_update::upgrade_instructions_text() {
+                    } else if let Some(instructions) =
+                        crate::cli::self_update::upgrade_instructions_text()
+                    {
                         msg.push('\n');
                         msg.push_str(&instructions);
                     }

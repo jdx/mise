@@ -8,11 +8,6 @@ use std::{
     sync::Arc,
 };
 
-use eyre::{Result, eyre};
-use idiomatic_version::IdiomaticVersionFile;
-use serde_derive::Deserialize;
-use std::sync::LazyLock as Lazy;
-use tool_versions::ToolVersions;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::MiseToml;
@@ -28,6 +23,11 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, T
 use crate::ui::{prompt, style};
 use crate::watch_files::WatchFile;
 use crate::{backend, config, dirs, env, file, hash};
+use eyre::{Result, eyre};
+use idiomatic_version::IdiomaticVersionFile;
+use serde_derive::Deserialize;
+use std::sync::LazyLock as Lazy;
+use tool_versions::ToolVersions;
 
 use super::Config;
 

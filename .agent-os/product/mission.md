@@ -50,13 +50,11 @@ Mise serves as "the front-end to your dev env" by unifying three critical aspect
 ### Primary Users
 
 1. **Individual Developers**
-
    - Managing multiple projects with different tool versions
    - Avoiding "dependency hell" and version conflicts
    - Streamlining local development setup
 
 2. **Development Teams**
-
    - Ensuring consistent environments across team members
    - Simplifying onboarding for new team members
    - Reducing "works on my machine" issues

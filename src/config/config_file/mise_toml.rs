@@ -621,7 +621,7 @@ impl Debug for MiseToml {
         let title = format!("MiseToml({}): {tools}", &display_path(&self.path));
         let mut d = f.debug_struct(&title);
         if let Some(min_version) = &self.min_version {
-            d.field("min_version", &min_version.to_string());
+            d.field("min_version", &format!("{:?}", min_version));
         }
         if !self.env_file.is_empty() {
             d.field("env_file", &self.env_file);

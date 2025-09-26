@@ -8,8 +8,8 @@ use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
 use crate::{cmd, env};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Debug, Default, serde::Deserialize)]
 struct InstructionsToml {

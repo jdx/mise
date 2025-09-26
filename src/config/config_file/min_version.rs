@@ -1,3 +1,4 @@
+use versions::Versioning;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MinVersionSpec {
     hard: Option<Versioning>,
@@ -9,11 +10,7 @@ impl MinVersionSpec {
         if hard.is_none() && soft.is_none() {
             None
         } else {
-            Some(Self {
-                hard,
-                soft,
-                upgrade_instructions: None,
-            })
+            Some(Self { hard, soft })
         }
     }
 
@@ -49,7 +46,6 @@ impl MinVersionSpec {
         Self {
             hard: self.hard.clone(),
             soft: self.soft.clone(),
-            upgrade_instructions: self.upgrade_instructions.clone(),
         }
     }
 
