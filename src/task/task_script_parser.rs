@@ -400,7 +400,7 @@ impl TaskScriptParser {
 
                 let mut resolved = Vec::with_capacity(sources.len());
 
-                for pattern in <Arc<Vec<_>> as std::ops::Deref>::deref(&sources) {
+                for pattern in sources.iter() {
                     // pattern is considered a tera template string if it contains opening tags:
                     // - "{#" for comments
                     // - "{{" for expressions
