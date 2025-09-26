@@ -111,7 +111,7 @@ impl TaskScriptParser {
         tera::Error::msg(format!("failed to lock: {}", e))
     }
 
-    fn setup_tera_for_spec_parsing(&self) -> TeraSpecParsingResult {
+    fn setup_tera_for_spec_parsing(&self, task: &Task) -> TeraSpecParsingResult {
         let mut tera = self.get_tera();
         let arg_order = Arc::new(Mutex::new(HashMap::new()));
         let input_args = Arc::new(Mutex::new(vec![]));
@@ -389,6 +389,84 @@ impl TaskScriptParser {
             }
         });
 
+        tera.register_function("task_source_files", {
+            let sources = Arc::new(task.sources.clone());
+
+            move |_: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
+               if sources.is_empty() {
+                   if sources.is_empty() {
+                       trace!("tera::render::resolve_task_sources `task_source_files` called in task with empty sources array");
+                   }
+
+                   return Ok(tera::Value::Array(Default::default()));
+               };
+
+                let mut resolved = Vec::with_capacity(sources.len());
+
+                for pattern in <Arc<Vec<_>> as std::ops::Deref>::deref(&sources) {
+                    // pattern is considered a tera template string if it contains opening tags:
+                    // - "{#" for comments
+                    // - "{{" for expressions
+                    // - "{%" for statements
+                    if pattern.contains("{#") || pattern.contains("{{") || pattern.contains("{%") {
+                        trace!(
+                            "tera::render::resolve_task_sources including tera template string in resolved task sources: {pattern}"
+                        );
+                        resolved.push(tera::Value::String(pattern.clone()));
+                        continue;
+                    }
+
+                    match glob::glob_with(
+                        &pattern,
+                        glob::MatchOptions {
+                            case_sensitive: false,
+                            require_literal_separator: false,
+                            require_literal_leading_dot: false,
+                        },
+                    ) {
+                        Err(error) => {
+                            warn!(
+                                "tera::render::resolve_task_sources including '{pattern}' in resolved task sources, ignoring glob parsing error: {error:#?}"
+                            );
+                            resolved.push(tera::Value::String(pattern.clone()));
+                        }
+                        Ok(expanded) => {
+                            let mut source_found = false;
+
+                            for path in expanded {
+                                source_found = true;
+
+                                match path {
+                                    Ok(path) => {
+                                        let source = path.display();
+                                        trace!(
+                                            "tera::render::resolve_task_sources resolved source from pattern '{pattern}': {source}"
+                                        );
+                                        resolved.push(tera::Value::String(source.to_string()));
+                                    }
+                                    Err(error) => {
+                                        let source = error.path().display();
+                                        warn!(
+                                            "tera::render::resolve_task_sources including '{source}' in resolved task sources despite: {:#?}",
+                                            error.error()
+                                        );
+                                    }
+                                }
+                            }
+
+                            if !source_found {
+                                warn!(
+                                    "tera::render::resolve_task_sources no source file(s) resolved for pattern: '{pattern}'"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                Ok(tera::Value::Array(resolved))
+            }
+        });
+
         (tera, arg_order, input_args, input_flags)
     }
 
@@ -398,7 +476,7 @@ impl TaskScriptParser {
         task: &Task,
         scripts: &[String],
     ) -> Result<usage::Spec> {
-        let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing();
+        let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
         let tera_ctx = task.tera_ctx(config).await?;
         // Don't insert env for spec-only parsing to avoid expensive environment rendering
         // Render scripts to trigger spec collection via Tera template functions (arg/option/flag), but discard the results
@@ -436,7 +514,7 @@ impl TaskScriptParser {
         scripts: &[String],
         env: &EnvMap,
     ) -> Result<(Vec<String>, usage::Spec)> {
-        let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing();
+        let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
         let mut tera_ctx = task.tera_ctx(config).await?;
         tera_ctx.insert("env", &env);
         let scripts = scripts
