@@ -535,27 +535,27 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_detect_config_file_type() {
+    #[tokio::test]
+    async fn test_detect_config_file_type() {
         env::set_var("MISE_EXPERIMENTAL", "true");
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/.nvmrc")),
+            detect_config_file_type(Path::new("/foo/bar/.nvmrc")).await,
             Some(ConfigFileType::IdiomaticVersion)
         );
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/.ruby-version")),
+            detect_config_file_type(Path::new("/foo/bar/.ruby-version")).await,
             Some(ConfigFileType::IdiomaticVersion)
         );
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/.test-tool-versions")),
+            detect_config_file_type(Path::new("/foo/bar/.test-tool-versions")).await,
             Some(ConfigFileType::ToolVersions)
         );
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/mise.toml")),
+            detect_config_file_type(Path::new("/foo/bar/mise.toml")).await,
             Some(ConfigFileType::MiseToml)
         );
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")),
+            detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")).await,
             Some(ConfigFileType::IdiomaticVersion)
         );
     }
