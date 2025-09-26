@@ -4,7 +4,7 @@ set -euxo pipefail
 MISE_VERSION=$(./scripts/get-version.sh)
 
 mkdir -p mise/lib
-echo 'message = "To update, use your package manager (apt/yum)."' > mise/lib/mise-self-update-instructions.toml
+echo 'message = "To update, use your package manager (apt/yum)."' >mise/lib/mise-self-update-instructions.toml
 
 tar -xvJf "dist/mise-$MISE_VERSION-linux-x64.tar.xz"
 fpm -s dir -t deb \
