@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# Test that postinstall hooks have access to pre_tools environment variables
+
+# Create a mise.toml with env vars that should be available before tools
+cat <<EOF >mise.toml
+[env]
+# Environment variable without tools=true (should be available in postinstall)
+PRE_TOOLS_VAR = "available_before_tools"
+
+# Environment variable explicitly with tools=false
+EXPLICIT_PRE_TOOLS = {value = "explicitly_pre_tools", tools = false}
+
+# Environment variable with tools=true (should NOT be available in postinstall)
+POST_TOOLS_VAR = {value = "available_after_tools", tools = true}
+
+[tools]
+dummy = { version = "latest", postinstall = "echo PRE_TOOLS_VAR=\$PRE_TOOLS_VAR; echo EXPLICIT_PRE_TOOLS=\$EXPLICIT_PRE_TOOLS; echo POST_TOOLS_VAR=\$POST_TOOLS_VAR" }
+EOF
+
+# Remove any existing dummy installation to force reinstall
+rm -rf ~/.mise/installs/dummy
+
+# Run install and capture output
+output=$(mise install dummy 2>&1)
+
+# Check that pre_tools environment variables are available in postinstall
+if [[ $output == *"PRE_TOOLS_VAR=available_before_tools"* ]]; then
+	echo "✓ PRE_TOOLS_VAR is available in postinstall"
+else
+	echo "✗ PRE_TOOLS_VAR is NOT available in postinstall"
+	echo "Output: $output"
+	exit 1
+fi
+
+if [[ $output == *"EXPLICIT_PRE_TOOLS=explicitly_pre_tools"* ]]; then
+	echo "✓ EXPLICIT_PRE_TOOLS is available in postinstall"
+else
+	echo "✗ EXPLICIT_PRE_TOOLS is NOT available in postinstall"
+	echo "Output: $output"
+	exit 1
+fi
+
+# The post_tools var should be empty since it's marked as tools=true
+if [[ $output == *"POST_TOOLS_VAR="* ]]; then
+	echo "✓ POST_TOOLS_VAR is empty as expected"
+else
+	echo "✗ POST_TOOLS_VAR is not empty"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Verify that POST_TOOLS_VAR with tools=true is NOT available in postinstall hook
+if [[ $output != *"POST_TOOLS_VAR=available_after_tools"* ]]; then
+	echo "✓ POST_TOOLS_VAR with tools=true is not available as expected"
+else
+	echo "✗ POST_TOOLS_VAR with tools=true should not be available"
+	echo "Output: $output"
+	exit 1
+fi

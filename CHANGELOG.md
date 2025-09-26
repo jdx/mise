@@ -1,6 +1,27 @@
 # Changelog
 
-## [2025.9.18](https://github.com/jdx/mise/compare/v2025.9.17..v2025.9.18) - 2025-09-24
+## [2025.9.19](https://github.com/jdx/mise/compare/v2025.9.18..v2025.9.19) - 2025-09-25
+
+### 📦 Registry
+
+- fix mise-ghcup plugin managed tools descriptions by @risu729 in [#6411](https://github.com/jdx/mise/pull/6411)
+- add Tinymist by @3w36zj6 in [#6412](https://github.com/jdx/mise/pull/6412)
+- revert djinni backend to ubi by @risu729 in [#6410](https://github.com/jdx/mise/pull/6410)
+
+### 🚀 Features
+
+- **(github)** filter remote versions by version_prefix by @risu729 in [#6408](https://github.com/jdx/mise/pull/6408)
+- Remove experimental labels for GitHub and HTTP backends by @Copilot in [#6415](https://github.com/jdx/mise/pull/6415)
+
+### 🧪 Testing
+
+- **(vfox)** replace flaky external tests with local dummy plugin by @jdx in [#6403](https://github.com/jdx/mise/pull/6403)
+
+### New Contributors
+
+- @Copilot made their first contribution in [#6415](https://github.com/jdx/mise/pull/6415)
+
+## [2025.9.18](https://github.com/jdx/mise/compare/v2025.9.17..v2025.9.18) - 2025-09-25
 
 ### 📦 Registry
 
@@ -8,6 +29,7 @@
 
 ### 🚀 Features
 
+- **(config)** support vars in tool versions by @jdx in [#6401](https://github.com/jdx/mise/pull/6401)
 - **(template)** add read_file() function by @jdx in [#6400](https://github.com/jdx/mise/pull/6400)
 
 ### 🐛 Bug Fixes

@@ -141,6 +141,7 @@ impl Doctor {
         let tools = ts.list_versions_by_plugin().into_iter().map(|(f, tv)| {
             let versions: serde_json::Value = tv
                 .iter()
+                .filter(|tv| tv.request.is_os_supported())
                 .map(|tv: &ToolVersion| {
                     let mut tool = serde_json::Map::new();
                     match f.is_version_installed(&config, tv, true) {
@@ -329,6 +330,7 @@ impl Doctor {
         let tools = ts
             .list_current_versions()
             .into_iter()
+            .filter(|(_, tv)| tv.request.is_os_supported())
             .map(|(f, tv)| match f.is_version_installed(&config, &tv, true) {
                 true => (tv.to_string(), style::nstyle("")),
                 false => {
