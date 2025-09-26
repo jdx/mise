@@ -492,12 +492,17 @@ impl Config {
             let min = style::eyellow(required);
             let cur = style::eyellow(cur);
             let msg = format!("mise version {min} is required, but you are using {cur}");
-            bail!(crate::cli::self_update::append_self_update_instructions(msg));
+            bail!(crate::cli::self_update::append_self_update_instructions(
+                msg
+            ));
         } else if let Some(recommended) = spec.soft_violation(cur) {
             let min = style::eyellow(recommended);
             let cur = style::eyellow(cur);
             let msg = format!("mise version {min} is recommended, but you are using {cur}");
-            warn!("{}", crate::cli::self_update::append_self_update_instructions(msg));
+            warn!(
+                "{}",
+                crate::cli::self_update::append_self_update_instructions(msg)
+            );
         }
         Ok(())
     }

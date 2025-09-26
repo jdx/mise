@@ -115,9 +115,9 @@ impl MiseToml {
                     }
                     _ => {}
                 }
-                if let Some(spec) = crate::config::config_file::min_version::MinVersionSpec::new(
-                    hard_req, soft_req,
-                ) {
+                if let Some(spec) =
+                    crate::config::config_file::min_version::MinVersionSpec::new(hard_req, soft_req)
+                {
                     crate::config::Config::enforce_min_version_spec(&spec)?;
                 }
             }
