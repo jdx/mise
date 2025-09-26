@@ -1,3 +1,4 @@
+use std::fmt;
 use versions::Versioning;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MinVersionSpec {
@@ -42,19 +43,23 @@ impl MinVersionSpec {
         self.soft().filter(|recommended| current < *recommended)
     }
 
-    pub fn to_owned(&self) -> Self {
-        Self {
-            hard: self.hard.clone(),
-            soft: self.soft.clone(),
-        }
-    }
-
     pub fn merge_with(&mut self, other: &Self) {
         if self.hard.is_none() {
             self.hard = other.hard.clone();
         }
         if self.soft.is_none() {
             self.soft = other.soft.clone();
+        }
+    }
+}
+
+impl fmt::Display for MinVersionSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match (self.hard.as_ref(), self.soft.as_ref()) {
+            (Some(h), None) => write!(f, "{}", h),
+            (None, Some(s)) => write!(f, "{}", s),
+            (Some(h), Some(s)) => write!(f, "hard={}, soft={}", h, s),
+            (None, None) => write!(f, ""),
         }
     }
 }
