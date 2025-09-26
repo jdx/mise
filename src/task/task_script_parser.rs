@@ -414,7 +414,7 @@ impl TaskScriptParser {
                     }
 
                     match glob::glob_with(
-                        &pattern,
+                        pattern,
                         glob::MatchOptions {
                             case_sensitive: false,
                             require_literal_separator: false,
