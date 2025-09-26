@@ -1590,6 +1590,11 @@ backends = [
 description = "historical CLI of getenvoy"
 test = ["getenvoy --version", "getenvoy version {{version}}"]
 
+[tools.ggshield]
+backends = ["aqua:GitGuardian/ggshield", "ubi:GitGuardian/ggshield", "pipx:ggshield"]
+description = "Detect and validate 500+ types of hardcoded secrets with advanced checks. Use it as a pre-commit hook, GitHub Action, or CLI for proactive secret detection and security."
+test = ["ggshield --version", "ggshield, version {{version}}"]
+
 [tools.ghalint]
 backends = ["aqua:suzuki-shunsuke/ghalint", "ubi:suzuki-shunsuke/ghalint"]
 description = "GitHub Actions linter"
