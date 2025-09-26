@@ -394,10 +394,7 @@ impl TaskScriptParser {
 
             move |_: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
                if sources.is_empty() {
-                   if sources.is_empty() {
-                       trace!("tera::render::resolve_task_sources `task_source_files` called in task with empty sources array");
-                   }
-
+                   trace!("tera::render::resolve_task_sources `task_source_files` called in task with empty sources array");
                    return Ok(tera::Value::Array(Default::default()));
                };
 
