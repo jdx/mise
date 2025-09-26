@@ -196,7 +196,7 @@ jobs:
   deb:
     runs-on: ubuntu-latest
     needs: [build-tarball]
-    container: ghcr.io/jdx/mise:deb@sha256:f78098bf3c413699948d4e0c0e6f37d980b8ad03c08d4c98d3da5a34a8f54d9a
+    container: ghcr.io/jdx/mise:deb@sha256:af96f8ead5d62cb23f2c0d17322550433a3a5ca6d6eb04ee23fd81d9863cf6e4
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
