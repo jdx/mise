@@ -235,7 +235,7 @@ cp completions/mise.fish %{buildroot}%{_datadir}/fish/vendor_completions.d/
 
 # Disable self-update for package manager installations
 mkdir -p %{buildroot}%{_libdir}/mise
-touch %{buildroot}%{_libdir}/mise/.disable-self-update
+echo 'message = "To update, use your package manager (dnf/yum)."' > %{buildroot}%{_libdir}/mise/mise-self-update-instructions.toml
 
 %files
 %license LICENSE
@@ -245,7 +245,7 @@ touch %{buildroot}%{_libdir}/mise/.disable-self-update
 %{_datadir}/bash-completion/completions/mise
 %{_datadir}/zsh/site-functions/_mise
 %{_datadir}/fish/vendor_completions.d/mise.fish
-%{_libdir}/mise/.disable-self-update
+%{_libdir}/mise/mise-self-update-instructions.toml
 
 %changelog
 * __CHANGELOG_DATE__ __MAINTAINER_NAME__ <__MAINTAINER_EMAIL__> - %{version}-1
