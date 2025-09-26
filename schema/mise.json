@@ -1710,8 +1710,28 @@
     },
     "min_version": {
       "description": "minimum version of mise required to use this config",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "type": "string"
+      "oneOf": [
+        {
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hard": {
+              "description": "error if current mise is lower than this version",
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            },
+            "soft": {
+              "description": "warn if current mise is lower than this version",
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            }
+          }
+        }
+      ]
     },
     "redactions": {
       "description": "env or vars keys to redact from logs",

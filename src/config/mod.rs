@@ -15,6 +15,7 @@ use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
+use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
 use crate::config::config_file::{ConfigFile, config_trust_root};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
@@ -34,7 +35,6 @@ pub mod env_directive;
 pub mod settings;
 pub mod tracking;
 
-use crate::cli::self_update::SelfUpdate;
 use crate::env_diff::EnvMap;
 use crate::hook_env::WatchFilePattern;
 use crate::hooks::Hook;
@@ -473,22 +473,36 @@ impl Config {
     }
 
     fn validate(&self) -> eyre::Result<()> {
+        self.validate_versions()?;
+        Ok(())
+    }
+
+    fn validate_versions(&self) -> eyre::Result<()> {
         for cf in self.config_files.values() {
-            if let Some(min) = cf.min_version() {
-                let cur = &*version::V;
-                if cur < min {
-                    let min = style::eyellow(min);
-                    let cur = style::eyellow(cur);
-                    if SelfUpdate::is_available() {
-                        bail!(
-                            "mise version {min} is required, but you are using {cur}\n\
-                            Run `mise self-update` to update mise",
-                        );
-                    } else {
-                        bail!("mise version {min} is required, but you are using {cur}");
-                    }
-                }
+            if let Some(spec) = cf.min_version() {
+                Self::enforce_min_version_spec(spec)?;
             }
+        }
+        Ok(())
+    }
+
+    pub fn enforce_min_version_spec(spec: &MinVersionSpec) -> eyre::Result<()> {
+        let cur = &*version::V;
+        if let Some(required) = spec.hard_violation(cur) {
+            let min = style::eyellow(required);
+            let cur = style::eyellow(cur);
+            let msg = format!("mise version {min} is required, but you are using {cur}");
+            bail!(crate::cli::self_update::append_self_update_instructions(
+                msg
+            ));
+        } else if let Some(recommended) = spec.soft_violation(cur) {
+            let min = style::eyellow(recommended);
+            let cur = style::eyellow(cur);
+            let msg = format!("mise version {min} is recommended, but you are using {cur}");
+            warn!(
+                "{}",
+                crate::cli::self_update::append_self_update_instructions(msg)
+            );
         }
         Ok(())
     }

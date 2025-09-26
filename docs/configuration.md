@@ -210,12 +210,24 @@ my_custom_node = '20'
 ### Minimum mise version
 
 Specify the minimum supported version of mise required for the configuration file.
-If the configuration file specifies a version of mise that is higher than
-the currently installed version, mise will error out.
+
+You can set a hard minimum (errors if unmet) or a soft minimum (warns and continues):
 
 ```toml
+# (equivalent to hard)
 min_version = '2024.11.1'
+
+# new object form
+min_version = { hard = '2024.11.1' }
+
+# soft recommendation
+min_version = { soft = '2024.11.1' }
+
+# both
+min_version = { hard = '2024.11.1', soft = '2024.9.0' }
 ```
+
+When a soft minimum is not met, mise will print a warning and (if available) show self-update instructions. When a hard minimum is not met, mise errors and shows self-update instructions.
 
 ### `mise.toml` schema
 
