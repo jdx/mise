@@ -473,6 +473,11 @@ impl Config {
     }
 
     fn validate(&self) -> eyre::Result<()> {
+        self.validate_versions()?;
+        Ok(())
+    }
+
+    fn validate_versions(&self) -> eyre::Result<()> {
         for cf in self.config_files.values() {
             if let Some(spec) = cf.min_version() {
                 let cur = &*version::V;

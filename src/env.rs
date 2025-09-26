@@ -207,9 +207,9 @@ pub static MISE_SELF_UPDATE_INSTRUCTIONS: Lazy<Option<PathBuf>> = Lazy::new(|| {
     find_in_tree(
         &base,
         &[
-            &["lib", "self-update-instructions.toml"],
-            &["lib", "mise", "self-update-instructions.toml"],
-            &["lib64", "mise", "self-update-instructions.toml"],
+            &["lib", "mise-self-update-instructions.toml"],
+            &["lib", "mise", "mise-self-update-instructions.toml"],
+            &["lib64", "mise", "mise-self-update-instructions.toml"],
         ],
     )
 });
