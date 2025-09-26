@@ -664,6 +664,7 @@ fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[tokio::test]
     async fn test_task_parse_arg() {
@@ -900,5 +901,78 @@ mod tests {
         assert_eq!(&flag.name, "baz");
         assert_eq!(flag.help, Some("".to_string()));
         assert_eq!(flag.help_first_line, None);
+    }
+
+    #[rstest::rstest]
+    #[case::no_sources(
+        &[],
+        "echo {{ task_source_files() }}",
+        "echo []"
+    )]
+    #[case::glob_with_matches(
+        &["**/filetask"],
+        "echo {{ task_source_files() | first }}",
+        "echo .mise/tasks/filetask"  // created by constructor in `src/test.rs`, guaranteed to exist
+    )]
+    #[case::glob_with_no_matches(
+        &["nonexistent/*.xyz"],
+        "echo {{ task_source_files() }}",
+        "echo []"
+    )]
+    #[case::literal_relative_path(
+        &["../../Cargo.toml"],
+        "echo {{ task_source_files() | first }}",
+        "echo ../../Cargo.toml"
+    )]
+    #[case::literal_absolute_path(
+        &[concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")],
+        "echo {{ task_source_files() | first }}",
+        concat!("echo ", env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")
+    )]
+    #[case::tera_template_preserved(
+        &["{{ env.HOME }}/file.txt", "src/*.rs"],
+        "echo {{ task_source_files() | first }}",
+        "echo {{ env.HOME }}/file.txt"
+    )]
+    #[case::invalid_glob_passed_through(
+        &["[invalid"],
+        "echo {{ task_source_files() | first }}",
+        "echo [invalid"
+    )]
+    #[case::tera_for_loop_template(
+        &[
+            concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/README.md")
+        ],
+        "{% for file in task_source_files() %}echo {{ file }}; {% endfor %}",
+        concat!(
+            "echo ",
+            env!("CARGO_MANIFEST_DIR"),
+            "/Cargo.toml; echo ",
+            env!("CARGO_MANIFEST_DIR"),
+            "/README.md; ",
+        ),
+    )]
+    #[tokio::test]
+    async fn test_task_parse_task_source_files(
+        #[case] sources: &[&str],
+        #[case] template: &str,
+        #[case] expected: &str,
+    ) {
+        let (mut task, scripts, parser, config) = (
+            Task::default(),
+            vec![template.into()],
+            TaskScriptParser::new(None),
+            Config::get().await.unwrap(),
+        );
+
+        task.sources = sources.iter().map(ToString::to_string).collect();
+
+        let (parsed, _) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+
+        assert_eq!(parsed, vec![expected]);
     }
 }
