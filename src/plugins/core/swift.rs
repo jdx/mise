@@ -95,6 +95,7 @@ impl SwiftPlugin {
                     format: file::TarFormat::TarGz,
                     pr: Some(&ctx.pr),
                     strip_components: 1,
+                    ..Default::default()
                 },
             )?;
         }

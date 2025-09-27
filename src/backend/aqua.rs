@@ -862,6 +862,7 @@ impl AquaBackend {
             format: format.parse().unwrap_or_default(),
             pr: Some(&ctx.pr),
             strip_components: 0,
+            ..Default::default()
         };
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
