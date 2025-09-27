@@ -124,6 +124,9 @@ pub struct Cli {
     /// Set the profile (environment)
     #[clap(short = 'P', long, global = true, hide = true, conflicts_with = "env")]
     pub profile: Option<Vec<String>>,
+    /// How many retries to attempt [default: 0]
+    #[clap(long, global = true, env = "MISE_RETRIES")]
+    pub retries: Option<usize>,
     #[clap(long, short, hide = true)]
     pub shell: Option<String>,
     /// Tool(s) to run in addition to what is in mise.toml files
