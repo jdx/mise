@@ -6,7 +6,7 @@ use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
 use eyre::{Result, bail};
 use indexmap::IndexSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 // Shared OS/arch patterns used across helpers
 const OS_PATTERNS: &[&str] = &[
