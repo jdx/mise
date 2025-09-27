@@ -29,6 +29,7 @@ RUN    apt-get update \
     fd-find \
     fish \
     libclang-dev \
+    libssl-dev \
     pkg-config \
     python3-venv \
     pipx \
