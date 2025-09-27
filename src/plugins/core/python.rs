@@ -4,8 +4,8 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::env;
 use crate::file::{TarOptions, display_path};
-use crate::git::{CloneOptions, Git};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
@@ -16,6 +16,7 @@ use async_trait::async_trait;
 use eyre::{bail, eyre};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
+use serde_json;
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -47,6 +48,78 @@ impl PythonPlugin {
     fn python_build_path(&self) -> PathBuf {
         self.ba.cache_path.join("pyenv")
     }
+
+    fn pyenv_version_file(&self) -> PathBuf {
+        self.ba.cache_path.join("pyenv_version.txt")
+    }
+
+    async fn get_pyenv_tarball_url(&self) -> eyre::Result<String> {
+        // Check if custom repo is specified
+        let repo_url = &Settings::get().python.pyenv_repo;
+        if repo_url.starts_with("https://github.com/") {
+            // Extract owner/repo from GitHub URL
+            let parts: Vec<&str> = repo_url
+                .trim_end_matches(".git")
+                .trim_end_matches('/')
+                .split('/')
+                .collect();
+            if parts.len() >= 2 {
+                let owner = parts[parts.len() - 2];
+                let repo = parts[parts.len() - 1];
+                // Get latest release tarball URL
+                let api_url = format!(
+                    "https://api.github.com/repos/{}/{}/releases/latest",
+                    owner, repo
+                );
+                let response = HTTP_FETCH.get_text(&api_url).await?;
+                let json: serde_json::Value = serde_json::from_str(&response)?;
+                if let Some(tarball_url) = json["tarball_url"].as_str() {
+                    return Ok(tarball_url.to_string());
+                }
+            }
+        }
+        // Default to pyenv latest release
+        Ok("https://api.github.com/repos/pyenv/pyenv/tarball/latest".to_string())
+    }
+
+    async fn save_pyenv_version(&self) -> eyre::Result<()> {
+        let version_file = self.pyenv_version_file();
+        // Get latest version tag
+        let response = HTTP_FETCH
+            .get_text("https://api.github.com/repos/pyenv/pyenv/releases/latest")
+            .await?;
+        let json: serde_json::Value = serde_json::from_str(&response)?;
+        let version = json["tag_name"].as_str().unwrap_or("unknown").to_string();
+        file::write(&version_file, &version)?;
+        Ok(())
+    }
+
+    async fn needs_pyenv_update(&self) -> eyre::Result<bool> {
+        let version_file = self.pyenv_version_file();
+        if !version_file.exists() {
+            return Ok(true);
+        }
+
+        // Check if the version file is older than 7 days
+        let metadata = std::fs::metadata(&version_file)?;
+        if let Ok(modified) = metadata.modified() {
+            let age = std::time::SystemTime::now().duration_since(modified)?;
+            if age < std::time::Duration::from_secs(7 * 24 * 60 * 60) {
+                // Less than 7 days old, skip update check
+                return Ok(false);
+            }
+        }
+
+        // Check if there's a newer version available
+        let current_version = file::read_to_string(&version_file)?;
+        let response = HTTP_FETCH
+            .get_text("https://api.github.com/repos/pyenv/pyenv/releases/latest")
+            .await?;
+        let json: serde_json::Value = serde_json::from_str(&response)?;
+        let latest_version = json["tag_name"].as_str().unwrap_or("unknown").to_string();
+
+        Ok(current_version.trim() != latest_version.trim())
+    }
     fn python_build_bin(&self) -> PathBuf {
         self.python_build_path()
             .join("plugins/python-build/bin/python-build")
@@ -58,16 +131,19 @@ impl PythonPlugin {
             })
             .lock()
     }
-    fn install_or_update_python_build(&self, ctx: Option<&InstallContext>) -> eyre::Result<()> {
+    async fn install_or_update_python_build(
+        &self,
+        ctx: Option<&InstallContext>,
+    ) -> eyre::Result<()> {
         ensure_not_windows()?;
-        let _lock = self.lock_pyenv();
+        let _lock = self.lock_pyenv()?;
         if self.python_build_bin().exists() {
-            self.update_python_build()
+            self.update_python_build().await
         } else {
-            self.install_python_build(ctx)
+            self.install_python_build(ctx).await
         }
     }
-    fn install_python_build(&self, ctx: Option<&InstallContext>) -> eyre::Result<()> {
+    async fn install_python_build(&self, ctx: Option<&InstallContext>) -> eyre::Result<()> {
         if self.python_build_bin().exists() {
             return Ok(());
         }
@@ -75,37 +151,61 @@ impl PythonPlugin {
         debug!("Installing python-build to {}", python_build_path.display());
         file::remove_all(&python_build_path)?;
         file::create_dir_all(self.python_build_path().parent().unwrap())?;
-        let git = Git::new(self.python_build_path());
-        let pr = ctx.map(|ctx| &ctx.pr);
-        let mut clone_options = CloneOptions::default();
-        if let Some(pr) = pr {
-            clone_options = clone_options.pr(pr);
+
+        // Download latest pyenv tarball
+        let tarball_url = self.get_pyenv_tarball_url().await?;
+        let temp_tarball = env::temp_dir().join("pyenv-latest.tar.gz");
+
+        if let Some(ctx) = ctx {
+            ctx.pr.set_message("downloading pyenv".into());
         }
-        git.clone(&Settings::get().python.pyenv_repo, clone_options)?;
+
+        HTTP.download_file(&tarball_url, &temp_tarball, ctx.map(|c| &c.pr))
+            .await?;
+
+        // Extract tarball
+        if let Some(ctx) = ctx {
+            ctx.pr.set_message("extracting pyenv".into());
+        }
+
+        file::untar(
+            &temp_tarball,
+            &python_build_path,
+            &TarOptions {
+                strip_components: 1,
+                pr: ctx.map(|c| &c.pr),
+                ..Default::default()
+            },
+        )?;
+
+        // Clean up temp file
+        file::remove_all(&temp_tarball).ok();
+
+        // Store the version for update checking
+        self.save_pyenv_version().await?;
+
         Ok(())
     }
-    fn update_python_build(&self) -> eyre::Result<()> {
-        // TODO: do not update if recently updated
+    async fn update_python_build(&self) -> eyre::Result<()> {
         debug!(
-            "Updating python-build in {}",
+            "Checking for python-build updates in {}",
             self.python_build_path().display()
         );
-        let pyenv_path = self.python_build_path();
-        let git = Git::new(pyenv_path.clone());
-        match plugins::core::run_fetch_task_with_timeout(move || git.update(None)) {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                warn!(
-                    "failed to update python-build repo ({}), attempting self-repair by recloning",
-                    err
-                );
-                // The cached pyenv repo can get corrupted (e.g. unable to read sha1 file).
-                // Repair by removing the cache and performing a fresh clone.
-                file::remove_all(&pyenv_path)?;
-                // Safe to reinstall without a context; progress reporting is optional here.
-                self.install_python_build(None)
-            }
+
+        // Check if update is needed
+        if !self.needs_pyenv_update().await? {
+            debug!("python-build is up to date");
+            return Ok(());
         }
+
+        debug!("Updating python-build");
+        let pyenv_path = self.python_build_path();
+
+        // Remove old installation
+        file::remove_all(&pyenv_path)?;
+
+        // Install fresh from tarball
+        self.install_python_build(None).await
     }
 
     async fn fetch_precompiled_remote_versions(
@@ -288,7 +388,7 @@ impl PythonPlugin {
     }
 
     async fn install_compiled(&self, ctx: &InstallContext, tv: &ToolVersion) -> eyre::Result<()> {
-        self.install_or_update_python_build(Some(ctx))?;
+        self.install_or_update_python_build(Some(ctx)).await?;
         if matches!(&tv.request, ToolRequest::Ref { .. }) {
             return Err(eyre!("Ref versions not supported for python"));
         }
@@ -441,7 +541,7 @@ impl Backend for PythonPlugin {
                 .map(|(v, _, _)| v.clone())
                 .collect())
         } else {
-            self.install_or_update_python_build(None)?;
+            self.install_or_update_python_build(None).await?;
             let python_build_bin = self.python_build_bin();
             plugins::core::run_fetch_task_with_timeout(move || {
                 let output = cmd!(python_build_bin, "--definitions").read()?;
