@@ -233,7 +233,8 @@ impl HttpBackend {
             file::make_executable(&dest)?;
         } else {
             // Auto-detect if we need strip_components=1 before extracting
-            if strip_components.is_none() {
+            // Only auto-strip if strip_components is not set AND bin_path is not explicitly configured
+            if strip_components.is_none() && opts.get("bin_path").is_none() {
                 if let Ok(should_strip) = file::should_strip_components(file_path, format) {
                     if should_strip {
                         debug!(
