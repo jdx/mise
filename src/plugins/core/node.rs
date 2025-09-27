@@ -112,6 +112,7 @@ impl NodePlugin {
                         format: TarFormat::TarGz,
                         strip_components: 1,
                         pr: Some(&ctx.pr),
+                        ..Default::default()
                     },
                 )?;
                 Ok(())

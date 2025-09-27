@@ -225,6 +225,7 @@ pub fn install_artifact(
             format,
             strip_components: strip_components.unwrap_or(0),
             pr,
+            ..Default::default()
         };
 
         // Extract with determined strip_components

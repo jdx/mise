@@ -665,11 +665,23 @@ impl TarFormat {
     }
 }
 
-#[derive(Default)]
 pub struct TarOptions<'a> {
     pub format: TarFormat,
     pub strip_components: usize,
     pub pr: Option<&'a Box<dyn SingleReport>>,
+    /// When false, files will be extracted with current timestamp instead of archive's mtime
+    pub preserve_mtime: bool,
+}
+
+impl<'a> Default for TarOptions<'a> {
+    fn default() -> Self {
+        Self {
+            format: TarFormat::default(),
+            strip_components: 0,
+            pr: None,
+            preserve_mtime: true, // Default to preserving mtime for backward compatibility
+        }
+    }
 }
 
 pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
@@ -746,6 +758,9 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
             create_dir_all(dest)?;
             break;
         }
+
+        // Configure mtime preservation based on options
+        entry.set_preserve_mtime(opts.preserve_mtime);
 
         trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
         entry.unpack_in(dest).wrap_err_with(err)?;

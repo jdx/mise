@@ -204,6 +204,7 @@ impl HttpBackend {
                 format,
                 strip_components: strip_components.unwrap_or(0),
                 pr,
+                preserve_mtime: false, // Bump mtime when extracting to cache
             };
 
             // Extract with determined strip_components

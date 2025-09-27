@@ -418,6 +418,7 @@ impl ToolStub {
             format: TarFormat::Auto,
             strip_components: 0,
             pr: Some(pr),
+            ..Default::default()
         };
         file::untar(archive_path, &extracted_dir, &tar_opts)?;
 
