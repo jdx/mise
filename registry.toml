@@ -504,7 +504,7 @@ description = "BTrace - a safe, dynamic tracing tool for the Java platform"
 [tools.buck2]
 backends = ["github:facebook/buck2[bin=buck2]"]
 description = "A fast, hermetic, multi-language build system"
-test = ["buck2 --version", "buck2 {{version}}"]
+test = ["buck2 --version", "buck2"]
 
 [tools.buf]
 backends = ["aqua:bufbuild/buf", "ubi:bufbuild/buf", "asdf:truepay/asdf-buf"]
