@@ -826,6 +826,10 @@
             "venv_stdlib": {
               "description": "Prefer to use venv from Python's standard library.",
               "type": "boolean"
+            },
+            "pyenv_repo": {
+              "description": "GitHub repository to use for pyenv (python-build).",
+              "type": "string"
             }
           }
         },

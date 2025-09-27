@@ -52,13 +52,40 @@ impl PythonPlugin {
         self.ba.cache_path.join("pyenv_version.txt")
     }
 
+    fn get_pyenv_repo(&self) -> eyre::Result<String> {
+        let repo = Settings::get()
+            .python
+            .pyenv_repo
+            .clone()
+            .unwrap_or_else(|| "pyenv/pyenv".to_string());
+
+        // Handle GitHub URL formats
+        if repo.starts_with("https://github.com/") {
+            let repo_path = repo
+                .strip_prefix("https://github.com/")
+                .unwrap()
+                .strip_suffix(".git")
+                .unwrap_or(repo.strip_prefix("https://github.com/").unwrap());
+            Ok(repo_path.to_string())
+        } else if repo.contains("://") {
+            // Non-GitHub URL detected
+            bail!(
+                "Only GitHub repositories are supported for python.pyenv_repo. Got: {}",
+                repo
+            )
+        } else {
+            // Assume it's already in owner/repo format
+            Ok(repo)
+        }
+    }
+
     async fn get_pyenv_latest_release(&self) -> eyre::Result<github::GithubRelease> {
-        // Always use the official pyenv/pyenv repository
-        let releases = github::list_releases("pyenv/pyenv").await?;
+        let repo = self.get_pyenv_repo()?;
+        let releases = github::list_releases(&repo).await?;
         releases
             .into_iter()
             .find(|r| !r.prerelease && !r.draft)
-            .ok_or_else(|| eyre!("No stable releases found for pyenv/pyenv"))
+            .ok_or_else(|| eyre!("No stable releases found for {}", repo))
     }
 
     async fn save_pyenv_version(&self, version: &str) -> eyre::Result<()> {
@@ -123,9 +150,10 @@ impl PythonPlugin {
 
         // Get latest pyenv release and download tarball
         let latest_release = self.get_pyenv_latest_release().await?;
+        let repo = self.get_pyenv_repo()?;
         let tarball_url = format!(
-            "https://api.github.com/repos/pyenv/pyenv/tarball/{}",
-            latest_release.tag_name
+            "https://api.github.com/repos/{}/tarball/{}",
+            repo, latest_release.tag_name
         );
         let temp_tarball = env::temp_dir().join("pyenv-latest.tar.gz");
 

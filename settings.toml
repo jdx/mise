@@ -844,6 +844,30 @@ description = "Prefer to use venv from Python's standard library."
 env = "MISE_VENV_STDLIB"
 type = "Bool"
 
+[python.pyenv_repo]
+description = "GitHub repository to use for pyenv (python-build)."
+docs = """
+Specify the GitHub repository to use for pyenv (python-build).
+Defaults to "pyenv/pyenv" which uses the official pyenv repository.
+You can specify a custom repository for testing or using a fork.
+
+Supported formats:
+- `owner/repo` (e.g., `pyenv/pyenv`)
+- `https://github.com/owner/repo`
+- `https://github.com/owner/repo.git`
+
+Example:
+```toml
+[settings]
+python.pyenv_repo = "myorg/my-pyenv-fork"
+# or
+python.pyenv_repo = "https://github.com/myorg/my-pyenv-fork.git"
+```
+"""
+env = "MISE_PYTHON_PYENV_REPO"
+optional = true
+type = "String"
+
 [python_compile]
 deprecated = "Use python.compile instead."
 description = "If true, compile python from source. If false, use precompiled binaries. If not set, use precompiled binaries if available."
