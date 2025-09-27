@@ -4,23 +4,35 @@
 # Setup
 #################################################################################
 
-# Find available port
-find_available_port() {
-	local port=8080
-	while lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; do
-		((port++))
-	done
-	echo $port
-}
+# Clean up any previous server files
+rm -f /tmp/mise_git_http_port /tmp/mise_git_http_ready /tmp/mise_git_http_info
 
-# Start local git HTTP server for faster testing
-SERVER_PORT=$(find_available_port)
-python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" "$SERVER_PORT" &
+# Start local git HTTP server with OS-assigned port to avoid race conditions
+python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
 SERVER_PID=$!
 
-# Wait for server to start
-sleep 2
+# Wait for server to be ready (with timeout)
+wait_for_server() {
+	local max_attempts=30 # 30 seconds timeout
+	local attempt=1
 
+	while [ $attempt -le $max_attempts ]; do
+		if [ -f /tmp/mise_git_http_ready ] && [ -f /tmp/mise_git_http_port ]; then
+			return 0
+		fi
+		sleep 1
+		attempt=$((attempt + 1))
+	done
+
+	echo "ERROR: Git HTTP server failed to start within 30 seconds"
+	kill "$SERVER_PID" 2>/dev/null || true
+	exit 1
+}
+
+wait_for_server
+
+# Read the actual port from the file
+SERVER_PORT=$(cat /tmp/mise_git_http_port)
 LOCAL_GIT_URL="http://localhost:${SERVER_PORT}/repo.git"
 
 # Update cache directory paths for local server
@@ -34,7 +46,7 @@ cargo init --name hello_cargo
 # Ensure cleanup on exit
 cleanup() {
 	kill "$SERVER_PID" 2>/dev/null || true
-	rm -f /tmp/mise_git_http_info
+	rm -f /tmp/mise_git_http_port /tmp/mise_git_http_ready /tmp/mise_git_http_info
 }
 trap cleanup EXIT
 

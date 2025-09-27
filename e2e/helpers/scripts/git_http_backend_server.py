@@ -140,7 +140,7 @@ def create_test_repo(repo_path):
     subprocess.run(['git', 'config', 'http.uploadpack', 'true'], cwd=repo_path, check=True)
     subprocess.run(['git', 'update-server-info'], cwd=repo_path, check=True)
 
-def start_server(port=8080):
+def start_server(port=0):
     # Create temp directory
     temp_dir = Path(tempfile.mkdtemp(prefix='mise_git_http_'))
     repo_path = temp_dir / 'repo'
@@ -152,10 +152,20 @@ def start_server(port=8080):
     def handler(*args, **kwargs):
         return GitHTTPHandler(*args, repo_dir=temp_dir, **kwargs)
 
-    # Start server
+    # Let the OS assign an available port if port=0
+    # This avoids race conditions between finding and binding
     with socketserver.TCPServer(("", port), handler) as httpd:
-        print(f"Git HTTP server running on port {port}")
-        print(f"Repository URL: http://localhost:{port}/repo.git")
+        actual_port = httpd.server_address[1]
+        print(f"Git HTTP server running on port {actual_port}")
+        print(f"Repository URL: http://localhost:{actual_port}/repo.git")
+
+        # Write the actual port to a file for the test to read
+        port_file = Path('/tmp/mise_git_http_port')
+        port_file.write_text(str(actual_port))
+
+        # Also write a ready marker file
+        ready_file = Path('/tmp/mise_git_http_ready')
+        ready_file.write_text('ready')
 
         # Save cleanup info
         with open('/tmp/mise_git_http_info', 'w') as f:
@@ -167,7 +177,9 @@ def start_server(port=8080):
             print("\nShutting down...")
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
+            port_file.unlink(missing_ok=True)
+            ready_file.unlink(missing_ok=True)
 
 if __name__ == '__main__':
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 0
     start_server(port)
