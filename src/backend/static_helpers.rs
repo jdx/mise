@@ -197,7 +197,6 @@ pub fn install_artifact(
     if is_compressed_binary {
         // Handle compressed single binary
         let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
-
         // Determine the destination path with support for bin_path
         let dest = if let Some(bin_path_template) = opts.get("bin_path") {
             let bin_path = template_string(bin_path_template, tv);
