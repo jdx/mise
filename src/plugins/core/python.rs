@@ -11,12 +11,11 @@ use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{Result, lock_file::LockFile};
-use crate::{cmd, dirs, file, plugins, sysconfig};
+use crate::{cmd, dirs, file, github, plugins, sysconfig};
 use async_trait::async_trait;
 use eyre::{bail, eyre};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
-use serde_json;
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -53,10 +52,10 @@ impl PythonPlugin {
         self.ba.cache_path.join("pyenv_version.txt")
     }
 
-    async fn get_pyenv_tarball_url(&self) -> eyre::Result<String> {
+    async fn get_pyenv_latest_release(&self) -> eyre::Result<github::GithubRelease> {
         // Check if custom repo is specified
         let repo_url = &Settings::get().python.pyenv_repo;
-        if repo_url.starts_with("https://github.com/") {
+        let repo = if repo_url.starts_with("https://github.com/") {
             // Extract owner/repo from GitHub URL
             let parts: Vec<&str> = repo_url
                 .trim_end_matches(".git")
@@ -64,33 +63,25 @@ impl PythonPlugin {
                 .split('/')
                 .collect();
             if parts.len() >= 2 {
-                let owner = parts[parts.len() - 2];
-                let repo = parts[parts.len() - 1];
-                // Get latest release tarball URL
-                let api_url = format!(
-                    "https://api.github.com/repos/{}/{}/releases/latest",
-                    owner, repo
-                );
-                let response = HTTP_FETCH.get_text(&api_url).await?;
-                let json: serde_json::Value = serde_json::from_str(&response)?;
-                if let Some(tarball_url) = json["tarball_url"].as_str() {
-                    return Ok(tarball_url.to_string());
-                }
+                format!("{}/{}", parts[parts.len() - 2], parts[parts.len() - 1])
+            } else {
+                "pyenv/pyenv".to_string()
             }
-        }
-        // Default to pyenv latest release
-        Ok("https://api.github.com/repos/pyenv/pyenv/tarball/latest".to_string())
+        } else {
+            "pyenv/pyenv".to_string()
+        };
+
+        // Get releases and return the latest non-prerelease
+        let releases = github::list_releases(&repo).await?;
+        releases
+            .into_iter()
+            .find(|r| !r.prerelease && !r.draft)
+            .ok_or_else(|| eyre!("No stable releases found for {}", repo))
     }
 
-    async fn save_pyenv_version(&self) -> eyre::Result<()> {
+    async fn save_pyenv_version(&self, version: &str) -> eyre::Result<()> {
         let version_file = self.pyenv_version_file();
-        // Get latest version tag
-        let response = HTTP_FETCH
-            .get_text("https://api.github.com/repos/pyenv/pyenv/releases/latest")
-            .await?;
-        let json: serde_json::Value = serde_json::from_str(&response)?;
-        let version = json["tag_name"].as_str().unwrap_or("unknown").to_string();
-        file::write(&version_file, &version)?;
+        file::write(&version_file, version)?;
         Ok(())
     }
 
@@ -112,13 +103,9 @@ impl PythonPlugin {
 
         // Check if there's a newer version available
         let current_version = file::read_to_string(&version_file)?;
-        let response = HTTP_FETCH
-            .get_text("https://api.github.com/repos/pyenv/pyenv/releases/latest")
-            .await?;
-        let json: serde_json::Value = serde_json::from_str(&response)?;
-        let latest_version = json["tag_name"].as_str().unwrap_or("unknown").to_string();
+        let latest_release = self.get_pyenv_latest_release().await?;
 
-        Ok(current_version.trim() != latest_version.trim())
+        Ok(current_version.trim() != latest_release.tag_name.trim())
     }
     fn python_build_bin(&self) -> PathBuf {
         self.python_build_path()
@@ -152,8 +139,12 @@ impl PythonPlugin {
         file::remove_all(&python_build_path)?;
         file::create_dir_all(self.python_build_path().parent().unwrap())?;
 
-        // Download latest pyenv tarball
-        let tarball_url = self.get_pyenv_tarball_url().await?;
+        // Get latest pyenv release and download tarball
+        let latest_release = self.get_pyenv_latest_release().await?;
+        let tarball_url = format!(
+            "https://api.github.com/repos/pyenv/pyenv/tarball/{}",
+            latest_release.tag_name
+        );
         let temp_tarball = env::temp_dir().join("pyenv-latest.tar.gz");
 
         if let Some(ctx) = ctx {
@@ -182,7 +173,7 @@ impl PythonPlugin {
         file::remove_all(&temp_tarball).ok();
 
         // Store the version for update checking
-        self.save_pyenv_version().await?;
+        self.save_pyenv_version(&latest_release.tag_name).await?;
 
         Ok(())
     }
