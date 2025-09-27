@@ -76,8 +76,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn nodejs_async() {
-        let versions = run_async("nodejs").await;
+    async fn test_nodejs_async() {
+        let versions = run_async("test-nodejs").await;
         assert!(versions.contains(&"20.0.0".to_string()));
     }
 
