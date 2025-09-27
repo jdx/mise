@@ -1,0 +1,61 @@
+name: mise
+title: mise-en-place
+version: "2025.9.23"
+summary: dev tools, env vars, task runner
+description: |
+  dev tools, env vars, task runner
+license: MIT
+website: https://mise.jdx.dev
+source-code: https://github.com/jdx/mise.git
+issues: https://github.com/jdx/mise/issues
+contact:
+  - https://github.com/jdx/mise/issues
+  - https://phanective.org
+donation:
+  - https://github.com/sponsors/jdx
+
+grade: stable
+confinement: strict
+
+platforms:
+  amd64:
+  arm64:
+  armhf:
+
+base: core24
+
+parts:
+  mise:
+    source: "."
+    source-type: local
+
+    plugin: rust
+    rust-channel: stable
+
+    build-packages:
+      - libssl-dev
+
+    override-build: |
+      mkdir -p ./mise/lib
+
+      cat >./mise/lib/mise-self-update-instructions.toml <<'TOML'
+      message = "To update mise snap package, run:\n\n  snap refresh\n\nNote that this command updates all the snap packages you installed."
+      TOML
+
+      craftctl default
+
+apps:
+  mise:
+    command: bin/mise
+    plugs:
+      - network
+      - network-bind
+      - process-control
+      - user-config
+
+plugs:
+  user-config:
+    interface: personal-files
+    write:
+      - $HOME/.cache/mise
+      - $HOME/.local/share/mise

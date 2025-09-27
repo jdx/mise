@@ -78,6 +78,7 @@ changelog="$(echo "$changelog" | tail -n +3)"
 sed -i.bak "s/^[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\? macos-arm64 (a1b2d3e [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\})$/$version macos-arm64 (a1b2d3e $(date +%Y-%m-%d))/" README.md
 sed -i.bak "s/^Version: [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/Version: $version/" packaging/rpm/mise.spec
 sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/version = \"$version\";/" default.nix
+sed -i.bak "s/version: \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\"$/version: \"$version\";/" snapcraft.yaml
 
 # Update GitHub star count using gh CLI
 stars_raw="$(gh api repos/jdx/mise --jq '.stargazers_count')"
