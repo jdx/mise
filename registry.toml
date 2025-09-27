@@ -339,10 +339,7 @@ test = ["bb --version", "babashka v{{version}}"]
 
 [tools.balena]
 aliases = ["balena-cli"]
-backends = [
-  "github:balena-io/balena-cli[bin_path=bin]",
-  "asdf:jaredallard/asdf-balena-cli",
-]
+backends = ["github:balena-io/balena-cli", "asdf:jaredallard/asdf-balena-cli"]
 description = "The balena CLI is a Command Line Interface for balenaCloud or openBalena"
 test = ["balena --version", "{{version}}"]
 
