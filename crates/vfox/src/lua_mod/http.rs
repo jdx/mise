@@ -74,7 +74,6 @@ fn get_headers(lua: &Lua, headers: &reqwest::header::HeaderMap) -> Result<Table>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -157,6 +156,7 @@ mod tests {
                     .set_body_string(test_content)
                     .insert_header("content-type", "application/json"),
             )
+            .expect(1) // Expect exactly one request
             .mount(&server)
             .await;
 
@@ -181,9 +181,19 @@ mod tests {
         .await
         .unwrap();
 
-        // Verify file was downloaded correctly
-        let content = fs::read_to_string(&path).unwrap();
-        assert!(content.contains("vfox-nodejs"));
+        // Add a small delay to ensure file write is completed
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Verify file was downloaded correctly with better error handling
+        let content = tokio::fs::read_to_string(&path)
+            .await
+            .unwrap_or_else(|e| panic!("Failed to read file at {:?}: {}", path, e));
+
+        assert!(
+            content.contains("vfox-nodejs"),
+            "Expected content to contain 'vfox-nodejs', but got: {:?}",
+            content
+        );
 
         // TempDir automatically cleans up when dropped
     }
