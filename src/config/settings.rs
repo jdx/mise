@@ -246,9 +246,6 @@ impl Settings {
         if let Some(python_precompiled_os) = &self.python_precompiled_os {
             self.python.precompiled_os = Some(python_precompiled_os.clone());
         }
-        if let Some(python_pyenv_repo) = &self.python_pyenv_repo {
-            self.python.pyenv_repo = python_pyenv_repo.clone();
-        }
         if let Some(python_venv_stdlib) = self.python_venv_stdlib {
             self.python.venv_stdlib = python_venv_stdlib;
         }

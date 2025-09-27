@@ -53,30 +53,12 @@ impl PythonPlugin {
     }
 
     async fn get_pyenv_latest_release(&self) -> eyre::Result<github::GithubRelease> {
-        // Check if custom repo is specified
-        let repo_url = &Settings::get().python.pyenv_repo;
-        let repo = if repo_url.starts_with("https://github.com/") {
-            // Extract owner/repo from GitHub URL
-            let parts: Vec<&str> = repo_url
-                .trim_end_matches(".git")
-                .trim_end_matches('/')
-                .split('/')
-                .collect();
-            if parts.len() >= 2 {
-                format!("{}/{}", parts[parts.len() - 2], parts[parts.len() - 1])
-            } else {
-                "pyenv/pyenv".to_string()
-            }
-        } else {
-            "pyenv/pyenv".to_string()
-        };
-
-        // Get releases and return the latest non-prerelease
-        let releases = github::list_releases(&repo).await?;
+        // Always use the official pyenv/pyenv repository
+        let releases = github::list_releases("pyenv/pyenv").await?;
         releases
             .into_iter()
             .find(|r| !r.prerelease && !r.draft)
-            .ok_or_else(|| eyre!("No stable releases found for {}", repo))
+            .ok_or_else(|| eyre!("No stable releases found for pyenv/pyenv"))
     }
 
     async fn save_pyenv_version(&self, version: &str) -> eyre::Result<()> {

@@ -800,11 +800,6 @@
               "description": "Specify the OS to use for precompiled binaries.",
               "type": "string"
             },
-            "pyenv_repo": {
-              "default": "https://github.com/pyenv/pyenv.git",
-              "description": "URL to fetch pyenv from for compiling python with python-build.",
-              "type": "string"
-            },
             "uv_venv_auto": {
               "description": "Integrate with uv to automatically create/source venvs if uv.lock is present.",
               "type": "boolean"
