@@ -147,6 +147,7 @@ impl PythonPlugin {
             &TarOptions {
                 strip_components: 1,
                 pr: ctx.map(|c| &c.pr),
+                preserve_mtime: false, // Use current time for fresh mtimes
                 ..Default::default()
             },
         )?;
