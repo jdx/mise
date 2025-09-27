@@ -80,7 +80,10 @@ impl RemoteTaskGit {
         if self.detect_ssh(file).is_ok() {
             return self.detect_ssh(file).unwrap();
         }
-        self.detect_https(file).unwrap()
+        if self.detect_https(file).is_ok() {
+            return self.detect_https(file).unwrap();
+        }
+        self.detect_file(file).unwrap()
     }
 
     fn detect_ssh(&self, file: &str) -> Result<GitRepoStructure> {
@@ -118,6 +121,24 @@ impl RemoteTaskGit {
 
         Ok(GitRepoStructure::new(url_without_path, path, branch))
     }
+
+    fn detect_file(&self, file: &str) -> Result<GitRepoStructure> {
+        let re = Regex::new(r"^git::(?P<url>file://(?P<path>[^?]+))//(?P<file_path>[^?]+)(\?ref=(?P<branch>[^?]+))?$").unwrap();
+
+        if !re.is_match(file) {
+            return Err(eyre!("Invalid file:// URL"));
+        }
+
+        let captures = re.captures(file).unwrap();
+
+        let url_without_path = captures.name("url").unwrap().as_str();
+
+        let path = captures.name("file_path").unwrap().as_str();
+
+        let branch: Option<String> = captures.name("branch").map(|m| m.as_str().to_string());
+
+        Ok(GitRepoStructure::new(url_without_path, path, branch))
+    }
 }
 
 #[async_trait]
@@ -128,6 +149,10 @@ impl TaskFileProvider for RemoteTaskGit {
         }
 
         if self.detect_https(file).is_ok() {
+            return true;
+        }
+
+        if self.detect_file(file).is_ok() {
             return true;
         }
 
@@ -350,6 +375,39 @@ mod tests {
             let first_cache_key = remote_task_git.get_cache_key(&first_repo);
             let second_cache_key = remote_task_git.get_cache_key(&second_repo);
             assert_eq!(expected, first_cache_key == second_cache_key);
+        }
+    }
+
+    #[test]
+    fn test_valid_detect_file() {
+        let remote_task_git = RemoteTaskGitBuilder::new().build();
+
+        let test_cases = vec![
+            "git::file:///tmp/repo.git//myfile?ref=v1.0.0",
+            "git::file:///home/user/repo.git//terraform/myfile?ref=master",
+            "git::file:///var/repos/example.git//terraform/myfile",
+            "git::file:///path/to/repo.git//myfile?ref=master",
+        ];
+
+        for url in test_cases {
+            let result = remote_task_git.detect_file(url);
+            assert!(result.is_ok());
+        }
+    }
+
+    #[test]
+    fn test_invalid_detect_file() {
+        let remote_task_git = RemoteTaskGitBuilder::new().build();
+
+        let test_cases = vec![
+            "git::file:///tmp/repo.git?ref=master", // Missing path
+            "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0", // Wrong protocol
+            "file:///tmp/repo.git//myfile",         // Missing git:: prefix
+        ];
+
+        for url in test_cases {
+            let result = remote_task_git.detect_file(url);
+            assert!(result.is_err());
         }
     }
 

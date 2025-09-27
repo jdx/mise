@@ -4,10 +4,28 @@
 # Setup
 #################################################################################
 
+# Source the local git server helper
+# shellcheck source=helpers/start_local_git_server.sh disable=SC1091
+source "$TEST_ROOT/helpers/start_local_git_server.sh"
+
 REMOTE_TASKS_DIR="${MISE_CACHE_DIR}/remote-git-tasks-cache"
-MISE_V2025117_CACHE_DIR="${REMOTE_TASKS_DIR}/791bacd406835a949d44cc2ac1106e0e4475d131ccc56b2540846d661bf5ff5c"
 
 cargo init --name hello_cargo
+
+# Start local git server for faster tests
+setup_local_git_server
+LOCAL_GIT_URL="$(get_local_git_url)"
+
+# Update cache directory hash to match local URL
+if command -v sha256sum >/dev/null; then
+	LOCAL_HASH=$(echo -n "${LOCAL_GIT_URL}v2025.1.17" | sha256sum | cut -d' ' -f1)
+elif command -v shasum >/dev/null; then
+	LOCAL_HASH=$(echo -n "${LOCAL_GIT_URL}v2025.1.17" | shasum -a 256 | cut -d' ' -f1)
+else
+	# Fallback for systems without sha256sum or shasum
+	LOCAL_HASH="fallback_hash_$(echo -n "${LOCAL_GIT_URL}v2025.1.17" | od -An -tx1 | tr -d ' \n' | head -c 64)"
+fi
+LOCAL_MISE_CACHE_DIR="${REMOTE_TASKS_DIR}/${LOCAL_HASH}"
 
 #################################################################################
 # Test remote tasks with no ref
@@ -15,29 +33,29 @@ cargo init --name hello_cargo
 
 cat <<EOF >mise.toml
 [tasks.remote_lint_https_latest]
-file  = "git::https://github.com/jdx/mise.git//xtasks/lint/ripgrep"
+file  = "git::${LOCAL_GIT_URL}//xtasks/lint/ripgrep"
 EOF
 
 assert_contains "mise tasks" "remote_lint_https_latest"
 assert_succeed "mise run remote_lint_https_latest" # Remote task should be downloaded
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+assert_directory_not_exists "${LOCAL_MISE_CACHE_DIR}"
 
 mise cache clear # Clear cache to force redownload
 
 assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_https_latest" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+assert_directory_not_exists "${LOCAL_MISE_CACHE_DIR}"
 
 assert_succeed "mise run remote_lint_https_latest --no-cache" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+assert_directory_not_exists "${LOCAL_MISE_CACHE_DIR}"
 
 assert_succeed "mise run remote_lint_https_latest" # Cache should be used
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+assert_directory_not_exists "${LOCAL_MISE_CACHE_DIR}"
 
 mise cache clear # Clear cache to force redownload
 
@@ -47,28 +65,28 @@ mise cache clear # Clear cache to force redownload
 
 cat <<EOF >mise.toml
 [tasks.remote_lint_https_ref]
-file  = "git::https://github.com/jdx/mise.git//xtasks/lint/ripgrep?ref=v2025.1.17"
+file  = "git::${LOCAL_GIT_URL}//xtasks/lint/ripgrep?ref=v2025.1.17"
 EOF
 
 assert_contains "mise tasks" "remote_lint_https_ref"
 assert_succeed "mise run remote_lint_https_ref" # Remote task should be downloaded
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
-assert_directory_exists "${MISE_V2025117_CACHE_DIR}"
-assert_directory_not_empty "${MISE_V2025117_CACHE_DIR}"
+assert_directory_exists "${LOCAL_MISE_CACHE_DIR}"
+assert_directory_not_empty "${LOCAL_MISE_CACHE_DIR}"
 
 mise cache clear # Clear cache to force redownload
 
 assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_https_ref" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+assert_directory_not_exists "${LOCAL_MISE_CACHE_DIR}"
 
 assert_succeed "mise run remote_lint_https_ref --no-cache" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+assert_directory_not_exists "${LOCAL_MISE_CACHE_DIR}"
 
 assert_succeed "mise run remote_lint_https_ref" # Cache should be used
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
-assert_directory_exists "${MISE_V2025117_CACHE_DIR}"
-assert_directory_not_empty "${MISE_V2025117_CACHE_DIR}"
+assert_directory_exists "${LOCAL_MISE_CACHE_DIR}"
+assert_directory_not_empty "${LOCAL_MISE_CACHE_DIR}"
