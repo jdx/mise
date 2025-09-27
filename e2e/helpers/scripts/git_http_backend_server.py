@@ -72,20 +72,30 @@ class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
                 self.send_response(200)
 
                 # Process headers
+                body_start = len(lines)  # Default to end if no separator found
                 for i, line in enumerate(lines):
                     if not headers_done:
                         if line == b'' or line == b'\r':
                             headers_done = True
-                            self.end_headers()
-                            # Send remaining content
-                            body = b'\n'.join(lines[i+1:])
-                            self.wfile.write(body)
+                            body_start = i + 1
                             break
                         elif b':' in line:
                             header_line = line.decode('utf-8', errors='ignore').strip()
                             if ':' in header_line:
                                 key, value = header_line.split(':', 1)
                                 self.send_header(key.strip(), value.strip())
+
+                # Always call end_headers even if no empty line was found
+                if not headers_done:
+                    # No empty line found, but we still need to end headers
+                    body_start = 0  # Treat entire output as body if no headers found
+
+                self.end_headers()
+
+                # Send body content
+                if body_start < len(lines):
+                    body = b'\n'.join(lines[body_start:])
+                    self.wfile.write(body)
             else:
                 self.send_error(500, f"Git backend error: {stderr.decode()}")
 
