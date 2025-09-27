@@ -69,6 +69,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise bin-paths [TOOL@VERSION]…`](/cli/bin-paths.md)
 - [`mise cache <SUBCOMMAND>`](/cli/cache.md)
 - [`mise cache clear [PLUGIN]…`](/cli/cache/clear.md)
+- [`mise cache path`](/cli/cache/path.md)
 - [`mise cache prune [--dry-run] [-v --verbose…] [PLUGIN]…`](/cli/cache/prune.md)
 - [`mise completion [--include-bash-completion-lib] [SHELL]`](/cli/completion.md)
 - [`mise config [FLAGS] <SUBCOMMAND>`](/cli/config.md)

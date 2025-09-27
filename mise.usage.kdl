@@ -133,6 +133,9 @@ cmd cache help="Manage the mise cache" {
         flag --outdate help="Mark all cache files as old" hide=#true
         arg "[PLUGIN]…" help="Plugin(s) to clear cache for e.g.: node, python" required=#false var=#true
     }
+    cmd path help="Show the cache directory path" {
+        alias dir
+    }
     cmd prune help="Removes stale mise cache files" {
         alias p
         long_help "Removes stale mise cache files\n\nBy default, this command will remove files that have not been accessed in 30 days.\nChange this with the MISE_CACHE_PRUNE_AGE environment variable."

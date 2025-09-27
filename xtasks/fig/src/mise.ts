@@ -279,6 +279,10 @@ esac`),
           },
         },
         {
+          name: ["path", "dir"],
+          description: "Show the cache directory path",
+        },
+        {
           name: ["prune", "p"],
           description: "Removes stale mise cache files",
           options: [
