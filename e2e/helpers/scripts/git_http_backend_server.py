@@ -29,13 +29,19 @@ class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
         env = os.environ.copy()
         env['GIT_PROJECT_ROOT'] = str(self.repo_dir)
         env['GIT_HTTP_EXPORT_ALL'] = '1'
-        env['PATH_INFO'] = self.path
+
+        # Map /repo.git paths to /repo
+        path_info = self.path
+        if path_info.startswith('/repo.git'):
+            path_info = path_info.replace('/repo.git', '/repo', 1)
+
+        env['PATH_INFO'] = path_info
         env['REQUEST_METHOD'] = self.command
         env['QUERY_STRING'] = ''
         env['REMOTE_ADDR'] = self.client_address[0]
 
-        if '?' in self.path:
-            env['PATH_INFO'], env['QUERY_STRING'] = self.path.split('?', 1)
+        if '?' in path_info:
+            env['PATH_INFO'], env['QUERY_STRING'] = path_info.split('?', 1)
 
         # Read request body for POST
         content_length = int(self.headers.get('Content-Length', 0))
@@ -88,49 +94,38 @@ class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
 
 def create_test_repo(repo_path):
     """Create a minimal test repository"""
-    # Initialize bare repo
-    subprocess.run(['git', 'init', '--bare', repo_path], check=True)
+    # Create a regular (non-bare) repository
+    subprocess.run(['git', 'init', repo_path], check=True)
 
-    # Create temporary working directory
-    with tempfile.TemporaryDirectory() as work_dir:
-        work_path = Path(work_dir)
+    # Configure git in the repository
+    subprocess.run(['git', 'config', 'user.name', 'Test User'], cwd=repo_path, check=True)
+    subprocess.run(['git', 'config', 'user.email', 'test@example.com'], cwd=repo_path, check=True)
 
-        # Clone to working directory
-        subprocess.run(['git', 'clone', repo_path, 'work'], cwd=work_dir, check=True)
-        work_repo = work_path / 'work'
+    # Create test files
+    xtasks_dir = Path(repo_path) / 'xtasks' / 'lint'
+    xtasks_dir.mkdir(parents=True)
 
-        # Configure git
-        subprocess.run(['git', 'config', 'user.name', 'Test User'], cwd=work_repo, check=True)
-        subprocess.run(['git', 'config', 'user.email', 'test@example.com'], cwd=work_repo, check=True)
+    ripgrep_file = xtasks_dir / 'ripgrep'
+    ripgrep_file.write_text('#!/usr/bin/env bash\necho "ripgrep task executed"\n')
+    ripgrep_file.chmod(0o755)
 
-        # Create test files
-        xtasks_dir = work_repo / 'xtasks' / 'lint'
-        xtasks_dir.mkdir(parents=True)
+    # Commit files
+    subprocess.run(['git', 'add', '.'], cwd=repo_path, check=True)
+    subprocess.run(['git', 'commit', '-m', 'Add test files'], cwd=repo_path, check=True)
+    subprocess.run(['git', 'tag', 'v2025.1.17'], cwd=repo_path, check=True)
 
-        ripgrep_file = xtasks_dir / 'ripgrep'
-        ripgrep_file.write_text('#!/usr/bin/env bash\necho "ripgrep task executed"\n')
-        ripgrep_file.chmod(0o755)
+    # Handle branch naming
+    current_branch = subprocess.run(
+        ['git', 'branch', '--show-current'],
+        cwd=repo_path,
+        capture_output=True,
+        text=True
+    ).stdout.strip()
 
-        # Commit and push
-        subprocess.run(['git', 'add', '.'], cwd=work_repo, check=True)
-        subprocess.run(['git', 'commit', '-m', 'Add test files'], cwd=work_repo, check=True)
-        subprocess.run(['git', 'tag', 'v2025.1.17'], cwd=work_repo, check=True)
+    if current_branch != 'main':
+        subprocess.run(['git', 'branch', '-m', current_branch, 'main'], cwd=repo_path, check=True)
 
-        # Handle branch naming
-        current_branch = subprocess.run(
-            ['git', 'branch', '--show-current'],
-            cwd=work_repo,
-            capture_output=True,
-            text=True
-        ).stdout.strip()
-
-        if current_branch != 'main':
-            subprocess.run(['git', 'branch', '-m', current_branch, 'main'], cwd=work_repo, check=True)
-
-        subprocess.run(['git', 'push', 'origin', 'main'], cwd=work_repo, check=True)
-        subprocess.run(['git', 'push', '--tags'], cwd=work_repo, check=True)
-
-    # Configure repo for HTTP
+    # Configure repo for HTTP serving
     subprocess.run(['git', 'config', 'http.receivepack', 'true'], cwd=repo_path, check=True)
     subprocess.run(['git', 'config', 'http.uploadpack', 'true'], cwd=repo_path, check=True)
     subprocess.run(['git', 'update-server-info'], cwd=repo_path, check=True)
@@ -138,7 +133,7 @@ def create_test_repo(repo_path):
 def start_server(port=8080):
     # Create temp directory
     temp_dir = Path(tempfile.mkdtemp(prefix='mise_git_http_'))
-    repo_path = temp_dir / 'repo.git'
+    repo_path = temp_dir / 'repo'
 
     print(f"Creating test repository at {repo_path}")
     create_test_repo(str(repo_path))
