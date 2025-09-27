@@ -186,7 +186,42 @@ pub fn install_artifact(
     // Use TarFormat for format detection
     let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
     let format = file::TarFormat::from_ext(ext);
-    if format == file::TarFormat::Raw {
+
+    // Get file extension and detect format
+    let file_name = file_path.file_name().unwrap().to_string_lossy();
+
+    // Check if it's a compressed binary (not a tar archive)
+    let is_compressed_binary =
+        !file_name.contains(".tar") && matches!(ext, "gz" | "xz" | "bz2" | "zst");
+
+    if is_compressed_binary {
+        // Handle compressed single binary
+        let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
+
+        // Determine the destination path with support for bin_path
+        let dest = if let Some(bin_path_template) = opts.get("bin_path") {
+            let bin_path = template_string(bin_path_template, tv);
+            let bin_dir = install_path.join(bin_path);
+            file::create_dir_all(&bin_dir)?;
+            bin_dir.join(decompressed_name)
+        } else if let Some(bin_name) = opts.get("bin") {
+            install_path.join(bin_name)
+        } else {
+            // Auto-clean binary names by removing OS/arch suffixes
+            let cleaned_name = clean_binary_name(decompressed_name, Some(&tv.ba().tool_name));
+            install_path.join(cleaned_name)
+        };
+
+        match ext {
+            "gz" => file::un_gz(file_path, &dest)?,
+            "xz" => file::un_xz(file_path, &dest)?,
+            "bz2" => file::un_bz2(file_path, &dest)?,
+            "zst" => file::un_zst(file_path, &dest)?,
+            _ => unreachable!(),
+        }
+
+        file::make_executable(&dest)?;
+    } else if format == file::TarFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
         if let Some(bin_path_template) = opts.get("bin_path") {
             let bin_path = template_string(bin_path_template, tv);
@@ -209,6 +244,7 @@ pub fn install_artifact(
             file::make_executable(&dest)?;
         }
     } else {
+        // Handle archive formats
         // Auto-detect if we need strip_components=1 before extracting
         // Only do this if strip_components was not explicitly set by the user
         if strip_components.is_none() {
