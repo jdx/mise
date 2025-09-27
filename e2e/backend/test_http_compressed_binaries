@@ -96,7 +96,7 @@ tar czf "$TEST_DIR/test-tool-archive.tar.gz" -C "$TEST_DIR" archive
 echo "Testing .tar.gz archive..."
 cat <<EOF >mise.toml
 [tools]
-"http:test-tool-archive" = { version = "1.0.0", url = "http://127.0.0.1:$HTTP_PORT/test-tool-archive.tar.gz", bin_path = "archive" }
+"http:test-tool-archive" = { version = "1.0.0", url = "http://127.0.0.1:$HTTP_PORT/test-tool-archive.tar.gz", bin_path = "archive", bin = "test-tool" }
 EOF
 mise install
 assert_contains "mise x -- test-tool" "test-tool version 1.0.0"
