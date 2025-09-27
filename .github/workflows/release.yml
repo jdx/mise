@@ -4,6 +4,8 @@ on:
   push:
     tags: ["v*"]
     branches: ["release"]
+  pull_request:
+    branches: ["main"]
   workflow_dispatch:
 
 concurrency:
@@ -11,7 +13,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  DRY_RUN: ${{ startsWith(github.event.ref, 'refs/tags/v') && '0' || '1' }}
+  DRY_RUN: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) && '0' || '1' }}
   RUST_BACKTRACE: 1
   GITHUB_API_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
   GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
@@ -19,6 +21,7 @@ env:
 
 jobs:
   build-tarball:
+    if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
     runs-on: ${{matrix.runs-on}}
     timeout-minutes: 45
@@ -102,6 +105,7 @@ jobs:
       - if: steps.cache-crates.outputs.cache-hit != 'true'
         run: cargo cache --autoclean
   build-tarball-windows:
+    if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-windows-${{matrix.arch}}
     runs-on: windows-latest
     timeout-minutes: 45
@@ -129,6 +133,7 @@ jobs:
           path: dist/*.zip
           if-no-files-found: error
   e2e-linux:
+    if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: e2e-linux-${{matrix.tranche}}
     needs: [build-tarball]
     runs-on: ubuntu-latest
@@ -170,6 +175,7 @@ jobs:
           max_attempts: 3
           command: ./e2e/run_all_tests
   rpm:
+    if: github.event_name != 'pull_request' || github.head_ref == 'release'
     runs-on: ubuntu-latest
     needs: [build-tarball]
     timeout-minutes: 10
@@ -194,6 +200,7 @@ jobs:
           path: dist/rpmrepo
           if-no-files-found: error
   deb:
+    if: github.event_name != 'pull_request' || github.head_ref == 'release'
     runs-on: ubuntu-latest
     needs: [build-tarball]
     container: ghcr.io/jdx/mise:deb@sha256:af96f8ead5d62cb23f2c0d17322550433a3a5ca6d6eb04ee23fd81d9863cf6e4
@@ -227,11 +234,18 @@ jobs:
       - deb
       - e2e-linux
       - build-tarball-windows
+    if: always()
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
         with:
           fetch-depth: 0
+      - name: Skip release for non-release branch PRs
+        if: github.event_name == 'pull_request' && github.head_ref != 'release'
+        run: |
+          echo "Skipping release steps for PR from non-release branch"
+          echo "All release operations will be skipped"
       - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true
@@ -243,9 +257,11 @@ jobs:
           path: ~/.cargo/bin/zipsign
           key: cargo-zipsign
       - run: ./scripts/setup-zipsign.sh
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
         env:
           ZIPSIGN: ${{ secrets.ZIPSIGN }}
       - name: Install fd-find
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
         run: |
           sudo apt-get update
           sudo apt-get install fd-find minisign
@@ -253,9 +269,12 @@ jobs:
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
         with: { path: artifacts }
       - run: ls -R artifacts
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
         with:
           path: artifacts
           pattern: |
@@ -265,15 +284,22 @@ jobs:
             mise-v*.zip
           merge-multiple: true
       - run: echo "${{ secrets.MINISIGN_KEY }}" >minisign.key
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
       - run: ls -R artifacts
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
       - run: tar -C "$HOME" -xvf "dist/mise-$(./scripts/get-version.sh)-linux-x64.tar.zst"
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
       - run: echo "$HOME/mise/bin" >> "$GITHUB_PATH"
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
       - run: which mise && mise -v && mise i
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
       - run: mise x -- scripts/release.sh
+        if: github.event_name != 'pull_request' || github.head_ref == 'release'
       - name: Create Draft GitHub Release
         if: startsWith(github.event.ref, 'refs/tags/v')
         run: |
