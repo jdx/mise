@@ -225,7 +225,6 @@ jobs:
           path: dist/deb
           if-no-files-found: error
   release:
-    if: github.event_name != 'pull_request' || github.head_ref == 'release'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -235,6 +234,7 @@ jobs:
       - deb
       - e2e-linux
       - build-tarball-windows
+    if: always()
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
         with:
