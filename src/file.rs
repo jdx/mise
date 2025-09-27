@@ -787,11 +787,21 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
         // The tar crate doesn't properly handle certain GNU sparse formats
         debug!("Using system tar for: {}", archive.display());
 
-        cmd!("tar", "-xf", archive, "-C", dest)
-            .run()
-            .wrap_err_with(|| {
-                format!("Failed to extract {} using system tar", archive.display())
-            })?;
+        // When preserve_mtime is false, use --touch to set extracted files' mtime to current time
+        // This is important for cache invalidation and autopruning
+        if !opts.preserve_mtime {
+            cmd!("tar", "--touch", "-xf", archive, "-C", dest)
+                .run()
+                .wrap_err_with(|| {
+                    format!("Failed to extract {} using system tar", archive.display())
+                })?;
+        } else {
+            cmd!("tar", "-xf", archive, "-C", dest)
+                .run()
+                .wrap_err_with(|| {
+                    format!("Failed to extract {} using system tar", archive.display())
+                })?;
+        }
     }
 
     // Always use our manual strip to ensure consistent behavior across backends
