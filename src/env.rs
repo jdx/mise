@@ -286,6 +286,7 @@ pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
 pub static OFFLINE: Lazy<bool> = Lazy::new(|| offline(&ARGS.read().unwrap()));
+pub static RETRIES: Lazy<usize> = Lazy::new(|| retries(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<EnvMap> =
     Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
@@ -574,6 +575,32 @@ fn environment(args: &[String]) -> Vec<String> {
     .filter(|s| !s.is_empty())
     .map(String::from)
     .collect()
+}
+
+fn retries(args: &[String]) -> usize {
+    let default_retries = 0;
+    if *IS_RUNNING_AS_SHIM {
+        var("MISE_RETRIES")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(default_retries)
+    } else {
+        args.windows(2)
+            .take_while(|window| !window.iter().any(|a| a == "--"))
+            .find_map(|window| {
+                if window[0] == "--retries" {
+                    window[1].parse::<usize>().ok()
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                var("MISE_RETRIES")
+                    .ok()
+                    .and_then(|v| v.parse::<usize>().ok())
+            })
+            .unwrap_or(default_retries)
+    }
 }
 
 fn log_file_level() -> Option<LevelFilter> {

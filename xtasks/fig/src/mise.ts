@@ -3455,6 +3455,14 @@ esac`),
       },
     },
     {
+      name: "--retries",
+      description: "How many retries to attempt [default: 0]",
+      isRepeatable: false,
+      args: {
+        name: "retries",
+      },
+    },
+    {
       name: "--raw",
       description:
         "Read/write directly to stdin/stdout/stderr instead of by line",

@@ -26,6 +26,10 @@ Set the environment for loading `mise.<ENV>.toml`
 
 How many jobs to run in parallel [default: 8]
 
+### `--retries <RETRIES>`
+
+How many retries to attempt [default: 0]
+
 ### `--raw`
 
 Read/write directly to stdin/stdout/stderr instead of by line

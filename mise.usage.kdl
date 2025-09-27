@@ -24,6 +24,9 @@ flag --output {
 flag "-P --profile" help="Set the profile (environment)" var=#true hide=#true global=#true {
     arg <PROFILE>
 }
+flag --retries help="How many retries to attempt [default: 0]" global=#true {
+    arg <RETRIES>
+}
 flag "-s --shell" hide=#true {
     arg <SHELL>
 }
