@@ -608,6 +608,11 @@
           "description": "Timeout in seconds for all HTTP requests in mise.",
           "type": "string"
         },
+        "http_retries": {
+          "default": 0,
+          "description": "Number of retries for HTTP requests in mise.",
+          "type": "number"
+        },
         "idiomatic_version_file": {
           "default": true,
           "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
