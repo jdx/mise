@@ -22,7 +22,7 @@ pub fn is_age_encrypted(value: &str) -> bool {
 
 pub async fn encrypt_value(
     value: &str,
-    recipients: Vec<Box<dyn Recipient + Send>>,
+    recipients: &[Box<dyn Recipient + Send>],
 ) -> Result<String> {
     if recipients.is_empty() {
         return Err(eyre!(
@@ -423,7 +423,8 @@ mod tests {
 
         // Small value should not be compressed
         let plaintext = "secret value";
-        let encrypted = encrypt_value(plaintext, vec![Box::new(recipient)]).await?;
+        let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(recipient)];
+        let encrypted = encrypt_value(plaintext, &recipients).await?;
 
         assert!(encrypted.starts_with(PREFIX_UNCOMPRESSED));
         assert!(encrypted.len() > PREFIX_UNCOMPRESSED.len());
@@ -444,7 +445,8 @@ mod tests {
 
         // Large value should be compressed (>1KB)
         let plaintext = "x".repeat(2000);
-        let encrypted = encrypt_value(&plaintext, vec![Box::new(recipient)]).await?;
+        let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(recipient)];
+        let encrypted = encrypt_value(&plaintext, &recipients).await?;
 
         assert!(encrypted.starts_with(PREFIX_COMPRESSED));
         assert!(encrypted.len() > PREFIX_COMPRESSED.len());

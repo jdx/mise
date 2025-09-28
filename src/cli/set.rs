@@ -11,6 +11,7 @@ use crate::env::{self};
 use crate::file::display_path;
 use crate::task::agecrypt;
 use crate::ui::table;
+use demand::Input;
 use eyre::{Result, bail};
 use tabled::Tabled;
 
@@ -44,6 +45,10 @@ pub struct Set {
     /// Can be used multiple times.
     #[clap(long, value_name = "ENV_KEY", verbatim_doc_comment, visible_aliases = ["rm", "unset"], hide = true)]
     remove: Option<Vec<String>>,
+
+    /// Prompt for environment variable values
+    #[clap(long)]
+    prompt: bool,
 
     /// [experimental] Encrypt the value with age before storing
     #[clap(long, requires = "env_vars")]
@@ -113,15 +118,28 @@ impl Set {
             }
         }
 
-        if let Some(env_vars) = self.env_vars.take() {
+        if let Some(mut env_vars) = self.env_vars.take() {
+            // Prompt for values if requested
+            if self.prompt {
+                for ev in &mut env_vars {
+                    if ev.value.is_none() {
+                        let prompt_msg = format!("Enter value for {}", ev.key);
+                        let value = Input::new(&prompt_msg)
+                            .password(self.age_encrypt) // Mask input if encrypting
+                            .run()?;
+                        ev.value = Some(value);
+                    }
+                }
+            }
+
             // Handle age encryption if requested
             if self.age_encrypt {
+                // Collect recipients once before the loop to avoid repeated I/O
+                let recipients = self.collect_age_recipients().await?;
                 for ev in env_vars {
                     match ev.value {
                         Some(value) => {
-                            // Collect recipients for each value (we can't clone them)
-                            let recipients = self.collect_age_recipients().await?;
-                            let encrypted = agecrypt::encrypt_value(&value, recipients).await?;
+                            let encrypted = agecrypt::encrypt_value(&value, &recipients).await?;
                             mise_toml.update_env(&ev.key, encrypted)?;
                         }
                         None => bail!("{} has no value", ev.key),
@@ -324,19 +342,14 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     key       value       source
     NODE_ENV  production  ~/.config/mise/config.toml
 
+    $ <bold>mise set --prompt PASSWORD</bold>
+    Enter value for PASSWORD: [hidden input]
+
     <bold><underline>[experimental] Age Encryption:</underline></bold>
 
-    $ <bold># Encrypt with age recipient</bold>
-    $ <bold>mise set API_KEY=secret --age-encrypt \
-        --age-recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p</bold>
+    $ <bold>mise set --age-encrypt API_KEY=secret</bold>
 
-    $ <bold># Encrypt with SSH public key</bold>
-    $ <bold>mise set DB_PASSWORD=pass123 --age-encrypt \
-        --age-ssh-recipient ~/.ssh/id_ed25519.pub</bold>
-
-    $ <bold># Decrypt (requires MISE_AGE_KEY env var or ~/.config/mise/age.txt)</bold>
-    $ <bold>export MISE_AGE_KEY="AGE-SECRET-KEY-1..."</bold>
-    $ <bold>mise set API_KEY</bold>
-    secret
+    $ <bold>mise set --age-encrypt --prompt API_KEY</bold>
+    Enter value for API_KEY: [hidden input]
 "#
 );
