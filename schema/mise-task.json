@@ -307,6 +307,10 @@
               "redact": {
                 "type": "boolean",
                 "description": "redact the value from logs"
+              },
+              "required": {
+                "type": "boolean",
+                "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false"
               }
             }
           },
@@ -565,6 +569,10 @@
         "redact": {
           "type": "boolean",
           "description": "redact the value from logs"
+        },
+        "required": {
+          "type": "boolean",
+          "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false"
         }
       },
       "oneOf": [
