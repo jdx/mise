@@ -703,7 +703,7 @@ cmd self-update help="Updates mise itself." {
 cmd set help="Set environment variables in mise.toml" {
     alias ev env-vars hide=#true
     long_help "Set environment variables in mise.toml\n\nBy default, this command modifies `mise.toml` in the current directory.\nUse `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`."
-    after_long_help "Examples:\n\n    $ mise set NODE_ENV=production\n\n    $ mise set NODE_ENV\n    production\n\n    $ mise set -E staging NODE_ENV=staging\n    # creates or modifies mise.staging.toml\n\n    $ mise set\n    key       value       source\n    NODE_ENV  production  ~/.config/mise/config.toml\n\n    [experimental] Age Encryption:\n\n    $ # Encrypt with age recipient\n    $ mise set API_KEY=secret --age-encrypt \\\n        --age-recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p\n\n    $ # Encrypt with SSH public key\n    $ mise set DB_PASSWORD=pass123 --age-encrypt \\\n        --age-ssh-recipient ~/.ssh/id_ed25519.pub\n\n    $ # Decrypt (requires MISE_AGE_KEY env var or ~/.config/mise/age.txt)\n    $ export MISE_AGE_KEY=\"AGE-SECRET-KEY-1...\"\n    $ mise set API_KEY\n    secret\n"
+    after_long_help "Examples:\n\n    $ mise set NODE_ENV=production\n\n    $ mise set NODE_ENV\n    production\n\n    $ mise set -E staging NODE_ENV=staging\n    # creates or modifies mise.staging.toml\n\n    $ mise set\n    key       value       source\n    NODE_ENV  production  ~/.config/mise/config.toml\n\n    $ mise set --prompt PASSWORD\n    Enter value for PASSWORD: [hidden input]\n\n    [experimental] Age Encryption:\n\n    $ mise set --age-encrypt API_KEY=secret\n\n    $ mise set --age-encrypt --prompt API_KEY\n    Enter value for API_KEY: [hidden input]\n"
     flag --file help="The TOML file to update" {
         long_help "The TOML file to update\n\nDefaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`."
         arg <FILE>
@@ -717,6 +717,7 @@ cmd set help="Set environment variables in mise.toml" {
         long_help "Remove the environment variable from config file\n\nCan be used multiple times."
         arg <ENV_KEY>
     }
+    flag --prompt help="Prompt for environment variable values"
     flag --age-encrypt help="[experimental] Encrypt the value with age before storing"
     flag --age-recipient help="[experimental] Age recipient (x25519 public key) for encryption" var=#true {
         long_help "[experimental] Age recipient (x25519 public key) for encryption\n\nCan be used multiple times. Requires --age-encrypt."

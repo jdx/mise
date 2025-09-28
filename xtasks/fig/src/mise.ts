@@ -1813,6 +1813,11 @@ esac`),
           },
         },
         {
+          name: "--prompt",
+          description: "Prompt for environment variable values",
+          isRepeatable: false,
+        },
+        {
           name: "--age-encrypt",
           description:
             "[experimental] Encrypt the value with age before storing",

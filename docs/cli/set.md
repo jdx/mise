@@ -32,6 +32,10 @@ Set the environment variable in the global config file
 
 Create/modify an environment-specific config file like .mise.&lt;env>.toml
 
+### `--prompt`
+
+Prompt for environment variable values
+
 ### `--age-encrypt`
 
 [experimental] Encrypt the value with age before storing
@@ -69,18 +73,13 @@ $ mise set
 key       value       source
 NODE_ENV  production  ~/.config/mise/config.toml
 
+$ mise set --prompt PASSWORD
+Enter value for PASSWORD: [hidden input]
+
 [experimental] Age Encryption:
 
-$ # Encrypt with age recipient
-$ mise set API_KEY=secret --age-encrypt \
-    --age-recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p
+$ mise set --age-encrypt API_KEY=secret
 
-$ # Encrypt with SSH public key
-$ mise set DB_PASSWORD=pass123 --age-encrypt \
-    --age-ssh-recipient ~/.ssh/id_ed25519.pub
-
-$ # Decrypt (requires MISE_AGE_KEY env var or ~/.config/mise/age.txt)
-$ export MISE_AGE_KEY="AGE-SECRET-KEY-1..."
-$ mise set API_KEY
-secret
+$ mise set --age-encrypt --prompt API_KEY
+Enter value for API_KEY: [hidden input]
 ```
