@@ -1929,7 +1929,10 @@ backends = ["aqua:common-fate/granted", "asdf:dex4er/asdf-granted"]
 description = "The easiest way to access AWS"
 
 [tools.graphite]
-backends = ["npm:@withgraphite/graphite-cli"]
+backends = [
+  "github:withgraphite/homebrew-tap[exe=gt]",
+  "npm:@withgraphite/graphite-cli",
+]
 description = "Code review for the age of AI"
 test = ["gt --version", "{{version}}"]
 
