@@ -1,5 +1,18 @@
 # Changelog
 
+## [2025.9.22](https://github.com/jdx/mise/compare/v2025.9.21..v2025.9.22) - 2025-09-28
+
+### 📦 Registry
+
+- re-enable tests by @risu729 in [#6454](https://github.com/jdx/mise/pull/6454)
+- restore comments and tests by @risu729 in [#6378](https://github.com/jdx/mise/pull/6378)
+- add github backend for graphite by @jdx in [#6455](https://github.com/jdx/mise/pull/6455)
+
+### 🚀 Features
+
+- **(backend)** add environment variable override for tool backends by @jdx in [#6456](https://github.com/jdx/mise/pull/6456)
+- add a http_retries setting to define number of retry attempts by @roele in [#6444](https://github.com/jdx/mise/pull/6444)
+
 ## [2025.9.21](https://github.com/jdx/mise/compare/v2025.9.20..v2025.9.21) - 2025-09-27
 
 ### 📦 Registry
