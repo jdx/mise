@@ -40,6 +40,7 @@ enum Commands {
 
 impl Age {
     pub async fn run(self) -> Result<()> {
+        crate::config::Settings::get().ensure_experimental("age")?;
         match self.command {
             Commands::Config(cmd) => cmd.run().await,
             Commands::Decrypt(cmd) => cmd.run().await,
