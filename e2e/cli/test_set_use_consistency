@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# Track test failures
+test_failures=0
+
 # Disable trust checking for this test
 export MISE_TRUSTED_CONFIG_PATHS="/"
 
@@ -20,6 +23,10 @@ export HOME="$test_home"
 cleanup() {
 	export HOME="$original_home"
 	rm -rf "$test_home" "$test_project"
+	if [ $test_failures -gt 0 ]; then
+		echo "❌ Test failed with $test_failures failures"
+		exit 1
+	fi
 }
 trap cleanup EXIT
 
@@ -34,6 +41,7 @@ if [ -f "$test_home/.config/mise/config.toml" ]; then
 	rm "$test_home/.config/mise/config.toml"
 else
 	echo "✗ mise use did not write to global config"
+	test_failures=$((test_failures + 1))
 fi
 
 # Test 2: In HOME directory, mise set should also write to global config (but currently doesn't)
@@ -44,6 +52,7 @@ if [ -f "$test_home/.config/mise/config.toml" ]; then
 	rm "$test_home/.config/mise/config.toml"
 else
 	echo "✗ mise set did not write to global config (BROKEN - creates local instead)"
+	test_failures=$((test_failures + 1))
 	if [ -f "$test_home/mise.toml" ]; then
 		echo "  → mise set created local mise.toml in HOME instead"
 		rm "$test_home/mise.toml"
@@ -61,6 +70,7 @@ if [ -f "$test_project/mise.toml" ]; then
 	rm "$test_project/mise.toml"
 else
 	echo "✗ mise set did not create local config"
+	test_failures=$((test_failures + 1))
 fi
 
 mise use dummy@1.0.0 || echo "mise use failed (expected if dummy not installed)"
@@ -69,6 +79,7 @@ if [ -f "$test_project/mise.toml" ]; then
 	rm "$test_project/mise.toml"
 else
 	echo "✗ mise use did not create local config"
+	test_failures=$((test_failures + 1))
 fi
 
 echo "=== Testing --path/--file directory handling ==="
@@ -82,12 +93,14 @@ if [ -f "$test_project/subdir/mise.toml" ]; then
 	rm "$test_project/subdir/mise.toml"
 else
 	echo "✗ mise use --path with directory failed"
+	test_failures=$((test_failures + 1))
 fi
 
 # Test 5: mise set --file does NOT support directory (currently)
 echo "Test 5: mise set --file with directory (currently unsupported)"
 if mise set --file "$test_project/subdir" TEST_VAR=test 2>/dev/null; then
 	echo "✗ mise set --file with directory succeeded (unexpected)"
+	test_failures=$((test_failures + 1))
 	if [ -f "$test_project/subdir/mise.toml" ]; then
 		rm "$test_project/subdir/mise.toml"
 	fi
@@ -124,6 +137,7 @@ else
 	echo "✗ Commands use different staging config files:"
 	echo "  mise use: $staging_file_use"
 	echo "  mise set: $staging_file_set"
+	test_failures=$((test_failures + 1))
 	[ -n "$staging_file_use" ] && rm "$staging_file_use"
 	[ -n "$staging_file_set" ] && rm "$staging_file_set"
 fi
@@ -160,6 +174,7 @@ if [ "$use_created_local" = "$set_created_local" ]; then
 	echo "✓ Both commands handle precedence consistently"
 else
 	echo "✗ Commands handle precedence differently (INCONSISTENT)"
+	test_failures=$((test_failures + 1))
 fi
 
 # Clean up
