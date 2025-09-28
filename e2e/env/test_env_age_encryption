@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# Test basic age encryption with x25519 key
+rm -f mise.toml age.txt
+
+# Generate test age key
+age-keygen -o age.txt 2>/dev/null
+AGE_PUBLIC_KEY=$(grep "# public key:" age.txt | cut -d: -f2 | tr -d ' ')
+AGE_SECRET_KEY=$(grep "AGE-SECRET-KEY-" age.txt)
+
+# Test encrypting a small value (should not compress)
+mise set SMALL_SECRET="my-secret-value" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
+assert_contains "cat mise.toml" 'SMALL_SECRET = "age64:v1:'
+
+# Test decrypting the value with mise set
+RESULT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise set SMALL_SECRET)
+assert "echo $RESULT" "my-secret-value"
+
+# Test decrypting in env resolution
+assert_contains "MISE_AGE_KEY=\"$AGE_SECRET_KEY\" mise env -s bash | grep SMALL_SECRET" "export SMALL_SECRET=my-secret-value"
+
+# Test encrypting a large value (should compress)
+LARGE_VALUE=$(python3 -c 'print("x" * 2000)')
+mise set LARGE_SECRET="$LARGE_VALUE" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
+assert_contains "cat mise.toml" 'LARGE_SECRET = "age64:zstd:v1:'
+
+# Test decrypting the large value
+RESULT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise set LARGE_SECRET | head -c 10)
+assert "echo $RESULT" "xxxxxxxxxx"
+
+# Test with multiple recipients
+age-keygen -o age2.txt 2>/dev/null
+AGE_PUBLIC_KEY2=$(grep "# public key:" age2.txt | cut -d: -f2 | tr -d ' ')
+AGE_SECRET_KEY2=$(grep "AGE-SECRET-KEY-" age2.txt)
+
+mise set MULTI_SECRET="multi-recipient-secret" --age-encrypt \
+	--age-recipient "$AGE_PUBLIC_KEY" \
+	--age-recipient "$AGE_PUBLIC_KEY2"
+
+# Both keys should be able to decrypt
+RESULT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise set MULTI_SECRET)
+assert "echo $RESULT" "multi-recipient-secret"
+
+RESULT=$(MISE_AGE_KEY="$AGE_SECRET_KEY2" mise set MULTI_SECRET)
+assert "echo $RESULT" "multi-recipient-secret"
+
+# Test with age key file
+cat <<EOF >~/.config/mise/age.txt
+$AGE_SECRET_KEY
+EOF
+
+mise set KEY_FILE_SECRET="key-file-secret" --age-encrypt --age-key-file age.txt
+RESULT=$(mise set KEY_FILE_SECRET)
+assert "echo $RESULT" "key-file-secret"
+
+# Test SSH recipient (if SSH key exists)
+if [ -f ~/.ssh/id_ed25519.pub ]; then
+	mise set SSH_SECRET="ssh-encrypted-secret" --age-encrypt --age-ssh-recipient ~/.ssh/id_ed25519.pub
+
+	# Decrypt with SSH key
+	if command -v age >/dev/null 2>&1; then
+		# Only test if age CLI is available
+		RESULT=$(mise set SSH_SECRET)
+		assert_contains "echo $RESULT" "ssh-encrypted-secret"
+	fi
+fi
+
+# Test default recipient behavior (uses age.txt if available)
+rm -f mise.toml
+cat <<EOF >~/.config/mise/age.txt
+$AGE_SECRET_KEY
+EOF
+
+# Should work with defaults when age.txt exists
+mise set DEFAULT_SECRET="uses-default-key" --age-encrypt
+RESULT=$(mise set DEFAULT_SECRET)
+assert "echo $RESULT" "uses-default-key"
+
+# Test error cases
+
+# Invalid recipient
+assert_fail "mise set INVALID=value --age-encrypt --age-recipient invalid-key"
+
+# No recipients available (remove defaults)
+rm -f ~/.config/mise/age.txt ~/.ssh/id_ed25519 ~/.ssh/id_rsa
+assert_fail "mise set NO_RECIPIENT=value --age-encrypt"
+
+# Decryption without key (non-strict mode returns ciphertext)
+rm -f ~/.config/mise/age.txt # Remove default key
+mise set ENCRYPTED_VALUE="encrypted" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
+RESULT=$(mise set ENCRYPTED_VALUE)
+assert_contains "echo $RESULT" "age64:"
+
+# Clean up
+rm -f mise.toml age.txt age2.txt ~/.config/mise/age.txt

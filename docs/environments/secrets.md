@@ -117,3 +117,135 @@ If you're using [mise-action](https://github.com/jdx/mise-action), it automatica
 import Settings from '/components/settings.vue';
 </script>
 <Settings child="sops" :level="4" />
+
+## Direct age Encryption <Badge type="warning" text="experimental" />
+
+In addition to sops, mise provides experimental built-in support for encrypting individual environment variables directly using [age](https://github.com/FiloSottile/age) encryption. This allows you to encrypt sensitive values right in your `mise.toml` file without needing external encrypted files.
+
+### Quick Start
+
+1. **Generate an age key pair** (if you haven't already):
+
+```bash
+age-keygen -o ~/.config/mise/age.txt
+# Note the public key output for encryption
+```
+
+2. **Encrypt a value**:
+
+```bash
+# Using x25519 age key
+mise set SECRET_API_KEY="my-secret-value" --age-encrypt \
+  --age-recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p
+
+# Or using SSH key
+mise set DB_PASSWORD="password123" --age-encrypt \
+  --age-ssh-recipient ~/.ssh/id_ed25519.pub
+```
+
+3. **Values are stored encrypted** in `mise.toml`:
+
+```toml
+[env]
+SECRET_API_KEY = "age64:v1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB3d0..."
+DB_PASSWORD = "age64:v1:YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IHNzaC1lZDI1NTE5..."
+```
+
+4. **Automatic decryption** at runtime:
+
+```bash
+# Decryption happens automatically when the identity is available
+export MISE_AGE_KEY="AGE-SECRET-KEY-1..."  # Or use ~/.config/mise/age.txt
+mise env  # Variables are decrypted automatically
+```
+
+### Encryption Options
+
+The `mise set` command supports several age-related flags:
+
+- `--age-encrypt` - Enable age encryption for the value
+- `--age-recipient <KEY>` - Specify age x25519 recipient (can be used multiple times)
+- `--age-ssh-recipient <PATH|KEY>` - Specify SSH recipient as file path or public key (can be used multiple times)
+- `--age-key-file <PATH>` - Use recipients from an age identity file
+
+### Storage Format
+
+Encrypted values are stored with a prefix indicating the encryption method:
+
+- `age64:v1:` - Uncompressed encrypted values (< 1KB)
+- `age64:zstd:v1:` - Compressed encrypted values (≥ 1KB, using zstd compression)
+
+### Decryption
+
+mise automatically decrypts values when:
+
+1. **Environment variable**: `MISE_AGE_KEY` contains the secret key
+2. **Identity file**: `~/.config/mise/age.txt` exists (default location)
+3. **SSH keys**: Standard SSH private keys (`~/.ssh/id_ed25519`, `~/.ssh/id_rsa`)
+
+Decrypted values are automatically marked as redacted for security.
+
+### Configuration
+
+You can configure age encryption behavior in settings:
+
+```toml
+[settings.age]
+# Path to age identity file (default: ~/.config/mise/age.txt)
+key_file = "~/.config/mise/age.txt"
+
+# Additional age identity files for decryption
+identity_files = ["~/.config/mise/age.txt", "~/.age/keys.txt"]
+
+# SSH identity files for decryption
+ssh_identity_files = ["~/.ssh/id_ed25519", "~/.ssh/id_rsa"]
+
+# Strict mode - fail if decryption fails (default: false)
+# In non-strict mode, encrypted values are returned as-is if decryption fails
+strict = false
+```
+
+### Use Cases
+
+Direct age encryption is useful for:
+
+- **API keys and tokens**: Encrypt sensitive credentials directly in config
+- **Database passwords**: Keep connection strings secure
+- **Small secrets**: Avoid separate encrypted files for individual values
+- **Team sharing**: Encrypt with multiple recipients for team access
+
+### Security Considerations
+
+- Encrypted values are safe to commit to version control
+- Always use `.gitignore` for identity files (`age.txt`, SSH private keys)
+- In CI/CD, provide identities via secure environment variables
+- Decrypted values are automatically redacted in logs when possible
+
+### Example: Team Collaboration
+
+```bash
+# Team members generate their age keys
+age-keygen -o ~/.config/mise/age.txt
+
+# Encrypt secrets for multiple team members
+mise set API_KEY="secret" --age-encrypt \
+  --age-recipient age1alice... \
+  --age-recipient age1bob... \
+  --age-recipient age1carol...
+
+# Each team member can decrypt with their own key
+export MISE_AGE_KEY="AGE-SECRET-KEY-1..."
+mise env  # Decrypts automatically
+```
+
+### Differences from sops
+
+| Feature            | sops                        | Direct age Encryption     |
+| ------------------ | --------------------------- | ------------------------- |
+| Encryption scope   | Entire file                 | Individual values         |
+| File formats       | JSON, YAML, TOML            | N/A (stored in mise.toml) |
+| Encryption methods | age, PGP, KMS, etc.         | age only                  |
+| Key rotation       | Requires re-encrypting file | Per-value re-encryption   |
+| Storage            | Separate encrypted files    | Inline in mise.toml       |
+
+Choose sops for encrypting entire configuration files with multiple secrets. Use direct age encryption for individual sensitive values that need to be mixed with non-sensitive configuration.

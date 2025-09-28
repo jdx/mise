@@ -323,5 +323,20 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise set</bold>
     key       value       source
     NODE_ENV  production  ~/.config/mise/config.toml
+
+    <bold><underline>[experimental] Age Encryption:</underline></bold>
+
+    $ <bold># Encrypt with age recipient</bold>
+    $ <bold>mise set API_KEY=secret --age-encrypt \
+        --age-recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p</bold>
+
+    $ <bold># Encrypt with SSH public key</bold>
+    $ <bold>mise set DB_PASSWORD=pass123 --age-encrypt \
+        --age-ssh-recipient ~/.ssh/id_ed25519.pub</bold>
+
+    $ <bold># Decrypt (requires MISE_AGE_KEY env var or ~/.config/mise/age.txt)</bold>
+    $ <bold>export MISE_AGE_KEY="AGE-SECRET-KEY-1..."</bold>
+    $ <bold>mise set API_KEY</bold>
+    secret
 "#
 );
