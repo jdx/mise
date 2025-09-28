@@ -1069,19 +1069,14 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
         None => env::current_dir()?,
     };
 
-    // If global flag is set, always use global config
-    if opts.global {
-        return Ok(global_config_path());
-    }
-
-    // If path is provided, handle it (file or directory)
+    // If path is provided, handle it (file or directory) - explicit paths take precedence
     if let Some(ref path) = opts.path {
         if path.is_file() {
             return Ok(path.clone());
         } else if path.is_dir() {
             let resolved = config_file_from_dir(path);
             if opts.prefer_toml && !resolved.to_string_lossy().ends_with(".toml") {
-                // For TOML-only commands, ensure we get a TOML file
+                // For TOML-only commands, ensure we get a TOML file in the specified directory
                 return Ok(path.join(&*env::MISE_DEFAULT_CONFIG_FILENAME));
             }
             return Ok(resolved);
@@ -1089,6 +1084,11 @@ pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
             // Path doesn't exist yet, return it as-is
             return Ok(path.clone());
         }
+    }
+
+    // If global flag is set and no explicit path provided, use global config
+    if opts.global {
+        return Ok(global_config_path());
     }
 
     // If env-specific config is requested
