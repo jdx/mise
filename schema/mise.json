@@ -955,6 +955,35 @@
           "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
           "type": "boolean"
         },
+        "age": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "identity_files": {
+              "description": "[experimental] List of age identity files to use for decryption.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "key_file": {
+              "description": "[experimental] Path to the age private key file to use for encryption/decryption.",
+              "type": "string"
+            },
+            "ssh_identity_files": {
+              "description": "[experimental] List of SSH identity files to use for age decryption.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "strict": {
+              "default": false,
+              "description": "[experimental] If true, fail when age decryption fails. If false, leave ciphertext as-is in these cases.",
+              "type": "boolean"
+            }
+          }
+        },
         "sops": {
           "type": "object",
           "additionalProperties": false,
