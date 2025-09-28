@@ -11,6 +11,7 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
             EnvDirectiveOptions {
                 tools: false,
                 redact: false,
+                required: False,
             },
         ),
         Val(
@@ -19,6 +20,7 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
             EnvDirectiveOptions {
                 tools: false,
                 redact: false,
+                required: False,
             },
         ),
         Val(
@@ -27,6 +29,7 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
             EnvDirectiveOptions {
                 tools: false,
                 redact: false,
+                required: False,
             },
         ),
     ],

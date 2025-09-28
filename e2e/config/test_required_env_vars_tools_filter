@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Tests that required env vars are only validated when their tools filter matches
+
+set -euo pipefail
+
+assert_contains() {
+	local output
+	output="${1}"
+	shift
+	if ! echo "${output}" | grep -q "$@"; then
+		echo "Expected to find '$*' in:"
+		echo "${output}"
+		exit 1
+	fi
+}
+
+assert_not_contains() {
+	local output
+	output="${1}"
+	shift
+	if echo "${output}" | grep -q "$@"; then
+		echo "Did not expect to find '$*' in:"
+		echo "${output}"
+		exit 1
+	fi
+}
+
+# Test 1: env command should NOT check tool-specific required vars
+cat >mise.toml <<'EOF'
+[env]
+TOOL_REQUIRED = { required = true, tools = true }
+NORMAL_REQUIRED = { required = true }
+EOF
+
+unset TOOL_REQUIRED NORMAL_REQUIRED || true
+
+# This should fail only on NORMAL_REQUIRED, not TOOL_REQUIRED
+if mise env 2>error.log; then
+	echo "ERROR: Expected mise env to fail but it succeeded"
+	exit 1
+fi
+
+assert_contains "$(cat error.log)" "NORMAL_REQUIRED"
+assert_not_contains "$(cat error.log)" "TOOL_REQUIRED"
+echo "Test 1 passed: env command doesn't check tool-specific required vars"
+
+# Test 2: exec command SHOULD check tool-specific required vars
+export NORMAL_REQUIRED="set"
+unset TOOL_REQUIRED || true
+
+if mise exec -- echo test 2>error.log; then
+	echo "ERROR: Expected mise exec to fail but it succeeded"
+	exit 1
+fi
+
+assert_contains "$(cat error.log)" "TOOL_REQUIRED"
+echo "Test 2 passed: exec command checks tool-specific required vars"
+
+# Test 3: Both vars satisfied should work
+export TOOL_REQUIRED="set"
+export NORMAL_REQUIRED="set"
+
+mise env >/dev/null
+mise exec -- echo test >/dev/null
+echo "Test 3 passed: Both types of required vars work when satisfied"
+
+# Test 4: Non-tool directives with tools=false should be validated by env
+cat >mise.toml <<'EOF'
+[env]
+NON_TOOL_VAR = { required = "Set NON_TOOL_VAR for development" }
+EOF
+
+unset NON_TOOL_VAR || true
+
+if mise env 2>error.log; then
+	echo "ERROR: Expected mise env to fail but it succeeded"
+	exit 1
+fi
+
+assert_contains "$(cat error.log)" "NON_TOOL_VAR"
+assert_contains "$(cat error.log)" "Set NON_TOOL_VAR for development"
+echo "Test 4 passed: Non-tool directives are validated by env command"
+
+echo "All tests passed!"

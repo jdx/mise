@@ -530,6 +530,7 @@ impl Config {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::NonToolsOnly,
+                warn_on_missing_required: *env::WARN_ON_MISSING_REQUIRED_ENV,
             },
         )
         .await?;
@@ -1152,6 +1153,7 @@ async fn load_vars(config: &Arc<Config>) -> Result<EnvResults> {
         EnvResolveOptions {
             vars: true,
             tools: ToolsFilter::NonToolsOnly,
+            warn_on_missing_required: false,
         },
     )
     .await?;
