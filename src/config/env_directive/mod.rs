@@ -396,7 +396,11 @@ impl EnvResults {
                     // Required directives don't set any value - they only validate during validation phase
                     // The actual value must come from the initial environment or a later config file
                 }
-                EnvDirective::Age { key: ref k, .. } => {
+                EnvDirective::Age {
+                    key: ref k,
+                    ref options,
+                    ..
+                } => {
                     // Decrypt age-encrypted value
                     let mut decrypted_v = crate::agecrypt::decrypt_age_directive(&directive)
                         .await
@@ -409,49 +413,30 @@ impl EnvResults {
                         r.vars.insert(k.clone(), (decrypted_v, source.clone()));
                     } else {
                         r.env_remove.remove(k);
-                        // Handle redaction based on directive type
-                        match directive {
-                            EnvDirective::Age { options, .. } => {
-                                // For age-encrypted values, we default to redacting for security
-                                // The challenge is that EnvDirectiveOptions.redact defaults to false,
-                                // but we want to invert this behavior for age directives.
-                                //
-                                // Solution: For age directives, redact UNLESS redact is explicitly false
-                                // Since we can't distinguish explicit false from default false,
-                                // we need to use context clues.
-                                //
-                                // Our heuristic: if the directive has ANY non-default options set,
-                                // then the user has explicitly configured it and we should respect
-                                // their redact choice. Otherwise, default to redacting.
+                        // Handle redaction for age-encrypted values
+                        // We're already in the EnvDirective::Age match arm, so we know this is an Age directive
 
-                                // With nullable redact, we can now distinguish between:
-                                // - None: not specified (default for age is to redact for security)
-                                // - Some(true): explicitly redact
-                                // - Some(false): explicitly don't redact
-                                debug!("Age directive {}: redact = {:?}", k, options.redact);
-                                match options.redact {
-                                    Some(false) => {
-                                        // User explicitly set redact = false - don't redact
-                                        debug!(
-                                            "Age directive {}: NOT redacting (explicit redact = false)",
-                                            k
-                                        );
-                                    }
-                                    Some(true) | None => {
-                                        // Either explicitly redact or use age default (redact for security)
-                                        debug!(
-                                            "Age directive {}: redacting (redact = {:?})",
-                                            k, options.redact
-                                        );
-                                        r.redactions.push(k.clone());
-                                    }
-                                }
+                        // For age-encrypted values, we default to redacting for security
+                        // With nullable redact, we can now distinguish between:
+                        // - None: not specified (default for age is to redact for security)
+                        // - Some(true): explicitly redact
+                        // - Some(false): explicitly don't redact
+                        debug!("Age directive {}: redact = {:?}", k, options.redact);
+                        match options.redact {
+                            Some(false) => {
+                                // User explicitly set redact = false - don't redact
+                                debug!(
+                                    "Age directive {}: NOT redacting (explicit redact = false)",
+                                    k
+                                );
                             }
-                            _ => {
-                                // Non-age directives use normal redact logic (default false)
-                                if directive.options().redact.unwrap_or(false) {
-                                    r.redactions.push(k.clone());
-                                }
+                            Some(true) | None => {
+                                // Either explicitly redact or use age default (redact for security)
+                                debug!(
+                                    "Age directive {}: redacting (redact = {:?})",
+                                    k, options.redact
+                                );
+                                r.redactions.push(k.clone());
                             }
                         }
                         env.insert(k.clone(), (decrypted_v, Some(source.clone())));

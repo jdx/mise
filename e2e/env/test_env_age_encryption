@@ -46,7 +46,15 @@ assert_contains "echo '$ENV_BASH'" "export SMALL_SECRET=my-secret-value"
 assert_contains "echo '$ENV_BASH'" "export ANOTHER_SECRET=another-value"
 
 # Test with multiple recipients
+rm -f age2.txt
+# Temporarily move mise.toml to avoid decryption errors when running mise x
+mv mise.toml mise.toml.tmp
 mise x age -- age-keygen -o age2.txt 2>/dev/null
+mv mise.toml.tmp mise.toml
+if [ ! -f age2.txt ]; then
+	echo "age2.txt not found after generation"
+	exit 1
+fi
 AGE_PUBLIC_KEY2=$(grep "# public key:" age2.txt | cut -d: -f2 | tr -d ' ')
 AGE_SECRET_KEY2=$(grep "AGE-SECRET-KEY-" age2.txt)
 
