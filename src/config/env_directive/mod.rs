@@ -144,6 +144,7 @@ impl Default for ToolsFilter {
 pub struct EnvResolveOptions {
     pub vars: bool,
     pub tools: ToolsFilter,
+    pub warn_on_missing_required: bool,
 }
 
 impl EnvResults {
@@ -381,7 +382,12 @@ impl EnvResults {
         }
 
         // Validate required environment variables
-        Self::validate_required_env_vars(&input, initial, &r)?;
+        Self::validate_required_env_vars(
+            &input,
+            initial,
+            &r,
+            resolve_opts.warn_on_missing_required,
+        )?;
 
         Ok(r)
     }
@@ -390,6 +396,7 @@ impl EnvResults {
         input: &[(EnvDirective, PathBuf)],
         initial: &EnvMap,
         env_results: &EnvResults,
+        warn_mode: bool,
     ) -> eyre::Result<()> {
         let mut required_vars = Vec::new();
 
@@ -417,11 +424,17 @@ impl EnvResults {
             };
 
             if !is_predefined && !is_defined_later {
-                return Err(eyre!(
+                let message = format!(
                     "Required environment variable '{}' is not defined. It must be set before mise runs or in a later config file. (Required in: {})",
                     var_name,
                     display_path(declaring_source)
-                ));
+                );
+
+                if warn_mode {
+                    warn!("{}", message);
+                } else {
+                    return Err(eyre!("{}", message));
+                }
             }
         }
 

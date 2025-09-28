@@ -152,6 +152,8 @@ pub static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
         Err(_) => Default::default(),
     });
 pub static MISE_ENV: Lazy<Vec<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
+pub static MISE_HOOK_ENV: Lazy<bool> =
+    Lazy::new(|| var("__MISE_HOOK_ENV").map(|v| v == "1").unwrap_or(false));
 pub static MISE_GLOBAL_CONFIG_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("MISE_GLOBAL_CONFIG_FILE").or_else(|| var_path("MISE_CONFIG_FILE")));
 pub static MISE_GLOBAL_CONFIG_ROOT: Lazy<PathBuf> =

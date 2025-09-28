@@ -981,6 +981,7 @@ impl Toolset {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::ToolsOnly,
+                warn_on_missing_required: false,
             },
         )
         .await?;
