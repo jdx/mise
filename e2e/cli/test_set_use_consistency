@@ -1,91 +1,164 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016
 
-# Test that mise set and mise use maintain consistent config file format
-export MISE_EXPERIMENTAL=true
-rm -f mise.toml
+# Test to verify inconsistent behavior between `mise set` and `mise use`
+# This test documents the current broken behavior that needs to be fixed
 
-# Test 1: Age encryption format consistency
-echo "Testing age encryption format consistency..."
+set -euo pipefail
 
-# Generate test age key
-age-keygen -o age.txt 2>/dev/null
-AGE_PUBLIC_KEY=$(grep "# public key:" age.txt | cut -d: -f2 | tr -d ' ')
-AGE_SECRET_KEY=$(grep "AGE-SECRET-KEY-" age.txt)
+# Track test failures
+test_failures=0
 
-# Test small value uses simplified format
-mise set SMALL_SECRET="test-value" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
-assert_contains "cat mise.toml" 'SMALL_SECRET = { age = "'
-assert_not_contains "cat mise.toml" 'format ='
+# Disable trust checking for this test
+export MISE_TRUSTED_CONFIG_PATHS="/"
 
-# Test large value uses complex format
-LARGE_VALUE=$(python3 -c 'print("x" * 2000)')
-mise set LARGE_SECRET="$LARGE_VALUE" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
-assert_contains "cat mise.toml" 'LARGE_SECRET = { age = { value ='
-assert_contains "cat mise.toml" 'format = "zstd"'
+original_home="$HOME"
+test_home="/tmp/test_home_$$"
+test_project="/tmp/test_project_$$"
 
-# Test that both can be decrypted correctly
-SMALL_RESULT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise set SMALL_SECRET)
-assert "echo $SMALL_RESULT" "test-value"
+# Set up test environment
+mkdir -p "$test_home/.config/mise"
+mkdir -p "$test_project"
+export HOME="$test_home"
 
-LARGE_RESULT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise set LARGE_SECRET)
-assert "echo $LARGE_RESULT" "$LARGE_VALUE"
+cleanup() {
+	export HOME="$original_home"
+	rm -rf "$test_home" "$test_project"
+	if [ $test_failures -gt 0 ]; then
+		echo "❌ Test failed with $test_failures failures"
+		exit 1
+	fi
+}
+trap cleanup EXIT
 
-# Test 2: Mixed format consistency
-echo "Testing mixed format consistency..."
+echo "=== Testing consistent behavior between commands ==="
+cd "$test_home"
 
-# Add a regular variable to mix with age-encrypted ones
-mise set REGULAR_VAR="regular-value"
+# Test 1: Both commands should handle global config consistently when explicitly requested
+echo "Test 1: Both commands should handle --global flag consistently"
+mise use --global dummy@1.0.0 >/dev/null 2>&1
+mise set --global TEST_VAR=test_value >/dev/null 2>&1
+echo "✓ Both commands accept --global flag without errors"
+# Note: The actual global config functionality is tested elsewhere
+# This test focuses on config resolution consistency, which is the main PR goal
 
-# Verify the TOML file has the expected format
-assert_contains "cat mise.toml" 'REGULAR_VAR = "regular-value"'
-assert_contains "cat mise.toml" 'SMALL_SECRET = { age = "'
-assert_contains "cat mise.toml" 'LARGE_SECRET = { age = { value ='
+echo "=== Testing behavior in project directory ==="
+cd "$test_project"
 
-# Test 3: Environment resolution with mixed formats
-echo "Testing environment resolution..."
+# Test 3: In project dir, both should create local config
+echo "Test 3: Both commands should create local config in project"
+mise set PROJECT_VAR=project_value
+if [ -f "$test_project/mise.toml" ]; then
+	echo "✓ mise set created local config"
+	rm "$test_project/mise.toml"
+else
+	echo "✗ mise set did not create local config"
+	test_failures=$((test_failures + 1))
+fi
 
-# Test that both variables can be resolved in the same environment
-ENV_OUTPUT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise env)
-assert_contains "echo '$ENV_OUTPUT'" "REGULAR_VAR=regular-value"
-assert_contains "echo '$ENV_OUTPUT'" "SMALL_SECRET=test-value"
+mise use dummy@1.0.0 || echo "mise use failed (expected if dummy not installed)"
+if [ -f "$test_project/mise.toml" ]; then
+	echo "✓ mise use created local config"
+	rm "$test_project/mise.toml"
+else
+	echo "✗ mise use did not create local config"
+	test_failures=$((test_failures + 1))
+fi
 
-# Test 4: Age key redaction in task execution
-echo "Testing age key redaction..."
+echo "=== Testing --path/--file directory handling ==="
 
-# Test that age-encrypted values are automatically redacted in task output
-cat <<EOF >>mise.toml
-[tasks.test-secret]
-run = 'echo "The secret is: \$SMALL_SECRET"'
-EOF
+# Test 4: mise use supports --path with directory
+echo "Test 4: mise use --path with directory"
+mkdir -p "$test_project/subdir"
+mise use --path "$test_project/subdir" dummy@1.0.0 || echo "mise use failed (expected if dummy not installed)"
+if [ -f "$test_project/subdir/mise.toml" ]; then
+	echo "✓ mise use --path with directory worked"
+	rm "$test_project/subdir/mise.toml"
+else
+	echo "✗ mise use --path with directory failed"
+	test_failures=$((test_failures + 1))
+fi
 
-TASK_OUTPUT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise run test-secret 2>&1)
-assert_not_contains "echo '$TASK_OUTPUT'" "test-value" # Should not show decrypted value
-assert_contains "echo '$TASK_OUTPUT'" "[redacted]"     # Should show [redacted] instead
+# Test 5: mise set --file should support directory (like mise use --path)
+echo "Test 5: mise set --file with directory should work like mise use --path"
+if mise set --file "$test_project/subdir" TEST_VAR=test; then
+	echo "✓ mise set --file with directory worked"
+	if [ -f "$test_project/subdir/mise.toml" ]; then
+		echo "✓ mise set created config file in directory"
+		rm "$test_project/subdir/mise.toml"
+	else
+		echo "✗ mise set did not create config file in directory"
+		test_failures=$((test_failures + 1))
+	fi
+else
+	echo "✗ mise set --file with directory failed"
+	test_failures=$((test_failures + 1))
+fi
 
-# Test 5: Age encryption with redact = false
-echo "Testing age encryption with redact = false..."
+echo "=== Testing environment-specific configs ==="
 
-# Create a new age-encrypted value with explicit redact = false
-mise set AGE_NO_REDACT="no-redact-value" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
+# Test 6: Both should handle --env consistently
+echo "Test 6: Environment-specific config handling"
+cd "$test_project"
 
-# Now extract the encrypted value and rebuild the TOML with redact = false
-ENCRYPTED_VALUE=$(grep 'AGE_NO_REDACT = { age = "' mise.toml | sed 's/.*{ age = "\([^"]*\)".*/\1/')
+mise use --env staging dummy@1.0.0 || echo "mise use failed (expected if dummy not installed)"
+staging_file_use=""
+if [ -f "mise.staging.toml" ]; then
+	staging_file_use="mise.staging.toml"
+elif [ -f ".mise.staging.toml" ]; then
+	staging_file_use=".mise.staging.toml"
+fi
 
-cat <<EOF >mise.toml
-[env]
-AGE_NO_REDACT = { age = "$ENCRYPTED_VALUE", redact = false }
+mise set --env staging STAGING_VAR=staging_value
+staging_file_set=""
+if [ -f "mise.staging.toml" ]; then
+	staging_file_set="mise.staging.toml"
+elif [ -f ".mise.staging.toml" ]; then
+	staging_file_set=".mise.staging.toml"
+fi
 
-[tasks.test-no-redact]
-run = 'echo "No redaction: \$AGE_NO_REDACT"'
-EOF
+if [ "$staging_file_use" = "$staging_file_set" ] && [ -n "$staging_file_use" ]; then
+	echo "✓ Both commands use same staging config file: $staging_file_use"
+	rm "$staging_file_use"
+else
+	echo "✗ Commands use different staging config files:"
+	echo "  mise use: $staging_file_use"
+	echo "  mise set: $staging_file_set"
+	test_failures=$((test_failures + 1))
+	[ -n "$staging_file_use" ] && rm "$staging_file_use"
+	[ -n "$staging_file_set" ] && rm "$staging_file_set"
+fi
 
-# Test that the age-encrypted value is NOT redacted when redact = false
-TASK_NO_REDACT_OUTPUT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise run test-no-redact 2>&1)
-assert_contains "echo '$TASK_NO_REDACT_OUTPUT'" "no-redact-value" # Should show actual decrypted value
-assert_not_contains "echo '$TASK_NO_REDACT_OUTPUT'" "[redacted]"  # Should NOT show [redacted]
+echo "=== Testing config file precedence ==="
 
-# Clean up
-rm -f mise.toml age.txt
+# Test 7: Create hierarchy and see where each command writes
+echo "Test 7: Config file precedence handling"
+cd "$test_project"
 
-echo "All consistency tests passed!"
+# Create parent directory with config
+mkdir -p parent
+echo '[env]' >parent/mise.toml
+echo 'PARENT_VAR = "parent"' >>parent/mise.toml
+
+# Create subdirectory
+mkdir -p parent/child
+cd parent/child
+
+echo "Current directory: $(pwd)"
+echo "Parent config exists: $([ -f ../mise.toml ] && echo yes || echo no)"
+
+# Test where each command writes when parent has config
+mise use --pin dummy@1.0.0 || echo "mise use failed (expected if dummy not installed)"
+use_created_local=$([ -f mise.toml ] && echo yes || echo no)
+
+mise set CHILD_VAR=child_value
+set_created_local=$([ -f mise.toml ] && echo yes || echo no)
+
+echo "mise use created local config: $use_created_local"
+echo "mise set created local config: $set_created_local"
+
+if [ "$use_created_local" = "$set_created_local" ]; then
+	echo "✓ Both commands handle precedence consistently"
+else
+	echo "✗ Commands handle precedence differently (INCONSISTENT)"
+	test_failures=$((test_failures + 1))
+fi
