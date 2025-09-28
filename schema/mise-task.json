@@ -571,8 +571,17 @@
           "description": "redact the value from logs"
         },
         "required": {
-          "type": "boolean",
-          "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false"
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "require this environment variable to be defined before mise runs or in a later config file"
+            },
+            {
+              "type": "string",
+              "description": "require this environment variable with user help text on how to set it"
+            }
+          ],
+          "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
         }
       },
       "oneOf": [
