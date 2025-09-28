@@ -9,6 +9,7 @@ use clap::{ArgAction, CommandFactory, Parser, Subcommand};
 use std::path::PathBuf;
 
 mod activate;
+mod age;
 mod alias;
 pub mod args;
 mod asdf;
@@ -191,6 +192,7 @@ pub struct CliGlobalOutputFlags {
 #[strum(serialize_all = "kebab-case")]
 pub enum Commands {
     Activate(activate::Activate),
+    Age(age::Age),
     Alias(Box<alias::Alias>),
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
@@ -260,6 +262,7 @@ impl Commands {
     pub async fn run(self) -> Result<()> {
         match self {
             Self::Activate(cmd) => cmd.run(),
+            Self::Age(cmd) => cmd.run().await,
             Self::Alias(cmd) => cmd.run().await,
             Self::Asdf(cmd) => cmd.run().await,
             Self::Backends(cmd) => cmd.run().await,
