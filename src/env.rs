@@ -42,9 +42,9 @@ pub static HOME: Lazy<PathBuf> =
     Lazy::new(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"));
 #[cfg(not(test))]
 pub static HOME: Lazy<PathBuf> = Lazy::new(|| {
-    // First try the HOME environment variable, then fall back to homedir
-    var_path("HOME")
-        .or_else(|| homedir::my_home().ok().flatten())
+    homedir::my_home()
+        .ok()
+        .flatten()
         .unwrap_or_else(|| PathBuf::from("/"))
 });
 
@@ -458,10 +458,7 @@ fn var_option_bool(key: &str) -> Option<bool> {
 }
 
 pub fn in_home_dir() -> bool {
-    let home = var_path("HOME")
-        .or_else(|| homedir::my_home().ok().flatten())
-        .unwrap_or_else(|| PathBuf::from("/"));
-    current_dir().is_ok_and(|d| d == home)
+    current_dir().is_ok_and(|d| d == *HOME)
 }
 
 pub fn var_path(key: &str) -> Option<PathBuf> {
