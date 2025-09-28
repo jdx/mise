@@ -372,7 +372,8 @@ async fn get_all_identity_files() -> Vec<PathBuf> {
 
     if let Some(ref identity_files) = Settings::get().age.identity_files {
         for path in identity_files {
-            files.push(path.clone());
+            // Apply path expansion for tilde and environment variables
+            files.push(replace_path(path.clone()));
         }
     }
 
@@ -393,7 +394,8 @@ fn get_all_ssh_identity_files() -> Vec<PathBuf> {
 
     if let Some(ref ssh_identity_files) = Settings::get().age.ssh_identity_files {
         for path in ssh_identity_files {
-            files.push(path.clone());
+            // Apply path expansion for tilde and environment variables
+            files.push(replace_path(path.clone()));
         }
     }
 
