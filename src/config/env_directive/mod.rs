@@ -368,21 +368,12 @@ impl EnvResults {
 
                     // Decrypt age-encrypted values
                     if crate::agecrypt::is_age_encrypted(&v) {
-                        match crate::agecrypt::decrypt_value(&v).await {
-                            Ok(decrypted) => {
-                                v = decrypted;
-                                // Always redact decrypted values for security
-                                if !r.redactions.contains(&k) {
-                                    r.redactions.push(k.clone());
-                                }
-                            }
-                            Err(e) => {
-                                debug!(
-                                    "[experimental] Failed to decrypt {}: {}, falling back to encrypted value",
-                                    k, e
-                                );
-                                // Fall back to encrypted string - don't fail the entire operation
-                            }
+                        v = crate::agecrypt::decrypt_value(&v)
+                            .await
+                            .map_err(|e| eyre!("[experimental] Failed to decrypt {}: {}", k, e))?;
+                        // Always redact decrypted values for security
+                        if !r.redactions.contains(&k) {
+                            r.redactions.push(k.clone());
                         }
                     }
 
@@ -405,27 +396,11 @@ impl EnvResults {
                     // Required directives don't set any value - they only validate during validation phase
                     // The actual value must come from the initial environment or a later config file
                 }
-                EnvDirective::Age {
-                    key: ref k,
-                    value: ref v,
-                    ..
-                } => {
-                    // Only check experimental when actually decrypting, not just when encountering age directives
-                    // The check is moved to the decrypt_age_directive function
+                EnvDirective::Age { key: ref k, .. } => {
                     // Decrypt age-encrypted value
-                    let mut decrypted_v = match crate::agecrypt::decrypt_age_directive(&directive)
+                    let mut decrypted_v = crate::agecrypt::decrypt_age_directive(&directive)
                         .await
-                    {
-                        Ok(decrypted) => decrypted,
-                        Err(e) => {
-                            debug!(
-                                "[experimental] Failed to decrypt {}: {}, falling back to encrypted value",
-                                k, e
-                            );
-                            // Fall back to the base64-encoded encrypted value
-                            v.clone()
-                        }
-                    };
+                        .map_err(|e| eyre!("[experimental] Failed to decrypt {}: {}", k, e))?;
 
                     // Parse as template after decryption
                     decrypted_v = r.parse_template(&ctx, &mut tera, &source, &decrypted_v)?;
