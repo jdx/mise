@@ -279,23 +279,30 @@ impl Set {
         let config = MiseToml::from_file(&config_path.unwrap()).unwrap_or_default();
 
         // For local configs, check directives directly
+        let env_entries = config.env_entries()?;
         for eva in filter {
-            match config.env_entries()?.into_iter().find_map(|ev| match ev {
-                EnvDirective::Val(k, v, _) if k == eva.key => Some((v, false)),
+            match env_entries.iter().find_map(|ev| match ev {
+                EnvDirective::Val(k, v, _) if k == &eva.key => Some((v.clone(), ev.clone())),
                 EnvDirective::Age {
                     key: k, value: v, ..
-                } if k == eva.key => Some((v, true)),
+                } if k == &eva.key => Some((v.clone(), ev.clone())),
                 _ => None,
             }) {
-                Some((value, is_age)) => {
-                    if is_age {
-                        // This is an EnvDirective::Age - use decrypt_age_directive
-                        match config.env_entries()?.into_iter().find_map(|ev| match &ev {
-                            EnvDirective::Age { key, .. } if key == &eva.key => Some(ev),
-                            _ => None,
-                        }) {
-                            Some(age_directive) => {
-                                match agecrypt::decrypt_age_directive(&age_directive).await {
+                Some((value, directive)) => {
+                    match directive {
+                        EnvDirective::Age { .. } => {
+                            // This is an EnvDirective::Age - use decrypt_age_directive
+                            match agecrypt::decrypt_age_directive(&directive).await {
+                                Ok(decrypted) => miseprintln!("{decrypted}"),
+                                Err(e) => {
+                                    bail!("[experimental] Failed to decrypt {}: {}", eva.key, e);
+                                }
+                            }
+                        }
+                        _ => {
+                            // Check for old format encrypted values
+                            if agecrypt::is_age_encrypted(&value) {
+                                match agecrypt::decrypt_value(&value).await {
                                     Ok(decrypted) => miseprintln!("{decrypted}"),
                                     Err(e) => {
                                         bail!(
@@ -305,22 +312,9 @@ impl Set {
                                         );
                                     }
                                 }
+                            } else {
+                                miseprintln!("{value}");
                             }
-                            None => {
-                                bail!("Age directive for {} not found", eva.key);
-                            }
-                        }
-                    } else {
-                        // Check for old format encrypted values
-                        if agecrypt::is_age_encrypted(&value) {
-                            match agecrypt::decrypt_value(&value).await {
-                                Ok(decrypted) => miseprintln!("{decrypted}"),
-                                Err(e) => {
-                                    bail!("[experimental] Failed to decrypt {}: {}", eva.key, e);
-                                }
-                            }
-                        } else {
-                            miseprintln!("{value}");
                         }
                     }
                 }
