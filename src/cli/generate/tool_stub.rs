@@ -369,7 +369,8 @@ impl ToolStub {
         let pr = mpr.add(&format!("download {filename}"));
 
         // Download using mise's HTTP client
-        HTTP.download_file(url, &archive_path, Some(&pr)).await?;
+        HTTP.download_file(url, &archive_path, Some(pr.as_ref()))
+            .await?;
 
         // Read the file to calculate checksum and size
         let bytes = file::read(&archive_path)?;
@@ -381,7 +382,7 @@ impl ToolStub {
             // Update progress message for extraction and reuse the same progress reporter
             pr.set_message(format!("extract {filename}"));
             match self
-                .extract_and_find_binary(&archive_path, &temp_dir, &filename, &pr)
+                .extract_and_find_binary(&archive_path, &temp_dir, &filename, pr.as_ref())
                 .await
             {
                 Ok(path) => {
@@ -407,7 +408,7 @@ impl ToolStub {
         archive_path: &std::path::Path,
         temp_dir: &tempfile::TempDir,
         _filename: &str,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
     ) -> Result<String> {
         // Try to extract and find executables
         let extracted_dir = temp_dir.path().join("extracted");

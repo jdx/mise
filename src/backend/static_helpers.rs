@@ -175,7 +175,7 @@ pub fn install_artifact(
     tv: &crate::toolset::ToolVersion,
     file_path: &Path,
     opts: &ToolVersionOptions,
-    pr: Option<&Box<dyn SingleReport>>,
+    pr: Option<&dyn SingleReport>,
 ) -> eyre::Result<()> {
     let install_path = tv.install_path();
     let mut strip_components = opts.get("strip_components").and_then(|s| s.parse().ok());
@@ -273,7 +273,7 @@ pub fn verify_artifact(
     _tv: &crate::toolset::ToolVersion,
     file_path: &Path,
     opts: &crate::toolset::ToolVersionOptions,
-    pr: Option<&Box<dyn SingleReport>>,
+    pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
     // Check platform-specific checksum first, then fall back to generic
     let checksum = lookup_platform_key(opts, "checksum").or_else(|| opts.get("checksum").cloned());
@@ -303,7 +303,7 @@ pub fn verify_artifact(
 pub fn verify_checksum_str(
     file_path: &Path,
     checksum: &str,
-    pr: Option<&Box<dyn SingleReport>>,
+    pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
     if let Some((algo, hash_str)) = checksum.split_once(':') {
         hash::ensure_checksum(file_path, hash_str, pr, algo)?;

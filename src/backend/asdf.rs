@@ -342,7 +342,7 @@ impl Backend for AsdfBackend {
             sm.prepend_path(p);
         }
 
-        let run_script = |script| sm.run_by_line(script, &ctx.pr);
+        let run_script = |script| sm.run_by_line(script, ctx.pr.as_ref());
 
         if sm.script_exists(&Download) {
             ctx.pr.set_message("bin/download".into());
@@ -358,7 +358,7 @@ impl Backend for AsdfBackend {
     async fn uninstall_version_impl(
         &self,
         config: &Arc<Config>,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         tv: &ToolVersion,
     ) -> Result<()> {
         if self.plugin_path.join("bin/uninstall").exists() {

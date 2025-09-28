@@ -59,7 +59,7 @@ impl AsdfPlugin {
 
     fn exec_hook_post_plugin_update(
         &self,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         pre: String,
         post: String,
     ) -> eyre::Result<()> {
@@ -78,12 +78,12 @@ impl AsdfPlugin {
         Ok(())
     }
 
-    fn exec_hook(&self, pr: &Box<dyn SingleReport>, hook: &str) -> eyre::Result<()> {
+    fn exec_hook(&self, pr: &dyn SingleReport, hook: &str) -> eyre::Result<()> {
         self.exec_hook_env(pr, hook, Default::default())
     }
     fn exec_hook_env(
         &self,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         hook: &str,
         env: HashMap<OsString, OsString>,
     ) -> eyre::Result<()> {
@@ -265,13 +265,13 @@ impl Plugin for AsdfPlugin {
         let pr = mpr.add_with_options(&prefix, dry_run);
         if !dry_run {
             let _lock = lock_file::get(&self.plugin_path, force)?;
-            self.install(config, &pr).await
+            self.install(config, pr.as_ref()).await
         } else {
             Ok(())
         }
     }
 
-    async fn update(&self, pr: &Box<dyn SingleReport>, gitref: Option<String>) -> Result<()> {
+    async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
         let plugin_path = self.plugin_path.to_path_buf();
         if plugin_path.is_symlink() {
             warn!(
@@ -300,7 +300,7 @@ impl Plugin for AsdfPlugin {
         Ok(())
     }
 
-    async fn uninstall(&self, pr: &Box<dyn SingleReport>) -> Result<()> {
+    async fn uninstall(&self, pr: &dyn SingleReport) -> Result<()> {
         if !self.is_installed() {
             return Ok(());
         }
@@ -325,7 +325,7 @@ impl Plugin for AsdfPlugin {
         Ok(())
     }
 
-    async fn install(&self, config: &Arc<Config>, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
         let repository = self.get_repo_url(config)?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
         debug!("asdf_plugin[{}]:install {:?}", self.name, repository);

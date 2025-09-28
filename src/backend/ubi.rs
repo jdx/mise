@@ -221,14 +221,14 @@ impl Backend for UbiBackend {
             ctx.pr
                 .set_message(format!("checksum verify {platform_key}"));
             if let Some((algo, check)) = checksum.split_once(':') {
-                hash::ensure_checksum(file, check, Some(&ctx.pr), algo)?;
+                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
             } else {
                 bail!("Invalid checksum: {platform_key}");
             }
         } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr
                 .set_message(format!("checksum generate {platform_key}"));
-            let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
+            let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
             platform_info.checksum = Some(format!("blake3:{hash}"));
         }
         Ok(())

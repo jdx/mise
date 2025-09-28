@@ -15,6 +15,6 @@ fn add_keys(ctx: &InstallContext, keys: &str) -> Result<()> {
         .arg("--quiet")
         .arg("--import")
         .stdin_string(keys)
-        .with_pr(&ctx.pr)
+        .with_pr(ctx.pr.as_ref())
         .execute()
 }
