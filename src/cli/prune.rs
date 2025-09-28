@@ -119,7 +119,8 @@ async fn delete(
         let pr = mpr.add(&prefix);
         if dry_run || Settings::get().yes || prompt::confirm_with_all(format!("remove {} ?", &tv))?
         {
-            p.uninstall_version(config, &tv, &pr, dry_run).await?;
+            p.uninstall_version(config, &tv, pr.as_ref(), dry_run)
+                .await?;
             runtime_symlinks::remove_missing_symlinks(p)?;
             pr.finish();
         }

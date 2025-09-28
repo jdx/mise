@@ -186,7 +186,7 @@ impl Client {
         &self,
         url: U,
         path: &Path,
-        pr: Option<&Box<dyn SingleReport>>,
+        pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
         let url = url.into_url()?;
         let headers = github_headers(&url);
@@ -199,7 +199,7 @@ impl Client {
         url: U,
         path: &Path,
         headers: &HeaderMap,
-        pr: Option<&Box<dyn SingleReport>>,
+        pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));

@@ -668,7 +668,7 @@ impl TarFormat {
 pub struct TarOptions<'a> {
     pub format: TarFormat,
     pub strip_components: usize,
-    pub pr: Option<&'a Box<dyn SingleReport>>,
+    pub pr: Option<&'a dyn SingleReport>,
     /// When false, files will be extracted with current timestamp instead of archive's mtime
     pub preserve_mtime: bool,
 }
