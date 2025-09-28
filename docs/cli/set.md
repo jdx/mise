@@ -32,6 +32,28 @@ Set the environment variable in the global config file
 
 Create/modify an environment-specific config file like .mise.&lt;env>.toml
 
+### `--age-encrypt`
+
+[experimental] Encrypt the value with age before storing
+
+### `--age-recipient… <RECIPIENT>`
+
+[experimental] Age recipient (x25519 public key) for encryption
+
+Can be used multiple times. Requires --age-encrypt.
+
+### `--age-ssh-recipient… <PATH_OR_PUBKEY>`
+
+[experimental] SSH recipient (public key or path) for age encryption
+
+Can be used multiple times. Requires --age-encrypt.
+
+### `--age-key-file <PATH>`
+
+[experimental] Age identity file for encryption
+
+Defaults to ~/.config/mise/age.txt if it exists
+
 Examples:
 
 ```

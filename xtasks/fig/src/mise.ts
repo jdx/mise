@@ -1812,6 +1812,40 @@ esac`),
             name: "env",
           },
         },
+        {
+          name: "--age-encrypt",
+          description:
+            "[experimental] Encrypt the value with age before storing",
+          isRepeatable: false,
+        },
+        {
+          name: "--age-recipient",
+          description:
+            "[experimental] Age recipient (x25519 public key) for encryption",
+          isRepeatable: true,
+          args: {
+            name: "recipient",
+          },
+        },
+        {
+          name: "--age-ssh-recipient",
+          description:
+            "[experimental] SSH recipient (public key or path) for age encryption",
+          isRepeatable: true,
+          args: {
+            name: "path_or_pubkey",
+            template: "filepaths",
+          },
+        },
+        {
+          name: "--age-key-file",
+          description: "[experimental] Age identity file for encryption",
+          isRepeatable: false,
+          args: {
+            name: "path",
+            template: "filepaths",
+          },
+        },
       ],
       args: {
         name: "env_var",

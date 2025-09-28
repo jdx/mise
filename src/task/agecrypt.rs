@@ -356,7 +356,7 @@ async fn get_default_key_file() -> Option<PathBuf> {
         .age
         .key_file
         .clone()
-        .map(|p| replace_path(p))
+        .map(replace_path)
         .or_else(|| {
             let default_path = dirs::CONFIG.join("age.txt");
             if default_path.exists() {
