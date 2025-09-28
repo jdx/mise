@@ -95,7 +95,7 @@ impl Backend for NPMBackend {
                 .arg(format!("{}@{}", self.tool_name(), tv.version))
                 .arg("--global")
                 .arg("--trust")
-                .with_pr(&ctx.pr)
+                .with_pr(ctx.pr.as_ref())
                 .envs(ctx.ts.env_with_path(&ctx.config).await?)
                 .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
                 .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
@@ -115,7 +115,7 @@ impl Backend for NPMBackend {
                 .arg(format!("{}@{}", self.tool_name(), tv.version))
                 .arg("--prefix")
                 .arg(tv.install_path())
-                .with_pr(&ctx.pr)
+                .with_pr(ctx.pr.as_ref())
                 .envs(ctx.ts.env_with_path(&ctx.config).await?)
                 .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                 .prepend_path(

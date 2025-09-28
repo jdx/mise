@@ -10,7 +10,7 @@ use path_absolutize::Absolutize;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{Config, Settings, config_file};
+use crate::config::{Config, ConfigPathOptions, Settings, config_file, resolve_target_config_path};
 use crate::file::display_path;
 use crate::registry::REGISTRY;
 use crate::toolset::{
@@ -208,27 +208,27 @@ impl Use {
 
     fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
-        let path = if self.global {
-            config::global_config_path()
-        } else if let Some(p) = &self.path {
+
+        // Handle special case for --path that needs absolutize logic for compatibility
+        let path = if let Some(p) = &self.path {
             let from_dir = config::config_file_from_dir(p).absolutize()?.to_path_buf();
             if from_dir.starts_with(&cwd) {
                 from_dir
             } else {
                 p.clone()
             }
-        } else if let Some(env) = &self.env {
-            let p = cwd.join(format!(".mise.{env}.toml"));
-            if p.exists() {
-                p
-            } else {
-                cwd.join(format!("mise.{env}.toml"))
-            }
-        } else if env::in_home_dir() {
-            config::global_config_path()
         } else {
-            config::config_file_from_dir(&cwd)
+            let opts = ConfigPathOptions {
+                global: self.global,
+                path: None, // handled above
+                env: self.env.clone(),
+                cwd: Some(cwd),
+                prefer_toml: false, // mise use supports .tool-versions and other formats
+                prevent_home_local: true, // When in HOME, use global config
+            };
+            resolve_target_config_path(opts)?
         };
+
         config_file::parse_or_init(&path)
     }
 

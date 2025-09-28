@@ -1,5 +1,74 @@
 # Changelog
 
+## [2025.9.22](https://github.com/jdx/mise/compare/v2025.9.21..v2025.9.22) - 2025-09-28
+
+### 📦 Registry
+
+- re-enable tests by @risu729 in [#6454](https://github.com/jdx/mise/pull/6454)
+- restore comments and tests by @risu729 in [#6378](https://github.com/jdx/mise/pull/6378)
+- add github backend for graphite by @jdx in [#6455](https://github.com/jdx/mise/pull/6455)
+
+### 🚀 Features
+
+- **(backend)** add environment variable override for tool backends by @jdx in [#6456](https://github.com/jdx/mise/pull/6456)
+- add a http_retries setting to define number of retry attempts by @roele in [#6444](https://github.com/jdx/mise/pull/6444)
+
+## [2025.9.21](https://github.com/jdx/mise/compare/v2025.9.20..v2025.9.21) - 2025-09-27
+
+### 📦 Registry
+
+- remove incorrect bin_path from balena-cli by @jdx in [#6445](https://github.com/jdx/mise/pull/6445)
+- disable oxlint test temporarily by @jdx in [#6446](https://github.com/jdx/mise/pull/6446)
+
+### 🚀 Features
+
+- **(cache)** add mise cache path command by @jdx in [#6442](https://github.com/jdx/mise/pull/6442)
+- **(github)** add support for compressed binaries and Buck2 to registry by @jdx in [#6439](https://github.com/jdx/mise/pull/6439)
+
+### 🐛 Bug Fixes
+
+- **(http)** bump mtime when extracting tarballs to cache by @jdx in [#6438](https://github.com/jdx/mise/pull/6438)
+
+### 🧪 Testing
+
+- **(vfox)** eliminate flaky remote host dependencies in tests by @jdx in [#6447](https://github.com/jdx/mise/pull/6447)
+- **(vfox)** improve test_download_file reliability by @jdx in [#6450](https://github.com/jdx/mise/pull/6450)
+- optimize remote task tests with local server by @jdx in [#6443](https://github.com/jdx/mise/pull/6443)
+- optimize git remote task tests with local repositories by @jdx in [#6441](https://github.com/jdx/mise/pull/6441)
+- mark slow e2e tests and add runtime warnings by @jdx in [#6449](https://github.com/jdx/mise/pull/6449)
+
+### Chore
+
+- **(ci)** run release workflow on PRs to main for branch protection by @jdx in [#6448](https://github.com/jdx/mise/pull/6448)
+
+## [2025.9.20](https://github.com/jdx/mise/compare/v2025.9.19..v2025.9.20) - 2025-09-26
+
+### 📦 Registry
+
+- use version_prefix for github backends by @risu729 in [#6409](https://github.com/jdx/mise/pull/6409)
+- fix hivemind by @mnm364 in [#6431](https://github.com/jdx/mise/pull/6431)
+- revert opam/k3kcli backends to ubi by @risu729 in [#6406](https://github.com/jdx/mise/pull/6406)
+
+### 🚀 Features
+
+- **(spm)** add support for self-hosted and GitLab repositories by @roele in [#6358](https://github.com/jdx/mise/pull/6358)
+- add instructions for self-update by @jdx in [#6433](https://github.com/jdx/mise/pull/6433)
+
+### 🐛 Bug Fixes
+
+- **(doctor)** exclude tools not supported on current os by @risu729 in [#6422](https://github.com/jdx/mise/pull/6422)
+- **(json-schema)** remove settings/additionalProperties by @tpansino in [#6420](https://github.com/jdx/mise/pull/6420)
+- **(task)** prevent hang when nested tasks fail by @jdx in [#6430](https://github.com/jdx/mise/pull/6430)
+- **(ubi)** filter versions with tag_regex before trimming v prefixes by @risu729 in [#6421](https://github.com/jdx/mise/pull/6421)
+- allow strip_archive_path_components to strip a dir containing the same filename by @risu729 in [#6405](https://github.com/jdx/mise/pull/6405)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to a64d8b4 by @renovate[bot] in [#6426](https://github.com/jdx/mise/pull/6426)
+- update actions/cache digest to 0057852 by @renovate[bot] in [#6425](https://github.com/jdx/mise/pull/6425)
+- update ghcr.io/jdx/mise:deb docker digest to af96f8e by @renovate[bot] in [#6428](https://github.com/jdx/mise/pull/6428)
+- update ghcr.io/jdx/mise:copr docker digest to 0f98c77 by @renovate[bot] in [#6427](https://github.com/jdx/mise/pull/6427)
+
 ## [2025.9.19](https://github.com/jdx/mise/compare/v2025.9.18..v2025.9.19) - 2025-09-25
 
 ### 📦 Registry
@@ -12,6 +81,10 @@
 
 - **(github)** filter remote versions by version_prefix by @risu729 in [#6408](https://github.com/jdx/mise/pull/6408)
 - Remove experimental labels for GitHub and HTTP backends by @Copilot in [#6415](https://github.com/jdx/mise/pull/6415)
+
+### 🐛 Bug Fixes
+
+- **(backend)** make pre-tools env vars available in postinstall hooks by @jdx in [#6418](https://github.com/jdx/mise/pull/6418)
 
 ### 🧪 Testing
 

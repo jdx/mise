@@ -19,7 +19,7 @@ use versions::Versioning;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
 use crate::config::config_file::{config_root, toml::deserialize_arr};
-use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions, RequiredValue};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config};
 use crate::file::{create_dir_all, display_path};
@@ -32,14 +32,14 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions
 use crate::watch_files::WatchFile;
 use crate::{dirs, file};
 
-use super::ConfigFileType;
+use super::{ConfigFileType, min_version::MinVersionSpec};
 
 #[derive(Default, Deserialize)]
 pub struct MiseToml {
     #[serde(rename = "_")]
     custom: Option<toml::Value>,
-    #[serde(default, deserialize_with = "deserialize_version")]
-    min_version: Option<Versioning>,
+    #[serde(default, deserialize_with = "deserialize_min_version")]
+    min_version: Option<MinVersionSpec>,
     #[serde(skip)]
     context: TeraContext,
     #[serde(skip)]
@@ -96,6 +96,34 @@ impl EnvList {
 }
 
 impl MiseToml {
+    fn enforce_min_version_fallback(body: &str) -> eyre::Result<()> {
+        if let Ok(val) = toml::from_str::<toml::Value>(body) {
+            if let Some(min_val) = val.get("min_version") {
+                let mut hard_req: Option<versions::Versioning> = None;
+                let mut soft_req: Option<versions::Versioning> = None;
+                match min_val {
+                    toml::Value::String(s) => {
+                        hard_req = versions::Versioning::new(s);
+                    }
+                    toml::Value::Table(t) => {
+                        if let Some(toml::Value::String(s)) = t.get("hard") {
+                            hard_req = versions::Versioning::new(s);
+                        }
+                        if let Some(toml::Value::String(s)) = t.get("soft") {
+                            soft_req = versions::Versioning::new(s);
+                        }
+                    }
+                    _ => {}
+                }
+                if let Some(spec) =
+                    crate::config::config_file::min_version::MinVersionSpec::new(hard_req, soft_req)
+                {
+                    crate::config::Config::enforce_min_version_spec(&spec)?;
+                }
+            }
+        }
+        Ok(())
+    }
     fn contains_template_syntax(input: &str) -> bool {
         input.contains("{{") || input.contains("{%") || input.contains("{#")
     }
@@ -122,9 +150,16 @@ impl MiseToml {
         trust_check(path)?;
         trace!("parsing: {}", display_path(path));
         let des = toml::Deserializer::new(body);
-        let mut rf: MiseToml = serde_ignored::deserialize(des, |p| {
+        let de_res = serde_ignored::deserialize(des, |p| {
             warn!("unknown field in {}: {p}", display_path(path));
-        })?;
+        });
+        let mut rf: MiseToml = match de_res {
+            Ok(rf) => rf,
+            Err(err) => {
+                Self::enforce_min_version_fallback(body)?;
+                return Err(err.into());
+            }
+        };
         rf.context = BASE_CONTEXT.clone();
         rf.context
             .insert("config_root", path.parent().unwrap().to_str().unwrap());
@@ -300,8 +335,8 @@ impl ConfigFile for MiseToml {
         self.path.as_path()
     }
 
-    fn min_version(&self) -> &Option<Versioning> {
-        &self.min_version
+    fn min_version(&self) -> Option<&MinVersionSpec> {
+        self.min_version.as_ref()
     }
 
     fn project_root(&self) -> Option<&Path> {
@@ -755,20 +790,95 @@ impl From<ToolRequest> for MiseTomlTool {
     }
 }
 
-fn deserialize_version<'de, D>(deserializer: D) -> Result<Option<Versioning>, D::Error>
+fn deserialize_min_version<'de, D>(deserializer: D) -> Result<Option<MinVersionSpec>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s: Option<String> = serde::Deserialize::deserialize(deserializer)?;
+    struct MinVersionVisitor;
 
-    match s {
-        Some(s) => Ok(Some(
-            Versioning::new(&s)
-                .ok_or(versions::Error::IllegalVersioning(s))
-                .map_err(serde::de::Error::custom)?,
-        )),
-        None => Ok(None),
+    impl<'de> Visitor<'de> for MinVersionVisitor {
+        type Value = Option<MinVersionSpec>;
+
+        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+            formatter.write_str("string or table for min_version")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            deserializer.deserialize_any(self)
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            let version = Versioning::new(v)
+                .ok_or_else(|| versions::Error::IllegalVersioning(v.to_string()))
+                .map_err(E::custom)?;
+            Ok(MinVersionSpec::new(Some(version), None))
+        }
+
+        fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            self.visit_str(&v)
+        }
+
+        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+        where
+            M: de::MapAccess<'de>,
+        {
+            let mut hard: Option<Versioning> = None;
+            let mut soft: Option<Versioning> = None;
+            while let Some(key) = map.next_key::<String>()? {
+                match key.as_str() {
+                    "hard" => {
+                        if hard.is_some() {
+                            return Err(de::Error::duplicate_field("hard"));
+                        }
+                        let value: String = map.next_value()?;
+                        let version = Versioning::new(&value)
+                            .ok_or_else(|| versions::Error::IllegalVersioning(value.clone()))
+                            .map_err(de::Error::custom)?;
+                        hard = Some(version);
+                    }
+                    "soft" => {
+                        if soft.is_some() {
+                            return Err(de::Error::duplicate_field("soft"));
+                        }
+                        let value: String = map.next_value()?;
+                        let version = Versioning::new(&value)
+                            .ok_or_else(|| versions::Error::IllegalVersioning(value.clone()))
+                            .map_err(de::Error::custom)?;
+                        soft = Some(version);
+                    }
+                    other => {
+                        return Err(de::Error::unknown_field(other, &["hard", "soft"]));
+                    }
+                }
+            }
+            Ok(MinVersionSpec::new(hard, soft))
+        }
     }
+
+    deserializer.deserialize_option(MinVersionVisitor)
 }
 
 impl<'de> de::Deserialize<'de> for EnvList {
@@ -984,6 +1094,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     options: EnvDirectiveOptions {
                                         tools: true,
                                         redact: false,
+                                        required: RequiredValue::False,
                                     },
                                 });
                             }
@@ -1005,20 +1116,51 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
+                                OptionsOnly {
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
                             }
                             let (value, options) = match map.next_value::<Val>()? {
-                                Val::Primitive(p) => (p, EnvDirectiveOptions::default()),
-                                Val::Map { value, options } => (value, options),
+                                Val::Primitive(p) => (Some(p), EnvDirectiveOptions::default()),
+                                Val::Map { value, options } => (Some(value), options),
+                                Val::OptionsOnly { options } => (None, options),
                             };
+
+                            // Validate that required cannot be used with any value
+                            if options.required.is_required() {
+                                match &value {
+                                    Some(_) => {
+                                        return Err(serde::de::Error::custom(format!(
+                                            "Environment variable '{}' cannot have both 'value' and 'required'. The 'required' flag means the variable must be defined elsewhere (in the environment or a later config file). Remove either the 'value' field or the 'required' flag.",
+                                            key
+                                        )));
+                                    }
+                                    None => {
+                                        // Required without a value is valid - it means the variable must be defined elsewhere
+                                    }
+                                }
+                            }
                             let directive = match value {
-                                PrimitiveVal::Str(s) => EnvDirective::Val(key, s, options),
-                                PrimitiveVal::Int(i) => {
+                                Some(PrimitiveVal::Str(s)) => EnvDirective::Val(key, s, options),
+                                Some(PrimitiveVal::Int(i)) => {
                                     EnvDirective::Val(key, i.to_string(), options)
                                 }
-                                PrimitiveVal::Bool(true) => {
+                                Some(PrimitiveVal::Bool(true)) => {
                                     EnvDirective::Val(key, "true".to_string(), options)
                                 }
-                                PrimitiveVal::Bool(false) => EnvDirective::Rm(key, options),
+                                Some(PrimitiveVal::Bool(false)) => EnvDirective::Rm(key, options),
+                                None => {
+                                    // No value provided - this creates a required variable that must be defined elsewhere
+                                    if !options.required.is_required() {
+                                        return Err(serde::de::Error::custom(format!(
+                                            "Environment variable '{}' has no value. Either provide a value or set required=true to indicate it must be defined elsewhere.",
+                                            key
+                                        )));
+                                    }
+                                    // For required variables without a value, we create a Required directive
+                                    EnvDirective::Required(key, options)
+                                }
                             };
                             env.push(directive);
                         }

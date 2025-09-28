@@ -204,7 +204,7 @@ impl Upgrade {
             {
                 let pr = mpr.add(&format!("uninstall {}@{}", o.name, tv));
                 if let Err(e) = self
-                    .uninstall_old_version(config, &o.tool_version, &pr)
+                    .uninstall_old_version(config, &o.tool_version, pr.as_ref())
                     .await
                 {
                     warn!("Failed to uninstall old version of {}: {}", o.name, e);
@@ -231,7 +231,7 @@ impl Upgrade {
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
     ) -> Result<()> {
         tv.backend()?
             .uninstall_version(config, tv, pr, self.dry_run)

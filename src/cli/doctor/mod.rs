@@ -188,6 +188,11 @@ impl Doctor {
         info::inline_section("activated", yn(env::is_activated()))?;
         info::inline_section("shims_on_path", yn(shims_on_path()))?;
         info::inline_section("self_update_available", yn(SelfUpdate::is_available()))?;
+        if !SelfUpdate::is_available() {
+            if let Some(instructions) = crate::cli::self_update::upgrade_instructions_text() {
+                info::section("self_update_instructions", instructions)?;
+            }
+        }
         if env::is_activated() && shims_on_path() {
             self.errors.push("shims are on PATH and mise is also activated. You should only use one of these methods.".to_string());
         }

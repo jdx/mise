@@ -2,11 +2,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::args::EnvVarArg;
-use crate::config;
-use crate::config::Config;
 use crate::config::config_file::ConfigFile;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
+use crate::config::{Config, ConfigPathOptions, resolve_target_config_path};
 use crate::env::{self};
 use crate::file::display_path;
 use crate::ui::table;
@@ -22,8 +21,9 @@ use tabled::Tabled;
 pub struct Set {
     /// The TOML file to update
     ///
+    /// Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
     /// Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
-    #[clap(long, verbatim_doc_comment, required = false, value_hint = clap::ValueHint::FilePath)]
+    #[clap(long, verbatim_doc_comment, required = false, value_hint = clap::ValueHint::AnyPath)]
     file: Option<PathBuf>,
 
     /// Render completions
@@ -182,21 +182,15 @@ impl Set {
     }
 
     fn filename(&self) -> Result<PathBuf> {
-        if let Some(file) = &self.file {
-            Ok(file.clone())
-        } else if self.global {
-            Ok(config::global_config_path())
-        } else if let Some(env) = &self.env {
-            let cwd = env::current_dir()?;
-            let p = cwd.join(format!(".mise.{env}.toml"));
-            if p.exists() {
-                Ok(p)
-            } else {
-                Ok(cwd.join(format!("mise.{env}.toml")))
-            }
-        } else {
-            Ok(config::local_toml_config_path())
-        }
+        let opts = ConfigPathOptions {
+            global: self.global,
+            path: self.file.clone(),
+            env: self.env.clone(),
+            cwd: None,                // Use current working directory
+            prefer_toml: true,        // mise set only works with TOML files
+            prevent_home_local: true, // When in HOME, use global config
+        };
+        resolve_target_config_path(opts)
     }
 }
 

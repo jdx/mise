@@ -365,7 +365,7 @@ impl AquaBackend {
             return Ok(());
         }
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(url, &tarball_path, Some(&ctx.pr))
+        HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))
             .await?;
         Ok(())
     }
@@ -397,7 +397,7 @@ impl AquaBackend {
                         AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
                     };
                     let checksum_path = download_path.join(format!("{filename}.checksum"));
-                    HTTP.download_file(&url, &checksum_path, Some(&ctx.pr))
+                    HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
                         .await?;
                     self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
                         .await?;
@@ -499,7 +499,8 @@ impl AquaBackend {
                         .map(|a| a.browser_download_url);
                     if let Some(url) = url {
                         let path = tv.download_path().join(asset);
-                        HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                            .await?;
                         path
                     } else {
                         warn!("no asset found for minisign of {tv}: {asset}");
@@ -509,7 +510,8 @@ impl AquaBackend {
                 AquaMinisignType::Http => {
                     let url = minisign.url(pkg, v, os(), arch())?;
                     let path = tv.download_path().join(filename).with_extension(".minisig");
-                    HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                    HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                        .await?;
                     path
                 }
             };
@@ -561,7 +563,8 @@ impl AquaBackend {
                         .map(|a| a.browser_download_url);
                     if let Some(url) = url {
                         let path = tv.download_path().join(asset);
-                        HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                            .await?;
                         path
                     } else {
                         warn!("no asset found for slsa verification of {tv}: {asset}");
@@ -573,7 +576,8 @@ impl AquaBackend {
                     let provenance_filename =
                         url.split('/').next_back().unwrap_or("provenance.json");
                     let path = tv.download_path().join(provenance_filename);
-                    HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                    HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                        .await?;
                     path
                 }
                 t => {
@@ -721,7 +725,7 @@ impl AquaBackend {
                     let key_path = if key_arg.starts_with("http") {
                         let key_filename = key_arg.split('/').next_back().unwrap_or("cosign.pub");
                         let key_path = download_path.join(key_filename);
-                        HTTP.download_file(&key_arg, &key_path, Some(&ctx.pr))
+                        HTTP.download_file(&key_arg, &key_path, Some(ctx.pr.as_ref()))
                             .await?;
                         key_path
                     } else {
@@ -736,7 +740,7 @@ impl AquaBackend {
                                 let sig_filename =
                                     sig_arg.split('/').next_back().unwrap_or("checksum.sig");
                                 let sig_path = download_path.join(sig_filename);
-                                HTTP.download_file(&sig_arg, &sig_path, Some(&ctx.pr))
+                                HTTP.download_file(&sig_arg, &sig_path, Some(ctx.pr.as_ref()))
                                     .await?;
                                 sig_path
                             } else {
@@ -779,7 +783,7 @@ impl AquaBackend {
                     let bundle_path = if bundle_arg.starts_with("http") {
                         let filename = bundle_arg.split('/').next_back().unwrap_or("bundle.json");
                         let bundle_path = download_path.join(filename);
-                        HTTP.download_file(&bundle_arg, &bundle_path, Some(&ctx.pr))
+                        HTTP.download_file(&bundle_arg, &bundle_path, Some(ctx.pr.as_ref()))
                             .await?;
                         bundle_path
                     } else {
@@ -860,8 +864,9 @@ impl AquaBackend {
             .expect("at least one bin path should exist");
         let mut tar_opts = TarOptions {
             format: format.parse().unwrap_or_default(),
-            pr: Some(&ctx.pr),
+            pr: Some(ctx.pr.as_ref()),
             strip_components: 0,
+            ..Default::default()
         };
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {

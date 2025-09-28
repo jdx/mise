@@ -1,5 +1,25 @@
 #!/usr/bin/env bash
 
+# Find available port
+find_available_port() {
+	python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()"
+}
+
+# Start local HTTP test server
+SERVER_PORT=$(find_available_port)
+python3 "${TEST_ROOT}/helpers/scripts/http_test_server.py" "$SERVER_PORT" &
+SERVER_PID=$!
+
+# Wait for server to start
+sleep 1
+
+# Ensure cleanup on exit
+cleanup() {
+	kill "$SERVER_PID" 2>/dev/null || true
+	rm -f /tmp/mise_http_test_port
+}
+trap cleanup EXIT
+
 cat <<EOF >mytask
 #!/usr/bin/env bash
 echo "running mytask"
@@ -19,6 +39,6 @@ assert "mise run mytask" "running mytask"
 cd .. || exit 1
 
 cat <<EOF >mise.toml
-tasks.mytask.file = "https://mise.jdx.dev/test/mytask"
+tasks.mytask.file = "http://localhost:${SERVER_PORT}/test/mytask"
 EOF
 assert "mise run mytask" "running mytask"

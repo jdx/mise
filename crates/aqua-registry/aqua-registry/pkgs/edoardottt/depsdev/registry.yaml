@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: edoardottt
+    repo_name: depsdev
+    description: CLI client (and Golang module) for deps.dev API. Free access to dependencies, licenses, advisories, and other critical health and security signals for open source package versions
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.10")
+        type: go_install
+      - version_constraint: "true"
+        asset: depsdev_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: depsdev_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

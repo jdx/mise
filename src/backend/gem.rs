@@ -69,7 +69,7 @@ impl Backend for GemBackend {
             //       uninstalling the ruby version used to install the gem will break the
             //       gem. We should find a way to fix this.
             // .arg("--env-shebang")
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
             .execute()?;
 
