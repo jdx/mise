@@ -51,6 +51,7 @@ mod render_mangen;
 mod reshim;
 pub mod run;
 mod search;
+mod secrets;
 #[cfg_attr(not(feature = "self_update"), path = "self_update_stub.rs")]
 pub mod self_update;
 mod set;
@@ -227,6 +228,7 @@ pub enum Commands {
     Reshim(reshim::Reshim),
     Run(run::Run),
     Search(search::Search),
+    Secrets(secrets::Secrets),
     #[cfg(feature = "self_update")]
     SelfUpdate(self_update::SelfUpdate),
     Set(set::Set),
@@ -296,6 +298,7 @@ impl Commands {
             Self::Reshim(cmd) => cmd.run().await,
             Self::Run(cmd) => cmd.run().await,
             Self::Search(cmd) => cmd.run().await,
+            Self::Secrets(cmd) => cmd.run().await,
             #[cfg(feature = "self_update")]
             Self::SelfUpdate(cmd) => cmd.run().await,
             Self::Set(cmd) => cmd.run().await,

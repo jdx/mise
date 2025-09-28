@@ -1110,25 +1110,49 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             #[serde(untagged)]
                             enum Val {
                                 Primitive(PrimitiveVal),
+                                Secret {
+                                    secret: crate::secrets::SecretConfig,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
                                 Map {
                                     value: PrimitiveVal,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
                             }
-                            let (value, options) = match map.next_value::<Val>()? {
-                                Val::Primitive(p) => (p, EnvDirectiveOptions::default()),
-                                Val::Map { value, options } => (value, options),
-                            };
-                            let directive = match value {
-                                PrimitiveVal::Str(s) => EnvDirective::Val(key, s, options),
-                                PrimitiveVal::Int(i) => {
-                                    EnvDirective::Val(key, i.to_string(), options)
+                            let directive = match map.next_value::<Val>()? {
+                                Val::Primitive(p) => match p {
+                                    PrimitiveVal::Str(s) => {
+                                        EnvDirective::Val(key, s, EnvDirectiveOptions::default())
+                                    }
+                                    PrimitiveVal::Int(i) => EnvDirective::Val(
+                                        key,
+                                        i.to_string(),
+                                        EnvDirectiveOptions::default(),
+                                    ),
+                                    PrimitiveVal::Bool(true) => EnvDirective::Val(
+                                        key,
+                                        "true".to_string(),
+                                        EnvDirectiveOptions::default(),
+                                    ),
+                                    PrimitiveVal::Bool(false) => {
+                                        EnvDirective::Rm(key, EnvDirectiveOptions::default())
+                                    }
+                                },
+                                Val::Secret { secret, options } => {
+                                    EnvDirective::Secret(key, secret, options)
                                 }
-                                PrimitiveVal::Bool(true) => {
-                                    EnvDirective::Val(key, "true".to_string(), options)
-                                }
-                                PrimitiveVal::Bool(false) => EnvDirective::Rm(key, options),
+                                Val::Map { value, options } => match value {
+                                    PrimitiveVal::Str(s) => EnvDirective::Val(key, s, options),
+                                    PrimitiveVal::Int(i) => {
+                                        EnvDirective::Val(key, i.to_string(), options)
+                                    }
+                                    PrimitiveVal::Bool(true) => {
+                                        EnvDirective::Val(key, "true".to_string(), options)
+                                    }
+                                    PrimitiveVal::Bool(false) => EnvDirective::Rm(key, options),
+                                },
                             };
                             env.push(directive);
                         }

@@ -3,6 +3,7 @@ use crate::dirs;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
+use crate::secrets::SecretConfig;
 use crate::tera::{get_tera, tera_exec};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
@@ -33,6 +34,8 @@ pub struct EnvDirectiveOptions {
 pub enum EnvDirective {
     /// simple key/value pair
     Val(String, String, EnvDirectiveOptions),
+    /// secret-backed env var
+    Secret(String, SecretConfig, EnvDirectiveOptions),
     /// remove a key
     Rm(String, EnvDirectiveOptions),
     /// dotenv file
@@ -56,6 +59,7 @@ impl EnvDirective {
     pub fn options(&self) -> &EnvDirectiveOptions {
         match self {
             EnvDirective::Val(_, _, opts)
+            | EnvDirective::Secret(_, _, opts)
             | EnvDirective::Rm(_, opts)
             | EnvDirective::File(_, opts)
             | EnvDirective::Path(_, opts)
@@ -82,6 +86,13 @@ impl Display for EnvDirective {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
+            EnvDirective::Secret(k, config, _) => {
+                if let Some(provider) = &config.provider {
+                    write!(f, "{k} = {{ secret = {{ provider = \"{}\" }} }}", provider)
+                } else {
+                    write!(f, "{k} = {{ secret = {{}} }}")
+                }
+            }
             EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
             EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
             EnvDirective::Path(path, _) => write!(f, "_.path = \"{}\"", display_path(path)),
@@ -254,6 +265,26 @@ impl EnvResults {
                             r.redactions.push(k.clone());
                         }
                         env.insert(k, (v, Some(source.clone())));
+                    }
+                }
+                EnvDirective::Secret(k, secret_config, _opts) => {
+                    // Store secret config for later resolution
+                    if !resolve_opts.vars {
+                        if secret_config.redact {
+                            r.redactions.push(k.clone());
+                        }
+                        // We'll resolve secrets in a second pass after all env vars are loaded
+                        // For now, just mark as pending with special prefix
+                        env.insert(
+                            k.clone(),
+                            (
+                                format!(
+                                    "__MISE_SECRET__:{}",
+                                    serde_json::to_string(&secret_config).unwrap()
+                                ),
+                                Some(source.clone()),
+                            ),
+                        );
                     }
                 }
                 EnvDirective::Rm(k, _opts) => {

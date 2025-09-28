@@ -22,6 +22,7 @@ use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
+use crate::secrets::{SecretConfig, SecretManager, SecretProviderType};
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::Task;
 use crate::toolset::{ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, install_state};
@@ -507,6 +508,62 @@ impl Config {
         Ok(())
     }
 
+    async fn resolve_secrets(&self, env_results: &mut EnvResults) -> Result<()> {
+        let secret_manager = SecretManager::new()?;
+        let default_provider = self.default_secret_provider();
+
+        // Find all env vars that need secret resolution
+        let mut secrets_to_resolve = Vec::new();
+        for (key, (value, source)) in &env_results.env {
+            if value.starts_with("__MISE_SECRET__:") {
+                let secret_json = value.strip_prefix("__MISE_SECRET__:").unwrap();
+                if let Ok(secret_config) = serde_json::from_str::<SecretConfig>(secret_json) {
+                    secrets_to_resolve.push((key.clone(), secret_config, source.clone()));
+                }
+            }
+        }
+
+        // Resolve each secret
+        for (key, secret_config, source) in secrets_to_resolve {
+            match secret_manager
+                .get(&key, &secret_config, default_provider.clone())
+                .await?
+            {
+                Some(value) => {
+                    env_results.env.insert(key, (value, source));
+                }
+                None if !secret_config.required => {
+                    // Remove the placeholder if not required and not found
+                    env_results.env.remove(&key);
+                }
+                None => {
+                    return Err(eyre::eyre!("Required secret '{}' not found", key));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn default_secret_provider(&self) -> SecretProviderType {
+        // Check settings first
+        // TODO: implement settings integration
+
+        // Check environment variable
+        if let Ok(provider) = std::env::var("MISE_SECRETS_PROVIDER") {
+            if let Ok(p) = provider.parse() {
+                return p;
+            }
+        }
+
+        // Default to keyring in local dev, env in CI
+        if std::env::var("CI").is_ok() {
+            SecretProviderType::Env
+        } else {
+            SecretProviderType::Keyring
+        }
+    }
+
     async fn load_env(self: &Arc<Self>) -> Result<EnvResults> {
         time!("load_env start");
         let entries = self
@@ -522,7 +579,7 @@ impl Config {
             .flatten()
             .collect();
         // trace!("load_env: entries: {:#?}", entries);
-        let env_results = EnvResults::resolve(
+        let mut env_results = EnvResults::resolve(
             self,
             self.tera_ctx.clone(),
             &env::PRISTINE_ENV,
@@ -533,6 +590,9 @@ impl Config {
             },
         )
         .await?;
+
+        // Resolve secrets
+        self.resolve_secrets(&mut env_results).await?;
         let redact_keys = self
             .redaction_keys()
             .into_iter()
