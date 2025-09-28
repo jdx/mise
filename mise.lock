@@ -27,16 +27,12 @@ size = 4758557
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"
 
 [[tools.bun]]
-version = "1.2.22"
+version = "1.2.23"
 backend = "core:bun"
 
 [tools.bun.platforms.linux-x64]
-checksum = "blake3:bf32acffd6e77803ba760caf8d2909389da01c95613b81fe155fe87e2a8f8004"
-size = 39256266
-
-[tools.bun.platforms.macos-arm64]
-checksum = "blake3:ec41528ae2badd9c5d41cefe2c463a307c46d9b5f0ccf157d6f406890340833e"
-size = 22178114
+checksum = "blake3:b8ea90017983cdbac0ef8f7292d91554f70c6986b73d656c213eabc19d68b9af"
+size = 39383658
 
 [[tools.cargo-binstall]]
 version = "1.15.6"
@@ -68,7 +64,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [[tools."cargo:usage-cli"]]
-version = "2.3.0"
+version = "2.3.1"
 backend = "cargo:usage-cli"
 
 [[tools.cosign]]
