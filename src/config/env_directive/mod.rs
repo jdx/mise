@@ -21,6 +21,87 @@ mod path;
 mod source;
 mod venv;
 
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum RequiredValue {
+    #[default]
+    False,
+    True,
+    Help(String),
+}
+
+impl RequiredValue {
+    pub fn is_required(&self) -> bool {
+        !matches!(self, RequiredValue::False)
+    }
+
+    pub fn help_text(&self) -> Option<&str> {
+        match self {
+            RequiredValue::Help(text) => Some(text.as_str()),
+            _ => None,
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RequiredValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+        use std::fmt;
+
+        struct RequiredVisitor;
+
+        impl<'de> Visitor<'de> for RequiredVisitor {
+            type Value = RequiredValue;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a boolean or a string")
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<RequiredValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(if value {
+                    RequiredValue::True
+                } else {
+                    RequiredValue::False
+                })
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<RequiredValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(RequiredValue::Help(value.to_string()))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<RequiredValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(RequiredValue::Help(value))
+            }
+        }
+
+        deserializer.deserialize_any(RequiredVisitor)
+    }
+}
+
+impl serde::Serialize for RequiredValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            RequiredValue::False => serializer.serialize_bool(false),
+            RequiredValue::True => serializer.serialize_bool(true),
+            RequiredValue::Help(text) => serializer.serialize_str(text),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EnvDirectiveOptions {
     #[serde(default)]
@@ -28,7 +109,7 @@ pub struct EnvDirectiveOptions {
     #[serde(default)]
     pub(crate) redact: bool,
     #[serde(default)]
-    pub(crate) required: bool,
+    pub(crate) required: RequiredValue,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -408,21 +489,21 @@ impl EnvResults {
     ) -> eyre::Result<()> {
         let mut required_vars = Vec::new();
 
-        // Collect all required environment variables
+        // Collect all required environment variables with their options
         for (directive, source) in input {
             match directive {
-                EnvDirective::Val(key, _, options) if options.required => {
-                    required_vars.push((key.clone(), source.clone()));
+                EnvDirective::Val(key, _, options) if options.required.is_required() => {
+                    required_vars.push((key.clone(), source.clone(), options.required.clone()));
                 }
-                EnvDirective::Required(key, _) => {
-                    required_vars.push((key.clone(), source.clone()));
+                EnvDirective::Required(key, options) => {
+                    required_vars.push((key.clone(), source.clone(), options.required.clone()));
                 }
                 _ => {}
             }
         }
 
         // Check if required variables are defined
-        for (var_name, declaring_source) in required_vars {
+        for (var_name, declaring_source, required_value) in required_vars {
             // Variable must be defined either:
             // 1. In the initial environment (before mise runs), OR
             // 2. In a config file processed later than the one declaring it as required
@@ -436,11 +517,17 @@ impl EnvResults {
             };
 
             if !is_predefined && !is_defined_later {
-                let message = format!(
+                let base_message = format!(
                     "Required environment variable '{}' is not defined. It must be set before mise runs or in a later config file. (Required in: {})",
                     var_name,
                     display_path(declaring_source)
                 );
+
+                let message = if let Some(help) = required_value.help_text() {
+                    format!("{}\nHelp: {}", base_message, help)
+                } else {
+                    base_message
+                };
 
                 if warn_mode {
                     warn!("{}", message);

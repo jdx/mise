@@ -19,7 +19,7 @@ use versions::Versioning;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
 use crate::config::config_file::{config_root, toml::deserialize_arr};
-use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions, RequiredValue};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config};
 use crate::file::{create_dir_all, display_path};
@@ -1094,7 +1094,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     options: EnvDirectiveOptions {
                                         tools: true,
                                         redact: false,
-                                        required: false,
+                                        required: RequiredValue::False,
                                     },
                                 });
                             }
@@ -1127,12 +1127,12 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 Val::OptionsOnly { options } => (None, options),
                             };
 
-                            // Validate that required=true cannot be used with any value
-                            if options.required {
+                            // Validate that required cannot be used with any value
+                            if options.required.is_required() {
                                 match &value {
                                     Some(_) => {
                                         return Err(serde::de::Error::custom(format!(
-                                            "Environment variable '{}' cannot have both 'value' and 'required = true'. The 'required' flag means the variable must be defined elsewhere (in the environment or a later config file). Remove either the 'value' field or the 'required' flag.",
+                                            "Environment variable '{}' cannot have both 'value' and 'required'. The 'required' flag means the variable must be defined elsewhere (in the environment or a later config file). Remove either the 'value' field or the 'required' flag.",
                                             key
                                         )));
                                     }
@@ -1152,7 +1152,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 Some(PrimitiveVal::Bool(false)) => EnvDirective::Rm(key, options),
                                 None => {
                                     // No value provided - this creates a required variable that must be defined elsewhere
-                                    if !options.required {
+                                    if !options.required.is_required() {
                                         return Err(serde::de::Error::custom(format!(
                                             "Environment variable '{}' has no value. Either provide a value or set required=true to indicate it must be defined elsewhere.",
                                             key

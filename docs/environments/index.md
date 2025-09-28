@@ -178,6 +178,17 @@ DATABASE_URL = { required = true }
 API_KEY = { required = true }
 ```
 
+You can also provide help text to guide users on how to set the variable:
+
+```toml
+[env]
+DATABASE_URL = { required = "Set DATABASE_URL to your PostgreSQL connection string (e.g., postgres://user:pass@localhost/dbname)" }
+API_KEY = { required = "Get your API key from https://example.com/api-keys" }
+AWS_REGION = { required = "Set to your AWS region (e.g., us-east-1, eu-west-1)" }
+```
+
+When a required variable is missing, mise will show the help text in the error message to assist users.
+
 ### Required Variable Behavior
 
 When a variable is marked as `required = true`, mise validates that it is defined through one of these sources:
