@@ -84,8 +84,8 @@ Support for external plugin ecosystems:
 
 When you specify a tool, mise determines the backend using this priority:
 
-1. **Environment variable override**: `MISE_BACKENDS_<TOOL>` (see below)
-2. **Explicit backend**: `mise use aqua:golangci/golangci-lint`
+1. **Explicit backend**: `mise use aqua:golangci/golangci-lint`
+2. **Environment variable override**: `MISE_BACKENDS_<TOOL>` (see below)
 3. **Registry lookup**: `mise use golangci-lint` → checks registry for default backend
 4. **Core tools**: `mise use node` → uses built-in core backend
 5. **Fallback**: If not found, suggests available backends
@@ -97,25 +97,10 @@ The [mise registry](../registry.md) defines a priority order for which backend t
 You can override the backend for any tool using the `MISE_BACKENDS_<TOOL>` environment variable pattern. The tool name is converted to SHOUTY_SNAKE_CASE (uppercase with underscores replacing hyphens).
 
 ```bash
-# Override graphite to use GitHub backend instead of npm
-export MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[bin=gt]'
-mise install graphite@latest
-
-# Override a custom tool not in the registry
-export MISE_BACKENDS_MY_TOOL='github:myorg/my-tool'
-mise install my-tool@latest
-
-# Use a different backend for node
-export MISE_BACKENDS_NODE='asdf:mise-plugins/mise-node'
-mise install node@20
+# Use vfox backend for php
+export MISE_BACKENDS_PHP='vfox:mise-plugins/vfox-php'
+mise install php@latest
 ```
-
-This is particularly useful for:
-
-- Testing different backends without modifying configuration files
-- Using custom or private repositories
-- CI/CD environments where you need dynamic backend selection
-- Overriding registry defaults for specific use cases
 
 ### Registry System
 
