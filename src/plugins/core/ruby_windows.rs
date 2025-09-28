@@ -176,11 +176,11 @@ impl Backend for RubyPlugin {
         Ok(versions)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".ruby-version".into(), "Gemfile".into()])
     }
 
-    fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
         let v = match path.file_name() {
             Some(name) if name == "Gemfile" => parse_gemfile(&file::read_to_string(path)?),
             _ => {
