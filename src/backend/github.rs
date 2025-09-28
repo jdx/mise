@@ -171,12 +171,12 @@ impl UnifiedGitBackend {
         platform_info.url = Some(asset_url.to_string());
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file_with_headers(asset_url, &file_path, &headers, Some(&ctx.pr))
+        HTTP.download_file_with_headers(asset_url, &file_path, &headers, Some(ctx.pr.as_ref()))
             .await?;
 
         // Verify and install
-        verify_artifact(tv, &file_path, opts, Some(&ctx.pr))?;
-        install_artifact(tv, &file_path, opts, Some(&ctx.pr))?;
+        verify_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
+        install_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
         self.verify_checksum(ctx, tv, &file_path)?;
 
         Ok(())

@@ -91,7 +91,7 @@ impl HttpBackend {
         url: &str,
         tv: &ToolVersion,
         opts: &ToolVersionOptions,
-        pr: Option<&Box<dyn SingleReport>>,
+        pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
         let cache_path = self.get_cached_tarball_path(cache_key);
         let extracted_path = self.get_cached_extracted_path(cache_key);
@@ -149,7 +149,7 @@ impl HttpBackend {
         cache_path: &Path,
         tv: &ToolVersion,
         opts: &ToolVersionOptions,
-        pr: Option<&Box<dyn SingleReport>>,
+        pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
         let mut strip_components = opts.get("strip_components").and_then(|s| s.parse().ok());
 
@@ -313,13 +313,13 @@ impl HttpBackend {
         if let Some(checksum) = &platform_info.checksum {
             ctx.pr.set_message(format!("checksum {filename}"));
             if let Some((algo, check)) = checksum.split_once(':') {
-                hash::ensure_checksum(file_path, check, Some(&ctx.pr), algo)?;
+                hash::ensure_checksum(file_path, check, Some(ctx.pr.as_ref()), algo)?;
             } else {
                 return Err(eyre::eyre!("Invalid checksum: {checksum}"));
             }
         } else if lockfile_enabled {
             ctx.pr.set_message(format!("generate checksum {filename}"));
-            let hash = hash::file_hash_blake3(file_path, Some(&ctx.pr))?;
+            let hash = hash::file_hash_blake3(file_path, Some(ctx.pr.as_ref()))?;
             platform_info.checksum = Some(format!("blake3:{hash}"));
         }
 
@@ -395,10 +395,11 @@ impl Backend for HttpBackend {
         platform_info.url = Some(url.clone());
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(&url, &file_path, Some(&ctx.pr)).await?;
+        HTTP.download_file(&url, &file_path, Some(ctx.pr.as_ref()))
+            .await?;
 
         // Verify (shared)
-        verify_artifact(&tv, &file_path, &opts, Some(&ctx.pr))?;
+        verify_artifact(&tv, &file_path, &opts, Some(ctx.pr.as_ref()))?;
 
         // Generate cache key - always use Blake3 hash of the file for consistency
         // This ensures that the same file content always gets the same cache key
@@ -414,7 +415,14 @@ impl Backend for HttpBackend {
             ctx.pr.set_message("using cached tarball".into());
         } else {
             ctx.pr.set_message("extracting to cache".into());
-            self.extract_to_cache(&file_path, &cache_key, &url, &tv, &opts, Some(&ctx.pr))?;
+            self.extract_to_cache(
+                &file_path,
+                &cache_key,
+                &url,
+                &tv,
+                &opts,
+                Some(ctx.pr.as_ref()),
+            )?;
         }
 
         // Create symlink from install directory to cache

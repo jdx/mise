@@ -55,7 +55,7 @@ impl Uninstall {
 
             let pr = mpr.add(&tv.style());
             if let Err(err) = plugin
-                .uninstall_version(&config, &tv, &pr, self.dry_run)
+                .uninstall_version(&config, &tv, pr.as_ref(), self.dry_run)
                 .await
             {
                 error!("{err}");
