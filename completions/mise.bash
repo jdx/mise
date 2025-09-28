@@ -7,15 +7,11 @@ _mise() {
         return 1
     fi
 
-    if [[ -z ${_usage_spec_mise_2025_9_22:-} ]]; then
-        _usage_spec_mise_2025_9_22="$(mise usage)"
-    fi
-
 	local cur prev words cword was_split comp_args
     _comp_initialize -n : -- "$@" || return
-    local spec_file="${TMPDIR:-/tmp}/usage__usage_spec_mise_2025_9_22.spec"
+    local spec_file="${TMPDIR:-/tmp}/usage__usage_spec_mise_2025_9_23.spec"
     if [[ ! -f "$spec_file" ]]; then
-        echo "${_usage_spec_mise_2025_9_22}" > "$spec_file"
+        mise usage > "$spec_file"
     fi
     # shellcheck disable=SC2207
 	_comp_compgen -- -W "$(command usage complete-word --shell bash -f "$spec_file" --cword="$cword" -- "${words[@]}")"

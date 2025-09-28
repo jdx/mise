@@ -1,5 +1,19 @@
 # Changelog
 
+## [2025.9.23](https://github.com/jdx/mise/compare/v2025.9.22..v2025.9.23) - 2025-09-28
+
+### 🚀 Features
+
+- **(env)** add support for required environment variables by @jdx in [#6461](https://github.com/jdx/mise/pull/6461)
+
+### 🐛 Bug Fixes
+
+- **(set)** unify config file resolution for mise set and mise use by @jdx in [#6467](https://github.com/jdx/mise/pull/6467)
+
+### Chore
+
+- **(clippy)** replace &Box<dyn SingleReport> with &dyn SingleReport by @jdx in [#6465](https://github.com/jdx/mise/pull/6465)
+
 ## [2025.9.22](https://github.com/jdx/mise/compare/v2025.9.21..v2025.9.22) - 2025-09-28
 
 ### 📦 Registry

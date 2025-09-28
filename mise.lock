@@ -30,6 +30,10 @@ url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-da
 version = "1.2.23"
 backend = "core:bun"
 
+[tools.bun.platforms.linux-x64]
+checksum = "blake3:b8ea90017983cdbac0ef8f7292d91554f70c6986b73d656c213eabc19d68b9af"
+size = 39383658
+
 [tools.bun.platforms.macos-arm64]
 checksum = "blake3:621c047bdd068c4972bf7b222a2e112908cd40b53256b690ec0921ea98676756"
 size = 22280328
@@ -64,7 +68,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [[tools."cargo:usage-cli"]]
-version = "2.3.0"
+version = "2.3.1"
 backend = "cargo:usage-cli"
 
 [[tools.cosign]]
