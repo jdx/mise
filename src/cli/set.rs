@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::args::EnvVarArg;
+use crate::agecrypt;
 use crate::config;
 use crate::config::Config;
 use crate::config::config_file::ConfigFile;
@@ -9,7 +10,6 @@ use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
 use crate::env::{self};
 use crate::file::display_path;
-use crate::task::agecrypt;
 use crate::ui::table;
 use demand::Input;
 use eyre::{Result, bail};
@@ -108,10 +108,40 @@ impl Set {
             if env_vars.len() == 1 && env_vars[0].value.is_none() {
                 let key = &env_vars[0].key;
                 match config.env_entries()?.into_iter().find_map(|ev| match ev {
-                    EnvDirective::Val(k, v, _) if &k == key => Some(v),
+                    EnvDirective::Val(k, v, _) if &k == key => Some((v, false)),
+                    EnvDirective::Age {
+                        key: k,
+                        value: v,
+                        format: _,
+                        ..
+                    } if &k == key => Some((v, true)),
                     _ => None,
                 }) {
-                    Some(value) => miseprintln!("{value}"),
+                    Some((value, is_age)) => {
+                        if is_age {
+                            // Decrypt age-encrypted values
+                            match agecrypt::decrypt_value(&value).await {
+                                Ok(decrypted) => miseprintln!("{decrypted}"),
+                                Err(e) => {
+                                    debug!("[experimental] Failed to decrypt {}: {}", key, e);
+                                    miseprintln!("{value}"); // Fall back to showing encrypted value
+                                }
+                            }
+                        } else {
+                            // Check for old format encrypted values
+                            if agecrypt::is_age_encrypted(&value) {
+                                match agecrypt::decrypt_value(&value).await {
+                                    Ok(decrypted) => miseprintln!("{decrypted}"),
+                                    Err(e) => {
+                                        debug!("[experimental] Failed to decrypt {}: {}", key, e);
+                                        miseprintln!("{value}"); // Fall back to showing encrypted value
+                                    }
+                                }
+                            } else {
+                                miseprintln!("{value}");
+                            }
+                        }
+                    }
                     None => bail!("Environment variable {key} not found"),
                 }
                 return Ok(());
@@ -139,8 +169,17 @@ impl Set {
                 for ev in env_vars {
                     match ev.value {
                         Some(value) => {
-                            let encrypted = agecrypt::encrypt_value(&value, &recipients).await?;
-                            mise_toml.update_env(&ev.key, encrypted)?;
+                            let age_directive =
+                                agecrypt::create_age_directive(ev.key.clone(), &value, &recipients)
+                                    .await?;
+                            if let crate::config::env_directive::EnvDirective::Age {
+                                value: encrypted_value,
+                                format,
+                                ..
+                            } = age_directive
+                            {
+                                mise_toml.update_env_age(&ev.key, &encrypted_value, format)?;
+                            }
                         }
                         None => bail!("{} has no value", ev.key),
                     }
@@ -173,21 +212,91 @@ impl Set {
     }
 
     async fn get(self) -> Result<()> {
-        let env = self.cur_env().await?;
+        // Determine config file path before moving env_vars
+        let config_path = if let Some(file) = &self.file {
+            Some(file.clone())
+        } else if self.env.is_some() {
+            Some(self.filename()?)
+        } else {
+            None
+        };
+
         let filter = self.env_vars.unwrap();
-        let vars = filter
-            .iter()
-            .filter_map(|ev| {
-                env.iter()
-                    .find(|r| r.key == ev.key)
-                    .map(|r| (r.key.clone(), r.value.clone()))
-            })
-            .collect::<HashMap<String, String>>();
+
+        // Handle global config case first
+        if config_path.is_none() {
+            let config = Config::get().await?;
+            let env_with_sources = config.env_with_sources().await?;
+            // For global config, fall back to the old logic using rows
+            let vars = filter
+                .iter()
+                .filter_map(|ev| {
+                    env_with_sources
+                        .iter()
+                        .find(|(k, _)| k.as_str() == ev.key.as_str())
+                        .map(|(k, (v, _))| (k.clone(), v.clone()))
+                })
+                .collect::<HashMap<String, String>>();
+
+            for eva in filter {
+                if let Some(value) = vars.get(&eva.key) {
+                    // Check for old format encrypted values
+                    if agecrypt::is_age_encrypted(value) {
+                        match agecrypt::decrypt_value(value).await {
+                            Ok(decrypted) => miseprintln!("{decrypted}"),
+                            Err(e) => {
+                                debug!("[experimental] Failed to decrypt {}: {}", eva.key, e);
+                                miseprintln!("{value}"); // Fall back to showing encrypted value
+                            }
+                        }
+                    } else {
+                        miseprintln!("{value}");
+                    }
+                } else {
+                    bail!("Environment variable {} not found", eva.key);
+                }
+            }
+            return Ok(());
+        }
+
+        // Get the config to access directives directly
+        let config = MiseToml::from_file(&config_path.unwrap()).unwrap_or_default();
+
+        // For local configs, check directives directly
         for eva in filter {
-            if let Some(value) = vars.get(&eva.key) {
-                miseprintln!("{value}");
-            } else {
-                bail!("Environment variable {} not found", eva.key);
+            match config.env_entries()?.into_iter().find_map(|ev| match ev {
+                EnvDirective::Val(k, v, _) if k == eva.key => Some((v, false)),
+                EnvDirective::Age {
+                    key: k, value: v, ..
+                } if k == eva.key => Some((v, true)),
+                _ => None,
+            }) {
+                Some((value, is_age)) => {
+                    if is_age {
+                        // Decrypt age-encrypted values
+                        match agecrypt::decrypt_value(&value).await {
+                            Ok(decrypted) => miseprintln!("{decrypted}"),
+                            Err(e) => {
+                                debug!("[experimental] Failed to decrypt {}: {}", eva.key, e);
+                                miseprintln!("{value}"); // Fall back to showing encrypted value
+                            }
+                        }
+                    } else {
+                        // Check for old format encrypted values
+                        if agecrypt::is_age_encrypted(&value) {
+                            match agecrypt::decrypt_value(&value).await {
+                                Ok(decrypted) => miseprintln!("{decrypted}"),
+                                Err(e) => {
+                                    debug!("[experimental] Failed to decrypt {}: {}", eva.key, e);
+                                    miseprintln!("{value}"); // Fall back to showing encrypted value
+                                }
+                            }
+                        } else {
+                            miseprintln!("{value}");
+                        }
+                    }
+                }
+                None => bail!("Environment variable {} not found", eva.key),
             }
         }
         Ok(())
@@ -205,6 +314,11 @@ impl Set {
                         value,
                         source: display_path(file),
                     }),
+                    EnvDirective::Age { key, value, .. } => Some(Row {
+                        key,
+                        value,
+                        source: display_path(file),
+                    }),
                     _ => None,
                 })
                 .collect()
@@ -217,6 +331,11 @@ impl Set {
                 .into_iter()
                 .filter_map(|ed| match ed {
                     EnvDirective::Val(key, value, _) => Some(Row {
+                        key,
+                        value,
+                        source: display_path(&filename),
+                    }),
+                    EnvDirective::Age { key, value, .. } => Some(Row {
                         key,
                         value,
                         source: display_path(&filename),

@@ -19,7 +19,7 @@ use versions::Versioning;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
 use crate::config::config_file::{config_root, toml::deserialize_arr};
-use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions, RequiredValue};
+use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions, RequiredValue};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config};
 use crate::file::{create_dir_all, display_path};
@@ -283,6 +283,51 @@ impl MiseToml {
             if i == key_parts.len() - 1 {
                 let k = get_key_with_decor(env_tbl, k);
                 env_tbl.insert_formatted(&k, toml_edit::value(value));
+                break;
+            } else if !env_tbl.contains_key(k) {
+                env_tbl.insert_formatted(&Key::from(*k), toml_edit::table());
+            }
+            env_tbl = env_tbl.get_mut(k).unwrap().as_table_mut().unwrap();
+        }
+        Ok(())
+    }
+
+    pub fn update_env_age(
+        &mut self,
+        key: &str,
+        value: &str,
+        format: Option<AgeFormat>,
+    ) -> eyre::Result<()> {
+        let mut doc = self.doc_mut()?;
+        let mut env_tbl = doc
+            .get_mut()
+            .unwrap()
+            .entry("env")
+            .or_insert_with(table)
+            .as_table_mut()
+            .unwrap();
+
+        // Create the age inline table: {age = {value = "...", format = "..."}}
+        let mut age_table = InlineTable::new();
+        age_table.insert("value", value.into());
+
+        if let Some(fmt) = format {
+            let format_str = match fmt {
+                AgeFormat::Zstd => "zstd",
+                AgeFormat::Raw => "raw",
+            };
+            age_table.insert("format", format_str.into());
+        }
+
+        let mut outer_table = InlineTable::new();
+        outer_table.insert("age", Value::InlineTable(age_table));
+
+        let key_parts = key.split('.').collect_vec();
+        for (i, k) in key_parts.iter().enumerate() {
+            if i == key_parts.len() - 1 {
+                let k = get_key_with_decor(env_tbl, k);
+                env_tbl
+                    .insert_formatted(&k, toml_edit::Item::Value(Value::InlineTable(outer_table)));
                 break;
             } else if !env_tbl.contains_key(k) {
                 env_tbl.insert_formatted(&Key::from(*k), toml_edit::table());
@@ -1110,6 +1155,11 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             #[derive(Deserialize)]
                             #[serde(untagged)]
                             enum Val {
+                                Age {
+                                    age: AgeVal,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
                                 Primitive(PrimitiveVal),
                                 Map {
                                     value: PrimitiveVal,
@@ -1121,10 +1171,32 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     options: EnvDirectiveOptions,
                                 },
                             }
-                            let (value, options) = match map.next_value::<Val>()? {
+
+                            #[derive(Deserialize)]
+                            struct AgeVal {
+                                value: String,
+                                #[serde(default)]
+                                format: Option<AgeFormat>,
+                            }
+                            let val_result = map.next_value::<Val>()?;
+
+                            // Handle Age variant separately since it creates a different directive type
+                            if let Val::Age { age, options } = val_result {
+                                let directive = EnvDirective::Age {
+                                    key: key.clone(),
+                                    value: age.value,
+                                    format: age.format,
+                                    options,
+                                };
+                                env.push(directive);
+                                continue;
+                            }
+
+                            let (value, options) = match val_result {
                                 Val::Primitive(p) => (Some(p), EnvDirectiveOptions::default()),
                                 Val::Map { value, options } => (Some(value), options),
                                 Val::OptionsOnly { options } => (None, options),
+                                Val::Age { .. } => unreachable!(), // Already handled above
                             };
 
                             // Validate that required cannot be used with any value

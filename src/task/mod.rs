@@ -27,7 +27,6 @@ use std::sync::LazyLock as Lazy;
 use std::{ffi, fmt, path};
 use xx::regex;
 
-pub mod agecrypt;
 mod deps;
 mod task_dep;
 pub mod task_file_providers;

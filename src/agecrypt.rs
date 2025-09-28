@@ -8,6 +8,7 @@ use eyre::{Result, WrapErr, eyre};
 use indexmap::IndexSet;
 
 use crate::config::Settings;
+use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions};
 use crate::file::{self, replace_path};
 use crate::{dirs, env};
 
@@ -114,6 +115,102 @@ pub async fn decrypt_value(encrypted: &str) -> Result<String> {
     }
 
     String::from_utf8(decrypted).wrap_err("[experimental] Decrypted value is not valid UTF-8")
+}
+
+pub async fn create_age_directive(
+    key: String,
+    value: &str,
+    recipients: &[Box<dyn Recipient + Send>],
+) -> Result<EnvDirective> {
+    if recipients.is_empty() {
+        return Err(eyre!(
+            "[experimental] No age recipients provided for encryption"
+        ));
+    }
+
+    let encryptor =
+        match Encryptor::with_recipients(recipients.iter().map(|r| r.as_ref() as &dyn Recipient)) {
+            Ok(encryptor) => encryptor,
+            Err(e) => return Err(eyre!("[experimental] Failed to create encryptor: {}", e)),
+        };
+
+    let mut encrypted = Vec::new();
+    let mut writer = encryptor.wrap_output(&mut encrypted)?;
+    writer.write_all(value.as_bytes())?;
+    writer.finish()?;
+
+    // Determine format based on size and compression
+    let (encoded, format) = if encrypted.len() > COMPRESSION_THRESHOLD {
+        let compressed = zstd::encode_all(&encrypted[..], ZSTD_COMPRESSION_LEVEL)?;
+        let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(&compressed);
+        (encoded, Some(AgeFormat::Zstd))
+    } else {
+        let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(&encrypted);
+        (encoded, Some(AgeFormat::Raw))
+    };
+
+    Ok(EnvDirective::Age {
+        key,
+        value: encoded,
+        format,
+        options: EnvDirectiveOptions::default(),
+    })
+}
+
+pub async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
+    match directive {
+        EnvDirective::Age { value, format, .. } => {
+            let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
+                .decode(value)
+                .wrap_err("[experimental] Failed to decode base64")?;
+
+            let ciphertext = match format {
+                Some(AgeFormat::Zstd) => zstd::decode_all(&decoded[..])
+                    .wrap_err("[experimental] Failed to decompress zstd")?,
+                Some(AgeFormat::Raw) | None => decoded,
+            };
+
+            let identities = load_all_identities().await?;
+            if identities.is_empty() {
+                if Settings::get().age.strict {
+                    return Err(eyre!(
+                        "[experimental] No age identities found for decryption (strict mode enabled)"
+                    ));
+                } else {
+                    debug!(
+                        "[experimental] No age identities found, returning ciphertext in non-strict mode"
+                    );
+                    return Ok(value.to_string());
+                }
+            }
+
+            let decryptor = Decryptor::new(&ciphertext[..])?;
+            let mut decrypted = Vec::new();
+
+            let identity_refs: Vec<&dyn Identity> = identities
+                .iter()
+                .map(|i| i.as_ref() as &dyn Identity)
+                .collect();
+
+            match decryptor.decrypt(identity_refs.into_iter()) {
+                Ok(mut reader) => {
+                    reader.read_to_end(&mut decrypted)?;
+                }
+                Err(e) => {
+                    if Settings::get().age.strict {
+                        return Err(eyre!("[experimental] Failed to decrypt: {}", e));
+                    } else {
+                        debug!("[experimental] Failed to decrypt in non-strict mode: {}", e);
+                        return Ok(value.to_string());
+                    }
+                }
+            }
+
+            String::from_utf8(decrypted)
+                .wrap_err("[experimental] Decrypted value is not valid UTF-8")
+        }
+        _ => Err(eyre!("[experimental] Not an Age directive")),
+    }
 }
 
 pub async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipient + Send>>> {

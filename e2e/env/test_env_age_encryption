@@ -83,7 +83,7 @@ assert "echo $RESULT" "uses-default-key"
 assert_fail "mise set INVALID=value --age-encrypt --age-recipient invalid-key"
 
 # No recipients available (remove defaults)
-rm -f ~/.config/mise/age.txt ~/.ssh/id_ed25519 ~/.ssh/id_rsa
+rm -f ~/.config/mise/age.txt
 assert_fail "mise set NO_RECIPIENT=value --age-encrypt"
 
 # Decryption without key (non-strict mode returns ciphertext)
