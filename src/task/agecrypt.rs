@@ -11,11 +11,13 @@ use crate::config::Settings;
 use crate::file::{self, replace_path};
 use crate::{dirs, env};
 
-const PREFIX: &str = "age64:zstd:v1:";
+const PREFIX_COMPRESSED: &str = "age64:zstd:v1:";
+const PREFIX_UNCOMPRESSED: &str = "age64:v1:";
 const ZSTD_COMPRESSION_LEVEL: i32 = 3;
+const COMPRESSION_THRESHOLD: usize = 1024; // 1KB
 
 pub fn is_age_encrypted(value: &str) -> bool {
-    value.starts_with(PREFIX)
+    value.starts_with(PREFIX_COMPRESSED) || value.starts_with(PREFIX_UNCOMPRESSED)
 }
 
 pub async fn encrypt_value(
@@ -39,25 +41,37 @@ pub async fn encrypt_value(
     writer.write_all(value.as_bytes())?;
     writer.finish()?;
 
-    let compressed = zstd::encode_all(&encrypted[..], ZSTD_COMPRESSION_LEVEL)?;
-    let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(&compressed);
-
-    Ok(format!("{}{}", PREFIX, encoded))
+    // Only compress if the encrypted value is larger than the threshold
+    if encrypted.len() > COMPRESSION_THRESHOLD {
+        let compressed = zstd::encode_all(&encrypted[..], ZSTD_COMPRESSION_LEVEL)?;
+        let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(&compressed);
+        Ok(format!("{}{}", PREFIX_COMPRESSED, encoded))
+    } else {
+        let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(&encrypted);
+        Ok(format!("{}{}", PREFIX_UNCOMPRESSED, encoded))
+    }
 }
 
 pub async fn decrypt_value(encrypted: &str) -> Result<String> {
-    if !encrypted.starts_with(PREFIX) {
+    let (is_compressed, encoded) = if encrypted.starts_with(PREFIX_COMPRESSED) {
+        (true, &encrypted[PREFIX_COMPRESSED.len()..])
+    } else if encrypted.starts_with(PREFIX_UNCOMPRESSED) {
+        (false, &encrypted[PREFIX_UNCOMPRESSED.len()..])
+    } else {
         return Err(eyre!(
             "[experimental] Value does not have age encryption prefix"
         ));
-    }
+    };
 
-    let encoded = &encrypted[PREFIX.len()..];
-    let compressed = base64::engine::general_purpose::STANDARD_NO_PAD
+    let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
         .decode(encoded)
         .wrap_err("[experimental] Failed to decode base64")?;
-    let ciphertext =
-        zstd::decode_all(&compressed[..]).wrap_err("[experimental] Failed to decompress zstd")?;
+
+    let ciphertext = if is_compressed {
+        zstd::decode_all(&decoded[..]).wrap_err("[experimental] Failed to decompress zstd")?
+    } else {
+        decoded
+    };
 
     let identities = load_all_identities().await?;
     if identities.is_empty() {
@@ -401,15 +415,37 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_age_x25519_round_trip() -> Result<()> {
+    async fn test_age_x25519_round_trip_small() -> Result<()> {
         let key = age::x25519::Identity::generate();
         let recipient = key.to_public();
 
+        // Small value should not be compressed
         let plaintext = "secret value";
         let encrypted = encrypt_value(plaintext, vec![Box::new(recipient)]).await?;
 
-        assert!(encrypted.starts_with(PREFIX));
-        assert!(encrypted.len() > PREFIX.len());
+        assert!(encrypted.starts_with(PREFIX_UNCOMPRESSED));
+        assert!(encrypted.len() > PREFIX_UNCOMPRESSED.len());
+
+        use age::secrecy::ExposeSecret;
+        env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
+        let decrypted = decrypt_value(&encrypted).await?;
+        env::remove_var("MISE_AGE_KEY");
+
+        assert_eq!(decrypted, plaintext);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_age_x25519_round_trip_large() -> Result<()> {
+        let key = age::x25519::Identity::generate();
+        let recipient = key.to_public();
+
+        // Large value should be compressed (>1KB)
+        let plaintext = "x".repeat(2000);
+        let encrypted = encrypt_value(&plaintext, vec![Box::new(recipient)]).await?;
+
+        assert!(encrypted.starts_with(PREFIX_COMPRESSED));
+        assert!(encrypted.len() > PREFIX_COMPRESSED.len());
 
         use age::secrecy::ExposeSecret;
         env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
@@ -423,6 +459,7 @@ mod tests {
     #[test]
     fn test_prefix_detection() {
         assert!(is_age_encrypted("age64:zstd:v1:abc123"));
+        assert!(is_age_encrypted("age64:v1:abc123"));
         assert!(!is_age_encrypted("plain text"));
         assert!(!is_age_encrypted("age64:wrong:prefix"));
     }
