@@ -381,7 +381,7 @@ impl EnvResults {
         }
 
         // Validate required environment variables
-        Self::validate_required_env_vars(&input, &initial, &r)?;
+        Self::validate_required_env_vars(&input, initial, &r)?;
 
         Ok(r)
     }
