@@ -22,6 +22,7 @@ e.g.: NODE_ENV=production
 
 The TOML file to update
 
+Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
 Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
 
 ### `-g --global`
