@@ -12,67 +12,8 @@ use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions}
 use crate::file::{self, replace_path};
 use crate::{dirs, env};
 
-const PREFIX_COMPRESSED: &str = "age64:zstd:v1:";
-const PREFIX_UNCOMPRESSED: &str = "age64:v1:";
 const ZSTD_COMPRESSION_LEVEL: i32 = 3;
 const COMPRESSION_THRESHOLD: usize = 1024; // 1KB
-
-pub fn is_age_encrypted(value: &str) -> bool {
-    value.starts_with(PREFIX_COMPRESSED) || value.starts_with(PREFIX_UNCOMPRESSED)
-}
-
-pub async fn decrypt_value(encrypted: &str) -> Result<String> {
-    let (is_compressed, encoded) = if let Some(stripped) = encrypted.strip_prefix(PREFIX_COMPRESSED)
-    {
-        (true, stripped)
-    } else if let Some(stripped) = encrypted.strip_prefix(PREFIX_UNCOMPRESSED) {
-        (false, stripped)
-    } else {
-        return Err(eyre!(
-            "[experimental] Value does not have age encryption prefix"
-        ));
-    };
-
-    let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
-        .decode(encoded)
-        .wrap_err("[experimental] Failed to decode base64")?;
-
-    let ciphertext = if is_compressed {
-        zstd::decode_all(&decoded[..]).wrap_err("[experimental] Failed to decompress zstd")?
-    } else {
-        decoded
-    };
-
-    let identities = load_all_identities().await?;
-    if identities.is_empty() {
-        return Err(eyre!(
-            "[experimental] No age identities found for decryption"
-        ));
-    }
-
-    // The age crate decryptor API
-    let decryptor = Decryptor::new(&ciphertext[..])?;
-
-    let mut decrypted = Vec::new();
-
-    // Convert identities to references for decrypt
-    let identity_refs: Vec<&dyn Identity> = identities
-        .iter()
-        .map(|i| i.as_ref() as &dyn Identity)
-        .collect();
-
-    // Try to decrypt with identities
-    match decryptor.decrypt(identity_refs.into_iter()) {
-        Ok(mut reader) => {
-            reader.read_to_end(&mut decrypted)?;
-        }
-        Err(e) => {
-            return Err(eyre!("[experimental] Failed to decrypt: {}", e));
-        }
-    }
-
-    String::from_utf8(decrypted).wrap_err("[experimental] Decrypted value is not valid UTF-8")
-}
 
 pub async fn create_age_directive(
     key: String,
@@ -529,14 +470,6 @@ mod tests {
             panic!("Expected Age directive");
         }
         Ok(())
-    }
-
-    #[test]
-    fn test_prefix_detection() {
-        assert!(is_age_encrypted("age64:zstd:v1:abc123"));
-        assert!(is_age_encrypted("age64:v1:abc123"));
-        assert!(!is_age_encrypted("plain text"));
-        assert!(!is_age_encrypted("age64:wrong:prefix"));
     }
 
     #[test]

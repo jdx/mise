@@ -1166,9 +1166,6 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
-                                AgeSimple {
-                                    age: String,
-                                },
                                 Map {
                                     value: PrimitiveVal,
                                     #[serde(flatten)]
@@ -1203,16 +1200,6 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     env.push(directive);
                                     continue;
                                 }
-                                Val::AgeSimple { age } => {
-                                    let directive = EnvDirective::Age {
-                                        key: key.clone(),
-                                        value: age.clone(),
-                                        format: None, // Default format for simplified syntax
-                                        options: EnvDirectiveOptions::default(),
-                                    };
-                                    env.push(directive);
-                                    continue;
-                                }
                                 Val::AgeWithOptions { age, options } => {
                                     let directive = EnvDirective::Age {
                                         key: key.clone(),
@@ -1230,9 +1217,9 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 Val::Primitive(p) => (Some(p), EnvDirectiveOptions::default()),
                                 Val::Map { value, options } => (Some(value), options),
                                 Val::OptionsOnly { options } => (None, options),
-                                Val::AgeComplex { .. }
-                                | Val::AgeSimple { .. }
-                                | Val::AgeWithOptions { .. } => unreachable!(), // Already handled above
+                                Val::AgeComplex { .. } | Val::AgeWithOptions { .. } => {
+                                    unreachable!() // Already handled above
+                                }
                             };
 
                             // Validate that required cannot be used with any value

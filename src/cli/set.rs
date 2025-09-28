@@ -90,12 +90,6 @@ impl Set {
                 .await
                 .map_err(|e| eyre!("[experimental] Failed to decrypt {}: {}", key, e))
         }
-        // Check for old format encrypted values
-        else if agecrypt::is_age_encrypted(value) {
-            agecrypt::decrypt_value(value)
-                .await
-                .map_err(|e| eyre!("[experimental] Failed to decrypt {}: {}", key, e))
-        }
         // Not encrypted, return as-is
         else {
             Ok(value.to_string())
