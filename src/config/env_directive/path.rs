@@ -62,6 +62,7 @@ mod tests {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::NonToolsOnly,
+                warn_on_missing_required: false,
             },
         )
         .await

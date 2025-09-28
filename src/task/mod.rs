@@ -599,6 +599,7 @@ impl Task {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
             },
         )
         .await?;

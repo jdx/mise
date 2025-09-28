@@ -21,12 +21,95 @@ mod path;
 mod source;
 mod venv;
 
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum RequiredValue {
+    #[default]
+    False,
+    True,
+    Help(String),
+}
+
+impl RequiredValue {
+    pub fn is_required(&self) -> bool {
+        !matches!(self, RequiredValue::False)
+    }
+
+    pub fn help_text(&self) -> Option<&str> {
+        match self {
+            RequiredValue::Help(text) => Some(text.as_str()),
+            _ => None,
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RequiredValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+        use std::fmt;
+
+        struct RequiredVisitor;
+
+        impl<'de> Visitor<'de> for RequiredVisitor {
+            type Value = RequiredValue;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a boolean or a string")
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<RequiredValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(if value {
+                    RequiredValue::True
+                } else {
+                    RequiredValue::False
+                })
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<RequiredValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(RequiredValue::Help(value.to_string()))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<RequiredValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(RequiredValue::Help(value))
+            }
+        }
+
+        deserializer.deserialize_any(RequiredVisitor)
+    }
+}
+
+impl serde::Serialize for RequiredValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            RequiredValue::False => serializer.serialize_bool(false),
+            RequiredValue::True => serializer.serialize_bool(true),
+            RequiredValue::Help(text) => serializer.serialize_str(text),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EnvDirectiveOptions {
     #[serde(default)]
     pub(crate) tools: bool,
     #[serde(default)]
     pub(crate) redact: bool,
+    #[serde(default)]
+    pub(crate) required: RequiredValue,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -35,6 +118,8 @@ pub enum EnvDirective {
     Val(String, String, EnvDirectiveOptions),
     /// remove a key
     Rm(String, EnvDirectiveOptions),
+    /// Required variable that must be defined elsewhere
+    Required(String, EnvDirectiveOptions),
     /// dotenv file
     File(String, EnvDirectiveOptions),
     /// add a path to the PATH
@@ -57,6 +142,7 @@ impl EnvDirective {
         match self {
             EnvDirective::Val(_, _, opts)
             | EnvDirective::Rm(_, opts)
+            | EnvDirective::Required(_, opts)
             | EnvDirective::File(_, opts)
             | EnvDirective::Path(_, opts)
             | EnvDirective::Source(_, opts)
@@ -83,6 +169,7 @@ impl Display for EnvDirective {
         match self {
             EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
             EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
+            EnvDirective::Required(k, _) => write!(f, "{k} (required)"),
             EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
             EnvDirective::Path(path, _) => write!(f, "_.path = \"{}\"", display_path(path)),
             EnvDirective::Source(path, _) => write!(f, "_.source = \"{}\"", display_path(path)),
@@ -142,6 +229,7 @@ impl Default for ToolsFilter {
 pub struct EnvResolveOptions {
     pub vars: bool,
     pub tools: ToolsFilter,
+    pub warn_on_missing_required: bool,
 }
 
 impl EnvResults {
@@ -180,7 +268,7 @@ impl EnvResults {
             EnvDirective::PythonVenv { .. } => Some(d),
             _ => None,
         });
-        let input = input
+        let filtered_input = input
             .iter()
             .fold(Vec::new(), |mut acc, (directive, source)| {
                 // Filter directives based on tools setting
@@ -203,7 +291,11 @@ impl EnvResults {
                 acc.push((directive.clone(), source.clone()));
                 acc
             });
-        for (directive, source) in input {
+
+        // Save filtered_input for validation after processing
+        let filtered_input_for_validation = filtered_input.clone();
+
+        for (directive, source) in filtered_input {
             let mut tera = get_tera(source.parent());
             tera.register_function(
                 "exec",
@@ -277,6 +369,10 @@ impl EnvResults {
                 EnvDirective::Rm(k, _opts) => {
                     env.shift_remove(&k);
                     r.env_remove.insert(k);
+                }
+                EnvDirective::Required(_k, _opts) => {
+                    // Required directives don't set any value - they only validate during validation phase
+                    // The actual value must come from the initial environment or a later config file
                 }
                 EnvDirective::Path(input_str, _opts) => {
                     let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str).await?;
@@ -396,7 +492,74 @@ impl EnvResults {
             r.env_paths = paths;
         }
 
+        // Validate required environment variables
+        Self::validate_required_env_vars(
+            &filtered_input_for_validation,
+            initial,
+            &r,
+            resolve_opts.warn_on_missing_required,
+        )?;
+
         Ok(r)
+    }
+
+    fn validate_required_env_vars(
+        input: &[(EnvDirective, PathBuf)],
+        initial: &EnvMap,
+        env_results: &EnvResults,
+        warn_mode: bool,
+    ) -> eyre::Result<()> {
+        let mut required_vars = Vec::new();
+
+        // Collect all required environment variables with their options
+        for (directive, source) in input {
+            match directive {
+                EnvDirective::Val(key, _, options) if options.required.is_required() => {
+                    required_vars.push((key.clone(), source.clone(), options.required.clone()));
+                }
+                EnvDirective::Required(key, options) => {
+                    required_vars.push((key.clone(), source.clone(), options.required.clone()));
+                }
+                _ => {}
+            }
+        }
+
+        // Check if required variables are defined
+        for (var_name, declaring_source, required_value) in required_vars {
+            // Variable must be defined either:
+            // 1. In the initial environment (before mise runs), OR
+            // 2. In a config file processed later than the one declaring it as required
+            let is_predefined = initial.contains_key(&var_name);
+
+            let is_defined_later = if let Some((_, var_source)) = env_results.env.get(&var_name) {
+                // Check if the variable comes from a different config file
+                var_source != &declaring_source
+            } else {
+                false
+            };
+
+            if !is_predefined && !is_defined_later {
+                let base_message = format!(
+                    "Required environment variable '{}' is not defined. It must be set before mise runs or in a later config file. (Required in: {})",
+                    var_name,
+                    display_path(declaring_source)
+                );
+
+                let message = if let Some(help) = required_value.help_text() {
+                    format!("{}\nHelp: {}", base_message, help)
+                } else {
+                    base_message
+                };
+
+                if warn_mode {
+                    warn!("{}", message);
+                } else {
+                    return Err(eyre!("{}", message));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn parse_template(
