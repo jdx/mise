@@ -486,6 +486,15 @@ description = "Timeout in seconds for all HTTP requests in mise."
 env = "MISE_HTTP_TIMEOUT"
 type = "Duration"
 
+[http_retries]
+default = 0
+description = "Number of retries for HTTP requests in mise."
+docs = """
+Uses an exponential backoff strategy. The duration is calculated by taking the base (10ms) to the n-th power.
+"""
+env = "MISE_HTTP_RETRIES"
+type = "Integer"
+
 [idiomatic_version_file]
 default = true
 deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
