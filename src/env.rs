@@ -152,8 +152,6 @@ pub static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
         Err(_) => Default::default(),
     });
 pub static MISE_ENV: Lazy<Vec<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
-pub static MISE_HOOK_ENV: Lazy<bool> =
-    Lazy::new(|| var("__MISE_HOOK_ENV").map(|v| v == "1").unwrap_or(false));
 pub static MISE_GLOBAL_CONFIG_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("MISE_GLOBAL_CONFIG_FILE").or_else(|| var_path("MISE_CONFIG_FILE")));
 pub static MISE_GLOBAL_CONFIG_ROOT: Lazy<PathBuf> =
@@ -288,6 +286,8 @@ pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
 pub static OFFLINE: Lazy<bool> = Lazy::new(|| offline(&ARGS.read().unwrap()));
+pub static WARN_ON_MISSING_REQUIRED_ENV: Lazy<AtomicBool> =
+    Lazy::new(|| warn_on_missing_required_env(&ARGS.read().unwrap()).into());
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<EnvMap> =
     Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
@@ -543,6 +543,22 @@ fn prefer_offline(args: &[String]) -> bool {
                 "ls",
                 "where",
                 "x",
+            ]
+            .contains(&a.as_str())
+        })
+        .unwrap_or_default()
+}
+
+/// returns true if missing required env vars should produce warnings instead of errors
+fn warn_on_missing_required_env(args: &[String]) -> bool {
+    // Check if we're running in a command that should warn instead of error
+    args.iter()
+        .take_while(|a| *a != "--")
+        .filter(|a| !a.starts_with('-'))
+        .nth(1)
+        .map(|a| {
+            [
+                "hook-env", // Shell activation should not break the shell
             ]
             .contains(&a.as_str())
         })

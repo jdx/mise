@@ -174,8 +174,8 @@ You can mark environment variables as required by setting `required = true`. Thi
 
 ```toml
 [env]
-DATABASE_URL = { value = "postgres://localhost/dev", required = true }
-API_KEY = { value = "fallback-key", required = true }
+DATABASE_URL = { required = true }
+API_KEY = { required = true }
 ```
 
 ### Required Variable Behavior
@@ -188,7 +188,7 @@ When a variable is marked as `required = true`, mise validates that it is define
 ```toml
 # In mise.toml
 [env]
-DATABASE_URL = { value = "default://localhost", required = true }
+DATABASE_URL = { required = true }
 ```
 
 ```toml
@@ -210,7 +210,6 @@ Error: Required environment variable 'DATABASE_URL' is not defined...
 # This will warn but continue (used by shell activation)
 $ mise hook-env --shell bash
 mise WARN Required environment variable 'DATABASE_URL' is not defined...
-export DATABASE_URL=default://localhost
 # Shell activation continues successfully
 ```
 
@@ -225,16 +224,15 @@ Required variables are useful for:
 
 ```toml
 [env]
-# Development database (override in mise.local.toml)
-DATABASE_URL = { value = "sqlite:///tmp/dev.db", required = true }
-
 # API keys (must be set in environment or mise.local.toml)
-# Note: Don't provide a value when using required=true for secrets
 STRIPE_API_KEY = { required = true }
 SENTRY_DSN = { required = true }
 
-# Feature flags
-ENABLE_BETA_FEATURES = { value = "false", required = true }
+# Database connection (must be set in environment or mise.local.toml)
+DATABASE_URL = { required = true }
+
+# Feature flags (must be explicitly configured)
+ENABLE_BETA_FEATURES = { required = true }
 ```
 
 ## `config_root`

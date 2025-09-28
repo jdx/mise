@@ -5,7 +5,7 @@
 # Create test config with required env var
 cat <<EOF >mise.toml
 [env]
-REQUIRED_VAR_HOOK = { value = "default_value", required = true }
+REQUIRED_VAR_HOOK = { required = true }
 NORMAL_VAR = "normal_value"
 EOF
 
@@ -15,8 +15,8 @@ unset REQUIRED_VAR_HOOK
 # hook-env should succeed but emit a warning
 mise hook-env --shell bash >hook_output.log 2>hook_error.log
 
-# Check that hook-env succeeded (exit code 0 is implicit if we reach this point)
-assert_contains "cat hook_output.log" "export REQUIRED_VAR_HOOK=default_value"
+# Check that hook-env succeeded and exported the normal var
+# Note: REQUIRED_VAR_HOOK should NOT be in output since it's not defined and has no value
 assert_contains "cat hook_output.log" "export NORMAL_VAR=normal_value"
 
 # Check that it emitted a warning

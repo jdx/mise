@@ -1127,25 +1127,18 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 Val::OptionsOnly { options } => (None, options),
                             };
 
-                            // Validate that required=true is not used with empty values
+                            // Validate that required=true cannot be used with any value
                             if options.required {
                                 match &value {
-                                    Some(PrimitiveVal::Str(s)) if s.is_empty() => {
+                                    Some(_) => {
                                         return Err(serde::de::Error::custom(format!(
-                                            "Environment variable '{}' cannot be both required=true and have an empty value. Use either a meaningful default value or remove the value field entirely.",
-                                            key
-                                        )));
-                                    }
-                                    Some(PrimitiveVal::Bool(false)) => {
-                                        return Err(serde::de::Error::custom(format!(
-                                            "Environment variable '{}' cannot be both required=true and have value=false (which unsets the variable). Required variables must have meaningful values.",
+                                            "Environment variable '{}' cannot have both 'value' and 'required = true'. The 'required' flag means the variable must be defined elsewhere (in the environment or a later config file). Remove either the 'value' field or the 'required' flag.",
                                             key
                                         )));
                                     }
                                     None => {
                                         // Required without a value is valid - it means the variable must be defined elsewhere
                                     }
-                                    _ => {} // Other values are fine
                                 }
                             }
                             let directive = match value {

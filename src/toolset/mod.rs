@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -981,7 +982,7 @@ impl Toolset {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::ToolsOnly,
-                warn_on_missing_required: false,
+                warn_on_missing_required: env::WARN_ON_MISSING_REQUIRED_ENV.load(Ordering::Relaxed),
             },
         )
         .await?;

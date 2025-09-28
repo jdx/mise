@@ -40,11 +40,6 @@ pub struct HookEnv {
 
 impl HookEnv {
     pub async fn run(self) -> Result<()> {
-        // Set flag to enable warning mode for required env vars
-        unsafe {
-            std::env::set_var("__MISE_HOOK_ENV", "1");
-        }
-
         let config = Config::get().await?;
         let watch_files = config.watch_files().await?;
         time!("hook-env");

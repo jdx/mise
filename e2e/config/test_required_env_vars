@@ -5,7 +5,7 @@ export REQUIRED_VAR1="predefined_value"
 
 cat <<EOF >mise.toml
 [env]
-REQUIRED_VAR1 = { value = "from_config", required = true }
+REQUIRED_VAR1 = { required = true }
 NORMAL_VAR = "normal_value"
 EOF
 
@@ -17,7 +17,7 @@ unset REQUIRED_VAR1
 
 cat <<EOF >mise.toml
 [env]
-REQUIRED_VAR2 = { value = "defined_in_config", required = true }
+REQUIRED_VAR2 = { required = true }
 NORMAL_VAR = "normal_value"
 EOF
 
@@ -34,7 +34,7 @@ rm -f mise.local.toml
 
 cat <<EOF >mise.toml
 [env]
-REQUIRED_VAR3 = { value = "config_value", required = true }
+REQUIRED_VAR3 = { required = true }
 NORMAL_VAR = "normal_value"
 EOF
 
@@ -53,8 +53,8 @@ export REQUIRED_VAR4="defined"
 
 cat <<EOF >mise.toml
 [env]
-REQUIRED_VAR4 = { value = "config_value", required = true }
-REQUIRED_VAR5 = { value = "config_value", required = true }
+REQUIRED_VAR4 = { required = true }
+REQUIRED_VAR5 = { required = true }
 NORMAL_VAR = "normal_value"
 EOF
 

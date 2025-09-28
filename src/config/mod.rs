@@ -9,6 +9,7 @@ use std::iter::once;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use tokio::{sync::OnceCell, task::JoinSet};
@@ -530,7 +531,7 @@ impl Config {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::NonToolsOnly,
-                warn_on_missing_required: *env::MISE_HOOK_ENV,
+                warn_on_missing_required: env::WARN_ON_MISSING_REQUIRED_ENV.load(Ordering::Relaxed),
             },
         )
         .await?;
