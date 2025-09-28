@@ -1116,20 +1116,58 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
+                                OptionsOnly {
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
                             }
                             let (value, options) = match map.next_value::<Val>()? {
-                                Val::Primitive(p) => (p, EnvDirectiveOptions::default()),
-                                Val::Map { value, options } => (value, options),
+                                Val::Primitive(p) => (Some(p), EnvDirectiveOptions::default()),
+                                Val::Map { value, options } => (Some(value), options),
+                                Val::OptionsOnly { options } => (None, options),
                             };
+
+                            // Validate that required=true is not used with empty values
+                            if options.required {
+                                match &value {
+                                    Some(PrimitiveVal::Str(s)) if s.is_empty() => {
+                                        return Err(serde::de::Error::custom(format!(
+                                            "Environment variable '{}' cannot be both required=true and have an empty value. Use either a meaningful default value or remove the value field entirely.",
+                                            key
+                                        )));
+                                    }
+                                    Some(PrimitiveVal::Bool(false)) => {
+                                        return Err(serde::de::Error::custom(format!(
+                                            "Environment variable '{}' cannot be both required=true and have value=false (which unsets the variable). Required variables must have meaningful values.",
+                                            key
+                                        )));
+                                    }
+                                    None => {
+                                        // Required without a value is valid - it means the variable must be defined elsewhere
+                                    }
+                                    _ => {} // Other values are fine
+                                }
+                            }
                             let directive = match value {
-                                PrimitiveVal::Str(s) => EnvDirective::Val(key, s, options),
-                                PrimitiveVal::Int(i) => {
+                                Some(PrimitiveVal::Str(s)) => EnvDirective::Val(key, s, options),
+                                Some(PrimitiveVal::Int(i)) => {
                                     EnvDirective::Val(key, i.to_string(), options)
                                 }
-                                PrimitiveVal::Bool(true) => {
+                                Some(PrimitiveVal::Bool(true)) => {
                                     EnvDirective::Val(key, "true".to_string(), options)
                                 }
-                                PrimitiveVal::Bool(false) => EnvDirective::Rm(key, options),
+                                Some(PrimitiveVal::Bool(false)) => EnvDirective::Rm(key, options),
+                                None => {
+                                    // No value provided - this creates a required variable that must be defined elsewhere
+                                    if !options.required {
+                                        return Err(serde::de::Error::custom(format!(
+                                            "Environment variable '{}' has no value. Either provide a value or set required=true to indicate it must be defined elsewhere.",
+                                            key
+                                        )));
+                                    }
+                                    // For required variables without a value, we create a Required directive
+                                    EnvDirective::Required(key, options)
+                                }
                             };
                             env.push(directive);
                         }

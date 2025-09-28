@@ -37,6 +37,8 @@ pub enum EnvDirective {
     Val(String, String, EnvDirectiveOptions),
     /// remove a key
     Rm(String, EnvDirectiveOptions),
+    /// Required variable that must be defined elsewhere
+    Required(String, EnvDirectiveOptions),
     /// dotenv file
     File(String, EnvDirectiveOptions),
     /// add a path to the PATH
@@ -59,6 +61,7 @@ impl EnvDirective {
         match self {
             EnvDirective::Val(_, _, opts)
             | EnvDirective::Rm(_, opts)
+            | EnvDirective::Required(_, opts)
             | EnvDirective::File(_, opts)
             | EnvDirective::Path(_, opts)
             | EnvDirective::Source(_, opts)
@@ -85,6 +88,7 @@ impl Display for EnvDirective {
         match self {
             EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
             EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
+            EnvDirective::Required(k, _) => write!(f, "{k} (required)"),
             EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
             EnvDirective::Path(path, _) => write!(f, "_.path = \"{}\"", display_path(path)),
             EnvDirective::Source(path, _) => write!(f, "_.source = \"{}\"", display_path(path)),
@@ -263,6 +267,10 @@ impl EnvResults {
                     env.shift_remove(&k);
                     r.env_remove.insert(k);
                 }
+                EnvDirective::Required(_k, _opts) => {
+                    // Required directives don't set any value - they only validate during validation phase
+                    // The actual value must come from the initial environment or a later config file
+                }
                 EnvDirective::Path(input_str, _opts) => {
                     let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str).await?;
                     paths.push((path.clone(), source.clone()));
@@ -402,10 +410,14 @@ impl EnvResults {
 
         // Collect all required environment variables
         for (directive, source) in input {
-            if let EnvDirective::Val(key, _, options) = directive {
-                if options.required {
+            match directive {
+                EnvDirective::Val(key, _, options) if options.required => {
                     required_vars.push((key.clone(), source.clone()));
                 }
+                EnvDirective::Required(key, _) => {
+                    required_vars.push((key.clone(), source.clone()));
+                }
+                _ => {}
             }
         }
 

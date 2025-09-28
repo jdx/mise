@@ -168,6 +168,75 @@ done
 Note: If you're using [mise-action](https://github.com/jdx/mise-action), it will automatically redact values marked with `redact = true` or matching patterns in the `redactions` array.
 :::
 
+## Required Variables
+
+You can mark environment variables as required by setting `required = true`. This ensures that the variable is defined either before mise runs or in a later config file (like `mise.local.toml`):
+
+```toml
+[env]
+DATABASE_URL = { value = "postgres://localhost/dev", required = true }
+API_KEY = { value = "fallback-key", required = true }
+```
+
+### Required Variable Behavior
+
+When a variable is marked as `required = true`, mise validates that it is defined through one of these sources:
+
+1. **Pre-existing environment** - Variable was set before running mise
+2. **Later config file** - Variable is defined in a config file processed after the one declaring it as required
+
+```toml
+# In mise.toml
+[env]
+DATABASE_URL = { value = "default://localhost", required = true }
+```
+
+```toml
+# In mise.local.toml (processed later)
+[env]
+DATABASE_URL = "postgres://prod.example.com/db"  # This satisfies the requirement
+```
+
+### Validation Behavior
+
+- **Regular commands** (like `mise env`): Fail with clear error messages when required variables are missing
+- **Shell activation** (`hook-env`): Warns about missing required variables but continues execution to avoid breaking shell setup
+
+```bash
+# This will fail if DATABASE_URL is not pre-defined or in a later config
+$ mise env
+Error: Required environment variable 'DATABASE_URL' is not defined...
+
+# This will warn but continue (used by shell activation)
+$ mise hook-env --shell bash
+mise WARN Required environment variable 'DATABASE_URL' is not defined...
+export DATABASE_URL=default://localhost
+# Shell activation continues successfully
+```
+
+### Use Cases
+
+Required variables are useful for:
+
+- **Database connections** - Ensure critical connection strings are explicitly set
+- **API keys** - Require explicit configuration of sensitive credentials
+- **Environment-specific settings** - Force explicit configuration per environment
+- **Team collaboration** - Document which variables team members must configure
+
+```toml
+[env]
+# Development database (override in mise.local.toml)
+DATABASE_URL = { value = "sqlite:///tmp/dev.db", required = true }
+
+# API keys (must be set in environment or mise.local.toml)
+# Note: Don't provide a value when using required=true for secrets
+STRIPE_API_KEY = { required = true }
+SENTRY_DSN = { required = true }
+
+# Feature flags
+ENABLE_BETA_FEATURES = { value = "false", required = true }
+```
+
 ## `config_root`
 
 `config_root` is the canonical project root directory that mise uses when resolving relative paths inside configuration files. Generally, when you use relative paths in mise you're referring to this directory.
