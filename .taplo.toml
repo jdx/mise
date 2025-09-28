@@ -5,6 +5,7 @@ exclude = ["docs/registry.toml", "docs/settings.toml"]
 
 [formatting]
 align_entries = false
+align_comments = false
 array_auto_collapse = true
 array_auto_expand = true
 indent_tables = false
