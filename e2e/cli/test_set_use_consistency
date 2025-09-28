@@ -28,25 +28,24 @@ assert_contains "cat mise.toml" 'format = "zstd"'
 SMALL_RESULT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise set SMALL_SECRET)
 assert "echo $SMALL_RESULT" "test-value"
 
-LARGE_RESULT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise set LARGE_SECRET | head -c 10)
+LARGE_RESULT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise set LARGE_SECRET)
 assert "echo $LARGE_RESULT" "xxxxxxxxxx"
 
 # Test 2: Mixed format consistency
 echo "Testing mixed format consistency..."
 
-# Add regular env var
+# Add a regular variable to mix with age-encrypted ones
 mise set REGULAR_VAR="regular-value"
-assert_contains "cat mise.toml" 'REGULAR_VAR = "regular-value"'
 
-# Verify all formats coexist properly
-CONFIG_CONTENT=$(cat mise.toml)
-assert_contains "echo '$CONFIG_CONTENT'" 'REGULAR_VAR = "regular-value"'
-assert_contains "echo '$CONFIG_CONTENT'" 'SMALL_SECRET = { age = "'
-assert_contains "echo '$CONFIG_CONTENT'" 'LARGE_SECRET = { age = { value ='
+# Verify the TOML file has the expected format
+assert_contains "cat mise.toml" 'REGULAR_VAR = "regular-value"'
+assert_contains "cat mise.toml" 'SMALL_SECRET = { age = "'
+assert_contains "cat mise.toml" 'LARGE_SECRET = { age = { value ='
 
 # Test 3: Environment resolution with mixed formats
 echo "Testing environment resolution..."
 
+# Test that both variables can be resolved in the same environment
 ENV_OUTPUT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise env)
 assert_contains "echo '$ENV_OUTPUT'" "REGULAR_VAR=regular-value"
 assert_contains "echo '$ENV_OUTPUT'" "SMALL_SECRET=test-value"
