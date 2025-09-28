@@ -286,8 +286,8 @@ pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
 pub static OFFLINE: Lazy<bool> = Lazy::new(|| offline(&ARGS.read().unwrap()));
-pub static WARN_ON_MISSING_REQUIRED_ENV: Lazy<AtomicBool> =
-    Lazy::new(|| warn_on_missing_required_env(&ARGS.read().unwrap()).into());
+pub static WARN_ON_MISSING_REQUIRED_ENV: Lazy<bool> =
+    Lazy::new(|| warn_on_missing_required_env(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<EnvMap> =
     Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
