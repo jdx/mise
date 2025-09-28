@@ -993,11 +993,6 @@
               "items": {
                 "type": "string"
               }
-            },
-            "strict": {
-              "default": false,
-              "description": "[experimental] If true, fail when age decryption fails. If false, leave ciphertext as-is in these cases.",
-              "type": "boolean"
             }
           }
         },
