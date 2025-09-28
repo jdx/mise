@@ -164,6 +164,14 @@ dnf copr enable jdxcode/mise
 dnf install mise
 ```
 
+### Snap (Linux, currently in beta)
+
+```sh
+sudo snap install mise --beta
+```
+
+[snapcraft.io page](https://snapcraft.io/mise)
+
 ### Docker
 
 ```sh

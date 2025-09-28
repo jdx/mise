@@ -79,6 +79,14 @@ sudo dnf install mise
 
 See the [copr page](https://copr.fedorainfracloud.org/coprs/jdxcode/mise/) for more information.
 
+== Snap (beta)
+
+```sh
+sudo snap install mise --beta
+```
+
+See the [snapcraft.io page](https://snapcraft.io/mise) for more information.
+
 :::
 
 `mise` respects [`MISE_DATA_DIR`](/configuration) and [`XDG_DATA_HOME`](/configuration) if you'd like
