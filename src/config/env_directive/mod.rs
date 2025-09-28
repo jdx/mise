@@ -291,6 +291,10 @@ impl EnvResults {
                 acc.push((directive.clone(), source.clone()));
                 acc
             });
+
+        // Save filtered_input for validation after processing
+        let filtered_input_for_validation = filtered_input.clone();
+
         for (directive, source) in filtered_input {
             let mut tera = get_tera(source.parent());
             tera.register_function(
@@ -472,7 +476,7 @@ impl EnvResults {
 
         // Validate required environment variables
         Self::validate_required_env_vars(
-            &input,
+            &filtered_input_for_validation,
             initial,
             &r,
             resolve_opts.warn_on_missing_required,
