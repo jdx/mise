@@ -33,6 +33,32 @@ Set the environment variable in the global config file
 
 Create/modify an environment-specific config file like .mise.&lt;env>.toml
 
+### `--prompt`
+
+Prompt for environment variable values
+
+### `--age-encrypt`
+
+[experimental] Encrypt the value with age before storing
+
+### `--age-recipient… <RECIPIENT>`
+
+[experimental] Age recipient (x25519 public key) for encryption
+
+Can be used multiple times. Requires --age-encrypt.
+
+### `--age-ssh-recipient… <PATH_OR_PUBKEY>`
+
+[experimental] SSH recipient (public key or path) for age encryption
+
+Can be used multiple times. Requires --age-encrypt.
+
+### `--age-key-file <PATH>`
+
+[experimental] Age identity file for encryption
+
+Defaults to ~/.config/mise/age.txt if it exists
+
 Examples:
 
 ```
@@ -47,4 +73,14 @@ $ mise set -E staging NODE_ENV=staging
 $ mise set
 key       value       source
 NODE_ENV  production  ~/.config/mise/config.toml
+
+$ mise set --prompt PASSWORD
+Enter value for PASSWORD: [hidden input]
+
+[experimental] Age Encryption:
+
+$ mise set --age-encrypt API_KEY=secret
+
+$ mise set --age-encrypt --prompt API_KEY
+Enter value for API_KEY: [hidden input]
 ```

@@ -1018,6 +1018,28 @@ description = "Suppress all `mise run|watch` output except errors—including wh
 env = "MISE_SILENT"
 type = "Bool"
 
+[age.identity_files]
+description = "[experimental] List of age identity files to use for decryption."
+env = "MISE_AGE_IDENTITY_FILES"
+optional = true
+rust_type = "Vec<PathBuf>"
+type = "ListPath"
+
+[age.key_file]
+default_docs = "~/.config/mise/age.txt"
+description = "[experimental] Path to the age private key file to use for encryption/decryption."
+env = "MISE_AGE_KEY_FILE"
+optional = true
+type = "Path"
+
+[age.ssh_identity_files]
+description = "[experimental] List of SSH identity files to use for age decryption."
+env = "MISE_AGE_SSH_IDENTITY_FILES"
+optional = true
+rust_type = "Vec<PathBuf>"
+type = "ListPath"
+
+
 [sops.age_key]
 description = "The age private key to use for sops secret decryption."
 env = "MISE_SOPS_AGE_KEY"
