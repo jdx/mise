@@ -16,10 +16,6 @@ packages:
           amd64: x64
           darwin: osx
           windows: win
-        overrides:
-          - goos: linux
-            goarch: amd64
-            asset: cyclonedx-{{.OS}}-musl-{{.Arch}}
       - version_constraint: "true"
         asset: cyclonedx-{{.OS}}-{{.Arch}}
         format: raw
@@ -27,7 +23,3 @@ packages:
           amd64: x64
           darwin: osx
           windows: win
-        overrides:
-          - goos: linux
-            goarch: amd64
-            asset: cyclonedx-{{.OS}}-musl-{{.Arch}}
