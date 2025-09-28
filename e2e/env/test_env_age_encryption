@@ -63,6 +63,12 @@ assert "echo $RESULT" "multi-recipient-secret"
 
 # Both keys should be able to decrypt via mise env
 assert_contains "MISE_EXPERIMENTAL=true MISE_AGE_KEY=\"$AGE_SECRET_KEY\" mise env | grep MULTI_SECRET" "MULTI_SECRET=multi-recipient-secret"
+
+# Test second key with clean environment (only multi-recipient variable)
+rm -f mise.toml
+MISE_EXPERIMENTAL=true mise set MULTI_SECRET="multi-recipient-secret" --age-encrypt \
+	--age-recipient "$AGE_PUBLIC_KEY" \
+	--age-recipient "$AGE_PUBLIC_KEY2"
 assert_contains "MISE_EXPERIMENTAL=true MISE_AGE_KEY=\"$AGE_SECRET_KEY2\" mise env | grep MULTI_SECRET" "MULTI_SECRET=multi-recipient-secret"
 
 # Test with age key file
