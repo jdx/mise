@@ -141,6 +141,7 @@ impl Doctor {
         let tools = ts.list_versions_by_plugin().into_iter().map(|(f, tv)| {
             let versions: serde_json::Value = tv
                 .iter()
+                .filter(|tv| tv.request.is_os_supported())
                 .map(|tv: &ToolVersion| {
                     let mut tool = serde_json::Map::new();
                     match f.is_version_installed(&config, tv, true) {
@@ -187,6 +188,11 @@ impl Doctor {
         info::inline_section("activated", yn(env::is_activated()))?;
         info::inline_section("shims_on_path", yn(shims_on_path()))?;
         info::inline_section("self_update_available", yn(SelfUpdate::is_available()))?;
+        if !SelfUpdate::is_available() {
+            if let Some(instructions) = crate::cli::self_update::upgrade_instructions_text() {
+                info::section("self_update_instructions", instructions)?;
+            }
+        }
         if env::is_activated() && shims_on_path() {
             self.errors.push("shims are on PATH and mise is also activated. You should only use one of these methods.".to_string());
         }
@@ -329,6 +335,7 @@ impl Doctor {
         let tools = ts
             .list_current_versions()
             .into_iter()
+            .filter(|(_, tv)| tv.request.is_os_supported())
             .map(|(f, tv)| match f.is_version_installed(&config, &tv, true) {
                 true => (tv.to_string(), style::nstyle("")),
                 false => {

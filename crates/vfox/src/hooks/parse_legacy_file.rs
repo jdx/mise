@@ -75,10 +75,10 @@ mod tests {
     use crate::Vfox;
 
     #[tokio::test]
-    async fn test_parse_legacy_file_nodejs() {
+    async fn test_parse_legacy_file_test_nodejs() {
         let vfox = Vfox::test();
         let response = vfox
-            .parse_legacy_file("nodejs", Path::new("test/data/.node-version"))
+            .parse_legacy_file("test-nodejs", Path::new("test/data/.node-version"))
             .await
             .unwrap();
         let out = format!("{response:?}");

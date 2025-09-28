@@ -41,6 +41,20 @@ For context, see [jdx/mise#3859](https://github.com/jdx/mise/issues/3859).
 5. **Rate limiting**: Set `MISE_GITHUB_TOKEN` to avoid GitHub API rate limits
    during development
 
+## Packaging and Self-Update Instructions
+
+When mise is installed via a package manager, in-app self-update is disabled and users should update via their package manager. Packaging should install a TOML file with platform-specific instructions at `lib/mise-self-update-instructions.toml` (or `lib/mise/mise-self-update-instructions.toml`). Example contents:
+
+```toml
+# Debian/Ubuntu (APT)
+message = "To update mise from the APT repository, run:\n\n  sudo apt update && sudo apt install --only-upgrade mise\n"
+```
+
+```toml
+# Fedora/CentOS Stream (DNF)
+message = "To update mise from COPR, run:\n\n  sudo dnf upgrade mise\n"
+```
+
 ## Testing
 
 mise has a comprehensive test suite with multiple types of tests to ensure

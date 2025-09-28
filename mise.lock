@@ -39,18 +39,13 @@ checksum = "blake3:ec41528ae2badd9c5d41cefe2c463a307c46d9b5f0ccf157d6f4068903408
 size = 22178114
 
 [[tools.cargo-binstall]]
-version = "1.15.5"
+version = "1.15.6"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "blake3:1a5fa23fb172db04713b8acd854227ad5df08480dcc0a2fbd71f4fd93c0693ca"
-size = 6790102
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.5/cargo-binstall-x86_64-unknown-linux-musl.tgz"
-
-[tools.cargo-binstall.platforms.macos-arm64]
-checksum = "blake3:4eff2c4ed16a8864b20b55fbe855821e60dfb633c04e40ab67679a0639f08b2f"
-size = 6004395
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.5/cargo-binstall-aarch64-apple-darwin.zip"
+checksum = "blake3:779d104f2f8a3b840a2a56659e3da44f96419d7a5378555b9c3dabe756ac4271"
+size = 6770808
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.6/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.7"
@@ -61,7 +56,7 @@ version = "1.43.2"
 backend = "cargo:cargo-insta"
 
 [[tools."cargo:cargo-release"]]
-version = "0.25.18"
+version = "0.25.19"
 backend = "cargo:cargo-release"
 
 [[tools."cargo:git-cliff"]]
@@ -105,18 +100,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [[tools.hk]]
-version = "1.15.5"
+version = "1.15.6"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:dbfd6f2b7d0f399f6ec8cd251a76656c27af25aa327c015ef1acf4307c6a4cbb"
-size = 6984984
-url = "https://github.com/jdx/hk/releases/download/v1.15.5/hk-x86_64-unknown-linux-gnu.tar.gz"
-
-[tools.hk.platforms.macos-arm64]
-checksum = "blake3:98c9e44790bcff4b4988e6a13f9524272164e98fd475dc43f364cfb41bb4e897"
-size = 6016496
-url = "https://github.com/jdx/hk/releases/download/v1.15.5/hk-aarch64-apple-darwin.tar.gz"
+checksum = "blake3:78f4bf19aeb8b67fc0ca700e2b469e9418c21f86767b002f808f89485108f28e"
+size = 6981769
+url = "https://github.com/jdx/hk/releases/download/v1.15.6/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"

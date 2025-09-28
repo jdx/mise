@@ -136,6 +136,7 @@ impl ErlangPlugin {
                 strip_components: 0,
                 pr: Some(&ctx.pr),
                 format: file::TarFormat::TarGz,
+                ..Default::default()
             },
         )?;
 
@@ -208,6 +209,7 @@ impl ErlangPlugin {
                 strip_components: 0,
                 pr: Some(&ctx.pr),
                 format: file::TarFormat::TarGz,
+                ..Default::default()
             },
         )?;
         Ok(Some(tv))

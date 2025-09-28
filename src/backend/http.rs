@@ -159,7 +159,51 @@ impl HttpBackend {
         let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
         let format = file::TarFormat::from_ext(ext);
 
-        if format == file::TarFormat::Raw {
+        // Get file extension and detect format
+        let file_name = file_path.file_name().unwrap().to_string_lossy();
+
+        // Check if it's a compressed binary (not a tar archive)
+        let is_compressed_binary =
+            !file_name.contains(".tar") && matches!(ext, "gz" | "xz" | "bz2" | "zst");
+
+        if is_compressed_binary {
+            // Handle compressed single binary
+            let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
+
+            // Determine the destination path
+            let (dest_dir, dest_filename) = if let Some(bin_path_template) = opts.get("bin_path") {
+                // If bin_path is specified, use it as directory
+                let bin_path = template_string(bin_path_template, tv);
+                let bin_dir = cache_path.join(&bin_path);
+                (bin_dir, std::ffi::OsString::from(decompressed_name))
+            } else if let Some(bin_name) = opts.get("bin") {
+                // If bin is specified, rename the file to this name
+                (cache_path.to_path_buf(), std::ffi::OsString::from(bin_name))
+            } else {
+                // Always auto-clean binary names by removing OS/arch suffixes
+                let cleaned_name = clean_binary_name(decompressed_name, Some(&self.ba.tool_name));
+                (
+                    cache_path.to_path_buf(),
+                    std::ffi::OsString::from(cleaned_name),
+                )
+            };
+
+            // Create the destination directory
+            file::create_dir_all(&dest_dir)?;
+
+            // Construct full destination path
+            let dest = dest_dir.join(&dest_filename);
+
+            match ext {
+                "gz" => file::un_gz(file_path, &dest)?,
+                "xz" => file::un_xz(file_path, &dest)?,
+                "bz2" => file::un_bz2(file_path, &dest)?,
+                "zst" => file::un_zst(file_path, &dest)?,
+                _ => unreachable!(),
+            }
+
+            file::make_executable(&dest)?;
+        } else if format == file::TarFormat::Raw {
             // For raw files, determine the destination
             let (dest_dir, dest_filename) = if let Some(bin_path_template) = opts.get("bin_path") {
                 // If bin_path is specified, use it as directory
@@ -189,7 +233,8 @@ impl HttpBackend {
             file::make_executable(&dest)?;
         } else {
             // Auto-detect if we need strip_components=1 before extracting
-            if strip_components.is_none() {
+            // Only auto-strip if strip_components is not set AND bin_path is not explicitly configured
+            if strip_components.is_none() && opts.get("bin_path").is_none() {
                 if let Ok(should_strip) = file::should_strip_components(file_path, format) {
                     if should_strip {
                         debug!(
@@ -204,6 +249,7 @@ impl HttpBackend {
                 format,
                 strip_components: strip_components.unwrap_or(0),
                 pr,
+                preserve_mtime: false, // Bump mtime when extracting to cache
             };
 
             // Extract with determined strip_components
@@ -318,7 +364,6 @@ impl Backend for HttpBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        Settings::get().ensure_experimental("http backend")?;
         let opts = tv.request.options();
 
         // Use the new helper to get platform-specific URL first, then fall back to general URL

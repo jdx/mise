@@ -340,10 +340,7 @@ test = ["bb --version", "babashka v{{version}}"]
 
 [tools.balena]
 aliases = ["balena-cli"]
-backends = [
-  "github:balena-io/balena-cli[bin_path=bin]",
-  "asdf:jaredallard/asdf-balena-cli",
-]
+backends = ["github:balena-io/balena-cli", "asdf:jaredallard/asdf-balena-cli"]
 description = "The balena CLI is a Command Line Interface for balenaCloud or openBalena"
 test = ["balena --version", "{{version}}"]
 
@@ -419,10 +416,12 @@ test = ["bw --version", "{{version}}"]
 
 [tools.bitwarden-secrets-manager]
 backends = [
-  "github:bitwarden/sdk[tag_regex=^bws,exe=bws]",
+  "github:bitwarden/sdk[version_prefix=bws-v]",
   "asdf:asdf-community/asdf-bitwarden-secrets-manager",
 ]
 description = "CLI for interacting with the Bitwarden Secrets Manager"
+# TODO: enable test when versions host is updated
+# test = ["bws --version", "bws {{version}}"]
 
 [tools.black]
 backends = ["aqua:psf/black"]
@@ -502,6 +501,11 @@ test = [
 [tools.btrace]
 backends = ["asdf:mise-plugins/mise-btrace"]
 description = "BTrace - a safe, dynamic tracing tool for the Java platform"
+
+[tools.buck2]
+backends = ["github:facebook/buck2[bin=buck2]"]
+description = "A fast, hermetic, multi-language build system"
+test = ["buck2 --version", "buck2"]
 
 [tools.buf]
 backends = ["aqua:bufbuild/buf", "ubi:bufbuild/buf", "asdf:truepay/asdf-buf"]
@@ -1151,11 +1155,11 @@ test = ["dive --version", "dive {{version}}"]
 
 [tools.djinni]
 backends = [
-  "github:cross-language-cpp/djinni-generator",
+  "ubi:cross-language-cpp/djinni-generator[exe=djinni]",
   "asdf:cross-language-cpp/asdf-djinni",
 ]
 description = "Command-line tool that generates gluecode from a djinni-IDL file"
-test = ["djinni-generator --version", "djinni generator version {{version}}"]
+test = ["djinni --version", "djinni generator version {{version}}"]
 
 [tools.dmd]
 backends = ["asdf:mise-plugins/mise-dmd"]
@@ -1619,7 +1623,7 @@ test = ["ghalint version", "{{version}}"]
 
 [tools.ghc]
 backends = ["asdf:mise-plugins/mise-ghcup"]
-description = "GHCup is the main installer for the general purpose language Haskell."
+description = "The Glorious Glasgow Haskell Compiler."
 test = [
   "ghc --version",
   "The Glorious Glasgow Haskell Compilation System, version {{version}}",
@@ -1910,7 +1914,7 @@ description = "A powerful Groovy-based web application framework for the JVM bui
 
 [tools.grain]
 backends = [
-  "github:grain-lang/grain[tag_regex=^grain-]",
+  "github:grain-lang/grain[version_prefix=grain-v]",
   "asdf:mise-plugins/mise-grain",
 ]
 description = "The Grain compiler toolchain and CLI. Home of the modern web staple"
@@ -2103,8 +2107,13 @@ backends = ["github:ddworken/hishtory", "asdf:asdf-community/asdf-hishtory"]
 description = "Your shell history: synced, queryable, and in context"
 
 [tools.hivemind]
-backends = ["github:DarthSim/hivemind", "go:github.com/DarthSim/hivemind"]
+backends = [
+  "ubi:DarthSim/hivemind",
+  "github:DarthSim/hivemind",
+  "go:github.com/DarthSim/hivemind",
+]
 description = "Process manager for Procfile-based applications"
+test = ["hivemind --version", "Hivemind version {{version}}"]
 
 [tools.hk]
 backends = ["aqua:jdx/hk", "ubi:jdx/hk"]
@@ -2121,7 +2130,7 @@ description = "An hledger/ledger-cli workflow focusing on automated statement im
 
 [tools.hls]
 backends = ["asdf:mise-plugins/mise-ghcup"]
-description = "haskell language-server"
+description = "Official Haskell IDE support via the language server protocol (LSP)"
 
 [tools.hostctl]
 backends = ["aqua:guumaster/hostctl", "asdf:svenluijten/asdf-hostctl"]
@@ -2389,8 +2398,10 @@ description = "Little helper to run CNCF's k3s in Docker"
 test = ["k3d --version", "k3d version v{{version}}"]
 
 [tools.k3kcli]
-backends = ['github:rancher/k3k[tag_regex=v\d]', "asdf:xanmanning/asdf-k3kcli"]
+backends = ['ubi:rancher/k3k[tag_regex=v\d]', "asdf:xanmanning/asdf-k3kcli"]
 description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to create and manage isolated K3s clusters within your existing Kubernetes environment"
+# TODO: enable tests after versions host update
+# test = ["k3k version", "k3k version {{version}}"]
 
 [tools.k3s]
 backends = ["asdf:mise-plugins/mise-k3s"]
@@ -2780,10 +2791,12 @@ description = "Lisp Flavoured Erlang (LFE)"
 
 [tools.libsql-server]
 backends = [
-  "github:tursodatabase/libsql[tag_regex=libsql-server,exe=sqld]",
+  "github:tursodatabase/libsql[version_prefix=libsql-server-v]",
   "asdf:jonasb/asdf-libsql-server",
 ]
 description = "server mode of libSQL, which is a fork of SQLite that is both Open Source, and Open Contributions"
+# TODO: enable test when versions host is updated
+# test = ["sqld --version", "sqld sqld {{version}}"]
 
 [tools.license-plist]
 backends = [
@@ -3258,8 +3271,9 @@ backends = ["aqua:open-policy-agent/opa", "asdf:tochukwuvictor/asdf-opa"]
 description = "Open Policy Agent (OPA) is an open source, general-purpose policy engine"
 
 [tools.opam]
-backends = ["github:ocaml/opam", "asdf:asdf-community/asdf-opam"]
+backends = ["ubi:ocaml/opam", "asdf:asdf-community/asdf-opam"]
 description = "(ocaml) opam is a source-based package manager. It supports multiple simultaneous compiler installations, flexible package constraints, and a Git-friendly development workflow"
+test = ["opam --version", "{{version}}"]
 
 [tools.openbao]
 backends = ["github:openbao/openbao[exe=bao]"]
@@ -3348,7 +3362,9 @@ test = ["oxker --version", "oxker {{version}}"]
 [tools.oxlint]
 backends = ["aqua:oxc-project/oxc/oxlint", "ubi:oxc-project/oxc", "npm:oxlint"]
 description = "This is the linter for oxc."
-test = ["oxlint --version", "Version: {{version}}"]
+# TODO: Re-enable test once the aqua registry is fixed
+# The latest release has incorrect binary naming (oxlint.linux-x64-gnu.node instead of oxlint)
+# test = ["oxlint --version", "Version: {{version}}"]
 
 [tools.pachctl]
 backends = ["aqua:pachyderm/pachyderm", "asdf:abatilo/asdf-pachctl"]
@@ -4441,6 +4457,18 @@ description = "Timoni is a package manager for Kubernetes, powered by CUE and in
 [tools.tiny]
 backends = ["asdf:mise-plugins/mise-tiny"]
 description = "rtx-tiny is mostly a fake plugin to check mise in CI"
+
+[tools.tinymist]
+backends = [
+  "aqua:Myriad-Dreamin/tinymist",
+  "ubi:Myriad-Dreamin/tinymist",
+  "cargo:tinymist",
+]
+description = "Tinymist is an integrated language service for Typst."
+test = [
+  "tinymist --version | grep 'Build Git Describe:' | cut -d':' -f2 | tr -d ' '",
+  "v{{version}}",
+]
 
 [tools.tinytex]
 backends = ["asdf:mise-plugins/mise-tinytex"]

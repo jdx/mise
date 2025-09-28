@@ -1,0 +1,7 @@
+# `mise cache path`
+
+- **Usage**: `mise cache path`
+- **Aliases**: `dir`
+- **Source code**: [`src/cli/cache/path.rs`](https://github.com/jdx/mise/blob/main/src/cli/cache/path.rs)
+
+Show the cache directory path
