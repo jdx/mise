@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Test MISE_BACKENDS_* environment variable override
+
+# Clean up any existing installations
+mise uninstall --all graphite 2>/dev/null || true
+mise uninstall --all github:withgraphite/homebrew-tap 2>/dev/null || true
+
+# Test with environment variable override to use GitHub backend
+export MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[exe=gt]'
+
+# List remote versions - should use GitHub backend
+echo "Testing ls-remote with env override..."
+versions=$(mise ls-remote graphite 2>&1)
+if [[ ! $versions =~ 1\.7\.1 ]]; then
+	echo "ERROR: Expected version 1.7.1 not found in remote versions"
+	echo "Got: $versions"
+	exit 1
+fi
+
+# Install graphite with env override
+echo "Testing installation with env override..."
+mise install graphite@1.7.1
+
+# Verify it's using the GitHub backend by checking the binary
+# The GitHub backend installs the binary directly, not in a bin/ subdirectory
+if [[ ! -f "$HOME/.local/share/mise/installs/graphite/1.7.1/gt" ]]; then
+	echo "ERROR: Expected gt binary not found"
+	ls -la "$HOME/.local/share/mise/installs/graphite/1.7.1/" 2>/dev/null || true
+	exit 1
+fi
+
+# Test execution
+echo "Testing execution..."
+version=$(mise exec graphite -- gt --version 2>&1)
+if [[ $version != "1.7.1" ]]; then
+	echo "ERROR: Expected version 1.7.1, got: $version"
+	exit 1
+fi
+
+# Clean up
+mise uninstall --all graphite
+
+echo "Backend environment variable override test passed!"

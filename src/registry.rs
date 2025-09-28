@@ -2,6 +2,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::env;
 use std::env::consts::{ARCH, OS};
 use std::fmt::Display;
 use std::iter::Iterator;
@@ -34,6 +35,19 @@ pub struct RegistryBackend {
 
 impl RegistryTool {
     pub fn backends(&self) -> Vec<&'static str> {
+        // Check for environment variable override first
+        // e.g., MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[exe=gt]'
+        let env_key = format!(
+            "MISE_BACKENDS_{}",
+            self.short.to_uppercase().replace('-', "_")
+        );
+        if let Ok(env_value) = env::var(&env_key) {
+            // Return the environment variable value as a single backend
+            // We need to leak the string to get a 'static lifetime since the registry expects it
+            let leaked = Box::leak(env_value.into_boxed_str());
+            return vec![leaked];
+        }
+
         static BACKEND_TYPES: Lazy<HashSet<String>> = Lazy::new(|| {
             let mut backend_types = BackendType::iter()
                 .map(|b| b.to_string())
@@ -171,5 +185,33 @@ mod tests {
             &BTreeSet::from(["cargo"]),
             &name
         ));
+    }
+
+    #[tokio::test]
+    async fn test_backend_env_override() {
+        let _config = Config::get().await.unwrap();
+        use super::*;
+
+        // Test with a known tool from the registry
+        if let Some(tool) = REGISTRY.get("node") {
+            // First test without env var - should return default backends
+            let default_backends = tool.backends();
+            assert!(!default_backends.is_empty());
+
+            // Test with env var override
+            // SAFETY: This is safe in a test environment
+            unsafe {
+                env::set_var("MISE_BACKENDS_NODE", "test:backend");
+            }
+            let overridden_backends = tool.backends();
+            assert_eq!(overridden_backends.len(), 1);
+            assert_eq!(overridden_backends[0], "test:backend");
+
+            // Clean up
+            // SAFETY: This is safe in a test environment
+            unsafe {
+                env::remove_var("MISE_BACKENDS_NODE");
+            }
+        }
     }
 }
