@@ -416,8 +416,7 @@ backends = [
   "asdf:asdf-community/asdf-bitwarden-secrets-manager",
 ]
 description = "CLI for interacting with the Bitwarden Secrets Manager"
-# TODO: enable test when versions host is updated
-# test = ["bws --version", "bws {{version}}"]
+test = ["bws --version", "bws {{version}}"]
 
 [tools.black]
 backends = ["aqua:psf/black"]
@@ -1889,8 +1888,7 @@ backends = [
   "asdf:mise-plugins/mise-grain",
 ]
 description = "The Grain compiler toolchain and CLI. Home of the modern web staple"
-# TODO: enable test when versions host is updated
-# test = ["grain --version", "{{version}}"]
+test = ["grain --version", "{{version}}"]
 
 [tools.granted]
 backends = ["aqua:common-fate/granted", "asdf:dex4er/asdf-granted"]
@@ -2077,7 +2075,6 @@ description = "Your shell history: synced, queryable, and in context"
 
 [tools.hivemind]
 backends = [
-  "ubi:DarthSim/hivemind",
   "github:DarthSim/hivemind",
   "go:github.com/DarthSim/hivemind",
 ]
@@ -2367,10 +2364,9 @@ description = "Little helper to run CNCF's k3s in Docker"
 test = ["k3d --version", "k3d version v{{version}}"]
 
 [tools.k3kcli]
-backends = ['ubi:rancher/k3k[tag_regex=v\d]', "asdf:xanmanning/asdf-k3kcli"]
+backends = ['github:rancher/k3k[version_prefix=v]', "asdf:xanmanning/asdf-k3kcli"]
 description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to create and manage isolated K3s clusters within your existing Kubernetes environment"
-# TODO: enable tests after versions host update
-# test = ["k3k version", "k3k version {{version}}"]
+test = ["k3k version", "k3k version {{version}}"]
 
 [tools.k3s]
 backends = ["asdf:mise-plugins/mise-k3s"]
@@ -2760,8 +2756,7 @@ backends = [
   "asdf:jonasb/asdf-libsql-server",
 ]
 description = "server mode of libSQL, which is a fork of SQLite that is both Open Source, and Open Contributions"
-# TODO: enable test when versions host is updated
-# test = ["sqld --version", "sqld sqld {{version}}"]
+test = ["sqld --version", "sqld sqld {{version}}"]
 
 [tools.license-plist]
 backends = [
@@ -3234,7 +3229,7 @@ backends = ["aqua:open-policy-agent/opa", "asdf:tochukwuvictor/asdf-opa"]
 description = "Open Policy Agent (OPA) is an open source, general-purpose policy engine"
 
 [tools.opam]
-backends = ["ubi:ocaml/opam", "asdf:asdf-community/asdf-opam"]
+backends = ["github:ocaml/opam", "asdf:asdf-community/asdf-opam"]
 description = "(ocaml) opam is a source-based package manager. It supports multiple simultaneous compiler installations, flexible package constraints, and a Git-friendly development workflow"
 test = ["opam --version", "{{version}}"]
 
@@ -4961,6 +4956,7 @@ test = ["zigmod version", "{{version}}"]
 [tools.zizmor]
 backends = ["aqua:zizmorcore/zizmor", "ubi:zizmorcore/zizmor", "cargo:zizmor"]
 description = "Static analysis for GitHub Actions"
+test = ["zizmor --version", "zizmor {{version}}"]
 
 [tools.zls]
 backends = ["aqua:zigtools/zls", "ubi:zigtools/zls"]
