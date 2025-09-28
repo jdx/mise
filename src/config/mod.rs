@@ -572,7 +572,7 @@ impl Config {
         // Handle required env vars
         for (key, var_name, source) in required_to_resolve {
             // First check if it's defined in current env
-            if let Some(value) = std::env::var(&var_name).ok() {
+            if let Ok(value) = std::env::var(&var_name) {
                 env_results.env.insert(key, (value, source));
                 continue;
             }
