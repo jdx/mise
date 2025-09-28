@@ -57,13 +57,9 @@ You can also specify the full name for a tool using `mise use aqua:1password/cli
 You can override the backend for any tool using environment variables with the pattern `MISE_BACKENDS_<TOOL>`. This takes the highest priority and overrides any registry or alias configuration:
 
 ```shell
-# Use GitHub backend for graphite instead of the default npm backend
-export MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[bin=gt]'
-mise install graphite
-
-# Install a custom tool not in the registry
-export MISE_BACKENDS_MYTOOL='github:myorg/mytool'
-mise install mytool@latest
+# Use vfox backend for php
+export MISE_BACKENDS_PHP='vfox:mise-plugins/vfox-php'
+mise install php@latest
 ```
 
 The tool name in the environment variable should be in SHOUTY_SNAKE_CASE (uppercase with underscores). For example, `my-tool` becomes `MISE_BACKENDS_MY_TOOL`.
