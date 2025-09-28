@@ -27,6 +27,8 @@ pub struct EnvDirectiveOptions {
     pub(crate) tools: bool,
     #[serde(default)]
     pub(crate) redact: bool,
+    #[serde(default)]
+    pub(crate) required: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -180,7 +182,7 @@ impl EnvResults {
             EnvDirective::PythonVenv { .. } => Some(d),
             _ => None,
         });
-        let input = input
+        let filtered_input = input
             .iter()
             .fold(Vec::new(), |mut acc, (directive, source)| {
                 // Filter directives based on tools setting
@@ -203,7 +205,7 @@ impl EnvResults {
                 acc.push((directive.clone(), source.clone()));
                 acc
             });
-        for (directive, source) in input {
+        for (directive, source) in filtered_input {
             let mut tera = get_tera(source.parent());
             tera.register_function(
                 "exec",
@@ -378,7 +380,52 @@ impl EnvResults {
             r.env_paths = paths;
         }
 
+        // Validate required environment variables
+        Self::validate_required_env_vars(&input, &initial, &r)?;
+
         Ok(r)
+    }
+
+    fn validate_required_env_vars(
+        input: &[(EnvDirective, PathBuf)],
+        initial: &EnvMap,
+        env_results: &EnvResults,
+    ) -> eyre::Result<()> {
+        let mut required_vars = Vec::new();
+
+        // Collect all required environment variables
+        for (directive, source) in input {
+            if let EnvDirective::Val(key, _, options) = directive {
+                if options.required {
+                    required_vars.push((key.clone(), source.clone()));
+                }
+            }
+        }
+
+        // Check if required variables are defined
+        for (var_name, declaring_source) in required_vars {
+            // Variable must be defined either:
+            // 1. In the initial environment (before mise runs), OR
+            // 2. In a config file processed later than the one declaring it as required
+            let is_predefined = initial.contains_key(&var_name);
+
+            let is_defined_later = if let Some((_, var_source)) = env_results.env.get(&var_name) {
+                // Check if the variable comes from a different config file
+                var_source != &declaring_source
+            } else {
+                false
+            };
+
+            if !is_predefined && !is_defined_later {
+                return Err(eyre!(
+                    "Required environment variable '{}' is not defined. It must be set before mise runs or in a later config file. (Required in: {})",
+                    var_name,
+                    display_path(declaring_source)
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     fn parse_template(

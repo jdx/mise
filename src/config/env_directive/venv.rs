@@ -178,6 +178,7 @@ mod tests {
                         options: EnvDirectiveOptions {
                             tools: true,
                             redact: false,
+                            required: false,
                         },
                     },
                     Default::default(),
@@ -192,6 +193,7 @@ mod tests {
                         options: EnvDirectiveOptions {
                             tools: true,
                             redact: false,
+                            required: false,
                         },
                     },
                     Default::default(),

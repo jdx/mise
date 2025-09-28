@@ -1094,6 +1094,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     options: EnvDirectiveOptions {
                                         tools: true,
                                         redact: false,
+                                        required: false,
                                     },
                                 });
                             }
