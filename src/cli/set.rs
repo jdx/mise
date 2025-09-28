@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 use super::args::EnvVarArg;
 use crate::agecrypt;
 use crate::config;
-use crate::config::Config;
 use crate::config::config_file::ConfigFile;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
+use crate::config::{Config, Settings};
 use crate::env::{self};
 use crate::file::display_path;
 use crate::ui::table;
@@ -164,6 +164,7 @@ impl Set {
 
             // Handle age encryption if requested
             if self.age_encrypt {
+                Settings::get().ensure_experimental("age encryption")?;
                 // Collect recipients once before the loop to avoid repeated I/O
                 let recipients = self.collect_age_recipients().await?;
                 for ev in env_vars {

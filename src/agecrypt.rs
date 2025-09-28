@@ -466,17 +466,32 @@ mod tests {
         // Small value should not be compressed
         let plaintext = "secret value";
         let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(recipient)];
-        let encrypted = encrypt_value(plaintext, &recipients).await?;
+        let directive =
+            create_age_directive("TEST_VAR".to_string(), plaintext, &recipients).await?;
 
-        assert!(encrypted.starts_with(PREFIX_UNCOMPRESSED));
-        assert!(encrypted.len() > PREFIX_UNCOMPRESSED.len());
+        if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
+            // Small value should not be compressed (format should be None/Raw)
+            assert!(
+                format.is_none()
+                    || matches!(format, Some(crate::config::env_directive::AgeFormat::Raw))
+            );
 
-        use age::secrecy::ExposeSecret;
-        env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
-        let decrypted = decrypt_value(&encrypted).await?;
-        env::remove_var("MISE_AGE_KEY");
+            use age::secrecy::ExposeSecret;
+            env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
+            let decrypted =
+                decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
+                    key: "TEST_VAR".to_string(),
+                    value,
+                    format,
+                    options: Default::default(),
+                })
+                .await?;
+            env::remove_var("MISE_AGE_KEY");
 
-        assert_eq!(decrypted, plaintext);
+            assert_eq!(decrypted, plaintext);
+        } else {
+            panic!("Expected Age directive");
+        }
         Ok(())
     }
 
@@ -488,17 +503,29 @@ mod tests {
         // Large value should be compressed (>1KB)
         let plaintext = "x".repeat(2000);
         let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(recipient)];
-        let encrypted = encrypt_value(&plaintext, &recipients).await?;
+        let directive =
+            create_age_directive("TEST_VAR".to_string(), &plaintext, &recipients).await?;
 
-        assert!(encrypted.starts_with(PREFIX_COMPRESSED));
-        assert!(encrypted.len() > PREFIX_COMPRESSED.len());
+        if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
+            // Large value should be compressed
+            assert_eq!(format, Some(crate::config::env_directive::AgeFormat::Zstd));
 
-        use age::secrecy::ExposeSecret;
-        env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
-        let decrypted = decrypt_value(&encrypted).await?;
-        env::remove_var("MISE_AGE_KEY");
+            use age::secrecy::ExposeSecret;
+            env::set_var("MISE_AGE_KEY", key.to_string().expose_secret());
+            let decrypted =
+                decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
+                    key: "TEST_VAR".to_string(),
+                    value,
+                    format,
+                    options: Default::default(),
+                })
+                .await?;
+            env::remove_var("MISE_AGE_KEY");
 
-        assert_eq!(decrypted, plaintext);
+            assert_eq!(decrypted, plaintext);
+        } else {
+            panic!("Expected Age directive");
+        }
         Ok(())
     }
 

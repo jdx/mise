@@ -13,7 +13,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::{cmp::PartialEq, sync::Arc};
 
-use super::Config;
+use super::{Config, Settings};
 
 mod file;
 mod module;
@@ -403,6 +403,7 @@ impl EnvResults {
                     // The actual value must come from the initial environment or a later config file
                 }
                 EnvDirective::Age { key: ref k, .. } => {
+                    Settings::get().ensure_experimental("age encryption")?;
                     // Decrypt age-encrypted value
                     let mut decrypted_v = crate::agecrypt::decrypt_age_directive(&directive)
                         .await
