@@ -454,13 +454,13 @@ pub trait Backend: Debug + Send + Sync {
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
         Ok(BTreeMap::new())
     }
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(REGISTRY
             .get(self.id())
             .map(|rt| rt.idiomatic_files.iter().map(|s| s.to_string()).collect())
             .unwrap_or_default())
     }
-    fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
         let contents = file::read_to_string(path)?;
         Ok(contents.trim().to_string())
     }

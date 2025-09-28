@@ -98,21 +98,18 @@ impl Upgrade {
             .build(config)
             .await?;
 
-        let config_file_updates = outdated
-            .iter()
-            .filter_map(|o| {
-                if let (Some(path), Some(_bump)) = (o.source.path(), &o.bump) {
-                    match config_file::parse(path) {
-                        Ok(cf) => Some((o, cf)),
-                        Err(e) => {
-                            warn!("failed to parse {}: {e}", display_path(path));
-                            None
-                        }
-                    }
-                } else {
-                    None
+        let mut outdated_with_config_files: Vec<(&OutdatedInfo, Arc<dyn config_file::ConfigFile>)> =
+            vec![];
+        for o in outdated.iter() {
+            if let (Some(path), Some(_bump)) = (o.source.path(), &o.bump) {
+                match config_file::parse(path).await {
+                    Ok(cf) => outdated_with_config_files.push((o, cf)),
+                    Err(e) => warn!("failed to parse {}: {e}", display_path(path)),
                 }
-            })
+            }
+        }
+        let config_file_updates = outdated_with_config_files
+            .iter()
             .filter(|(o, cf)| {
                 if let Ok(trs) = cf.to_tool_request_set() {
                     if let Some(versions) = trs.tools.get(o.tool_request.ba()) {

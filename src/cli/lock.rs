@@ -140,7 +140,7 @@ impl Lock {
                 // Try to read tools from the config file or from the overall config
                 let tools = if config_path.exists() {
                     // Read directly from the local config file
-                    match crate::config::config_file::parse(&config_path) {
+                    match crate::config::config_file::parse(&config_path).await {
                         Ok(config_file) => {
                             let tool_request_set = config_file.to_tool_request_set()?;
                             tool_request_set

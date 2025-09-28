@@ -112,7 +112,7 @@ impl Use {
             .with_global_only(self.global)
             .build(&config)
             .await?;
-        let cf = self.get_config_file()?;
+        let cf = self.get_config_file().await?;
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
@@ -206,7 +206,7 @@ impl Use {
         Ok(())
     }
 
-    fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
+    async fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
 
         // Handle special case for --path that needs absolutize logic for compatibility
@@ -229,7 +229,7 @@ impl Use {
             resolve_target_config_path(opts)?
         };
 
-        config_file::parse_or_init(&path)
+        config_file::parse_or_init(&path).await
     }
 
     async fn warn_if_hidden(&self, config: &Arc<Config>, global: &Path) {

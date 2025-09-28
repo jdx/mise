@@ -103,7 +103,7 @@ impl Backend for BunPlugin {
         Ok(versions)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".bun-version".into()])
     }
 
