@@ -1048,6 +1048,74 @@ pub fn local_toml_config_path() -> PathBuf {
         })
 }
 
+/// Options for resolving target config file path
+#[derive(Debug, Default)]
+pub struct ConfigPathOptions {
+    pub global: bool,
+    pub path: Option<PathBuf>,
+    pub env: Option<String>,
+    pub cwd: Option<PathBuf>,
+    pub prefer_toml: bool,
+    pub prevent_home_local: bool,
+}
+
+/// Unified config file path resolution for both `mise use` and `mise set`
+///
+/// This function centralizes the logic for determining which config file to target
+/// based on various options, ensuring consistent behavior between commands.
+pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
+    let cwd = match opts.cwd {
+        Some(ref path) => path.clone(),
+        None => env::current_dir()?,
+    };
+
+    // If global flag is set, always use global config
+    if opts.global {
+        return Ok(global_config_path());
+    }
+
+    // If path is provided, handle it (file or directory)
+    if let Some(ref path) = opts.path {
+        if path.is_file() {
+            return Ok(path.clone());
+        } else if path.is_dir() {
+            let resolved = config_file_from_dir(path);
+            if opts.prefer_toml && !resolved.to_string_lossy().ends_with(".toml") {
+                // For TOML-only commands, ensure we get a TOML file
+                return Ok(path.join(&*env::MISE_DEFAULT_CONFIG_FILENAME));
+            }
+            return Ok(resolved);
+        } else {
+            // Path doesn't exist yet, return it as-is
+            return Ok(path.clone());
+        }
+    }
+
+    // If env-specific config is requested
+    if let Some(ref env_name) = opts.env {
+        let dotfile_path = cwd.join(format!(".mise.{}.toml", env_name));
+        if dotfile_path.exists() {
+            return Ok(dotfile_path);
+        } else {
+            return Ok(cwd.join(format!("mise.{}.toml", env_name)));
+        }
+    }
+
+    // If we're in HOME directory and prevent_home_local is true, use global config
+    if opts.prevent_home_local && env::in_home_dir() {
+        return Ok(global_config_path());
+    }
+
+    // Default: determine based on current directory
+    if opts.prefer_toml {
+        // For mise set, prefer TOML and use local_toml_config_path logic
+        Ok(local_toml_config_path())
+    } else {
+        // For mise use, use existing config_file_from_dir logic which respects ASDF compat
+        Ok(config_file_from_dir(&cwd))
+    }
+}
+
 async fn load_all_config_files(
     config_filenames: &[PathBuf],
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
