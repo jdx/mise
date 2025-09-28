@@ -1039,11 +1039,6 @@ optional = true
 rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
-[age.strict]
-default = false
-description = "[experimental] If true, fail when age decryption fails. If false, leave ciphertext as-is in these cases."
-env = "MISE_AGE_STRICT"
-type = "Bool"
 
 [sops.age_key]
 description = "The age private key to use for sops secret decryption."

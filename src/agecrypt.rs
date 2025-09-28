@@ -76,16 +76,9 @@ pub async fn decrypt_value(encrypted: &str) -> Result<String> {
 
     let identities = load_all_identities().await?;
     if identities.is_empty() {
-        if Settings::get().age.strict {
-            return Err(eyre!(
-                "[experimental] No age identities found for decryption (strict mode enabled)"
-            ));
-        } else {
-            debug!(
-                "[experimental] No age identities found, returning ciphertext in non-strict mode"
-            );
-            return Ok(encrypted.to_string());
-        }
+        return Err(eyre!(
+            "[experimental] No age identities found for decryption"
+        ));
     }
 
     // The age crate decryptor API
@@ -105,12 +98,7 @@ pub async fn decrypt_value(encrypted: &str) -> Result<String> {
             reader.read_to_end(&mut decrypted)?;
         }
         Err(e) => {
-            if Settings::get().age.strict {
-                return Err(eyre!("[experimental] Failed to decrypt: {}", e));
-            } else {
-                debug!("[experimental] Failed to decrypt in non-strict mode: {}", e);
-                return Ok(encrypted.to_string());
-            }
+            return Err(eyre!("[experimental] Failed to decrypt: {}", e));
         }
     }
 
@@ -172,16 +160,9 @@ pub async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
 
             let identities = load_all_identities().await?;
             if identities.is_empty() {
-                if Settings::get().age.strict {
-                    return Err(eyre!(
-                        "[experimental] No age identities found for decryption (strict mode enabled)"
-                    ));
-                } else {
-                    debug!(
-                        "[experimental] No age identities found, returning ciphertext in non-strict mode"
-                    );
-                    return Ok(value.to_string());
-                }
+                return Err(eyre!(
+                    "[experimental] No age identities found for decryption"
+                ));
             }
 
             let decryptor = Decryptor::new(&ciphertext[..])?;
@@ -197,12 +178,7 @@ pub async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
                     reader.read_to_end(&mut decrypted)?;
                 }
                 Err(e) => {
-                    if Settings::get().age.strict {
-                        return Err(eyre!("[experimental] Failed to decrypt: {}", e));
-                    } else {
-                        debug!("[experimental] Failed to decrypt in non-strict mode: {}", e);
-                        return Ok(value.to_string());
-                    }
+                    return Err(eyre!("[experimental] Failed to decrypt: {}", e));
                 }
             }
 

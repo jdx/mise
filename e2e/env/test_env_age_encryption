@@ -114,16 +114,14 @@ assert_fail "mise set INVALID=value --age-encrypt --age-recipient invalid-key"
 rm -f ~/.config/mise/age.txt
 assert_fail "mise set NO_RECIPIENT=value --age-encrypt"
 
-# Decryption without key (non-strict mode returns ciphertext)
+# Decryption without key (strict mode should fail)
 rm -f ~/.config/mise/age.txt # Remove default key
 mise set ENCRYPTED_VALUE="encrypted" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
-RESULT=$(mise set ENCRYPTED_VALUE)
-# In non-strict mode, should show the raw encrypted base64 value
-assert_contains "echo $RESULT" "YWdlLWVuY3J5cHRpb24" # Should show encrypted base64
+# In strict mode, should fail when no key is available
+assert_fail "mise set ENCRYPTED_VALUE"
 
-# Test that mise env shows encrypted value when no key available
-ENV_OUTPUT=$(mise env | grep ENCRYPTED_VALUE || true)
-assert_contains "echo '$ENV_OUTPUT'" "YWdlLWVuY3J5cHRpb24" # Should show encrypted base64
+# Test that mise env also fails when no key available
+assert_fail "mise env"
 
 # Test mixed encrypted and plain values in mise env
 rm -f mise.toml
