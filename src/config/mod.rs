@@ -22,7 +22,6 @@ use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
-use crate::secrets::{SecretConfig, SecretManager, SecretProviderType};
 use crate::shorthands::{Shorthands, get_shorthands};
 use crate::task::Task;
 use crate::toolset::{ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, install_state};
@@ -509,59 +508,162 @@ impl Config {
     }
 
     async fn resolve_secrets(&self, env_results: &mut EnvResults) -> Result<()> {
-        let secret_manager = SecretManager::new()?;
-        let default_provider = self.default_secret_provider();
-
         // Find all env vars that need secret resolution
         let mut secrets_to_resolve = Vec::new();
+        let mut required_to_resolve = Vec::new();
+
         for (key, (value, source)) in &env_results.env {
             if value.starts_with("__MISE_SECRET__:") {
                 let secret_json = value.strip_prefix("__MISE_SECRET__:").unwrap();
-                if let Ok(secret_config) = serde_json::from_str::<SecretConfig>(secret_json) {
+                if let Ok(secret_config) = serde_json::from_str::<serde_json::Value>(secret_json) {
                     secrets_to_resolve.push((key.clone(), secret_config, source.clone()));
+                }
+            } else if value.starts_with("__MISE_REQUIRED__:") {
+                let var_name = value.strip_prefix("__MISE_REQUIRED__:").unwrap();
+                required_to_resolve.push((key.clone(), var_name.to_string(), source.clone()));
+            }
+        }
+
+        // Resolve secrets first
+        for (key, config, source) in secrets_to_resolve {
+            let provider = config["provider"].as_str().unwrap_or("env");
+
+            let resolved_value = match provider {
+                "onepassword" => {
+                    let reference = config["reference"].as_str();
+                    let vault = config["vault"].as_str();
+                    let item = config["item"].as_str();
+                    let field = config["field"].as_str();
+
+                    let secret_key = if let Some(ref_str) = reference {
+                        ref_str.to_string()
+                    } else if let (Some(v), Some(i), Some(f)) = (vault, item, field) {
+                        format!("op://{}/{}/{}", v, i, f)
+                    } else {
+                        key.clone() // fallback to env var name
+                    };
+
+                    self.resolve_onepassword_secret(&secret_key).await?
+                }
+                "keyring" => {
+                    let service = config["service"].as_str();
+                    let account = config["account"].as_str().unwrap_or(&key);
+
+                    self.resolve_keyring_secret(service, account).await?
+                }
+                "env" => std::env::var(&key).ok(),
+                _ => None,
+            };
+
+            match resolved_value {
+                Some(value) => {
+                    env_results.env.insert(key, (value, source));
+                }
+                None => {
+                    return Err(eyre::eyre!(
+                        "Secret '{}' not found in provider {}",
+                        key,
+                        provider
+                    ));
                 }
             }
         }
 
-        // Resolve each secret
-        for (key, secret_config, source) in secrets_to_resolve {
-            match secret_manager
-                .get(&key, &secret_config, default_provider.clone())
-                .await?
-            {
-                Some(value) => {
-                    env_results.env.insert(key, (value, source));
-                }
-                None if !secret_config.required => {
-                    // Remove the placeholder if not required and not found
-                    env_results.env.remove(&key);
-                }
-                None => {
-                    return Err(eyre::eyre!("Required secret '{}' not found", key));
-                }
+        // Handle required env vars
+        for (key, var_name, source) in required_to_resolve {
+            // First check if it's defined in current env
+            if let Some(value) = std::env::var(&var_name).ok() {
+                env_results.env.insert(key, (value, source));
+                continue;
             }
+
+            // Check for mise.local.toml or other local config files
+            if let Some(value) = self.check_local_configs(&var_name)? {
+                env_results.env.insert(key, (value, source));
+                continue;
+            }
+
+            // Not found - issue warning and remove from env
+            warn!(
+                "Required environment variable '{}' is not defined",
+                var_name
+            );
+            env_results.env.remove(&key);
         }
 
         Ok(())
     }
 
-    fn default_secret_provider(&self) -> SecretProviderType {
-        // Check settings first
-        // TODO: implement settings integration
-
-        // Check environment variable
-        if let Ok(provider) = std::env::var("MISE_SECRETS_PROVIDER") {
-            if let Ok(p) = provider.parse() {
-                return p;
+    fn check_local_configs(&self, var_name: &str) -> Result<Option<String>> {
+        // Check mise.local.toml files for the variable
+        for (config_path, config_file) in &self.config_files {
+            if config_path.file_name().and_then(|n| n.to_str()) == Some("mise.local.toml") {
+                if let Ok(entries) = config_file.env_entries() {
+                    for directive in entries {
+                        if let crate::config::env_directive::EnvDirective::Val(key, value, _) =
+                            directive
+                        {
+                            if key == var_name {
+                                return Ok(Some(value));
+                            }
+                        }
+                    }
+                }
             }
         }
+        Ok(None)
+    }
 
-        // Default to keyring in local dev, env in CI
-        if std::env::var("CI").is_ok() {
-            SecretProviderType::Env
+    pub async fn resolve_onepassword_secret(&self, key: &str) -> Result<Option<String>> {
+        use std::process::Command;
+
+        // Check if op CLI is available
+        let op_path = which::which("op").map_err(|_| {
+            eyre::eyre!("1Password CLI (op) not found. Install with: mise use -g 1password")
+        })?;
+
+        let key = key.to_string();
+        let output = tokio::task::spawn_blocking(move || {
+            Command::new(op_path).arg("read").arg(&key).output()
+        })
+        .await??;
+
+        if output.status.success() {
+            let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            Ok(Some(value))
+        } else if output.status.code() == Some(1) {
+            Ok(None) // Item not found
         } else {
-            SecretProviderType::Keyring
+            let error = String::from_utf8_lossy(&output.stderr);
+            Err(eyre::eyre!("1Password error: {}", error))
         }
+    }
+
+    pub async fn resolve_keyring_secret(
+        &self,
+        service: Option<&str>,
+        account: &str,
+    ) -> Result<Option<String>> {
+        use keyring::Entry;
+
+        let project_name = std::env::current_dir()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "default".to_string());
+        let default_service = format!("mise:{}", project_name);
+
+        let service = service.unwrap_or(&default_service).to_string();
+        let account = account.to_string();
+
+        tokio::task::spawn_blocking(move || match Entry::new(&service, &account) {
+            Ok(entry) => match entry.get_password() {
+                Ok(password) => Ok(Some(password)),
+                Err(keyring::Error::NoEntry) => Ok(None),
+                Err(e) => Err(eyre::eyre!("Keyring error: {}", e)),
+            },
+            Err(e) => Err(eyre::eyre!("Failed to access keyring: {}", e)),
+        })
+        .await?
     }
 
     async fn load_env(self: &Arc<Self>) -> Result<EnvResults> {

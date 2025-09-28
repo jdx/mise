@@ -13,46 +13,32 @@ cd "$TEST_DIR"
 # Test basic secret configuration parsing
 cat <<EOF >mise.toml
 [env]
-TEST_SECRET = { secret = { provider = "env" } }
-TEST_WITH_KEY = { secret = { provider = "env", key = "HOME" } }
+TEST_SECRET = { required = true }
+TEST_OP_SECRET = { onepassword = { reference = "op://MyVault/Item/field" } }
+TEST_KEYRING_SECRET = { keyring = { service = "test-service", account = "test-account" } }
 EOF
 
-# Test that secrets check works with env provider
-export TEST_SECRET="test_value"
-$MISE secrets check
-echo "✓ secrets check passed"
+# Also create a local config for the required env var
+cat <<EOF >mise.local.toml
+[env]
+TEST_SECRET = "test_value"
+EOF
 
-# Test that secrets get works
-output=$($MISE secrets get TEST_SECRET --provider env --show)
-if [ "$output" != "test_value" ]; then
-	echo "✗ Expected 'test_value', got '$output'"
-	exit 1
-fi
-echo "✓ secrets get returned correct value"
-
-# Test redacted output
-output=$($MISE secrets get TEST_SECRET --provider env 2>/dev/null)
-if [[ $output != *"<redacted>"* ]]; then
-	echo "✗ Expected redacted output, got '$output'"
-	exit 1
-fi
-echo "✓ secrets get redacts by default"
-
-# Test that env resolution works with secrets
+# Test that required env var works
 output=$($MISE env | grep TEST_SECRET || echo "")
 if [ -z "$output" ]; then
-	echo "✗ Secret not resolved in env"
+	echo "✗ Required env var not resolved"
 	exit 1
 fi
-echo "✓ secrets resolved in env"
+echo "✓ required env var resolved from local config"
 
-# Test key mapping
-output=$($MISE secrets get TEST_WITH_KEY --provider env --show)
-if [ "$output" != "$HOME" ]; then
-	echo "✗ Expected '$HOME', got '$output'"
+# Test that the env var shows up in env output
+output=$($MISE env | grep "TEST_SECRET=test_value" || echo "")
+if [ -z "$output" ]; then
+	echo "✗ TEST_SECRET not found in env output"
 	exit 1
 fi
-echo "✓ key mapping works"
+echo "✓ required env var shows correct value in env"
 
 # Clean up
 cd /

@@ -1110,8 +1110,18 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             #[serde(untagged)]
                             enum Val {
                                 Primitive(PrimitiveVal),
-                                Secret {
-                                    secret: crate::secrets::SecretConfig,
+                                OnePassword {
+                                    onepassword: OnePasswordConfig,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                                Keyring {
+                                    keyring: KeyringConfig,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
+                                Required {
+                                    required: bool,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
@@ -1120,6 +1130,26 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
+                            }
+
+                            #[derive(Deserialize)]
+                            struct OnePasswordConfig {
+                                #[serde(default)]
+                                vault: Option<String>,
+                                #[serde(default)]
+                                item: Option<String>,
+                                #[serde(default)]
+                                field: Option<String>,
+                                #[serde(default)]
+                                reference: Option<String>,
+                            }
+
+                            #[derive(Deserialize)]
+                            struct KeyringConfig {
+                                #[serde(default)]
+                                service: Option<String>,
+                                #[serde(default)]
+                                account: Option<String>,
                             }
                             let directive = match map.next_value::<Val>()? {
                                 Val::Primitive(p) => match p {
@@ -1140,8 +1170,33 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         EnvDirective::Rm(key, EnvDirectiveOptions::default())
                                     }
                                 },
-                                Val::Secret { secret, options } => {
-                                    EnvDirective::Secret(key, secret, options)
+                                Val::OnePassword {
+                                    onepassword,
+                                    options,
+                                } => EnvDirective::OnePassword {
+                                    key,
+                                    vault: onepassword.vault,
+                                    item: onepassword.item,
+                                    field: onepassword.field,
+                                    reference: onepassword.reference,
+                                    options,
+                                },
+                                Val::Keyring { keyring, options } => EnvDirective::Keyring {
+                                    key,
+                                    service: keyring.service,
+                                    account: keyring.account,
+                                    options,
+                                },
+                                Val::Required {
+                                    required: true,
+                                    options,
+                                } => EnvDirective::Required { key, options },
+                                Val::Required {
+                                    required: false,
+                                    options,
+                                } => {
+                                    // If required=false, treat as a regular env var with empty value
+                                    EnvDirective::Val(key, String::new(), options)
                                 }
                                 Val::Map { value, options } => match value {
                                     PrimitiveVal::Str(s) => EnvDirective::Val(key, s, options),

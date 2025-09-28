@@ -3,7 +3,6 @@ use crate::dirs;
 use crate::env;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::secrets::SecretConfig;
 use crate::tera::{get_tera, tera_exec};
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
@@ -34,8 +33,27 @@ pub struct EnvDirectiveOptions {
 pub enum EnvDirective {
     /// simple key/value pair
     Val(String, String, EnvDirectiveOptions),
-    /// secret-backed env var
-    Secret(String, SecretConfig, EnvDirectiveOptions),
+    /// env var from 1password
+    OnePassword {
+        key: String,
+        vault: Option<String>,
+        item: Option<String>,
+        field: Option<String>,
+        reference: Option<String>, // op://vault/item/field format
+        options: EnvDirectiveOptions,
+    },
+    /// env var from keyring
+    Keyring {
+        key: String,
+        service: Option<String>,
+        account: Option<String>,
+        options: EnvDirectiveOptions,
+    },
+    /// env var that must be defined elsewhere
+    Required {
+        key: String,
+        options: EnvDirectiveOptions,
+    },
     /// remove a key
     Rm(String, EnvDirectiveOptions),
     /// dotenv file
@@ -59,7 +77,9 @@ impl EnvDirective {
     pub fn options(&self) -> &EnvDirectiveOptions {
         match self {
             EnvDirective::Val(_, _, opts)
-            | EnvDirective::Secret(_, _, opts)
+            | EnvDirective::OnePassword { options: opts, .. }
+            | EnvDirective::Keyring { options: opts, .. }
+            | EnvDirective::Required { options: opts, .. }
             | EnvDirective::Rm(_, opts)
             | EnvDirective::File(_, opts)
             | EnvDirective::Path(_, opts)
@@ -86,13 +106,32 @@ impl Display for EnvDirective {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
-            EnvDirective::Secret(k, config, _) => {
-                if let Some(provider) = &config.provider {
-                    write!(f, "{k} = {{ secret = {{ provider = \"{}\" }} }}", provider)
+            EnvDirective::OnePassword { key, reference, .. } => {
+                if let Some(ref_str) = reference {
+                    write!(
+                        f,
+                        "{key} = {{ onepassword = {{ reference = \"{}\" }} }}",
+                        ref_str
+                    )
                 } else {
-                    write!(f, "{k} = {{ secret = {{}} }}")
+                    write!(f, "{key} = {{ onepassword = {{}} }}")
                 }
             }
+            EnvDirective::Keyring {
+                key,
+                service,
+                account,
+                ..
+            } => match (service, account) {
+                (Some(s), Some(a)) => write!(
+                    f,
+                    "{key} = {{ keyring = {{ service = \"{s}\", account = \"{a}\" }} }}"
+                ),
+                (Some(s), None) => write!(f, "{key} = {{ keyring = {{ service = \"{s}\" }} }}"),
+                (None, Some(a)) => write!(f, "{key} = {{ keyring = {{ account = \"{a}\" }} }}"),
+                (None, None) => write!(f, "{key} = {{ keyring = {{}} }}"),
+            },
+            EnvDirective::Required { key, .. } => write!(f, "{key} = {{ required = true }}"),
             EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
             EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
             EnvDirective::Path(path, _) => write!(f, "_.path = \"{}\"", display_path(path)),
@@ -267,23 +306,62 @@ impl EnvResults {
                         env.insert(k, (v, Some(source.clone())));
                     }
                 }
-                EnvDirective::Secret(k, secret_config, _opts) => {
-                    // Store secret config for later resolution
+                EnvDirective::OnePassword {
+                    key,
+                    vault,
+                    item,
+                    field,
+                    reference,
+                    options: _opts,
+                } => {
                     if !resolve_opts.vars {
-                        if secret_config.redact {
-                            r.redactions.push(k.clone());
+                        if redact {
+                            r.redactions.push(key.clone());
                         }
-                        // We'll resolve secrets in a second pass after all env vars are loaded
-                        // For now, just mark as pending with special prefix
+                        // Create a serializable config for later resolution
+                        let config = serde_json::json!({
+                            "provider": "onepassword",
+                            "vault": vault,
+                            "item": item,
+                            "field": field,
+                            "reference": reference
+                        });
                         env.insert(
-                            k.clone(),
-                            (
-                                format!(
-                                    "__MISE_SECRET__:{}",
-                                    serde_json::to_string(&secret_config).unwrap()
-                                ),
-                                Some(source.clone()),
-                            ),
+                            key.clone(),
+                            (format!("__MISE_SECRET__:{}", config), Some(source.clone())),
+                        );
+                    }
+                }
+                EnvDirective::Keyring {
+                    key,
+                    service,
+                    account,
+                    options: _opts,
+                } => {
+                    if !resolve_opts.vars {
+                        if redact {
+                            r.redactions.push(key.clone());
+                        }
+                        let config = serde_json::json!({
+                            "provider": "keyring",
+                            "service": service,
+                            "account": account
+                        });
+                        env.insert(
+                            key.clone(),
+                            (format!("__MISE_SECRET__:{}", config), Some(source.clone())),
+                        );
+                    }
+                }
+                EnvDirective::Required {
+                    key,
+                    options: _opts,
+                } => {
+                    if !resolve_opts.vars {
+                        // Mark as requiring resolution from external source
+                        env.insert(
+                            key.clone(),
+                            (format!("__MISE_REQUIRED__:{}", key), Some(source.clone())),
                         );
                     }
                 }
