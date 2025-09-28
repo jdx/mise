@@ -2074,10 +2074,7 @@ backends = ["github:ddworken/hishtory", "asdf:asdf-community/asdf-hishtory"]
 description = "Your shell history: synced, queryable, and in context"
 
 [tools.hivemind]
-backends = [
-  "github:DarthSim/hivemind",
-  "go:github.com/DarthSim/hivemind",
-]
+backends = ["github:DarthSim/hivemind", "go:github.com/DarthSim/hivemind"]
 description = "Process manager for Procfile-based applications"
 test = ["hivemind --version", "Hivemind version {{version}}"]
 
