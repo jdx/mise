@@ -244,7 +244,25 @@ impl EnvResults {
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
-                    let v = r.parse_template(&ctx, &mut tera, &source, &v)?;
+                    let mut v = r.parse_template(&ctx, &mut tera, &source, &v)?;
+
+                    // Decrypt age-encrypted values
+                    if crate::task::agecrypt::is_age_encrypted(&v) {
+                        match crate::task::agecrypt::decrypt_value(&v).await {
+                            Ok(decrypted) => {
+                                v = decrypted;
+                                // Always redact decrypted values for security
+                                if !r.redactions.contains(&k) {
+                                    r.redactions.push(k.clone());
+                                }
+                            }
+                            Err(e) => {
+                                debug!("[experimental] Failed to decrypt {}: {}", k, e);
+                                // In non-strict mode, the encrypted value is returned
+                            }
+                        }
+                    }
+
                     if resolve_opts.vars {
                         r.vars.insert(k, (v, source.clone()));
                     } else {

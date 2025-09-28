@@ -147,6 +147,39 @@ pub async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipient + S
     Ok(parsed_recipients)
 }
 
+pub async fn load_recipients_from_key_file(path: &Path) -> Result<Vec<Box<dyn Recipient + Send>>> {
+    let mut recipients: Vec<Box<dyn Recipient + Send>> = Vec::new();
+
+    if !path.exists() {
+        return Err(eyre!(
+            "[experimental] Age key file not found: {}",
+            path.display()
+        ));
+    }
+
+    let content = file::read_to_string(path)?;
+
+    // Parse age x25519 identities and convert to recipients
+    for line in content.lines() {
+        let line = line.trim();
+        if line.starts_with("AGE-SECRET-KEY-") {
+            if let Ok(identity) = line.parse::<age::x25519::Identity>() {
+                let public_key = identity.to_public();
+                recipients.push(Box::new(public_key));
+            }
+        }
+    }
+
+    if recipients.is_empty() {
+        return Err(eyre!(
+            "[experimental] No valid age identities found in {}",
+            path.display()
+        ));
+    }
+
+    Ok(recipients)
+}
+
 pub fn parse_recipient(recipient_str: &str) -> Result<Option<Box<dyn Recipient + Send>>> {
     let trimmed = recipient_str.trim();
 
@@ -220,21 +253,38 @@ async fn load_ssh_recipient_from_private_key(path: &Path) -> Result<String> {
 }
 
 async fn load_all_identities() -> Result<Vec<Box<dyn Identity>>> {
+    // Get identity files first
+    let identity_files = get_all_identity_files().await;
+    let ssh_identity_files = get_all_ssh_identity_files();
+
+    // Now process identities without holding them across await points
     let mut identities: Vec<Box<dyn Identity>> = Vec::new();
 
     // Check MISE_AGE_KEY environment variable
     if let Ok(age_key) = env::var("MISE_AGE_KEY") {
         if !age_key.is_empty() {
-            if let Ok(identity_file) = IdentityFile::from_buffer(age_key.as_bytes()) {
-                if let Ok(mut file_identities) = identity_file.into_identities() {
-                    identities.append(&mut file_identities);
+            // First try to parse as a raw age secret key
+            for line in age_key.lines() {
+                let line = line.trim();
+                if line.starts_with("AGE-SECRET-KEY-") {
+                    if let Ok(identity) = line.parse::<age::x25519::Identity>() {
+                        identities.push(Box::new(identity));
+                    }
+                }
+            }
+
+            // If no keys were found, try parsing as an identity file
+            if identities.is_empty() {
+                if let Ok(identity_file) = IdentityFile::from_buffer(age_key.as_bytes()) {
+                    if let Ok(mut file_identities) = identity_file.into_identities() {
+                        identities.append(&mut file_identities);
+                    }
                 }
             }
         }
     }
 
     // Load from identity files
-    let identity_files = get_all_identity_files().await;
     for path in identity_files {
         if path.exists() {
             match file::read_to_string(&path) {
@@ -256,7 +306,6 @@ async fn load_all_identities() -> Result<Vec<Box<dyn Identity>>> {
     }
 
     // Load SSH identities
-    let ssh_identity_files = get_all_ssh_identity_files();
     for path in ssh_identity_files {
         if path.exists() {
             match std::fs::File::open(&path) {

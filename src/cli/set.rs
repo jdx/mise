@@ -9,6 +9,7 @@ use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
 use crate::env::{self};
 use crate::file::display_path;
+use crate::task::agecrypt;
 use crate::ui::table;
 use eyre::{Result, bail};
 use tabled::Tabled;
@@ -44,6 +45,28 @@ pub struct Set {
     #[clap(long, value_name = "ENV_KEY", verbatim_doc_comment, visible_aliases = ["rm", "unset"], hide = true)]
     remove: Option<Vec<String>>,
 
+    /// [experimental] Encrypt the value with age before storing
+    #[clap(long, requires = "env_vars")]
+    age_encrypt: bool,
+
+    /// [experimental] Age recipient (x25519 public key) for encryption
+    ///
+    /// Can be used multiple times. Requires --age-encrypt.
+    #[clap(long, value_name = "RECIPIENT", requires = "age_encrypt")]
+    age_recipient: Vec<String>,
+
+    /// [experimental] SSH recipient (public key or path) for age encryption
+    ///
+    /// Can be used multiple times. Requires --age-encrypt.
+    #[clap(long, value_name = "PATH_OR_PUBKEY", requires = "age_encrypt")]
+    age_ssh_recipient: Vec<String>,
+
+    /// [experimental] Age identity file for encryption
+    ///
+    /// Defaults to ~/.config/mise/age.txt if it exists
+    #[clap(long, value_name = "PATH", requires = "age_encrypt", value_hint = clap::ValueHint::FilePath)]
+    age_key_file: Option<PathBuf>,
+
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
     #[clap(value_name = "ENV_VAR", verbatim_doc_comment)]
@@ -51,7 +74,7 @@ pub struct Set {
 }
 
 impl Set {
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
         if self.complete {
             return self.complete().await;
         }
@@ -76,7 +99,7 @@ impl Set {
             }
         }
 
-        if let Some(env_vars) = self.env_vars {
+        if let Some(env_vars) = &self.env_vars {
             if env_vars.len() == 1 && env_vars[0].value.is_none() {
                 let key = &env_vars[0].key;
                 match config.env_entries()?.into_iter().find_map(|ev| match ev {
@@ -88,10 +111,28 @@ impl Set {
                 }
                 return Ok(());
             }
-            for ev in env_vars {
-                match ev.value {
-                    Some(value) => mise_toml.update_env(&ev.key, value)?,
-                    None => bail!("{} has no value", ev.key),
+        }
+
+        if let Some(env_vars) = self.env_vars.take() {
+            // Handle age encryption if requested
+            if self.age_encrypt {
+                for ev in env_vars {
+                    match ev.value {
+                        Some(value) => {
+                            // Collect recipients for each value (we can't clone them)
+                            let recipients = self.collect_age_recipients().await?;
+                            let encrypted = agecrypt::encrypt_value(&value, recipients).await?;
+                            mise_toml.update_env(&ev.key, encrypted)?;
+                        }
+                        None => bail!("{} has no value", ev.key),
+                    }
+                }
+            } else {
+                for ev in env_vars {
+                    match ev.value {
+                        Some(value) => mise_toml.update_env(&ev.key, value)?,
+                        None => bail!("{} has no value", ev.key),
+                    }
                 }
             }
         }
@@ -197,6 +238,56 @@ impl Set {
         } else {
             Ok(config::local_toml_config_path())
         }
+    }
+
+    async fn collect_age_recipients(&self) -> Result<Vec<Box<dyn age::Recipient + Send>>> {
+        use age::Recipient;
+
+        let mut recipients: Vec<Box<dyn Recipient + Send>> = Vec::new();
+
+        // Add x25519 recipients from command line
+        for recipient_str in &self.age_recipient {
+            if let Some(recipient) = agecrypt::parse_recipient(recipient_str)? {
+                recipients.push(recipient);
+            }
+        }
+
+        // Add SSH recipients from command line
+        for ssh_arg in &self.age_ssh_recipient {
+            let path = Path::new(ssh_arg);
+            if path.exists() {
+                // It's a file path
+                recipients.push(agecrypt::load_ssh_recipient_from_path(path).await?);
+            } else {
+                // Try to parse as a direct SSH public key
+                if let Some(recipient) = agecrypt::parse_recipient(ssh_arg)? {
+                    recipients.push(recipient);
+                }
+            }
+        }
+
+        // If no recipients were provided, use defaults
+        if recipients.is_empty()
+            && (self.age_recipient.is_empty()
+                && self.age_ssh_recipient.is_empty()
+                && self.age_key_file.is_none())
+        {
+            recipients = agecrypt::load_recipients_from_defaults().await?;
+        }
+
+        // Load recipients from key file if specified
+        if let Some(key_file) = &self.age_key_file {
+            let key_file_recipients = agecrypt::load_recipients_from_key_file(key_file).await?;
+            recipients.extend(key_file_recipients);
+        }
+
+        if recipients.is_empty() {
+            bail!(
+                "[experimental] No age recipients provided. Use --age-recipient, --age-ssh-recipient, or --age-key-file"
+            );
+        }
+
+        Ok(recipients)
     }
 }
 
