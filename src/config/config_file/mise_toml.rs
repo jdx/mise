@@ -1141,7 +1141,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     python_create_args: venv.python_create_args,
                                     options: EnvDirectiveOptions {
                                         tools: true,
-                                        redact: false,
+                                        redact: Some(false),
                                         required: RequiredValue::False,
                                     },
                                 });
@@ -1160,6 +1160,11 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             enum Val {
                                 AgeComplex {
                                     age: AgeComplexVal,
+                                },
+                                AgeWithOptions {
+                                    age: String,
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
                                 },
                                 AgeSimple {
                                     age: String,
@@ -1181,6 +1186,8 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 value: String,
                                 #[serde(default)]
                                 format: Option<AgeFormat>,
+                                #[serde(flatten)]
+                                options: EnvDirectiveOptions,
                             }
                             let val_result = map.next_value::<Val>()?;
 
@@ -1191,7 +1198,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         key: key.clone(),
                                         value: age.value.clone(),
                                         format: age.format.clone(),
-                                        options: EnvDirectiveOptions::default(),
+                                        options: age.options.clone(),
                                     };
                                     env.push(directive);
                                     continue;
@@ -1206,6 +1213,16 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     env.push(directive);
                                     continue;
                                 }
+                                Val::AgeWithOptions { age, options } => {
+                                    let directive = EnvDirective::Age {
+                                        key: key.clone(),
+                                        value: age.clone(),
+                                        format: None, // Default format for simplified syntax with options
+                                        options: options.clone(),
+                                    };
+                                    env.push(directive);
+                                    continue;
+                                }
                                 _ => {}
                             }
 
@@ -1213,7 +1230,9 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 Val::Primitive(p) => (Some(p), EnvDirectiveOptions::default()),
                                 Val::Map { value, options } => (Some(value), options),
                                 Val::OptionsOnly { options } => (None, options),
-                                Val::AgeComplex { .. } | Val::AgeSimple { .. } => unreachable!(), // Already handled above
+                                Val::AgeComplex { .. }
+                                | Val::AgeSimple { .. }
+                                | Val::AgeWithOptions { .. } => unreachable!(), // Already handled above
                             };
 
                             // Validate that required cannot be used with any value
