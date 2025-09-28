@@ -1,12 +1,13 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
+use heck::ToShoutySnakeCase;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
 use std::env::consts::{ARCH, OS};
 use std::fmt::Display;
 use std::iter::Iterator;
-use std::sync::LazyLock as Lazy;
+use std::sync::{LazyLock as Lazy, Mutex};
 use strum::IntoEnumIterator;
 use url::Url;
 
@@ -33,18 +34,30 @@ pub struct RegistryBackend {
     pub platforms: &'static [&'static str],
 }
 
+// Cache for environment variable overrides
+static ENV_BACKENDS: Lazy<Mutex<HashMap<String, &'static str>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
 impl RegistryTool {
     pub fn backends(&self) -> Vec<&'static str> {
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[exe=gt]'
-        let env_key = format!(
-            "MISE_BACKENDS_{}",
-            self.short.to_uppercase().replace('-', "_")
-        );
+        let env_key = format!("MISE_BACKENDS_{}", self.short.to_shouty_snake_case());
+
+        // Check cache first
+        {
+            let cache = ENV_BACKENDS.lock().unwrap();
+            if let Some(&backend) = cache.get(&env_key) {
+                return vec![backend];
+            }
+        }
+
+        // Check environment variable
         if let Ok(env_value) = env::var(&env_key) {
-            // Return the environment variable value as a single backend
-            // We need to leak the string to get a 'static lifetime since the registry expects it
+            // Store in cache with 'static lifetime
             let leaked = Box::leak(env_value.into_boxed_str());
+            let mut cache = ENV_BACKENDS.lock().unwrap();
+            cache.insert(env_key.clone(), leaked);
             return vec![leaked];
         }
 
@@ -192,6 +205,9 @@ mod tests {
         let _config = Config::get().await.unwrap();
         use super::*;
 
+        // Clear the cache first
+        ENV_BACKENDS.lock().unwrap().clear();
+
         // Test with a known tool from the registry
         if let Some(tool) = REGISTRY.get("node") {
             // First test without env var - should return default backends
@@ -212,6 +228,7 @@ mod tests {
             unsafe {
                 env::remove_var("MISE_BACKENDS_NODE");
             }
+            ENV_BACKENDS.lock().unwrap().clear();
         }
     }
 }
