@@ -84,17 +84,10 @@ If none are found, the command fails with an error asking you to provide recipie
 
 ## Settings
 
-```toml
-[settings.age]
-# Path to age identity file used for both encryption (to derive recipient) and decryption
-key_file = "~/.config/mise/age.txt"
-
-# Additional identity files to try for decryption
-identity_files = ["~/.config/mise/age.txt", "~/.age/keys.txt"]
-
-# SSH identity files to try for decryption
-ssh_identity_files = ["~/.ssh/id_ed25519", "~/.ssh/id_rsa"]
-```
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="age" :level="2" />
 
 ## Notes
 
