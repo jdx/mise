@@ -19,7 +19,7 @@ use versions::Versioning;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::config::config_file::{ConfigFile, TaskConfig, config_trust_root, trust, trust_check};
 use crate::config::config_file::{config_root, toml::deserialize_arr};
-use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions};
+use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions, RequiredValue};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config};
 use crate::file::{create_dir_all, display_path};
@@ -1094,6 +1094,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     options: EnvDirectiveOptions {
                                         tools: true,
                                         redact: false,
+                                        required: RequiredValue::False,
                                     },
                                 });
                             }
@@ -1115,20 +1116,51 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
+                                OptionsOnly {
+                                    #[serde(flatten)]
+                                    options: EnvDirectiveOptions,
+                                },
                             }
                             let (value, options) = match map.next_value::<Val>()? {
-                                Val::Primitive(p) => (p, EnvDirectiveOptions::default()),
-                                Val::Map { value, options } => (value, options),
+                                Val::Primitive(p) => (Some(p), EnvDirectiveOptions::default()),
+                                Val::Map { value, options } => (Some(value), options),
+                                Val::OptionsOnly { options } => (None, options),
                             };
+
+                            // Validate that required cannot be used with any value
+                            if options.required.is_required() {
+                                match &value {
+                                    Some(_) => {
+                                        return Err(serde::de::Error::custom(format!(
+                                            "Environment variable '{}' cannot have both 'value' and 'required'. The 'required' flag means the variable must be defined elsewhere (in the environment or a later config file). Remove either the 'value' field or the 'required' flag.",
+                                            key
+                                        )));
+                                    }
+                                    None => {
+                                        // Required without a value is valid - it means the variable must be defined elsewhere
+                                    }
+                                }
+                            }
                             let directive = match value {
-                                PrimitiveVal::Str(s) => EnvDirective::Val(key, s, options),
-                                PrimitiveVal::Int(i) => {
+                                Some(PrimitiveVal::Str(s)) => EnvDirective::Val(key, s, options),
+                                Some(PrimitiveVal::Int(i)) => {
                                     EnvDirective::Val(key, i.to_string(), options)
                                 }
-                                PrimitiveVal::Bool(true) => {
+                                Some(PrimitiveVal::Bool(true)) => {
                                     EnvDirective::Val(key, "true".to_string(), options)
                                 }
-                                PrimitiveVal::Bool(false) => EnvDirective::Rm(key, options),
+                                Some(PrimitiveVal::Bool(false)) => EnvDirective::Rm(key, options),
+                                None => {
+                                    // No value provided - this creates a required variable that must be defined elsewhere
+                                    if !options.required.is_required() {
+                                        return Err(serde::de::Error::custom(format!(
+                                            "Environment variable '{}' has no value. Either provide a value or set required=true to indicate it must be defined elsewhere.",
+                                            key
+                                        )));
+                                    }
+                                    // For required variables without a value, we create a Required directive
+                                    EnvDirective::Required(key, options)
+                                }
                             };
                             env.push(directive);
                         }
