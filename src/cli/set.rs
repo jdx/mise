@@ -123,8 +123,7 @@ impl Set {
                             match agecrypt::decrypt_value(&value).await {
                                 Ok(decrypted) => miseprintln!("{decrypted}"),
                                 Err(e) => {
-                                    debug!("[experimental] Failed to decrypt {}: {}", key, e);
-                                    miseprintln!("{value}"); // Fall back to showing encrypted value
+                                    bail!("[experimental] Failed to decrypt {}: {}", key, e);
                                 }
                             }
                         } else {
@@ -133,8 +132,7 @@ impl Set {
                                 match agecrypt::decrypt_value(&value).await {
                                     Ok(decrypted) => miseprintln!("{decrypted}"),
                                     Err(e) => {
-                                        debug!("[experimental] Failed to decrypt {}: {}", key, e);
-                                        miseprintln!("{value}"); // Fall back to showing encrypted value
+                                        bail!("[experimental] Failed to decrypt {}: {}", key, e);
                                     }
                                 }
                             } else {
