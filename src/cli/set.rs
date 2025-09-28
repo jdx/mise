@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::args::EnvVarArg;
@@ -11,7 +10,7 @@ use crate::env::{self};
 use crate::file::display_path;
 use crate::ui::table;
 use demand::Input;
-use eyre::{Result, bail};
+use eyre::{Result, bail, eyre};
 use tabled::Tabled;
 
 /// Set environment variables in mise.toml
@@ -79,6 +78,29 @@ pub struct Set {
 }
 
 impl Set {
+    /// Decrypt a value if it's encrypted, otherwise return it as-is
+    async fn decrypt_value_if_needed(
+        key: &str,
+        value: &str,
+        directive: Option<&EnvDirective>,
+    ) -> Result<String> {
+        // If we have an Age directive, use the specialized decryption
+        if let Some(EnvDirective::Age { .. }) = directive {
+            agecrypt::decrypt_age_directive(directive.unwrap())
+                .await
+                .map_err(|e| eyre!("[experimental] Failed to decrypt {}: {}", key, e))
+        }
+        // Check for old format encrypted values
+        else if agecrypt::is_age_encrypted(value) {
+            agecrypt::decrypt_value(value)
+                .await
+                .map_err(|e| eyre!("[experimental] Failed to decrypt {}: {}", key, e))
+        }
+        // Not encrypted, return as-is
+        else {
+            Ok(value.to_string())
+        }
+    }
     pub async fn run(mut self) -> Result<()> {
         if self.complete {
             return self.complete().await;
@@ -94,8 +116,6 @@ impl Set {
         }
 
         let filename = self.filename()?;
-        let config = MiseToml::from_file(&filename).unwrap_or_default();
-
         let mut mise_toml = get_mise_toml(&filename)?;
 
         if let Some(env_names) = &self.remove {
@@ -107,38 +127,12 @@ impl Set {
         if let Some(env_vars) = &self.env_vars {
             if env_vars.len() == 1 && env_vars[0].value.is_none() {
                 let key = &env_vars[0].key;
-                match config.env_entries()?.into_iter().find_map(|ev| match ev {
-                    EnvDirective::Val(k, v, _) if &k == key => Some((v, false)),
-                    EnvDirective::Age {
-                        key: k,
-                        value: v,
-                        format: _,
-                        ..
-                    } if &k == key => Some((v, true)),
-                    _ => None,
-                }) {
-                    Some((value, is_age)) => {
-                        if is_age {
-                            // Decrypt age-encrypted values
-                            match agecrypt::decrypt_value(&value).await {
-                                Ok(decrypted) => miseprintln!("{decrypted}"),
-                                Err(e) => {
-                                    bail!("[experimental] Failed to decrypt {}: {}", key, e);
-                                }
-                            }
-                        } else {
-                            // Check for old format encrypted values
-                            if agecrypt::is_age_encrypted(&value) {
-                                match agecrypt::decrypt_value(&value).await {
-                                    Ok(decrypted) => miseprintln!("{decrypted}"),
-                                    Err(e) => {
-                                        bail!("[experimental] Failed to decrypt {}: {}", key, e);
-                                    }
-                                }
-                            } else {
-                                miseprintln!("{value}");
-                            }
-                        }
+                // Use Config's centralized env loading which handles decryption
+                let full_config = Config::get().await?;
+                let env = full_config.env().await?;
+                match env.get(key) {
+                    Some(value) => {
+                        miseprintln!("{value}");
                     }
                     None => bail!("Environment variable {key} not found"),
                 }
@@ -242,30 +236,10 @@ impl Set {
         if config_path.is_none() {
             let config = Config::get().await?;
             let env_with_sources = config.env_with_sources().await?;
-            // For global config, fall back to the old logic using rows
-            let vars = filter
-                .iter()
-                .filter_map(|ev| {
-                    env_with_sources
-                        .iter()
-                        .find(|(k, _)| k.as_str() == ev.key.as_str())
-                        .map(|(k, (v, _))| (k.clone(), v.clone()))
-                })
-                .collect::<HashMap<String, String>>();
-
+            // env_with_sources already contains decrypted values
             for eva in filter {
-                if let Some(value) = vars.get(&eva.key) {
-                    // Check for old format encrypted values
-                    if agecrypt::is_age_encrypted(value) {
-                        match agecrypt::decrypt_value(value).await {
-                            Ok(decrypted) => miseprintln!("{decrypted}"),
-                            Err(e) => {
-                                bail!("[experimental] Failed to decrypt {}: {}", eva.key, e);
-                            }
-                        }
-                    } else {
-                        miseprintln!("{value}");
-                    }
+                if let Some((value, _source)) = env_with_sources.get(&eva.key) {
+                    miseprintln!("{value}");
                 } else {
                     bail!("Environment variable {} not found", eva.key);
                 }
@@ -280,41 +254,16 @@ impl Set {
         let env_entries = config.env_entries()?;
         for eva in filter {
             match env_entries.iter().find_map(|ev| match ev {
-                EnvDirective::Val(k, v, _) if k == &eva.key => Some((v.clone(), ev.clone())),
+                EnvDirective::Val(k, v, _) if k == &eva.key => Some((v.clone(), Some(ev))),
                 EnvDirective::Age {
                     key: k, value: v, ..
-                } if k == &eva.key => Some((v.clone(), ev.clone())),
+                } if k == &eva.key => Some((v.clone(), Some(ev))),
                 _ => None,
             }) {
                 Some((value, directive)) => {
-                    match directive {
-                        EnvDirective::Age { .. } => {
-                            // This is an EnvDirective::Age - use decrypt_age_directive
-                            match agecrypt::decrypt_age_directive(&directive).await {
-                                Ok(decrypted) => miseprintln!("{decrypted}"),
-                                Err(e) => {
-                                    bail!("[experimental] Failed to decrypt {}: {}", eva.key, e);
-                                }
-                            }
-                        }
-                        _ => {
-                            // Check for old format encrypted values
-                            if agecrypt::is_age_encrypted(&value) {
-                                match agecrypt::decrypt_value(&value).await {
-                                    Ok(decrypted) => miseprintln!("{decrypted}"),
-                                    Err(e) => {
-                                        bail!(
-                                            "[experimental] Failed to decrypt {}: {}",
-                                            eva.key,
-                                            e
-                                        );
-                                    }
-                                }
-                            } else {
-                                miseprintln!("{value}");
-                            }
-                        }
-                    }
+                    let decrypted =
+                        Self::decrypt_value_if_needed(&eva.key, &value, directive).await?;
+                    miseprintln!("{decrypted}");
                 }
                 None => bail!("Environment variable {} not found", eva.key),
             }
