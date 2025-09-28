@@ -1,6 +1,8 @@
 # Direct age Encryption <Badge type="warning" text="experimental" />
 
-Encrypt individual environment variable values directly in `mise.toml` using [age](https://github.com/FiloSottile/age).
+Encrypt individual environment variable values directly in `mise.toml` using [age](https://github.com/FiloSottile/age) encryption. The age tool is not required—mise has support built-in.
+
+This is a simple method of storing encrypted environment variables directly in `mise.toml`. You can use it simply by running `mise set --age-encrypt <key>=<value>`. By default, mise will use your ssh key (`~/.ssh/id_ed25519` or `~/.ssh/id_rsa`) if it exists.
 
 - **Inline storage**: values live alongside other env vars in `mise.toml`
 - **Multiple recipients**: x25519 age keys and SSH recipients
@@ -8,7 +10,7 @@ Encrypt individual environment variable values directly in `mise.toml` using [ag
 
 ## Quick start
 
-1. Generate an age key (if needed):
+1. [optional] Generate an age key (if you want to create a new age key and don't want to use your ssh key):
 
 ```bash
 age-keygen -o ~/.config/mise/age.txt
@@ -18,30 +20,24 @@ age-keygen -o ~/.config/mise/age.txt
 2. Encrypt a value:
 
 ```bash
-# Using x25519 age key
-mise set SECRET_API_KEY="my-secret-value" --age-encrypt \
-  --age-recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p
-
-# Or using SSH key
-mise set DB_PASSWORD="password123" --age-encrypt \
-  --age-ssh-recipient ~/.ssh/id_ed25519.pub
+mise set --age-encrypt --prompt DB_PASSWORD
+# Enter value for DB_PASSWORD: [hidden input]
 ```
+
+::: warning
+It's recommended to use `--prompt` to avoid accidentally exposing the value to your shell history. You don't have to though, you can use `mise set --age-encrypt DB_PASSWORD="password123"`.
+:::
 
 3. Values are stored encrypted in `mise.toml` as an age directive:
 
 ```toml
 [env]
-SECRET_API_KEY = { age = { value = "<base64>", format = "raw" } }
-DB_PASSWORD    = { age = { value = "<base64>", format = "zstd" } }
+DB_PASSWORD = { age = { value = "<base64>" } }
 ```
 
 4. Decryption happens automatically:
 
 ```bash
-# Using env var with raw private key or identity file content
-export MISE_AGE_KEY="AGE-SECRET-KEY-1..."
-# or: export MISE_AGE_KEY="$(cat ~/.config/mise/age.txt)"
-
 mise env  # Variables are decrypted automatically
 ```
 
@@ -51,7 +47,7 @@ mise env  # Variables are decrypted automatically
 - `--age-recipient <KEY>` — x25519 recipient (can be set multiple times)
 - `--age-ssh-recipient <PATH|KEY>` — SSH public key or path to `.pub`/private key (can be set multiple times)
 - `--age-key-file <PATH>` — use recipients derived from an age identity file
-- `--prompt` — prompt for the value (input is hidden when encrypting)
+- `--prompt` — prompt for the value to avoid accidentally exposing it to your shell history
 
 If no recipients are provided explicitly, mise will try defaults (see below).
 
@@ -61,8 +57,6 @@ Encrypted values are stored as base64 along with a `format` field:
 
 - `format = "raw"` — uncompressed ciphertext (typically for small values)
 - `format = "zstd"` — zstd-compressed ciphertext (used when ciphertext > 1KB)
-
-Legacy string values with prefixes `age64:v1:` and `age64:zstd:v1:` are also supported for decryption.
 
 ## Decryption identities
 
@@ -105,4 +99,4 @@ ssh_identity_files = ["~/.ssh/id_ed25519", "~/.ssh/id_rsa"]
 ## Notes
 
 - Feature is experimental; flags and behavior may change.
-- `mise set KEY` will print the decrypted value when possible; if decryption fails, it prints the encrypted value instead.
+- `mise set KEY` will print the decrypted value

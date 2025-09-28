@@ -53,7 +53,6 @@ opt-level = 3
 
 [dependencies]
 age = { version = "0.11", features = ["ssh"] }
-atty = "0.2"
 async-backtrace = "0.2"
 async-trait = "0.1"
 aws-lc-rs = { version = "1", optional = true, features = [
@@ -122,7 +121,6 @@ reqwest = { version = "0.12", default-features = false, features = [
 rmcp = { version = "0.3", features = ["server", "transport-io", "schemars"] }
 rmcp-macros = "0.3"
 rmp-serde = "1"
-rpassword = "7"
 rops = { version = "0.1", default-features = false, features = [
   "aes-gcm",
   "sha2",
