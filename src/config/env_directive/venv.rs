@@ -177,7 +177,7 @@ mod tests {
                         python_create_args: None,
                         options: EnvDirectiveOptions {
                             tools: true,
-                            redact: false,
+                            redact: Some(false),
                             required: crate::config::env_directive::RequiredValue::False,
                         },
                     },
@@ -192,7 +192,7 @@ mod tests {
                         python_create_args: None,
                         options: EnvDirectiveOptions {
                             tools: true,
-                            redact: false,
+                            redact: Some(false),
                             required: crate::config::env_directive::RequiredValue::False,
                         },
                     },

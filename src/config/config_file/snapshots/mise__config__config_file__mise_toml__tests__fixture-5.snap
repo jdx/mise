@@ -9,7 +9,7 @@ MiseToml(~/fixtures/.mise.toml): ToolRequestSet: terraform@1.0.0 node@18 node@pr
             "production",
             EnvDirectiveOptions {
                 tools: false,
-                redact: false,
+                redact: None,
                 required: False,
             },
         ),
