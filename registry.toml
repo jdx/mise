@@ -416,8 +416,7 @@ backends = [
   "asdf:asdf-community/asdf-bitwarden-secrets-manager",
 ]
 description = "CLI for interacting with the Bitwarden Secrets Manager"
-# TODO: enable test when versions host is updated
-# test = ["bws --version", "bws {{version}}"]
+test = ["bws --version", "bws {{version}}"]
 
 [tools.black]
 backends = ["aqua:psf/black"]
@@ -1889,8 +1888,7 @@ backends = [
   "asdf:mise-plugins/mise-grain",
 ]
 description = "The Grain compiler toolchain and CLI. Home of the modern web staple"
-# TODO: enable test when versions host is updated
-# test = ["grain --version", "{{version}}"]
+test = ["grain --version", "{{version}}"]
 
 [tools.granted]
 backends = ["aqua:common-fate/granted", "asdf:dex4er/asdf-granted"]
@@ -2076,11 +2074,7 @@ backends = ["github:ddworken/hishtory", "asdf:asdf-community/asdf-hishtory"]
 description = "Your shell history: synced, queryable, and in context"
 
 [tools.hivemind]
-backends = [
-  "ubi:DarthSim/hivemind",
-  "github:DarthSim/hivemind",
-  "go:github.com/DarthSim/hivemind",
-]
+backends = ["github:DarthSim/hivemind", "go:github.com/DarthSim/hivemind"]
 description = "Process manager for Procfile-based applications"
 test = ["hivemind --version", "Hivemind version {{version}}"]
 
@@ -2367,10 +2361,12 @@ description = "Little helper to run CNCF's k3s in Docker"
 test = ["k3d --version", "k3d version v{{version}}"]
 
 [tools.k3kcli]
-backends = ['ubi:rancher/k3k[tag_regex=v\d]', "asdf:xanmanning/asdf-k3kcli"]
+backends = [
+  'ubi:rancher/k3k[tag_regex=v\\d,matching=k3kcli]',
+  "asdf:xanmanning/asdf-k3kcli",
+]
 description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to create and manage isolated K3s clusters within your existing Kubernetes environment"
-# TODO: enable tests after versions host update
-# test = ["k3k version", "k3k version {{version}}"]
+test = ["k3k --version", "k3kcli version v{{version}}"]
 
 [tools.k3s]
 backends = ["asdf:mise-plugins/mise-k3s"]
@@ -2760,8 +2756,7 @@ backends = [
   "asdf:jonasb/asdf-libsql-server",
 ]
 description = "server mode of libSQL, which is a fork of SQLite that is both Open Source, and Open Contributions"
-# TODO: enable test when versions host is updated
-# test = ["sqld --version", "sqld sqld {{version}}"]
+test = ["sqld --version", "sqld sqld {{version}}"]
 
 [tools.license-plist]
 backends = [
@@ -4961,6 +4956,7 @@ test = ["zigmod version", "{{version}}"]
 [tools.zizmor]
 backends = ["aqua:zizmorcore/zizmor", "ubi:zizmorcore/zizmor", "cargo:zizmor"]
 description = "Static analysis for GitHub Actions"
+test = ["zizmor --version", "zizmor {{version}}"]
 
 [tools.zls]
 backends = ["aqua:zigtools/zls", "ubi:zigtools/zls"]
