@@ -121,7 +121,7 @@ MISE_EXPERIMENTAL=true mise set ENCRYPTED_VALUE="encrypted" --age-encrypt --age-
 # In strict mode, should fail when no key is available
 assert_fail "MISE_EXPERIMENTAL=true mise set ENCRYPTED_VALUE"
 
-# Test that mise env also fails when no key available
+# Test that mise env also fails when no key available (with encrypted values present)
 assert_fail "MISE_EXPERIMENTAL=true mise env"
 
 # Test mixed encrypted and plain values in mise env

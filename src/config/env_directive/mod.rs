@@ -13,7 +13,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::{cmp::PartialEq, sync::Arc};
 
-use super::{Config, Settings};
+use super::Config;
 
 mod file;
 mod module;
@@ -112,7 +112,7 @@ pub struct EnvDirectiveOptions {
     pub(crate) required: RequiredValue,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EnvDirective {
     /// simple key/value pair
     Val(String, String, EnvDirectiveOptions),
@@ -377,8 +377,11 @@ impl EnvResults {
                                 }
                             }
                             Err(e) => {
-                                debug!("[experimental] Failed to decrypt {}: {}", k, e);
-                                // In non-strict mode, the encrypted value is returned
+                                debug!(
+                                    "[experimental] Failed to decrypt {}: {}, falling back to encrypted value",
+                                    k, e
+                                );
+                                // Fall back to encrypted string - don't fail the entire operation
                             }
                         }
                     }
@@ -402,12 +405,27 @@ impl EnvResults {
                     // Required directives don't set any value - they only validate during validation phase
                     // The actual value must come from the initial environment or a later config file
                 }
-                EnvDirective::Age { key: ref k, .. } => {
-                    Settings::get().ensure_experimental("age encryption")?;
+                EnvDirective::Age {
+                    key: ref k,
+                    value: ref v,
+                    ..
+                } => {
+                    // Only check experimental when actually decrypting, not just when encountering age directives
+                    // The check is moved to the decrypt_age_directive function
                     // Decrypt age-encrypted value
-                    let mut decrypted_v = crate::agecrypt::decrypt_age_directive(&directive)
+                    let mut decrypted_v = match crate::agecrypt::decrypt_age_directive(&directive)
                         .await
-                        .map_err(|e| eyre!("[experimental] Failed to decrypt {}: {}", k, e))?;
+                    {
+                        Ok(decrypted) => decrypted,
+                        Err(e) => {
+                            debug!(
+                                "[experimental] Failed to decrypt {}: {}, falling back to encrypted value",
+                                k, e
+                            );
+                            // Fall back to the base64-encoded encrypted value
+                            v.clone()
+                        }
+                    };
 
                     // Parse as template after decryption
                     decrypted_v = r.parse_template(&ctx, &mut tera, &source, &decrypted_v)?;

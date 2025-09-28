@@ -218,6 +218,14 @@ impl Set {
             Some(file.clone())
         } else if self.env.is_some() {
             Some(self.filename()?)
+        } else if !self.global {
+            // Check for local config file when no specific file or environment is specified
+            let local_path = self.filename()?;
+            if local_path.exists() {
+                Some(local_path)
+            } else {
+                None // Fall back to global config if no local config exists
+            }
         } else {
             None
         };
@@ -246,8 +254,7 @@ impl Set {
                         match agecrypt::decrypt_value(value).await {
                             Ok(decrypted) => miseprintln!("{decrypted}"),
                             Err(e) => {
-                                debug!("[experimental] Failed to decrypt {}: {}", eva.key, e);
-                                miseprintln!("{value}"); // Fall back to showing encrypted value
+                                bail!("[experimental] Failed to decrypt {}: {}", eva.key, e);
                             }
                         }
                     } else {
@@ -274,12 +281,25 @@ impl Set {
             }) {
                 Some((value, is_age)) => {
                     if is_age {
-                        // Decrypt age-encrypted values
-                        match agecrypt::decrypt_value(&value).await {
-                            Ok(decrypted) => miseprintln!("{decrypted}"),
-                            Err(e) => {
-                                debug!("[experimental] Failed to decrypt {}: {}", eva.key, e);
-                                miseprintln!("{value}"); // Fall back to showing encrypted value
+                        // This is an EnvDirective::Age - use decrypt_age_directive
+                        match config.env_entries()?.into_iter().find_map(|ev| match &ev {
+                            EnvDirective::Age { key, .. } if key == &eva.key => Some(ev),
+                            _ => None,
+                        }) {
+                            Some(age_directive) => {
+                                match agecrypt::decrypt_age_directive(&age_directive).await {
+                                    Ok(decrypted) => miseprintln!("{decrypted}"),
+                                    Err(e) => {
+                                        bail!(
+                                            "[experimental] Failed to decrypt {}: {}",
+                                            eva.key,
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                            None => {
+                                bail!("Age directive for {} not found", eva.key);
                             }
                         }
                     } else {
@@ -288,8 +308,7 @@ impl Set {
                             match agecrypt::decrypt_value(&value).await {
                                 Ok(decrypted) => miseprintln!("{decrypted}"),
                                 Err(e) => {
-                                    debug!("[experimental] Failed to decrypt {}: {}", eva.key, e);
-                                    miseprintln!("{value}"); // Fall back to showing encrypted value
+                                    bail!("[experimental] Failed to decrypt {}: {}", eva.key, e);
                                 }
                             }
                         } else {
