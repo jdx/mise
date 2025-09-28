@@ -103,7 +103,7 @@ pub async fn create_age_directive(
         (encoded, Some(AgeFormat::Zstd))
     } else {
         let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(&encrypted);
-        (encoded, Some(AgeFormat::Raw))
+        (encoded, None) // Use None for raw format (default)
     };
 
     Ok(EnvDirective::Age {

@@ -307,20 +307,23 @@ impl MiseToml {
             .as_table_mut()
             .unwrap();
 
-        // Create the age inline table: {age = {value = "...", format = "..."}}
-        let mut age_table = InlineTable::new();
-        age_table.insert("value", value.into());
-
-        if let Some(fmt) = format {
-            let format_str = match fmt {
-                AgeFormat::Zstd => "zstd",
-                AgeFormat::Raw => "raw",
-            };
-            age_table.insert("format", format_str.into());
-        }
-
+        // Create the age inline table
         let mut outer_table = InlineTable::new();
-        outer_table.insert("age", Value::InlineTable(age_table));
+
+        // Check if we need the complex format or can use simplified form
+        match format {
+            Some(AgeFormat::Zstd) => {
+                // Non-default format, use full form: {age = {value = "...", format = "zstd"}}
+                let mut age_table = InlineTable::new();
+                age_table.insert("value", value.into());
+                age_table.insert("format", "zstd".into());
+                outer_table.insert("age", Value::InlineTable(age_table));
+            }
+            Some(AgeFormat::Raw) | None => {
+                // Default format or no format, use simplified form: {age = "..."}
+                outer_table.insert("age", value.into());
+            }
+        }
 
         let key_parts = key.split('.').collect_vec();
         for (i, k) in key_parts.iter().enumerate() {
@@ -1155,8 +1158,11 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             #[derive(Deserialize)]
                             #[serde(untagged)]
                             enum Val {
-                                Age {
-                                    age: AgeVal,
+                                AgeComplex {
+                                    age: AgeComplexVal,
+                                },
+                                AgeSimple {
+                                    age: String,
                                 },
                                 Map {
                                     value: PrimitiveVal,
@@ -1171,30 +1177,43 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             }
 
                             #[derive(Deserialize)]
-                            struct AgeVal {
+                            struct AgeComplexVal {
                                 value: String,
                                 #[serde(default)]
                                 format: Option<AgeFormat>,
                             }
                             let val_result = map.next_value::<Val>()?;
 
-                            // Handle Age variant separately since it creates a different directive type
-                            if let Val::Age { age } = val_result {
-                                let directive = EnvDirective::Age {
-                                    key: key.clone(),
-                                    value: age.value,
-                                    format: age.format,
-                                    options: EnvDirectiveOptions::default(),
-                                };
-                                env.push(directive);
-                                continue;
+                            // Handle Age variants separately since they create different directive types
+                            match &val_result {
+                                Val::AgeComplex { age } => {
+                                    let directive = EnvDirective::Age {
+                                        key: key.clone(),
+                                        value: age.value.clone(),
+                                        format: age.format.clone(),
+                                        options: EnvDirectiveOptions::default(),
+                                    };
+                                    env.push(directive);
+                                    continue;
+                                }
+                                Val::AgeSimple { age } => {
+                                    let directive = EnvDirective::Age {
+                                        key: key.clone(),
+                                        value: age.clone(),
+                                        format: None, // Default format for simplified syntax
+                                        options: EnvDirectiveOptions::default(),
+                                    };
+                                    env.push(directive);
+                                    continue;
+                                }
+                                _ => {}
                             }
 
                             let (value, options) = match val_result {
                                 Val::Primitive(p) => (Some(p), EnvDirectiveOptions::default()),
                                 Val::Map { value, options } => (Some(value), options),
                                 Val::OptionsOnly { options } => (None, options),
-                                Val::Age { .. } => unreachable!(), // Already handled above
+                                Val::AgeComplex { .. } | Val::AgeSimple { .. } => unreachable!(), // Already handled above
                             };
 
                             // Validate that required cannot be used with any value

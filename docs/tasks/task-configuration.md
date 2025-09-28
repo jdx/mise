@@ -402,4 +402,4 @@ Like `[env]`, vars can also be read in as a file:
 _.file = ".env"
 ```
 
-[Secrets](/environments/secrets) are also supported as vars.
+[Secrets](/environments/secrets/) are also supported as vars.

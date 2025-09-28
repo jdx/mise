@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# Test that mise set and mise use maintain consistent config file format
+export MISE_EXPERIMENTAL=true
+rm -f mise.toml
+
+# Test 1: Age encryption format consistency
+echo "Testing age encryption format consistency..."
+
+# Generate test age key
+age-keygen -o age.txt 2>/dev/null
+AGE_PUBLIC_KEY=$(grep "# public key:" age.txt | cut -d: -f2 | tr -d ' ')
+AGE_SECRET_KEY=$(grep "AGE-SECRET-KEY-" age.txt)
+
+# Test small value uses simplified format
+mise set SMALL_SECRET="test-value" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
+assert_contains "cat mise.toml" 'SMALL_SECRET = { age = "'
+assert_not_contains "cat mise.toml" 'format ='
+
+# Test large value uses complex format
+LARGE_VALUE=$(python3 -c 'print("x" * 2000)')
+mise set LARGE_SECRET="$LARGE_VALUE" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
+assert_contains "cat mise.toml" 'LARGE_SECRET = { age = { value ='
+assert_contains "cat mise.toml" 'format = "zstd"'
+
+# Test that both can be decrypted correctly
+SMALL_RESULT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise set SMALL_SECRET)
+assert "echo $SMALL_RESULT" "test-value"
+
+LARGE_RESULT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise set LARGE_SECRET | head -c 10)
+assert "echo $LARGE_RESULT" "xxxxxxxxxx"
+
+# Test 2: Mixed format consistency
+echo "Testing mixed format consistency..."
+
+# Add regular env var
+mise set REGULAR_VAR="regular-value"
+assert_contains "cat mise.toml" 'REGULAR_VAR = "regular-value"'
+
+# Verify all formats coexist properly
+CONFIG_CONTENT=$(cat mise.toml)
+assert_contains "echo '$CONFIG_CONTENT'" 'REGULAR_VAR = "regular-value"'
+assert_contains "echo '$CONFIG_CONTENT'" 'SMALL_SECRET = { age = "'
+assert_contains "echo '$CONFIG_CONTENT'" 'LARGE_SECRET = { age = { value ='
+
+# Test 3: Environment resolution with mixed formats
+echo "Testing environment resolution..."
+
+ENV_OUTPUT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise env)
+assert_contains "echo '$ENV_OUTPUT'" "REGULAR_VAR=regular-value"
+assert_contains "echo '$ENV_OUTPUT'" "SMALL_SECRET=test-value"
+
+# Test 4: Age key redaction in task execution
+echo "Testing age key redaction..."
+
+# Test that age-encrypted values are automatically redacted in task output
+cat <<EOF >>mise.toml
+[tasks.test-secret]
+run = 'echo "The secret is: \$SMALL_SECRET"'
+EOF
+
+TASK_OUTPUT=$(MISE_AGE_KEY="$AGE_SECRET_KEY" mise run test-secret 2>&1)
+assert_not_contains "echo '$TASK_OUTPUT'" "test-value" # Should not show decrypted value
+assert_contains "echo '$TASK_OUTPUT'" "[redacted]"     # Should show [redacted] instead
+
+# Clean up
+rm -f mise.toml age.txt
+
+echo "All consistency tests passed!"

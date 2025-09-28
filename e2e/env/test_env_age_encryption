@@ -10,10 +10,10 @@ age-keygen -o age.txt 2>/dev/null
 AGE_PUBLIC_KEY=$(grep "# public key:" age.txt | cut -d: -f2 | tr -d ' ')
 AGE_SECRET_KEY=$(grep "AGE-SECRET-KEY-" age.txt)
 
-# Test encrypting a small value (should not compress, uses new TOML format)
+# Test encrypting a small value (should not compress, uses simplified TOML format)
 MISE_EXPERIMENTAL=true mise set SMALL_SECRET="my-secret-value" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
-assert_contains "cat mise.toml" 'SMALL_SECRET = { age = {'
-assert_contains "cat mise.toml" 'format = "raw"'
+assert_contains "cat mise.toml" 'SMALL_SECRET = { age = "'
+assert_not_contains "cat mise.toml" 'format ='
 
 # Test decrypting the value with mise set
 RESULT=$(MISE_EXPERIMENTAL=true MISE_AGE_KEY="$AGE_SECRET_KEY" mise set SMALL_SECRET)
@@ -26,10 +26,10 @@ assert_contains "MISE_EXPERIMENTAL=true MISE_AGE_KEY=\"$AGE_SECRET_KEY\" mise en
 ENV_OUTPUT=$(MISE_EXPERIMENTAL=true MISE_AGE_KEY="$AGE_SECRET_KEY" mise env)
 assert_contains "echo '$ENV_OUTPUT'" "SMALL_SECRET=my-secret-value"
 
-# Test encrypting a large value (should compress, uses new TOML format)
+# Test encrypting a large value (should compress, uses complex TOML format)
 LARGE_VALUE=$(python3 -c 'print("x" * 2000)')
 MISE_EXPERIMENTAL=true mise set LARGE_SECRET="$LARGE_VALUE" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
-assert_contains "cat mise.toml" 'LARGE_SECRET = { age = {'
+assert_contains "cat mise.toml" 'LARGE_SECRET = { age = { value ='
 assert_contains "cat mise.toml" 'format = "zstd"'
 
 # Test decrypting the large value with mise set
