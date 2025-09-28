@@ -21,43 +21,12 @@ pub fn is_age_encrypted(value: &str) -> bool {
     value.starts_with(PREFIX_COMPRESSED) || value.starts_with(PREFIX_UNCOMPRESSED)
 }
 
-pub async fn encrypt_value(
-    value: &str,
-    recipients: &[Box<dyn Recipient + Send>],
-) -> Result<String> {
-    if recipients.is_empty() {
-        return Err(eyre!(
-            "[experimental] No age recipients provided for encryption"
-        ));
-    }
-
-    let encryptor =
-        match Encryptor::with_recipients(recipients.iter().map(|r| r.as_ref() as &dyn Recipient)) {
-            Ok(encryptor) => encryptor,
-            Err(e) => return Err(eyre!("[experimental] Failed to create encryptor: {}", e)),
-        };
-
-    let mut encrypted = Vec::new();
-    let mut writer = encryptor.wrap_output(&mut encrypted)?;
-    writer.write_all(value.as_bytes())?;
-    writer.finish()?;
-
-    // Only compress if the encrypted value is larger than the threshold
-    if encrypted.len() > COMPRESSION_THRESHOLD {
-        let compressed = zstd::encode_all(&encrypted[..], ZSTD_COMPRESSION_LEVEL)?;
-        let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(&compressed);
-        Ok(format!("{}{}", PREFIX_COMPRESSED, encoded))
-    } else {
-        let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(&encrypted);
-        Ok(format!("{}{}", PREFIX_UNCOMPRESSED, encoded))
-    }
-}
-
 pub async fn decrypt_value(encrypted: &str) -> Result<String> {
-    let (is_compressed, encoded) = if encrypted.starts_with(PREFIX_COMPRESSED) {
-        (true, &encrypted[PREFIX_COMPRESSED.len()..])
-    } else if encrypted.starts_with(PREFIX_UNCOMPRESSED) {
-        (false, &encrypted[PREFIX_UNCOMPRESSED.len()..])
+    let (is_compressed, encoded) = if let Some(stripped) = encrypted.strip_prefix(PREFIX_COMPRESSED)
+    {
+        (true, stripped)
+    } else if let Some(stripped) = encrypted.strip_prefix(PREFIX_UNCOMPRESSED) {
+        (false, stripped)
     } else {
         return Err(eyre!(
             "[experimental] Value does not have age encryption prefix"
