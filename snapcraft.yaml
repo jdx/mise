@@ -14,7 +14,7 @@ contact:
 donation:
   - https://github.com/sponsors/jdx
 
-grade: stable
+grade: devel
 confinement: strict
 
 platforms:
