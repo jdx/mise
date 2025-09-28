@@ -1157,10 +1157,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             enum Val {
                                 Age {
                                     age: AgeVal,
-                                    #[serde(flatten)]
-                                    options: EnvDirectiveOptions,
                                 },
-                                Primitive(PrimitiveVal),
                                 Map {
                                     value: PrimitiveVal,
                                     #[serde(flatten)]
@@ -1170,6 +1167,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
+                                Primitive(PrimitiveVal),
                             }
 
                             #[derive(Deserialize)]
@@ -1181,12 +1179,12 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             let val_result = map.next_value::<Val>()?;
 
                             // Handle Age variant separately since it creates a different directive type
-                            if let Val::Age { age, options } = val_result {
+                            if let Val::Age { age } = val_result {
                                 let directive = EnvDirective::Age {
                                     key: key.clone(),
                                     value: age.value,
                                     format: age.format,
-                                    options,
+                                    options: EnvDirectiveOptions::default(),
                                 };
                                 env.push(directive);
                                 continue;

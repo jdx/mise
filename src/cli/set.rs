@@ -220,11 +220,19 @@ impl Set {
             Some(self.filename()?)
         } else if !self.global {
             // Check for local config file when no specific file or environment is specified
-            let local_path = self.filename()?;
-            if local_path.exists() {
-                Some(local_path)
+            // Check for mise.toml in current directory first
+            let cwd = env::current_dir()?;
+            let mise_toml = cwd.join("mise.toml");
+            if mise_toml.exists() {
+                Some(mise_toml)
             } else {
-                None // Fall back to global config if no local config exists
+                // Fall back to .mise.toml if mise.toml doesn't exist
+                let dot_mise_toml = cwd.join(".mise.toml");
+                if dot_mise_toml.exists() {
+                    Some(dot_mise_toml)
+                } else {
+                    None // Fall back to global config if no local config exists
+                }
             }
         } else {
             None
