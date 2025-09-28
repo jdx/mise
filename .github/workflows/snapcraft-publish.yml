@@ -1,0 +1,55 @@
+name: snapcraft-publish
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish-snapcraft:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        tranche: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      #
+      # Build
+      #
+      - uses: snapcore/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79 # v1.3.0
+        with:
+          snapcraft-channel: beta
+        id: snapbuild
+
+      - name: Quick test for snap packages
+        run: sudo snap install --dangerous ${{ steps.snapcraft.outputs.snap }}
+
+      #
+      # Test
+      #
+      - run: mise -v
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
+      - run: mise i
+      - name: Run e2e tests
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3.0.2
+        env:
+          TEST_TRANCHE: ${{matrix.tranche}}
+          TEST_TRANCHE_COUNT: 8
+          TEST_ALL: 1
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          command: ./e2e/run_all_tests
+
+      #
+      # Publish
+      #
+      - uses: snapcore/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40 # v1.2.0
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.snapbuild.outputs.snap }}
+          release: stable
