@@ -6,7 +6,7 @@ export MISE_EXPERIMENTAL=true
 rm -f mise.toml age.txt
 
 # Generate test age key
-age-keygen -o age.txt 2>/dev/null
+mise x age -- age-keygen -o age.txt 2>/dev/null
 AGE_PUBLIC_KEY=$(grep "# public key:" age.txt | cut -d: -f2 | tr -d ' ')
 AGE_SECRET_KEY=$(grep "AGE-SECRET-KEY-" age.txt)
 
@@ -46,7 +46,7 @@ assert_contains "echo '$ENV_BASH'" "export SMALL_SECRET=my-secret-value"
 assert_contains "echo '$ENV_BASH'" "export ANOTHER_SECRET=another-value"
 
 # Test with multiple recipients
-age-keygen -o age2.txt 2>/dev/null
+mise x age -- age-keygen -o age2.txt 2>/dev/null
 AGE_PUBLIC_KEY2=$(grep "# public key:" age2.txt | cut -d: -f2 | tr -d ' ')
 AGE_SECRET_KEY2=$(grep "AGE-SECRET-KEY-" age2.txt)
 
