@@ -9,7 +9,7 @@ expression: cf.env_entries().unwrap()
         EnvDirectiveOptions {
             tools: false,
             redact: false,
-            required: false,
+            required: False,
         },
     ),
 ]

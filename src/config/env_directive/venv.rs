@@ -178,7 +178,7 @@ mod tests {
                         options: EnvDirectiveOptions {
                             tools: true,
                             redact: false,
-                            required: false,
+                            required: crate::config::env_directive::RequiredValue::False,
                         },
                     },
                     Default::default(),
@@ -193,7 +193,7 @@ mod tests {
                         options: EnvDirectiveOptions {
                             tools: true,
                             redact: false,
-                            required: false,
+                            required: crate::config::env_directive::RequiredValue::False,
                         },
                     },
                     Default::default(),
