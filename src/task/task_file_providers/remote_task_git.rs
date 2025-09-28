@@ -102,7 +102,7 @@ impl RemoteTaskGit {
     }
 
     fn detect_https(&self, file: &str) -> Result<GitRepoStructure> {
-        let re = Regex::new(r"^git::(?P<url>https://(?P<host>[^/]+)/(?P<repo>.+)\.git)//(?P<path>[^?]+)(\?ref=(?P<branch>[^?]+))?$").unwrap();
+        let re = Regex::new(r"^git::(?P<url>https?://(?P<host>[^/]+)/(?P<repo>.+)\.git)//(?P<path>[^?]+)(\?ref=(?P<branch>[^?]+))?$").unwrap();
 
         if !re.is_match(file) {
             return Err(eyre!("Invalid HTTPS URL"));
@@ -226,6 +226,7 @@ mod tests {
             "git::https://git.acme.com:8080/myorg/example.git//terraform/myfile?ref=master",
             "git::https://myserver.com/example.git//terraform/myfile",
             "git::https://myserver.com/example.git//myfile?ref=master",
+            "git::http://localhost:8080/repo.git//xtasks/lint/ripgrep", // HTTP support for local testing
         ];
 
         for url in test_cases {

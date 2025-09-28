@@ -4,10 +4,51 @@
 # Setup
 #################################################################################
 
+# Clean up any previous server files
+rm -f /tmp/mise_git_http_port /tmp/mise_git_http_ready /tmp/mise_git_http_info
+
+# Start local git HTTP server with OS-assigned port to avoid race conditions
+python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
+SERVER_PID=$!
+
+# Wait for server to be ready (with timeout)
+wait_for_server() {
+	local max_attempts=30 # 30 seconds timeout
+	local attempt=1
+
+	while [ $attempt -le $max_attempts ]; do
+		if [ -f /tmp/mise_git_http_ready ] && [ -f /tmp/mise_git_http_port ]; then
+			return 0
+		fi
+		sleep 1
+		attempt=$((attempt + 1))
+	done
+
+	echo "ERROR: Git HTTP server failed to start within 30 seconds"
+	kill "$SERVER_PID" 2>/dev/null || true
+	exit 1
+}
+
+wait_for_server
+
+# Read the actual port from the file
+SERVER_PORT=$(cat /tmp/mise_git_http_port)
+LOCAL_GIT_URL="http://localhost:${SERVER_PORT}/repo.git"
+
+# Update cache directory paths for local server
 REMOTE_TASKS_DIR="${MISE_CACHE_DIR}/remote-git-tasks-cache"
-MISE_V2025117_CACHE_DIR="${REMOTE_TASKS_DIR}/791bacd406835a949d44cc2ac1106e0e4475d131ccc56b2540846d661bf5ff5c"
+# Hash for localhost URL will be different than GitHub URL
+LOCAL_CACHE_HASH=$(echo -n "${LOCAL_GIT_URL}v2025.1.17" | shasum -a 256 | cut -d' ' -f1)
+MISE_LOCAL_CACHE_DIR="${REMOTE_TASKS_DIR}/${LOCAL_CACHE_HASH}"
 
 cargo init --name hello_cargo
+
+# Ensure cleanup on exit
+cleanup() {
+	kill "$SERVER_PID" 2>/dev/null || true
+	rm -f /tmp/mise_git_http_port /tmp/mise_git_http_ready /tmp/mise_git_http_info
+}
+trap cleanup EXIT
 
 #################################################################################
 # Test remote tasks with no ref
@@ -15,29 +56,29 @@ cargo init --name hello_cargo
 
 cat <<EOF >mise.toml
 [tasks.remote_lint_https_latest]
-file  = "git::https://github.com/jdx/mise.git//xtasks/lint/ripgrep"
+file  = "git::${LOCAL_GIT_URL}//xtasks/lint/ripgrep"
 EOF
 
 assert_contains "mise tasks" "remote_lint_https_latest"
 assert_succeed "mise run remote_lint_https_latest" # Remote task should be downloaded
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+assert_directory_not_exists "${MISE_LOCAL_CACHE_DIR}"
 
 mise cache clear # Clear cache to force redownload
 
 assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_https_latest" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+assert_directory_not_exists "${MISE_LOCAL_CACHE_DIR}"
 
 assert_succeed "mise run remote_lint_https_latest --no-cache" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+assert_directory_not_exists "${MISE_LOCAL_CACHE_DIR}"
 
 assert_succeed "mise run remote_lint_https_latest" # Cache should be used
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+assert_directory_not_exists "${MISE_LOCAL_CACHE_DIR}"
 
 mise cache clear # Clear cache to force redownload
 
@@ -47,28 +88,28 @@ mise cache clear # Clear cache to force redownload
 
 cat <<EOF >mise.toml
 [tasks.remote_lint_https_ref]
-file  = "git::https://github.com/jdx/mise.git//xtasks/lint/ripgrep?ref=v2025.1.17"
+file  = "git::${LOCAL_GIT_URL}//xtasks/lint/ripgrep?ref=v2025.1.17"
 EOF
 
 assert_contains "mise tasks" "remote_lint_https_ref"
 assert_succeed "mise run remote_lint_https_ref" # Remote task should be downloaded
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
-assert_directory_exists "${MISE_V2025117_CACHE_DIR}"
-assert_directory_not_empty "${MISE_V2025117_CACHE_DIR}"
+assert_directory_exists "${MISE_LOCAL_CACHE_DIR}"
+assert_directory_not_empty "${MISE_LOCAL_CACHE_DIR}"
 
 mise cache clear # Clear cache to force redownload
 
 assert_succeed "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_lint_https_ref" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+assert_directory_not_exists "${MISE_LOCAL_CACHE_DIR}"
 
 assert_succeed "mise run remote_lint_https_ref --no-cache" # Remote task should be redownloaded
 assert_directory_not_exists "${REMOTE_TASKS_DIR}"
-assert_directory_not_exists "${MISE_V2025117_CACHE_DIR}"
+assert_directory_not_exists "${MISE_LOCAL_CACHE_DIR}"
 
 assert_succeed "mise run remote_lint_https_ref" # Cache should be used
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
-assert_directory_exists "${MISE_V2025117_CACHE_DIR}"
-assert_directory_not_empty "${MISE_V2025117_CACHE_DIR}"
+assert_directory_exists "${MISE_LOCAL_CACHE_DIR}"
+assert_directory_not_empty "${MISE_LOCAL_CACHE_DIR}"

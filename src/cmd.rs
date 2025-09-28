@@ -98,7 +98,7 @@ where
 
 pub struct CmdLineRunner<'a> {
     cmd: Command,
-    pr: Option<&'a Box<dyn SingleReport>>,
+    pr: Option<&'a dyn SingleReport>,
     pr_arc: Option<Arc<Box<dyn SingleReport>>>,
     stdin: Option<String>,
     redactions: IndexSet<String>,
@@ -273,7 +273,7 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    pub fn with_pr(mut self, pr: &'a Box<dyn SingleReport>) -> Self {
+    pub fn with_pr(mut self, pr: &'a dyn SingleReport) -> Self {
         self.pr = Some(pr);
         self
     }
@@ -431,7 +431,10 @@ impl<'a> CmdLineRunner<'a> {
             on_stdout(line);
             return;
         }
-        if let Some(pr) = self.pr.or(self.pr_arc.as_deref()) {
+        if let Some(pr) = self
+            .pr
+            .or(self.pr_arc.as_ref().map(|arc| arc.as_ref().as_ref()))
+        {
             if !line.trim().is_empty() {
                 pr.set_message(line)
             }
@@ -448,7 +451,10 @@ impl<'a> CmdLineRunner<'a> {
             on_stderr(line);
             return;
         }
-        match self.pr.or(self.pr_arc.as_deref()) {
+        match self
+            .pr
+            .or(self.pr_arc.as_ref().map(|arc| arc.as_ref().as_ref()))
+        {
             Some(pr) => {
                 if !line.trim().is_empty() {
                     pr.println(line)
@@ -465,7 +471,10 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     fn on_error(&self, output: String, status: ExitStatus) -> Result<()> {
-        match self.pr.or(self.pr_arc.as_deref()) {
+        match self
+            .pr
+            .or(self.pr_arc.as_ref().map(|arc| arc.as_ref().as_ref()))
+        {
             Some(pr) => {
                 error!("{} failed", self.get_program());
                 if !Settings::get().verbose && !output.trim().is_empty() {

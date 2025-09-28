@@ -33,6 +33,19 @@
         "redact": {
           "type": "boolean",
           "description": "redact the value from logs"
+        },
+        "required": {
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "require this environment variable to be defined before mise runs or in a later config file"
+            },
+            {
+              "type": "string",
+              "description": "require this environment variable with user help text on how to set it"
+            }
+          ],
+          "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
         }
       },
       "oneOf": [
@@ -82,6 +95,10 @@
               "redact": {
                 "type": "boolean",
                 "description": "redact the value from logs"
+              },
+              "required": {
+                "type": "boolean",
+                "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false"
               }
             }
           },
@@ -607,6 +624,11 @@
           "default": "30s",
           "description": "Timeout in seconds for all HTTP requests in mise.",
           "type": "string"
+        },
+        "http_retries": {
+          "default": 0,
+          "description": "Number of retries for HTTP requests in mise.",
+          "type": "number"
         },
         "idiomatic_version_file": {
           "default": true,
@@ -1710,8 +1732,28 @@
     },
     "min_version": {
       "description": "minimum version of mise required to use this config",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "type": "string"
+      "oneOf": [
+        {
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hard": {
+              "description": "error if current mise is lower than this version",
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            },
+            "soft": {
+              "description": "warn if current mise is lower than this version",
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            }
+          }
+        }
+      ]
     },
     "redactions": {
       "description": "env or vars keys to redact from logs",

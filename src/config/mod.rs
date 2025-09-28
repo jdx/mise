@@ -15,6 +15,7 @@ use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
+use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
 use crate::config::config_file::{ConfigFile, config_trust_root};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
@@ -34,7 +35,6 @@ pub mod env_directive;
 pub mod settings;
 pub mod tracking;
 
-use crate::cli::self_update::SelfUpdate;
 use crate::env_diff::EnvMap;
 use crate::hook_env::WatchFilePattern;
 use crate::hooks::Hook;
@@ -473,22 +473,36 @@ impl Config {
     }
 
     fn validate(&self) -> eyre::Result<()> {
+        self.validate_versions()?;
+        Ok(())
+    }
+
+    fn validate_versions(&self) -> eyre::Result<()> {
         for cf in self.config_files.values() {
-            if let Some(min) = cf.min_version() {
-                let cur = &*version::V;
-                if cur < min {
-                    let min = style::eyellow(min);
-                    let cur = style::eyellow(cur);
-                    if SelfUpdate::is_available() {
-                        bail!(
-                            "mise version {min} is required, but you are using {cur}\n\
-                            Run `mise self-update` to update mise",
-                        );
-                    } else {
-                        bail!("mise version {min} is required, but you are using {cur}");
-                    }
-                }
+            if let Some(spec) = cf.min_version() {
+                Self::enforce_min_version_spec(spec)?;
             }
+        }
+        Ok(())
+    }
+
+    pub fn enforce_min_version_spec(spec: &MinVersionSpec) -> eyre::Result<()> {
+        let cur = &*version::V;
+        if let Some(required) = spec.hard_violation(cur) {
+            let min = style::eyellow(required);
+            let cur = style::eyellow(cur);
+            let msg = format!("mise version {min} is required, but you are using {cur}");
+            bail!(crate::cli::self_update::append_self_update_instructions(
+                msg
+            ));
+        } else if let Some(recommended) = spec.soft_violation(cur) {
+            let min = style::eyellow(recommended);
+            let cur = style::eyellow(cur);
+            let msg = format!("mise version {min} is recommended, but you are using {cur}");
+            warn!(
+                "{}",
+                crate::cli::self_update::append_self_update_instructions(msg)
+            );
         }
         Ok(())
     }
@@ -516,6 +530,7 @@ impl Config {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::NonToolsOnly,
+                warn_on_missing_required: *env::WARN_ON_MISSING_REQUIRED_ENV,
             },
         )
         .await?;
@@ -1033,6 +1048,74 @@ pub fn local_toml_config_path() -> PathBuf {
         })
 }
 
+/// Options for resolving target config file path
+#[derive(Debug, Default)]
+pub struct ConfigPathOptions {
+    pub global: bool,
+    pub path: Option<PathBuf>,
+    pub env: Option<String>,
+    pub cwd: Option<PathBuf>,
+    pub prefer_toml: bool,
+    pub prevent_home_local: bool,
+}
+
+/// Unified config file path resolution for both `mise use` and `mise set`
+///
+/// This function centralizes the logic for determining which config file to target
+/// based on various options, ensuring consistent behavior between commands.
+pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
+    let cwd = match opts.cwd {
+        Some(ref path) => path.clone(),
+        None => env::current_dir()?,
+    };
+
+    // If path is provided, handle it (file or directory) - explicit paths take precedence
+    if let Some(ref path) = opts.path {
+        if path.is_file() {
+            return Ok(path.clone());
+        } else if path.is_dir() {
+            let resolved = config_file_from_dir(path);
+            if opts.prefer_toml && !resolved.to_string_lossy().ends_with(".toml") {
+                // For TOML-only commands, ensure we get a TOML file in the specified directory
+                return Ok(path.join(&*env::MISE_DEFAULT_CONFIG_FILENAME));
+            }
+            return Ok(resolved);
+        } else {
+            // Path doesn't exist yet, return it as-is
+            return Ok(path.clone());
+        }
+    }
+
+    // If global flag is set and no explicit path provided, use global config
+    if opts.global {
+        return Ok(global_config_path());
+    }
+
+    // If env-specific config is requested
+    if let Some(ref env_name) = opts.env {
+        let dotfile_path = cwd.join(format!(".mise.{}.toml", env_name));
+        if dotfile_path.exists() {
+            return Ok(dotfile_path);
+        } else {
+            return Ok(cwd.join(format!("mise.{}.toml", env_name)));
+        }
+    }
+
+    // If we're in HOME directory and prevent_home_local is true, use global config
+    if opts.prevent_home_local && env::in_home_dir() {
+        return Ok(global_config_path());
+    }
+
+    // Default: determine based on current directory
+    if opts.prefer_toml {
+        // For mise set, prefer TOML and use local_toml_config_path logic
+        Ok(local_toml_config_path())
+    } else {
+        // For mise use, use existing config_file_from_dir logic which respects ASDF compat
+        Ok(config_file_from_dir(&cwd))
+    }
+}
+
 async fn load_all_config_files(
     config_filenames: &[PathBuf],
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
@@ -1138,6 +1221,7 @@ async fn load_vars(config: &Arc<Config>) -> Result<EnvResults> {
         EnvResolveOptions {
             vars: true,
             tools: ToolsFilter::NonToolsOnly,
+            warn_on_missing_required: false,
         },
     )
     .await?;

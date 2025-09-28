@@ -285,12 +285,12 @@ impl Debug for Git {
 
 #[derive(Default)]
 pub struct CloneOptions<'a> {
-    pr: Option<&'a Box<dyn SingleReport>>,
+    pr: Option<&'a dyn SingleReport>,
     branch: Option<String>,
 }
 
 impl<'a> CloneOptions<'a> {
-    pub fn pr(mut self, pr: &'a Box<dyn SingleReport>) -> Self {
+    pub fn pr(mut self, pr: &'a dyn SingleReport) -> Self {
         self.pr = Some(pr);
         self
     }

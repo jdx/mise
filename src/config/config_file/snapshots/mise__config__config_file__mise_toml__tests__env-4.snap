@@ -1,7 +1,6 @@
 ---
 source: src/config/config_file/mise_toml.rs
 expression: cf
-snapshot_kind: text
 ---
 MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
     min_version: "2024.1.1",
@@ -12,6 +11,7 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
             EnvDirectiveOptions {
                 tools: false,
                 redact: false,
+                required: False,
             },
         ),
         Val(
@@ -20,6 +20,7 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
             EnvDirectiveOptions {
                 tools: false,
                 redact: false,
+                required: False,
             },
         ),
         Val(
@@ -28,6 +29,7 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
             EnvDirectiveOptions {
                 tools: false,
                 redact: false,
+                required: False,
             },
         ),
     ],

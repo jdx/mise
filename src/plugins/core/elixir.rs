@@ -37,13 +37,13 @@ impl ElixirPlugin {
     async fn test_elixir(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("elixir --version".into());
         CmdLineRunner::new(self.elixir_bin(tv))
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
             .arg("--version")
             .execute()
     }
 
-    async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let version = &tv.version;
         let version = if regex!(r"^[0-9]").is_match(version) {
             &format!("v{version}")
@@ -123,7 +123,7 @@ impl Backend for ElixirPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, &ctx.pr).await?;
+        let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path).await?;
         self.verify(ctx, &tv).await?;

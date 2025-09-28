@@ -178,6 +178,7 @@ mod tests {
                         options: EnvDirectiveOptions {
                             tools: true,
                             redact: false,
+                            required: crate::config::env_directive::RequiredValue::False,
                         },
                     },
                     Default::default(),
@@ -192,6 +193,7 @@ mod tests {
                         options: EnvDirectiveOptions {
                             tools: true,
                             redact: false,
+                            required: crate::config::env_directive::RequiredValue::False,
                         },
                     },
                     Default::default(),
@@ -200,6 +202,7 @@ mod tests {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::ToolsOnly,
+                warn_on_missing_required: false,
             },
         )
         .await

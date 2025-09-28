@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Test HTTP backend with compressed binaries
+
+# Create a temporary directory for test artifacts
+TEST_DIR="$(mktemp -d)"
+HTTP_PORT=8765
+SERVER_PID=""
+
+# Cleanup function
+cleanup() {
+	if [ -n "$SERVER_PID" ]; then
+		kill "$SERVER_PID" 2>/dev/null || true
+	fi
+	rm -rf "$TEST_DIR"
+	rm -f mise.toml
+}
+trap cleanup EXIT
+
+# Create a simple test binary
+cat >"$TEST_DIR/test-tool" <<'EOF'
+#!/usr/bin/env bash
+echo "test-tool version 1.0.0"
+EOF
+chmod +x "$TEST_DIR/test-tool"
+
+# Create compressed versions of the binary
+echo "Creating compressed binaries..."
+gzip -c "$TEST_DIR/test-tool" >"$TEST_DIR/test-tool-linux-x64.gz"
+xz -c "$TEST_DIR/test-tool" >"$TEST_DIR/test-tool-linux-x64.xz"
+bzip2 -c "$TEST_DIR/test-tool" >"$TEST_DIR/test-tool-linux-x64.bz2"
+
+# Also test with zst if available
+if command -v zstd >/dev/null 2>&1; then
+	zstd -c "$TEST_DIR/test-tool" >"$TEST_DIR/test-tool-linux-x64.zst"
+fi
+
+# Start a simple HTTP server
+echo "Starting HTTP server on port $HTTP_PORT..."
+cd "$TEST_DIR"
+python3 -m http.server $HTTP_PORT --bind 127.0.0.1 >/dev/null 2>&1 &
+SERVER_PID=$!
+
+# Go back to original directory
+cd -
+
+# Wait for server to start
+sleep 2
+
+# Test with different compressed formats
+echo "Testing .gz compressed binary..."
+cat <<EOF >mise.toml
+[tools]
+"http:test-tool-gz" = { version = "1.0.0", url = "http://127.0.0.1:$HTTP_PORT/test-tool-linux-x64.gz", bin = "test-tool" }
+EOF
+mise install
+assert_contains "mise x -- test-tool" "test-tool version 1.0.0"
+mise uninstall --all
+
+echo "Testing .xz compressed binary..."
+cat <<EOF >mise.toml
+[tools]
+"http:test-tool-xz" = { version = "1.0.0", url = "http://127.0.0.1:$HTTP_PORT/test-tool-linux-x64.xz", bin = "test-tool" }
+EOF
+mise install
+assert_contains "mise x -- test-tool" "test-tool version 1.0.0"
+mise uninstall --all
+
+echo "Testing .bz2 compressed binary..."
+cat <<EOF >mise.toml
+[tools]
+"http:test-tool-bz2" = { version = "1.0.0", url = "http://127.0.0.1:$HTTP_PORT/test-tool-linux-x64.bz2", bin = "test-tool" }
+EOF
+mise install
+assert_contains "mise x -- test-tool" "test-tool version 1.0.0"
+mise uninstall --all
+
+if [ -f "$TEST_DIR/test-tool-linux-x64.zst" ]; then
+	echo "Testing .zst compressed binary..."
+	cat <<EOF >mise.toml
+[tools]
+"http:test-tool-zst" = { version = "1.0.0", url = "http://127.0.0.1:$HTTP_PORT/test-tool-linux-x64.zst", bin = "test-tool" }
+EOF
+	mise install
+	assert_contains "mise x -- test-tool" "test-tool version 1.0.0"
+	mise uninstall --all
+fi
+
+# Test with a tar.gz archive for comparison
+echo "Creating tar.gz archive..."
+mkdir -p "$TEST_DIR/archive"
+cp "$TEST_DIR/test-tool" "$TEST_DIR/archive/"
+tar czf "$TEST_DIR/test-tool-archive.tar.gz" -C "$TEST_DIR" archive
+
+echo "Testing .tar.gz archive..."
+cat <<EOF >mise.toml
+[tools]
+"http:test-tool-archive" = { version = "1.0.0", url = "http://127.0.0.1:$HTTP_PORT/test-tool-archive.tar.gz", bin_path = "archive", bin = "test-tool" }
+EOF
+mise install
+assert_contains "mise x -- test-tool" "test-tool version 1.0.0"
+
+echo "All tests passed!"

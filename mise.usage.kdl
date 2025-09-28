@@ -133,6 +133,9 @@ cmd cache help="Manage the mise cache" {
         flag --outdate help="Mark all cache files as old" hide=#true
         arg "[PLUGIN]…" help="Plugin(s) to clear cache for e.g.: node, python" required=#false var=#true
     }
+    cmd path help="Show the cache directory path" {
+        alias dir
+    }
     cmd prune help="Removes stale mise cache files" {
         alias p
         long_help "Removes stale mise cache files\n\nBy default, this command will remove files that have not been accessed in 30 days.\nChange this with the MISE_CACHE_PRUNE_AGE environment variable."
@@ -702,7 +705,7 @@ cmd set help="Set environment variables in mise.toml" {
     long_help "Set environment variables in mise.toml\n\nBy default, this command modifies `mise.toml` in the current directory.\nUse `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`."
     after_long_help "Examples:\n\n    $ mise set NODE_ENV=production\n\n    $ mise set NODE_ENV\n    production\n\n    $ mise set -E staging NODE_ENV=staging\n    # creates or modifies mise.staging.toml\n\n    $ mise set\n    key       value       source\n    NODE_ENV  production  ~/.config/mise/config.toml\n"
     flag --file help="The TOML file to update" {
-        long_help "The TOML file to update\n\nDefaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`."
+        long_help "The TOML file to update\n\nCan be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.\nDefaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`."
         arg <FILE>
     }
     flag --complete help="Render completions" hide=#true
