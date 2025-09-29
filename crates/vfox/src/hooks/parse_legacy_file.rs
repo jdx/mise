@@ -39,6 +39,19 @@ impl IntoLua for LegacyFileContext {
     fn into_lua(self, lua: &Lua) -> mlua::Result<Value> {
         let table = lua.create_table()?;
         table.set("args", self.args)?;
+        table.set(
+            "filename",
+            self.filepath
+                .file_name()
+                .ok_or(LuaError::RuntimeError(String::from(
+                    "No basename for legacy file",
+                )))?
+                .to_os_string()
+                .into_string()
+                .or(Err(LuaError::RuntimeError(String::from(
+                    "Could not convert basename to string",
+                ))))?,
+        )?;
         table.set("filepath", self.filepath.to_string_lossy().to_string())?;
         table.set(
             "getInstalledVersions",

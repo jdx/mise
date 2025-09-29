@@ -171,7 +171,7 @@ impl Backend for SwiftPlugin {
         Ok(versions)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         if Settings::get().experimental {
             Ok(vec![".swift-version".into()])
         } else {

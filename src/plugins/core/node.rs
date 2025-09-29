@@ -459,11 +459,11 @@ impl Backend for NodePlugin {
         Ok(aliases)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".node-version".into(), ".nvmrc".into()])
     }
 
-    fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
         let body = file::read_to_string(path)?;
         // strip comments
         let body = body.split('#').next().unwrap_or_default().to_string();

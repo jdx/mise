@@ -103,6 +103,39 @@
             }
           },
           {
+            "type": "object",
+            "properties": {
+              "age": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "description": "[experimental] age-encrypted value (simplified format)"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string",
+                        "description": "[experimental] age-encrypted value"
+                      },
+                      "format": {
+                        "type": "string",
+                        "enum": ["raw", "zstd"],
+                        "description": "[experimental] compression format for the encrypted value"
+                      }
+                    },
+                    "required": ["value"],
+                    "additionalProperties": false,
+                    "description": "[experimental] age-encrypted value (complex format)"
+                  }
+                ]
+              }
+            },
+            "required": ["age"],
+            "additionalProperties": false,
+            "description": "[experimental] age-encrypted environment variable"
+          },
+          {
             "type": "string"
           },
           {
@@ -971,6 +1004,30 @@
         "silent": {
           "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
           "type": "boolean"
+        },
+        "age": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "identity_files": {
+              "description": "[experimental] List of age identity files to use for decryption.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "key_file": {
+              "description": "[experimental] Path to the age private key file to use for encryption/decryption.",
+              "type": "string"
+            },
+            "ssh_identity_files": {
+              "description": "[experimental] List of SSH identity files to use for age decryption.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         },
         "sops": {
           "type": "object",

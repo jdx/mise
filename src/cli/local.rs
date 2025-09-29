@@ -117,7 +117,7 @@ pub async fn local(
         "mise local/global are deprecated. Use `mise use` instead."
     );
     let settings = Settings::try_get()?;
-    let cf = config_file::parse_or_init(path)?;
+    let cf = config_file::parse_or_init(path).await?;
     if show_path {
         miseprintln!("{}", path.display());
         return Ok(());

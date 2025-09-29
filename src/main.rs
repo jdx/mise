@@ -29,6 +29,7 @@ mod timings;
 #[macro_use]
 mod cmd;
 
+mod agecrypt;
 mod aqua;
 mod backend;
 pub(crate) mod build_time;

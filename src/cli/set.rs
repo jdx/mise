@@ -1,15 +1,16 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::args::EnvVarArg;
+use crate::agecrypt;
 use crate::config::config_file::ConfigFile;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
-use crate::config::{Config, ConfigPathOptions, resolve_target_config_path};
+use crate::config::{Config, ConfigPathOptions, Settings, resolve_target_config_path};
 use crate::env::{self};
 use crate::file::display_path;
 use crate::ui::table;
-use eyre::{Result, bail};
+use demand::Input;
+use eyre::{Result, bail, eyre};
 use tabled::Tabled;
 
 /// Set environment variables in mise.toml
@@ -44,6 +45,32 @@ pub struct Set {
     #[clap(long, value_name = "ENV_KEY", verbatim_doc_comment, visible_aliases = ["rm", "unset"], hide = true)]
     remove: Option<Vec<String>>,
 
+    /// Prompt for environment variable values
+    #[clap(long)]
+    prompt: bool,
+
+    /// [experimental] Encrypt the value with age before storing
+    #[clap(long, requires = "env_vars")]
+    age_encrypt: bool,
+
+    /// [experimental] Age recipient (x25519 public key) for encryption
+    ///
+    /// Can be used multiple times. Requires --age-encrypt.
+    #[clap(long, value_name = "RECIPIENT", requires = "age_encrypt")]
+    age_recipient: Vec<String>,
+
+    /// [experimental] SSH recipient (public key or path) for age encryption
+    ///
+    /// Can be used multiple times. Requires --age-encrypt.
+    #[clap(long, value_name = "PATH_OR_PUBKEY", requires = "age_encrypt")]
+    age_ssh_recipient: Vec<String>,
+
+    /// [experimental] Age identity file for encryption
+    ///
+    /// Defaults to ~/.config/mise/age.txt if it exists
+    #[clap(long, value_name = "PATH", requires = "age_encrypt", value_hint = clap::ValueHint::FilePath)]
+    age_key_file: Option<PathBuf>,
+
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
     #[clap(value_name = "ENV_VAR", verbatim_doc_comment)]
@@ -51,7 +78,24 @@ pub struct Set {
 }
 
 impl Set {
-    pub async fn run(self) -> Result<()> {
+    /// Decrypt a value if it's encrypted, otherwise return it as-is
+    async fn decrypt_value_if_needed(
+        key: &str,
+        value: &str,
+        directive: Option<&EnvDirective>,
+    ) -> Result<String> {
+        // If we have an Age directive, use the specialized decryption
+        if let Some(EnvDirective::Age { .. }) = directive {
+            agecrypt::decrypt_age_directive(directive.unwrap())
+                .await
+                .map_err(|e| eyre!("[experimental] Failed to decrypt {}: {}", key, e))
+        }
+        // Not encrypted, return as-is
+        else {
+            Ok(value.to_string())
+        }
+    }
+    pub async fn run(mut self) -> Result<()> {
         if self.complete {
             return self.complete().await;
         }
@@ -66,8 +110,6 @@ impl Set {
         }
 
         let filename = self.filename()?;
-        let config = MiseToml::from_file(&filename).unwrap_or_default();
-
         let mut mise_toml = get_mise_toml(&filename)?;
 
         if let Some(env_names) = &self.remove {
@@ -76,22 +118,65 @@ impl Set {
             }
         }
 
-        if let Some(env_vars) = self.env_vars {
+        if let Some(env_vars) = &self.env_vars {
             if env_vars.len() == 1 && env_vars[0].value.is_none() {
                 let key = &env_vars[0].key;
-                match config.env_entries()?.into_iter().find_map(|ev| match ev {
-                    EnvDirective::Val(k, v, _) if &k == key => Some(v),
-                    _ => None,
-                }) {
-                    Some(value) => miseprintln!("{value}"),
+                // Use Config's centralized env loading which handles decryption
+                let full_config = Config::get().await?;
+                let env = full_config.env().await?;
+                match env.get(key) {
+                    Some(value) => {
+                        miseprintln!("{value}");
+                    }
                     None => bail!("Environment variable {key} not found"),
                 }
                 return Ok(());
             }
-            for ev in env_vars {
-                match ev.value {
-                    Some(value) => mise_toml.update_env(&ev.key, value)?,
-                    None => bail!("{} has no value", ev.key),
+        }
+
+        if let Some(mut env_vars) = self.env_vars.take() {
+            // Prompt for values if requested
+            if self.prompt {
+                for ev in &mut env_vars {
+                    if ev.value.is_none() {
+                        let prompt_msg = format!("Enter value for {}", ev.key);
+                        let value = Input::new(&prompt_msg)
+                            .password(self.age_encrypt) // Mask input if encrypting
+                            .run()?;
+                        ev.value = Some(value);
+                    }
+                }
+            }
+
+            // Handle age encryption if requested
+            if self.age_encrypt {
+                Settings::get().ensure_experimental("age encryption")?;
+                // Collect recipients once before the loop to avoid repeated I/O
+                let recipients = self.collect_age_recipients().await?;
+                for ev in env_vars {
+                    match ev.value {
+                        Some(value) => {
+                            let age_directive =
+                                agecrypt::create_age_directive(ev.key.clone(), &value, &recipients)
+                                    .await?;
+                            if let crate::config::env_directive::EnvDirective::Age {
+                                value: encrypted_value,
+                                format,
+                                ..
+                            } = age_directive
+                            {
+                                mise_toml.update_env_age(&ev.key, &encrypted_value, format)?;
+                            }
+                        }
+                        None => bail!("{} has no value", ev.key),
+                    }
+                }
+            } else {
+                for ev in env_vars {
+                    match ev.value {
+                        Some(value) => mise_toml.update_env(&ev.key, value)?,
+                        None => bail!("{} has no value", ev.key),
+                    }
                 }
             }
         }
@@ -114,21 +199,67 @@ impl Set {
     }
 
     async fn get(self) -> Result<()> {
-        let env = self.cur_env().await?;
-        let filter = self.env_vars.unwrap();
-        let vars = filter
-            .iter()
-            .filter_map(|ev| {
-                env.iter()
-                    .find(|r| r.key == ev.key)
-                    .map(|r| (r.key.clone(), r.value.clone()))
-            })
-            .collect::<HashMap<String, String>>();
-        for eva in filter {
-            if let Some(value) = vars.get(&eva.key) {
-                miseprintln!("{value}");
+        // Determine config file path before moving env_vars
+        let config_path = if let Some(file) = &self.file {
+            Some(file.clone())
+        } else if self.env.is_some() {
+            Some(self.filename()?)
+        } else if !self.global {
+            // Check for local config file when no specific file or environment is specified
+            // Check for mise.toml in current directory first
+            let cwd = env::current_dir()?;
+            let mise_toml = cwd.join("mise.toml");
+            if mise_toml.exists() {
+                Some(mise_toml)
             } else {
-                bail!("Environment variable {} not found", eva.key);
+                // Fall back to .mise.toml if mise.toml doesn't exist
+                let dot_mise_toml = cwd.join(".mise.toml");
+                if dot_mise_toml.exists() {
+                    Some(dot_mise_toml)
+                } else {
+                    None // Fall back to global config if no local config exists
+                }
+            }
+        } else {
+            None
+        };
+
+        let filter = self.env_vars.unwrap();
+
+        // Handle global config case first
+        if config_path.is_none() {
+            let config = Config::get().await?;
+            let env_with_sources = config.env_with_sources().await?;
+            // env_with_sources already contains decrypted values
+            for eva in filter {
+                if let Some((value, _source)) = env_with_sources.get(&eva.key) {
+                    miseprintln!("{value}");
+                } else {
+                    bail!("Environment variable {} not found", eva.key);
+                }
+            }
+            return Ok(());
+        }
+
+        // Get the config to access directives directly
+        let config = MiseToml::from_file(&config_path.unwrap()).unwrap_or_default();
+
+        // For local configs, check directives directly
+        let env_entries = config.env_entries()?;
+        for eva in filter {
+            match env_entries.iter().find_map(|ev| match ev {
+                EnvDirective::Val(k, v, _) if k == &eva.key => Some((v.clone(), Some(ev))),
+                EnvDirective::Age {
+                    key: k, value: v, ..
+                } if k == &eva.key => Some((v.clone(), Some(ev))),
+                _ => None,
+            }) {
+                Some((value, directive)) => {
+                    let decrypted =
+                        Self::decrypt_value_if_needed(&eva.key, &value, directive).await?;
+                    miseprintln!("{decrypted}");
+                }
+                None => bail!("Environment variable {} not found", eva.key),
             }
         }
         Ok(())
@@ -146,6 +277,11 @@ impl Set {
                         value,
                         source: display_path(file),
                     }),
+                    EnvDirective::Age { key, value, .. } => Some(Row {
+                        key,
+                        value,
+                        source: display_path(file),
+                    }),
                     _ => None,
                 })
                 .collect()
@@ -158,6 +294,11 @@ impl Set {
                 .into_iter()
                 .filter_map(|ed| match ed {
                     EnvDirective::Val(key, value, _) => Some(Row {
+                        key,
+                        value,
+                        source: display_path(&filename),
+                    }),
+                    EnvDirective::Age { key, value, .. } => Some(Row {
                         key,
                         value,
                         source: display_path(&filename),
@@ -191,6 +332,56 @@ impl Set {
             prevent_home_local: true, // When in HOME, use global config
         };
         resolve_target_config_path(opts)
+    }
+
+    async fn collect_age_recipients(&self) -> Result<Vec<Box<dyn age::Recipient + Send>>> {
+        use age::Recipient;
+
+        let mut recipients: Vec<Box<dyn Recipient + Send>> = Vec::new();
+
+        // Add x25519 recipients from command line
+        for recipient_str in &self.age_recipient {
+            if let Some(recipient) = agecrypt::parse_recipient(recipient_str)? {
+                recipients.push(recipient);
+            }
+        }
+
+        // Add SSH recipients from command line
+        for ssh_arg in &self.age_ssh_recipient {
+            let path = Path::new(ssh_arg);
+            if path.exists() {
+                // It's a file path
+                recipients.push(agecrypt::load_ssh_recipient_from_path(path).await?);
+            } else {
+                // Try to parse as a direct SSH public key
+                if let Some(recipient) = agecrypt::parse_recipient(ssh_arg)? {
+                    recipients.push(recipient);
+                }
+            }
+        }
+
+        // If no recipients were provided, use defaults
+        if recipients.is_empty()
+            && (self.age_recipient.is_empty()
+                && self.age_ssh_recipient.is_empty()
+                && self.age_key_file.is_none())
+        {
+            recipients = agecrypt::load_recipients_from_defaults().await?;
+        }
+
+        // Load recipients from key file if specified
+        if let Some(key_file) = &self.age_key_file {
+            let key_file_recipients = agecrypt::load_recipients_from_key_file(key_file).await?;
+            recipients.extend(key_file_recipients);
+        }
+
+        if recipients.is_empty() {
+            bail!(
+                "[experimental] No age recipients provided. Use --age-recipient, --age-ssh-recipient, or --age-key-file"
+            );
+        }
+
+        Ok(recipients)
     }
 }
 
@@ -226,5 +417,15 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise set</bold>
     key       value       source
     NODE_ENV  production  ~/.config/mise/config.toml
+
+    $ <bold>mise set --prompt PASSWORD</bold>
+    Enter value for PASSWORD: [hidden input]
+
+    <bold><underline>[experimental] Age Encryption:</underline></bold>
+
+    $ <bold>mise set --age-encrypt API_KEY=secret</bold>
+
+    $ <bold>mise set --age-encrypt --prompt API_KEY</bold>
+    Enter value for API_KEY: [hidden input]
 "#
 );

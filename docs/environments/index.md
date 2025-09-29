@@ -332,7 +332,7 @@ _.file = [
 You can set [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files in any
 directory.
 
-See [secrets](/environments/secrets) for ways to read encrypted files with `env._.file`.
+See [secrets](/environments/secrets/) for ways to read encrypted files with `env._.file`.
 
 ### `env._.path`
 

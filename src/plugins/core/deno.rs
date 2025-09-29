@@ -110,7 +110,7 @@ impl Backend for DenoPlugin {
         Ok(versions)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".deno-version".into()])
     }
 

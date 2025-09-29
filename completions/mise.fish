@@ -7,14 +7,10 @@ if ! type -p usage &> /dev/null
     echo "See https://usage.jdx.dev for more information." >&2
     return 1
 end
-
-if ! set -q _usage_spec_mise_2025_9_22
-  set -g _usage_spec_mise_2025_9_22 (mise usage | string collect)
-end
 set -l tmpdir (if set -q TMPDIR; echo $TMPDIR; else; echo /tmp; end)
-set -l spec_file "$tmpdir/usage__usage_spec_mise_2025_9_22.spec"
+set -l spec_file "$tmpdir/usage__usage_spec_mise_2025_9_23.spec"
 if not test -f "$spec_file"
-    echo $_usage_spec_mise_2025_9_22 > "$spec_file"
+    mise usage | string collect > "$spec_file"
 end
 
 set -l tokens

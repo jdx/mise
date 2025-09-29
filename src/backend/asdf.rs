@@ -293,7 +293,7 @@ impl Backend for AsdfBackend {
         Ok(aliases)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         if let Some(data) = &self.toml.list_idiomatic_filenames.data {
             return Ok(self.plugin.parse_idiomatic_filenames(data));
         }
@@ -311,7 +311,7 @@ impl Backend for AsdfBackend {
             .cloned()
     }
 
-    fn parse_idiomatic_file(&self, idiomatic_file: &Path) -> Result<String> {
+    async fn parse_idiomatic_file(&self, idiomatic_file: &Path) -> Result<String> {
         if let Some(cached) = self.fetch_cached_idiomatic_file(idiomatic_file)? {
             return Ok(cached);
         }

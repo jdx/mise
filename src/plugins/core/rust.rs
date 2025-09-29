@@ -84,7 +84,7 @@ impl Backend for RustPlugin {
         Ok(versions)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         if Settings::get().experimental {
             Ok(vec!["rust-toolchain.toml".into()])
         } else {
@@ -92,7 +92,7 @@ impl Backend for RustPlugin {
         }
     }
 
-    fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
         let rt = parse_idiomatic_file(path)?;
         Ok(rt.channel)
     }
