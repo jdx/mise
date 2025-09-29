@@ -25,7 +25,7 @@ jobs:
         id: snapbuild
 
       - name: Quick test for snap packages
-        run: sudo snap install --dangerous ${{ steps.snapcraft.outputs.snap }}
+        run: sudo snap install --dangerous ${{ steps.snapbuild.outputs.snap }}
 
       #
       # Test
