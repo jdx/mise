@@ -161,5 +161,27 @@ ENV_FISH=$(MISE_EXPERIMENTAL=true mise env -s fish)
 assert_contains "echo '$ENV_FISH'" "set -gx PLAIN_VAR plain-value"
 assert_contains "echo '$ENV_FISH'" "set -gx ENCRYPTED_VAR encrypted-value"
 
+# Test --prompt flag with age encryption
+rm -f mise.toml
+cat <<EOF >~/.config/mise/age.txt
+$AGE_SECRET_KEY
+EOF
+
+# Test that --prompt works even when variable doesn't exist yet
+# This simulates: mise set --age-encrypt PROMPT_SECRET --prompt
+# User would enter "prompt-value" when prompted
+echo "prompt-value" | MISE_EXPERIMENTAL=true mise set --age-encrypt PROMPT_SECRET --prompt
+RESULT=$(MISE_EXPERIMENTAL=true mise set PROMPT_SECRET)
+assert "echo $RESULT" "prompt-value"
+
+# Verify it's actually encrypted in the file
+assert_contains "cat mise.toml" 'PROMPT_SECRET = { age = "'
+
+# Test that --prompt works even when variable already exists
+# This should re-prompt and overwrite
+echo "new-prompt-value" | MISE_EXPERIMENTAL=true mise set --age-encrypt PROMPT_SECRET --prompt
+RESULT=$(MISE_EXPERIMENTAL=true mise set PROMPT_SECRET)
+assert "echo $RESULT" "new-prompt-value"
+
 # Clean up
 rm -f mise.toml age.txt age2.txt ~/.config/mise/age.txt
