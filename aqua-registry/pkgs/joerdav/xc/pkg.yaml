@@ -1,6 +1,0 @@
-packages:
-  - name: joerdav/xc@v0.8.6
-  - name: joerdav/xc
-    version: v0.0.43
-  - name: joerdav/xc
-    version: v0.0.30

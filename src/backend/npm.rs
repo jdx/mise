@@ -37,8 +37,15 @@ impl Backend for NPMBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        // TODO: Add bun support for listing package versions without npm
+        // Currently bun info requires a package.json file, so we always use npm.
+        // Once bun provides a way to query registry without package.json, we can
+        // switch to using bun when npm.bun=true
+        self.ensure_npm_for_version_check(config).await;
         timeout::run_with_timeout_async(
             async || {
+                // Always use npm for listing versions since bun info requires package.json
+                // bun is only used for actual package installation
                 let raw = cmd!(NPM_PROGRAM, "view", self.tool_name(), "versions", "--json")
                     .full_env(self.dependency_env(config).await?)
                     .read()?;
@@ -51,12 +58,17 @@ impl Backend for NPMBackend {
     }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
+        // TODO: Add bun support for getting latest version without npm
+        // See TODO in _list_remote_versions for details
+        self.ensure_npm_for_version_check(config).await;
         let cache = self.latest_version_cache.lock().await;
         let this = self;
         timeout::run_with_timeout_async(
             async || {
                 cache
                     .get_or_try_init_async(async || {
+                        // Always use npm for getting version info since bun info requires package.json
+                        // bun is only used for actual package installation
                         let raw =
                             cmd!(NPM_PROGRAM, "view", this.tool_name(), "dist-tags", "--json")
                                 .full_env(this.dependency_env(config).await?)
@@ -76,13 +88,14 @@ impl Backend for NPMBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        self.check_install_deps(&ctx.config).await;
         if Settings::get().npm.bun {
             CmdLineRunner::new("bun")
                 .arg("install")
                 .arg(format!("{}@{}", self.tool_name(), tv.version))
                 .arg("--global")
                 .arg("--trust")
-                .with_pr(&ctx.pr)
+                .with_pr(ctx.pr.as_ref())
                 .envs(ctx.ts.env_with_path(&ctx.config).await?)
                 .env("BUN_INSTALL_GLOBAL_DIR", tv.install_path())
                 .env("BUN_INSTALL_BIN", tv.install_path().join("bin"))
@@ -102,7 +115,7 @@ impl Backend for NPMBackend {
                 .arg(format!("{}@{}", self.tool_name(), tv.version))
                 .arg("--prefix")
                 .arg(tv.install_path())
-                .with_pr(&ctx.pr)
+                .with_pr(ctx.pr.as_ref())
                 .envs(ctx.ts.env_with_path(&ctx.config).await?)
                 .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                 .prepend_path(
@@ -139,6 +152,47 @@ impl NPMBackend {
                     .build(),
             ),
             ba: Arc::new(ba),
+        }
+    }
+
+    /// Check dependencies for version checking (always needs npm)
+    async fn ensure_npm_for_version_check(&self, config: &Arc<Config>) {
+        // We always need npm for querying package versions
+        // TODO: Once bun supports querying packages without package.json, this can be updated
+        self.warn_if_dependency_missing(
+            config,
+            "npm", // Use "npm" for dependency check, which will check npm.cmd on Windows
+            "To use npm packages with mise, you need to install Node.js first:\n\
+              mise use node@latest\n\n\
+            Note: npm is required for querying package information, even when using bun for installation.",
+        )
+        .await
+    }
+
+    /// Check dependencies for package installation (npm or bun based on settings)
+    async fn check_install_deps(&self, config: &Arc<Config>) {
+        if Settings::get().npm.bun {
+            // In bun mode, only bun is required for installation
+            self.warn_if_dependency_missing(
+                config,
+                "bun",
+                "To use npm packages with bun, you need to install bun first:\n\
+                  mise use bun@latest\n\n\
+                Or switch back to npm by setting:\n\
+                  mise settings npm.bun=false",
+            )
+            .await
+        } else {
+            // In npm mode, npm is required
+            self.warn_if_dependency_missing(
+                config,
+                "npm", // Use "npm" for dependency check, which will check npm.cmd on Windows
+                "To use npm packages with mise, you need to install Node.js first:\n\
+                  mise use node@latest\n\n\
+                Alternatively, you can use bun instead of npm by setting:\n\
+                  mise settings npm.bun=true",
+            )
+            .await
         }
     }
 }

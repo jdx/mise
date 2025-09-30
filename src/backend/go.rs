@@ -1,11 +1,12 @@
+use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::Config;
 use crate::config::Settings;
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
-use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use itertools::Itertools;
 use std::{fmt::Debug, sync::Arc};
@@ -31,6 +32,16 @@ impl Backend for GoBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        // Check if go is available
+        self.warn_if_dependency_missing(
+            config,
+            "go",
+            "To use go packages with mise, you need to install Go first:\n\
+              mise use go@latest\n\n\
+            Or install Go via https://go.dev/dl/",
+        )
+        .await;
+
         timeout::run_with_timeout_async(
             async || {
                 let tool_name = self.tool_name();
@@ -87,6 +98,17 @@ impl Backend for GoBackend {
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
         Settings::get().ensure_experimental("go backend")?;
+
+        // Check if go is available
+        self.warn_if_dependency_missing(
+            &ctx.config,
+            "go",
+            "To use go packages with mise, you need to install Go first:\n\
+              mise use go@latest\n\n\
+            Or install Go via https://go.dev/dl/",
+        )
+        .await;
+
         let opts = self.ba.opts();
 
         let install = async |v| {
@@ -97,7 +119,7 @@ impl Backend for GoBackend {
             }
 
             cmd.arg(format!("{}@{v}", self.tool_name()))
-                .with_pr(&ctx.pr)
+                .with_pr(ctx.pr.as_ref())
                 .envs(self.dependency_env(&ctx.config).await?)
                 .env("GOBIN", tv.install_path().join("bin"))
                 .execute()

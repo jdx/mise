@@ -1,8 +1,0 @@
-packages:
-  - name: grafana/tanka@v0.33.0
-  - name: grafana/tanka
-    version: v0.20.0
-  - name: grafana/tanka
-    version: v0.10.0
-  - name: grafana/tanka
-    version: v0.3.0

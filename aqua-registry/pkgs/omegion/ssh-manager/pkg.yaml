@@ -1,8 +1,0 @@
-packages:
-  - name: omegion/ssh-manager@v1.68.0
-  - name: omegion/ssh-manager
-    version: v0.13.0
-  - name: omegion/ssh-manager
-    version: v0.11.0
-  - name: omegion/ssh-manager
-    version: v0.10.0

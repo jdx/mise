@@ -1,4 +1,0 @@
-packages:
-  - name: hashicorp/copywrite@v0.22.0
-  - name: hashicorp/copywrite
-    version: v0.16.5

@@ -10,7 +10,70 @@ assert_contains "mise env -s bash dummy@1.0.1 | grep PATH" "/installs/dummy/1.0.
 
 cat <<'EOF' >mise.toml
 [env]
+_.path = 'a'
+EOF
+assert "mise dr path" "$PWD/a"
+
+cat <<'EOF' >mise.toml
+[env]
 _.path = ['a', 'b']
 EOF
 assert "mise dr path" "$PWD/a
 $PWD/b"
+
+cat <<'EOF' >mise.toml
+[env]
+_.path = { path = "a", tools = true }
+EOF
+assert "mise dr path" "$PWD/a"
+
+cat <<'EOF' >mise.toml
+[env]
+_.path = { path = ["a"], tools = true }
+EOF
+assert "mise dr path" "$PWD/a"
+
+cat <<'EOF' >mise.toml
+[env]
+_.path = [{ path = "a", tools = true }, "b"]
+EOF
+assert "mise dr path" "$PWD/a
+$PWD/b"
+
+cat <<'EOF' >mise.toml
+[env]
+_.path = { path = "a", tools = true }
+EOF
+assert "mise dr path" "$PWD/a"
+
+cat <<'EOF' >mise.toml
+[env]
+_.path = [{ path = ["a", "b"], tools = true }]
+EOF
+assert "mise dr path" "$PWD/a
+$PWD/b"
+
+cat <<'EOF' >mise.toml
+[[env]]
+_.path = [{ path = "a", tools = true }, "b"]
+[[env]]
+_.path = "c"
+EOF
+assert "mise dr path" "$PWD/a
+$PWD/b
+$PWD/c"
+
+cat <<'EOF' >mise.toml
+[env]
+_.path = ['a', 'b']
+EOF
+mkdir -p sub_dir
+cd sub_dir
+cat <<'EOF' >mise.toml
+[env]
+_.path = ['c', 'd']
+EOF
+assert "mise dr path" "$PWD/c
+$PWD/d
+${PWD%/*}/a
+${PWD%/*}/b"

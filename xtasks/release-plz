@@ -2,22 +2,62 @@
 #MISE description="Release with release-plz"
 set -euxo pipefail
 
+# Ensure this script is only run in GitHub Actions
+if [[ -z ${GITHUB_ACTIONS:-} ]]; then
+	echo "Error: This script must be run in GitHub Actions"
+	echo "The release-plz script should only be executed in the CI/CD pipeline"
+	exit 1
+fi
+
 git config user.name mise-en-dev
 git config user.email release@mise.jdx.dev
+
+exists_on_crates() {
+	crate="$1"
+	version="$2"
+	if cargo info --registry "crates-io" --color never --quiet "$crate" | grep -E "^version:\s+$version$" >/dev/null 2>&1; then
+		return 0
+	fi
+	if curl -fsSL "https://crates.io/api/v1/crates/$crate/$version" >/dev/null 2>&1; then
+		return 0
+	fi
+	return 1
+}
 
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
 latest_version="$(cargo info --registry "crates-io" --color never --quiet mise | grep "^version:" | cut -d' ' -f2)"
 if [[ $cur_version != "$latest_version" ]]; then
 	echo "Releasing $cur_version"
 	cargo set-version "$cur_version" --workspace
-	cargo publish --allow-dirty -p vfox
+	if exists_on_crates vfox "$cur_version"; then
+		echo "vfox@$cur_version already on crates.io, skipping publish"
+	else
+		cargo publish --allow-dirty -p vfox
+	fi
 	cargo add "vfox@$cur_version"
-	cargo publish --allow-dirty -p mise
+
+	if exists_on_crates aqua-registry "$cur_version"; then
+		echo "aqua-registry@$cur_version already on crates.io, skipping publish"
+	else
+		cargo publish --allow-dirty -p aqua-registry
+	fi
+	cargo add "aqua-registry@$cur_version"
+
+	if exists_on_crates mise "$cur_version"; then
+		echo "mise@$cur_version already on crates.io, skipping publish"
+	else
+		cargo publish --allow-dirty -p mise
+	fi
+
 	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
 	changelog="$(echo "$changelog" | tail -n +3)"
-	git tag "v$cur_version" -s -m "$changelog"
-	git push --tags
-	gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog" --draft
+	if git rev-parse -q --verify "refs/tags/v$cur_version" >/dev/null ||
+		git ls-remote --exit-code --tags origin "v$cur_version" >/dev/null 2>&1; then
+		echo "Tag v$cur_version already exists, skipping tag creation"
+	else
+		git tag "v$cur_version" -s -m "$changelog"
+		git push --tags
+	fi
 	exit 0
 fi
 
@@ -39,11 +79,40 @@ sed -i.bak "s/^[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\? macos-arm64 (a1b2d3e 
 sed -i.bak "s/^Version: [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/Version: $version/" packaging/rpm/mise.spec
 sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/version = \"$version\";/" default.nix
 
+# Update GitHub star count using gh CLI
+stars_raw="$(gh api repos/jdx/mise --jq '.stargazers_count')"
+if [[ -n $stars_raw ]]; then
+	if [[ $stars_raw -ge 1000 ]]; then
+		# Format as k notation (e.g., 19346 -> 19.3k)
+		stars_formatted="$(echo "scale=1; $stars_raw / 1000" | bc)k"
+		# Remove trailing .0k
+		stars_formatted="${stars_formatted/.0k/k}"
+	else
+		stars_formatted="$stars_raw"
+	fi
+
+	# Update the stars data file
+	cat >docs/.vitepress/stars.data.ts <<EOF
+// This file is auto-updated by xtasks/release-plz
+// Current star count from GitHub API
+export default {
+  load() {
+    return {
+      stars: "$stars_formatted",
+    };
+  },
+};
+EOF
+	echo "Updated star count to $stars_formatted"
+fi
+
 mise run render ::: lint-fix
 
-rm -rf aqua-registry
-git clone https://github.com/aquaproj/aqua-registry
-rm aqua-registry/.gitattributes
+rm -rf crates/aqua-registry/aqua-registry
+git clone https://github.com/aquaproj/aqua-registry crates/aqua-registry/aqua-registry
+# Keep only pkgs/**/registry.yaml files, remove everything else
+find crates/aqua-registry/aqua-registry -type f ! -path "crates/aqua-registry/aqua-registry/pkgs/*/registry.yaml" ! -name LICENSE -delete
+find crates/aqua-registry/aqua-registry -type d -empty -delete
 
 mise up
 git status
@@ -53,8 +122,9 @@ git add \
 	Cargo.toml \
 	CHANGELOG.md \
 	README.md \
-	aqua-registry \
+	crates/aqua-registry/aqua-registry \
 	default.nix \
+	docs/.vitepress/stars.data.ts \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \
 	completions \

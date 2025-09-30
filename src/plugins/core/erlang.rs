@@ -125,7 +125,7 @@ impl ErlangPlugin {
 
         ctx.pr.set_message(format!("Downloading {filename}"));
         if !tarball_path.exists() {
-            HTTP.download_file(&url, &tarball_path, Some(&ctx.pr))
+            HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
                 .await?;
         }
         ctx.pr.set_message(format!("Extracting {filename}"));
@@ -134,15 +134,16 @@ impl ErlangPlugin {
             &tv.download_path(),
             &TarOptions {
                 strip_components: 0,
-                pr: Some(&ctx.pr),
+                pr: Some(ctx.pr.as_ref()),
                 format: file::TarFormat::TarGz,
+                ..Default::default()
             },
         )?;
 
         self.move_to_install_path(&tv)?;
 
         CmdLineRunner::new(tv.install_path().join("Install"))
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .arg("-minimal")
             .arg(tv.install_path())
             .execute()?;
@@ -197,8 +198,12 @@ impl ErlangPlugin {
         };
         ctx.pr.set_message(format!("Downloading {tarball_name}"));
         let tarball_path = tv.download_path().join(&tarball_name);
-        HTTP.download_file(&asset.browser_download_url, &tarball_path, Some(&ctx.pr))
-            .await?;
+        HTTP.download_file(
+            &asset.browser_download_url,
+            &tarball_path,
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.set_message(format!("Extracting {tarball_name}"));
         file::untar(
@@ -206,8 +211,9 @@ impl ErlangPlugin {
             &tv.install_path(),
             &TarOptions {
                 strip_components: 0,
-                pr: Some(&ctx.pr),
+                pr: Some(ctx.pr.as_ref()),
                 format: file::TarFormat::TarGz,
+                ..Default::default()
             },
         )?;
         Ok(Some(tv))
@@ -240,8 +246,12 @@ impl ErlangPlugin {
         };
         ctx.pr.set_message(format!("Downloading {}", zip_name));
         let zip_path = tv.download_path().join(&zip_name);
-        HTTP.download_file(&asset.browser_download_url, &zip_path, Some(&ctx.pr))
-            .await?;
+        HTTP.download_file(
+            &asset.browser_download_url,
+            &zip_path,
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
         self.verify_checksum(ctx, &mut tv, &zip_path)?;
         ctx.pr.set_message(format!("Extracting {}", zip_name));
         file::unzip(&zip_path, &tv.install_path(), &Default::default())?;

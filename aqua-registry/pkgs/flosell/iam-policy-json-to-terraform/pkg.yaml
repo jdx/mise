@@ -1,4 +1,0 @@
-packages:
-  - name: flosell/iam-policy-json-to-terraform@1.9.1
-  - name: flosell/iam-policy-json-to-terraform
-    version: 1.6.0

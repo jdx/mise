@@ -1,6 +1,0 @@
-packages:
-  - name: golangci/misspell@v0.7.0
-  - name: golangci/misspell
-    version: v0.5.1
-  - name: golangci/misspell
-    version: v0.4.1

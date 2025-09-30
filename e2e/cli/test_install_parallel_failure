@@ -22,7 +22,7 @@ EOF
 
 # Try to install both tools in parallel
 # The dummy tool should fail, but tiny should succeed
-assert_fail "mise install" "Failed to install tool: dummy@other-dummy"
+assert_fail "mise install" "Failed to install asdf:dummy@other-dummy"
 
 # Verify tiny was installed successfully despite dummy failure
 assert_contains "mise ls --installed tiny" "3.1.0"
@@ -45,7 +45,7 @@ mise uninstall jq --all 2>/dev/null || true
 mise uninstall tiny --all 2>/dev/null || true
 
 # Create a scenario with one valid and one invalid tool
-assert_fail "mise install tiny@latest jq@999.999.999" "Failed to install tool: jq@999.999.999"
+assert_fail "mise install tiny@latest jq@999.999.999" "Failed to install aqua:jqlang/jq@999.999.999"
 
 # Verify the valid tool was installed
 assert_contains "mise ls --installed tiny" "3.1.0"

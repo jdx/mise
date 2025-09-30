@@ -81,7 +81,7 @@ impl EnvDiff {
             "--noprofile",
             "-c",
             indoc::formatdoc! {"
-                . {script}
+                . \"{script}\"
                 export -p
             ", script = script.display()}
         )

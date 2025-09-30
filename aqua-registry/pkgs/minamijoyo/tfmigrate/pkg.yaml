@@ -1,4 +1,0 @@
-packages:
-  - name: minamijoyo/tfmigrate@v0.4.3
-  - name: minamijoyo/tfmigrate
-    version: v0.2.12

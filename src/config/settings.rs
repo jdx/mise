@@ -39,6 +39,7 @@ pub enum SettingsType {
     ListString,
     ListPath,
     SetString,
+    IndexMap,
 }
 
 pub struct SettingsMeta {
@@ -136,6 +137,10 @@ impl Settings {
         if settings.raw {
             settings.jobs = 1;
         }
+        // Handle NO_COLOR environment variable
+        if *env::NO_COLOR {
+            settings.color = false;
+        }
         if settings.debug {
             settings.log_level = "debug".to_string();
         }
@@ -176,7 +181,9 @@ impl Settings {
             settings.yes = true;
         }
         if settings.all_compile {
-            settings.node.compile = Some(true);
+            if settings.node.compile.is_none() {
+                settings.node.compile = Some(true);
+            }
             if settings.python.compile.is_none() {
                 settings.python.compile = Some(true);
             }
@@ -335,6 +342,8 @@ impl Settings {
     pub fn reset(cli_settings: Option<SettingsPartial>) {
         *CLI_SETTINGS.lock().unwrap() = cli_settings;
         *BASE_SETTINGS.write().unwrap() = None;
+        // Clear caches that depend on settings and environment
+        crate::config::config_file::config_root::reset();
     }
 
     pub fn ensure_experimental(&self, what: &str) -> Result<()> {
@@ -406,6 +415,12 @@ impl Settings {
 
     pub fn http_timeout(&self) -> Duration {
         duration::parse_duration(&self.http_timeout).unwrap()
+    }
+
+    pub fn task_timeout_duration(&self) -> Option<Duration> {
+        self.task_timeout
+            .as_ref()
+            .and_then(|s| duration::parse_duration(s).ok())
     }
 
     pub fn log_level(&self) -> log::LevelFilter {
@@ -531,4 +546,10 @@ where
         // collect into HashSet to remove duplicates
         .collect::<Result<BTreeSet<_>, _>>()
         .map(|set| set.into_iter().collect())
+}
+
+/// Parse URL replacements from JSON string format
+/// Expected format: {"source_domain": "replacement_domain", ...}
+pub fn parse_url_replacements(input: &str) -> Result<IndexMap<String, String>, serde_json::Error> {
+    serde_json::from_str(input)
 }

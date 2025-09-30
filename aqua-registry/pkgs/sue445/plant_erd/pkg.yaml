@@ -1,4 +1,0 @@
-packages:
-  - name: sue445/plant_erd@v0.4.9
-  - name: sue445/plant_erd
-    version: v0.0.1

@@ -71,6 +71,8 @@ feature-depth = 1
 # output a note when they are encountered.
 ignore = [
   { id = "RUSTSEC-2024-0436", reason = "subdependency cannot be updated" },
+  { id = "RUSTSEC-2024-0370", reason = "proc-macro-error dependency from sigstore crate - no safe upgrade available" },
+  { id = "RUSTSEC-2023-0071", reason = "rsa crate Marvin attack vulnerability from sigstore crate - no safe upgrade available" },
   #"RUSTSEC-0000-0000",
   #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
   #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
@@ -100,6 +102,7 @@ allow = [
   "ISC",
   "MIT",
   "MPL-2.0",
+  "OpenSSL",
   "Unicode-3.0",
   "Zlib",
 ]

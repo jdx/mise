@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::static_helpers::try_with_v_prefix;
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::env::{
@@ -84,12 +85,6 @@ impl Backend for UbiBackend {
 
             Ok(versions
                 .into_iter()
-                // trim 'v' prefixes if they exist
-                .map(|t| match regex!(r"^v[0-9]").is_match(&t) {
-                    true => t[1..].to_string(),
-                    false => t,
-                })
-                .sorted_by_cached_key(|v| !regex!(r"^[0-9]").is_match(v))
                 .filter(|v| {
                     if let Some(re) = opts.get("tag_regex") {
                         let re = tag_regex.get_or_init(|| Regex::new(re).unwrap());
@@ -98,6 +93,12 @@ impl Backend for UbiBackend {
                         true
                     }
                 })
+                // trim 'v' prefixes if they exist
+                .map(|t| match regex!(r"^v[0-9]").is_match(&t) {
+                    true => t[1..].to_string(),
+                    false => t,
+                })
+                .sorted_by_cached_key(|v| !regex!(r"^[0-9]").is_match(v))
                 .rev()
                 .collect())
         }
@@ -108,19 +109,8 @@ impl Backend for UbiBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let mut v = tv.version.to_string();
+        let v = tv.version.to_string();
         let opts = tv.request.options();
-        let forge = match opts.get("provider") {
-            Some(forge) => ForgeType::from_str(forge)?,
-            None => ForgeType::default(),
-        };
-        let api_url = match opts.get("api_url") {
-            Some(api_url) => api_url.strip_suffix("/").unwrap_or(api_url),
-            None => match forge {
-                ForgeType::GitHub => github::API_URL,
-                ForgeType::GitLab => gitlab::API_URL,
-            },
-        };
         let bin_path = opts
             .get("bin_path")
             .cloned()
@@ -128,37 +118,24 @@ impl Backend for UbiBackend {
         let extract_all = opts.get("extract_all").is_some_and(|v| v == "true");
         let bin_dir = tv.install_path();
 
-        if !name_is_url(&self.tool_name()) {
-            let release: Result<_, eyre::Report> = match forge {
-                ForgeType::GitHub => github::get_release_for_url(api_url, &self.tool_name(), &v)
+        if name_is_url(&self.tool_name()) {
+            install(&self.tool_name(), &v, &bin_dir, extract_all, &opts).await?;
+        } else {
+            try_with_v_prefix(&v, None, |candidate| {
+                let opts = opts.clone();
+                let bin_dir = bin_dir.clone();
+                async move {
+                    install(
+                        &self.tool_name(),
+                        &candidate,
+                        &bin_dir,
+                        extract_all,
+                        &opts,
+                    )
                     .await
-                    .map(|_| "github"),
-                ForgeType::GitLab => gitlab::get_release_for_url(api_url, &self.tool_name(), &v)
-                    .await
-                    .map(|_| "gitlab"),
-            };
-            if let Err(err) = release {
-                // this can fail with a rate limit error or 404, either way, try prefixing and if it fails, try without the prefix
-                // if http::error_code(&err) == Some(404) {
-                debug!(
-                    "Failed to get release for {}, trying with 'v' prefix: {}",
-                    tv, err
-                );
-                v = format!("v{v}");
-                // }
-            }
-        }
-
-        if let Err(err) = install(&self.tool_name(), &v, &bin_dir, extract_all, &opts).await {
-            debug!(
-                "Failed to install with ubi version '{}': {}, trying with '{}'",
-                v, err, tv
-            );
-            if let Err(err) =
-                install(&self.tool_name(), &tv.version, &bin_dir, extract_all, &opts).await
-            {
-                bail!("Failed to install with ubi '{}': {}", tv, err);
-            }
+                }
+            })
+            .await?;
         }
 
         let mut possible_exes = vec![
@@ -244,14 +221,14 @@ impl Backend for UbiBackend {
             ctx.pr
                 .set_message(format!("checksum verify {platform_key}"));
             if let Some((algo, check)) = checksum.split_once(':') {
-                hash::ensure_checksum(file, check, Some(&ctx.pr), algo)?;
+                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
             } else {
                 bail!("Invalid checksum: {platform_key}");
             }
         } else if Settings::get().lockfile && Settings::get().experimental {
             ctx.pr
                 .set_message(format!("checksum generate {platform_key}"));
-            let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
+            let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
             platform_info.checksum = Some(format!("blake3:{hash}"));
         }
         Ok(())

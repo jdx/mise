@@ -1,2 +1,0 @@
-packages:
-  - name: golang.org/x/tools/gopls@v0.20.0

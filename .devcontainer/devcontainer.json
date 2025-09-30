@@ -31,6 +31,11 @@
   // Configure tool-specific properties.
   // "customizations": {},
 
+  // Environment variables to set in the container
+  "containerEnv": {
+    "MISE_TRUSTED_CONFIG_PATHS": "/"
+  },
+
   // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
   "remoteUser": "root"
 }

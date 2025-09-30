@@ -2,7 +2,7 @@ use crate::backend::asset_detector;
 use crate::backend::backend_type::BackendType;
 use crate::backend::static_helpers::lookup_platform_key;
 use crate::backend::static_helpers::{
-    get_filename_from_url, install_artifact, template_string, verify_artifact,
+    get_filename_from_url, install_artifact, template_string, try_with_v_prefix, verify_artifact,
 };
 use crate::cli::args::BackendArg;
 use crate::config::Config;
@@ -45,6 +45,10 @@ impl Backend for UnifiedGitBackend {
             let releases = gitlab::list_releases_from_url(api_url.as_str(), &repo).await?;
             Ok(releases
                 .into_iter()
+                .filter(|r| {
+                    opts.get("version_prefix")
+                        .is_none_or(|p| r.tag_name.starts_with(p))
+                })
                 .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
                 .collect())
@@ -52,6 +56,10 @@ impl Backend for UnifiedGitBackend {
             let releases = github::list_releases_from_url(api_url.as_str(), &repo).await?;
             Ok(releases
                 .into_iter()
+                .filter(|r| {
+                    opts.get("version_prefix")
+                        .is_none_or(|p| r.tag_name.starts_with(p))
+                })
                 .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
                 .collect())
@@ -63,13 +71,6 @@ impl Backend for UnifiedGitBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let feature_name = if self.is_gitlab() {
-            "gitlab backend"
-        } else {
-            "github backend"
-        };
-        Settings::get().ensure_experimental(feature_name)?;
-
         let repo = self.repo();
         let opts = tv.request.options();
         let api_url = self.get_api_url(&opts);
@@ -170,12 +171,12 @@ impl UnifiedGitBackend {
         platform_info.url = Some(asset_url.to_string());
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file_with_headers(asset_url, &file_path, &headers, Some(&ctx.pr))
+        HTTP.download_file_with_headers(asset_url, &file_path, &headers, Some(ctx.pr.as_ref()))
             .await?;
 
         // Verify and install
-        verify_artifact(tv, &file_path, opts, Some(&ctx.pr))?;
-        install_artifact(tv, &file_path, opts, Some(&ctx.pr))?;
+        verify_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
+        install_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
         self.verify_checksum(ctx, tv, &file_path)?;
 
         Ok(())
@@ -206,56 +207,6 @@ impl UnifiedGitBackend {
         }
     }
 
-    /// Helper to try both prefixed and non-prefixed tags for a resolver function
-    async fn try_with_v_prefix<F, Fut>(&self, version: &str, resolver: F) -> Result<String>
-    where
-        F: Fn(String) -> Fut,
-        Fut: std::future::Future<Output = Result<String>>,
-    {
-        let mut errors = vec![];
-        let opts = self.ba.opts();
-
-        // Generate candidates based on version prefix configuration
-        let candidates = if let Some(prefix) = opts.get("version_prefix") {
-            // If a custom prefix is configured, try both prefixed and non-prefixed versions
-            if version.starts_with(prefix) {
-                vec![
-                    version.to_string(),
-                    version.trim_start_matches(prefix).to_string(),
-                ]
-            } else {
-                vec![format!("{}{}", prefix, version), version.to_string()]
-            }
-        } else {
-            // Fall back to 'v' prefix logic
-            if version.starts_with('v') {
-                vec![
-                    version.to_string(),
-                    version.trim_start_matches('v').to_string(),
-                ]
-            } else {
-                vec![format!("v{version}"), version.to_string()]
-            }
-        };
-
-        for candidate in candidates {
-            match resolver(candidate.clone()).await {
-                Ok(url) => return Ok(url),
-                Err(e) => {
-                    let is_404 = crate::http::error_code(&e) == Some(404);
-                    if is_404 {
-                        errors.push(e);
-                    } else {
-                        return Err(e);
-                    }
-                }
-            }
-        }
-        Err(errors
-            .pop()
-            .unwrap_or_else(|| eyre::eyre!("No matching release found for {version}")))
-    }
-
     /// Resolves the asset URL using either explicit patterns or auto-detection
     async fn resolve_asset_url(
         &self,
@@ -270,14 +221,15 @@ impl UnifiedGitBackend {
         }
 
         let version = &tv.version;
+        let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
         if self.is_gitlab() {
-            self.try_with_v_prefix(version, |candidate| async move {
+            try_with_v_prefix(version, version_prefix, |candidate| async move {
                 self.resolve_gitlab_asset_url(tv, opts, repo, api_url, &candidate)
                     .await
             })
             .await
         } else {
-            self.try_with_v_prefix(version, |candidate| async move {
+            try_with_v_prefix(version, version_prefix, |candidate| async move {
                 self.resolve_github_asset_url(tv, opts, repo, api_url, &candidate)
                     .await
             })

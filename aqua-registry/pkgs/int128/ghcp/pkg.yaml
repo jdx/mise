@@ -1,6 +1,0 @@
-packages:
-  - name: int128/ghcp@v1.15.0
-  - name: int128/ghcp
-    version: v1.13.0
-  - name: int128/ghcp
-    version: v1.5.0

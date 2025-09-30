@@ -1,4 +1,0 @@
-packages:
-  - name: quantumsheep/sshs@4.7.2
-  - name: quantumsheep/sshs
-    version: 3.4.0

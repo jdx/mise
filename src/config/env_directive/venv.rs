@@ -177,7 +177,8 @@ mod tests {
                         python_create_args: None,
                         options: EnvDirectiveOptions {
                             tools: true,
-                            redact: false,
+                            redact: Some(false),
+                            required: crate::config::env_directive::RequiredValue::False,
                         },
                     },
                     Default::default(),
@@ -191,7 +192,8 @@ mod tests {
                         python_create_args: None,
                         options: EnvDirectiveOptions {
                             tools: true,
-                            redact: false,
+                            redact: Some(false),
+                            required: crate::config::env_directive::RequiredValue::False,
                         },
                     },
                     Default::default(),
@@ -200,6 +202,7 @@ mod tests {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::ToolsOnly,
+                warn_on_missing_required: false,
             },
         )
         .await

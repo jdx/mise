@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+
+# Test to verify inconsistent behavior between `mise set` and `mise use`
+# This test documents the current broken behavior that needs to be fixed
+
+set -euo pipefail
+
+# Track test failures
+test_failures=0
+
+# Disable trust checking for this test
+export MISE_TRUSTED_CONFIG_PATHS="/"
+
+original_home="$HOME"
+test_home="/tmp/test_home_$$"
+test_project="/tmp/test_project_$$"
+
+# Set up test environment
+mkdir -p "$test_home/.config/mise"
+mkdir -p "$test_project"
+export HOME="$test_home"
+
+cleanup() {
+	export HOME="$original_home"
+	rm -rf "$test_home" "$test_project"
+	if [ $test_failures -gt 0 ]; then
+		echo "❌ Test failed with $test_failures failures"
+		exit 1
+	fi
+}
+trap cleanup EXIT
+
+echo "=== Testing consistent behavior between commands ==="
+cd "$test_home"
+
+# Test 1: Both commands should handle global config consistently when explicitly requested
+echo "Test 1: Both commands should handle --global flag consistently"
+mise use --global dummy@1.0.0 >/dev/null 2>&1
+mise set --global TEST_VAR=test_value >/dev/null 2>&1
+echo "✓ Both commands accept --global flag without errors"
+# Note: The actual global config functionality is tested elsewhere
+# This test focuses on config resolution consistency, which is the main PR goal
+
+echo "=== Testing behavior in project directory ==="
+cd "$test_project"
+
+# Test 3: In project dir, both should create local config
+echo "Test 3: Both commands should create local config in project"
+mise set PROJECT_VAR=project_value
+if [ -f "$test_project/mise.toml" ]; then
+	echo "✓ mise set created local config"
+	rm "$test_project/mise.toml"
+else
+	echo "✗ mise set did not create local config"
+	test_failures=$((test_failures + 1))
+fi
+
+mise use dummy@1.0.0 || echo "mise use failed (expected if dummy not installed)"
+if [ -f "$test_project/mise.toml" ]; then
+	echo "✓ mise use created local config"
+	rm "$test_project/mise.toml"
+else
+	echo "✗ mise use did not create local config"
+	test_failures=$((test_failures + 1))
+fi
+
+echo "=== Testing --path/--file directory handling ==="
+
+# Test 4: mise use supports --path with directory
+echo "Test 4: mise use --path with directory"
+mkdir -p "$test_project/subdir"
+mise use --path "$test_project/subdir" dummy@1.0.0 || echo "mise use failed (expected if dummy not installed)"
+if [ -f "$test_project/subdir/mise.toml" ]; then
+	echo "✓ mise use --path with directory worked"
+	rm "$test_project/subdir/mise.toml"
+else
+	echo "✗ mise use --path with directory failed"
+	test_failures=$((test_failures + 1))
+fi
+
+# Test 5: mise set --file should support directory (like mise use --path)
+echo "Test 5: mise set --file with directory should work like mise use --path"
+if mise set --file "$test_project/subdir" TEST_VAR=test; then
+	echo "✓ mise set --file with directory worked"
+	if [ -f "$test_project/subdir/mise.toml" ]; then
+		echo "✓ mise set created config file in directory"
+		rm "$test_project/subdir/mise.toml"
+	else
+		echo "✗ mise set did not create config file in directory"
+		test_failures=$((test_failures + 1))
+	fi
+else
+	echo "✗ mise set --file with directory failed"
+	test_failures=$((test_failures + 1))
+fi
+
+echo "=== Testing environment-specific configs ==="
+
+# Test 6: Both should handle --env consistently
+echo "Test 6: Environment-specific config handling"
+cd "$test_project"
+
+mise use --env staging dummy@1.0.0 || echo "mise use failed (expected if dummy not installed)"
+staging_file_use=""
+if [ -f "mise.staging.toml" ]; then
+	staging_file_use="mise.staging.toml"
+elif [ -f ".mise.staging.toml" ]; then
+	staging_file_use=".mise.staging.toml"
+fi
+
+mise set --env staging STAGING_VAR=staging_value
+staging_file_set=""
+if [ -f "mise.staging.toml" ]; then
+	staging_file_set="mise.staging.toml"
+elif [ -f ".mise.staging.toml" ]; then
+	staging_file_set=".mise.staging.toml"
+fi
+
+if [ "$staging_file_use" = "$staging_file_set" ] && [ -n "$staging_file_use" ]; then
+	echo "✓ Both commands use same staging config file: $staging_file_use"
+	rm "$staging_file_use"
+else
+	echo "✗ Commands use different staging config files:"
+	echo "  mise use: $staging_file_use"
+	echo "  mise set: $staging_file_set"
+	test_failures=$((test_failures + 1))
+	[ -n "$staging_file_use" ] && rm "$staging_file_use"
+	[ -n "$staging_file_set" ] && rm "$staging_file_set"
+fi
+
+echo "=== Testing config file precedence ==="
+
+# Test 7: Create hierarchy and see where each command writes
+echo "Test 7: Config file precedence handling"
+cd "$test_project"
+
+# Create parent directory with config
+mkdir -p parent
+echo '[env]' >parent/mise.toml
+echo 'PARENT_VAR = "parent"' >>parent/mise.toml
+
+# Create subdirectory
+mkdir -p parent/child
+cd parent/child
+
+echo "Current directory: $(pwd)"
+echo "Parent config exists: $([ -f ../mise.toml ] && echo yes || echo no)"
+
+# Test where each command writes when parent has config
+mise use --pin dummy@1.0.0 || echo "mise use failed (expected if dummy not installed)"
+use_created_local=$([ -f mise.toml ] && echo yes || echo no)
+
+mise set CHILD_VAR=child_value
+set_created_local=$([ -f mise.toml ] && echo yes || echo no)
+
+echo "mise use created local config: $use_created_local"
+echo "mise set created local config: $set_created_local"
+
+if [ "$use_created_local" = "$set_created_local" ]; then
+	echo "✓ Both commands handle precedence consistently"
+else
+	echo "✗ Commands handle precedence differently (INCONSISTENT)"
+	test_failures=$((test_failures + 1))
+fi

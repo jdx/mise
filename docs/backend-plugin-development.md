@@ -15,7 +15,7 @@ Backend plugins extend the standard vfox plugin system with enhanced backend met
 Backend plugins are generally a git repository but can also be a directory (via `mise link`). They use three main backend methods implemented as individual files:
 
 - `hooks/backend_list_versions.lua` - Lists available versions for a tool
-- `hooks/backend_install.lua` - Installs a specific version of a tool  
+- `hooks/backend_install.lua` - Installs a specific version of a tool
 - `hooks/backend_exec_env.lua` - Sets up environment variables for a tool
 
 ## Backend Methods
@@ -28,10 +28,10 @@ Lists available versions for a tool:
 function PLUGIN:BackendListVersions(ctx)
     local tool = ctx.tool
     local versions = {}
-    
+
     -- Your logic to fetch versions for the tool
     -- Example: query an API, parse a registry, etc.
-    
+
     return {versions = versions}
 end
 ```
@@ -45,10 +45,10 @@ function PLUGIN:BackendInstall(ctx)
     local tool = ctx.tool
     local version = ctx.version
     local install_path = ctx.install_path
-    
+
     -- Your logic to install the tool
     -- Example: download files, extract archives, etc.
-    
+
     return {}
 end
 ```
@@ -60,10 +60,10 @@ Sets up environment variables for a tool:
 ```lua
 function PLUGIN:BackendExecEnv(ctx)
     local install_path = ctx.install_path
-    
+
     -- Your logic to set up environment variables
     -- Example: add bin directories to PATH
-    
+
     return {
         env_vars = {
             {key = "PATH", value = install_path .. "/bin"}
@@ -74,12 +74,36 @@ end
 
 ## Creating a Backend Plugin
 
+### Using the Template Repository
+
+Use the dedicated [mise-backend-plugin-template](https://github.com/jdx/mise-backend-plugin-template) for creating backend plugins:
+
+```bash
+# Option 1: Use GitHub's template feature (recommended)
+# Visit https://github.com/jdx/mise-backend-plugin-template
+# Click "Use this template" to create your repository
+
+# Option 2: Clone and modify
+git clone https://github.com/jdx/mise-backend-plugin-template my-backend-plugin
+cd my-backend-plugin
+rm -rf .git
+git init
+```
+
+The template includes:
+
+- Complete backend plugin structure with all required hooks
+- Modern development tooling (hk, stylua, luacheck, actionlint)
+- Comprehensive documentation and examples
+- CI/CD setup with GitHub Actions
+- Multiple implementation patterns for different backend types
+
 ### 1. Plugin Structure
 
 Create a directory with this structure:
 
 ```
-vfox-npm/
+my-backend-plugin/
 ├── metadata.lua                    # Plugin metadata
 ├── hooks/
 │   ├── backend_list_versions.lua   # BackendListVersions hook
@@ -108,7 +132,7 @@ Here's the complete implementation of the vfox-npm plugin that manages npm packa
 ```lua
 PLUGIN = {
     name = "vfox-npm",
-    version = "1.0.0", 
+    version = "1.0.0",
     description = "Backend plugin for npm packages",
     author = "jdx"
 }
@@ -123,7 +147,7 @@ function PLUGIN:BackendListVersions(ctx)
 
     local result = cmd.exec("npm view " .. ctx.tool .. " versions --json")
     local versions = json.decode(result)
-    
+
     return {versions = versions}
 end
 ```
@@ -135,12 +159,12 @@ function PLUGIN:BackendInstall(ctx)
     local tool = ctx.tool
     local version = ctx.version
     local install_path = ctx.install_path
-    
+
     -- Install the package directly using npm install
     local cmd = require("cmd")
     local npm_cmd = "npm install " .. tool .. "@" .. version .. " --no-package-lock --no-save --silent"
     local result = cmd.exec(npm_cmd, {cwd = install_path})
-    
+
     -- If we get here, the command succeeded
     return {}
 end
@@ -188,16 +212,16 @@ Backend plugins receive context through the `ctx` parameter passed to each hook 
 
 ### BackendListVersions Context
 
-| Variable | Description | Example |
-|----------|-------------|---------|
+| Variable   | Description   | Example      |
+| ---------- | ------------- | ------------ |
 | `ctx.tool` | The tool name | `"prettier"` |
 
 ### BackendInstall and BackendExecEnv Context
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `ctx.tool` | The tool name | `"prettier"` |
-| `ctx.version` | The requested version | `"3.0.0"` |
+| Variable           | Description            | Example                                                           |
+| ------------------ | ---------------------- | ----------------------------------------------------------------- |
+| `ctx.tool`         | The tool name          | `"prettier"`                                                      |
+| `ctx.version`      | The requested version  | `"3.0.0"`                                                         |
 | `ctx.install_path` | Installation directory | `"/home/user/.local/share/mise/installs/vfox-npm/prettier/3.0.0"` |
 
 ## Testing Your Plugin
@@ -235,26 +259,26 @@ Provide more meaningful error messages:
 ```lua
 function PLUGIN:BackendListVersions(ctx)
     local tool = ctx.tool
-    
+
     -- Validate tool name
     if not tool or tool == "" then
         error("Tool name cannot be empty")
     end
-    
+
     -- Execute command with error checking
     local cmd = require("cmd")
     local result = cmd.exec("npm view " .. tool .. " versions --json 2>/dev/null")
     if not result or result:match("npm ERR!") then
         error("Failed to fetch versions for " .. tool .. ": " .. (result or "no output"))
     end
-    
+
     -- Parse JSON response
     local json = require("json")
     local success, npm_versions = pcall(json.decode, result)
     if not success or not npm_versions then
         error("Failed to parse versions for " .. tool)
     end
-    
+
     -- Return versions or error if none found
     local versions = {}
     if type(npm_versions) == "table" then
@@ -262,11 +286,11 @@ function PLUGIN:BackendListVersions(ctx)
             table.insert(versions, npm_versions[i])
         end
     end
-    
+
     if #versions == 0 then
         error("No versions found for " .. tool)
     end
-    
+
     return {versions = versions}
 end
 ```
@@ -317,10 +341,10 @@ function PLUGIN:BackendInstall(ctx)
     local tool = ctx.tool
     local version = ctx.version
     local install_path = ctx.install_path
-    
+
     -- Create install directory
     os.execute("mkdir -p " .. install_path)
-    
+
     if tool == "special-tool" then
         -- Special installation logic
         local cmd = require("cmd")
@@ -338,7 +362,7 @@ function PLUGIN:BackendInstall(ctx)
             error("Failed to install " .. tool .. "@" .. version)
         end
     end
-    
+
     return {}
 end
 ```
@@ -357,7 +381,7 @@ function PLUGIN:BackendInstall(ctx)
     elseif RUNTIME.osType == "Windows" then
         -- Windows installation logic
     end
-    
+
     return {}
 end
 ```
@@ -395,7 +419,8 @@ TODO: We need caching support for [Shared Lua modules](plugin-lua-modules.md).
 
 ## Next Steps
 
+- [Start with the backend plugin template](https://github.com/jdx/mise-backend-plugin-template)
 - [Learn about Tool Plugin Development](tool-plugin-development.md)
-- [Explore available Lua modules](plugin-lua-modules.md)  
+- [Explore available Lua modules](plugin-lua-modules.md)
 - [Publishing your plugin](plugin-publishing.md)
 - [View the vfox-npm plugin source](https://github.com/jdx/vfox-npm)

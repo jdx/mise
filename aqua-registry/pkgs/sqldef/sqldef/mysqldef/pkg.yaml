@@ -1,6 +1,0 @@
-packages:
-  - name: sqldef/sqldef/mysqldef@v2.0.10
-  - name: sqldef/sqldef/mysqldef
-    version: v0.1.1
-  - name: sqldef/sqldef/mysqldef
-    version: v0.1.0

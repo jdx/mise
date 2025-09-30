@@ -35,7 +35,7 @@ MISE_TASK_OUTPUT=prefix assert "mise run all" "[a] running a
 [c] running c
 [all] running all
 [z] running z"
-# defaults to interleave if linear depedency graph
+# defaults to interleave if linear dependency graph
 assert "mise run all" "running a
 running b
 running c
@@ -59,17 +59,10 @@ c
     └── a
 d
 z
-├── all
-│   ├── c
-│   │   └── b
-│   │       └── a
-│   ├── b
-│   │   └── a
-│   └── a
-├── a
-├── b
-│   └── a
-├── c
-│   └── b
-│       └── a
-└── d"
+└── all
+    ├── c
+    │   └── b
+    │       └── a
+    ├── b
+    │   └── a
+    └── a"

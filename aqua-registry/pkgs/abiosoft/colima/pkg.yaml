@@ -1,6 +1,0 @@
-packages:
-  - name: abiosoft/colima@v0.8.4
-  - name: abiosoft/colima
-    version: v0.7.1
-  - name: abiosoft/colima
-    version: v0.2.2

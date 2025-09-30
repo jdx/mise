@@ -90,7 +90,7 @@ impl JavaPlugin {
         tv.install_path().join("bin/java")
     }
 
-    fn test_java(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
+    fn test_java(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         CmdLineRunner::new(self.java_bin(tv))
             .with_pr(pr)
             .env("JAVA_HOME", tv.install_path())
@@ -102,7 +102,7 @@ impl JavaPlugin {
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         m: &JavaMetadata,
     ) -> Result<PathBuf> {
         let filename = m.url.split('/').next_back().unwrap();
@@ -127,7 +127,7 @@ impl JavaPlugin {
     fn install(
         &self,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         tarball_path: &Path,
         m: &JavaMetadata,
     ) -> Result<()> {
@@ -233,7 +233,7 @@ impl JavaPlugin {
         Ok(())
     }
 
-    fn verify(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
+    fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         pr.set_message("java -version".into());
         self.test_java(tv, pr)
     }
@@ -351,11 +351,11 @@ impl Backend for JavaPlugin {
         Ok(aliases)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".java-version".into(), ".sdkmanrc".into()])
     }
 
-    fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
         let contents = file::read_to_string(path)?;
         if path.file_name() == Some(".sdkmanrc".as_ref()) {
             let version = contents
@@ -411,7 +411,7 @@ impl Backend for JavaPlugin {
                     if !tarball_path.exists() {
                         debug!("File not found, downloading from cached URL: {}", url);
                         // Download using the lockfile URL, not JavaMetadata
-                        HTTP.download_file(url, &tarball_path, Some(&ctx.pr))
+                        HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))
                             .await?;
                         // Optionally verify checksum if present
                         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
@@ -423,17 +423,21 @@ impl Backend for JavaPlugin {
                 } else {
                     // No URL in lockfile, fallback to metadata
                     let metadata = self.tv_to_metadata(&tv).await?;
-                    let tarball_path = self.download(ctx, &mut tv, &ctx.pr, metadata).await?;
+                    let tarball_path = self
+                        .download(ctx, &mut tv, ctx.pr.as_ref(), metadata)
+                        .await?;
                     (metadata, tarball_path)
                 }
             } else {
                 let metadata = self.tv_to_metadata(&tv).await?;
-                let tarball_path = self.download(ctx, &mut tv, &ctx.pr, metadata).await?;
+                let tarball_path = self
+                    .download(ctx, &mut tv, ctx.pr.as_ref(), metadata)
+                    .await?;
                 (metadata, tarball_path)
             };
 
-        self.install(&tv, &ctx.pr, &tarball_path, metadata)?;
-        self.verify(&tv, &ctx.pr)?;
+        self.install(&tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
+        self.verify(&tv, ctx.pr.as_ref())?;
 
         Ok(tv)
     }
@@ -484,6 +488,8 @@ impl Backend for JavaPlugin {
 fn os() -> &'static str {
     if cfg!(target_os = "macos") {
         "macosx"
+    } else if OS.as_str() == "freebsd" {
+        "linux"
     } else {
         &OS
     }
@@ -508,7 +514,7 @@ struct JavaMetadata {
     file_type: Option<String>,
     // filename: String,
     image_type: Option<String>,
-    // java_version: String,
+    java_version: String,
     jvm_impl: String,
     // os: String,
     // release_type: String,
@@ -539,6 +545,14 @@ impl Display for JavaMetadata {
         }
         if self.jvm_impl == "openj9" {
             v.push(self.jvm_impl.clone());
+        }
+        if self.vendor == "liberica-nik" {
+            let major = self
+                .java_version
+                .split('.')
+                .next()
+                .unwrap_or(&self.java_version);
+            v.push(format!("openjdk{}", major));
         }
         v.push(self.version.clone());
         write!(f, "{}", v.join("-"))

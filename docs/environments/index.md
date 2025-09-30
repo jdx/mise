@@ -95,6 +95,16 @@ mise en
 # bar
 ```
 
+## Environment in tasks
+
+It is also possible to define environment inside a task
+
+```toml [mise.toml]
+[tasks.print]
+run = "echo $MY_VAR"
+env = { _.file = '/path/to/file.env', "MY_VAR" = "my variable" }
+```
+
 ## Lazy eval
 
 Environment variables typically are resolved before tools—that way you can configure tool installation
@@ -142,7 +152,7 @@ mise env --values
 mise env --redacted --values
 ```
 
-:::danger
+::: danger
 Because mise may output sensitive values that could show up in CI logs you'll need to be configure your CI setup
 to know which values are sensitive.
 
@@ -157,6 +167,114 @@ done
 
 Note: If you're using [mise-action](https://github.com/jdx/mise-action), it will automatically redact values marked with `redact = true` or matching patterns in the `redactions` array.
 :::
+
+## Required Variables
+
+You can mark environment variables as required by setting `required = true`. This ensures that the variable is defined either before mise runs or in a later config file (like `mise.local.toml`):
+
+```toml
+[env]
+DATABASE_URL = { required = true }
+API_KEY = { required = true }
+```
+
+You can also provide help text to guide users on how to set the variable:
+
+```toml
+[env]
+DATABASE_URL = { required = "Set DATABASE_URL to your PostgreSQL connection string (e.g., postgres://user:pass@localhost/dbname)" }
+API_KEY = { required = "Get your API key from https://example.com/api-keys" }
+AWS_REGION = { required = "Set to your AWS region (e.g., us-east-1, eu-west-1)" }
+```
+
+When a required variable is missing, mise will show the help text in the error message to assist users.
+
+### Required Variable Behavior
+
+When a variable is marked as `required = true`, mise validates that it is defined through one of these sources:
+
+1. **Pre-existing environment** - Variable was set before running mise
+2. **Later config file** - Variable is defined in a config file processed after the one declaring it as required
+
+```toml
+# In mise.toml
+[env]
+DATABASE_URL = { required = true }
+```
+
+```toml
+# In mise.local.toml (processed later)
+[env]
+DATABASE_URL = "postgres://prod.example.com/db"  # This satisfies the requirement
+```
+
+### Validation Behavior
+
+- **Regular commands** (like `mise env`): Fail with clear error messages when required variables are missing
+- **Shell activation** (`hook-env`): Warns about missing required variables but continues execution to avoid breaking shell setup
+
+```bash
+# This will fail if DATABASE_URL is not pre-defined or in a later config
+$ mise env
+Error: Required environment variable 'DATABASE_URL' is not defined...
+
+# This will warn but continue (used by shell activation)
+$ mise hook-env --shell bash
+mise WARN Required environment variable 'DATABASE_URL' is not defined...
+# Shell activation continues successfully
+```
+
+### Use Cases
+
+Required variables are useful for:
+
+- **Database connections** - Ensure critical connection strings are explicitly set
+- **API keys** - Require explicit configuration of sensitive credentials
+- **Environment-specific settings** - Force explicit configuration per environment
+- **Team collaboration** - Document which variables team members must configure
+
+```toml
+[env]
+# API keys (must be set in environment or mise.local.toml)
+STRIPE_API_KEY = { required = true }
+SENTRY_DSN = { required = true }
+
+# Database connection (must be set in environment or mise.local.toml)
+DATABASE_URL = { required = true }
+
+# Feature flags (must be explicitly configured)
+ENABLE_BETA_FEATURES = { required = true }
+```
+
+## `config_root`
+
+`config_root` is the canonical project root directory that mise uses when resolving relative paths inside configuration files. Generally, when you use relative paths in mise you're referring to this directory.
+
+- When your config lives at nested paths like `.config/mise/config.toml` or `.mise/config.toml`, `config_root` points to the project directory that contains those files (for example, `/path/to/project`).
+- When your config lives at the project root (for example, `mise.toml`), `config_root` is simply the current directory.
+- Relative paths in environment directives are resolved against `config_root` so they behave consistently regardless of where the config file itself lives.
+
+Here's some example config files and their `config_root`:
+
+| Config File                                 | `config_root` |
+| ------------------------------------------- | ------------- |
+| `~/src/foo/.config/mise/conf.d/config.toml` | `~/src/foo`   |
+| `~/src/foo/.config/mise/config.toml`        | `~/src/foo`   |
+| `~/src/foo/.mise/config.toml`               | `~/src/foo`   |
+| `~/src/foo/mise.toml`                       | `~/src/foo`   |
+
+You can see the implementation in [config_root.rs](https://github.com/jdx/mise/blob/main/src/config/config_file/config_root.rs).
+
+Examples:
+
+```toml
+[env]
+# These are equivalent and both resolve against the project root
+_.path = ["tools/bin", "{{config_root}}/tools/bin"]
+
+# Likewise, a relative source path resolves against the project root
+_.source = "scripts/env.sh"          # == "{{config_root}}/scripts/env.sh"
+```
 
 ## `env._` directives
 
@@ -214,7 +332,7 @@ _.file = [
 You can set [`MISE_ENV_FILE=.env`](/configuration#mise-env-file) to automatically load dotenv files in any
 directory.
 
-See [secrets](/environments/secrets) for ways to read encrypted files with `env._.file`.
+See [secrets](/environments/secrets/) for ways to read encrypted files with `env._.file`.
 
 ### `env._.path`
 
@@ -248,14 +366,14 @@ _.path = { path = ["{{env.GEM_HOME}}/bin"], tools = true }
 _.path = [
     # adds an absolute path
     "~/.local/share/bin",
-    # adds paths relative to directory in which this file was found (see below for details), not PWD
+    # adds a path relative to the project root (config_root)
     "{{config_root}}/node_modules/.bin",
-    # adds paths relative to the exact file that this is found in (not PWD)
+    # adds a relative path (equivalent to "{{config_root}}/tools/bin")
     "tools/bin",
 ]
 ```
 
-Adding a relative path like `tools/bin` or `./tools/bin` is similar to adding a path rooted at <span v-pre>`{{config_root}}`</span>, but behaves differently if your config file is nested in a subdirectory like `/path/to/project/.config/mise/config.toml`. Including `tools/bin` will add the path `/path/to/project/.config/mise/tools/bin`, whereas including <span v-pre>`{{config_root}}/tools/bin`</span> will add the path `/path/to/project/tools/bin`.
+Relative paths like `tools/bin` or `./tools/bin` are resolved against <span v-pre>`{{config_root}}`</span>. For example, with a config file at `/path/to/project/.config/mise/config.toml`, `tools/bin` resolves to `/path/to/project/tools/bin`.
 
 ### `env._.source`
 
@@ -298,11 +416,11 @@ _.source = { path = "my/env.sh", tools = true }
 ```toml
 [env]
 _.source = [
-    # Sources the file relative to this config file
+    # Sources the file relative to the config root
     './scripts/base.sh',
     # Sources a file at an absolute path
     '/User/bob/env.sh',
-    # Sources the file relative to this config file and redacts the values
+    # Sources the file relative to the config root and redacts the values
     { path = ".secrets.sh", redact = true }
 ]
 ```

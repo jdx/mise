@@ -1,4 +1,0 @@
-packages:
-  - name: babarot/gist@v1.2.6
-  - name: babarot/gist
-    version: v1.2.4

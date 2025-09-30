@@ -1,8 +1,0 @@
-packages:
-  - name: ViRb3/wgcf@v2.2.29
-  - name: ViRb3/wgcf
-    version: v2.2.6
-  - name: ViRb3/wgcf
-    version: v2.2.5
-  - name: ViRb3/wgcf
-    version: v2.2.2

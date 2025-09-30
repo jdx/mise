@@ -1,4 +1,0 @@
-packages:
-  - name: suzuki-shunsuke/renovate-issue-action@v0.3.2
-  - name: suzuki-shunsuke/renovate-issue-action
-    version: v0.3.1

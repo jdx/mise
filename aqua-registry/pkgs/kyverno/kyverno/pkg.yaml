@@ -1,8 +1,0 @@
-packages:
-  - name: kyverno/kyverno@v1.15.1
-  - name: kyverno/kyverno
-    version: v1.10.7
-  - name: kyverno/kyverno
-    version: v1.10.0
-  - name: kyverno/kyverno
-    version: v1.5.8

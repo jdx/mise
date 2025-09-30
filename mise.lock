@@ -1,4 +1,4 @@
-[tools.actionlint]
+[[tools.actionlint]]
 version = "1.7.7"
 backend = "aqua:rhysd/actionlint"
 
@@ -12,7 +12,7 @@ checksum = "sha256:2693315b9093aeacb4ebd91a993fea54fc215057bf0da2659056b4bc03387
 size = 1962532
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_darwin_arm64.tar.gz"
 
-[tools.age]
+[[tools.age]]
 version = "1.2.1"
 backend = "aqua:FiloSottile/age"
 
@@ -26,62 +26,66 @@ checksum = "blake3:5c7e92baa305e64738b31e6ed9725d6cecdb8915af6e1b6c59bb4d7890efa
 size = 4758557
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"
 
-[tools.bun]
-version = "1.2.21"
+[[tools.bun]]
+version = "1.2.23"
 backend = "core:bun"
 
 [tools.bun.platforms.linux-x64]
-checksum = "blake3:cf519ce71d7c518e211001f428ae34c2ec2a4f0484787bdf28baf7f372c94860"
-size = 39128668
+checksum = "blake3:b8ea90017983cdbac0ef8f7292d91554f70c6986b73d656c213eabc19d68b9af"
+size = 39383658
 
-[tools.cargo-binstall]
-version = "1.15.1"
+[tools.bun.platforms.macos-arm64]
+checksum = "blake3:621c047bdd068c4972bf7b222a2e112908cd40b53256b690ec0921ea98676756"
+size = 22280328
+
+[[tools.cargo-binstall]]
+version = "1.15.6"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "blake3:88fb96688c2d3761b509caf9bf523681b59b0faec3b9bde1d1b54c92152eb5b0"
-size = 6760342
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.1/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+checksum = "blake3:779d104f2f8a3b840a2a56659e3da44f96419d7a5378555b9c3dabe756ac4271"
+size = 6770808
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.6/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
-[tools."cargo:cargo-edit"]
+[[tools."cargo:cargo-edit"]]
 version = "0.13.7"
 backend = "cargo:cargo-edit"
 
-[tools."cargo:cargo-insta"]
-version = "1.43.1"
+[[tools."cargo:cargo-insta"]]
+version = "1.43.2"
 backend = "cargo:cargo-insta"
 
-[tools."cargo:cargo-release"]
-version = "0.25.18"
+[[tools."cargo:cargo-release"]]
+version = "0.25.19"
 backend = "cargo:cargo-release"
 
-[tools."cargo:git-cliff"]
-version = "2.10.0"
+[[tools."cargo:git-cliff"]]
+version = "2.10.1"
 backend = "cargo:git-cliff"
 
-[tools."cargo:toml-cli"]
+[[tools."cargo:toml-cli"]]
 version = "0.2.3"
 backend = "cargo:toml-cli"
 
-[tools."cargo:usage-cli"]
-version = "2.2.2"
+[[tools."cargo:usage-cli"]]
+version = "2.3.2"
 backend = "cargo:usage-cli"
 
-[tools.cosign]
-version = "2.5.3"
+[[tools.cosign]]
+version = "2.6.0"
 backend = "aqua:sigstore/cosign"
 
 [tools.cosign.platforms.linux-x64]
-checksum = "sha256:783b5d6c74105401c63946c68d9b2a4e1aab3c8abce043e06b8510b02b623ec9"
-size = 154068646
-url = "https://github.com/sigstore/cosign/releases/download/v2.5.3/cosign-linux-amd64"
+checksum = "sha256:ea5c65f99425d6cfbb5c4b5de5dac035f14d09131c1a0ea7c7fc32eab39364f9"
+size = 155329864
+url = "https://github.com/sigstore/cosign/releases/download/v2.6.0/cosign-linux-amd64"
 
 [tools.cosign.platforms.macos-arm64]
-checksum = "sha256:86e0cad94d0da4c0dab5e26672ede71447a08a0f0d8495b9381c117df27d7d09"
-size = 152385074
-url = "https://github.com/sigstore/cosign/releases/download/v2.5.3/cosign-darwin-arm64"
+checksum = "sha256:dea5b83b8b375b99ac803c7bdb1f798963dbeb47789ceb72153202e7f20e8d07"
+size = 154611890
+url = "https://github.com/sigstore/cosign/releases/download/v2.6.0/cosign-darwin-arm64"
 
-[tools.gh]
+[[tools.gh]]
 version = "2.62.0"
 backend = "aqua:cli/cli"
 
@@ -95,16 +99,16 @@ checksum = "sha256:fdb77f31b8a6dd23c3fd858758d692a45f7fc76383e37d475bdcae038df92
 size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
-[tools.hk]
-version = "1.10.6"
+[[tools.hk]]
+version = "1.15.7"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:97e03b33b91890feea0cc057d2203788c84a444882a901b409ca4bd5783a3168"
-size = 6858515
-url = "https://github.com/jdx/hk/releases/download/v1.10.6/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "blake3:f4d35bcfb24c82d065ef7f65331386ec8f4721b2a9ae501bce977de91a1c8658"
+size = 6986299
+url = "https://github.com/jdx/hk/releases/download/v1.15.7/hk-x86_64-unknown-linux-gnu.tar.gz"
 
-[tools.jq]
+[[tools.jq]]
 version = "1.8.1"
 backend = "aqua:jqlang/jq"
 
@@ -118,28 +122,33 @@ checksum = "sha256:a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263
 size = 841408
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
 
-[tools."npm:markdownlint-cli"]
+[[tools."npm:ajv-cli"]]
+version = "5.0.0"
+backend = "npm:ajv-cli"
+
+[[tools."npm:markdownlint-cli"]]
 version = "0.45.0"
 backend = "npm:markdownlint-cli"
 
-[tools."npm:prettier"]
+[[tools."npm:prettier"]]
 version = "3.6.2"
 backend = "npm:prettier"
 
-[tools."pipx:toml-sort"]
-version = "0.24.2"
-backend = "pipx:toml-sort"
-
-[tools.pkl]
-version = "0.29.0"
+[[tools.pkl]]
+version = "0.29.1"
 backend = "aqua:apple/pkl"
 
 [tools.pkl.platforms.linux-x64]
-checksum = "blake3:954ab61f352db192105bc3dd6daef7bd27aa847b1ea0a8f469f1f05881644864"
-size = 103994096
-url = "https://github.com/apple/pkl/releases/download/0.29.0/pkl-linux-amd64"
+checksum = "blake3:8b26122653f2b25453211286c68f96eb53373763dc743bf8ff6c2c80917848e2"
+size = 103994144
+url = "https://github.com/apple/pkl/releases/download/0.29.1/pkl-linux-amd64"
 
-[tools.pre-commit]
+[tools.pkl.platforms.macos-arm64]
+checksum = "blake3:5160399295c75f15f6b2b1e2925945a5d42a66793aa4eec821ab2dc60a5ae4ea"
+size = 104874656
+url = "https://github.com/apple/pkl/releases/download/0.29.1/pkl-macos-aarch64"
+
+[[tools.pre-commit]]
 version = "4.3.0"
 backend = "aqua:pre-commit/pre-commit"
 
@@ -153,7 +162,7 @@ checksum = "sha256:f1d50b97e9ca9167aceb76c14e90b07cde8b6789bc199d5005cfd817a7188
 size = 8268268
 url = "https://github.com/pre-commit/pre-commit/releases/download/v4.3.0/pre-commit-4.3.0.pyz"
 
-[tools.ripgrep]
+[[tools.ripgrep]]
 version = "14.1.1"
 backend = "aqua:BurntSushi/ripgrep"
 
@@ -167,7 +176,7 @@ checksum = "sha256:24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b93
 size = 1787248
 url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
 
-[tools.shellcheck]
+[[tools.shellcheck]]
 version = "0.11.0"
 backend = "aqua:koalaman/shellcheck"
 
@@ -176,7 +185,7 @@ checksum = "blake3:0ad9524f3f16ad030f8350e7b970c62c24aeff3d813f2565665aecc5a8b79
 size = 2559196
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
 
-[tools.shfmt]
+[[tools.shfmt]]
 version = "3.12.0"
 backend = "aqua:mvdan/sh"
 
@@ -185,7 +194,7 @@ checksum = "sha256:d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a74
 size = 2916536
 url = "https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_linux_amd64"
 
-[tools.slsa-verifier]
+[[tools.slsa-verifier]]
 version = "2.7.1"
 backend = "ubi:slsa-framework/slsa-verifier"
 
@@ -195,21 +204,16 @@ checksum = "blake3:6b7c72ece3e3cbd9db12dd8e261e594bb24721db140692d4f5cbdf508df45
 [tools.slsa-verifier.platforms.macos-arm64-slsa-verifier]
 checksum = "blake3:af93f77462964b7eeb93b9f45ccedeefc641305f6618d9ffc2480d89b0cceed6"
 
-[tools.sops]
-version = "3.10.2"
+[[tools.sops]]
+version = "3.11.0"
 backend = "aqua:getsops/sops"
 
 [tools.sops.platforms.linux-x64]
-checksum = "sha256:79b0f844237bd4b0446e4dc884dbc1765fc7dedc3968f743d5949c6f2e701739"
-size = 45011128
-url = "https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.linux.amd64"
+checksum = "sha256:775f1384d55decfad228e7196a3f683791914f92a473f78fc47700531c29dfef"
+size = 46346424
+url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.linux.amd64"
 
-[tools.sops.platforms.macos-arm64]
-checksum = "sha256:99702df79737162b986641afb8d98251acb16a52e6cab556a6b6f57c608c059a"
-size = 44246082
-url = "https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.darwin.arm64"
-
-[tools.taplo]
+[[tools.taplo]]
 version = "0.10.0"
 backend = "aqua:tamasfe/taplo"
 
@@ -218,7 +222,7 @@ checksum = "blake3:4871fab0e60275a1eb46e7190726e144f56c9a9527f59b0d1da5a042baead
 size = 5116068
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz"
 
-[tools.wait-for-gh-rate-limit]
+[[tools.wait-for-gh-rate-limit]]
 version = "1.0.0"
 backend = "ubi:jdx/wait-for-gh-rate-limit"
 

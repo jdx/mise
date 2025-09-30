@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
@@ -22,7 +22,7 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::{ctrlc, prompt, style, time};
-use crate::{dirs, env, exit, file, ui};
+use crate::{dirs, duration, env, exit, file, ui};
 use clap::{CommandFactory, ValueHint};
 use console::Term;
 use demand::{DemandOption, Select};
@@ -34,8 +34,8 @@ use itertools::Itertools;
 #[cfg(unix)]
 use nix::sys::signal::SIGTERM;
 use tokio::{
-    sync::{Mutex, Semaphore},
-    task::{JoinHandle, JoinSet},
+    sync::{Mutex, Semaphore, mpsc, oneshot},
+    task::JoinSet,
 };
 use xx::regex;
 
@@ -84,6 +84,10 @@ pub struct Run {
     /// Arguments to pass to the tasks. Use ":::" to separate tasks.
     #[clap(allow_hyphen_values = true, hide = true, last = true)]
     pub args_last: Vec<String>,
+
+    /// Do not use cache on remote tasks
+    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
+    pub no_cache: bool,
 
     /// Change to this directory before executing the command
     #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
@@ -150,6 +154,15 @@ pub struct Run {
     #[clap(long, short, verbatim_doc_comment)]
     pub raw: bool,
 
+    /// Don't show any output except for errors
+    #[clap(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
+    pub silent: bool,
+
+    /// Timeout for the task to complete
+    /// e.g.: 30s, 5m
+    #[clap(long, verbatim_doc_comment)]
+    pub timeout: Option<String>,
+
     /// Shows elapsed time after each task completes
     ///
     /// Default to always show with `MISE_TASK_TIMINGS=1`
@@ -165,10 +178,6 @@ pub struct Run {
     /// Don't show extra output
     #[clap(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
     pub quiet: bool,
-
-    /// Don't show any output except for errors
-    #[clap(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
-    pub silent: bool,
 
     #[clap(skip)]
     pub is_linear: bool,
@@ -199,13 +208,17 @@ pub struct Run {
 
     #[clap(skip)]
     pub timed_outputs: Arc<std::sync::Mutex<IndexMap<String, (SystemTime, String)>>>,
-
-    // Do not use cache on remote tasks
-    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
-    pub no_cache: bool,
 }
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
+
+struct SpawnCtx {
+    semaphore: Arc<Semaphore>,
+    config: Arc<Config>,
+    sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+    jset: Arc<Mutex<JoinSet<Result<()>>>>,
+    in_flight: Arc<std::sync::atomic::AtomicUsize>,
+}
 
 impl Run {
     pub async fn run(mut self) -> Result<()> {
@@ -227,7 +240,22 @@ impl Run {
             .collect_vec();
         let task_list = get_task_lists(&config, &args, true).await?;
         time!("run get_task_lists");
-        self.parallelize_tasks(config, task_list).await?;
+
+        // Apply global timeout for entire run if configured
+        let timeout = if let Some(timeout_str) = &self.timeout {
+            Some(duration::parse_duration(timeout_str)?)
+        } else {
+            Settings::get().task_timeout_duration()
+        };
+
+        if let Some(timeout) = timeout {
+            tokio::time::timeout(timeout, self.parallelize_tasks(config, task_list))
+                .await
+                .map_err(|_| eyre!("mise run timed out after {:?}", timeout))??
+        } else {
+            self.parallelize_tasks(config, task_list).await?
+        }
+
         time!("run done");
         Ok(())
     }
@@ -316,66 +344,139 @@ impl Run {
         .await?;
 
         let timer = std::time::Instant::now();
-        let this_ = this.clone();
         let jset = Arc::new(Mutex::new(JoinSet::new()));
-        let jset_ = jset.clone();
         let config = config.clone();
 
-        let handle: JoinHandle<Result<()>> = tokio::task::spawn(async move {
-            let tasks = Arc::new(Mutex::new(tasks));
-            let semaphore = Arc::new(Semaphore::new(this_.jobs()));
-            let mut rx = tasks.lock().await.subscribe();
-            while let Some(Some(task)) = rx.recv().await {
-                if this_.is_stopping() {
-                    break;
-                }
-                let jset = jset_.clone();
-                let this_ = this_.clone();
-                let permit = semaphore.clone().acquire_owned().await?;
-                let tasks = tasks.clone();
-                let config = config.clone();
-                trace!("running task: {task}");
-                jset.lock().await.spawn(async move {
-                    let _permit = permit;
-                    let result = this_.run_task(&task, &config).await;
-                    if let Err(err) = &result {
-                        let status = Error::get_exit_status(err);
-                        if !this_.is_stopping() && status.is_none() {
-                            // only show this if it's the first failure, or we haven't killed all the remaining tasks
-                            // otherwise we'll get unhelpful error messages about being killed by mise which we expect
-                            let prefix = task.estyled_prefix();
-                            if Settings::get().verbose {
-                                this_.eprint(
-                                    &task,
-                                    &prefix,
-                                    &format!("{} {err:?}", style::ered("ERROR")),
-                                );
-                            } else {
-                                // Show the full error chain
-                                this_.eprint(
-                                    &task,
-                                    &prefix,
-                                    &format!("{} {err}", style::ered("ERROR")),
-                                );
-                                let mut current_err = err.source();
-                                while let Some(e) = current_err {
-                                    this_.eprint(
-                                        &task,
-                                        &prefix,
-                                        &format!("{} {e}", style::ered("ERROR")),
-                                    );
-                                    current_err = e.source();
-                                }
-                            };
+        type SchedMsg = (Task, Arc<Mutex<Deps>>);
+        let (sched_tx, mut sched_rx) = mpsc::unbounded_channel::<SchedMsg>();
+        let sched_tx = Arc::new(sched_tx);
+        let in_flight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (main_done_tx, main_done_rx) = tokio::sync::watch::channel(false);
+
+        // Pump initial deps leaves into scheduler
+        let main_deps = Arc::new(Mutex::new(tasks));
+        {
+            let sched_tx = sched_tx.clone();
+            let main_deps_clone = main_deps.clone();
+            // forward initial leaves synchronously
+            {
+                let mut rx = main_deps_clone.lock().await.subscribe();
+                loop {
+                    match rx.try_recv() {
+                        Ok(Some(task)) => {
+                            trace!(
+                                "main deps initial leaf: {} {}",
+                                task.name,
+                                task.args.join(" ")
+                            );
+                            let _ = sched_tx.send((task, main_deps_clone.clone()));
                         }
-                        this_.add_failed_task(task.clone(), status);
+                        Ok(None) => {
+                            trace!("main deps initial done");
+                            break;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                            break;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                            break;
+                        }
                     }
-                    tasks.lock().await.remove(&task);
-                    result
-                });
+                }
             }
-            Ok(())
-        });
+            // then forward remaining leaves asynchronously
+            tokio::spawn(async move {
+                let mut rx = main_deps_clone.lock().await.subscribe();
+                while let Some(msg) = rx.recv().await {
+                    match msg {
+                        Some(task) => {
+                            trace!(
+                                "main deps leaf scheduled: {} {}",
+                                task.name,
+                                task.args.join(" ")
+                            );
+                            let _ = sched_tx.send((task, main_deps_clone.clone()));
+                        }
+                        None => {
+                            trace!("main deps completed");
+                            let _ = main_done_tx.send(true);
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Inline scheduler loop; drains ready tasks and exits when main deps done and in-flight is zero
+        let semaphore = Arc::new(Semaphore::new(this.jobs()));
+        let mut main_done_rx = main_done_rx.clone();
+        loop {
+            // Drain ready tasks without awaiting
+            let mut drained_any = false;
+            loop {
+                match sched_rx.try_recv() {
+                    Ok((task, deps_for_remove)) => {
+                        drained_any = true;
+                        trace!("scheduler received: {} {}", task.name, task.args.join(" "));
+                        if this.is_stopping() && !this.continue_on_error {
+                            break;
+                        }
+                        Self::spawn_sched_job(
+                            this.clone(),
+                            task,
+                            deps_for_remove,
+                            SpawnCtx {
+                                semaphore: semaphore.clone(),
+                                config: config.clone(),
+                                sched_tx: sched_tx.clone(),
+                                jset: jset.clone(),
+                                in_flight: in_flight.clone(),
+                            },
+                        )
+                        .await?;
+                    }
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => break,
+                }
+            }
+
+            // Exit if main deps finished and nothing is running/queued
+            if *main_done_rx.borrow()
+                && in_flight.load(std::sync::atomic::Ordering::SeqCst) == 0
+                && !drained_any
+            {
+                trace!("scheduler drain complete; exiting loop");
+                break;
+            }
+
+            // Await either new work or main_done change
+            tokio::select! {
+                m = sched_rx.recv() => {
+                    if let Some((task, deps_for_remove)) = m {
+                        trace!("scheduler received: {} {}", task.name, task.args.join(" "));
+                        if this.is_stopping() && !this.continue_on_error { break; }
+                        Self::spawn_sched_job(
+                            this.clone(),
+                            task,
+                            deps_for_remove,
+                            SpawnCtx {
+                                semaphore: semaphore.clone(),
+                                config: config.clone(),
+                                sched_tx: sched_tx.clone(),
+                                jset: jset.clone(),
+                                in_flight: in_flight.clone(),
+                            },
+                        )
+                        .await?;
+                    } else {
+                        // channel closed; rely on main_done/in_flight to exit soon
+                    }
+                }
+                _ = main_done_rx.changed() => {
+                    trace!("main_done changed: {}", *main_done_rx.borrow());
+                }
+            }
+        }
 
         while let Some(result) = jset.lock().await.join_next().await {
             if result.is_ok() || this.continue_on_error {
@@ -387,7 +488,7 @@ impl Run {
             CmdLineRunner::kill_all();
             break;
         }
-        handle.await??;
+        // scheduler loop done
 
         if this.output(None) == TaskOutput::KeepOrder {
             // TODO: display these as tasks complete in order somehow rather than waiting until everything is done
@@ -409,10 +510,12 @@ impl Run {
                 }
             }
         }
-        if this.timings() && num_tasks > 1 && *env::MISE_TASK_LEVEL == 0 {
+        if this.timings() && num_tasks > 1 {
             let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
             eprintln!("{}", style::edim(msg));
         };
+        // If there were failures and --continue-on-error was used, print a brief summary
+        this.maybe_print_failure_summary();
         if let Some((task, status)) = this.failed_tasks.lock().unwrap().first() {
             let prefix = task.estyled_prefix();
             this.eprint(
@@ -427,6 +530,110 @@ impl Run {
         Ok(())
     }
 
+    async fn spawn_sched_job(
+        this: Arc<Self>,
+        task: Task,
+        deps_for_remove: Arc<Mutex<Deps>>,
+        ctx: SpawnCtx,
+    ) -> Result<()> {
+        // If we're already stopping due to a previous failure and not in
+        // continue-on-error mode, do not launch this task. Ensure we remove
+        // it from the dependency graph so the scheduler can make progress.
+        if this.is_stopping() && !this.continue_on_error {
+            trace!(
+                "aborting spawn before start (not continue-on-error): {} {}",
+                task.name,
+                task.args.join(" ")
+            );
+            deps_for_remove.lock().await.remove(&task);
+            return Ok(());
+        }
+        let needs_permit = Self::task_needs_permit(&task);
+        let permit_opt = if needs_permit {
+            let wait_start = std::time::Instant::now();
+            let p = Some(ctx.semaphore.clone().acquire_owned().await?);
+            trace!(
+                "semaphore acquired for {} after {}ms",
+                task.name,
+                wait_start.elapsed().as_millis()
+            );
+            // If a failure occurred while we were waiting for a permit and we're not
+            // in continue-on-error mode, skip launching this task. This prevents
+            // subsequently queued tasks (e.g., from CLI ":::" groups) from running
+            // after the first failure when --jobs=1 and ensures immediate stop.
+            if this.is_stopping() && !this.continue_on_error {
+                trace!(
+                    "aborting spawn after failure (not continue-on-error): {} {}",
+                    task.name,
+                    task.args.join(" ")
+                );
+                // Remove from deps so the scheduler can drain and not hang
+                deps_for_remove.lock().await.remove(&task);
+                return Ok(());
+            }
+            p
+        } else {
+            trace!("no semaphore needed for orchestrator task: {}", task.name);
+            None
+        };
+
+        ctx.in_flight
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let in_flight_c = ctx.in_flight.clone();
+        trace!("running task: {task}");
+        ctx.jset.lock().await.spawn(async move {
+            let _permit = permit_opt;
+            let result = this
+                .run_task_sched(&task, &ctx.config, ctx.sched_tx.clone())
+                .await;
+            if let Err(err) = &result {
+                let status = Error::get_exit_status(err);
+                if !this.is_stopping() && status.is_none() {
+                    let prefix = task.estyled_prefix();
+                    if Settings::get().verbose {
+                        this.eprint(&task, &prefix, &format!("{} {err:?}", style::ered("ERROR")));
+                    } else {
+                        this.eprint(&task, &prefix, &format!("{} {err}", style::ered("ERROR")));
+                        let mut current_err = err.source();
+                        while let Some(e) = current_err {
+                            this.eprint(&task, &prefix, &format!("{} {e}", style::ered("ERROR")));
+                            current_err = e.source();
+                        }
+                    };
+                }
+                this.add_failed_task(task.clone(), status);
+            }
+            deps_for_remove.lock().await.remove(&task);
+            trace!("deps removed: {} {}", task.name, task.args.join(" "));
+            in_flight_c.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            result
+        });
+
+        Ok(())
+    }
+
+    fn task_needs_permit(task: &Task) -> bool {
+        // Only shell/script tasks execute external commands and need a concurrency slot.
+        // Orchestrator-only tasks (pure groups of sub-tasks) do not.
+        task.file.is_some() || !task.run_script_strings().is_empty()
+    }
+
+    fn maybe_print_failure_summary(&self) {
+        if !self.continue_on_error {
+            return;
+        }
+        let failed = self.failed_tasks.lock().unwrap().clone();
+        if failed.is_empty() {
+            return;
+        }
+        let count = failed.len();
+        eprintln!("{} {} task(s) failed:", style::ered("ERROR"), count);
+        for (task, status) in &failed {
+            let prefix = task.estyled_prefix();
+            self.eprint(task, &prefix, &format!("exited with status {}", status));
+        }
+    }
+
     fn eprint(&self, task: &Task, prefix: &str, line: &str) {
         match self.output(Some(task)) {
             TaskOutput::Replacing => {
@@ -439,8 +646,14 @@ impl Run {
         }
     }
 
-    async fn run_task(&self, task: &Task, config: &Arc<Config>) -> Result<()> {
+    async fn run_task_sched(
+        &self,
+        task: &Task,
+        config: &Arc<Config>,
+        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+    ) -> Result<()> {
         let prefix = task.estyled_prefix();
+        let total_start = std::time::Instant::now();
         if Settings::get().task_skip.contains(&task.name) {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "skipping task");
@@ -463,19 +676,25 @@ impl Run {
         for (k, v) in &task.tools {
             tools.push(format!("{k}@{v}").parse()?);
         }
+        let ts_build_start = std::time::Instant::now();
         let ts = ToolsetBuilder::new()
             .with_args(&tools)
             .build(config)
             .await?;
-        let mut env = task.render_env(config, &ts).await?;
+        trace!(
+            "task {} ToolsetBuilder::build took {}ms",
+            task.name,
+            ts_build_start.elapsed().as_millis()
+        );
+        let env_render_start = std::time::Instant::now();
+        let (mut env, task_env) = task.render_env(config, &ts).await?;
+        trace!(
+            "task {} render_env took {}ms",
+            task.name,
+            env_render_start.elapsed().as_millis()
+        );
         let output = self.output(Some(task));
         env.insert("MISE_TASK_OUTPUT".into(), output.to_string());
-        if output == TaskOutput::Prefix {
-            env.insert(
-                "MISE_TASK_LEVEL".into(),
-                (*env::MISE_TASK_LEVEL + 1).to_string(),
-            );
-        }
         if !self.timings {
             env.insert("MISE_TASK_TIMINGS".to_string(), "0".to_string());
         }
@@ -497,7 +716,14 @@ impl Run {
         let timer = std::time::Instant::now();
 
         if let Some(file) = &task.file {
+            let exec_start = std::time::Instant::now();
             self.exec_file(config, file, task, &env, &prefix).await?;
+            trace!(
+                "task {} exec_file took {}ms (total {}ms)",
+                task.name,
+                exec_start.elapsed().as_millis(),
+                total_start.elapsed().as_millis()
+            );
         } else {
             let rendered_run_scripts = task
                 .render_run_scripts_with_args(config, self.cd.clone(), &task.args, &env)
@@ -513,13 +739,27 @@ impl Run {
             self.parse_usage_spec_and_init_env(config, task, &mut env, get_args)
                 .await?;
 
-            for (script, args) in rendered_run_scripts {
-                self.exec_script(&script, &args, task, &env, &prefix)
-                    .await?;
-            }
+            let exec_start = std::time::Instant::now();
+            self.exec_task_run_entries(
+                config,
+                task,
+                (&env, &task_env),
+                &prefix,
+                rendered_run_scripts,
+                sched_tx,
+            )
+            .await?;
+            trace!(
+                "task {} exec_task_run_entries took {}ms (total {}ms)",
+                task.name,
+                exec_start.elapsed().as_millis(),
+                total_start.elapsed().as_millis()
+            );
         }
 
-        if self.task_timings() && (task.file.as_ref().is_some() || !task.run().is_empty()) {
+        if self.task_timings()
+            && (task.file.as_ref().is_some() || !task.run_script_strings().is_empty())
+        {
             self.eprint(
                 task,
                 &prefix,
@@ -528,6 +768,162 @@ impl Run {
         }
 
         self.save_checksum(task)?;
+
+        Ok(())
+    }
+
+    async fn exec_task_run_entries(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        full_env: (&BTreeMap<String, String>, &[(String, String)]),
+        prefix: &str,
+        rendered_scripts: Vec<(String, Vec<String>)>,
+        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+    ) -> Result<()> {
+        let (env, task_env) = full_env;
+        use crate::task::RunEntry;
+        let mut script_iter = rendered_scripts.into_iter();
+        for entry in task.run() {
+            match entry {
+                RunEntry::Script(_) => {
+                    if let Some((script, args)) = script_iter.next() {
+                        self.exec_script(&script, &args, task, env, prefix).await?;
+                    }
+                }
+                RunEntry::SingleTask { task: spec } => {
+                    self.inject_and_wait(config, &[spec.to_string()], task_env, sched_tx.clone())
+                        .await?;
+                }
+                RunEntry::TaskGroup { tasks } => {
+                    self.inject_and_wait(config, tasks, task_env, sched_tx.clone())
+                        .await?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn inject_and_wait(
+        &self,
+        config: &Arc<Config>,
+        specs: &[String],
+        task_env: &[(String, String)],
+        sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
+    ) -> Result<()> {
+        trace!("inject start: {}", specs.join(", "));
+        // Build tasks list from specs
+        let tasks_map = config.tasks_with_aliases().await?;
+        let mut to_run: Vec<Task> = vec![];
+        for spec in specs {
+            let (name, args) = split_task_spec(spec);
+            let matches = tasks_map.get_matching(name)?;
+            ensure!(!matches.is_empty(), "task not found: {}", name);
+            for t in matches {
+                let mut t = (*t).clone();
+                t.args = args.clone();
+                to_run.push(t);
+            }
+        }
+        let sub_deps = Deps::new(config, to_run).await?;
+        let sub_deps = Arc::new(Mutex::new(sub_deps));
+
+        // Pump subgraph into scheduler and signal completion via oneshot when done
+        let (done_tx, mut done_rx) = oneshot::channel::<()>();
+        let task_env_directives: Vec<EnvDirective> =
+            task_env.iter().cloned().map(Into::into).collect();
+        {
+            let sub_deps_clone = sub_deps.clone();
+            let sched_tx = sched_tx.clone();
+            // forward initial leaves synchronously
+            {
+                let mut rx = sub_deps_clone.lock().await.subscribe();
+                let mut any = false;
+                loop {
+                    match rx.try_recv() {
+                        Ok(Some(task)) => {
+                            any = true;
+                            let task = task.derive_env(&task_env_directives);
+                            trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
+                            let _ = sched_tx.send((task, sub_deps_clone.clone()));
+                        }
+                        Ok(None) => {
+                            trace!("inject initial done");
+                            break;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
+                            break;
+                        }
+                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                            break;
+                        }
+                    }
+                }
+                if !any {
+                    trace!("inject had no initial leaves");
+                }
+            }
+            // then forward remaining leaves asynchronously
+            tokio::spawn(async move {
+                let mut rx = sub_deps_clone.lock().await.subscribe();
+                while let Some(msg) = rx.recv().await {
+                    match msg {
+                        Some(task) => {
+                            trace!(
+                                "inject leaf scheduled: {} {}",
+                                task.name,
+                                task.args.join(" ")
+                            );
+                            let task = task.derive_env(&task_env_directives);
+                            let _ = sched_tx.send((task, sub_deps_clone.clone()));
+                        }
+                        None => {
+                            let _ = done_tx.send(());
+                            trace!("inject complete");
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Wait for completion with a check for early stopping
+        loop {
+            // Check if we should stop early due to failure
+            if self.is_stopping() && !self.continue_on_error {
+                trace!("inject_and_wait: stopping early due to failure");
+                // Clean up the dependency graph to ensure completion
+                let mut deps = sub_deps.lock().await;
+                let tasks_to_remove: Vec<Task> = deps.all().cloned().collect();
+                for task in tasks_to_remove {
+                    deps.remove(&task);
+                }
+                drop(deps);
+                // Give a short time for the spawned task to finish cleanly
+                let _ = tokio::time::timeout(Duration::from_millis(100), done_rx).await;
+                return Err(eyre!("task sequence aborted due to failure"));
+            }
+
+            // Try to receive the done signal with a short timeout
+            match tokio::time::timeout(Duration::from_millis(100), &mut done_rx).await {
+                Ok(Ok(())) => {
+                    trace!("inject_and_wait: received done signal");
+                    break;
+                }
+                Ok(Err(e)) => {
+                    return Err(eyre!(e));
+                }
+                Err(_) => {
+                    // Timeout, check again if we should stop
+                    continue;
+                }
+            }
+        }
+
+        // Final check if we failed during the execution
+        if self.is_stopping() && !self.continue_on_error {
+            return Err(eyre!("task sequence aborted due to failure"));
+        }
 
         Ok(())
     }
@@ -710,22 +1106,22 @@ impl Run {
             }
             TaskOutput::KeepOrder => {
                 cmd = cmd.with_on_stdout(|line| {
-                    self.keep_order_output
-                        .lock()
-                        .unwrap()
-                        .get_mut(task)
-                        .unwrap()
-                        .0
-                        .push((prefix.to_string(), line));
+                    let mut map = self.keep_order_output.lock().unwrap();
+                    if !map.contains_key(task) {
+                        map.insert(task.clone(), Default::default());
+                    }
+                    if let Some(entry) = map.get_mut(task) {
+                        entry.0.push((prefix.to_string(), line));
+                    }
                 });
                 cmd = cmd.with_on_stderr(|line| {
-                    self.keep_order_output
-                        .lock()
-                        .unwrap()
-                        .get_mut(task)
-                        .unwrap()
-                        .1
-                        .push((prefix.to_string(), line));
+                    let mut map = self.keep_order_output.lock().unwrap();
+                    if !map.contains_key(task) {
+                        map.insert(task.clone(), Default::default());
+                    }
+                    if let Some(entry) = map.get_mut(task) {
+                        entry.1.push((prefix.to_string(), line));
+                    }
                 });
             }
             TaskOutput::Replacing => {
@@ -867,8 +1263,7 @@ impl Run {
     }
 
     async fn sources_are_fresh(&self, task: &Task, config: &Arc<Config>) -> Result<bool> {
-        let outputs = task.outputs.paths(task);
-        if task.sources.is_empty() && outputs.is_empty() {
+        if task.sources.is_empty() {
             return Ok(false);
         }
         // TODO: We should benchmark this and find out if it might be possible to do some caching around this or something
@@ -895,7 +1290,7 @@ impl Run {
                 return Ok(false);
             }
             let sources = self.get_last_modified_from_metadatas(&source_metadatas);
-            let outputs = self.get_last_modified(&root, &outputs)?;
+            let outputs = self.get_last_modified(&root, &task.outputs.paths(task))?;
             file::write(&source_metadata_hash_path, &source_metadata_hash)?;
             trace!("sources: {sources:?}, outputs: {outputs:?}");
             match (sources, outputs) {
@@ -1072,6 +1467,13 @@ impl Run {
     }
 }
 
+fn split_task_spec(spec: &str) -> (&str, Vec<String>) {
+    let mut parts = spec.split_whitespace();
+    let name = parts.next().unwrap_or("");
+    let args = parts.map(|s| s.to_string()).collect_vec();
+    (name, args)
+}
+
 fn is_glob_pattern(path: &str) -> bool {
     // This is the character set used for glob
     // detection by glob
@@ -1189,7 +1591,10 @@ pub enum TaskOutput {
 fn trunc(prefix: &str, msg: &str) -> String {
     let prefix_len = console::measure_text_width(prefix);
     let msg = msg.lines().next().unwrap_or_default();
-    console::truncate_str(msg, *env::TERM_WIDTH - prefix_len - 1, "…").to_string()
+    // Ensure we have at least 20 characters for the message, even with very long prefixes
+    let available_width = (*env::TERM_WIDTH).saturating_sub(prefix_len + 1);
+    let max_width = available_width.max(20); // Always show at least 20 chars of message
+    console::truncate_str(msg, max_width, "…").to_string()
 }
 
 async fn err_no_task(config: &Config, name: &str) -> Result<()> {

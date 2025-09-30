@@ -1,4 +1,4 @@
-# HTTP Backend <Badge type="warning" text="experimental" />
+# HTTP Backend
 
 You may install tools directly from HTTP URLs using the `http` backend. This backend downloads files from any HTTP/HTTPS URL and is ideal for tools that distribute pre-built binaries or archives through direct download links.
 
@@ -78,7 +78,7 @@ url = "https://example.com/releases/my-tool-v1.0.0.tar.gz"
 checksum = "sha256:a1b2c3d4e5f6789..."
 ```
 
-*Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mise-lock) to manage checksums.*
+_Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mise-lock) to manage checksums._
 
 ### Platform-specific Checksums
 
@@ -172,6 +172,7 @@ The HTTP backend implements an intelligent caching system to optimize disk usage
 ### Cache Location
 
 Downloaded and extracted files are cached in `$MISE_CACHE_DIR/http-tarballs/` instead of being stored separately for each tool installation. By default:
+
 - **Linux**: `~/.cache/mise/http-tarballs/`
 - **macOS**: `~/Library/Caches/mise/http-tarballs/`
 
@@ -183,6 +184,7 @@ Cache keys are generated based on the file content to ensure identical downloads
 2. **Extraction options**: `strip_components` is included in the cache key since it affects the extracted structure
 
 Example cache directory structure:
+
 ```
 ~/.cache/mise/http-tarballs/
 ├── 71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f/

@@ -1,4 +1,0 @@
-packages:
-  - name: regclient/regclient/regctl@v0.9.1
-  - name: regclient/regclient/regctl
-    version: v0.3.8

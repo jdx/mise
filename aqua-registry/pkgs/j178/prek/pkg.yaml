@@ -1,6 +1,0 @@
-packages:
-  - name: j178/prek@v0.1.4
-  - name: j178/prek
-    version: v0.0.22
-  - name: j178/prek
-    version: v0.0.5

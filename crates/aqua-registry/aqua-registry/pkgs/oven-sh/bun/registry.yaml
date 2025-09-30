@@ -1,0 +1,66 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: oven-sh
+    repo_name: bun
+    aliases:
+      - name: Jarred-Sumner/bun
+    description: Incredibly fast JavaScript runtime, bundler, transpiler and package manager – all in one
+    files:
+      - name: bun
+      - name: bunx
+    version_prefix: bun-v
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.4")
+        asset: bun-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x64
+          arm64: aarch64
+        supported_envs:
+          - linux/amd64
+          - darwin
+        files:
+          - name: bun
+            src: "{{.AssetWithoutExt}}/bun"
+          - name: bunx
+            src: "{{.AssetWithoutExt}}/bun"
+            link: bunx
+      - version_constraint: semver("<= 1.0.36")
+        asset: bun-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x64
+          arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+        files:
+          - name: bun
+            src: "{{.AssetWithoutExt}}/bun"
+          - name: bunx
+            src: "{{.AssetWithoutExt}}/bun"
+            link: bunx
+      - version_constraint: "true"
+        asset: bun-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        files:
+          - name: bun
+            src: "{{.AssetWithoutExt}}/bun"
+          - name: bunx
+            src: "{{.AssetWithoutExt}}/bun"
+            link: bunx
+        overrides:
+          - goos: linux
+            asset: bun-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            replacements: {}
+        replacements:
+          amd64: x64
+          arm64: aarch64
+        checksum:
+          type: github_release
+          asset: SHASUMS256.txt
+          algorithm: sha256

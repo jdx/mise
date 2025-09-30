@@ -173,7 +173,7 @@ impl TasksLs {
                   "quiet": task.quiet,
                   "silent": task.silent,
                   "tools": task.tools,
-                  "run": task.run(),
+                  "run": task.run_script_strings(),
                   "file": task.file,
                 })
             })

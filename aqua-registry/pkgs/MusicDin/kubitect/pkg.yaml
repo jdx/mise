@@ -1,4 +1,0 @@
-packages:
-  - name: MusicDin/kubitect@v3.5.0
-  - name: MusicDin/kubitect
-    version: v2.0.7

@@ -1,6 +1,0 @@
-packages:
-  - name: wakatime/wakatime-cli@v1.131.0
-  - name: wakatime/wakatime-cli
-    version: v1.28.1-alpha.3
-  - name: wakatime/wakatime-cli
-    version: v0.4.0-alpha.1

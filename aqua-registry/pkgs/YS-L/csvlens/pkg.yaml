@@ -1,4 +1,0 @@
-packages:
-  - name: YS-L/csvlens@v0.13.0
-  - name: YS-L/csvlens
-    version: v0.9.1

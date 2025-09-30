@@ -47,6 +47,15 @@ impl Backend for GemBackend {
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         Settings::get().ensure_experimental("gem backend")?;
 
+        // Check if gem is available
+        self.warn_if_dependency_missing(
+            &ctx.config,
+            "gem",
+            "To use gem packages with mise, you need to install Ruby first:\n\
+              mise use ruby@latest",
+        )
+        .await;
+
         CmdLineRunner::new("gem")
             .arg("install")
             .arg(self.tool_name())
@@ -60,7 +69,7 @@ impl Backend for GemBackend {
             //       uninstalling the ruby version used to install the gem will break the
             //       gem. We should find a way to fix this.
             // .arg("--env-shebang")
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
             .execute()?;
 

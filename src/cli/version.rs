@@ -126,6 +126,8 @@ pub async fn show_latest() {
         if SelfUpdate::is_available() {
             let cmd = style("mise self-update").bright().yellow().for_stderr();
             warn!("To update, run {}", cmd);
+        } else if let Some(instructions) = crate::cli::self_update::upgrade_instructions_text() {
+            warn!("{}", instructions);
         }
     }
 }
@@ -146,8 +148,14 @@ async fn get_latest_version(duration: Duration) -> Option<String> {
     let version_file_path = dirs::CACHE.join("latest-version");
     if let Ok(metadata) = modified_duration(&version_file_path) {
         if metadata < duration {
-            if let Ok(version) = file::read_to_string(&version_file_path) {
-                return Some(version.trim().to_string());
+            if let Some(version) = file::read_to_string(&version_file_path)
+                .ok()
+                .map(|s| s.trim().to_string())
+                .and_then(Versioning::new)
+            {
+                if *V <= version {
+                    return Some(version.to_string());
+                }
             }
         }
     }

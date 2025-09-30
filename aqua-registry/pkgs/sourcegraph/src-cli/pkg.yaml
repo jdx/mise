@@ -1,8 +1,0 @@
-packages:
-  - name: sourcegraph/src-cli@6.7.0
-  - name: sourcegraph/src-cli
-    version: 3.30.4
-  - name: sourcegraph/src-cli
-    version: 3.10.9
-  - name: sourcegraph/src-cli
-    version: 1.0.0

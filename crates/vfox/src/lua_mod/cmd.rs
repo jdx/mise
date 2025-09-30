@@ -102,16 +102,26 @@ mod tests {
 
     #[test]
     fn test_cmd_with_cwd() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+        // Canonicalize to resolve symlinks (e.g., /var -> /private/var on macOS)
+        let temp_path_canonical = temp_path
+            .canonicalize()
+            .unwrap_or_else(|_| temp_path.to_path_buf());
+        let temp_dir_str = temp_path_canonical.to_string_lossy().to_string();
+        let expected_path = temp_dir_str.trim_end_matches('/').to_string();
         let lua = Lua::new();
         mod_cmd(&lua).unwrap();
         lua.load(mlua::chunk! {
             local cmd = require("cmd")
             -- Test with working directory
-            local result = cmd.exec("pwd", {cwd = "/tmp"})
-            assert(result:find("/tmp") ~= nil)
+            local result = cmd.exec("pwd", {cwd = $temp_dir_str})
+            -- Check that result contains the expected path (handles trailing slashes/newlines)
+            assert(result:find($expected_path) ~= nil, "Expected result to contain: " .. $expected_path .. " but got: " .. result)
         })
         .exec()
         .unwrap();
+        // TempDir automatically cleans up when dropped
     }
 
     #[test]

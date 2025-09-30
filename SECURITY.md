@@ -26,16 +26,37 @@ mise.jdx.dev is the asset host for mise. It's used to host precompiled mise CLI 
 which mise uses to occasionally check for a new version being released. Everything hosted there uses a single
 vendor to reduce surface area.
 
-## Cosign and slsa verification
+## Native Security Verification
 
-mise will verify signatures of tools using [cosign](https://docs.sigstore.dev/) and [slsa-verifier](https://github.com/slsa-framework/slsa-verifier)
-if cosign/slsa-verifier is installed and the tool is configured to support it. Typically, these will be tools using aqua as the backend.
-See the [aqua docs](https://aquaproj.github.io/docs/reference/security/cosign-slsa) for more on how this is
-configured in the [aqua registry](https://github.com/aquaproj/aqua-registry).
+mise provides **native Rust implementation** for security verification of tools, eliminating the need for external dependencies like `cosign`, `slsa-verifier`, `minisign`, or `gh` CLI tools. This applies to tools using the aqua backend.
 
-You will see this verification happen when tools are installed, setting `--verbose` when installing tools will help
-make it easier to see if verification happened. If you happen to notice a tool offers gpg/slsa/cosign/minisign/etc, see if you can
-make a PR to the aqua registry for mise to pick it up.
+### Supported Verification Methods
+
+- **Cosign signatures**: Keyless and key-based signature verification
+- **SLSA provenance**: Verification of Supply-chain Levels for Software Artifacts (SLSA) attestations
+- **GitHub Artifact Attestations**: Verification of GitHub's artifact attestation system
+- **Minisign verification**: Verification of minisign signatures
+- **Checksum verification**: Always enabled for supported backends
+
+### Configuration
+
+All verification methods are enabled by default and can be configured via environment variables:
+
+```bash
+# Enable/disable specific verification methods
+export MISE_AQUA_COSIGN=true                 # Default: true
+export MISE_AQUA_SLSA=true                   # Default: true
+export MISE_AQUA_GITHUB_ATTESTATIONS=true    # Default: true
+export MISE_AQUA_MINISIGN=true               # Default: true
+```
+
+### How it Works
+
+You will see this verification happen automatically when aqua tools are installed. The verification status is displayed during installation with progress indicators. If any verification fails, the installation will be aborted.
+
+See the [aqua docs](https://aquaproj.github.io/docs/reference/security/cosign-slsa) for more on how verification is configured in the [aqua registry](https://github.com/aquaproj/aqua-registry).
+
+If you notice a tool offers security verification methods (gpg/slsa/cosign/minisign/etc), consider making a PR to the aqua registry to enable verification for that tool.
 
 ## `mise.lock`
 

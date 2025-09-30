@@ -1,4 +1,0 @@
-packages:
-  - name: tkuchiki/slp@v0.2.1
-  - name: tkuchiki/slp
-    version: v0.1.2

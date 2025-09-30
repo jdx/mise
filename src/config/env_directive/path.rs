@@ -62,6 +62,7 @@ mod tests {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::NonToolsOnly,
+                warn_on_missing_required: false,
             },
         )
         .await
@@ -71,8 +72,8 @@ mod tests {
             @r#"
         [
             "~/foo/1",
-            "~/cwd/rel2/2",
-            "~/cwd/rel/1",
+            "~/rel2/2",
+            "~/rel/1",
             "/path/1",
             "/path/2",
         ]

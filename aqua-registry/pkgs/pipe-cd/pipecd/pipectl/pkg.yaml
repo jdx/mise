@@ -1,8 +1,0 @@
-packages:
-  - name: pipe-cd/pipecd/pipectl@v0.53.0
-  - name: pipe-cd/pipecd/pipectl
-    version: v0.33.0
-  - name: pipe-cd/pipecd/pipectl
-    version: v0.27.4
-  - name: pipe-cd/pipecd/pipectl
-    version: v0.24.0

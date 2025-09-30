@@ -107,11 +107,20 @@ run_test() {
 	local status=0
 
 	START="$(date +%s)"
-	within_isolated_env bash --noprofile --norc -euo pipefail -c "source $SCRIPT_DIR/assert.sh && source $TEST_SCRIPT" || status=$?
+	within_isolated_env bash --noprofile --norc -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
 	END="$(date +%s)"
 	DURATION=$((END - START))s
 
 	echo "$TEST: $DURATION" >&2
+
+	# Check if test took >20s and isn't marked as slow
+	DURATION_NUM="${DURATION%s}"
+	if [[ $DURATION_NUM -gt 20 && ! $TEST =~ "_slow"$ ]]; then
+		warn "Test $TEST took ${DURATION} (>20s) but is not marked as slow. Consider renaming to ${TEST}_slow"
+		if [[ -n ${GITHUB_ACTIONS:-} ]]; then
+			echo "::warning title=Slow test not marked::Test $TEST took ${DURATION} (>20s). Consider renaming to ${TEST}_slow to improve CI performance." >&2
+		fi
+	fi
 
 	if [[ $status == 0 ]]; then
 		remove_isolated_env

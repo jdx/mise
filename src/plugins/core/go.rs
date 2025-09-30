@@ -58,7 +58,7 @@ impl GoPlugin {
     fn install_default_packages(
         &self,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
     ) -> eyre::Result<()> {
         let settings = Settings::get();
         let default_packages_file = file::replace_path(&settings.go_default_packages_file);
@@ -84,7 +84,7 @@ impl GoPlugin {
         Ok(())
     }
 
-    fn test_go(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    fn test_go(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> eyre::Result<()> {
         pr.set_message("go version".into());
         CmdLineRunner::new(self.go_bin(tv))
             // run the command in the install path to prevent issues with go.mod version mismatch
@@ -94,11 +94,7 @@ impl GoPlugin {
             .execute()
     }
 
-    async fn download(
-        &self,
-        tv: &mut ToolVersion,
-        pr: &Box<dyn SingleReport>,
-    ) -> eyre::Result<PathBuf> {
+    async fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> eyre::Result<PathBuf> {
         let settings = Settings::get();
         let filename = format!(
             "go{}.{}-{}.{}",
@@ -134,7 +130,7 @@ impl GoPlugin {
     fn install(
         &self,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         tarball_path: &Path,
     ) -> eyre::Result<()> {
         let tarball = tarball_path
@@ -161,7 +157,7 @@ impl GoPlugin {
         Ok(())
     }
 
-    fn verify(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> eyre::Result<()> {
         self.test_go(tv, pr)?;
         if let Err(err) = self.install_default_packages(tv, pr) {
             warn!("failed to install default go packages: {err:#}");
@@ -219,7 +215,7 @@ impl Backend for GoPlugin {
             Ok(versions)
         })
     }
-    fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".go-version".into()])
     }
 
@@ -228,10 +224,10 @@ impl Backend for GoPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tarball_path = self.download(&mut tv, &ctx.pr).await?;
+        let tarball_path = self.download(&mut tv, ctx.pr.as_ref()).await?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
-        self.install(&tv, &ctx.pr, &tarball_path)?;
-        self.verify(&tv, &ctx.pr)?;
+        self.install(&tv, ctx.pr.as_ref(), &tarball_path)?;
+        self.verify(&tv, ctx.pr.as_ref())?;
 
         Ok(tv)
     }
@@ -239,7 +235,7 @@ impl Backend for GoPlugin {
     async fn uninstall_version_impl(
         &self,
         _config: &Arc<Config>,
-        _pr: &Box<dyn SingleReport>,
+        _pr: &dyn SingleReport,
         tv: &ToolVersion,
     ) -> eyre::Result<()> {
         let gopath = self.gopath(tv);

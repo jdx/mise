@@ -1,2 +1,0 @@
-packages:
-  - name: aws-containers/amazon-ecs-exec-checker@v0.7

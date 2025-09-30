@@ -1,4 +1,0 @@
-packages:
-  - name: juicedata/juicefs@v1.3.0
-  - name: juicedata/juicefs
-    version: v1.0.0-beta2

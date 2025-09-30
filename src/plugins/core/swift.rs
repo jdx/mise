@@ -34,12 +34,12 @@ impl SwiftPlugin {
     fn test_swift(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("swift --version".into());
         CmdLineRunner::new(self.swift_bin(tv))
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .arg("--version")
             .execute()
     }
 
-    async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let settings = Settings::get();
         let url = format!(
             "https://download.swift.org/swift-{version}-release/{platform_directory}/swift-{version}-RELEASE/swift-{version}-RELEASE-{platform}{architecture}.{extension}",
@@ -77,7 +77,7 @@ impl SwiftPlugin {
                 .arg("--expand-full")
                 .arg(tarball_path)
                 .arg(&tmp)
-                .with_pr(&ctx.pr)
+                .with_pr(ctx.pr.as_ref())
                 .execute()?;
             file::remove_all(tv.install_path())?;
             file::rename(
@@ -93,8 +93,9 @@ impl SwiftPlugin {
                 &tv.install_path(),
                 &file::TarOptions {
                     format: file::TarFormat::TarGz,
-                    pr: Some(&ctx.pr),
+                    pr: Some(ctx.pr.as_ref()),
                     strip_components: 1,
+                    ..Default::default()
                 },
             )?;
         }
@@ -130,7 +131,7 @@ impl SwiftPlugin {
         }
         gpg::add_keys_swift(ctx)?;
         let sig_path = PathBuf::from(format!("{}.sig", tarball_path.to_string_lossy()));
-        HTTP.download_file(format!("{}.sig", url(tv)), &sig_path, Some(&ctx.pr))
+        HTTP.download_file(format!("{}.sig", url(tv)), &sig_path, Some(ctx.pr.as_ref()))
             .await?;
         self.gpg(ctx)
             .arg("--quiet")
@@ -148,7 +149,7 @@ impl SwiftPlugin {
     }
 
     fn gpg<'a>(&self, ctx: &'a InstallContext) -> CmdLineRunner<'a> {
-        CmdLineRunner::new("gpg").with_pr(&ctx.pr)
+        CmdLineRunner::new("gpg").with_pr(ctx.pr.as_ref())
     }
 }
 
@@ -170,7 +171,7 @@ impl Backend for SwiftPlugin {
         Ok(versions)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         if Settings::get().experimental {
             Ok(vec![".swift-version".into()])
         } else {
@@ -183,7 +184,7 @@ impl Backend for SwiftPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, &ctx.pr).await?;
+        let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
         if cfg!(target_os = "linux") && Settings::get().swift.gpg_verify != Some(false) {
             self.verify_gpg(ctx, &tv, &tarball_path).await?;
         }
@@ -208,8 +209,8 @@ fn platform_directory() -> String {
     } else if let Ok(os_release) = &*os_release::OS_RELEASE {
         let settings = Settings::get();
         let arch = settings.arch();
-        if os_release.id == "ubuntu" && arch == "aarch64" {
-            let retval = format!("{}{}-{}", os_release.id, os_release.version_id, arch);
+        if os_release.id == "ubuntu" && arch == "arm64" {
+            let retval = format!("{}{}-aarch64", os_release.id, os_release.version_id);
             retval.replace(".", "")
         } else {
             platform().replace(".", "")
@@ -254,8 +255,12 @@ fn extension() -> &'static str {
 
 fn architecture(settings: &Settings) -> Option<&str> {
     let arch = settings.arch();
-    if cfg!(target_os = "linux") && arch != "x64" {
-        return Some(arch);
+    if cfg!(target_os = "linux") {
+        return match arch {
+            "x64" => None,
+            "arm64" => Some("aarch64"),
+            _ => Some(arch),
+        };
     } else if cfg!(windows) && arch == "arm64" {
         return Some("arm64");
     }

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# https://github.com/jdx/mise/discussions/6257
+
+cat <<EOF >mise.toml
+[tasks.fail_task]
+run = "exit 1"
+
+[tasks.success_task]
+run = "echo 'This should not run if previous task fails'"
+
+[tasks.sequence]
+run = [
+  { task = "fail_task" },
+  { task = "success_task" },
+]
+EOF
+
+# Test that task sequence stops on failure
+output=$(mise run sequence 2>&1) && exit_code=0 || exit_code=$?
+
+# The sequence should fail with exit code 1
+if [ "$exit_code" -ne 1 ]; then
+	echo "Expected exit code 1, got $exit_code"
+	exit 1
+fi
+
+# The second task should not have run
+if echo "$output" | grep -q "This should not run"; then
+	echo "Second task ran when it shouldn't have"
+	exit 1
+fi
+
+# Test that --continue-on-error allows subsequent tasks to run
+output=$(mise run --continue-on-error sequence 2>&1) && exit_code=0 || exit_code=$?
+
+# The sequence should still exit with 1 (at least one task failed)
+if [ "$exit_code" -ne 1 ]; then
+	echo "Expected exit code 1 with --continue-on-error, got $exit_code"
+	exit 1
+fi
+
+# The second task SHOULD have run with --continue-on-error
+if ! echo "$output" | grep -q "This should not run"; then
+	echo "Second task didn't run with --continue-on-error"
+	exit 1
+fi
+
+echo "Test passed: task sequence correctly handles failures"

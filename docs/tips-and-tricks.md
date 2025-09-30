@@ -128,11 +128,24 @@ Don't do this inside of scripts because mise may add a command in a future versi
 
 ## Software verification
 
-Install cosign, slsa-verifier, and gpg (cosign and slsa-verifier can be installed with mise) in order to verify tools automatically.
+mise provides **native software verification** for aqua tools without requiring external dependencies. For aqua tools, Cosign/Minisign signatures, SLSA provenance, and GitHub attestations are verified automatically using mise's built-in implementation.
+
+For other verification needs (like GPG), you can install additional tools:
 
 ```sh
 brew install gpg
-mise use -g cosign slsa-verifier
+# Note: cosign and slsa-verifier are no longer needed for aqua tools
+# mise now handles verification natively
+```
+
+To configure aqua verification (all enabled by default):
+
+```sh
+# Disable specific verification methods if needed
+export MISE_AQUA_COSIGN=false
+export MISE_AQUA_SLSA=false
+export MISE_AQUA_GITHUB_ATTESTATIONS=false
+export MISE_AQUA_MINISIGN=false
 ```
 
 ## [`mise up --bump`](/cli/upgrade.html)

@@ -1,4 +1,4 @@
-use crate::config::config_file::{config_root, trust_check};
+use crate::config::config_file::trust_check;
 use crate::dirs;
 use crate::env;
 use crate::env_diff::EnvMap;
@@ -21,24 +21,118 @@ mod path;
 mod source;
 mod venv;
 
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
-pub struct EnvDirectiveOptions {
-    pub(crate) tools: bool,
-    pub(crate) redact: bool,
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum RequiredValue {
+    #[default]
+    False,
+    True,
+    Help(String),
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+impl RequiredValue {
+    pub fn is_required(&self) -> bool {
+        !matches!(self, RequiredValue::False)
+    }
+
+    pub fn help_text(&self) -> Option<&str> {
+        match self {
+            RequiredValue::Help(text) => Some(text.as_str()),
+            _ => None,
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for RequiredValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+        use std::fmt;
+
+        struct RequiredVisitor;
+
+        impl<'de> Visitor<'de> for RequiredVisitor {
+            type Value = RequiredValue;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a boolean or a string")
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<RequiredValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(if value {
+                    RequiredValue::True
+                } else {
+                    RequiredValue::False
+                })
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<RequiredValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(RequiredValue::Help(value.to_string()))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<RequiredValue, E>
+            where
+                E: de::Error,
+            {
+                Ok(RequiredValue::Help(value))
+            }
+        }
+
+        deserializer.deserialize_any(RequiredVisitor)
+    }
+}
+
+impl serde::Serialize for RequiredValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            RequiredValue::False => serializer.serialize_bool(false),
+            RequiredValue::True => serializer.serialize_bool(true),
+            RequiredValue::Help(text) => serializer.serialize_str(text),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EnvDirectiveOptions {
+    #[serde(default)]
+    pub(crate) tools: bool,
+    #[serde(default)]
+    pub(crate) redact: Option<bool>,
+    #[serde(default)]
+    pub(crate) required: RequiredValue,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EnvDirective {
     /// simple key/value pair
     Val(String, String, EnvDirectiveOptions),
     /// remove a key
     Rm(String, EnvDirectiveOptions),
+    /// Required variable that must be defined elsewhere
+    Required(String, EnvDirectiveOptions),
     /// dotenv file
     File(String, EnvDirectiveOptions),
     /// add a path to the PATH
     Path(String, EnvDirectiveOptions),
     /// run a bash script and apply the resulting env diff
     Source(String, EnvDirectiveOptions),
+    /// [experimental] age-encrypted value
+    Age {
+        key: String,
+        value: String,
+        format: Option<AgeFormat>,
+        options: EnvDirectiveOptions,
+    },
     PythonVenv {
         path: String,
         create: bool,
@@ -55,9 +149,11 @@ impl EnvDirective {
         match self {
             EnvDirective::Val(_, _, opts)
             | EnvDirective::Rm(_, opts)
+            | EnvDirective::Required(_, opts)
             | EnvDirective::File(_, opts)
             | EnvDirective::Path(_, opts)
             | EnvDirective::Source(_, opts)
+            | EnvDirective::Age { options: opts, .. }
             | EnvDirective::PythonVenv { options: opts, .. }
             | EnvDirective::Module(_, _, opts) => opts,
         }
@@ -81,9 +177,21 @@ impl Display for EnvDirective {
         match self {
             EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
             EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
+            EnvDirective::Required(k, _) => write!(f, "{k} (required)"),
             EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
             EnvDirective::Path(path, _) => write!(f, "_.path = \"{}\"", display_path(path)),
             EnvDirective::Source(path, _) => write!(f, "_.source = \"{}\"", display_path(path)),
+            EnvDirective::Age { key, format, .. } => {
+                write!(f, "{key} (age-encrypted")?;
+                if let Some(fmt) = format {
+                    let fmt_str = match fmt {
+                        AgeFormat::Zstd => "zstd",
+                        AgeFormat::Raw => "raw",
+                    };
+                    write!(f, ", {fmt_str}")?;
+                }
+                write!(f, ")")
+            }
             EnvDirective::Module(name, _, _) => write!(f, "module {name}"),
             EnvDirective::PythonVenv {
                 path,
@@ -110,6 +218,15 @@ impl Display for EnvDirective {
             }
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub enum AgeFormat {
+    #[serde(rename = "zstd")]
+    Zstd,
+    #[serde(rename = "raw")]
+    #[default]
+    Raw,
 }
 
 #[derive(Default, Clone)]
@@ -140,6 +257,7 @@ impl Default for ToolsFilter {
 pub struct EnvResolveOptions {
     pub vars: bool,
     pub tools: ToolsFilter,
+    pub warn_on_missing_required: bool,
 }
 
 impl EnvResults {
@@ -178,7 +296,7 @@ impl EnvResults {
             EnvDirective::PythonVenv { .. } => Some(d),
             _ => None,
         });
-        let input = input
+        let filtered_input = input
             .iter()
             .fold(Vec::new(), |mut acc, (directive, source)| {
                 // Filter directives based on tools setting
@@ -201,7 +319,11 @@ impl EnvResults {
                 acc.push((directive.clone(), source.clone()));
                 acc
             });
-        for (directive, source) in input {
+
+        // Save filtered_input for validation after processing
+        let filtered_input_for_validation = filtered_input.clone();
+
+        for (directive, source) in filtered_input {
             let mut tera = get_tera(source.parent());
             tera.register_function(
                 "exec",
@@ -217,7 +339,7 @@ impl EnvResults {
             //     &directive,
             //     &source
             // );
-            let config_root = config_root(&source);
+            let config_root = crate::config::config_file::config_root::config_root(&source);
             ctx.insert("cwd", &*dirs::CWD);
             ctx.insert("config_root", &config_root);
             let env_vars = env
@@ -243,12 +365,13 @@ impl EnvResults {
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
                     let v = r.parse_template(&ctx, &mut tera, &source, &v)?;
+
                     if resolve_opts.vars {
                         r.vars.insert(k, (v, source.clone()));
                     } else {
                         r.env_remove.remove(&k);
                         // trace!("resolve: inserting {:?}={:?} from {:?}", &k, &v, &source);
-                        if redact {
+                        if redact.unwrap_or(false) {
                             r.redactions.push(k.clone());
                         }
                         env.insert(k, (v, Some(source.clone())));
@@ -257,6 +380,56 @@ impl EnvResults {
                 EnvDirective::Rm(k, _opts) => {
                     env.shift_remove(&k);
                     r.env_remove.insert(k);
+                }
+                EnvDirective::Required(_k, _opts) => {
+                    // Required directives don't set any value - they only validate during validation phase
+                    // The actual value must come from the initial environment or a later config file
+                }
+                EnvDirective::Age {
+                    key: ref k,
+                    ref options,
+                    ..
+                } => {
+                    // Decrypt age-encrypted value
+                    let mut decrypted_v = crate::agecrypt::decrypt_age_directive(&directive)
+                        .await
+                        .map_err(|e| eyre!("[experimental] Failed to decrypt {}: {}", k, e))?;
+
+                    // Parse as template after decryption
+                    decrypted_v = r.parse_template(&ctx, &mut tera, &source, &decrypted_v)?;
+
+                    if resolve_opts.vars {
+                        r.vars.insert(k.clone(), (decrypted_v, source.clone()));
+                    } else {
+                        r.env_remove.remove(k);
+                        // Handle redaction for age-encrypted values
+                        // We're already in the EnvDirective::Age match arm, so we know this is an Age directive
+
+                        // For age-encrypted values, we default to redacting for security
+                        // With nullable redact, we can now distinguish between:
+                        // - None: not specified (default for age is to redact for security)
+                        // - Some(true): explicitly redact
+                        // - Some(false): explicitly don't redact
+                        debug!("Age directive {}: redact = {:?}", k, options.redact);
+                        match options.redact {
+                            Some(false) => {
+                                // User explicitly set redact = false - don't redact
+                                debug!(
+                                    "Age directive {}: NOT redacting (explicit redact = false)",
+                                    k
+                                );
+                            }
+                            Some(true) | None => {
+                                // Either explicitly redact or use age default (redact for security)
+                                debug!(
+                                    "Age directive {}: redacting (redact = {:?})",
+                                    k, options.redact
+                                );
+                                r.redactions.push(k.clone());
+                            }
+                        }
+                        env.insert(k.clone(), (decrypted_v, Some(source.clone())));
+                    }
                 }
                 EnvDirective::Path(input_str, _opts) => {
                     let path = Self::path(&mut ctx, &mut tera, &mut r, &source, input_str).await?;
@@ -282,7 +455,7 @@ impl EnvResults {
                             if resolve_opts.vars {
                                 r.vars.insert(k, (v, f.clone()));
                             } else {
-                                if redact {
+                                if redact.unwrap_or(false) {
                                     r.redactions.push(k.clone());
                                 }
                                 env.insert(k, (v, Some(f.clone())));
@@ -308,7 +481,7 @@ impl EnvResults {
                             if resolve_opts.vars {
                                 r.vars.insert(k, (v, f.clone()));
                             } else {
-                                if redact {
+                                if redact.unwrap_or(false) {
                                     r.redactions.push(k.clone());
                                 }
                                 env.insert(k, (v, Some(f.clone())));
@@ -343,7 +516,7 @@ impl EnvResults {
                     .await?;
                 }
                 EnvDirective::Module(name, value, _opts) => {
-                    Self::module(&mut r, source, name, &value, redact).await?;
+                    Self::module(&mut r, source, name, &value, redact.unwrap_or(false)).await?;
                 }
             };
         }
@@ -360,24 +533,90 @@ impl EnvResults {
         // trace!("resolve: paths: {:#?}", &paths);
         // trace!("resolve: ctx.env: {:#?}", &ctx.get("env"));
         for (source, paths) in &paths.iter().chunk_by(|(_, source)| source) {
-            let config_root = source
-                .parent()
-                .map(Path::to_path_buf)
-                .or_else(|| dirs::CWD.clone())
-                .unwrap_or_default();
+            // Use the computed config_root (project root for nested configs) for path resolution
+            // to be consistent with other env directives like _.source and _.file
+            let config_root = crate::config::config_file::config_root::config_root(source);
             let paths = paths.map(|(p, _)| p).collect_vec();
-            let paths = paths
+            let mut paths = paths
                 .iter()
                 .rev()
                 .flat_map(|path| env::split_paths(path))
                 .map(|s| normalize_path(&config_root, s))
                 .collect::<Vec<_>>();
-            r.env_paths.extend(paths);
+            // r.env_paths is already reversed and paths should prepend r.env_paths
+            paths.reverse();
+            paths.extend(r.env_paths);
+            r.env_paths = paths;
         }
 
-        r.env_paths.reverse();
+        // Validate required environment variables
+        Self::validate_required_env_vars(
+            &filtered_input_for_validation,
+            initial,
+            &r,
+            resolve_opts.warn_on_missing_required,
+        )?;
 
         Ok(r)
+    }
+
+    fn validate_required_env_vars(
+        input: &[(EnvDirective, PathBuf)],
+        initial: &EnvMap,
+        env_results: &EnvResults,
+        warn_mode: bool,
+    ) -> eyre::Result<()> {
+        let mut required_vars = Vec::new();
+
+        // Collect all required environment variables with their options
+        for (directive, source) in input {
+            match directive {
+                EnvDirective::Val(key, _, options) if options.required.is_required() => {
+                    required_vars.push((key.clone(), source.clone(), options.required.clone()));
+                }
+                EnvDirective::Required(key, options) => {
+                    required_vars.push((key.clone(), source.clone(), options.required.clone()));
+                }
+                _ => {}
+            }
+        }
+
+        // Check if required variables are defined
+        for (var_name, declaring_source, required_value) in required_vars {
+            // Variable must be defined either:
+            // 1. In the initial environment (before mise runs), OR
+            // 2. In a config file processed later than the one declaring it as required
+            let is_predefined = initial.contains_key(&var_name);
+
+            let is_defined_later = if let Some((_, var_source)) = env_results.env.get(&var_name) {
+                // Check if the variable comes from a different config file
+                var_source != &declaring_source
+            } else {
+                false
+            };
+
+            if !is_predefined && !is_defined_later {
+                let base_message = format!(
+                    "Required environment variable '{}' is not defined. It must be set before mise runs or in a later config file. (Required in: {})",
+                    var_name,
+                    display_path(declaring_source)
+                );
+
+                let message = if let Some(help) = required_value.help_text() {
+                    format!("{}\nHelp: {}", base_message, help)
+                } else {
+                    base_message
+                };
+
+                if warn_mode {
+                    warn!("{}", message);
+                } else {
+                    return Err(eyre!("{}", message));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn parse_template(

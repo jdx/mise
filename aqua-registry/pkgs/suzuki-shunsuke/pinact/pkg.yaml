@@ -1,4 +1,0 @@
-packages:
-  - name: suzuki-shunsuke/pinact@v3.4.2
-  - name: suzuki-shunsuke/pinact
-    version: v1.0.0-1

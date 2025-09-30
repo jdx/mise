@@ -1,8 +1,0 @@
-packages:
-  - name: koyeb/koyeb-cli@v5.7.0
-  - name: koyeb/koyeb-cli
-    version: v2.0.1
-  - name: koyeb/koyeb-cli
-    version: v2.0.0-rc1
-  - name: koyeb/koyeb-cli
-    version: v1.2.0

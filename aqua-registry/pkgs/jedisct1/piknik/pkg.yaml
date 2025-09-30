@@ -1,4 +1,0 @@
-packages:
-  - name: jedisct1/piknik@0.10.2
-  - name: jedisct1/piknik
-    version: "0.3"

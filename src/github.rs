@@ -114,6 +114,7 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>>
 
     if *env::MISE_LIST_ALL_VERSIONS {
         while let Some(next) = next_page(&headers) {
+            headers = get_headers(&next);
             let (more, h) = crate::http::HTTP_FETCH
                 .json_headers_with_headers::<Vec<GithubRelease>, _>(next, &headers)
                 .await?;
@@ -155,6 +156,7 @@ async fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
 
     if *env::MISE_LIST_ALL_VERSIONS {
         while let Some(next) = next_page(&headers) {
+            headers = get_headers(&next);
             let (more, h) = crate::http::HTTP_FETCH
                 .json_headers_with_headers::<Vec<GithubTag>, _>(next, &headers)
                 .await?;

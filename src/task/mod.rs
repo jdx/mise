@@ -1,15 +1,14 @@
 use crate::cli::version::VERSION;
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
-use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
+use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
 use crate::path_env::PathEnv;
 use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
-use console::{Color, truncate_str};
-use either::Either;
+use console::{Color, measure_text_width, truncate_str};
 use eyre::{Result, eyre};
 use globset::GlobBuilder;
 use indexmap::IndexMap;
@@ -42,6 +41,34 @@ use crate::ui::style;
 pub use deps::Deps;
 use task_dep::TaskDep;
 use task_sources::TaskOutputs;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[serde(untagged)]
+pub enum RunEntry {
+    /// Shell script entry
+    Script(String),
+    /// Run a single task with optional args
+    SingleTask { task: String },
+    /// Run multiple tasks in parallel
+    TaskGroup { tasks: Vec<String> },
+}
+
+impl std::str::FromStr for RunEntry {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(RunEntry::Script(s.to_string()))
+    }
+}
+
+impl Display for RunEntry {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            RunEntry::Script(s) => write!(f, "{}", s),
+            RunEntry::SingleTask { task } => write!(f, "task: {task}"),
+            RunEntry::TaskGroup { tasks } => write!(f, "tasks: {}", tasks.join(", ")),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -92,13 +119,15 @@ pub struct Task {
     pub tools: IndexMap<String, String>,
     #[serde(default)]
     pub usage: String,
+    #[serde(default)]
+    pub timeout: Option<String>,
 
     // normal type
     #[serde(default, deserialize_with = "deserialize_arr")]
-    pub run: Vec<String>,
+    pub run: Vec<RunEntry>,
 
     #[serde(default, deserialize_with = "deserialize_arr")]
-    pub run_windows: Vec<String>,
+    pub run_windows: Vec<RunEntry>,
 
     // command type
     // pub command: Option<String>,
@@ -111,38 +140,6 @@ pub struct Task {
     // file type
     #[serde(default)]
     pub file: Option<PathBuf>,
-}
-
-#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct EitherStringOrIntOrBool(
-    #[serde(with = "either::serde_untagged")] pub Either<String, EitherIntOrBool>,
-);
-
-#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct EitherIntOrBool(#[serde(with = "either::serde_untagged")] pub Either<i64, bool>);
-
-impl Display for EitherIntOrBool {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.0 {
-            Either::Left(i) => write!(f, "{i}"),
-            Either::Right(b) => write!(f, "{b}"),
-        }
-    }
-}
-
-impl Display for EitherStringOrIntOrBool {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.0 {
-            Either::Left(s) => write!(f, "\"{s}\""),
-            Either::Right(b) => write!(f, "{b}"),
-        }
-    }
-}
-
-impl Debug for EitherStringOrIntOrBool {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{self}")
-    }
 }
 
 impl Task {
@@ -235,6 +232,12 @@ impl Task {
         Ok(task)
     }
 
+    pub fn derive_env(&self, env_directives: &[EnvDirective]) -> Self {
+        let mut new_task = self.clone();
+        new_task.env.0.extend_from_slice(env_directives);
+        new_task
+    }
+
     /// prints the task name without an extension
     pub fn display_name(&self, all_tasks: &BTreeMap<String, Task>) -> String {
         let display_name = self
@@ -281,12 +284,23 @@ impl Task {
         format!("[{}]", self.display_name)
     }
 
-    pub fn run(&self) -> &Vec<String> {
+    pub fn run(&self) -> &Vec<RunEntry> {
         if cfg!(windows) && !self.run_windows.is_empty() {
             &self.run_windows
         } else {
             &self.run
         }
+    }
+
+    /// Returns only the script strings from the run entries (without rendering)
+    pub fn run_script_strings(&self) -> Vec<String> {
+        self.run()
+            .iter()
+            .filter_map(|e| match e {
+                RunEntry::Script(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
     pub fn all_depends(&self, tasks: &BTreeMap<String, &Task>) -> Result<Vec<Task>> {
@@ -327,9 +341,10 @@ impl Task {
             .flatten_ok()
             .filter_ok(|t| tasks_to_run.contains(t))
             .collect_vec();
-        let depends_post = tasks_to_run
+        let depends_post = self
+            .depends_post
             .iter()
-            .flat_map(|t| t.depends_post.iter().map(|td| match_tasks(&tasks, td)))
+            .map(|td| match_tasks(&tasks, td))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
@@ -376,8 +391,9 @@ impl Task {
                 .unwrap_or_default();
             (spec, vec![])
         } else {
+            let scripts_only = self.run_script_strings();
             let (scripts, spec) = TaskScriptParser::new(cwd)
-                .parse_run_scripts(config, self, self.run(), env)
+                .parse_run_scripts(config, self, &scripts_only, env)
                 .await?;
             (spec, scripts)
         };
@@ -398,8 +414,9 @@ impl Task {
                 })
                 .unwrap_or_default()
         } else {
+            let scripts_only = self.run_script_strings();
             TaskScriptParser::new(dir)
-                .parse_run_scripts_for_spec_only(config, self, self.run())
+                .parse_run_scripts_for_spec_only(config, self, &scripts_only)
                 .await?
         };
         self.populate_spec_metadata(&mut spec);
@@ -415,8 +432,9 @@ impl Task {
     ) -> Result<Vec<(String, Vec<String>)>> {
         let (spec, scripts) = self.parse_usage_spec(config, cwd.clone(), env).await?;
         if has_any_args_defined(&spec) {
+            let scripts_only = self.run_script_strings();
             let scripts = TaskScriptParser::new(cwd)
-                .parse_run_scripts_with_args(config, self, self.run(), env, args, &spec)
+                .parse_run_scripts_with_args(config, self, &scripts_only, env, args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
         } else {
@@ -425,7 +443,7 @@ impl Task {
                 .enumerate()
                 .map(|(i, script)| {
                     // only pass args to the last script if no formal args are defined
-                    match i == self.run().len() - 1 {
+                    match i == self.run_script_strings().len() - 1 {
                         true => (script.clone(), args.iter().cloned().collect_vec()),
                         false => (script.clone(), vec![]),
                     }
@@ -454,15 +472,8 @@ impl Task {
             ]
         });
         let idx = self.display_name.chars().map(|c| c as usize).sum::<usize>() % COLORS.len();
-        let prefix = style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string();
-        if *env::MISE_TASK_LEVEL > 0 {
-            format!(
-                "MISE_TASK_UNNEST:{}:MISE_TASK_UNNEST {prefix}",
-                *env::MISE_TASK_LEVEL
-            )
-        } else {
-            prefix
-        }
+
+        style::ereset() + &style::estyle(self.prefix()).fg(COLORS[idx]).to_string()
     }
 
     pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
@@ -529,6 +540,9 @@ impl Task {
         for s in &mut self.sources {
             *s = tera.render_str(s, &tera_ctx)?;
         }
+        if !self.sources.is_empty() && self.outputs.is_empty() {
+            self.outputs = TaskOutputs::Auto;
+        }
         self.outputs.render(&mut tera, &tera_ctx)?;
         for d in &mut self.depends {
             d.render(&mut tera, &tera_ctx)?;
@@ -555,7 +569,11 @@ impl Task {
         self.name.replace(':', path::MAIN_SEPARATOR_STR).into()
     }
 
-    pub async fn render_env(&self, config: &Arc<Config>, ts: &Toolset) -> Result<EnvMap> {
+    pub async fn render_env(
+        &self,
+        config: &Arc<Config>,
+        ts: &Toolset,
+    ) -> Result<(EnvMap, Vec<(String, String)>)> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         let mut env = ts.full_env(config).await?;
         if let Some(root) = &config.project_root {
@@ -580,12 +598,13 @@ impl Task {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
             },
         )
         .await?;
-
+        let task_env = env_results.env.into_iter().map(|(k, (v, _))| (k, v));
         // Apply the resolved environment variables
-        env.extend(env_results.env.into_iter().map(|(k, (v, _))| (k, v)));
+        env.extend(task_env.clone());
 
         // Remove environment variables that were explicitly unset
         for key in &env_results.env_remove {
@@ -603,7 +622,7 @@ impl Task {
             env.insert(env::PATH_KEY.to_string(), path_env.to_string());
         }
 
-        Ok(env)
+        Ok((env, task_env.collect()))
     }
 }
 
@@ -678,21 +697,29 @@ impl Default for Task {
             quiet: false,
             tools: Default::default(),
             usage: "".to_string(),
+            timeout: None,
         }
     }
 }
 
 impl Display for Task {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let cmd = if let Some(command) = self.run().first() {
-            Some(command.to_string())
-        } else {
-            self.file.as_ref().map(display_path)
-        };
+        let cmd = self
+            .run()
+            .iter()
+            .map(|e| e.to_string())
+            .next()
+            .or_else(|| self.file.as_ref().map(display_path));
 
         if let Some(cmd) = cmd {
             let cmd = cmd.lines().next().unwrap_or_default();
-            write!(f, "{} {}", self.prefix(), truncate_str(cmd, 60, "…"))
+            let prefix = self.prefix();
+            let prefix_len = measure_text_width(&prefix);
+            // Ensure we have at least 20 characters for the command, even with very long prefixes
+            let available_width = (*env::TERM_WIDTH).saturating_sub(prefix_len + 4); // 4 chars buffer for spacing and ellipsis
+            let max_width = available_width.max(20); // Always show at least 20 chars of command
+            let truncated_cmd = truncate_str(cmd, max_width, "…");
+            write!(f, "{} {}", prefix, truncated_cmd)
         } else {
             write!(f, "{}", self.prefix())
         }
@@ -829,6 +856,48 @@ mod tests {
         for (root, path) in test_cases {
             assert!(name_from_path(root, path).is_err())
         }
+    }
+
+    // This test verifies that resolve_depends correctly uses self.depends_post
+    // instead of iterating through all tasks_to_run (which was the bug)
+    #[tokio::test]
+    async fn test_resolve_depends_post_uses_self_only() {
+        use crate::task::task_dep::TaskDep;
+
+        // Create a task with depends_post
+        let task_with_post_deps = Task {
+            name: "task_with_post".to_string(),
+            depends_post: vec![
+                TaskDep {
+                    task: "post1".to_string(),
+                    args: vec![],
+                },
+                TaskDep {
+                    task: "post2".to_string(),
+                    args: vec![],
+                },
+            ],
+            ..Default::default()
+        };
+
+        // Create another task with different depends_post
+        let other_task = Task {
+            name: "other_task".to_string(),
+            depends_post: vec![TaskDep {
+                task: "other_post".to_string(),
+                args: vec![],
+            }],
+            ..Default::default()
+        };
+
+        // Verify that task_with_post_deps has the expected depends_post
+        assert_eq!(task_with_post_deps.depends_post.len(), 2);
+        assert_eq!(task_with_post_deps.depends_post[0].task, "post1");
+        assert_eq!(task_with_post_deps.depends_post[1].task, "post2");
+
+        // Verify that other_task doesn't interfere (would have before the fix)
+        assert_eq!(other_task.depends_post.len(), 1);
+        assert_eq!(other_task.depends_post[0].task, "other_post");
     }
 
     #[tokio::test]

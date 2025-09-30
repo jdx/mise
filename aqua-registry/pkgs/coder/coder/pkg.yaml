@@ -1,8 +1,0 @@
-packages:
-  - name: coder/coder@v2.25.1
-  - name: coder/coder
-    version: v0.5.9
-  - name: coder/coder
-    version: v0.4.2
-  - name: coder/coder
-    version: v0.3.3

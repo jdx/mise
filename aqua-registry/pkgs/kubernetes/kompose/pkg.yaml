@@ -1,4 +1,0 @@
-packages:
-  - name: kubernetes/kompose@v1.37.0
-  - name: kubernetes/kompose
-    version: v1.25

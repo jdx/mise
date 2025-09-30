@@ -1,6 +1,6 @@
 use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::{env, fs};
 
 fn main() {
@@ -14,7 +14,6 @@ fn main() {
 
     codegen_settings();
     codegen_registry();
-    codegen_aqua();
 }
 
 fn codegen_registry() {
@@ -195,6 +194,7 @@ pub struct Settings {"#
                 "ListString" => "Vec<String>",
                 "ListPath" => "Vec<PathBuf>",
                 "SetString" => "BTreeSet<String>",
+                "IndexMap<String, String>" => "IndexMap<String, String>",
                 t => panic!("Unknown type: {t}"),
             }));
         if let Some(type_) = type_ {
@@ -276,9 +276,15 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
     for (name, props) in &settings {
         let props = props.as_table().unwrap();
         if let Some(type_) = props.get("type").map(|v| v.as_str().unwrap()) {
+            // We could shadow the 'type_' variable, but its a best practice to avoid shadowing.
+            // Thus, we introduce 'meta_type' here.
+            let meta_type = match type_ {
+                "IndexMap<String, String>" => "IndexMap",
+                other => other,
+            };
             lines.push(format!(
                 r#"    "{name}" => SettingsMeta {{
-        type_: SettingsType::{type_},"#,
+        type_: SettingsType::{meta_type},"#,
             ));
             if let Some(description) = props.get("description") {
                 let description = description.as_str().unwrap().to_string();
@@ -293,9 +299,15 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
         for (key, props) in props.as_table().unwrap() {
             let props = props.as_table().unwrap();
             if let Some(type_) = props.get("type").map(|v| v.as_str().unwrap()) {
+                // We could shadow the 'type_' variable, but its a best practice to avoid shadowing.
+                // Thus, we introduce 'meta_type' here.
+                let meta_type = match type_ {
+                    "IndexMap<String, String>" => "IndexMap",
+                    other => other,
+                };
                 lines.push(format!(
                     r#"    "{name}.{key}" => SettingsMeta {{
-        type_: SettingsType::{type_},"#,
+        type_: SettingsType::{meta_type},"#,
                 ));
             }
             if let Some(description) = props.get("description") {
@@ -315,69 +327,4 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
     );
 
     fs::write(&dest_path, lines.join("\n")).unwrap();
-}
-
-// pub static AQUA_STANDARD_REGISTRY_FILES: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
-//     include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry.rs"));
-// });
-
-fn codegen_aqua() {
-    let out_dir = env::var_os("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("aqua_standard_registry.rs");
-    let mut lines = vec!["[".to_string()];
-    for (k, v) in aqua_registries(&registry_dir()).unwrap_or_default() {
-        lines.push(format!(r####"    ("{k}", r###"{v}"###),"####));
-    }
-    lines.push("].into()".to_string());
-    fs::write(&dest_path, lines.join("\n")).unwrap();
-}
-
-fn ls(path: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
-    fs::read_dir(path)?
-        .map(|entry| entry.map(|e| e.path()))
-        .collect()
-}
-
-fn aqua_registries(d: &Path) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
-    let mut registries = vec![];
-    for f in ls(d)? {
-        if f.is_dir() {
-            registries.extend(aqua_registries(&f)?);
-        } else if f.file_name() == Some("registry.yaml".as_ref()) {
-            let registry_yaml = fs::read_to_string(&f)?;
-            registries.push((
-                f.parent()
-                    .unwrap()
-                    .strip_prefix(registry_dir())
-                    .unwrap()
-                    .iter()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .collect::<Vec<_>>()
-                    .join("/"),
-                registry_yaml.clone(),
-            ));
-            if registry_yaml.contains("aliases") {
-                let registry: serde_yaml::Value = serde_yaml::from_str(&registry_yaml)?;
-                if let Some(packages) = registry.get("packages").and_then(|p| p.as_sequence()) {
-                    for package in packages {
-                        if let Some(aliases) = package.get("aliases").and_then(|a| a.as_sequence())
-                        {
-                            for alias in aliases {
-                                if let Some(name) = alias.get("name").and_then(|n| n.as_str()) {
-                                    registries.push((name.to_string(), registry_yaml.clone()));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    Ok(registries)
-}
-
-fn registry_dir() -> PathBuf {
-    PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap())
-        .join("aqua-registry")
-        .join("pkgs")
 }

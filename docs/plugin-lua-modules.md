@@ -185,7 +185,7 @@ local strings = require("strings")
 local function normalize_version(version)
     -- Remove 'v' prefix if present
     version = strings.trim_prefix(version, "v")
-    
+
     -- Remove pre-release suffixes
     local parts = strings.split(version, "-")
     return parts[1]
@@ -258,14 +258,14 @@ function get_github_releases(owner, repo)
     local resp, err = http.get({
         url = "https://github.com/" .. owner .. "/" .. repo .. "/releases"
     })
-    
+
     if err ~= nil then
         error("Failed to fetch releases: " .. err)
     end
-    
+
     local doc = html.parse(resp.body)
     local releases = {}
-    
+
     -- Find all release tags
     local release_elements = doc:find("a[href*='/releases/tag/']")
     for _, element in ipairs(release_elements) do
@@ -278,7 +278,7 @@ function get_github_releases(owner, repo)
             })
         end
     end
-    
+
     return releases
 end
 ```
@@ -324,17 +324,17 @@ function install_from_archive(download_url, install_path)
     local err = http.download_file({
         url = download_url
     }, archive_path)
-    
+
     if err ~= nil then
         error("Download failed: " .. err)
     end
-    
+
     -- Extract to installation directory
     local err = archiver.decompress(archive_path, install_path)
     if err ~= nil then
         error("Extraction failed: " .. err)
     end
-    
+
     -- Clean up archive
     os.remove(archive_path)
 end
@@ -355,6 +355,13 @@ print(full_path)  -- On Unix: /foo/bar/baz.txt, on Windows: \foo\bar\baz.txt
 ```
 
 The `file.join_path(...)` function joins any number of path segments using the correct separator for the current operating system. This is the recommended way to construct file paths in cross-platform plugins.
+
+### Read File Contents
+
+```lua
+local file = require("file")
+print(file.read("/path/to/file"))
+```
 
 ### Create Symbolic Links
 
@@ -482,21 +489,21 @@ function fetch_npm_versions(package_name)
             ['User-Agent'] = "mise-plugin"
         }
     })
-    
+
     if err ~= nil then
         error("Failed to fetch package info: " .. err)
     end
-    
+
     local package_info = json.decode(resp.body)
     local versions = {}
-    
+
     for version, _ in pairs(package_info.versions) do
         table.insert(versions, version)
     end
-    
+
     -- Sort versions (simple string sort)
     table.sort(versions)
-    
+
     return versions
 end
 ```
@@ -515,16 +522,16 @@ function download_with_verification(url, dest_path, expected_sha256)
             ['User-Agent'] = "mise-plugin"
         }
     }, dest_path)
-    
+
     if err ~= nil then
         error("Download failed: " .. err)
     end
-    
+
     -- Verify file exists
     if not file.exists(dest_path) then
         error("Downloaded file not found")
     end
-    
+
     -- Note: SHA256 verification would need additional implementation
     -- This is a simplified example
     print("Downloaded successfully to: " .. dest_path)
@@ -542,21 +549,21 @@ function parse_config_file(config_path)
     if not file.exists(config_path) then
         return {}  -- Return empty config
     end
-    
+
     local content = file.read(config_path)
     if not content then
         error("Failed to read config file: " .. config_path)
     end
-    
+
     -- Trim whitespace
     content = strings.trim_space(content)
-    
+
     -- Parse JSON
     local success, config = pcall(json.decode, content)
     if not success then
         error("Invalid JSON in config file: " .. config_path)
     end
-    
+
     return config
 end
 ```
@@ -572,23 +579,23 @@ function scrape_versions_from_releases(base_url)
     local resp, err = http.get({
         url = base_url .. "/releases"
     })
-    
+
     if err ~= nil then
         error("Failed to fetch releases page: " .. err)
     end
-    
+
     local doc = html.parse(resp.body)
     local versions = {}
-    
+
     -- Find version tags
     local version_elements = doc:find("h2 a[href*='/releases/tag/']")
     for _, element in ipairs(version_elements) do
         local version_text = element:text()
         local version = strings.trim_space(version_text)
-        
+
         -- Remove 'v' prefix if present
         version = strings.trim_prefix(version, "v")
-        
+
         if version and version ~= "" then
             table.insert(versions, {
                 version = version,
@@ -596,7 +603,7 @@ function scrape_versions_from_releases(base_url)
             })
         end
     end
-    
+
     return versions
 end
 ```
@@ -613,20 +620,20 @@ local json = require("json")
 
 function safe_api_call(url)
     local resp, err = http.get({url = url})
-    
+
     if err ~= nil then
         error("HTTP request failed: " .. err)
     end
-    
+
     if resp.status_code ~= 200 then
         error("API returned error: " .. resp.status_code .. " " .. resp.body)
     end
-    
+
     local success, data = pcall(json.decode, resp.body)
     if not success then
         error("Failed to parse JSON response: " .. data)
     end
-    
+
     return data
 end
 ```
@@ -642,26 +649,26 @@ local cache_ttl = 3600  -- 1 hour
 function cached_http_get(url)
     local now = os.time()
     local cache_key = url
-    
+
     -- Check cache
     if cache[cache_key] and (now - cache[cache_key].timestamp) < cache_ttl then
         return cache[cache_key].data
     end
-    
+
     -- Fetch fresh data
     local http = require("http")
     local resp, err = http.get({url = url})
-    
+
     if err ~= nil then
         error("HTTP request failed: " .. err)
     end
-    
+
     -- Cache the result
     cache[cache_key] = {
         data = resp,
         timestamp = now
     }
-    
+
     return resp
 end
 ```
@@ -674,7 +681,7 @@ Handle cross-platform differences:
 local function get_platform_info()
     local is_windows = package.config:sub(1,1) == '\\'
     local cmd = require("cmd")
-    
+
     if is_windows then
         return {
             os = "windows",
@@ -685,7 +692,7 @@ local function get_platform_info()
     else
         local uname = cmd.exec("uname -s"):lower()
         local arch = cmd.exec("uname -m")
-        
+
         return {
             os = uname,
             arch = arch,

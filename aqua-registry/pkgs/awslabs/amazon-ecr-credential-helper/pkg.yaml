@@ -1,4 +1,0 @@
-packages:
-  - name: awslabs/amazon-ecr-credential-helper@v0.10.1
-  - name: awslabs/amazon-ecr-credential-helper
-    version: v0.3.1

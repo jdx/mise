@@ -1,8 +1,0 @@
-packages:
-  - name: go-to-k/lamver@v0.18.0
-  - name: go-to-k/lamver
-    version: v0.4.2
-  - name: go-to-k/lamver
-    version: v0.4.1
-  - name: go-to-k/lamver
-    version: v0.0.1

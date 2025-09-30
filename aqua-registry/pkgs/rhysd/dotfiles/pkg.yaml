@@ -1,4 +1,0 @@
-packages:
-  - name: rhysd/dotfiles@v0.2.3
-  - name: rhysd/dotfiles
-    version: v0.2.2

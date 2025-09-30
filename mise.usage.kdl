@@ -95,20 +95,20 @@ cmd alias help="Manage version aliases." {
         flag --no-header help="Don't show table header"
         arg "[TOOL]" help="Show aliases for <TOOL>" required=#false
     }
-    cmd set help="Add/update an alias for a plugin" {
+    cmd set help="Add/update an alias for a backend/plugin" {
         alias add create
-        long_help "Add/update an alias for a plugin\n\nThis modifies the contents of ~/.config/mise/config.toml"
-        after_long_help "Examples:\n\n    $ mise alias set node lts-jod 22.0.0\n"
-        arg <PLUGIN> help="The plugin to set the alias for"
+        long_help "Add/update an alias for a backend/plugin\n\nThis modifies the contents of ~/.config/mise/config.toml"
+        after_long_help "Examples:\n\n    $ mise alias set maven asdf:mise-plugins/mise-maven\n    $ mise alias set node lts-jod 22.0.0\n"
+        arg <PLUGIN> help="The backend/plugin to set the alias for"
         arg <ALIAS> help="The alias to set"
-        arg <VALUE> help="The value to set the alias to"
+        arg "[VALUE]" help="The value to set the alias to" required=#false
     }
-    cmd unset help="Clears an alias for a plugin" {
+    cmd unset help="Clears an alias for a backend/plugin" {
         alias rm remove delete del
-        long_help "Clears an alias for a plugin\n\nThis modifies the contents of ~/.config/mise/config.toml"
-        after_long_help "Examples:\n\n    $ mise alias unset node lts-jod\n"
-        arg <PLUGIN> help="The plugin to remove the alias from"
-        arg <ALIAS> help="The alias to remove"
+        long_help "Clears an alias for a backend/plugin\n\nThis modifies the contents of ~/.config/mise/config.toml"
+        after_long_help "Examples:\n\n    $ mise alias unset maven\n    $ mise alias unset node lts-jod\n"
+        arg <PLUGIN> help="The backend/plugin to remove the alias from"
+        arg "[ALIAS]" help="The alias to remove" required=#false
     }
 }
 cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf\" internally" {
@@ -132,6 +132,9 @@ cmd cache help="Manage the mise cache" {
         alias clean hide=#true
         flag --outdate help="Mark all cache files as old" hide=#true
         arg "[PLUGIN]…" help="Plugin(s) to clear cache for e.g.: node, python" required=#false var=#true
+    }
+    cmd path help="Show the cache directory path" {
+        alias dir
     }
     cmd prune help="Removes stale mise cache files" {
         alias p
@@ -641,6 +644,7 @@ cmd run help="Run task(s)" {
     alias r
     long_help "Run task(s)\n\nThis command will run a tasks, or multiple tasks in parallel.\nTasks may have dependencies on other tasks or on source files.\nIf source is configured on a tasks, it will only run if the source\nfiles have changed.\n\nTasks can be defined in mise.toml or as standalone scripts.\nIn mise.toml, tasks take this form:\n\n    [tasks.build]\n    run = \"npm run build\"\n    sources = [\"src/**/*.ts\"]\n    outputs = [\"dist/**/*.js\"]\n\nAlternatively, tasks can be defined as standalone scripts.\nThese must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or\n`.config/mise/tasks`.\nThe name of the script will be the name of the tasks.\n\n    $ cat .mise/tasks/build<<EOF\n    #!/usr/bin/env bash\n    npm run build\n    EOF\n    $ mise run build"
     after_long_help "Examples:\n\n    # Runs the \"lint\" tasks. This needs to either be defined in mise.toml\n    # or as a standalone script. See the project README for more information.\n    $ mise run lint\n\n    # Forces the \"build\" tasks to run even if its sources are up-to-date.\n    $ mise run build --force\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ mise run test --raw\n\n    # Runs the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ mise run lint ::: test ::: check\n\n    # Execute multiple tasks each with their own arguments.\n    $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2\n"
+    flag --no-cache help="Do not use cache on remote tasks"
     flag "-C --cd" help="Change to this directory before executing the command" {
         arg <CD>
     }
@@ -660,6 +664,10 @@ cmd run help="Run task(s)" {
         arg <JOBS>
     }
     flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
+    flag "-S --silent" help="Don't show any output except for errors"
+    flag --timeout help="Timeout for the task to complete\ne.g.: 30s, 5m" {
+        arg <TIMEOUT>
+    }
     flag --timings help="Shows elapsed time after each task completes" hide=#true {
         long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
     }
@@ -667,12 +675,10 @@ cmd run help="Run task(s)" {
         long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
     }
     flag "-q --quiet" help="Don't show extra output"
-    flag "-S --silent" help="Don't show any output except for errors"
     flag "-o --output" help="Change how tasks information is output when running tasks" {
         long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
         arg <OUTPUT>
     }
-    flag --no-cache
     mount run="mise tasks --usage"
 }
 cmd search help="Search for tools in the registry" {
@@ -696,17 +702,34 @@ cmd self-update help="Updates mise itself." {
 }
 cmd set help="Set environment variables in mise.toml" {
     alias ev env-vars hide=#true
-    long_help "Set environment variables in mise.toml\n\nBy default, this command modifies `mise.toml` in the current directory."
-    after_long_help "Examples:\n\n    $ mise set NODE_ENV=production\n\n    $ mise set NODE_ENV\n    production\n\n    $ mise set\n    key       value       source\n    NODE_ENV  production  ~/.config/mise/config.toml\n"
+    long_help "Set environment variables in mise.toml\n\nBy default, this command modifies `mise.toml` in the current directory.\nUse `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`."
+    after_long_help "Examples:\n\n    $ mise set NODE_ENV=production\n\n    $ mise set NODE_ENV\n    production\n\n    $ mise set -E staging NODE_ENV=staging\n    # creates or modifies mise.staging.toml\n\n    $ mise set\n    key       value       source\n    NODE_ENV  production  ~/.config/mise/config.toml\n\n    $ mise set --prompt PASSWORD\n    Enter value for PASSWORD: [hidden input]\n\n    [experimental] Age Encryption:\n\n    $ mise set --age-encrypt API_KEY=secret\n\n    $ mise set --age-encrypt --prompt API_KEY\n    Enter value for API_KEY: [hidden input]\n"
     flag --file help="The TOML file to update" {
-        long_help "The TOML file to update\n\nDefaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`."
+        long_help "The TOML file to update\n\nCan be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.\nDefaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`."
         arg <FILE>
     }
     flag --complete help="Render completions" hide=#true
     flag "-g --global" help="Set the environment variable in the global config file"
+    flag "-E --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
+        arg <ENV>
+    }
     flag "--remove --rm --unset" help="Remove the environment variable from config file" var=#true hide=#true {
         long_help "Remove the environment variable from config file\n\nCan be used multiple times."
         arg <ENV_KEY>
+    }
+    flag --prompt help="Prompt for environment variable values"
+    flag --age-encrypt help="[experimental] Encrypt the value with age before storing"
+    flag --age-recipient help="[experimental] Age recipient (x25519 public key) for encryption" var=#true {
+        long_help "[experimental] Age recipient (x25519 public key) for encryption\n\nCan be used multiple times. Requires --age-encrypt."
+        arg <RECIPIENT>
+    }
+    flag --age-ssh-recipient help="[experimental] SSH recipient (public key or path) for age encryption" var=#true {
+        long_help "[experimental] SSH recipient (public key or path) for age encryption\n\nCan be used multiple times. Requires --age-encrypt."
+        arg <PATH_OR_PUBKEY>
+    }
+    flag --age-key-file help="[experimental] Age identity file for encryption" {
+        long_help "[experimental] Age identity file for encryption\n\nDefaults to ~/.config/mise/age.txt if it exists"
+        arg <PATH>
     }
     arg "[ENV_VAR]…" help="Environment variable(s) to set\ne.g.: NODE_ENV=production" required=#false var=#true
 }
@@ -898,6 +921,7 @@ cmd tasks help="Manage tasks" {
         alias r
         long_help "Run task(s)\n\nThis command will run a tasks, or multiple tasks in parallel.\nTasks may have dependencies on other tasks or on source files.\nIf source is configured on a tasks, it will only run if the source\nfiles have changed.\n\nTasks can be defined in mise.toml or as standalone scripts.\nIn mise.toml, tasks take this form:\n\n    [tasks.build]\n    run = \"npm run build\"\n    sources = [\"src/**/*.ts\"]\n    outputs = [\"dist/**/*.js\"]\n\nAlternatively, tasks can be defined as standalone scripts.\nThese must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or\n`.config/mise/tasks`.\nThe name of the script will be the name of the tasks.\n\n    $ cat .mise/tasks/build<<EOF\n    #!/usr/bin/env bash\n    npm run build\n    EOF\n    $ mise run build"
         after_long_help "Examples:\n\n    # Runs the \"lint\" tasks. This needs to either be defined in mise.toml\n    # or as a standalone script. See the project README for more information.\n    $ mise run lint\n\n    # Forces the \"build\" tasks to run even if its sources are up-to-date.\n    $ mise run build --force\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ mise run test --raw\n\n    # Runs the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ mise run lint ::: test ::: check\n\n    # Execute multiple tasks each with their own arguments.\n    $ mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2\n"
+        flag --no-cache help="Do not use cache on remote tasks"
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg <CD>
         }
@@ -917,6 +941,10 @@ cmd tasks help="Manage tasks" {
             arg <JOBS>
         }
         flag "-r --raw" help="Read/write directly to stdin/stdout/stderr instead of by line\nRedactions are not applied with this option\nConfigure with `raw` config or `MISE_RAW` env var"
+        flag "-S --silent" help="Don't show any output except for errors"
+        flag --timeout help="Timeout for the task to complete\ne.g.: 30s, 5m" {
+            arg <TIMEOUT>
+        }
         flag --timings help="Shows elapsed time after each task completes" hide=#true {
             long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
         }
@@ -924,12 +952,10 @@ cmd tasks help="Manage tasks" {
             long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
         }
         flag "-q --quiet" help="Don't show extra output"
-        flag "-S --silent" help="Don't show any output except for errors"
         flag "-o --output" help="Change how tasks information is output when running tasks" {
             long_help "Change how tasks information is output when running tasks\n\n- `prefix` - Print stdout/stderr by line, prefixed with the task's label\n- `interleave` - Print directly to stdout/stderr instead of by line\n- `replacing` - Stdout is replaced each time, stderr is printed as is\n- `timed` - Only show stdout lines if they are displayed for more than 1 second\n- `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output\n- `quiet` - Don't show extra output\n- `silent` - Don't show any output including stdout and stderr from the task except for errors"
             arg <OUTPUT>
         }
-        flag --no-cache
         arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2" required=#false default=default
         arg "[ARGS]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=#false var=#true
         arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=#false var=#true hide=#true

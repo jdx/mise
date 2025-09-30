@@ -1,8 +1,0 @@
-packages:
-  - name: rootless-containers/rootlesskit@v2.3.5
-  - name: rootless-containers/rootlesskit
-    version: v2.2.0
-  - name: rootless-containers/rootlesskit
-    version: v0.9.5
-  - name: rootless-containers/rootlesskit
-    version: v0.9.0-beta.0

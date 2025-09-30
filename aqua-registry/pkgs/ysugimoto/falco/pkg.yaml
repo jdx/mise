@@ -1,8 +1,0 @@
-packages:
-  - name: ysugimoto/falco@v1.20.0
-  - name: ysugimoto/falco
-    version: v1.1.1
-  - name: ysugimoto/falco
-    version: v0.20.1
-  - name: ysugimoto/falco
-    version: v0.9.1

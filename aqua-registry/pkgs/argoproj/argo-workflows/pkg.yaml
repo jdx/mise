@@ -1,4 +1,0 @@
-packages:
-  - name: argoproj/argo-workflows@v3.7.1
-  - name: argoproj/argo-workflows
-    version: v3.4.3

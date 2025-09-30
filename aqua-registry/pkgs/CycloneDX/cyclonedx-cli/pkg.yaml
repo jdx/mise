@@ -1,4 +1,0 @@
-packages:
-  - name: CycloneDX/cyclonedx-cli@v0.29.1
-  - name: CycloneDX/cyclonedx-cli
-    version: v0.22.0

@@ -1,4 +1,0 @@
-packages:
-  - name: libbpf/bpftool@v7.6.0
-  - name: libbpf/bpftool
-    version: v7.2.0

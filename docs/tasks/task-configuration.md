@@ -9,10 +9,22 @@ All examples are in toml-task format instead of file, however they apply in both
 
 ### `run`
 
-- **Type**: `string | string[]`
+- **Type**: `string | (string | { task: string } | { tasks: string[] })[]`
 
-The command to run. This is the only required property for a task. Note that tasks can be defined in
-`mise.toml` in various ways in order to simplify the config, e.g.: these are all equal:
+The command(s) to run. This is the only required property for a task.
+
+You can now mix scripts with task references:
+
+```toml
+[tasks.grouped]
+run = [
+  { task = "t1" },          # run t1 (with its dependencies)
+  { tasks = ["t2", "t3"] }, # run t2 and t3 in parallel (with their dependencies)
+  "echo end",               # then run a script
+]
+```
+
+Simple forms still work and are equivalent:
 
 ```toml
 tasks.a = "echo hello"
@@ -26,7 +38,9 @@ run = ["echo hello"]
 
 ### `run_windows`
 
-An alternative script to run when `mise run` is executed on windows:
+- **Type**: `string | (string | { task: string } | { tasks: string[] })[]`
+
+Windows-specific variant of `run` supporting the same structured syntax:
 
 ```toml
 [tasks.build]
@@ -218,6 +232,7 @@ has changed since the last build.
 ### `outputs`
 
 - **Type**: `string | string[] | { auto = true }`
+- **Default**: `{ auto = true }`
 
 The counterpart to `sources`, these are the files or directories that the task will create/modify after
 it executes.
@@ -231,7 +246,7 @@ a file for `sources` to work.
 [tasks.build]
 run = "cargo build"
 sources = ["Cargo.toml", "src/**/*.rs"]
-outputs = { auto = true }
+outputs = { auto = true } # this is the default when sources is defined
 ```
 
 ### `shell`
@@ -387,4 +402,4 @@ Like `[env]`, vars can also be read in as a file:
 _.file = ".env"
 ```
 
-[Secrets](/environments/secrets) are also supported as vars.
+[Secrets](/environments/secrets/) are also supported as vars.

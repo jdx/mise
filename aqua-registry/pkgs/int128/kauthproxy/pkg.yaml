@@ -1,4 +1,0 @@
-packages:
-  - name: int128/kauthproxy@v1.2.4
-  - name: int128/kauthproxy
-    version: v1.1.1

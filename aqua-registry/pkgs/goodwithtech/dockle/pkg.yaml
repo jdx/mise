@@ -1,6 +1,0 @@
-packages:
-  - name: goodwithtech/dockle@v0.4.15
-  - name: goodwithtech/dockle
-    version: v0.4.5
-  - name: goodwithtech/dockle
-    version: v0.3.12

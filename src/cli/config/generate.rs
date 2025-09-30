@@ -20,10 +20,10 @@ pub struct ConfigGenerate {
 }
 
 impl ConfigGenerate {
-    pub fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("`mise config generate`")?;
         let doc = if let Some(tool_versions) = &self.tool_versions {
-            self.tool_versions(tool_versions)?
+            self.tool_versions(tool_versions).await?
         } else {
             self.default()
         };
@@ -37,9 +37,10 @@ impl ConfigGenerate {
         Ok(())
     }
 
-    fn tool_versions(&self, tool_versions: &Path) -> Result<String> {
-        let to = config_file::parse_or_init(&PathBuf::from(&*env::MISE_DEFAULT_CONFIG_FILENAME))?;
-        let from = config_file::parse(tool_versions)?;
+    async fn tool_versions(&self, tool_versions: &Path) -> Result<String> {
+        let to =
+            config_file::parse_or_init(&PathBuf::from(&*env::MISE_DEFAULT_CONFIG_FILENAME)).await?;
+        let from = config_file::parse(tool_versions).await?;
         let tools = from.to_tool_request_set()?.tools;
         for (ba, tools) in tools {
             to.replace_versions(&ba, tools)?;

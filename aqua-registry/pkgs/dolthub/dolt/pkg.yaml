@@ -1,6 +1,0 @@
-packages:
-  - name: dolthub/dolt@v1.58.6
-  - name: dolthub/dolt
-    version: v0.40.15
-  - name: dolthub/dolt
-    version: v0.40.13

@@ -1,22 +1,22 @@
---- Parse legacy version files like .node-version, .nvmrc, etc.
---- @param ctx table Context information
---- @field ctx.filepath string Path to the legacy file
---- @return table Version information
+--- Parse the legacy file found by vfox to determine the version of the tool.
+--- Useful to extract version numbers from files like JavaScript's package.json or Golangs go.mod.
 function PLUGIN:ParseLegacyFile(ctx)
-    local filepath = ctx.filepath
-    local content = io.open(filepath, "r")
-    if content then
-        local version = content:read("*line")
-        content:close()
-        if version then
-            -- Remove any "v" prefix and trim whitespace
-            version = version:gsub("^v", ""):match("^%s*(.-)%s*$")
-            return {
-                version = version
-            }
-        end
+    local filename = ctx.filename
+    if filename == nil then
+        error("ctx.filename is nil")
     end
+    if filename ~= ".dummy-version" then
+        error("Expected filename to be .dummy-version, got " .. filename)
+    end
+    local filepath = ctx.filepath
+    local file = require("file")
+    local content = file.read(filepath)
+    content = content:gsub("%s+", "")
+    if content == "" then
+        return {}
+    end
+
     return {
-        version = nil
+        version = content,
     }
-end 
+end

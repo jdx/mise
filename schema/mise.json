@@ -4,6 +4,71 @@
   "title": "mise",
   "type": "object",
   "$defs": {
+    "env_directive": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tools": {
+          "type": "boolean",
+          "description": "load tools before resolving"
+        },
+        "redact": {
+          "type": "boolean",
+          "description": "redact the value from logs"
+        },
+        "required": {
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "require this environment variable to be defined before mise runs or in a later config file"
+            },
+            {
+              "type": "string",
+              "description": "require this environment variable with user help text on how to set it"
+            }
+          ],
+          "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
+        }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/env_directive/properties/path"
+            }
+          },
+          "required": ["path"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "paths": {
+              "$ref": "#/$defs/env_directive/properties/paths"
+            }
+          },
+          "required": ["paths"]
+        }
+      ]
+    },
     "env": {
       "additionalProperties": {
         "oneOf": [
@@ -30,8 +95,45 @@
               "redact": {
                 "type": "boolean",
                 "description": "redact the value from logs"
+              },
+              "required": {
+                "type": "boolean",
+                "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false"
               }
             }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "description": "[experimental] age-encrypted value (simplified format)"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string",
+                        "description": "[experimental] age-encrypted value"
+                      },
+                      "format": {
+                        "type": "string",
+                        "enum": ["raw", "zstd"],
+                        "description": "[experimental] compression format for the encrypted value"
+                      }
+                    },
+                    "required": ["value"],
+                    "additionalProperties": false,
+                    "description": "[experimental] age-encrypted value (complex format)"
+                  }
+                ]
+              }
+            },
+            "required": ["age"],
+            "additionalProperties": false,
+            "description": "[experimental] age-encrypted environment variable"
           },
           {
             "type": "string"
@@ -53,30 +155,7 @@
             "file": {
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      ]
-                    },
-                    "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
-                    }
-                  }
+                  "$ref": "#/$defs/env_directive"
                 },
                 {
                   "description": "dotenv file to load",
@@ -84,11 +163,18 @@
                 },
                 {
                   "description": "dotenv files to load",
+                  "type": "array",
                   "items": {
-                    "description": "dotenv file to load",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "description": "dotenv file to load",
+                        "type": "string"
+                      },
+                      {
+                        "$ref": "#/$defs/env_directive"
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -109,8 +195,51 @@
                           }
                         }
                       ]
+                    },
+                    "paths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "tools": {
+                      "type": "boolean",
+                      "description": "load tools before resolving"
                     }
-                  }
+                  },
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["path"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "paths": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": ["paths"]
+                    }
+                  ]
                 },
                 {
                   "description": "PATH entry to add",
@@ -118,11 +247,37 @@
                 },
                 {
                   "description": "PATH entries to add",
+                  "type": "array",
                   "items": {
-                    "description": "PATH entry to add",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "description": "PATH entry to add",
+                        "type": "string"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          },
+                          "tools": {
+                            "type": "boolean",
+                            "description": "load tools before resolving"
+                          }
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -177,30 +332,7 @@
             "source": {
               "oneOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "path": {
-                      "oneOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      ]
-                    },
-                    "tools": {
-                      "type": "boolean",
-                      "description": "load tools before resolving"
-                    },
-                    "redact": {
-                      "type": "boolean",
-                      "description": "redact the value from logs"
-                    }
-                  }
+                  "$ref": "#/$defs/env_directive"
                 },
                 {
                   "description": "bash script to load",
@@ -208,11 +340,18 @@
                 },
                 {
                   "description": "bash scripts to load",
+                  "type": "array",
                   "items": {
-                    "description": "bash script to load",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "description": "bash script to load",
+                        "type": "string"
+                      },
+                      {
+                        "$ref": "#/$defs/env_directive"
+                      }
+                    ]
+                  }
                 }
               ]
             }
@@ -224,6 +363,7 @@
     },
     "settings": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "activate_aggressive": {
           "description": "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.",
@@ -242,6 +382,7 @@
           "type": "boolean"
         },
         "aqua": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "baked_registry": {
@@ -260,6 +401,11 @@
               "items": {
                 "type": "string"
               }
+            },
+            "github_attestations": {
+              "default": true,
+              "description": "Enable GitHub Artifact Attestations verification for aqua tools.",
+              "type": "boolean"
             },
             "minisign": {
               "default": true,
@@ -309,6 +455,7 @@
           "type": "string"
         },
         "cargo": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "binstall": {
@@ -389,6 +536,7 @@
           }
         },
         "dotnet": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "package_flags": {
@@ -427,6 +575,7 @@
           "type": "string"
         },
         "erlang": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "compile": {
@@ -509,6 +658,11 @@
           "description": "Timeout in seconds for all HTTP requests in mise.",
           "type": "string"
         },
+        "http_retries": {
+          "default": 0,
+          "description": "Number of retries for HTTP requests in mise.",
+          "type": "number"
+        },
         "idiomatic_version_file": {
           "default": true,
           "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
@@ -576,6 +730,7 @@
           "enum": ["trace", "debug", "info", "warn", "error"]
         },
         "node": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "compile": {
@@ -602,6 +757,7 @@
           "type": "boolean"
         },
         "npm": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "bun": {
@@ -639,6 +795,7 @@
           "type": "boolean"
         },
         "pipx": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "registry_url": {
@@ -667,6 +824,7 @@
           "deprecated": true
         },
         "python": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "compile": {
@@ -785,6 +943,7 @@
           "type": "boolean"
         },
         "ruby": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "apply_patches": {
@@ -825,6 +984,7 @@
           }
         },
         "rust": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "cargo_home": {
@@ -845,7 +1005,32 @@
           "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
           "type": "boolean"
         },
+        "age": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "identity_files": {
+              "description": "[experimental] List of age identity files to use for decryption.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "key_file": {
+              "description": "[experimental] Path to the age private key file to use for encryption/decryption.",
+              "type": "string"
+            },
+            "ssh_identity_files": {
+              "description": "[experimental] List of SSH identity files to use for age decryption.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
         "sops": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "age_key": {
@@ -873,6 +1058,7 @@
           }
         },
         "status": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "missing_tools": {
@@ -896,6 +1082,7 @@
           }
         },
         "swift": {
+          "type": "object",
           "additionalProperties": false,
           "properties": {
             "gpg_verify": {
@@ -950,6 +1137,10 @@
             "type": "string"
           }
         },
+        "task_timeout": {
+          "description": "Default timeout for tasks. Can be overridden by individual tasks.",
+          "type": "string"
+        },
         "task_timings": {
           "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
           "type": "boolean"
@@ -975,6 +1166,13 @@
           "default": "sh -c -o errexit",
           "description": "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh.",
           "type": "string"
+        },
+        "url_replacements": {
+          "description": "Map of URL patterns to replacement URLs applied to all requests.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "use_file_shell_for_executable_tasks": {
           "default": false,
@@ -1027,6 +1225,40 @@
         }
       }
     },
+    "task_run_entry": {
+      "oneOf": [
+        {
+          "description": "script to run",
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "task": {
+              "description": "single task name (with optional args) to run",
+              "type": "string"
+            }
+          },
+          "required": ["task"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tasks": {
+              "description": "parallel task group to run",
+              "items": {
+                "description": "task name and args",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": ["tasks"]
+        }
+      ]
+    },
     "task": {
       "oneOf": [
         {
@@ -1072,11 +1304,21 @@
                 },
                 {
                   "description": "task with args to run before this task",
+                  "type": "array",
                   "items": {
                     "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -1088,11 +1330,21 @@
                 },
                 {
                   "description": "task with args to run after this task",
+                  "type": "array",
                   "items": {
                     "description": "task name and args",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
                 }
               ]
             },
@@ -1122,22 +1374,7 @@
               "type": "string"
             },
             "env": {
-              "additionalProperties": {
-                "oneOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "enum": [false],
-                    "type": "boolean"
-                  }
-                ]
-              },
-              "description": "environment variables",
-              "type": "object"
+              "$ref": "#/$defs/env"
             },
             "tools": {
               "description": "tools to install/activate before running this task",
@@ -1243,32 +1480,26 @@
             "run": {
               "oneOf": [
                 {
-                  "description": "script to run",
-                  "type": "string"
+                  "$ref": "#/$defs/task_run_entry"
                 },
                 {
-                  "description": "script to run",
+                  "type": "array",
                   "items": {
-                    "description": "script to run",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "$ref": "#/$defs/task_run_entry"
+                  }
                 }
               ]
             },
             "run_windows": {
               "oneOf": [
                 {
-                  "description": "script to run on windows",
-                  "type": "string"
+                  "$ref": "#/$defs/task_run_entry"
                 },
                 {
-                  "description": "script to run on windows",
+                  "type": "array",
                   "items": {
-                    "description": "script to run on windows",
-                    "type": "string"
-                  },
-                  "type": "array"
+                    "$ref": "#/$defs/task_run_entry"
+                  }
                 }
               ]
             },
@@ -1402,6 +1633,7 @@
               ]
             },
             "install_env": {
+              "type": "object",
               "additionalProperties": {
                 "oneOf": [
                   {
@@ -1506,10 +1738,7 @@
         "properties": {
           "run": {
             "type": "string",
-            "description": "script to run when file changes",
-            "items": {
-              "type": "string"
-            }
+            "description": "script to run when file changes"
           },
           "patterns": {
             "type": "array",
@@ -1560,8 +1789,28 @@
     },
     "min_version": {
       "description": "minimum version of mise required to use this config",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "type": "string"
+      "oneOf": [
+        {
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hard": {
+              "description": "error if current mise is lower than this version",
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            },
+            "soft": {
+              "description": "warn if current mise is lower than this version",
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            }
+          }
+        }
+      ]
     },
     "redactions": {
       "description": "env or vars keys to redact from logs",
@@ -1580,7 +1829,6 @@
     },
     "settings": {
       "$ref": "#/$defs/settings",
-      "additionalProperties": false,
       "description": "mise settings",
       "type": "object"
     },
@@ -1621,6 +1869,7 @@
       "$ref": "#/$defs/watch_files"
     },
     "_": {
+      "type": "object",
       "additionalProperties": true
     }
   }

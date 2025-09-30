@@ -46,6 +46,7 @@ curl https://mise.run/fish | sh
 :::
 
 These shell-specific installers will:
+
 - Install mise using the same logic as the main installer
 - Automatically detect your shell's configuration file
 - Add the activation line if it's not already present
@@ -392,7 +393,7 @@ Then, run the following commands to install the completion script for your shell
 
 ```sh [bash]
 # This requires bash-completion to be installed
-mkdir -p ~/.local/share/bash-completion/
+mkdir -p ~/.local/share/bash-completion/completions/
 mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise
 ```
 

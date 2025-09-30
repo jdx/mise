@@ -1,6 +1,0 @@
-packages:
-  - name: makiuchi-d/arelo@v1.15.3
-  - name: makiuchi-d/arelo
-    version: v1.12.3
-  - name: makiuchi-d/arelo
-    version: v1.10.1

@@ -38,16 +38,16 @@ jobs:
             echo "only-registry-toml=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
+
           if ! git rev-parse ${{ github.event.pull_request.head.sha }} >/dev/null 2>&1; then
             echo "❌ Error: Cannot access head commit"
             echo "only-registry-toml=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
+
           # Get the list of modified files
           MODIFIED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
-          
+
           # Check if only registry.toml is modified
           if [[ "$MODIFIED_FILES" == "registry.toml" ]]; then
             echo "only-registry-toml=true" >> $GITHUB_OUTPUT
@@ -62,13 +62,13 @@ jobs:
         run: |
           # Extract tool names from base commit (lines ending with .backends)
           BASE_TOOLS=$(git show ${{ github.event.pull_request.base.sha }}:registry.toml | grep -E '^[a-zA-Z0-9_-]+\.backends' | sed 's/\.backends.*//' | sort)
-          
+
           # Extract tool names from head commit (lines ending with .backends)
           HEAD_TOOLS=$(git show ${{ github.event.pull_request.head.sha }}:registry.toml | grep -E '^[a-zA-Z0-9_-]+\.backends' | sed 's/\.backends.*//' | sort)
-          
+
           # Find new tools (tools in head but not in base)
           NEW_TOOLS=$(comm -13 <(echo "$BASE_TOOLS") <(echo "$HEAD_TOOLS"))
-          
+
           if [[ -n "$NEW_TOOLS" ]]; then
             echo "new-tools-added=true" >> $GITHUB_OUTPUT
             echo "new-tools=$NEW_TOOLS" >> $GITHUB_OUTPUT
@@ -104,7 +104,7 @@ jobs:
             echo "Example: registry: add rg (aqua:BurntSushi/ripgrep)"
             exit 1
           fi
-          
+
           # Check if PR title mentions any of the new tools
           TOOL_MENTIONED=false
           for tool in $NEW_TOOLS; do
@@ -113,7 +113,7 @@ jobs:
               break
             fi
           done
-          
+
           if [[ "$TOOL_MENTIONED" == "false" ]]; then
             echo "❌ Error: PR title should mention the new tool(s) being added"
             echo "New tools: $NEW_TOOLS"

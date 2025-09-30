@@ -5,7 +5,72 @@ use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
 use crate::ui::progress_report::SingleReport;
 use eyre::{Result, bail};
+use indexmap::IndexSet;
 use std::path::Path;
+
+// Shared OS/arch patterns used across helpers
+const OS_PATTERNS: &[&str] = &[
+    "linux", "darwin", "macos", "windows", "win", "freebsd", "openbsd", "netbsd", "android",
+    "unknown",
+];
+// Longer arch patterns first to avoid partial matches
+const ARCH_PATTERNS: &[&str] = &[
+    "x86_64", "aarch64", "ppc64le", "ppc64", "armv7", "armv6", "arm64", "amd64", "mipsel",
+    "riscv64", "s390x", "i686", "i386", "x64", "mips", "arm", "x86",
+];
+
+/// Helper to try both prefixed and non-prefixed tags for a resolver function
+pub async fn try_with_v_prefix<F, Fut, T>(
+    version: &str,
+    version_prefix: Option<&str>,
+    resolver: F,
+) -> Result<T>
+where
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let mut errors = vec![];
+
+    // Generate candidates based on version prefix configuration
+    let candidates = if let Some(prefix) = version_prefix {
+        // If a custom prefix is configured, try both prefixed and non-prefixed versions
+        if version.starts_with(prefix) {
+            vec![
+                version.to_string(),
+                version.trim_start_matches(prefix).to_string(),
+            ]
+        } else {
+            vec![format!("{}{}", prefix, version), version.to_string()]
+        }
+    } else {
+        // Fall back to 'v' prefix logic
+        if version.starts_with('v') {
+            vec![
+                version.to_string(),
+                version.trim_start_matches('v').to_string(),
+            ]
+        } else {
+            vec![format!("v{version}"), version.to_string()]
+        }
+    };
+
+    for candidate in candidates {
+        match resolver(candidate.clone()).await {
+            Ok(res) => return Ok(res),
+            Err(e) => {
+                let is_404 = crate::http::error_code(&e) == Some(404);
+                if is_404 {
+                    errors.push(e);
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+    Err(errors
+        .pop()
+        .unwrap_or_else(|| eyre::eyre!("No matching release found for {version}")))
+}
 
 /// Returns all possible aliases for the current platform (os, arch),
 /// with the preferred spelling first (macos/x64, linux/x64, etc).
@@ -59,6 +124,44 @@ pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<
     None
 }
 
+/// Lists platform keys (e.g. "macos-x64") for which a given key_type exists (e.g. "url").
+pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &str) -> Vec<String> {
+    let mut set = IndexSet::new();
+
+    // Gather from flat keys
+    for (k, _) in opts.iter() {
+        if let Some(rest) = k
+            .strip_prefix("platforms_")
+            .or_else(|| k.strip_prefix("platform_"))
+        {
+            if let Some(platform_part) = rest.strip_suffix(&format!("_{}", key_type)) {
+                // Only convert the OS/arch separator underscore to a dash, preserving
+                // underscores inside architecture names like x86_64
+                let platform_key = if let Some((os_part, rest)) = platform_part.split_once('_') {
+                    format!("{os_part}-{rest}")
+                } else {
+                    platform_part.to_string()
+                };
+                set.insert(platform_key);
+            }
+        }
+    }
+
+    // Probe nested keys using shared patterns
+    for os in OS_PATTERNS {
+        for arch in ARCH_PATTERNS {
+            for prefix in ["platforms", "platform"] {
+                let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
+                if opts.contains_key(&nested_key) {
+                    set.insert(format!("{os}-{arch}"));
+                }
+            }
+        }
+    }
+
+    set.into_iter().collect()
+}
+
 pub fn template_string(template: &str, tv: &ToolVersion) -> String {
     let version = &tv.version;
     template.replace("{version}", version)
@@ -72,7 +175,7 @@ pub fn install_artifact(
     tv: &crate::toolset::ToolVersion,
     file_path: &Path,
     opts: &ToolVersionOptions,
-    pr: Option<&Box<dyn SingleReport>>,
+    pr: Option<&dyn SingleReport>,
 ) -> eyre::Result<()> {
     let install_path = tv.install_path();
     let mut strip_components = opts.get("strip_components").and_then(|s| s.parse().ok());
@@ -83,7 +186,41 @@ pub fn install_artifact(
     // Use TarFormat for format detection
     let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
     let format = file::TarFormat::from_ext(ext);
-    if format == file::TarFormat::Raw {
+
+    // Get file extension and detect format
+    let file_name = file_path.file_name().unwrap().to_string_lossy();
+
+    // Check if it's a compressed binary (not a tar archive)
+    let is_compressed_binary =
+        !file_name.contains(".tar") && matches!(ext, "gz" | "xz" | "bz2" | "zst");
+
+    if is_compressed_binary {
+        // Handle compressed single binary
+        let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
+        // Determine the destination path with support for bin_path
+        let dest = if let Some(bin_path_template) = opts.get("bin_path") {
+            let bin_path = template_string(bin_path_template, tv);
+            let bin_dir = install_path.join(bin_path);
+            file::create_dir_all(&bin_dir)?;
+            bin_dir.join(decompressed_name)
+        } else if let Some(bin_name) = opts.get("bin") {
+            install_path.join(bin_name)
+        } else {
+            // Auto-clean binary names by removing OS/arch suffixes
+            let cleaned_name = clean_binary_name(decompressed_name, Some(&tv.ba().tool_name));
+            install_path.join(cleaned_name)
+        };
+
+        match ext {
+            "gz" => file::un_gz(file_path, &dest)?,
+            "xz" => file::un_xz(file_path, &dest)?,
+            "bz2" => file::un_bz2(file_path, &dest)?,
+            "zst" => file::un_zst(file_path, &dest)?,
+            _ => unreachable!(),
+        }
+
+        file::make_executable(&dest)?;
+    } else if format == file::TarFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
         if let Some(bin_path_template) = opts.get("bin_path") {
             let bin_path = template_string(bin_path_template, tv);
@@ -106,9 +243,10 @@ pub fn install_artifact(
             file::make_executable(&dest)?;
         }
     } else {
+        // Handle archive formats
         // Auto-detect if we need strip_components=1 before extracting
-        // Only do this if strip_components was not explicitly set by the user
-        if strip_components.is_none() {
+        // Only do this if strip_components was not explicitly set by the user AND bin_path is not configured
+        if strip_components.is_none() && opts.get("bin_path").is_none() {
             if let Ok(should_strip) = file::should_strip_components(file_path, format) {
                 if should_strip {
                     debug!(
@@ -122,6 +260,7 @@ pub fn install_artifact(
             format,
             strip_components: strip_components.unwrap_or(0),
             pr,
+            ..Default::default()
         };
 
         // Extract with determined strip_components
@@ -134,7 +273,7 @@ pub fn verify_artifact(
     _tv: &crate::toolset::ToolVersion,
     file_path: &Path,
     opts: &crate::toolset::ToolVersionOptions,
-    pr: Option<&Box<dyn SingleReport>>,
+    pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
     // Check platform-specific checksum first, then fall back to generic
     let checksum = lookup_platform_key(opts, "checksum").or_else(|| opts.get("checksum").cloned());
@@ -164,7 +303,7 @@ pub fn verify_artifact(
 pub fn verify_checksum_str(
     file_path: &Path,
     checksum: &str,
-    pr: Option<&Box<dyn SingleReport>>,
+    pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
     if let Some((algo, hash_str)) = checksum.split_once(':') {
         hash::ensure_checksum(file_path, hash_str, pr, algo)?;
@@ -192,17 +331,6 @@ pub fn verify_checksum_str(
 /// - "app-2.0.0-linux-x64" -> "app" (with tool_name="app")
 /// - "script-darwin-arm64.sh" -> "script.sh" (preserves .sh extension)
 pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
-    // Common OS patterns to remove
-    let os_patterns = [
-        "linux", "darwin", "macos", "windows", "win", "freebsd", "openbsd", "netbsd", "android",
-    ];
-
-    // Common architecture patterns to remove (longer patterns first to avoid partial matches)
-    let arch_patterns = [
-        "x86_64", "aarch64", "ppc64le", "ppc64", "armv7", "armv6", "arm64", "amd64", "mipsel",
-        "riscv64", "s390x", "i686", "i386", "x64", "mips", "arm", "x86",
-    ];
-
     // Extract extension if present (to preserve it)
     let (name_without_ext, extension) = if let Some(pos) = name.rfind('.') {
         let potential_ext = &name[pos + 1..];
@@ -224,8 +352,8 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     let mut cleaned = name_without_ext.to_string();
 
     // First try combined OS-arch patterns
-    for os in &os_patterns {
-        for arch in &arch_patterns {
+    for os in OS_PATTERNS {
+        for arch in ARCH_PATTERNS {
             // Try different separator combinations
             let patterns = [
                 format!("-{os}-{arch}"),
@@ -253,7 +381,7 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     }
 
     // Try just OS suffix (sometimes arch is omitted)
-    for os in &os_patterns {
+    for os in OS_PATTERNS {
         let patterns = [format!("-{os}"), format!("_{os}")];
         for pattern in &patterns {
             if let Some(pos) = cleaned.rfind(pattern.as_str()) {
@@ -278,7 +406,7 @@ pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     }
 
     // Try just arch suffix (sometimes OS is omitted)
-    for arch in &arch_patterns {
+    for arch in ARCH_PATTERNS {
         let patterns = [format!("-{arch}"), format!("_{arch}")];
         for pattern in &patterns {
             if let Some(pos) = cleaned.rfind(pattern.as_str()) {
@@ -441,6 +569,39 @@ mod tests {
         // Test edge cases
         assert_eq!(clean_binary_name("linux", None), "linux"); // Just OS name
         assert_eq!(clean_binary_name("", None), "");
+    }
+
+    #[test]
+    fn test_list_available_platforms_with_key_flat_preserves_arch_underscore() {
+        let mut opts = IndexMap::new();
+        // Flat keys with os_arch_keytype naming
+        opts.insert(
+            "platforms_macos_x86_64_url".to_string(),
+            "https://example.com/macos-x86_64.tar.gz".to_string(),
+        );
+        opts.insert(
+            "platforms_linux_x64_url".to_string(),
+            "https://example.com/linux-x64.tar.gz".to_string(),
+        );
+        // Different prefix variant also supported
+        opts.insert(
+            "platform_windows_arm64_url".to_string(),
+            "https://example.com/windows-arm64.zip".to_string(),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        let platforms = list_available_platforms_with_key(&tool_opts, "url");
+
+        // Should convert only the OS/arch separator underscore to dash
+        assert!(platforms.contains(&"macos-x86_64".to_string()));
+        assert!(!platforms.contains(&"macos-x86-64".to_string()));
+
+        assert!(platforms.contains(&"linux-x64".to_string()));
+        assert!(platforms.contains(&"windows-arm64".to_string()));
     }
 
     #[test]

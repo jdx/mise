@@ -1,6 +1,6 @@
 # SPM Backend <Badge type="warning" text="experimental" />
 
-You may install executables managed by [Swift Package Manager](https://www.swift.org/documentation/package-manager) directly from GitHub releases.
+You may install executables managed by [Swift Package Manager](https://www.swift.org/documentation/package-manager) directly from GitHub or GitLab releases.
 
 The code for this is inside of the mise repository at [`./src/backend/spm.rs`](https://github.com/jdx/mise/blob/main/src/backend/spm.rs).
 
@@ -42,3 +42,28 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 | GitHub url for specific release version       | `spm:https://github.com/tuist/tuist.git@4.15.0` |
 
 Other syntax may work but is unsupported and untested.
+
+## Tool Options
+
+The following [tool-options](/dev-tools/#tool-options) are available for the backend — these
+go in `[tools]` in `mise.toml`.
+
+### `provider`
+
+Set the provider type to use for fetching assets and release information. Either `github` or `gitlab` (default is `github`).
+Ensure the `provider` is set to the correct type if you use shorthand notation and `api_url` for self-hosted repositories
+as the type probably cannot be derived correctly from the URL.
+
+```toml
+[tools]
+"spm:patricklorran/ios-settings" = { version = "latest", provider = "gitlab" }
+```
+
+### `api_url`
+
+Set the URL for the provider's API. This is useful when using a self-hosted instance.
+
+```toml
+[tools]
+"spm:acme/my-tool" = { version = "latest", provider = "gitlab", api_url = "https://gitlab.acme.com/api/v4" }
+```

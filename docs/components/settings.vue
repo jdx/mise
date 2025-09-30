@@ -8,7 +8,8 @@ const settings = child
   : data;
 
 // Check if there are any settings to display
-const hasSettings = settings.some((f) => f.type) || settings.some((f) => !f.type);
+const hasSettings =
+  settings.some((f) => f.type) || settings.some((f) => !f.type);
 </script>
 
 <!--  <ul>-->

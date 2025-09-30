@@ -1,6 +1,0 @@
-packages:
-  - name: sqls-server/sqls@v0.2.27
-  - name: sqls-server/sqls
-    version: v0.2.20
-  - name: sqls-server/sqls
-    version: v0.1.0

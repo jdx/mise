@@ -1,8 +1,0 @@
-packages:
-  - name: grpc-ecosystem/grpc-gateway/protoc-gen-openapiv2@v2.27.2
-  - name: grpc-ecosystem/grpc-gateway/protoc-gen-openapiv2
-    version: v2.16.0
-  - name: grpc-ecosystem/grpc-gateway/protoc-gen-openapiv2
-    version: v2.13.0
-  - name: grpc-ecosystem/grpc-gateway/protoc-gen-openapiv2
-    version: v2.10.1

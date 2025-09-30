@@ -41,6 +41,20 @@ For context, see [jdx/mise#3859](https://github.com/jdx/mise/issues/3859).
 5. **Rate limiting**: Set `MISE_GITHUB_TOKEN` to avoid GitHub API rate limits
    during development
 
+## Packaging and Self-Update Instructions
+
+When mise is installed via a package manager, in-app self-update is disabled and users should update via their package manager. Packaging should install a TOML file with platform-specific instructions at `lib/mise-self-update-instructions.toml` (or `lib/mise/mise-self-update-instructions.toml`). Example contents:
+
+```toml
+# Debian/Ubuntu (APT)
+message = "To update mise from the APT repository, run:\n\n  sudo apt update && sudo apt install --only-upgrade mise\n"
+```
+
+```toml
+# Fedora/CentOS Stream (DNF)
+message = "To update mise from COPR, run:\n\n  sudo dnf upgrade mise\n"
+```
+
 ## Testing
 
 mise has a comprehensive test suite with multiple types of tests to ensure
@@ -630,6 +644,7 @@ of the full backend specification.
 ### Quick Start
 
 1. **Choose the right backend** for your tool:
+
    - **[aqua](dev-tools/backends/aqua.md)** - Preferred for GitHub releases with security
      features
    - **[ubi](dev-tools/backends/ubi.md)** - Simple GitHub/GitLab releases following
@@ -738,7 +753,7 @@ If you need a custom backend:
    creating a [discussion](https://github.com/jdx/mise/discussions)
 2. **Consider if existing backends** (ubi, aqua, npm, pipx, etc.) can meet your
    needs
-3. **Create a plugin** - use the [plugin system](tool-plugin-development.md) to create plugins for private/custom tools without core changes
+3. **Create a plugin** - use the [plugin system](tool-plugin-development.md) to create plugins for private/custom tools without core changes. Start with the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) for a quick setup
 
 Most tool installation needs can be met by existing backends, especially
 [ubi](dev-tools/backends/ubi.md) for GitHub releases and
@@ -768,33 +783,34 @@ across different installation systems.
    ```rust
    use crate::backend::{Backend, BackendType};
    use crate::install_context::InstallContext;
-   
+
    #[derive(Debug)]
    pub struct MyBackend {
        // backend-specific fields
    }
-   
+
    impl Backend for MyBackend {
        fn get_type(&self) -> BackendType { BackendType::MyBackend }
-       
+
        async fn list_remote_versions(&self) -> Result<Vec<String>> {
            // Implementation for listing available versions
        }
-       
-       async fn install_version(&self, ctx: &InstallContext, 
+
+       async fn install_version(&self, ctx: &InstallContext,
                                  tv: &ToolVersion) -> Result<()> {
            // Implementation for installing a specific version
        }
-       
+
        async fn uninstall_version(&self, tv: &ToolVersion) -> Result<()> {
            // Implementation for uninstalling a version
        }
-       
+
        // ... other required methods
    }
    ```
 
 3. **Register the backend** in `src/backend/mod.rs`:
+
    - Add your backend to the imports
    - Add it to the backend registry/factory function
    - Add the `BackendType` enum variant

@@ -27,6 +27,12 @@ pub fn mod_file(lua: &Lua) -> Result<()> {
         "file",
         lua.create_table_from(vec![
             (
+                "read",
+                lua.create_async_function(|_lua: mlua::Lua, input| async move {
+                    read(&_lua, input).await
+                })?,
+            ),
+            (
                 "symlink",
                 lua.create_async_function(|_lua: mlua::Lua, input| async move {
                     symlink(&_lua, input).await
@@ -35,6 +41,15 @@ pub fn mod_file(lua: &Lua) -> Result<()> {
             ("join_path", lua.create_function(join_path)?),
         ])?,
     )?)
+}
+
+async fn read(_lua: &Lua, input: MultiValue) -> mlua::Result<String> {
+    let args: Vec<String> = input
+        .into_iter()
+        .map(|v| v.to_string())
+        .collect::<mlua::Result<_>>()?;
+    let path = Path::new(&args[0]);
+    std::fs::read_to_string(path).into_lua_err()
 }
 
 async fn symlink(_lua: &Lua, input: MultiValue) -> mlua::Result<()> {
@@ -63,20 +78,46 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn test_symlink() {
-        let _ = fs::remove_file("/tmp/test_symlink_dst");
+    fn test_read() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("file-read.txt");
+        let filepath_str = filepath.to_string_lossy().to_string();
+        fs::write(&filepath, "hello world").unwrap();
         let lua = Lua::new();
         mod_file(&lua).unwrap();
         lua.load(mlua::chunk! {
             local file = require("file")
-            file.symlink("/tmp/test_symlink_src", "/tmp/test_symlink_dst")
+            local success, contents = pcall(file.read, $filepath_str)
+            if not success then
+                error("Failed to read: " .. contents)
+            end
+            if contents == nil then
+                error("contents should not be nil")
+            elseif contents ~= "hello world" then
+                error("contents expected to be 'hello world', was actually:" .. contents)
+            end
         })
         .exec()
         .unwrap();
-        assert_eq!(
-            fs::read_link("/tmp/test_symlink_dst").unwrap(),
-            Path::new("/tmp/test_symlink_src")
-        );
-        fs::remove_file("/tmp/test_symlink_dst").unwrap();
+        // TempDir automatically cleans up when dropped
+    }
+
+    #[test]
+    fn test_symlink() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let src_path = temp_dir.path().join("symlink_src");
+        let dst_path = temp_dir.path().join("symlink_dst");
+        let src_path_str = src_path.to_string_lossy().to_string();
+        let dst_path_str = dst_path.to_string_lossy().to_string();
+        let lua = Lua::new();
+        mod_file(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local file = require("file")
+            file.symlink($src_path_str, $dst_path_str)
+        })
+        .exec()
+        .unwrap();
+        assert_eq!(fs::read_link(&dst_path).unwrap(), src_path);
+        // TempDir automatically cleans up when dropped
     }
 }

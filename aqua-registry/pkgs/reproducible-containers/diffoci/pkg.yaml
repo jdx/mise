@@ -1,4 +1,0 @@
-packages:
-  - name: reproducible-containers/diffoci@v0.1.7
-  - name: reproducible-containers/diffoci
-    version: v0.1.2

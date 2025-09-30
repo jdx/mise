@@ -1,4 +1,0 @@
-packages:
-  - name: Automattic/harper/harper-ls@v0.59.0
-  - name: Automattic/harper/harper-ls
-    version: v0.11.0

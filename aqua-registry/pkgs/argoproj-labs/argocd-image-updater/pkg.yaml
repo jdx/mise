@@ -1,6 +1,0 @@
-packages:
-  - name: argoproj-labs/argocd-image-updater@v0.16.0
-  - name: argoproj-labs/argocd-image-updater
-    version: v0.11.3
-  - name: argoproj-labs/argocd-image-updater
-    version: v0.9.1

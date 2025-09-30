@@ -1,2 +1,44 @@
+# Cross configuration for mise
+# Use cross 0.2.5 images which are based on Ubuntu 16.04 (glibc 2.23)
+# This ensures compatibility with Amazon Linux 2 (glibc 2.26) and other older systems
+
 [build.env]
-passthrough = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
+passthrough = [
+  "RUST_BACKTRACE",
+  "CARGO_TERM_COLOR",
+  "AWS_LC_SYS_EXTERNAL_BINDGEN",
+  "BINDGEN_EXTRA_CLANG_ARGS",
+]
+
+# Explicitly use 0.2.5 images for GNU targets (Ubuntu 16.04, glibc 2.23)
+[target.x86_64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:0.2.5"
+
+[target.aarch64-unknown-linux-gnu]
+# Use newer image for aarch64 to get assembler that supports ARMv8.2-A crypto instructions
+# This is based on Ubuntu 20.04 (glibc 2.31) but should still be compatible with Amazon Linux 2
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main"
+pre-build = [
+  "apt-get update && apt-get install --assume-yes --no-install-recommends libclang-dev clang curl",
+  "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable",
+  ". ~/.cargo/env && cargo install --force --locked bindgen-cli",
+  "ln -s ~/.cargo/bin/bindgen /usr/local/bin/bindgen",
+]
+
+[target.armv7-unknown-linux-gnueabi]
+image = "ghcr.io/cross-rs/armv7-unknown-linux-gnueabi:0.2.5"
+pre-build = [
+  "dpkg --add-architecture armhf",
+  "apt-get update && apt-get install -y libclang-dev clang llvm-dev pkg-config",
+]
+
+
+# Musl targets for static linking
+[target.x86_64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-musl:0.2.5"
+
+[target.aarch64-unknown-linux-musl]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-musl:0.2.5"
+
+[target.armv7-unknown-linux-musleabi]
+image = "ghcr.io/cross-rs/armv7-unknown-linux-musleabi:0.2.5"

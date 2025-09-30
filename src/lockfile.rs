@@ -112,6 +112,7 @@ impl Lockfile {
             .try_into()?;
 
         let mut lockfile = Lockfile::default();
+        let mut has_single_version_format = false;
 
         for (short, value) in tools {
             let versions = match value {
@@ -119,9 +120,21 @@ impl Lockfile {
                     .into_iter()
                     .map(LockfileTool::try_from)
                     .collect::<Result<Vec<_>>>()?,
-                _ => vec![LockfileTool::try_from(value)?],
+                _ => {
+                    // Single-Version format detected - will be auto-migrated
+                    has_single_version_format = true;
+                    trace!("Auto-migrating single-version format for tool: {}", short);
+                    vec![LockfileTool::try_from(value)?]
+                }
             };
             lockfile.tools.insert(short, versions);
+        }
+
+        if has_single_version_format {
+            debug!(
+                "Auto-migrated lockfile from single-version to multi-version format: {}",
+                path.display()
+            );
         }
 
         Ok(lockfile)
@@ -133,16 +146,13 @@ impl Lockfile {
         } else {
             let mut tools = toml::Table::new();
             for (short, versions) in &self.tools {
-                let value: toml::Value = if versions.len() == 1 {
-                    versions[0].clone().into_toml_value()
-                } else {
-                    versions
-                        .iter()
-                        .cloned()
-                        .map(|version| version.into_toml_value())
-                        .collect::<Vec<toml::Value>>()
-                        .into()
-                };
+                // Always write Multi-Version format (array format) for consistency
+                let value: toml::Value = versions
+                    .iter()
+                    .cloned()
+                    .map(|version| version.into_toml_value())
+                    .collect::<Vec<toml::Value>>()
+                    .into();
                 tools.insert(short.clone(), value);
             }
             let mut lockfile = toml::Table::new();
@@ -519,4 +529,95 @@ fn format(mut doc: DocumentMut) -> String {
     }
 
     doc.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_multi_version_format_migration() {
+        // Test that single-version format is read correctly and writes as multi-version
+        let single_version_toml = r#"
+[tools.node]
+version = "20.10.0"
+backend = "core:node"
+
+[[tools.python]]
+version = "3.11.0"
+backend = "core:python"
+"#;
+
+        let table: toml::Table = toml::from_str(single_version_toml).unwrap();
+        let tools: toml::Table = table.get("tools").unwrap().clone().try_into().unwrap();
+
+        let mut lockfile = Lockfile::default();
+        for (short, value) in tools {
+            let versions = match value {
+                toml::Value::Array(arr) => arr
+                    .into_iter()
+                    .map(LockfileTool::try_from)
+                    .collect::<Result<Vec<_>>>()
+                    .unwrap(),
+                _ => vec![LockfileTool::try_from(value).unwrap()],
+            };
+            lockfile.tools.insert(short, versions);
+        }
+
+        // Verify that we have the expected tools
+        assert_eq!(lockfile.tools.len(), 2);
+        assert!(lockfile.tools.contains_key("node"));
+        assert!(lockfile.tools.contains_key("python"));
+
+        // Verify node was migrated from single-version
+        let node_versions = &lockfile.tools["node"];
+        assert_eq!(node_versions.len(), 1);
+        assert_eq!(node_versions[0].version, "20.10.0");
+        assert_eq!(node_versions[0].backend, Some("core:node".to_string()));
+
+        // Verify python was already multi-version
+        let python_versions = &lockfile.tools["python"];
+        assert_eq!(python_versions.len(), 1);
+        assert_eq!(python_versions[0].version, "3.11.0");
+    }
+
+    #[test]
+    fn test_save_always_uses_multi_version_format() {
+        let mut lockfile = Lockfile::default();
+        let mut platforms = BTreeMap::new();
+        platforms.insert(
+            "macos-arm64".to_string(),
+            PlatformInfo {
+                checksum: Some("sha256:abc123".to_string()),
+                url: Some("https://example.com/node.tar.gz".to_string()),
+                size: Some(12345678),
+            },
+        );
+
+        let tool = LockfileTool {
+            version: "20.10.0".to_string(),
+            backend: Some("core:node".to_string()),
+            platforms,
+        };
+
+        lockfile.tools.insert("node".to_string(), vec![tool]);
+
+        // Create a temporary file to test saving
+        let temp_dir = std::env::temp_dir();
+        let test_lockfile = temp_dir.join("test_lockfile.lock");
+
+        // Save and verify it uses multi-version format
+        lockfile.save(&test_lockfile).unwrap();
+
+        let content = std::fs::read_to_string(&test_lockfile).unwrap();
+
+        // Should use [[tools.node]] array syntax, not [tools.node] single version
+        assert!(content.contains("[[tools.node]]"));
+        // Verify it doesn't use single-version format (but allow platforms sections)
+        assert!(!content.lines().any(|line| line.trim() == "[tools.node]"));
+
+        // Clean up
+        let _ = std::fs::remove_file(&test_lockfile);
+    }
 }

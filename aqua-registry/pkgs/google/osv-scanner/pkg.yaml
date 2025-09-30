@@ -1,8 +1,0 @@
-packages:
-  - name: google/osv-scanner@v2.2.2
-  - name: google/osv-scanner
-    version: v1.6.2
-  - name: google/osv-scanner
-    version: v1.4.2
-  - name: google/osv-scanner
-    version: v1.0.0

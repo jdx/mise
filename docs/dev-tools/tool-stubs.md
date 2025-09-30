@@ -101,6 +101,7 @@ mise generate tool-stub ./bin/gh --url "https://github.com/cli/cli/releases/down
 ```
 
 This will:
+
 - Download the archive to detect checksums (for security)
 - Extract it to auto-detect the binary path
 - Generate an executable stub with complete TOML configuration
@@ -157,6 +158,7 @@ The generator will preserve existing configuration and merge new platforms into 
 ### Supported Archive Formats
 
 The generator automatically detects and extracts various archive formats:
+
 - `.tar.gz` / `.tgz` (gzip compressed tarballs)
 - `.tar.xz` / `.txz` (xz compressed tarballs)
 - `.tar.bz2` / `.tbz2` (bzip2 compressed tarballs)
@@ -179,6 +181,7 @@ size = 12345678
 ```
 
 The generator automatically:
+
 - Calculates BLAKE3 checksums for integrity verification
 - Detects file sizes
 - Identifies the correct binary path within archives

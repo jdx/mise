@@ -1,8 +1,0 @@
-packages:
-  - name: cantino/mcfly@v0.9.3
-  - name: cantino/mcfly
-    version: v0.8.5
-  - name: cantino/mcfly
-    version: v0.6.0
-  - name: cantino/mcfly
-    version: v0.5.6

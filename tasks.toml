@@ -97,11 +97,6 @@ mise completion zsh > completions/_mise
 mise completion fish > completions/mise.fish
 '''
 
-["render:settings"]
-description = 'Render settings documentation'
-run = "tsx xtasks/render/settings.ts"
-depends = ['docs:setup']
-
 ["render:mangen"]
 description = 'Generate man pages'
 depends = ["build"]
@@ -148,28 +143,28 @@ run = "cargo test --all-features"
 env = { CARGO_TERM_COLOR = "always", "RUST_TEST_THREADS" = "1" }
 
 ["docker:image"]
-hide = true                                                                                                                     # docker stuff is not working correctly right now
+hide = true # docker stuff is not working correctly right now
 description = "build docker image from Dockerfile"
 run = 'docker build --build-arg GITHUB_TOKEN=$GITHUB_API_TOKEN $root -f $root/packaging/dev/Dockerfile -t ghcr.io/jdx/mise:dev'
 
 ["docker:run"]
-hide = true                                                                                                                                                                            # docker stuff is not working correctly right now
+hide = true # docker stuff is not working correctly right now
 description = "run a command inside of development docker container"
 run = 'docker run -ti --rm -e GITHUB_API_TOKEN -e TEST_ALL -v $root:/mise -v /tmp/mise/target:/tmp/mise/target -v /tmp/mise/registry:/tmp/mise/registry -w /mise ghcr.io/jdx/mise:dev'
 depends = ["docker:image"]
 
 ["docker:cargo"]
-hide = true                                                      # docker stuff is not working correctly right now
+hide = true # docker stuff is not working correctly right now
 description = "run cargo inside of development docker container"
 run = 'mise tasks run docker:run cargo'
 
 ["docker:mise"]
-hide = true                                                     # docker stuff is not working correctly right now
+hide = true # docker stuff is not working correctly right now
 description = "run mise inside of development docker container"
 run = "mise tasks run -- docker:cargo run --"
 
 ["docker:e2e"]
-hide = true                                                          # docker stuff is not working correctly right now
+hide = true # docker stuff is not working correctly right now
 description = "run e2e tests inside of development docker container"
 run = "mise tasks run docker:mise run test:e2e"
 

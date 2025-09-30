@@ -1,0 +1,28 @@
+# Taplo configuration for mise
+
+exclude = ["docs/registry.toml", "docs/settings.toml"]
+
+
+[formatting]
+align_entries = false
+align_comments = false
+array_auto_collapse = true
+array_auto_expand = true
+indent_tables = false
+reorder_keys = false
+
+[[rule]]
+include = ["registry.toml"]
+schema.path = "./schema/mise-registry.json"
+
+[rule.formatting]
+reorder_keys = true
+reorder_arrays = false
+
+[[rule]]
+include = ["settings.toml"]
+schema.path = "./schema/mise-settings.json"
+
+[rule.formatting]
+reorder_keys = true
+reorder_arrays = false

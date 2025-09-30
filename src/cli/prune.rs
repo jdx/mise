@@ -89,7 +89,7 @@ pub async fn prunable_tools(
         to_delete.retain(|_, (_, tv)| tools.contains(&tv.ba()));
     }
 
-    for cf in config.get_tracked_config_files()?.values() {
+    for cf in config.get_tracked_config_files().await?.values() {
         let mut ts = Toolset::from(cf.to_tool_request_set()?);
         ts.resolve(config).await?;
         for (_, tv) in ts.list_current_versions() {
@@ -119,7 +119,8 @@ async fn delete(
         let pr = mpr.add(&prefix);
         if dry_run || Settings::get().yes || prompt::confirm_with_all(format!("remove {} ?", &tv))?
         {
-            p.uninstall_version(config, &tv, &pr, dry_run).await?;
+            p.uninstall_version(config, &tv, pr.as_ref(), dry_run)
+                .await?;
             runtime_symlinks::remove_missing_symlinks(p)?;
             pr.finish();
         }

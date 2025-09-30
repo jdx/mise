@@ -4,6 +4,6 @@
   "exclude": ["node_modules"],
   "compilerOptions": {
     "outDir": "./build",
-    "types": ["@withfig/autocomplete-types", "node"]
+    "types": ["@withfig/autocomplete-types", "bun"]
   }
 }

@@ -50,7 +50,6 @@ done
 
 echo "::group::Checksums"
 pushd "$RELEASE_DIR"
-echo "$MISE_VERSION" | tr -d 'v' >VERSION
 cp mise-latest-linux-x64 mise-latest-linux-amd64
 cp mise-latest-macos-x64 mise-latest-macos-amd64
 sha256sum ./mise-latest-* >SHASUMS256.txt
@@ -85,17 +84,4 @@ curl -L -o "$TMP_FILE" "https://github.com/jdx/mise/archive/refs/tags/$MISE_VERS
 gpg --detach-sign -u 8B81C9D17413A06D <"$TMP_FILE" >"$RELEASE_DIR/$MISE_VERSION/$MISE_VERSION.tar.gz.sig"
 rm "$TMP_FILE"
 
-if [[ $DRY_RUN != 1 ]]; then
-	echo "::group::Publish npm @jdxcode/mise"
-	NPM_PREFIX=@jdxcode/mise ./scripts/release-npm.sh
-	#  echo "::group::Publish npm mise-cli"
-	#  NPM_PREFIX=mise-cli ./scripts/release-npm.sh
-	echo "::group::Publish r2"
-	./scripts/publish-r2.sh
-	echo "::group::Deploy Cloudflare Worker"
-	./scripts/deploy-worker.sh
-	echo "::group::Update redirect"
-	./scripts/update-redirect.sh "$MISE_VERSION" || true
-	echo "::group::Publish GitHub releases as draft"
-	gh release edit --draft=true "$MISE_VERSION"
-fi
+# Publishing is now done after GitHub release is created

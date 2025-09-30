@@ -1,6 +1,0 @@
-packages:
-  - name: elsesiy/kubectl-view-secret@v0.14.0
-  - name: elsesiy/kubectl-view-secret
-    version: v0.7.0
-  - name: elsesiy/kubectl-view-secret
-    version: v0.6.0

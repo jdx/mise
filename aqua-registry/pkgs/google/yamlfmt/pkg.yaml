@@ -1,4 +1,0 @@
-packages:
-  - name: google/yamlfmt@v0.17.2
-  - name: google/yamlfmt
-    version: v0.13.0

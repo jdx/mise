@@ -1,8 +1,0 @@
-packages:
-  - name: GoogleCloudPlatform/terraformer@0.8.30
-  - name: GoogleCloudPlatform/terraformer
-    version: 0.8.24
-  - name: GoogleCloudPlatform/terraformer
-    version: 0.8.18
-  - name: GoogleCloudPlatform/terraformer
-    version: 0.8.12

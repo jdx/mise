@@ -1,5 +1,5 @@
 #MISE alias=["format"]
-#MISE wait_for=["build", "render:settings"]
+#MISE wait_for=["build", "render:schema"]
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $true
 

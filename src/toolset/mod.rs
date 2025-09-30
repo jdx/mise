@@ -20,11 +20,13 @@ use crate::{backend, config, env, hooks};
 use crate::{backend::Backend, parallel};
 pub use builder::ToolsetBuilder;
 use console::truncate_str;
-use eyre::{Result, WrapErr};
+use dashmap::DashMap;
+use eyre::Result;
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use outdated_info::OutdatedInfo;
 pub use outdated_info::is_outdated_version;
+use std::sync::LazyLock as Lazy;
 use tokio::sync::OnceCell;
 use tokio::{sync::Semaphore, task::JoinSet};
 pub use tool_request::ToolRequest;
@@ -44,6 +46,10 @@ mod tool_version_list;
 mod tool_version_options;
 
 pub use tool_version_options::{ToolVersionOptions, parse_tool_options};
+
+// Cache Toolset::list_paths results across identical toolsets within a process.
+// Keyed by project_root plus sorted list of backend@version pairs currently installed.
+static LIST_PATHS_CACHE: Lazy<DashMap<String, Vec<PathBuf>>> = Lazy::new(DashMap::new);
 
 #[derive(Debug, Clone)]
 pub struct InstallOptions {
@@ -249,6 +255,7 @@ impl Toolset {
                     // Count both successes and failures toward header progress
                     mpr.header_inc(successful_installations.len() + failed_installations.len());
                     installed.extend(successful_installations);
+
                     return Err(Error::InstallFailed {
                         successful_installations: installed,
                         failed_installations,
@@ -448,10 +455,9 @@ impl Toolset {
                             force: opts.force,
                             dry_run: opts.dry_run,
                         };
-                        let old_tv = tv.clone();
-                        ba.install_version(ctx, tv)
-                            .await
-                            .wrap_err_with(|| format!("failed to install {old_tv}"))
+                        // Avoid wrapping the backend error here so the error location
+                        // points to the backend implementation (more helpful for debugging).
+                        ba.install_version(ctx, tv).await
                     }
                     .await;
 
@@ -748,14 +754,40 @@ impl Toolset {
         Ok((env, env_results))
     }
     pub async fn list_paths(&self, config: &Arc<Config>) -> Vec<PathBuf> {
-        let mut paths = vec![];
-        for (p, tv) in self.list_current_installed_versions(config).into_iter() {
-            paths.extend(p.list_bin_paths(config, &tv).await.unwrap_or_else(|e| {
-                warn!("Error listing bin paths for {tv}: {e:#}");
-                Vec::new()
-            }));
+        // Build a stable cache key based on project_root and current installed versions
+        let mut key_parts = vec![];
+        if let Some(root) = &config.project_root {
+            key_parts.push(root.to_string_lossy().to_string());
+        }
+        let mut installed: Vec<String> = self
+            .list_current_installed_versions(config)
+            .into_iter()
+            .map(|(p, tv)| format!("{}@{}", p.id(), tv.version))
+            .collect();
+        installed.sort();
+        key_parts.extend(installed);
+        let cache_key = key_parts.join("|");
+        if let Some(entry) = LIST_PATHS_CACHE.get(&cache_key) {
+            trace!("toolset.list_paths hit cache");
+            return entry.clone();
         }
 
+        let mut paths: Vec<PathBuf> = Vec::new();
+        for (p, tv) in self.list_current_installed_versions(config).into_iter() {
+            let start = std::time::Instant::now();
+            let new_paths = p.list_bin_paths(config, &tv).await.unwrap_or_else(|e| {
+                warn!("Error listing bin paths for {tv}: {e:#}");
+                Vec::new()
+            });
+            trace!(
+                "toolset.list_paths {}@{} list_bin_paths took {}ms",
+                p.id(),
+                tv.version,
+                start.elapsed().as_millis()
+            );
+            paths.extend(new_paths);
+        }
+        LIST_PATHS_CACHE.insert(cache_key, paths.clone());
         paths
             .into_iter()
             .filter(|p| p.parent().is_some()) // TODO: why?
@@ -949,6 +981,7 @@ impl Toolset {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::ToolsOnly,
+                warn_on_missing_required: *env::WARN_ON_MISSING_REQUIRED_ENV,
             },
         )
         .await?;

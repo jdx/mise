@@ -1,0 +1,682 @@
+/**
+ * Customize default theme styling by overriding CSS variables
+ * Color palette inspired by developer tools and modern CLI aesthetics
+ */
+
+:root {
+  /* Brand Colors - Modern developer aesthetic */
+  --vp-c-brand-1: #00d9ff; /* Bright cyan - primary brand */
+  --vp-c-brand-2: #00b8d9; /* Darker cyan - hover states */
+  --vp-c-brand-3: #00acc1; /* Even darker - active states */
+  --vp-c-brand-soft: rgba(0, 217, 255, 0.14);
+
+  /* Accent Colors - Terminal-inspired green */
+  --vp-c-success-1: #52e892;
+  --vp-c-success-2: #3dd979;
+  --vp-c-success-3: #2bc760;
+  --vp-c-success-soft: rgba(82, 232, 146, 0.14);
+
+  /* Warning Colors - Warm orange */
+  --vp-c-warning-1: #ff9100;
+  --vp-c-warning-2: #e68200;
+  --vp-c-warning-3: #cc7300;
+  --vp-c-warning-soft: rgba(255, 145, 0, 0.14);
+
+  /* Danger Colors - Vibrant red */
+  --vp-c-danger-1: #ff5252;
+  --vp-c-danger-2: #f44336;
+  --vp-c-danger-3: #d32f2f;
+  --vp-c-danger-soft: rgba(255, 82, 82, 0.14);
+
+  /* Typography - Modern monospace-first approach */
+  --vp-font-family-base: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans",
+    "Helvetica Neue", sans-serif;
+  --vp-font-family-mono: "JetBrains Mono", "Fira Code", "SF Mono", Monaco,
+    "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
+  --vp-font-family-heading: "Bebas Neue", "Inter", sans-serif;
+
+  /* Custom spacing for better readability */
+  --vp-layout-max-width: 1440px;
+}
+
+/* Dark mode specific customizations */
+.dark {
+  /* Enhanced dark mode colors */
+  --vp-c-bg: #0a0a0b;
+  --vp-c-bg-soft: #121214;
+  --vp-c-bg-mute: #1a1a1d;
+  --vp-c-bg-alt: #161618;
+
+  /* Better contrast for dark mode */
+  --vp-c-divider: #2a2a2d;
+  --vp-c-divider-light: #363639;
+
+  /* Text colors with better readability */
+  --vp-c-text-1: #e7e7e8;
+  --vp-c-text-2: #c9c9ca;
+  --vp-c-text-3: #9e9e9f;
+  --vp-c-text-4: #71717a;
+
+  /* Code block enhancements */
+  --vp-code-block-bg: #161618;
+  --vp-code-block-divider-color: #2a2a2d;
+  --vp-code-copy-code-hover-bg: #2a2a2d;
+
+  /* Inline code styling */
+  --vp-c-code-bg: #1a1a1d;
+  --vp-c-code-color: #00d9ff;
+}
+
+/* Light mode customizations */
+:root:not(.dark) {
+  /* Light mode brand colors - brighter for better visibility */
+  --vp-c-brand-1: #00acc1; /* Bright cyan for light mode */
+  --vp-c-brand-2: #0097a7; /* Slightly darker on hover */
+  --vp-c-brand-3: #00838f; /* Active state */
+  --vp-c-brand-soft: rgba(0, 172, 193, 0.08);
+
+  /* Adjusted success colors for light mode */
+  --vp-c-success-1: #4caf50;
+  --vp-c-success-2: #388e3c;
+  --vp-c-success-soft: rgba(76, 175, 80, 0.08);
+
+  /* Adjusted warning colors */
+  --vp-c-warning-1: #ff9800;
+  --vp-c-warning-2: #f57c00;
+  --vp-c-warning-soft: rgba(255, 152, 0, 0.08);
+
+  /* Background colors with better contrast */
+  --vp-c-bg: #ffffff;
+  --vp-c-bg-soft: #f8f9fa;
+  --vp-c-bg-mute: #e9ecef;
+  --vp-c-bg-alt: #f1f3f5;
+
+  /* Text colors with better readability */
+  --vp-c-text-1: #1a1a1a;
+  --vp-c-text-2: #4a5568;
+  --vp-c-text-3: #718096;
+  --vp-c-text-4: #a0aec0;
+
+  /* Dividers with more contrast */
+  --vp-c-divider: #e2e8f0;
+  --vp-c-divider-light: #cbd5e0;
+
+  /* Light mode code styling */
+  --vp-c-code-bg: #f1f3f5;
+  --vp-c-code-color: #00838f;
+
+  /* Code blocks in light mode */
+  --vp-code-block-bg: #f8f9fa;
+  --vp-code-block-divider-color: #e2e8f0;
+}
+
+/* Navigation Bar Customization */
+.VPNav {
+  backdrop-filter: blur(12px);
+  background-color: var(--vp-c-bg-soft-up);
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.VPNavBar {
+  transition: all 0.3s ease;
+}
+
+.VPNavBar.has-sidebar .content {
+  backdrop-filter: blur(8px);
+}
+
+/* Logo Enhancement */
+.VPNavBarTitle .VPImage.logo {
+  height: 48px !important;
+  width: 48px !important;
+  transition: all 0.3s ease;
+}
+
+.VPNavBarTitle:hover .VPImage.logo {
+  transform: scale(1.1);
+  filter: drop-shadow(0 0 12px rgba(0, 217, 255, 0.6));
+}
+
+/* Site Title Enhancement */
+.VPNavBarTitle .title {
+  font-weight: 900;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  margin-left: 0.25rem;
+  transition: all 0.3s ease;
+  color: var(--vp-c-text-1);
+  background-image: linear-gradient(
+    120deg,
+    #00d9ff 0%,
+    #52e892 50%,
+    #ff9100 100%
+  );
+  background-size: 200% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* Light mode gradient */
+:root:not(.dark) .VPNavBarTitle .title {
+  background-image: linear-gradient(
+    120deg,
+    #00acc1 0%,
+    #4caf50 50%,
+    #ff9800 100%
+  );
+}
+
+/* Gradient text on hover */
+.VPNavBarTitle:hover .title {
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(0, 217, 255, 0.3));
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+  .VPNavBarTitle .title::before {
+    display: none;
+  }
+}
+
+/* GitHub star count badge */
+.VPSocialLinks a[href*="github.com/jdx/mise"] {
+  display: inline-flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  position: relative;
+  padding-bottom: 12px !important;
+  margin-bottom: -12px !important;
+}
+
+/* Ensure GitHub icon is visible and aligned */
+.VPSocialLinks a[href*="github.com/jdx/mise"] svg {
+  display: block !important;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+}
+
+.VPSocialLinks .star-count {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--vp-c-text-3);
+  font-family: var(--vp-font-family-mono);
+  letter-spacing: -0.02em;
+  transition: color 0.25s ease;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.VPSocialLinks a[href*="github.com/jdx/mise"]:hover .star-count {
+  color: var(--vp-c-brand-1);
+}
+
+/* Hide star count on mobile to save space */
+@media (max-width: 640px) {
+  .VPSocialLinks .star-count {
+    display: none;
+  }
+}
+
+/* Apply Bebas Neue to h1 headers, navigation, and key UI elements */
+h1,
+.vp-doc h1,
+.VPHero .name,
+.VPHome .name,
+.VPNavBarTitle .title,
+.VPNavBarMenu .VPNavBarMenuLink,
+.VPNavBarMenuGroup .text,
+.VPDocOutlineTitle {
+  font-family: "Bebas Neue", var(--vp-font-family-base) !important;
+  letter-spacing: 0.03em;
+}
+
+/* Nav bar menu items (Dev Tools, Environments, Tasks) */
+.VPNavBarMenu .VPNavBarMenuLink {
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+}
+
+/* "On this page" header */
+.VPDocOutlineTitle {
+  font-size: 1rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Make search button text invisible but maintain layout */
+.DocSearch-Button .DocSearch-Button-Placeholder {
+  visibility: hidden;
+}
+
+/* Adjust h1 size for Bebas Neue's tall characters */
+.vp-doc h1 {
+  font-size: 3rem;
+  line-height: 1.2;
+}
+
+/* Site title specific adjustment - font sizing */
+.VPNavBarTitle .title {
+  font-size: 1.3rem !important;
+  letter-spacing: 0.05em;
+}
+
+/* Hero section enhancement */
+.VPHero {
+  padding-bottom: 56px !important;
+}
+
+.VPHero .name {
+  background: linear-gradient(120deg, #00d9ff 0%, #52e892 50%, #ff9100 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  font-size: 6rem !important;
+  line-height: 1.1 !important;
+  animation: shimmer 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 20px rgba(0, 217, 255, 0.3));
+}
+
+/* Light mode hero gradient */
+:root:not(.dark) .VPHero .name {
+  background: linear-gradient(120deg, #00acc1 0%, #4caf50 50%, #ff9800 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.VPHero .tagline {
+  font-size: 1.35rem !important;
+  opacity: 0.9;
+  font-weight: 500;
+}
+
+/* Button customization */
+.VPButton {
+  font-weight: 600;
+  transition: all 0.25s ease;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  font-size: 0.875rem;
+}
+
+.VPButton.medium {
+  padding: 0 24px;
+}
+
+.VPButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 217, 255, 0.15);
+}
+
+/* Sidebar enhancements */
+.VPSidebar {
+  backdrop-filter: blur(8px);
+}
+
+/* Light mode sidebar background */
+:root:not(.dark) .VPSidebar {
+  background-color: rgba(255, 255, 255, 0.8);
+}
+
+.VPSidebarItem {
+  margin: 0;
+}
+
+.VPSidebarItem.level-0 > .item {
+  padding-top: 2px;
+  padding-bottom: 2px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  font-size: 0.75rem;
+  color: var(--vp-c-text-3);
+}
+
+.VPSidebarItem .link {
+  transition: all 0.2s ease;
+  border-radius: 4px;
+  padding: 2px 6px !important;
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.VPSidebarItem .link:hover {
+  background-color: var(--vp-c-bg-mute);
+  color: var(--vp-c-brand-1);
+  padding-left: 10px !important;
+}
+
+.VPSidebarItem .link.active {
+  background-color: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+  border-left: 3px solid var(--vp-c-brand-1);
+}
+
+/* Code blocks with better syntax highlighting */
+.vp-code-group {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+div[class*="language-"] {
+  border-radius: 8px;
+  border: 1px solid var(--vp-code-block-divider-color);
+  transition:
+    box-shadow 0.3s ease,
+    border-color 0.3s ease;
+}
+
+div[class*="language-"]:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  /* Removed transform to prevent jumping */
+}
+
+div[class*="language-"] .lang {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+/* Copy code button enhancement */
+div[class*="language-"] .copy {
+  background-color: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+div[class*="language-"] .copy:hover {
+  background-color: var(--vp-c-brand-1);
+  border-color: var(--vp-c-brand-1);
+  color: white;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--vp-c-bg-soft);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vp-c-divider);
+  border-radius: 5px;
+  border: 2px solid var(--vp-c-bg-soft);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vp-c-text-3);
+}
+
+/* Feature cards on home page */
+.VPFeature {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  background: linear-gradient(
+    135deg,
+    var(--vp-c-bg-soft) 0%,
+    var(--vp-c-bg) 100%
+  );
+}
+
+.VPFeature:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 217, 255, 0.1);
+}
+
+.VPFeature .icon {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 217, 255, 0.2));
+}
+
+/* Table styling */
+.vp-doc table {
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--vp-c-divider);
+}
+
+.vp-doc th {
+  background: var(--vp-c-bg-soft);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  letter-spacing: 0.025em;
+  color: var(--vp-c-text-2);
+}
+
+.vp-doc tr {
+  transition: background-color 0.2s ease;
+}
+
+.vp-doc tbody tr:hover {
+  background-color: var(--vp-c-bg-soft);
+}
+
+/* Links with underline animation */
+.vp-doc a {
+  position: relative;
+  color: var(--vp-c-brand-1);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.vp-doc a:hover {
+  color: var(--vp-c-brand-2);
+}
+
+.vp-doc a:not(.header-anchor):not(.VPButton)::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  bottom: -2px;
+  left: 0;
+  background-color: var(--vp-c-brand-1);
+  transform: scaleX(0);
+  transform-origin: bottom right;
+  transition: transform 0.25s ease-out;
+}
+
+.vp-doc a:not(.header-anchor):not(.VPButton):hover::after {
+  transform: scaleX(1);
+  transform-origin: bottom left;
+}
+
+/* Tip/Warning/Danger blocks customization */
+.custom-block {
+  border-radius: 8px;
+  border-width: 1px;
+  margin: 1.5rem 0;
+}
+
+.custom-block.tip {
+  border-color: var(--vp-c-success-2);
+  background-color: var(--vp-c-success-soft);
+}
+
+.custom-block.warning {
+  border-color: var(--vp-c-warning-2);
+  background-color: var(--vp-c-warning-soft);
+}
+
+.custom-block.danger {
+  border-color: var(--vp-c-danger-2);
+  background-color: var(--vp-c-danger-soft);
+}
+
+.custom-block-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  font-size: 0.85rem;
+}
+
+/* Search modal enhancement */
+.VPLocalSearchBox {
+  --vp-local-search-highlight-bg: var(--vp-c-brand-soft);
+  --vp-local-search-highlight-text: var(--vp-c-brand-1);
+}
+
+/* Algolia DocSearch customization */
+.DocSearch {
+  --docsearch-primary-color: var(--vp-c-brand-1) !important;
+  --docsearch-highlight-color: var(--vp-c-brand-1) !important;
+  --docsearch-muted-color: var(--vp-c-text-2) !important;
+  --docsearch-hit-color: var(--vp-c-text-1) !important;
+  --docsearch-hit-active-color: var(--vp-c-text-1) !important;
+  --docsearch-hit-background: var(--vp-c-bg-soft) !important;
+}
+
+/* Saturated cyan-teal background for selected search results */
+.DocSearch-Hit[aria-selected="true"] {
+  background-color: rgba(0, 217, 255, 0.1) !important;
+}
+
+.DocSearch-Hit[aria-selected="true"] a {
+  background-color: rgba(0, 217, 255, 0.1) !important;
+}
+
+.dark .DocSearch-Hit[aria-selected="true"] {
+  background-color: rgba(0, 217, 255, 0.08) !important;
+}
+
+.dark .DocSearch-Hit[aria-selected="true"] a {
+  background-color: rgba(0, 217, 255, 0.08) !important;
+}
+
+/* Page transitions */
+.VPContent {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Terminal-style elements */
+.terminal {
+  background: #0a0a0b;
+  color: #52e892;
+  padding: 1rem;
+  border-radius: 8px;
+  font-family: var(--vp-font-family-mono);
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.terminal::before {
+  content: "● ● ●";
+  position: absolute;
+  top: 0.75rem;
+  left: 1rem;
+  color: #ff5252;
+  font-size: 0.75rem;
+  letter-spacing: 0.25rem;
+}
+
+/* Responsive improvements */
+@media (max-width: 1024px) {
+  .VPHero .name {
+    font-size: 5rem !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .VPHero .name {
+    font-size: 4rem !important;
+  }
+
+  .VPHero .tagline {
+    font-size: 1.125rem !important;
+  }
+}
+
+/* Loading animation for async content */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.loading {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Custom badge styles */
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.badge-new {
+  background-color: var(--vp-c-success-soft);
+  color: var(--vp-c-success-1);
+  border: 1px solid var(--vp-c-success-2);
+}
+
+.badge-beta {
+  background-color: var(--vp-c-warning-soft);
+  color: var(--vp-c-warning-1);
+  border: 1px solid var(--vp-c-warning-2);
+}
+
+.badge-deprecated {
+  background-color: var(--vp-c-danger-soft);
+  color: var(--vp-c-danger-1);
+  border: 1px solid var(--vp-c-danger-2);
+}

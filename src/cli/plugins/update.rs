@@ -53,7 +53,7 @@ impl Update {
                 let mpr = MultiProgressReport::get();
                 let pr = mpr.add(&prefix);
                 plugin
-                    .update(&pr, ref_)
+                    .update(pr.as_ref(), ref_)
                     .await
                     .wrap_err_with(|| format!("[{plugin}] plugin update"))?;
                 Ok(())

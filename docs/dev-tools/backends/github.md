@@ -61,7 +61,8 @@ Specifies the pattern to match against release asset names. This is useful when 
 Specifies a custom version prefix for release tags. By default, mise handles the common `v` prefix (e.g., `v1.0.0`), but some repositories use different prefixes like `release-`, `version-`, or no prefix at all.
 
 When `version_prefix` is configured, mise will:
-- Strip the prefix when listing available versions
+
+- Filter available versions with the prefix and strip it
 - Add the prefix when searching for releases
 - Try both prefixed and non-prefixed versions during installation
 
@@ -71,6 +72,7 @@ When `version_prefix` is configured, mise will:
 ```
 
 **Examples:**
+
 - With `version_prefix = "release-"`:
   - User specifies `1.0.0` → mise searches for `release-1.0.0` tag
   - Available versions show as `1.0.0` (prefix stripped)
@@ -102,7 +104,7 @@ asset_pattern = "tool-1.0.0-x64.tar.gz"
 checksum = "sha256:a1b2c3d4e5f6789..."
 ```
 
-*Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mise-lock) to manage checksums.*
+_Instead of specifying the checksum here, you can use [mise.lock](/dev-tools/mise-lock) to manage checksums._
 
 ### Platform-specific Checksums
 

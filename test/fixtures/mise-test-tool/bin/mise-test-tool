@@ -1,0 +1,24 @@
+#!/usr/bin/env node
+// bin/mise-test-tool
+
+const os = require('os');
+const process = require('process');
+const fs = require('fs');
+const path = require('path');
+
+// Read version from package.json
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+
+console.log(`mise-test-tool v${packageJson.version}`);
+console.log(`Platform: ${os.platform()}-${os.arch()}`);
+console.log(`Arguments: ${JSON.stringify(process.argv.slice(2))}`);
+console.log('Environment variables:');
+
+Object.keys(process.env)
+  .filter(key => key.startsWith('MISE_'))
+  .sort()
+  .forEach(key => {
+    console.log(`  ${key}=${process.env[key]}`);
+  });
+
+process.exit(0);

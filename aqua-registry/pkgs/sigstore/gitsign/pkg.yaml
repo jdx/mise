@@ -1,4 +1,0 @@
-packages:
-  - name: sigstore/gitsign@v0.13.0
-  - name: sigstore/gitsign
-    version: v0.1.0

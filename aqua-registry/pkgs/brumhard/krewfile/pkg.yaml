@@ -1,4 +1,0 @@
-packages:
-  - name: brumhard/krewfile@v0.6.3
-  - name: brumhard/krewfile
-    version: v0.6.1

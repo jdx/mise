@@ -1,4 +1,0 @@
-packages:
-  - name: grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway@v2.27.2
-  - name: grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway
-    version: v2.13.0

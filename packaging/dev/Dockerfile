@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/rust:1
+FROM mcr.microsoft.com/devcontainers/rust:1@sha256:89214ba709cd952884c7355cf9b22e18d2cc080c50138440f4207a50a4bcbe0a
 LABEL maintainer="jdx"
 
 ENV GOPROXY=direct
@@ -23,10 +23,13 @@ RUN    apt-get update \
     && apt-get install -y --no-install-recommends \
     bison \
     build-essential \
+    clang \
     cmake \
     direnv \
     fd-find \
     fish \
+    libclang-dev \
+    pkg-config \
     python3-venv \
     pipx \
     && ln -s /usr/bin/{fdfind,fd} \

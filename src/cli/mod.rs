@@ -334,6 +334,7 @@ impl Cli {
             tool_stub::short_circuit_stub(&args[2..]).await?;
         }
         measure!("logger", { logger::init() });
+        check_working_directory();
         measure!("handle_shim", { shims::handle_shim().await })?;
         ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
@@ -392,6 +393,7 @@ impl Cli {
                         task_prs: Default::default(),
                         timed_outputs: Default::default(),
                         no_cache: Default::default(),
+                        timeout: None,
                     }));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(
@@ -448,3 +450,17 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise settings color=0</bold>          Disable color by modifying global config file
 "#
 );
+
+/// Check if the current working directory exists and warn if not
+fn check_working_directory() {
+    if std::env::current_dir().is_err() {
+        // Try to get the directory path from PWD env var, which might still contain the old path
+        let dir_path = std::env::var("PWD")
+            .or_else(|_| std::env::var("OLDPWD"))
+            .unwrap_or_else(|_| "(unknown)".to_string());
+        warn!(
+            "Current directory does not exist or is not accessible: {}",
+            dir_path
+        );
+    }
+}

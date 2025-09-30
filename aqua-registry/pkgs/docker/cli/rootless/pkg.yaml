@@ -1,4 +1,0 @@
-packages:
-  - name: docker/cli/rootless@v28.3.3
-  - name: docker/cli/rootless
-    version: v27.5.1

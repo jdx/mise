@@ -1,5 +1,7 @@
 # Configuration
 
+Learn how to configure mise for your project with `mise.toml` files, environment variables, and various configuration options to manage your development environment.
+
 ## `mise.toml`
 
 `mise.toml` is the config file for mise. They can be at any of the following file paths (in order of precedence, top overrides configuration of lower paths):
@@ -45,14 +47,24 @@ When mise needs configuration, it follows this process:
 
 ```
 /
-├── etc/mise/config.toml              # System-wide config (highest precedence)
+├── etc/mise/                          # System-wide config (highest precedence)
+│   ├── conf.d/*.toml                 # System fragments, loaded alphabetically
+│   ├── config.toml                   # System defaults
+│   └── config.<env>.toml             # Env-specific system config (MISE_ENV or -E)
 └── home/user/
-    ├── .config/mise/config.toml      # Global user config
+    ├── .config/mise/
+    │   ├── conf.d/*.toml             # User fragments, loaded alphabetically
+    │   ├── config.toml               # Global user config
+    │   ├── config.<env>.toml         # Env-specific user config
+    │   ├── config.local.toml         # User-local overrides
+    │   └── config.<env>.local.toml   # Env-specific user-local overrides
     └── work/
         ├── mise.toml                 # Work-wide settings
         └── myproject/
             ├── mise.local.toml       # Local overrides (git-ignored)
             ├── mise.toml             # Project config
+            ├── mise.<env>.toml       # Env-specific project config
+            ├── mise.<env>.local.toml # Env-specific project local overrides
             └── backend/
                 └── mise.toml         # Service-specific config (lowest precedence)
 ```
@@ -81,7 +93,7 @@ Different configuration sections merge in different ways:
 
 ```toml
 # Global: [tasks.test] = "npm test"
-# Project: [tasks.test] = "yarn test"  
+# Project: [tasks.test] = "yarn test"
 # Result: "yarn test" (completely replaces global)
 ```
 
@@ -198,12 +210,24 @@ my_custom_node = '20'
 ### Minimum mise version
 
 Specify the minimum supported version of mise required for the configuration file.
-If the configuration file specifies a version of mise that is higher than
-the currently installed version, mise will error out.
+
+You can set a hard minimum (errors if unmet) or a soft minimum (warns and continues):
 
 ```toml
+# (equivalent to hard)
 min_version = '2024.11.1'
+
+# new object form
+min_version = { hard = '2024.11.1' }
+
+# soft recommendation
+min_version = { soft = '2024.11.1' }
+
+# both
+min_version = { hard = '2024.11.1', soft = '2024.9.0' }
 ```
+
+When a soft minimum is not met, mise will print a warning and (if available) show self-update instructions. When a hard minimum is not met, mise errors and shows self-update instructions.
 
 ### `mise.toml` schema
 

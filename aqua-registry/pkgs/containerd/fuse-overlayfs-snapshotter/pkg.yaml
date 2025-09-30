@@ -1,4 +1,0 @@
-packages:
-  - name: containerd/fuse-overlayfs-snapshotter@v2.1.6
-  - name: containerd/fuse-overlayfs-snapshotter
-    version: v2.1.2

@@ -1,7 +1,6 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
-use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::file::TarOptions;
 use crate::http::HTTP;
@@ -11,16 +10,16 @@ use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
 use crate::{
-    aqua::aqua_registry::{
+    aqua::aqua_registry_wrapper::{
         AQUA_REGISTRY, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
 use crate::{backend::Backend, config::Config};
-use crate::{file, github, minisign};
+use crate::{env, file, github, minisign};
 use async_trait::async_trait;
 use dashmap::DashMap;
-use eyre::{ContextCompat, Result, bail};
+use eyre::{ContextCompat, Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use regex::Regex;
@@ -52,10 +51,6 @@ impl Backend for AquaBackend {
 
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
-    }
-
-    fn get_optional_dependencies(&self) -> Result<Vec<&str>> {
-        Ok(vec!["cosign", "slsa-verifier"])
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
@@ -285,7 +280,7 @@ impl AquaBackend {
                                 continue;
                             }
                         }
-                        let pkg = pkg.clone().with_version(&[version]);
+                        let pkg = pkg.clone().with_version(&[version], os(), arch());
                         if let Some(prefix) = &pkg.version_prefix {
                             if let Some(_v) = version.strip_prefix(prefix) {
                                 version = _v;
@@ -315,13 +310,13 @@ impl AquaBackend {
             AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
                 Ok((self.github_archive_url(pkg, v), false))
             }
-            AquaPackageType::Http => pkg.url(v).map(|url| (url, false)),
+            AquaPackageType::Http => pkg.url(v, os(), arch()).map(|url| (url, false)),
             ref t => bail!("unsupported aqua package type: {t}"),
         }
     }
 
     async fn github_release_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
-        let asset_strs = pkg.asset_strs(v)?;
+        let asset_strs = pkg.asset_strs(v, os(), arch())?;
         self.github_release_asset(pkg, v, asset_strs).await
     }
 
@@ -370,7 +365,7 @@ impl AquaBackend {
             return Ok(());
         }
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(url, &tarball_path, Some(&ctx.pr))
+        HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))
             .await?;
         Ok(())
     }
@@ -385,6 +380,8 @@ impl AquaBackend {
     ) -> Result<()> {
         self.verify_slsa(ctx, tv, pkg, v, filename).await?;
         self.verify_minisign(ctx, tv, pkg, v, filename).await?;
+        self.verify_github_attestations(ctx, tv, pkg, v, filename)
+            .await?;
 
         let download_path = tv.download_path();
         let platform_key = self.get_platform_key();
@@ -394,13 +391,13 @@ impl AquaBackend {
                 if checksum.enabled() {
                     let url = match checksum._type() {
                         AquaChecksumType::GithubRelease => {
-                            let asset_strs = checksum.asset_strs(pkg, v)?;
+                            let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
                             self.github_release_asset(pkg, v, asset_strs).await?
                         }
-                        AquaChecksumType::Http => checksum.url(pkg, v)?,
+                        AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
                     };
                     let checksum_path = download_path.join(format!("{filename}.checksum"));
-                    HTTP.download_file(&url, &checksum_path, Some(&ctx.pr))
+                    HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
                         .await?;
                     self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
                         .await?;
@@ -485,7 +482,7 @@ impl AquaBackend {
             debug!("minisign: {:?}", minisign);
             let sig_path = match minisign._type() {
                 AquaMinisignType::GithubRelease => {
-                    let asset = minisign.asset(pkg, v)?;
+                    let asset = minisign.asset(pkg, v, os(), arch())?;
                     let repo_owner = minisign
                         .repo_owner
                         .clone()
@@ -502,7 +499,8 @@ impl AquaBackend {
                         .map(|a| a.browser_download_url);
                     if let Some(url) = url {
                         let path = tv.download_path().join(asset);
-                        HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                            .await?;
                         path
                     } else {
                         warn!("no asset found for minisign of {tv}: {asset}");
@@ -510,15 +508,16 @@ impl AquaBackend {
                     }
                 }
                 AquaMinisignType::Http => {
-                    let url = minisign.url(pkg, v)?;
+                    let url = minisign.url(pkg, v, os(), arch())?;
                     let path = tv.download_path().join(filename).with_extension(".minisig");
-                    HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                    HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                        .await?;
                     path
                 }
             };
             let data = file::read(tv.download_path().join(filename))?;
             let sig = file::read_to_string(sig_path)?;
-            minisign::verify(&minisign.public_key(pkg, v)?, &data, &sig)?;
+            minisign::verify(&minisign.public_key(pkg, v, os(), arch())?, &data, &sig)?;
         }
         Ok(())
     }
@@ -539,69 +538,160 @@ impl AquaBackend {
                 debug!("slsa is disabled for {tv}");
                 return Ok(());
             }
-            if let Some(slsa_bin) = self.dependency_which(&ctx.config, "slsa-verifier").await {
-                ctx.pr.set_message("verify slsa".to_string());
-                let repo_owner = slsa
-                    .repo_owner
-                    .clone()
-                    .unwrap_or_else(|| pkg.repo_owner.clone());
-                let repo_name = slsa
-                    .repo_name
-                    .clone()
-                    .unwrap_or_else(|| pkg.repo_name.clone());
-                let repo = format!("{repo_owner}/{repo_name}");
-                let provenance_path = match slsa.r#type.as_deref().unwrap_or_default() {
-                    "github_release" => {
-                        let asset = slsa.asset(pkg, v)?;
-                        let url = github::get_release(&repo, v)
-                            .await?
-                            .assets
-                            .into_iter()
-                            .find(|a| a.name == asset)
-                            .map(|a| a.browser_download_url);
-                        if let Some(url) = url {
-                            let path = tv.download_path().join(asset);
-                            HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
-                            path.to_string_lossy().to_string()
-                        } else {
-                            warn!("no asset found for slsa verification of {tv}: {asset}");
-                            return Ok(());
-                        }
-                    }
-                    "http" => {
-                        let url = slsa.url(pkg, v)?;
-                        let path = tv.download_path().join(filename);
-                        HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
-                        path.to_string_lossy().to_string()
-                    }
-                    t => {
-                        warn!("unsupported slsa type: {t}");
+
+            ctx.pr.set_message("verify slsa".to_string());
+
+            // Download the provenance file
+            let repo_owner = slsa
+                .repo_owner
+                .clone()
+                .unwrap_or_else(|| pkg.repo_owner.clone());
+            let repo_name = slsa
+                .repo_name
+                .clone()
+                .unwrap_or_else(|| pkg.repo_name.clone());
+            let repo = format!("{repo_owner}/{repo_name}");
+
+            let provenance_path = match slsa.r#type.as_deref().unwrap_or_default() {
+                "github_release" => {
+                    let asset = slsa.asset(pkg, v, os(), arch())?;
+                    let url = github::get_release(&repo, v)
+                        .await?
+                        .assets
+                        .into_iter()
+                        .find(|a| a.name == asset)
+                        .map(|a| a.browser_download_url);
+                    if let Some(url) = url {
+                        let path = tv.download_path().join(asset);
+                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                            .await?;
+                        path
+                    } else {
+                        warn!("no asset found for slsa verification of {tv}: {asset}");
                         return Ok(());
                     }
-                };
-                let source_uri = slsa
-                    .source_uri
-                    .clone()
-                    .unwrap_or_else(|| format!("github.com/{repo}"));
-                let mut cmd = CmdLineRunner::new(slsa_bin)
-                    .arg("verify-artifact")
-                    .arg(tv.download_path().join(filename))
-                    .arg("--provenance-repository")
-                    .arg(&repo)
-                    .arg("--source-uri")
-                    .arg(source_uri)
-                    .arg("--provenance-path")
-                    .arg(provenance_path);
-                let source_tag = slsa.source_tag.clone().unwrap_or_else(|| v.to_string());
-                if source_tag != "-" {
-                    cmd = cmd.arg("--source-tag").arg(source_tag);
                 }
-                cmd = cmd.with_pr(&ctx.pr);
-                cmd.execute()?;
-            } else {
-                warn!("{tv} can be verified with slsa-verifier but slsa-verifier is not installed");
+                "http" => {
+                    let url = slsa.url(pkg, v, os(), arch())?;
+                    let provenance_filename =
+                        url.split('/').next_back().unwrap_or("provenance.json");
+                    let path = tv.download_path().join(provenance_filename);
+                    HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                        .await?;
+                    path
+                }
+                t => {
+                    warn!("unsupported slsa type: {t}");
+                    return Ok(());
+                }
+            };
+
+            let artifact_path = tv.download_path().join(filename);
+
+            // Use native sigstore-verification crate for SLSA verification
+            // Default to SLSA level 1 (sops provides level 1, newer tools provide level 2+)
+            let min_level = 1u8;
+
+            match sigstore_verification::verify_slsa_provenance(
+                &artifact_path,
+                &provenance_path,
+                min_level,
+            )
+            .await
+            {
+                Ok(true) => {
+                    ctx.pr
+                        .set_message(format!("✓ SLSA provenance verified (level {})", min_level));
+                    debug!(
+                        "SLSA provenance verified successfully for {tv} at level {}",
+                        min_level
+                    );
+                }
+                Ok(false) => {
+                    return Err(eyre!("SLSA provenance verification failed for {tv}"));
+                }
+                Err(e) => {
+                    // Use proper error type matching instead of string matching
+                    match &e {
+                        sigstore_verification::AttestationError::NoAttestations => {
+                            // SLSA verification was explicitly configured but attestations are missing
+                            // This should be treated as a security failure, not a warning
+                            return Err(eyre!(
+                                "SLSA verification failed for {tv}: Package configuration requires SLSA provenance but no attestations found"
+                            ));
+                        }
+                        _ => {
+                            return Err(eyre!("SLSA verification error for {tv}: {e}"));
+                        }
+                    }
+                }
             }
         }
+        Ok(())
+    }
+
+    async fn verify_github_attestations(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        pkg: &AquaPackage,
+        _v: &str,
+        filename: &str,
+    ) -> Result<()> {
+        // Check if attestations are enabled via settings
+        if !Settings::get().aqua.github_attestations {
+            debug!("GitHub attestations verification disabled");
+            return Ok(());
+        }
+
+        if let Some(github_attestations) = &pkg.github_artifact_attestations {
+            if github_attestations.enabled == Some(false) {
+                debug!("GitHub attestations verification is disabled for {tv}");
+                return Ok(());
+            }
+
+            ctx.pr.set_message("verify GitHub attestations".to_string());
+
+            let artifact_path = tv.download_path().join(filename);
+
+            // Get expected workflow from registry
+            let signer_workflow = pkg
+                .github_artifact_attestations
+                .as_ref()
+                .and_then(|att| att.signer_workflow.clone());
+
+            match sigstore_verification::verify_github_attestation(
+                &artifact_path,
+                &pkg.repo_owner,
+                &pkg.repo_name,
+                env::GITHUB_TOKEN.as_deref(),
+                signer_workflow.as_deref(),
+            )
+            .await
+            {
+                Ok(true) => {
+                    ctx.pr
+                        .set_message("✓ GitHub attestations verified".to_string());
+                    debug!("GitHub attestations verified successfully for {tv}");
+                }
+                Ok(false) => {
+                    return Err(eyre!(
+                        "GitHub attestations verification returned false for {tv}"
+                    ));
+                }
+                Err(sigstore_verification::AttestationError::NoAttestations) => {
+                    return Err(eyre!(
+                        "No GitHub attestations found for {tv}, but attestations are expected per aqua registry configuration"
+                    ));
+                }
+                Err(e) => {
+                    return Err(eyre!(
+                        "GitHub attestations verification failed for {tv}: {e}"
+                    ));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -622,61 +712,104 @@ impl AquaBackend {
                 debug!("cosign is disabled for {tv}");
                 return Ok(());
             }
-            if let Some(cosign_bin) = self.dependency_which(&ctx.config, "cosign").await {
-                ctx.pr
-                    .set_message("verify checksums with cosign".to_string());
-                let mut cmd = CmdLineRunner::new(cosign_bin)
-                    .arg("verify-blob")
-                    .arg(checksum_path);
-                if log::log_enabled!(log::Level::Debug) {
-                    cmd = cmd.arg("--verbose");
-                }
-                if cosign.experimental == Some(true) {
-                    cmd = cmd.env("COSIGN_EXPERIMENTAL", "1");
-                }
-                if let Some(signature) = &cosign.signature {
-                    let arg = signature.arg(pkg, v)?;
-                    if !arg.is_empty() {
-                        cmd = cmd.arg("--signature").arg(arg);
-                    }
-                }
-                if let Some(key) = &cosign.key {
-                    let arg = key.arg(pkg, v)?;
-                    if !arg.is_empty() {
-                        cmd = cmd.arg("--key").arg(arg);
-                    }
-                }
-                if let Some(certificate) = &cosign.certificate {
-                    let arg = certificate.arg(pkg, v)?;
-                    if !arg.is_empty() {
-                        cmd = cmd.arg("--certificate").arg(arg);
-                    }
-                }
-                if let Some(bundle) = &cosign.bundle {
-                    let url = bundle.arg(pkg, v)?;
-                    if !url.is_empty() {
-                        let filename = url.split('/').next_back().unwrap();
-                        let bundle_path = download_path.join(filename);
-                        HTTP.download_file(&url, &bundle_path, Some(&ctx.pr))
+
+            ctx.pr
+                .set_message("verify checksums with cosign".to_string());
+
+            // Use native sigstore-verification crate
+            if let Some(key) = &cosign.key {
+                // Key-based verification
+                let key_arg = key.arg(pkg, v, os(), arch())?;
+                if !key_arg.is_empty() {
+                    // Download or locate the public key
+                    let key_path = if key_arg.starts_with("http") {
+                        let key_filename = key_arg.split('/').next_back().unwrap_or("cosign.pub");
+                        let key_path = download_path.join(key_filename);
+                        HTTP.download_file(&key_arg, &key_path, Some(ctx.pr.as_ref()))
                             .await?;
-                        cmd = cmd.arg("--bundle").arg(bundle_path);
+                        key_path
+                    } else {
+                        PathBuf::from(key_arg)
+                    };
+
+                    // Download signature if specified
+                    let sig_path = if let Some(signature) = &cosign.signature {
+                        let sig_arg = signature.arg(pkg, v, os(), arch())?;
+                        if !sig_arg.is_empty() {
+                            if sig_arg.starts_with("http") {
+                                let sig_filename =
+                                    sig_arg.split('/').next_back().unwrap_or("checksum.sig");
+                                let sig_path = download_path.join(sig_filename);
+                                HTTP.download_file(&sig_arg, &sig_path, Some(ctx.pr.as_ref()))
+                                    .await?;
+                                sig_path
+                            } else {
+                                PathBuf::from(sig_arg)
+                            }
+                        } else {
+                            // Default signature path
+                            checksum_path.with_extension("sig")
+                        }
+                    } else {
+                        // Default signature path
+                        checksum_path.with_extension("sig")
+                    };
+
+                    // Verify with key
+                    match sigstore_verification::verify_cosign_signature_with_key(
+                        checksum_path,
+                        &sig_path,
+                        &key_path,
+                    )
+                    .await
+                    {
+                        Ok(true) => {
+                            ctx.pr
+                                .set_message("✓ Cosign signature verified with key".to_string());
+                            debug!("Cosign signature verified successfully with key for {tv}");
+                        }
+                        Ok(false) => {
+                            return Err(eyre!("Cosign signature verification failed for {tv}"));
+                        }
+                        Err(e) => {
+                            return Err(eyre!("Cosign verification error for {tv}: {e}"));
+                        }
                     }
                 }
-                for opt in cosign.opts(pkg, v)? {
-                    cmd = cmd.arg(opt);
+            } else if let Some(bundle) = &cosign.bundle {
+                // Bundle-based keyless verification
+                let bundle_arg = bundle.arg(pkg, v, os(), arch())?;
+                if !bundle_arg.is_empty() {
+                    let bundle_path = if bundle_arg.starts_with("http") {
+                        let filename = bundle_arg.split('/').next_back().unwrap_or("bundle.json");
+                        let bundle_path = download_path.join(filename);
+                        HTTP.download_file(&bundle_arg, &bundle_path, Some(ctx.pr.as_ref()))
+                            .await?;
+                        bundle_path
+                    } else {
+                        PathBuf::from(bundle_arg)
+                    };
+
+                    // Verify with bundle (keyless)
+                    match sigstore_verification::verify_cosign_signature(
+                        checksum_path,
+                        &bundle_path,
+                    )
+                    .await
+                    {
+                        Ok(true) => {
+                            ctx.pr
+                                .set_message("✓ Cosign bundle verified (keyless)".to_string());
+                            debug!("Cosign bundle verified successfully for {tv}");
+                        }
+                        Ok(false) => {
+                            return Err(eyre!("Cosign bundle verification failed for {tv}"));
+                        }
+                        Err(e) => {
+                            return Err(eyre!("Cosign bundle verification error for {tv}: {e}"));
+                        }
+                    }
                 }
-                for arg in Settings::get()
-                    .aqua
-                    .cosign_extra_args
-                    .clone()
-                    .unwrap_or_default()
-                {
-                    cmd = cmd.arg(arg);
-                }
-                cmd = cmd.with_pr(&ctx.pr);
-                cmd.execute()?;
-            } else {
-                warn!("{tv} can be verified with cosign but cosign is not installed");
             }
         }
         Ok(())
@@ -694,11 +827,11 @@ impl AquaBackend {
         ctx.pr.set_message(format!("extract {filename}"));
         let install_path = tv.install_path();
         file::remove_all(&install_path)?;
-        let format = pkg.format(v)?;
+        let format = pkg.format(v, os(), arch())?;
         let mut bin_names: Vec<Cow<'_, str>> = pkg
             .files
             .iter()
-            .filter_map(|file| match file.src(pkg, v) {
+            .filter_map(|file| match file.src(pkg, v, os(), arch()) {
                 Ok(Some(s)) => Some(Cow::Owned(s)),
                 Ok(None) => Some(Cow::Borrowed(file.name.as_str())),
                 Err(_) => None,
@@ -714,7 +847,10 @@ impl AquaBackend {
         }
         let bin_paths: Vec<_> = bin_names
             .iter()
-            .map(|name| install_path.join(name.as_ref()))
+            .map(|name| {
+                let name_str: &str = name.as_ref();
+                install_path.join(name_str)
+            })
             .map(|path| {
                 if cfg!(windows) && pkg.complete_windows_ext {
                     path.with_extension("exe")
@@ -728,8 +864,9 @@ impl AquaBackend {
             .expect("at least one bin path should exist");
         let mut tar_opts = TarOptions {
             format: format.parse().unwrap_or_default(),
-            pr: Some(&ctx.pr),
+            pr: Some(ctx.pr.as_ref()),
             strip_components: 0,
+            ..Default::default()
         };
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {
@@ -802,11 +939,11 @@ impl AquaBackend {
             .iter()
             .map(|f| {
                 let srcs = if let Some(prefix) = &pkg.version_prefix {
-                    vec![f.src(pkg, &format!("{}{}", prefix, tv.version))?]
+                    vec![f.src(pkg, &format!("{}{}", prefix, tv.version), os(), arch())?]
                 } else {
                     vec![
-                        f.src(pkg, &tv.version)?,
-                        f.src(pkg, &format!("v{}", tv.version))?,
+                        f.src(pkg, &tv.version, os(), arch())?,
+                        f.src(pkg, &format!("v{}", tv.version), os(), arch())?,
                     ]
                 };
                 Ok(srcs

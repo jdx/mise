@@ -1,8 +1,0 @@
-packages:
-  - name: abhimanyu003/sttr@v0.2.27
-  - name: abhimanyu003/sttr
-    version: v0.2.24
-  - name: abhimanyu003/sttr
-    version: v0.2.23
-  - name: abhimanyu003/sttr
-    version: v0.2.11

@@ -570,7 +570,8 @@ impl ToolStub {
         // Find our file in the global args and take everything after it
         let args = {
             let global_args = crate::env::ARGS.read().unwrap();
-            if let Some(file_pos) = global_args.iter().position(|arg| arg == file_str.as_ref()) {
+            let file_str_ref: &str = file_str.as_ref();
+            if let Some(file_pos) = global_args.iter().position(|arg| arg == file_str_ref) {
                 global_args.get(file_pos + 1..).unwrap_or(&[]).to_vec()
             } else {
                 vec![]
