@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# Test that not_found_auto_install works when a tool is already configured but not installed
+# Reproduces https://github.com/jdx/mise/discussions/6482#discussioncomment-14552091
+
+# Test 1: hook-not-found auto-install
+# Set up: Install tiny@3.1.0 globally
+mise use -g tiny@3.1.0
+assert "mise current tiny" "3.1.0"
+
+# Create a project that requires a different version (tiny@3.0.0)
+cat >mise.toml <<EOF
+[tools]
+tiny = "3.0.0"
+EOF
+
+# Uninstall the required version to simulate it being missing
+mise uninstall tiny@3.0.0 || true
+
+# Verify it's not installed
+assert_fail "mise ls tiny --installed | grep 3.0.0"
+
+# Simulate the hook-not-found behavior: rtx-tiny is requested but not installed
+# This should auto-install tiny@3.0.0 (note: tiny plugin provides rtx-tiny binary)
+mise hook-not-found rtx-tiny && mise current tiny | grep -q "3.0.0"
+assert_contains "mise ls tiny --installed" "3.0.0"
+
+# Clean up for next test
+rm -f mise.toml
+mise uninstall tiny@3.0.0
+
+# Test 2: shim auto-install
+# Set up: Install tiny@3.1.0 globally, configure tiny@3.0.0 locally (not installed)
+cat >mise.toml <<EOF
+[tools]
+tiny = "3.0.0"
+EOF
+
+# Verify it's not installed
+assert_fail "mise ls tiny --installed | grep 3.0.0"
+
+# Add shims to PATH and run the shimmed binary
+# This should auto-install tiny@3.0.0 via the shim
+export PATH="$MISE_DATA_DIR/shims:$PATH"
+rtx-tiny && mise current tiny | grep -q "3.0.0"
+assert_contains "mise ls tiny --installed" "3.0.0"
+
+# Clean up
+rm -f mise.toml
+mise use -g --rm tiny
+mise uninstall tiny --all
