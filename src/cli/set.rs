@@ -103,7 +103,9 @@ impl Set {
             (None, None) => {
                 return self.list_all().await;
             }
-            (None, Some(env_vars)) if env_vars.iter().all(|ev| ev.value.is_none()) => {
+            (None, Some(env_vars))
+                if env_vars.iter().all(|ev| ev.value.is_none()) && !self.prompt =>
+            {
                 return self.get().await;
             }
             _ => {}
@@ -119,7 +121,7 @@ impl Set {
         }
 
         if let Some(env_vars) = &self.env_vars {
-            if env_vars.len() == 1 && env_vars[0].value.is_none() {
+            if env_vars.len() == 1 && env_vars[0].value.is_none() && !self.prompt {
                 let key = &env_vars[0].key;
                 // Use Config's centralized env loading which handles decryption
                 let full_config = Config::get().await?;
