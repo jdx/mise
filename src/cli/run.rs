@@ -440,6 +440,19 @@ impl Run {
                 }
             }
 
+            // Check if we should stop early due to failure
+            if this.is_stopping() && !this.continue_on_error {
+                trace!("scheduler: stopping early due to failure, cleaning up main deps");
+                // Clean up the dependency graph to ensure the main_done signal is sent
+                let mut deps = main_deps.lock().await;
+                let tasks_to_remove: Vec<Task> = deps.all().cloned().collect();
+                for task in tasks_to_remove {
+                    deps.remove(&task);
+                }
+                drop(deps);
+                break;
+            }
+
             // Exit if main deps finished and nothing is running/queued
             if *main_done_rx.borrow()
                 && in_flight.load(std::sync::atomic::Ordering::SeqCst) == 0
