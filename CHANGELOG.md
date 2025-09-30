@@ -1,5 +1,20 @@
 # Changelog
 
+## [2025.9.24](https://github.com/jdx/mise/compare/v2025.9.23..v2025.9.24) - 2025-09-29
+
+### 📦 Registry
+
+- add ggshield by @TyceHerrman in [#6435](https://github.com/jdx/mise/pull/6435)
+- add jaq by @TyceHerrman in [#6434](https://github.com/jdx/mise/pull/6434)
+
+### 🚀 Features
+
+- **(age)** support age encrypted env vars in mise.toml files by @jdx in [#6463](https://github.com/jdx/mise/pull/6463)
+
+### 🐛 Bug Fixes
+
+- **(vfox)** integrate `parse_legacy_file` into backend by @malept in [#6471](https://github.com/jdx/mise/pull/6471)
+
 ## [2025.9.23](https://github.com/jdx/mise/compare/v2025.9.22..v2025.9.23) - 2025-09-28
 
 ### 🚀 Features
