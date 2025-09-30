@@ -20,10 +20,10 @@ env:
   GH_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
-  build-tarball:
+  build-tarball-linux:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: build-tarball-${{matrix.name}}
-    runs-on: ${{matrix.runs-on}}
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
@@ -32,47 +32,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu
-            name: linux-x64
+          - name: linux-x64
             target: x86_64-unknown-linux-gnu
-            runs-on: ubuntu-latest
-          - os: ubuntu
-            name: linux-x64-musl
+          - name: linux-x64-musl
             target: x86_64-unknown-linux-musl
-            runs-on: ubuntu-latest
-          - os: ubuntu
-            name: linux-arm64
+          - name: linux-arm64
             target: aarch64-unknown-linux-gnu
-            runs-on: ubuntu-latest
-          - os: ubuntu
-            name: linux-arm64-musl
+          - name: linux-arm64-musl
             target: aarch64-unknown-linux-musl
-            runs-on: ubuntu-latest
-          - os: ubuntu
-            name: linux-armv7
+          - name: linux-armv7
             target: armv7-unknown-linux-gnueabi
-            runs-on: ubuntu-latest
-          - os: ubuntu
-            name: linux-armv7-musl
+          - name: linux-armv7-musl
             target: armv7-unknown-linux-musleabi
-            runs-on: ubuntu-latest
-          - os: macos
-            name: macos-x64
-            target: x86_64-apple-darwin
-            runs-on: macos-latest
-          - os: macos
-            name: macos-arm64
-            target: aarch64-apple-darwin
-            runs-on: macos-latest
     steps:
-      - if: matrix.os == 'macos'
-        uses: apple-actions/import-codesign-certs@95e84a1a18f2bdbc5c6ab9b7f4429372e4b13a8b # v5
-        with:
-          p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
-          p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
       - name: Install cross
-        if: matrix.os == 'ubuntu'
         uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
         with:
           tool: cross
@@ -83,9 +57,55 @@ jobs:
           path: ~/.cargo/registry/cache
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-registry
+      - name: build-tarball ${{matrix.target}}
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+        with:
+          timeout_minutes: 45
+          max_attempts: 3
+          command: scripts/build-tarball.sh ${{matrix.target}}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tarball-${{matrix.target}}
+          path: |
+            dist/mise-*.tar.xz
+            dist/mise-*.tar.gz
+            dist/mise-*.tar.zst
+          if-no-files-found: error
+      - uses: taiki-e/install-action@0aa4f22591557b744fe31e55dbfcdfea74a073f7 # v2
+        with: { tool: cargo-cache }
+      - if: steps.cache-crates.outputs.cache-hit != 'true'
+        run: cargo cache --autoclean
+  build-tarball-macos:
+    if: github.event_name != 'pull_request' || github.head_ref == 'release'
+    name: build-tarball-${{matrix.name}}
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
+      MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-x64
+            target: x86_64-apple-darwin
+          - name: macos-arm64
+            target: aarch64-apple-darwin
+    steps:
+      - uses: apple-actions/import-codesign-certs@95e84a1a18f2bdbc5c6ab9b7f4429372e4b13a8b # v5
+        with:
+          p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
+          p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+      - name: cache crates
+        id: cache-crates
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cargo/registry/cache
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-registry
       - name: Setup Rust target
         run: rustup target add ${{matrix.target}}
-        if: matrix.os != 'ubuntu'
       - name: build-tarball ${{matrix.target}}
         uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
         with:
@@ -135,7 +155,7 @@ jobs:
   e2e-linux:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     name: e2e-linux-${{matrix.tranche}}
-    needs: [build-tarball]
+    needs: [build-tarball-linux]
     runs-on: ubuntu-latest
     #container: ghcr.io/jdx/mise:github-actions
     timeout-minutes: 30
@@ -177,7 +197,7 @@ jobs:
   rpm:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     runs-on: ubuntu-latest
-    needs: [build-tarball]
+    needs: [build-tarball-linux]
     timeout-minutes: 10
     container: ghcr.io/jdx/mise:rpm@sha256:5f944c8356690cb4df4ed1596f9c0d24a90c5962488c1c3ecfe3e2b06d84dfe2
     steps:
@@ -202,7 +222,7 @@ jobs:
   deb:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     runs-on: ubuntu-latest
-    needs: [build-tarball]
+    needs: [build-tarball-linux]
     container: ghcr.io/jdx/mise:deb@sha256:af96f8ead5d62cb23f2c0d17322550433a3a5ca6d6eb04ee23fd81d9863cf6e4
     timeout-minutes: 10
     steps:
@@ -233,6 +253,7 @@ jobs:
       - rpm
       - deb
       - e2e-linux
+      - build-tarball-macos
       - build-tarball-windows
     if: always()
     steps:
