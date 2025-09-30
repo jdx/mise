@@ -1,5 +1,30 @@
 # Changelog
 
+## [2025.9.25](https://github.com/jdx/mise/compare/v2025.9.24..v2025.9.25) - 2025-09-30
+
+### 📦 Registry
+
+- prefer k3s from Aqua over ASDF plugin by @TobiX in [#6486](https://github.com/jdx/mise/pull/6486)
+
+### 🐛 Bug Fixes
+
+- **(auto-install)** support installing non-active backend versions by @jdx in [#6484](https://github.com/jdx/mise/pull/6484)
+- **(install)** remove duplicate 'mise' text in install header by @jdx in [#6489](https://github.com/jdx/mise/pull/6489)
+- **(task)** prevent hang when tasks with multiple dependencies fail by @stempler in [#6481](https://github.com/jdx/mise/pull/6481)
+
+### 🧪 Testing
+
+- **(e2e)** use local HTTP server instead of httpbin.org for tool-stub tests by @jdx in [#6488](https://github.com/jdx/mise/pull/6488)
+
+### Chore
+
+- **(ci)** prevent release workflow from running on release branch pushes by @jdx in [#6490](https://github.com/jdx/mise/pull/6490)
+- **(ci)** parallelize release workflow to start e2e tests earlier by @jdx in [#6491](https://github.com/jdx/mise/pull/6491)
+
+### New Contributors
+
+- @stempler made their first contribution in [#6481](https://github.com/jdx/mise/pull/6481)
+
 ## [2025.9.24](https://github.com/jdx/mise/compare/v2025.9.23..v2025.9.24) - 2025-09-29
 
 ### 📦 Registry
