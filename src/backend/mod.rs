@@ -6,11 +6,13 @@ use std::hash::Hash;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::sync::Mutex as TokioMutex;
 
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
+use crate::errors::Error;
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -502,13 +504,60 @@ pub trait Backend: Debug + Send + Sync {
         let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
         self.create_install_dirs(&tv)?;
 
-        let old_tv = tv.clone();
-        let tv = match self.install_version_(&ctx, tv).await {
-            Ok(tv) => tv,
-            Err(e) => {
-                self.cleanup_install_dirs_on_error(&old_tv);
-                // Pass through the error - it will be wrapped at a higher level
-                return Err(e);
+        let mut current_retry = 0;
+        let tv = loop {
+            match self.install_version_(&ctx, tv.clone()).await {
+                Ok(tv) => break tv,
+                Err(e) => {
+                    self.cleanup_install_dirs_on_error(&tv);
+
+                    trait IsRetryable {
+                        fn is_retryable(&self) -> bool;
+                    }
+
+                    impl IsRetryable for eyre::Report {
+                        fn is_retryable(&self) -> bool {
+                            if let Some(reqwest_error) = self.downcast_ref::<reqwest::Error>() {
+                                return reqwest_error.is_request()
+                                    && (reqwest_error.is_connect() || reqwest_error.is_timeout());
+                            }
+
+                            false
+                        }
+                    }
+
+                    if current_retry < ctx.retry && e.is_retryable() {
+                        const MAX_BACKOFF_TIME: u64 = 60;
+
+                        let backoff_time = 2u64.pow(current_retry.into()).min(MAX_BACKOFF_TIME);
+                        current_retry += 1;
+                        ctx.pr.println(format!(
+                            "{}",
+                            Error::InstallFailed {
+                                successful_installations: vec![],
+                                failed_installations: vec![(tv.request.clone(), e)],
+                            }
+                        ));
+                        ctx.pr.println(format!(
+                            "Retrying installation … ({current_retry}/{})",
+                            ctx.retry
+                        ));
+
+                        for i in 0..backoff_time {
+                            ctx.pr.set_message(format!(
+                                "install failed (retrying in {} seconds …)",
+                                backoff_time - i
+                            ));
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                        }
+                        ctx.pr.set_message("install".into());
+
+                        continue;
+                    }
+
+                    // Pass through the error - it will be wrapped at a higher level
+                    return Err(e);
+                }
             }
         };
 

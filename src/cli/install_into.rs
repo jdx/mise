@@ -21,6 +21,10 @@ pub struct InstallInto {
     /// Path to install the tool into
     #[clap(value_hint = ValueHint::DirPath)]
     path: PathBuf,
+
+    /// Retry installation if it fails due to transient errors, e.g. network issues.
+    #[clap(long, default_value_t = 0)]
+    retry: u8,
 }
 
 impl InstallInto {
@@ -48,6 +52,7 @@ impl InstallInto {
             pr: mpr.add(&tv.style()),
             force: true,
             dry_run: false,
+            retry: self.retry,
         };
         tv.install_path = Some(self.path.clone());
         backend.install_version(install_ctx, tv).await?;
