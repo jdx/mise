@@ -253,6 +253,7 @@ jobs:
       - rpm
       - deb
       - e2e-linux
+      - build-tarball-linux
       - build-tarball-macos
       - build-tarball-windows
     if: always()
