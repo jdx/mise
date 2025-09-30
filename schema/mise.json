@@ -33,6 +33,19 @@
         "redact": {
           "type": "boolean",
           "description": "redact the value from logs"
+        },
+        "required": {
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "require this environment variable to be defined before mise runs or in a later config file"
+            },
+            {
+              "type": "string",
+              "description": "require this environment variable with user help text on how to set it"
+            }
+          ],
+          "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
         }
       },
       "oneOf": [
@@ -82,8 +95,45 @@
               "redact": {
                 "type": "boolean",
                 "description": "redact the value from logs"
+              },
+              "required": {
+                "type": "boolean",
+                "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false"
               }
             }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "description": "[experimental] age-encrypted value (simplified format)"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string",
+                        "description": "[experimental] age-encrypted value"
+                      },
+                      "format": {
+                        "type": "string",
+                        "enum": ["raw", "zstd"],
+                        "description": "[experimental] compression format for the encrypted value"
+                      }
+                    },
+                    "required": ["value"],
+                    "additionalProperties": false,
+                    "description": "[experimental] age-encrypted value (complex format)"
+                  }
+                ]
+              }
+            },
+            "required": ["age"],
+            "additionalProperties": false,
+            "description": "[experimental] age-encrypted environment variable"
           },
           {
             "type": "string"
@@ -608,6 +658,11 @@
           "description": "Timeout in seconds for all HTTP requests in mise.",
           "type": "string"
         },
+        "http_retries": {
+          "default": 0,
+          "description": "Number of retries for HTTP requests in mise.",
+          "type": "number"
+        },
         "idiomatic_version_file": {
           "default": true,
           "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
@@ -949,6 +1004,30 @@
         "silent": {
           "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
           "type": "boolean"
+        },
+        "age": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "identity_files": {
+              "description": "[experimental] List of age identity files to use for decryption.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "key_file": {
+              "description": "[experimental] Path to the age private key file to use for encryption/decryption.",
+              "type": "string"
+            },
+            "ssh_identity_files": {
+              "description": "[experimental] List of SSH identity files to use for age decryption.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         },
         "sops": {
           "type": "object",

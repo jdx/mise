@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# Test that hook-env warns about missing required env vars instead of failing
+
+# Create test config with required env var
+cat <<EOF >mise.toml
+[env]
+REQUIRED_VAR_HOOK = { required = true }
+NORMAL_VAR = "normal_value"
+EOF
+
+# Ensure the required var is not set
+unset REQUIRED_VAR_HOOK
+
+# hook-env should succeed but emit a warning
+mise hook-env --shell bash >hook_output.log 2>hook_error.log
+
+# Check that hook-env succeeded and exported the normal var
+# Note: REQUIRED_VAR_HOOK should NOT be in output since it's not defined and has no value
+assert_contains "cat hook_output.log" "export NORMAL_VAR=normal_value"
+
+# Check that it emitted a warning
+assert_contains "cat hook_error.log" "Required environment variable 'REQUIRED_VAR_HOOK' is not defined"
+
+# Verify that regular mise env still fails
+if mise env 2>env_error.log; then
+	echo "ERROR: Expected mise env to fail but it succeeded"
+	exit 1
+fi
+
+assert_contains "cat env_error.log" "Required environment variable 'REQUIRED_VAR_HOOK' is not defined"
+
+# Cleanup
+rm -f mise.toml hook_output.log hook_error.log env_error.log
+unset REQUIRED_VAR_HOOK NORMAL_VAR

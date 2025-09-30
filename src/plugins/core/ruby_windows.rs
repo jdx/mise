@@ -45,7 +45,7 @@ impl RubyPlugin {
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
     ) -> Result<()> {
         let settings = Settings::get();
         let default_gems_file = file::replace_path(&settings.ruby.default_packages_file);
@@ -76,7 +76,7 @@ impl RubyPlugin {
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
     ) -> Result<()> {
         pr.set_message("ruby -v".into());
         CmdLineRunner::new(self.ruby_path(tv))
@@ -90,7 +90,7 @@ impl RubyPlugin {
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
     ) -> Result<()> {
         pr.set_message("gem -v".into());
         CmdLineRunner::new(self.gem_path(tv))
@@ -109,7 +109,7 @@ impl RubyPlugin {
         Ok(())
     }
 
-    async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let arch = arch();
         let url = format!(
             "https://github.com/oneclick/rubyinstaller2/releases/download/RubyInstaller-{version}-1/rubyinstaller-{version}-1-{arch}.7z",
@@ -144,7 +144,7 @@ impl RubyPlugin {
     }
 
     async fn verify(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
-        self.test_ruby(&ctx.config, tv, &ctx.pr).await
+        self.test_ruby(&ctx.config, tv, ctx.pr.as_ref()).await
     }
 }
 
@@ -176,11 +176,11 @@ impl Backend for RubyPlugin {
         Ok(versions)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".ruby-version".into(), "Gemfile".into()])
     }
 
-    fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
         let v = match path.file_name() {
             Some(name) if name == "Gemfile" => parse_gemfile(&file::read_to_string(path)?),
             _ => {
@@ -200,13 +200,16 @@ impl Backend for RubyPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let tarball = self.download(&tv, &ctx.pr).await?;
+        let tarball = self.download(&tv, ctx.pr.as_ref()).await?;
         self.verify_checksum(ctx, &mut tv, &tarball)?;
         self.install(ctx, &tv, &tarball).await?;
         self.verify(ctx, &tv).await?;
         self.install_rubygems_hook(&tv)?;
-        self.test_gem(&ctx.config, &tv, &ctx.pr).await?;
-        if let Err(err) = self.install_default_gems(&ctx.config, &tv, &ctx.pr).await {
+        self.test_gem(&ctx.config, &tv, ctx.pr.as_ref()).await?;
+        if let Err(err) = self
+            .install_default_gems(&ctx.config, &tv, ctx.pr.as_ref())
+            .await
+        {
             warn!("failed to install default ruby gems {err:#}");
         }
         Ok(tv)

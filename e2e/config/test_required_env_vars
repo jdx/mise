@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+# Test 1: Required env var defined before mise runs (should succeed)
+export REQUIRED_VAR1="predefined_value"
+
+cat <<EOF >mise.toml
+[env]
+REQUIRED_VAR1 = { required = true }
+NORMAL_VAR = "normal_value"
+EOF
+
+# This should succeed
+mise env >/dev/null
+
+# Test 2: Required env var defined in a later config file (should succeed)
+unset REQUIRED_VAR1
+
+cat <<EOF >mise.toml
+[env]
+REQUIRED_VAR2 = { required = true }
+NORMAL_VAR = "normal_value"
+EOF
+
+cat <<EOF >mise.local.toml
+[env]
+REQUIRED_VAR2 = "overridden_in_local"
+EOF
+
+# This should also succeed
+mise env >/dev/null
+
+# Test 3: Required env var not defined anywhere (should fail)
+rm -f mise.local.toml
+
+cat <<EOF >mise.toml
+[env]
+REQUIRED_VAR3 = { required = true }
+NORMAL_VAR = "normal_value"
+EOF
+
+unset REQUIRED_VAR3
+
+# This should fail with a clear error message
+if mise env 2>error.log; then
+	echo "ERROR: Expected mise env to fail but it succeeded"
+	exit 1
+fi
+
+assert_contains "cat error.log" "Required environment variable 'REQUIRED_VAR3' is not defined"
+
+# Test 4: Multiple required vars, some defined, some not (should fail)
+export REQUIRED_VAR4="defined"
+
+cat <<EOF >mise.toml
+[env]
+REQUIRED_VAR4 = { required = true }
+REQUIRED_VAR5 = { required = true }
+NORMAL_VAR = "normal_value"
+EOF
+
+unset REQUIRED_VAR5
+
+if mise env 2>error2.log; then
+	echo "ERROR: Expected mise env to fail but it succeeded"
+	exit 1
+fi
+
+assert_contains "cat error2.log" "Required environment variable 'REQUIRED_VAR5' is not defined"
+
+# Cleanup
+rm -f mise.toml mise.local.toml error.log error2.log
+unset REQUIRED_VAR1 REQUIRED_VAR2 REQUIRED_VAR3 REQUIRED_VAR4 REQUIRED_VAR5

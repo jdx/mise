@@ -307,8 +307,45 @@
               "redact": {
                 "type": "boolean",
                 "description": "redact the value from logs"
+              },
+              "required": {
+                "type": "boolean",
+                "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false"
               }
             }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "description": "[experimental] age-encrypted value (simplified format)"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string",
+                        "description": "[experimental] age-encrypted value"
+                      },
+                      "format": {
+                        "type": "string",
+                        "enum": ["raw", "zstd"],
+                        "description": "[experimental] compression format for the encrypted value"
+                      }
+                    },
+                    "required": ["value"],
+                    "additionalProperties": false,
+                    "description": "[experimental] age-encrypted value (complex format)"
+                  }
+                ]
+              }
+            },
+            "required": ["age"],
+            "additionalProperties": false,
+            "description": "[experimental] age-encrypted environment variable"
           },
           {
             "type": "string"
@@ -565,6 +602,19 @@
         "redact": {
           "type": "boolean",
           "description": "redact the value from logs"
+        },
+        "required": {
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "require this environment variable to be defined before mise runs or in a later config file"
+            },
+            {
+              "type": "string",
+              "description": "require this environment variable with user help text on how to set it"
+            }
+          ],
+          "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
         }
       },
       "oneOf": [

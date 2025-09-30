@@ -1,11 +1,13 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
+use heck::ToShoutySnakeCase;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::env;
 use std::env::consts::{ARCH, OS};
 use std::fmt::Display;
 use std::iter::Iterator;
-use std::sync::LazyLock as Lazy;
+use std::sync::{LazyLock as Lazy, Mutex};
 use strum::IntoEnumIterator;
 use url::Url;
 
@@ -32,8 +34,33 @@ pub struct RegistryBackend {
     pub platforms: &'static [&'static str],
 }
 
+// Cache for environment variable overrides
+static ENV_BACKENDS: Lazy<Mutex<HashMap<String, &'static str>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
 impl RegistryTool {
     pub fn backends(&self) -> Vec<&'static str> {
+        // Check for environment variable override first
+        // e.g., MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[exe=gt]'
+        let env_key = format!("MISE_BACKENDS_{}", self.short.to_shouty_snake_case());
+
+        // Check cache first
+        {
+            let cache = ENV_BACKENDS.lock().unwrap();
+            if let Some(&backend) = cache.get(&env_key) {
+                return vec![backend];
+            }
+        }
+
+        // Check environment variable
+        if let Ok(env_value) = env::var(&env_key) {
+            // Store in cache with 'static lifetime
+            let leaked = Box::leak(env_value.into_boxed_str());
+            let mut cache = ENV_BACKENDS.lock().unwrap();
+            cache.insert(env_key.clone(), leaked);
+            return vec![leaked];
+        }
+
         static BACKEND_TYPES: Lazy<HashSet<String>> = Lazy::new(|| {
             let mut backend_types = BackendType::iter()
                 .map(|b| b.to_string())
@@ -171,5 +198,37 @@ mod tests {
             &BTreeSet::from(["cargo"]),
             &name
         ));
+    }
+
+    #[tokio::test]
+    async fn test_backend_env_override() {
+        let _config = Config::get().await.unwrap();
+        use super::*;
+
+        // Clear the cache first
+        ENV_BACKENDS.lock().unwrap().clear();
+
+        // Test with a known tool from the registry
+        if let Some(tool) = REGISTRY.get("node") {
+            // First test without env var - should return default backends
+            let default_backends = tool.backends();
+            assert!(!default_backends.is_empty());
+
+            // Test with env var override
+            // SAFETY: This is safe in a test environment
+            unsafe {
+                env::set_var("MISE_BACKENDS_NODE", "test:backend");
+            }
+            let overridden_backends = tool.backends();
+            assert_eq!(overridden_backends.len(), 1);
+            assert_eq!(overridden_backends[0], "test:backend");
+
+            // Clean up
+            // SAFETY: This is safe in a test environment
+            unsafe {
+                env::remove_var("MISE_BACKENDS_NODE");
+            }
+            ENV_BACKENDS.lock().unwrap().clear();
+        }
     }
 }

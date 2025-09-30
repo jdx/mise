@@ -486,6 +486,15 @@ description = "Timeout in seconds for all HTTP requests in mise."
 env = "MISE_HTTP_TIMEOUT"
 type = "Duration"
 
+[http_retries]
+default = 0
+description = "Number of retries for HTTP requests in mise."
+docs = """
+Uses an exponential backoff strategy. The duration is calculated by taking the base (10ms) to the n-th power.
+"""
+env = "MISE_HTTP_RETRIES"
+type = "Integer"
+
 [idiomatic_version_file]
 default = true
 deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
@@ -1008,6 +1017,28 @@ type = "Path"
 description = "Suppress all `mise run|watch` output except errors—including what tasks output."
 env = "MISE_SILENT"
 type = "Bool"
+
+[age.identity_files]
+description = "[experimental] List of age identity files to use for decryption."
+env = "MISE_AGE_IDENTITY_FILES"
+optional = true
+rust_type = "Vec<PathBuf>"
+type = "ListPath"
+
+[age.key_file]
+default_docs = "~/.config/mise/age.txt"
+description = "[experimental] Path to the age private key file to use for encryption/decryption."
+env = "MISE_AGE_KEY_FILE"
+optional = true
+type = "Path"
+
+[age.ssh_identity_files]
+description = "[experimental] List of SSH identity files to use for age decryption."
+env = "MISE_AGE_SSH_IDENTITY_FILES"
+optional = true
+rust_type = "Vec<PathBuf>"
+type = "ListPath"
+
 
 [sops.age_key]
 description = "The age private key to use for sops secret decryption."

@@ -443,20 +443,18 @@ impl Config {
         Ok(tasks)
     }
 
-    pub fn get_tracked_config_files(&self) -> Result<ConfigMap> {
-        let config_files = Tracker::list_all()?
-            .into_iter()
-            .map(|path| match config_file::parse(&path) {
-                Ok(cf) => Some((path, cf)),
-                Err(err) => {
-                    error!("Error loading config file: {:#}", err);
-                    None
+    pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
+        let mut config_files: ConfigMap = ConfigMap::default();
+        for path in Tracker::list_all()?.into_iter() {
+            match config_file::parse(&path).await {
+                Ok(cf) => {
+                    config_files.insert(path, cf);
                 }
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flatten()
-            .collect();
+                Err(err) => {
+                    error!("Error loading config file: {:?}", err);
+                }
+            }
+        }
         Ok(config_files)
     }
 
@@ -530,6 +528,7 @@ impl Config {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::NonToolsOnly,
+                warn_on_missing_required: *env::WARN_ON_MISSING_REQUIRED_ENV,
             },
         )
         .await?;
@@ -736,7 +735,7 @@ async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
             if !tool_is_enabled(&*tool) {
                 return vec![];
             }
-            match tool.idiomatic_filenames() {
+            match tool.idiomatic_filenames().await {
                 Ok(filenames) => filenames
                     .iter()
                     .map(|f| (f.to_string(), tool.id().to_string()))
@@ -1047,43 +1046,106 @@ pub fn local_toml_config_path() -> PathBuf {
         })
 }
 
+/// Options for resolving target config file path
+#[derive(Debug, Default)]
+pub struct ConfigPathOptions {
+    pub global: bool,
+    pub path: Option<PathBuf>,
+    pub env: Option<String>,
+    pub cwd: Option<PathBuf>,
+    pub prefer_toml: bool,
+    pub prevent_home_local: bool,
+}
+
+/// Unified config file path resolution for both `mise use` and `mise set`
+///
+/// This function centralizes the logic for determining which config file to target
+/// based on various options, ensuring consistent behavior between commands.
+pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
+    let cwd = match opts.cwd {
+        Some(ref path) => path.clone(),
+        None => env::current_dir()?,
+    };
+
+    // If path is provided, handle it (file or directory) - explicit paths take precedence
+    if let Some(ref path) = opts.path {
+        if path.is_file() {
+            return Ok(path.clone());
+        } else if path.is_dir() {
+            let resolved = config_file_from_dir(path);
+            if opts.prefer_toml && !resolved.to_string_lossy().ends_with(".toml") {
+                // For TOML-only commands, ensure we get a TOML file in the specified directory
+                return Ok(path.join(&*env::MISE_DEFAULT_CONFIG_FILENAME));
+            }
+            return Ok(resolved);
+        } else {
+            // Path doesn't exist yet, return it as-is
+            return Ok(path.clone());
+        }
+    }
+
+    // If global flag is set and no explicit path provided, use global config
+    if opts.global {
+        return Ok(global_config_path());
+    }
+
+    // If env-specific config is requested
+    if let Some(ref env_name) = opts.env {
+        let dotfile_path = cwd.join(format!(".mise.{}.toml", env_name));
+        if dotfile_path.exists() {
+            return Ok(dotfile_path);
+        } else {
+            return Ok(cwd.join(format!("mise.{}.toml", env_name)));
+        }
+    }
+
+    // If we're in HOME directory and prevent_home_local is true, use global config
+    if opts.prevent_home_local && env::in_home_dir() {
+        return Ok(global_config_path());
+    }
+
+    // Default: determine based on current directory
+    if opts.prefer_toml {
+        // For mise set, prefer TOML and use local_toml_config_path logic
+        Ok(local_toml_config_path())
+    } else {
+        // For mise use, use existing config_file_from_dir logic which respects ASDF compat
+        Ok(config_file_from_dir(&cwd))
+    }
+}
+
 async fn load_all_config_files(
     config_filenames: &[PathBuf],
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<ConfigMap> {
     backend::load_tools().await?;
-    Ok(config_filenames
-        .iter()
-        .unique()
-        .map(|f| {
-            if f.is_dir() {
-                return Ok(None);
-            }
-            let cf = match parse_config_file(f, idiomatic_filenames) {
-                Ok(cfg) => cfg,
-                Err(err) => {
-                    if err.to_string().contains("are not trusted.") {
-                        warn!("{err}");
-                        return Ok(None);
-                    }
-                    return Err(err.wrap_err(format!(
-                        "error parsing config file: {}",
-                        style::ebold(display_path(f))
-                    )));
+    let mut config_map = ConfigMap::default();
+    for f in config_filenames.iter().unique() {
+        if f.is_dir() {
+            continue;
+        }
+        let cf = match parse_config_file(f, idiomatic_filenames).await {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                if err.to_string().contains("are not trusted.") {
+                    warn!("{err}");
+                    continue;
                 }
-            };
-            if let Err(err) = Tracker::track(f) {
-                warn!("tracking config: {err:#}");
+                return Err(err.wrap_err(format!(
+                    "error parsing config file: {}",
+                    style::ebold(display_path(f))
+                )));
             }
-            Ok(Some((f.clone(), cf)))
-        })
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect())
+        };
+        if let Err(err) = Tracker::track(f) {
+            warn!("tracking config: {err:#}");
+        }
+        config_map.insert(f.clone(), cf);
+    }
+    Ok(config_map)
 }
 
-fn parse_config_file(
+async fn parse_config_file(
     f: &PathBuf,
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<Arc<dyn ConfigFile>> {
@@ -1094,9 +1156,11 @@ fn parse_config_file(
                 .into_iter()
                 .filter(|f| plugin.contains(&f.to_string()))
                 .collect::<Vec<_>>();
-            IdiomaticVersionFile::parse(f.into(), tools).map(|f| Arc::new(f) as Arc<dyn ConfigFile>)
+            IdiomaticVersionFile::parse(f.into(), tools)
+                .await
+                .map(|f| Arc::new(f) as Arc<dyn ConfigFile>)
         }
-        None => config_file::parse(f),
+        None => config_file::parse(f).await,
     }
 }
 
@@ -1152,6 +1216,7 @@ async fn load_vars(config: &Arc<Config>) -> Result<EnvResults> {
         EnvResolveOptions {
             vars: true,
             tools: ToolsFilter::NonToolsOnly,
+            warn_on_missing_required: false,
         },
     )
     .await?;

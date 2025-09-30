@@ -27,30 +27,25 @@ size = 4758557
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"
 
 [[tools.bun]]
-version = "1.2.22"
+version = "1.2.23"
 backend = "core:bun"
 
 [tools.bun.platforms.linux-x64]
-checksum = "blake3:bf32acffd6e77803ba760caf8d2909389da01c95613b81fe155fe87e2a8f8004"
-size = 39256266
+checksum = "blake3:b8ea90017983cdbac0ef8f7292d91554f70c6986b73d656c213eabc19d68b9af"
+size = 39383658
 
 [tools.bun.platforms.macos-arm64]
-checksum = "blake3:ec41528ae2badd9c5d41cefe2c463a307c46d9b5f0ccf157d6f406890340833e"
-size = 22178114
+checksum = "blake3:621c047bdd068c4972bf7b222a2e112908cd40b53256b690ec0921ea98676756"
+size = 22280328
 
 [[tools.cargo-binstall]]
-version = "1.15.5"
+version = "1.15.6"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "blake3:1a5fa23fb172db04713b8acd854227ad5df08480dcc0a2fbd71f4fd93c0693ca"
-size = 6790102
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.5/cargo-binstall-x86_64-unknown-linux-musl.tgz"
-
-[tools.cargo-binstall.platforms.macos-arm64]
-checksum = "blake3:4eff2c4ed16a8864b20b55fbe855821e60dfb633c04e40ab67679a0639f08b2f"
-size = 6004395
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.5/cargo-binstall-aarch64-apple-darwin.zip"
+checksum = "blake3:779d104f2f8a3b840a2a56659e3da44f96419d7a5378555b9c3dabe756ac4271"
+size = 6770808
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.6/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.7"
@@ -61,7 +56,7 @@ version = "1.43.2"
 backend = "cargo:cargo-insta"
 
 [[tools."cargo:cargo-release"]]
-version = "0.25.18"
+version = "0.25.19"
 backend = "cargo:cargo-release"
 
 [[tools."cargo:git-cliff"]]
@@ -73,7 +68,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [[tools."cargo:usage-cli"]]
-version = "2.2.2"
+version = "2.3.2"
 backend = "cargo:usage-cli"
 
 [[tools.cosign]]
@@ -105,18 +100,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [[tools.hk]]
-version = "1.15.5"
+version = "1.15.7"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:dbfd6f2b7d0f399f6ec8cd251a76656c27af25aa327c015ef1acf4307c6a4cbb"
-size = 6984984
-url = "https://github.com/jdx/hk/releases/download/v1.15.5/hk-x86_64-unknown-linux-gnu.tar.gz"
-
-[tools.hk.platforms.macos-arm64]
-checksum = "blake3:98c9e44790bcff4b4988e6a13f9524272164e98fd475dc43f364cfb41bb4e897"
-size = 6016496
-url = "https://github.com/jdx/hk/releases/download/v1.15.5/hk-aarch64-apple-darwin.tar.gz"
+checksum = "blake3:f4d35bcfb24c82d065ef7f65331386ec8f4721b2a9ae501bce977de91a1c8658"
+size = 6986299
+url = "https://github.com/jdx/hk/releases/download/v1.15.7/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"
@@ -215,18 +205,13 @@ checksum = "blake3:6b7c72ece3e3cbd9db12dd8e261e594bb24721db140692d4f5cbdf508df45
 checksum = "blake3:af93f77462964b7eeb93b9f45ccedeefc641305f6618d9ffc2480d89b0cceed6"
 
 [[tools.sops]]
-version = "3.10.2"
+version = "3.11.0"
 backend = "aqua:getsops/sops"
 
 [tools.sops.platforms.linux-x64]
-checksum = "sha256:79b0f844237bd4b0446e4dc884dbc1765fc7dedc3968f743d5949c6f2e701739"
-size = 45011128
-url = "https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.linux.amd64"
-
-[tools.sops.platforms.macos-arm64]
-checksum = "sha256:99702df79737162b986641afb8d98251acb16a52e6cab556a6b6f57c608c059a"
-size = 44246082
-url = "https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.darwin.arm64"
+checksum = "sha256:775f1384d55decfad228e7196a3f683791914f92a473f78fc47700531c29dfef"
+size = 46346424
+url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.linux.amd64"
 
 [[tools.taplo]]
 version = "0.10.0"

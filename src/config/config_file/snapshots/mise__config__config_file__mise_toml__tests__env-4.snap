@@ -10,7 +10,8 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
             "bar",
             EnvDirectiveOptions {
                 tools: false,
-                redact: false,
+                redact: None,
+                required: False,
             },
         ),
         Val(
@@ -18,7 +19,8 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
             "qux\\nquux",
             EnvDirectiveOptions {
                 tools: false,
-                redact: false,
+                redact: None,
+                required: False,
             },
         ),
         Val(
@@ -26,7 +28,8 @@ MiseToml(~/cwd/.test.mise.toml): ToolRequestSet: <empty> {
             "qux\nquux",
             EnvDirectiveOptions {
                 tools: false,
-                redact: false,
+                redact: None,
+                required: False,
             },
         ),
     ],

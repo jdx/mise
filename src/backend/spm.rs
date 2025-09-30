@@ -133,7 +133,7 @@ impl SPMBackend {
             );
             repo.clone(
                 package_repo.url.as_str(),
-                CloneOptions::default().pr(&ctx.pr),
+                CloneOptions::default().pr(ctx.pr.as_ref()),
             )?;
         }
         debug!("Checking out revision: {revision}");
@@ -192,7 +192,7 @@ impl SPMBackend {
             .arg(repo_dir)
             .arg("--cache-path")
             .arg(dirs::CACHE.join("spm"))
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .prepend_path(
                 self.dependency_toolset(&ctx.config)
                     .await?

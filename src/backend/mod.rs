@@ -445,7 +445,7 @@ pub trait Backend: Debug + Send + Sync {
         }
         Ok(())
     }
-    fn purge(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
         rmdir(&self.ba().installs_path, pr)?;
         rmdir(&self.ba().cache_path, pr)?;
         rmdir(&self.ba().downloads_path, pr)?;
@@ -454,13 +454,13 @@ pub trait Backend: Debug + Send + Sync {
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
         Ok(BTreeMap::new())
     }
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(REGISTRY
             .get(self.id())
             .map(|rt| rt.idiomatic_files.iter().map(|s| s.to_string()).collect())
             .unwrap_or_default())
     }
-    fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
         let contents = file::read_to_string(path)?;
         Ok(contents.trim().to_string())
     }
@@ -492,7 +492,7 @@ pub trait Backend: Debug + Send + Sync {
 
         if self.is_version_installed(&ctx.config, &tv, true) {
             if ctx.force {
-                self.uninstall_version(&ctx.config, &tv, &ctx.pr, false)
+                self.uninstall_version(&ctx.config, &tv, ctx.pr.as_ref(), false)
                     .await?;
             } else {
                 return Ok(tv);
@@ -559,7 +559,7 @@ pub trait Backend: Debug + Send + Sync {
         CmdLineRunner::new(&*env::SHELL)
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .arg(env::SHELL_COMMAND_FLAG)
             .arg(script)
             .envs(env_vars)
@@ -571,7 +571,7 @@ pub trait Backend: Debug + Send + Sync {
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         dryrun: bool,
     ) -> eyre::Result<()> {
         pr.set_message("uninstall".into());
@@ -599,7 +599,7 @@ pub trait Backend: Debug + Send + Sync {
     async fn uninstall_version_impl(
         &self,
         _config: &Arc<Config>,
-        _pr: &Box<dyn SingleReport>,
+        _pr: &dyn SingleReport,
         _tv: &ToolVersion,
     ) -> Result<()> {
         Ok(())
@@ -837,13 +837,13 @@ pub trait Backend: Debug + Send + Sync {
         if let Some(checksum) = &platform_info.checksum {
             ctx.pr.set_message(format!("checksum {filename}"));
             if let Some((algo, check)) = checksum.split_once(':') {
-                hash::ensure_checksum(file, check, Some(&ctx.pr), algo)?;
+                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
             } else {
                 bail!("Invalid checksum: {checksum}");
             }
         } else if lockfile_enabled {
             ctx.pr.set_message(format!("generate checksum {filename}"));
-            let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
+            let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
             platform_info.checksum = Some(format!("blake3:{hash}"));
         }
 
@@ -992,7 +992,7 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
     }
 }
 
-fn rmdir(dir: &Path, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
     if !dir.exists() {
         return Ok(());
     }
