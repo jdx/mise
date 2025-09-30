@@ -2432,8 +2432,9 @@ description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to cre
 test = ["k3k --version", "k3kcli version v{{version}}"]
 
 [tools.k3s]
-backends = ["asdf:mise-plugins/mise-k3s"]
+backends = ["aqua:k3s-io/k3s", "asdf:mise-plugins/mise-k3s"]
 description = "The certified Kubernetes distribution built for IoT & Edge computing"
+test = ["k3s --version", "k3s version v{{version}}"]
 
 [tools.k3sup]
 backends = ["aqua:alexellis/k3sup", "asdf:cgroschupp/asdf-k3sup"]
