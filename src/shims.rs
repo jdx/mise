@@ -60,7 +60,7 @@ async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf>
             return Ok(bin);
         }
     }
-    if Settings::get().not_found_auto_install && console::user_attended() {
+    if Settings::get().not_found_auto_install {
         for tv in ts
             .install_missing_bin(config, bin_name)
             .await?
