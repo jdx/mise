@@ -882,11 +882,16 @@ impl Toolset {
                 continue;
             }
 
-            // Check if this backend has ANY installed version in the system
-            if let Some((_, tv)) = all_installed.iter().find(|(p, _)| p.ba() == backend.ba()) {
-                // Found an installed version of this backend, check if it provides the bin
+            // Check if this backend has ANY installed version that provides the bin
+            let backend_versions: Vec<_> = all_installed
+                .iter()
+                .filter(|(p, _)| p.ba() == backend.ba())
+                .collect();
+
+            for (_, tv) in backend_versions {
                 if let Ok(Some(_bin)) = backend.which(config, tv, bin_name).await {
-                    plugins.insert(backend);
+                    plugins.insert(backend.clone());
+                    break;
                 }
             }
         }
