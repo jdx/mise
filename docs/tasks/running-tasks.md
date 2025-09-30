@@ -18,7 +18,7 @@ label. By printing line-by-line we avoid interleaving output from parallel execu
 To just print stdout/stderr directly, use `--interleave`, the `task_output` setting, or `MISE_TASK_OUTPUT=interleave`.
 
 Stdin is not read by default. To enable this, set `raw = true` on the task that needs it. This will prevent
-it running in parallel with any other task — a RWMutex will get a write lock in this case. This also prevents redactions applied to the output.
+it running in parallel with any other task—a RWMutex will get a write lock in this case. This also prevents redactions applied to the output.
 
 Extra arguments will be passed to the task, for example, if we want to run in release mode:
 
