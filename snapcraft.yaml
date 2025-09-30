@@ -7,9 +7,9 @@ description: |
 license: MIT
 website: https://mise.jdx.dev
 source-code: https://github.com/jdx/mise.git
-issues: https://github.com/jdx/mise/issues
+issues: https://github.com/jdx/mise/discussions
 contact:
-  - https://github.com/jdx/mise/issues
+  - https://github.com/jdx/mise/discussions
   - https://phanective.org
 donation:
   - https://github.com/sponsors/jdx
