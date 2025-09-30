@@ -116,7 +116,7 @@ impl ProgressReport {
         let pad = *LONGEST_PLUGIN_NAME;
         let pb = ProgressBar::new(length)
             .with_style(HEADER_TEMPLATE.clone())
-            .with_prefix(normal_prefix(pad, &prefix))
+            .with_prefix(pad_prefix(pad, &prefix))
             .with_message(message);
         pb.enable_steady_tick(TICK_INTERVAL);
         ProgressReport { pb }
