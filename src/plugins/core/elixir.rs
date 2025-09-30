@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -8,10 +9,10 @@ use crate::cmd::CmdLineRunner;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, config::Config};
-use crate::{file, plugins};
+use crate::{env, file, plugins};
 use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
@@ -139,6 +140,25 @@ impl Backend for ElixirPlugin {
             .iter()
             .map(|p| tv.install_path().join(p))
             .collect())
+    }
+
+    async fn exec_env(
+        &self,
+        _config: &Arc<Config>,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        let mut map = BTreeMap::new();
+        let mut set = |k: &str, v: PathBuf| {
+            map.insert(k.to_string(), v.to_string_lossy().to_string());
+        };
+        if !env::PRISTINE_ENV.contains_key("MIX_HOME") {
+            set("MIX_HOME", tv.install_path().join(".mix"));
+        }
+        if !env::PRISTINE_ENV.contains_key("MIX_ARCHIVES") {
+            set("MIX_ARCHIVES", tv.install_path().join(".mix").join("archives"));
+        }
+        Ok(map)
     }
 }
 
