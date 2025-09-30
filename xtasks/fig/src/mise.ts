@@ -1374,6 +1374,15 @@ const completionSpec: Fig.Spec = {
           description: "Show installation output",
           isRepeatable: true,
         },
+        {
+          name: "--retry",
+          description:
+            "Retry installation if it fails due to transient errors, e.g. network issues",
+          isRepeatable: false,
+          args: {
+            name: "retry",
+          },
+        },
       ],
       args: {
         name: "tool@version",
@@ -1387,6 +1396,17 @@ const completionSpec: Fig.Spec = {
     {
       name: "install-into",
       description: "Install a tool version to a specific path",
+      options: [
+        {
+          name: "--retry",
+          description:
+            "Retry installation if it fails due to transient errors, e.g. network issues",
+          isRepeatable: false,
+          args: {
+            name: "retry",
+          },
+        },
+      ],
       args: [
         {
           name: "tool@version",

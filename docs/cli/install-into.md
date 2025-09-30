@@ -1,6 +1,6 @@
 # `mise install-into`
 
-- **Usage**: `mise install-into <TOOL@VERSION> <PATH>`
+- **Usage**: `mise install-into [--retry <RETRY>] <TOOL@VERSION> <PATH>`
 - **Source code**: [`src/cli/install_into.rs`](https://github.com/jdx/mise/blob/main/src/cli/install_into.rs)
 
 Install a tool version to a specific path
@@ -16,6 +16,12 @@ Tool to install e.g.: node@20
 ### `<PATH>`
 
 Path to install the tool into
+
+## Flags
+
+### `--retry <RETRY>`
+
+Retry installation if it fails due to transient errors, e.g. network issues
 
 Examples:
 

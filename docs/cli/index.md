@@ -94,7 +94,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise generate tool-stub [FLAGS] <OUTPUT>`](/cli/generate/tool-stub.md)
 - [`mise implode [--config] [-n --dry-run]`](/cli/implode.md)
 - [`mise install [FLAGS] [TOOL@VERSION]…`](/cli/install.md)
-- [`mise install-into <TOOL@VERSION> <PATH>`](/cli/install-into.md)
+- [`mise install-into [--retry <RETRY>] <TOOL@VERSION> <PATH>`](/cli/install-into.md)
 - [`mise latest [-i --installed] <TOOL@VERSION>`](/cli/latest.md)
 - [`mise link [-f --force] <TOOL@VERSION> <PATH>`](/cli/link.md)
 - [`mise lock [FLAGS] [TOOL]…`](/cli/lock.md)

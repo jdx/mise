@@ -452,11 +452,17 @@ cmd install help="Install a tool version" {
     flag "-v --verbose" help="Show installation output" var=#true count=#true {
         long_help "Show installation output\n\nThis argument will print plugin output such as download, configuration, and compilation output."
     }
+    flag --retry help="Retry installation if it fails due to transient errors, e.g. network issues" {
+        arg <RETRY>
+    }
     arg "[TOOL@VERSION]…" help="Tool(s) to install e.g.: node@20" required=#false var=#true
 }
 cmd install-into help="Install a tool version to a specific path" {
     long_help "Install a tool version to a specific path\n\nUsed for building a tool to a directory for use outside of mise"
     after_long_help "Examples:\n\n    # install node@20.0.0 into ./mynode\n    $ mise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v\n    20.0.0\n"
+    flag --retry help="Retry installation if it fails due to transient errors, e.g. network issues" {
+        arg <RETRY>
+    }
     arg <TOOL@VERSION> help="Tool to install e.g.: node@20"
     arg <PATH> help="Path to install the tool into"
 }

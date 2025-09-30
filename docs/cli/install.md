@@ -45,6 +45,10 @@ Show installation output
 
 This argument will print plugin output such as download, configuration, and compilation output.
 
+### `--retry <RETRY>`
+
+Retry installation if it fails due to transient errors, e.g. network issues
+
 Examples:
 
 ```
