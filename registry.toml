@@ -845,7 +845,11 @@ description = "The Conventional Commits toolbox"
 test = ["cog --version", "cog {{version}}"]
 
 [tools.code]
-backends = ["aqua:just-every/code", "ubi:just-every/code", "npm:@just-every/code"]
+backends = [
+  "aqua:just-every/code",
+  "ubi:just-every/code",
+  "npm:@just-every/code",
+]
 description = "Fast, effective, mind-blowing, coding CLI. Browser integration, multi-agents, theming, and reasoning control. Orchestrate agents from OpenAI, Claude, Gemini or any provider."
 test = ["code --version", "code {{version}}"]
 
