@@ -11,9 +11,6 @@ or simply mention what you plan to do in the
 PRs are often either rejected or need to change significantly after submission
 so make sure before you start working on something it won't be a wasted effort.
 
-Do not attempt to open a GitHub issue. New GitHub issues will be automatically closed.
-For context, see [jdx/mise#3859](https://github.com/jdx/mise/issues/3859).
-
 ## Contributing Guidelines
 
 1. **Before starting**: Create a discussion or discuss in Discord for non-obvious changes
