@@ -27,7 +27,7 @@ jobs:
       - name: Install snap package for testing
         run: sudo snap install --dangerous ${{ steps.snapbuild.outputs.snap }}
       - run: mise -v
-      - run: mise i
+      - run: eval "$(mise activate bash)" && mise install
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
