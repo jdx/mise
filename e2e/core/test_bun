@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Enable idiomatic version files for bun
+mise settings set idiomatic_version_file_enable_tools bun
+
 cat <<EOF >.bun-version
 1.1.21
 EOF
