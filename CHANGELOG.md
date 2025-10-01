@@ -1,5 +1,33 @@
 # Changelog
 
+## [2025.10.0](https://github.com/jdx/mise/compare/v2025.9.25..v2025.10.0) - 2025-10-01
+
+### 📦 Registry
+
+- add code by @TyceHerrman in [#6492](https://github.com/jdx/mise/pull/6492)
+
+### 🚀 Features
+
+- change idiomatic_version_file to default disabled by @jdx in [#6501](https://github.com/jdx/mise/pull/6501)
+
+### 🐛 Bug Fixes
+
+- **(self-update)** add missing functions to self_update stub by @jdx in [#6502](https://github.com/jdx/mise/pull/6502)
+- **(set)** allow --prompt flag to work with `mise set` by @jdx in [#6485](https://github.com/jdx/mise/pull/6485)
+
+### 📚 Documentation
+
+- **(hooks)** clarify pre/post-install hooks description. by @minusfive in [#6497](https://github.com/jdx/mise/pull/6497)
+- remove link to issue by @jdx in [e13d980](https://github.com/jdx/mise/commit/e13d98012fda05e5032b7dfc18f562c28f140cf9)
+
+### 🧪 Testing
+
+- **(e2e)** remove deprecated MISE_LEGACY_VERSION_FILE assertions by @jdx in [#6505](https://github.com/jdx/mise/pull/6505)
+
+### New Contributors
+
+- @minusfive made their first contribution in [#6497](https://github.com/jdx/mise/pull/6497)
+
 ## [2025.9.25](https://github.com/jdx/mise/compare/v2025.9.24..v2025.9.25) - 2025-09-30
 
 ### 📦 Registry
