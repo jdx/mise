@@ -36,6 +36,7 @@ jobs:
           if-no-files-found: error
 
   publish-snapcraft:
+    if: github.event_name == 'release'
     needs: [build-snapcraft]
 
     runs-on: ubuntu-latest
