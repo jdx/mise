@@ -9,5 +9,8 @@ cat <<EOF >.deno-version
 1.43.3
 EOF
 
+# Enable idiomatic version files for deno
+mise settings set idiomatic_version_file_enable_tools deno
+
 mise i deno
 assert_contains "mise x deno -- deno -V" "deno 1.43.3"
