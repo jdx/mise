@@ -144,7 +144,7 @@ impl Backend for ElixirPlugin {
 
     async fn exec_env(
         &self,
-        _config: &Arc<Config>,
+        config: &Arc<Config>,
         _ts: &Toolset,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
@@ -152,10 +152,13 @@ impl Backend for ElixirPlugin {
         let mut set = |k: &str, v: PathBuf| {
             map.insert(k.to_string(), v.to_string_lossy().to_string());
         };
-        if !env::PRISTINE_ENV.contains_key("MIX_HOME") {
+        let config_env = config.env().await?;
+        if !env::PRISTINE_ENV.contains_key("MIX_HOME") && !config_env.contains_key("MIX_HOME") {
             set("MIX_HOME", tv.install_path().join(".mix"));
         }
-        if !env::PRISTINE_ENV.contains_key("MIX_ARCHIVES") {
+        if !env::PRISTINE_ENV.contains_key("MIX_ARCHIVES")
+            && !config_env.contains_key("MIX_ARCHIVES")
+        {
             set(
                 "MIX_ARCHIVES",
                 tv.install_path().join(".mix").join("archives"),
