@@ -35,14 +35,14 @@ parts:
     build-packages:
       - libssl-dev
 
-    override-build: |
-      mkdir -p ./mise/lib
-
-      cat >./mise/lib/mise-self-update-instructions.toml <<'TOML'
-      message = "To update mise snap package, run:\n\n  snap refresh\n\nNote that this command updates all the snap packages you installed."
-      TOML
-
-      craftctl default
+  update-instructions:
+    plugin: dump
+    source: ./packaging/snapcraft
+    source-type: local
+    organize:
+      "mise-self-update-instructions.toml": lib/
+    stage:
+      - lib/
 
 apps:
   mise:
