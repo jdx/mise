@@ -532,7 +532,7 @@ For example, to enable idiomatic version files for node and python:
     mise settings add idiomatic_version_file_enable_tools node
     mise settings add idiomatic_version_file_enable_tools python
 
-See https://github.com/jdx/mise/discussions/4345 for more information.
+See [Idiomatic Version Files](/configuration.html#idiomatic-version-files) for more information.
 """
 env = "MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS"
 parse_env = "set_by_comma"
