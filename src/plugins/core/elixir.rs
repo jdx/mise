@@ -156,7 +156,10 @@ impl Backend for ElixirPlugin {
             set("MIX_HOME", tv.install_path().join(".mix"));
         }
         if !env::PRISTINE_ENV.contains_key("MIX_ARCHIVES") {
-            set("MIX_ARCHIVES", tv.install_path().join(".mix").join("archives"));
+            set(
+                "MIX_ARCHIVES",
+                tv.install_path().join(".mix").join("archives"),
+            );
         }
         Ok(map)
     }
