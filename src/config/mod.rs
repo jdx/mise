@@ -1,4 +1,3 @@
-use config_file::ConfigFileType;
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
@@ -14,6 +13,8 @@ use std::time::Duration;
 use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
+use crate::backend::ABackend;
+use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
@@ -27,8 +28,6 @@ use crate::task::Task;
 use crate::toolset::{ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, install_state};
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
-use crate::{backend::ABackend, cli::version::VERSION};
-use crate::{backend::Backend, cli::version};
 
 pub mod config_file;
 pub mod env_directive;
@@ -125,9 +124,6 @@ impl Config {
         trace!("config_paths: {config_paths:?}");
         let config_files = measure!("config::load config_files", {
             load_all_config_files(&config_paths, &idiomatic_files).await?
-        });
-        measure!("config::load warn_about_idiomatic_version_files", {
-            warn_about_idiomatic_version_files(&config_files);
         });
 
         let mut config = Self {
@@ -703,7 +699,8 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
 }
 
 async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
-    if !Settings::get().idiomatic_version_file {
+    let enable_tools = Settings::get().idiomatic_version_file_enable_tools.clone();
+    if enable_tools.is_empty() {
         return BTreeMap::new();
     }
     if !Settings::get()
@@ -716,23 +713,10 @@ async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
         );
     }
     let mut jset = JoinSet::new();
-    let tool_is_enabled = |tool: &dyn Backend| {
-        if let Some(enable_tools) = &Settings::get().idiomatic_version_file_enable_tools {
-            enable_tools.contains(tool.id())
-        } else if !Settings::get()
-            .idiomatic_version_file_disable_tools
-            .is_empty()
-        {
-            !Settings::get()
-                .idiomatic_version_file_disable_tools
-                .contains(tool.id())
-        } else {
-            true
-        }
-    };
     for tool in backend::list() {
+        let enable_tools = enable_tools.clone();
         jset.spawn(async move {
-            if !tool_is_enabled(&*tool) {
+            if !enable_tools.contains(tool.id()) {
                 return vec![];
             }
             match tool.idiomatic_filenames().await {
@@ -1300,47 +1284,6 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     });
 
     Ok(())
-}
-
-fn warn_about_idiomatic_version_files(config_files: &ConfigMap) {
-    if Settings::get()
-        .idiomatic_version_file_enable_tools
-        .as_ref()
-        .is_some()
-    {
-        return;
-    }
-    debug_assert!(
-        !VERSION.starts_with("2025.10"),
-        "default idiomatic version files to disabled"
-    );
-    let Some((p, tool)) = config_files
-        .iter()
-        .filter(|(_, cf)| cf.config_type() == ConfigFileType::IdiomaticVersion)
-        .filter_map(|(p, cf)| cf.to_tool_request_set().ok().map(|ts| (p, ts.tools)))
-        .filter_map(|(p, tools)| tools.first().map(|(ba, _)| (p, ba.to_string())))
-        .next()
-    else {
-        return;
-    };
-    deprecated!(
-        "idiomatic_version_file_enable_tools",
-        r#"
-Idiomatic version files like {} are currently enabled by default. However, this will change in mise 2025.10.0 to instead default to disabled.
-
-You can remove this warning by explicitly enabling idiomatic version files for {} with:
-
-    mise settings add idiomatic_version_file_enable_tools {}
-
-You can disable idiomatic version files with:
-
-    mise settings add idiomatic_version_file_enable_tools "[]"
-
-See https://github.com/jdx/mise/discussions/4345 for more information."#,
-        display_path(p),
-        tool,
-        tool
-    );
 }
 
 async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {

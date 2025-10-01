@@ -496,7 +496,6 @@ env = "MISE_HTTP_RETRIES"
 type = "Integer"
 
 [idiomatic_version_file]
-default = true
 deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
 description = "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc."
 docs = """
@@ -508,6 +507,8 @@ information.
 Set to "false" to disable idiomatic version file parsing.
 """
 env = "MISE_IDIOMATIC_VERSION_FILE"
+hide = true
+optional = true
 type = "Bool"
 
 [idiomatic_version_file_disable_tools]
@@ -515,15 +516,27 @@ default = []
 deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
 description = "Specific tools to disable idiomatic version files for."
 env = "MISE_IDIOMATIC_VERSION_FILE_DISABLE_TOOLS"
+hide = true
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
 [idiomatic_version_file_enable_tools]
+default = []
 description = "Specific tools to enable idiomatic version files for like .node-version, .ruby-version, etc."
+docs = """
+By default, idiomatic version files are disabled. You can enable them for specific tools with this setting.
+
+For example, to enable idiomatic version files for node and python:
+
+    mise settings add idiomatic_version_file_enable_tools node
+    mise settings add idiomatic_version_file_enable_tools python
+
+See [Idiomatic Version Files](/configuration.html#idiomatic-version-files) for more information.
+"""
 env = "MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS"
 parse_env = "set_by_comma"
-rust_type = "Option<BTreeSet<String>>"
+rust_type = "BTreeSet<String>"
 type = "SetString"
 
 [ignored_config_paths]

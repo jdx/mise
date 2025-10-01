@@ -7,10 +7,14 @@ assert_contains "mise x -- python --version" "Python 3.12.3"
 rm mise.toml
 mise rm python@3.12.3
 
+# Enable idiomatic version files for python
+mise settings set idiomatic_version_file_enable_tools python
+
 echo '3.12.3' >.python-version
 assert_contains "mise i 2>&1" "mise python@3.12.3"
 assert_contains "mise x -- python --version" "Python 3.12.3"
 
-mise settings idiomatic_version_file_disable_tools python
+# Disable idiomatic version files for python to test override behavior
+mise settings set idiomatic_version_file_enable_tools "[]"
 mise use python@3.13
 assert_contains "mise x -- python --version" "Python 3.13"

@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Enable idiomatic version files for java
+mise settings set idiomatic_version_file_enable_tools java
+
 cat <<EOF >.sdkmanrc
 java=17.0.2
 EOF
