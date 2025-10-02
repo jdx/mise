@@ -4528,6 +4528,11 @@ backends = [
 description = "Count your code, quickly"
 test = ["tokei --version", "tokei {{version}}"]
 
+[tools.tombi]
+backends = ["aqua:tombi-toml/tombi", "ubi:tombi-toml/tombi"]
+description = TOML Formatter / Linter / Language Server
+test = ["tombi --version", "tombi" {{version}}]
+
 [tools.tomcat]
 backends = ["asdf:mise-plugins/mise-tomcat"]
 description = "The Apache Tomcat® software is an open source implementation of the Jakarta Servlet, Jakarta Pages, Jakarta Expression Language, Jakarta WebSocket, Jakarta Annotations and Jakarta Authentication specifications. These specifications are part of the Jakarta EE platform"
