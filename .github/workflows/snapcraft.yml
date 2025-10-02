@@ -1,9 +1,6 @@
 name: snapcraft
 
 on:
-  push:
-    tags: ["v*"]
-    branches: ["main", "mise"]
   pull_request:
     branches: ["main"]
   release:
