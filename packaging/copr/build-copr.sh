@@ -290,7 +290,8 @@ if [ "$DRY_RUN" != "true" ]; then
 	for chroot in "${chroot_array[@]}"; do
 		copr_cmd="$copr_cmd --chroot $chroot"
 	done
-	copr_cmd="$copr_cmd $COPR_OWNER/$COPR_PROJECT $SRPM_FILE"
+	# Add timeout (140 minutes = 8400 seconds)
+	copr_cmd="$copr_cmd --timeout 8400 $COPR_OWNER/$COPR_PROJECT $SRPM_FILE"
 
 	eval "$copr_cmd"
 
