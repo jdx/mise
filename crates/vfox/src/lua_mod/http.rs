@@ -1,4 +1,5 @@
-use mlua::{ExternalResult, Lua, MultiValue, Result, Table};
+use mlua::{BorrowedStr, ExternalResult, Lua, MultiValue, Result, Table};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::http::CLIENT;
 
@@ -30,9 +31,32 @@ pub fn mod_http(lua: &Lua) -> Result<()> {
     )
 }
 
+fn into_headers(table: &Table) -> Result<HeaderMap> {
+    let mut map = HeaderMap::new();
+    for (k, v) in table
+        .pairs::<BorrowedStr, BorrowedStr>()
+        .filter_map(Result::ok)
+    {
+        map.insert(
+            HeaderName::from_bytes(k.as_bytes()).into_lua_err()?,
+            HeaderValue::from_str(&*v).into_lua_err()?,
+        );
+    }
+    Ok(map)
+}
+
 async fn get(lua: &Lua, input: Table) -> Result<Table> {
     let url: String = input.get("url").into_lua_err()?;
-    let resp = CLIENT.get(&url).send().await.into_lua_err()?;
+    let headers: HeaderMap = input
+        .get::<Table>("headers")
+        .and_then(|tbl| into_headers(&tbl))
+        .unwrap_or_default();
+    let resp = CLIENT
+        .get(&url)
+        .headers(headers)
+        .send()
+        .await
+        .into_lua_err()?;
     let t = lua.create_table()?;
     t.set("status_code", resp.status().as_u16())?;
     t.set("headers", get_headers(lua, resp.headers())?)?;
@@ -43,8 +67,17 @@ async fn get(lua: &Lua, input: Table) -> Result<Table> {
 async fn download_file(_lua: &Lua, input: MultiValue) -> Result<()> {
     let t: &Table = input.iter().next().unwrap().as_table().unwrap();
     let url: String = t.get("url").into_lua_err()?;
+    let headers: HeaderMap = t
+        .get::<Table>("headers")
+        .and_then(|tbl| into_headers(&tbl))
+        .unwrap_or_default();
     let path: String = input.iter().nth(1).unwrap().to_string()?;
-    let resp = CLIENT.get(&url).send().await.into_lua_err()?;
+    let resp = CLIENT
+        .get(&url)
+        .headers(headers)
+        .send()
+        .await
+        .into_lua_err()?;
     resp.error_for_status_ref().into_lua_err()?;
     let mut file = tokio::fs::File::create(&path).await.into_lua_err()?;
     let bytes = resp.bytes().await.into_lua_err()?;
@@ -56,7 +89,16 @@ async fn download_file(_lua: &Lua, input: MultiValue) -> Result<()> {
 
 async fn head(lua: &Lua, input: Table) -> Result<Table> {
     let url: String = input.get("url").into_lua_err()?;
-    let resp = CLIENT.head(&url).send().await.into_lua_err()?;
+    let headers: HeaderMap = input
+        .get::<Table>("headers")
+        .and_then(|tbl| into_headers(&tbl))
+        .unwrap_or_default();
+    let resp = CLIENT
+        .head(&url)
+        .headers(headers)
+        .send()
+        .await
+        .into_lua_err()?;
     let t = lua.create_table()?;
     t.set("status_code", resp.status().as_u16())?;
     t.set("headers", get_headers(lua, resp.headers())?)?;
@@ -74,7 +116,7 @@ fn get_headers(lua: &Lua, headers: &reqwest::header::HeaderMap) -> Result<Table>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
@@ -102,6 +144,45 @@ mod tests {
         lua.load(mlua::chunk! {
             local http = require("http")
             local resp = http.get({ url = $url })
+            assert(resp.status_code == 200)
+            assert(type(resp.body) == "string")
+        })
+        .exec_async()
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_headers() {
+        // Start a local mock server
+        let server = MockServer::start().await;
+
+        // Create a mock endpoint
+        Mock::given(method("GET"))
+            .and(path("/get"))
+            .and(header("Authorization", "Bearer abc"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({
+                        "message": "test response"
+                    }))
+                    .insert_header("content-type", "application/json"),
+            )
+            .mount(&server)
+            .await;
+
+        let lua = Lua::new();
+        mod_http(&lua).unwrap();
+
+        let url = server.uri() + "/get";
+        lua.load(mlua::chunk! {
+            local http = require("http")
+            local resp = http.get({
+                url = $url,
+                headers = {
+                    ["Authorization"] = "Bearer abc"
+                }
+            })
             assert(resp.status_code == 200)
             assert(type(resp.body) == "string")
         })
