@@ -33,10 +33,8 @@ pub fn mod_http(lua: &Lua) -> Result<()> {
 
 fn into_headers(table: &Table) -> Result<HeaderMap> {
     let mut map = HeaderMap::new();
-    for (k, v) in table
-        .pairs::<BorrowedStr, BorrowedStr>()
-        .filter_map(Result::ok)
-    {
+    for entry in table.pairs::<BorrowedStr, BorrowedStr>() {
+        let (k, v) = entry?;
         map.insert(
             HeaderName::from_bytes(k.as_bytes()).into_lua_err()?,
             HeaderValue::from_str(&*v).into_lua_err()?,
