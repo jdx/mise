@@ -22,6 +22,7 @@ pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     context.insert("env", &*env::PRISTINE_ENV);
     context.insert("mise_bin", &*env::MISE_BIN);
     context.insert("mise_pid", &*env::MISE_PID);
+    context.insert("mise_shims", &*env::MISE_SHIMS_DIR);
     if !(*env::MISE_ENV).is_empty() {
         context.insert("mise_env", &*env::MISE_ENV);
     }
@@ -437,6 +438,13 @@ mod tests {
                 .into_string()
                 .unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn test_mise_shims() {
+        let _config = Config::get().await.unwrap();
+        let s = render("{{mise_shims}}");
+        assert!(s.ends_with("/shims")); // test dir is not deterministic
     }
 
     #[tokio::test]
