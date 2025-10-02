@@ -37,7 +37,7 @@ fn into_headers(table: &Table) -> Result<HeaderMap> {
         let (k, v) = entry?;
         map.insert(
             HeaderName::from_bytes(k.as_bytes()).into_lua_err()?,
-            HeaderValue::from_str(&*v).into_lua_err()?,
+            HeaderValue::from_str(&v).into_lua_err()?,
         );
     }
     Ok(map)
