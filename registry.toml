@@ -4531,7 +4531,7 @@ test = ["tokei --version", "tokei {{version}}"]
 [tools.tombi]
 backends = ["aqua:tombi-toml/tombi", "ubi:tombi-toml/tombi"]
 description = TOML Formatter / Linter / Language Server
-test = ["tombi --version", "tombi" {{version}}]
+test = ["tombi --version", "tombi {{version}}"]
 
 [tools.tomcat]
 backends = ["asdf:mise-plugins/mise-tomcat"]
