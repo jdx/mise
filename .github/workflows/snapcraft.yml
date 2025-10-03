@@ -1,6 +1,9 @@
 name: snapcraft
 
 on:
+  push:
+    tags: ["v*"]
+    branches: ["main", "mise"]
   pull_request:
     branches: ["main"]
   release:
@@ -33,7 +36,7 @@ jobs:
           if-no-files-found: error
 
   publish-snapcraft:
-    if: github.event_name != 'pull_request' || github.head_ref == 'release'
+    if: github.event_name == 'release'
     needs: [build-snapcraft]
 
     runs-on: ubuntu-latest
