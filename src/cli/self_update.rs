@@ -165,34 +165,42 @@ impl SelfUpdate {
 
     #[cfg(target_os = "macos")]
     fn verify_macos_signature(binary_path: &Path) -> Result<()> {
+        use std::process::Command;
+
         debug!(
             "Verifying macOS code signature for: {}",
             binary_path.display()
         );
 
         // Check if codesign is available
-        if cmd!("which", "codesign").run().is_err() {
+        let codesign_check = Command::new("which")
+            .arg("codesign")
+            .output();
+
+        if codesign_check.is_err() || !codesign_check.unwrap().status.success() {
             warn!("codesign command not found in PATH, skipping binary signature verification");
             warn!("This is unusual on macOS - consider verifying your system installation");
             return Ok(());
         }
 
         // Verify signature and identifier in one step using --test-requirement
-        cmd!(
-            "codesign",
-            "--verify",
-            "--deep",
-            "--strict",
-            "-R=identifier \"dev.jdx.mise\"",
-            binary_path
-        )
-        .run()
-        .map_err(|e| {
-            eyre::eyre!(
+        let output = Command::new("codesign")
+            .args([
+                "--verify",
+                "--deep",
+                "--strict",
+                "-R=identifier \"dev.jdx.mise\"",
+            ])
+            .arg(binary_path)
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
                 "macOS binary signature verification failed (invalid signature or incorrect identifier): {}",
-                e
-            )
-        })?;
+                stderr.trim()
+            );
+        }
 
         debug!("macOS binary signature verified successfully");
         Ok(())
