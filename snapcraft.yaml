@@ -1,7 +1,7 @@
 # To test this snap package on your local Linux machine,
 # Install snapcraft (`snap install snapcraft --classic`) and
 # run the following commands:
-# 
+#
 # ```shell
 # snapcraft pack
 # snap install ./mise_20xx.xx.x_amd64.snap --dangerous
