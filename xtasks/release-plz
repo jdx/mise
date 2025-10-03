@@ -125,6 +125,7 @@ git add \
 	README.md \
 	crates/aqua-registry/aqua-registry \
 	default.nix \
+	snapcraft.yaml \
 	docs/.vitepress/stars.data.ts \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \
