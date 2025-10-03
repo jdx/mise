@@ -69,18 +69,48 @@ impl Shell for Zsh {
             out.push_str(&formatdoc! {r#"
             if [ -z "${{_mise_cmd_not_found:-}}" ]; then
                 _mise_cmd_not_found=1
-                [ -n "$(declare -f command_not_found_handler)" ] && eval "${{$(declare -f command_not_found_handler)/command_not_found_handler/_command_not_found_handler}}"
+                # preserve existing handler if present
+                if typeset -f command_not_found_handler >/dev/null; then
+                    functions -c command_not_found_handler _command_not_found_handler
+                fi
 
-                function command_not_found_handler() {{
-                    if [[ "$1" != "mise" && "$1" != "mise-"* ]] && {exe} hook-not-found -s zsh -- "$1"; then
-                      _mise_hook
-                      "$@"
-                    elif [ -n "$(declare -f _command_not_found_handler)" ]; then
-                        _command_not_found_handler "$@"
+                typeset -gA _mise_cnf_tried
+
+                # helper for fallback behavior
+                _mise_fallback() {{
+                    local _cmd="$1"; shift
+                    if typeset -f _command_not_found_handler >/dev/null; then
+                        _command_not_found_handler "$_cmd" "$@"
+                        return $?
                     else
-                        echo "zsh: command not found: $1" >&2
+                        print -u2 -- "zsh: command not found: $_cmd"
                         return 127
                     fi
+                }}
+
+                command_not_found_handler() {{
+                    local cmd="$1"; shift
+
+                    # never intercept mise itself or retry already-attempted commands
+                    if [[ "$cmd" == "mise" || "$cmd" == mise-* || -n "${{_mise_cnf_tried["$cmd"]}}" ]]; then
+                        _mise_fallback "$cmd" "$@"
+                        return $?
+                    fi
+
+                    # run the hook; only retry if the command is actually found afterward
+                    if {exe} hook-not-found -s zsh -- "$cmd"; then
+                        _mise_hook
+                        if command -v -- "$cmd" >/dev/null 2>&1; then
+                            "$cmd" "$@"
+                            return $?
+                        fi
+                    else
+                        # only mark as tried if mise explicitly can't handle it
+                        _mise_cnf_tried["$cmd"]=1
+                    fi
+
+                    # fall back
+                    _mise_fallback "$cmd" "$@"
                 }}
             fi
             "#});
