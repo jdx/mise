@@ -177,42 +177,24 @@ impl SelfUpdate {
             return Ok(());
         }
 
-        // Run codesign --verify --deep --strict on the binary
-        cmd!("codesign", "--verify", "--deep", "--strict", binary_path)
-            .run()
-            .map_err(|e| {
-                eyre::eyre!("macOS binary signature verification failed: {}", e)
-            })?;
+        // Verify signature and identifier in one step using --test-requirement
+        cmd!(
+            "codesign",
+            "--verify",
+            "--deep",
+            "--strict",
+            "-R=identifier \"dev.jdx.mise\"",
+            binary_path
+        )
+        .run()
+        .map_err(|e| {
+            eyre::eyre!(
+                "macOS binary signature verification failed (invalid signature or incorrect identifier): {}",
+                e
+            )
+        })?;
 
-        // Additionally verify the identifier
-        let output = cmd!("codesign", "--display", "--verbose=2", binary_path)
-            .stderr_to_stdout()
-            .read()
-            .map_err(|e| {
-                eyre::eyre!("Failed to display binary signature information: {}", e)
-            })?;
-
-        // Parse and check the identifier
-        let identifier = output
-            .lines()
-            .find(|line| line.starts_with("Identifier="))
-            .and_then(|line| line.strip_prefix("Identifier="))
-            .map(|s| s.trim());
-
-        match identifier {
-            Some("dev.jdx.mise") => {
-                debug!("macOS binary signature verified successfully");
-                Ok(())
-            }
-            Some(other) => {
-                bail!(
-                    "macOS binary has incorrect identifier. Expected 'dev.jdx.mise', got '{}'",
-                    other
-                );
-            }
-            None => {
-                bail!("macOS binary has no identifier in codesign output");
-            }
-        }
+        debug!("macOS binary signature verified successfully");
+        Ok(())
     }
 }
