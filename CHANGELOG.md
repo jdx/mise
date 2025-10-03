@@ -1,5 +1,27 @@
 # Changelog
 
+## [2025.10.1](https://github.com/jdx/mise/compare/v2025.10.0..v2025.10.1) - 2025-10-03
+
+### 📦 Registry
+
+- add tombi by @TyceHerrman in [#6520](https://github.com/jdx/mise/pull/6520)
+
+### 🚀 Features
+
+- **(snapcraft)** add snap package by @phanect in [#6472](https://github.com/jdx/mise/pull/6472)
+
+### 🐛 Bug Fixes
+
+- **(cache)** remove duplicate bytes in prune output by @risu729 in [#6515](https://github.com/jdx/mise/pull/6515)
+
+### Chore
+
+- **(copr)** increase COPR publish timeout by 60 minutes by @Copilot in [#6512](https://github.com/jdx/mise/pull/6512)
+
+### New Contributors
+
+- @phanect made their first contribution in [#6472](https://github.com/jdx/mise/pull/6472)
+
 ## [2025.10.0](https://github.com/jdx/mise/compare/v2025.9.25..v2025.10.0) - 2025-10-01
 
 ### 📦 Registry

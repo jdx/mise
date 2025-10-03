@@ -1,6 +1,6 @@
 name: mise
 title: mise-en-place
-version: "2025.10.0"
+version: "2025.10.1"
 summary: dev tools, env vars, task runner
 description: |
   dev tools, env vars, task runner
