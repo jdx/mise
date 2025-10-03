@@ -48,6 +48,7 @@ apps:
   mise:
     command: bin/mise
     plugs:
+      - home
       - network
       - network-bind
       - process-control
