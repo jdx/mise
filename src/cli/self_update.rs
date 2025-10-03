@@ -9,7 +9,7 @@ use crate::config::Settings;
 use crate::{cmd, env};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default, serde::Deserialize)]
 struct InstructionsToml {
@@ -200,6 +200,14 @@ impl SelfUpdate {
             .args(["--display", "--verbose=2"])
             .arg(binary_path)
             .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
+                "Failed to display binary signature information: {}",
+                stderr.trim()
+            );
+        }
 
         let stderr = String::from_utf8_lossy(&output.stderr);
 
