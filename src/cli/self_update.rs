@@ -9,7 +9,7 @@ use crate::config::Settings;
 use crate::{cmd, env};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Default, serde::Deserialize)]
 struct InstructionsToml {
@@ -165,7 +165,10 @@ impl SelfUpdate {
     fn verify_macos_signature(binary_path: &Path) -> Result<()> {
         use std::process::Command;
 
-        debug!("Verifying macOS code signature for: {}", binary_path.display());
+        debug!(
+            "Verifying macOS code signature for: {}",
+            binary_path.display()
+        );
 
         // Run codesign --verify --deep --strict on the binary
         let output = Command::new("codesign")
