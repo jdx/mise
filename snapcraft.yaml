@@ -68,4 +68,5 @@ plugs:
     interface: personal-files
     write:
       - $HOME/.cache/mise
+      - $HOME/.config/mise
       - $HOME/.local/share/mise
