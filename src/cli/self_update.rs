@@ -9,9 +9,9 @@ use crate::config::Settings;
 use crate::{cmd, env};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 use std::path::Path;
+use std::path::PathBuf;
 
 #[derive(Debug, Default, serde::Deserialize)]
 struct InstructionsToml {
@@ -173,9 +173,7 @@ impl SelfUpdate {
         );
 
         // Check if codesign is available
-        let codesign_check = Command::new("which")
-            .arg("codesign")
-            .output();
+        let codesign_check = Command::new("which").arg("codesign").output();
 
         if codesign_check.is_err() || !codesign_check.unwrap().status.success() {
             warn!("codesign command not found in PATH, skipping binary signature verification");
