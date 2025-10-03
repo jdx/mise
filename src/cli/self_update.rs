@@ -9,7 +9,9 @@ use crate::config::Settings;
 use crate::{cmd, env};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(target_os = "macos")]
+use std::path::Path;
 
 #[derive(Debug, Default, serde::Deserialize)]
 struct InstructionsToml {
@@ -163,59 +165,38 @@ impl SelfUpdate {
 
     #[cfg(target_os = "macos")]
     fn verify_macos_signature(binary_path: &Path) -> Result<()> {
-        use std::process::Command;
-
         debug!(
             "Verifying macOS code signature for: {}",
             binary_path.display()
         );
 
         // Check if codesign is available
-        let codesign_check = Command::new("which")
-            .arg("codesign")
-            .output();
-
-        if codesign_check.is_err() || !codesign_check.unwrap().status.success() {
+        if cmd!("which", "codesign").run().is_err() {
             warn!("codesign command not found in PATH, skipping binary signature verification");
             warn!("This is unusual on macOS - consider verifying your system installation");
             return Ok(());
         }
 
         // Run codesign --verify --deep --strict on the binary
-        let output = Command::new("codesign")
-            .args(["--verify", "--deep", "--strict"])
-            .arg(binary_path)
-            .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "macOS binary signature verification failed: {}",
-                stderr.trim()
-            );
-        }
+        cmd!("codesign", "--verify", "--deep", "--strict", binary_path)
+            .run()
+            .map_err(|e| {
+                eyre::eyre!("macOS binary signature verification failed: {}", e)
+            })?;
 
         // Additionally verify the identifier
-        let output = Command::new("codesign")
-            .args(["--display", "--verbose=2"])
-            .arg(binary_path)
-            .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "Failed to display binary signature information: {}",
-                stderr.trim()
-            );
-        }
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let output = cmd!("codesign", "--display", "--verbose=2", binary_path)
+            .stderr_to_stdout()
+            .read()
+            .map_err(|e| {
+                eyre::eyre!("Failed to display binary signature information: {}", e)
+            })?;
 
         // Check for expected identifier
-        if !stderr.contains("Identifier=dev.jdx.mise") {
+        if !output.contains("Identifier=dev.jdx.mise") {
             bail!(
                 "macOS binary does not have the expected identifier. Got: {}",
-                stderr.trim()
+                output.trim()
             );
         }
 
