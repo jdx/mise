@@ -1,17 +1,12 @@
-name: snapcraft
+name: snapcraft-publish
 
 on:
-  push:
-    tags: ["v*"]
-    branches: ["main", "mise"]
-  pull_request:
-    branches: ["main"]
   release:
     types: [published]
   workflow_dispatch:
 
 jobs:
-  build-snapcraft:
+  publish-snapcraft:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -23,33 +18,9 @@ jobs:
           snapcraft-channel: beta
         id: snapbuild
 
-      # Quick E2E test
-      - name: Install snap package for testing
-        run: sudo snap install --dangerous ${{ steps.snapbuild.outputs.snap }}
-      - run: mise -v
-      - run: eval "$(mise activate bash)" && mise install
-
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: snapcraft
-          path: ${{ steps.snapbuild.outputs.snap }}
-          if-no-files-found: error
-
-  publish-snapcraft:
-    if: github.event_name == 'release'
-    needs: [build-snapcraft]
-
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/download-artifact@v5
-        with:
-          name: snapcraft
-          path: ./mise.snap
-
       - uses: snapcore/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40 # v1.2.0
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
-          snap: ./mise.snap
+          snap: ${{ steps.snapbuild.outputs.snap }}
           release: beta
