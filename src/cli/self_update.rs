@@ -9,7 +9,7 @@ use crate::config::Settings;
 use crate::{cmd, env};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default, serde::Deserialize)]
 struct InstructionsToml {
@@ -142,6 +142,13 @@ impl SelfUpdate {
             .no_confirm(settings.is_ok_and(|s| s.yes) || self.yes)
             .build()?
             .update()?;
+
+        // Verify macOS binary signature after update
+        #[cfg(target_os = "macos")]
+        if status.updated() {
+            Self::verify_macos_signature(&env::MISE_BIN)?;
+        }
+
         Ok(status)
     }
 
@@ -152,5 +159,45 @@ impl SelfUpdate {
         let has_disable = env::MISE_SELF_UPDATE_DISABLED_PATH.is_some();
         let has_instructions = env::MISE_SELF_UPDATE_INSTRUCTIONS.is_some();
         !(has_disable || has_instructions)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn verify_macos_signature(binary_path: &Path) -> Result<()> {
+        use std::process::Command;
+
+        debug!("Verifying macOS code signature for: {}", binary_path.display());
+
+        // Run codesign --verify --deep --strict on the binary
+        let output = Command::new("codesign")
+            .args(["--verify", "--deep", "--strict"])
+            .arg(binary_path)
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
+                "macOS binary signature verification failed: {}",
+                stderr.trim()
+            );
+        }
+
+        // Additionally verify the signing authority
+        let output = Command::new("codesign")
+            .args(["--display", "--verbose=2"])
+            .arg(binary_path)
+            .output()?;
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        // Check for expected Developer ID
+        if !stderr.contains("Developer ID Application: Jeffrey Dickey") {
+            bail!(
+                "macOS binary is not signed by the expected authority. Got: {}",
+                stderr.trim()
+            );
+        }
+
+        debug!("macOS binary signature verified successfully");
+        Ok(())
     }
 }
