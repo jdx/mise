@@ -1,5 +1,29 @@
 # Changelog
 
+## [2025.10.2](https://github.com/jdx/mise/compare/v2025.10.1..v2025.10.2) - 2025-10-03
+
+### 🐛 Bug Fixes
+
+- **(shell)** prevent infinite loop in zsh command-not-found handler by @yordis in [#6516](https://github.com/jdx/mise/pull/6516)
+- **(snapcraft)** add missing home plug for the home directory access permission by @phanect in [#6525](https://github.com/jdx/mise/pull/6525)
+- **(vfox)** implement headers support on http mod by @BasixKOR in [#6521](https://github.com/jdx/mise/pull/6521)
+- set MIX_HOME and MIX_ARCHIVES when using the elixir plugin by @numso in [#6504](https://github.com/jdx/mise/pull/6504)
+
+### 📦️ Dependency Updates
+
+- update docker/login-action digest to 5e57cd1 by @renovate[bot] in [#6522](https://github.com/jdx/mise/pull/6522)
+- update fedora:43 docker digest to 2c0d72b by @renovate[bot] in [#6523](https://github.com/jdx/mise/pull/6523)
+
+### Security
+
+- verify macOS binary signature during self-update by @jdx in [#6528](https://github.com/jdx/mise/pull/6528)
+
+### New Contributors
+
+- @yordis made their first contribution in [#6516](https://github.com/jdx/mise/pull/6516)
+- @numso made their first contribution in [#6504](https://github.com/jdx/mise/pull/6504)
+- @BasixKOR made their first contribution in [#6521](https://github.com/jdx/mise/pull/6521)
+
 ## [2025.10.1](https://github.com/jdx/mise/compare/v2025.10.0..v2025.10.1) - 2025-10-03
 
 ### 📦 Registry
