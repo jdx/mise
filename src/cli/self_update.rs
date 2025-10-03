@@ -192,15 +192,27 @@ impl SelfUpdate {
                 eyre::eyre!("Failed to display binary signature information: {}", e)
             })?;
 
-        // Check for expected identifier
-        if !output.contains("Identifier=dev.jdx.mise") {
-            bail!(
-                "macOS binary does not have the expected identifier. Got: {}",
-                output.trim()
-            );
-        }
+        // Parse and check the identifier
+        let identifier = output
+            .lines()
+            .find(|line| line.starts_with("Identifier="))
+            .and_then(|line| line.strip_prefix("Identifier="))
+            .map(|s| s.trim());
 
-        debug!("macOS binary signature verified successfully");
-        Ok(())
+        match identifier {
+            Some("dev.jdx.mise") => {
+                debug!("macOS binary signature verified successfully");
+                Ok(())
+            }
+            Some(other) => {
+                bail!(
+                    "macOS binary has incorrect identifier. Expected 'dev.jdx.mise', got '{}'",
+                    other
+                );
+            }
+            None => {
+                bail!("macOS binary has no identifier in codesign output");
+            }
+        }
     }
 }
