@@ -45,10 +45,10 @@ fn into_headers(table: &Table) -> Result<HeaderMap> {
 
 async fn get(lua: &Lua, input: Table) -> Result<Table> {
     let url: String = input.get("url").into_lua_err()?;
-    let headers: HeaderMap = input
-        .get::<Table>("headers")
-        .and_then(|tbl| into_headers(&tbl))
-        .unwrap_or_default();
+    let headers = match input.get::<Option<Table>>("headers").into_lua_err()? {
+        Some(tbl) => into_headers(&tbl)?,
+        None => HeaderMap::default(),
+    };
     let resp = CLIENT
         .get(&url)
         .headers(headers)
@@ -65,10 +65,10 @@ async fn get(lua: &Lua, input: Table) -> Result<Table> {
 async fn download_file(_lua: &Lua, input: MultiValue) -> Result<()> {
     let t: &Table = input.iter().next().unwrap().as_table().unwrap();
     let url: String = t.get("url").into_lua_err()?;
-    let headers: HeaderMap = t
-        .get::<Table>("headers")
-        .and_then(|tbl| into_headers(&tbl))
-        .unwrap_or_default();
+    let headers = match t.get::<Option<Table>>("headers").into_lua_err()? {
+        Some(tbl) => into_headers(&tbl)?,
+        None => HeaderMap::default(),
+    };
     let path: String = input.iter().nth(1).unwrap().to_string()?;
     let resp = CLIENT
         .get(&url)
@@ -87,10 +87,10 @@ async fn download_file(_lua: &Lua, input: MultiValue) -> Result<()> {
 
 async fn head(lua: &Lua, input: Table) -> Result<Table> {
     let url: String = input.get("url").into_lua_err()?;
-    let headers: HeaderMap = input
-        .get::<Table>("headers")
-        .and_then(|tbl| into_headers(&tbl))
-        .unwrap_or_default();
+    let headers = match input.get::<Option<Table>>("headers").into_lua_err()? {
+        Some(tbl) => into_headers(&tbl)?,
+        None => HeaderMap::default(),
+    };
     let resp = CLIENT
         .head(&url)
         .headers(headers)
