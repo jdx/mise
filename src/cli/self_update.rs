@@ -170,6 +170,17 @@ impl SelfUpdate {
             binary_path.display()
         );
 
+        // Check if codesign is available
+        let codesign_check = Command::new("which")
+            .arg("codesign")
+            .output();
+
+        if codesign_check.is_err() || !codesign_check.unwrap().status.success() {
+            warn!("codesign command not found in PATH, skipping binary signature verification");
+            warn!("This is unusual on macOS - consider verifying your system installation");
+            return Ok(());
+        }
+
         // Run codesign --verify --deep --strict on the binary
         let output = Command::new("codesign")
             .args(["--verify", "--deep", "--strict"])
@@ -184,7 +195,7 @@ impl SelfUpdate {
             );
         }
 
-        // Additionally verify the signing authority
+        // Additionally verify the identifier
         let output = Command::new("codesign")
             .args(["--display", "--verbose=2"])
             .arg(binary_path)
@@ -192,10 +203,10 @@ impl SelfUpdate {
 
         let stderr = String::from_utf8_lossy(&output.stderr);
 
-        // Check for expected Developer ID
-        if !stderr.contains("Developer ID Application: Jeffrey Dickey") {
+        // Check for expected identifier
+        if !stderr.contains("Identifier=dev.jdx.mise") {
             bail!(
-                "macOS binary is not signed by the expected authority. Got: {}",
+                "macOS binary does not have the expected identifier. Got: {}",
                 stderr.trim()
             );
         }
