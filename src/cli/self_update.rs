@@ -9,6 +9,8 @@ use crate::config::Settings;
 use crate::{cmd, env};
 use std::collections::BTreeMap;
 use std::fs;
+#[cfg(target_os = "macos")]
+use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -142,6 +144,13 @@ impl SelfUpdate {
             .no_confirm(settings.is_ok_and(|s| s.yes) || self.yes)
             .build()?
             .update()?;
+
+        // Verify macOS binary signature after update
+        #[cfg(target_os = "macos")]
+        if status.updated() {
+            Self::verify_macos_signature(&env::MISE_BIN)?;
+        }
+
         Ok(status)
     }
 
@@ -152,5 +161,46 @@ impl SelfUpdate {
         let has_disable = env::MISE_SELF_UPDATE_DISABLED_PATH.is_some();
         let has_instructions = env::MISE_SELF_UPDATE_INSTRUCTIONS.is_some();
         !(has_disable || has_instructions)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn verify_macos_signature(binary_path: &Path) -> Result<()> {
+        use std::process::Command;
+
+        debug!(
+            "Verifying macOS code signature for: {}",
+            binary_path.display()
+        );
+
+        // Check if codesign is available
+        let codesign_check = Command::new("which").arg("codesign").output();
+
+        if codesign_check.is_err() || !codesign_check.unwrap().status.success() {
+            warn!("codesign command not found in PATH, skipping binary signature verification");
+            warn!("This is unusual on macOS - consider verifying your system installation");
+            return Ok(());
+        }
+
+        // Verify signature and identifier in one step using --test-requirement
+        let output = Command::new("codesign")
+            .args([
+                "--verify",
+                "--deep",
+                "--strict",
+                "-R=identifier \"dev.jdx.mise\"",
+            ])
+            .arg(binary_path)
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
+                "macOS binary signature verification failed (invalid signature or incorrect identifier): {}",
+                stderr.trim()
+            );
+        }
+
+        debug!("macOS binary signature verified successfully");
+        Ok(())
     }
 }
