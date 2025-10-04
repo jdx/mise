@@ -364,6 +364,61 @@ run = "echo task4"
 
 If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
 
+### `task_config.experimental_monorepo_root` <Badge type="warning" text="experimental" />
+
+- **Type**: `bool`
+- **Default**: `false`
+- **Requires**: `MISE_EXPERIMENTAL=1`
+
+Enable monorepo task support with bazel/buck2-style target paths. When enabled, mise will automatically
+discover tasks in subdirectories and prefix them with their relative path from the monorepo root.
+
+```toml
+[task_config]
+experimental_monorepo_root = true
+```
+
+With this enabled and the following structure:
+
+```
+myproject/
+├── mise.toml (with experimental_monorepo_root = true)
+├── projects/
+│   ├── frontend/
+│   │   └── mise.toml (with tasks: build, test)
+│   └── backend/
+│       └── mise.toml (with tasks: build, test)
+```
+
+Tasks will be automatically namespaced:
+- `//projects/frontend:build`
+- `//projects/frontend:test`
+- `//projects/backend:build`
+- `//projects/backend:test`
+
+You can run these tasks using either absolute or relative syntax:
+
+```bash
+# Absolute path (with // prefix)
+mise run '//projects/frontend:build'
+
+# Relative path (without // prefix)
+mise run 'projects/frontend:build'
+
+# With glob patterns
+mise run '//projects/*:test'      # Run test in all projects
+mise tasks ls '//projects/*:*'    # List all tasks in projects/
+```
+
+This is useful for large monorepos where multiple projects need their own tasks but you want to run
+them all from the root directory. Tasks in subdirectories up to 5 levels deep will be discovered.
+
+**Notes:**
+- Task names use `:` as the separator between path and task name
+- Quote task names in shell commands to prevent interpretation of `/` and `:`
+- Subdirectories with `.mise.toml`, `mise.toml`, `.mise/config.toml`, or `.config/mise/config.toml` will be scanned
+- Hidden directories and common build artifacts (`node_modules`, `target`, `dist`, `build`) are automatically excluded
+
 ## `redactions` <Badge type="warning" text="experimental" />
 
 - **Type**: `string[]`
