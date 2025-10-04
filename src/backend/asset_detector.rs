@@ -1,6 +1,8 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
+use crate::backend::static_helpers::get_filename_from_url;
+
 /// Platform detection patterns
 pub struct PlatformPatterns {
     pub os_patterns: &'static [(AssetOs, Regex)],
@@ -303,26 +305,12 @@ impl AssetPicker {
 }
 
 /// Detects platform information from a URL
-pub fn detect_platform_from_url(url_str: &str) -> Option<DetectedPlatform> {
+pub fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
     let mut detected_os = None;
     let mut detected_arch = None;
     let mut detected_libc = None;
 
-    // Extract filename from URL for analysis using proper URL parsing
-    let filename = if let Ok(url) = url::Url::parse(url_str) {
-        // Use proper URL parsing to get the path and extract filename
-        url.path_segments()
-            .and_then(|mut segments| segments.next_back())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| url_str.to_string())
-    } else {
-        // Fallback to simple parsing for non-URL strings or malformed URLs
-        url_str
-            .split('/')
-            .next_back()
-            .unwrap_or(url_str)
-            .to_string()
-    };
+    let filename = get_filename_from_url(&url);
 
     // Try to detect OS
     for (os, pattern) in PLATFORM_PATTERNS.os_patterns.iter() {
