@@ -48,6 +48,9 @@ export const commands: { [key: string]: Command } = {
       clear: {
         hide: false,
       },
+      path: {
+        hide: false,
+      },
       prune: {
         hide: false,
       },

@@ -63,7 +63,7 @@ impl RubyPlugin {
     }
 
     async fn update_build_tool(&self, ctx: Option<&InstallContext>) -> Result<()> {
-        let pr = ctx.map(|ctx| &ctx.pr);
+        let pr = ctx.map(|ctx| ctx.pr.as_ref());
         if Settings::get().ruby.ruby_install {
             self.update_ruby_install(pr)
                 .await
@@ -75,7 +75,7 @@ impl RubyPlugin {
         }
     }
 
-    fn install_ruby_build(&self, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
+    fn install_ruby_build(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
         debug!(
             "Installing ruby-build to {}",
             self.ruby_build_path().display()
@@ -97,7 +97,7 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         Ok(())
     }
-    async fn update_ruby_build(&self, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
+    async fn update_ruby_build(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
         let _lock = self.lock_build_tool();
         if self.ruby_build_bin().exists() {
             let cur = self.ruby_build_version()?;
@@ -120,7 +120,7 @@ impl RubyPlugin {
         Ok(())
     }
 
-    fn install_ruby_install(&self, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
+    fn install_ruby_install(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
         let settings = Settings::get();
         debug!(
             "Installing ruby-install to {}",
@@ -144,7 +144,7 @@ impl RubyPlugin {
         file::remove_all(&tmp)?;
         Ok(())
     }
-    async fn update_ruby_install(&self, pr: Option<&Box<dyn SingleReport>>) -> Result<()> {
+    async fn update_ruby_install(&self, pr: Option<&dyn SingleReport>) -> Result<()> {
         let _lock = self.lock_build_tool();
         let ruby_install_path = self.ruby_install_path();
         if !ruby_install_path.exists() {
@@ -177,7 +177,7 @@ impl RubyPlugin {
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
     ) -> Result<()> {
         let settings = Settings::get();
         let default_gems_file = file::replace_path(&settings.ruby.default_packages_file);
@@ -230,7 +230,7 @@ impl RubyPlugin {
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
-        pr: &'a Box<dyn SingleReport>,
+        pr: &'a dyn SingleReport,
     ) -> Result<CmdLineRunner<'a>> {
         let settings = Settings::get();
         let cmd = if settings.ruby.ruby_install {
@@ -339,11 +339,11 @@ impl Backend for RubyPlugin {
         .await
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".ruby-version".into(), "Gemfile".into()])
     }
 
-    fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
         let v = match path.file_name() {
             Some(name) if name == "Gemfile" => parse_gemfile(&file::read_to_string(path)?),
             _ => {
@@ -363,12 +363,15 @@ impl Backend for RubyPlugin {
             warn!("ruby build tool update error: {err:#}");
         }
         ctx.pr.set_message("ruby-build".into());
-        self.install_cmd(&ctx.config, &tv, &ctx.pr)
+        self.install_cmd(&ctx.config, &tv, ctx.pr.as_ref())
             .await?
             .execute()?;
 
         self.install_rubygems_hook(&tv)?;
-        if let Err(err) = self.install_default_gems(&ctx.config, &tv, &ctx.pr).await {
+        if let Err(err) = self
+            .install_default_gems(&ctx.config, &tv, ctx.pr.as_ref())
+            .await
+        {
             warn!("failed to install default ruby gems {err:#}");
         }
         Ok(tv)

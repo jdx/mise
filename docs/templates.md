@@ -175,12 +175,19 @@ Mise offers additional functions:
 - `choice(n, alphabet)` - Generate a string of `n` with random sample with replacement
   of `alphabet`. For example, `choice(64, HEX)` will generate a random
   64-character lowercase hex string.
+- `read_file(path) -> String` – Reads the contents of a file at the given path and returns
+  it as a string.
 
-An example of function using `exec`:
+Examples of functions:
 
 ```toml
+# Using exec to get command output
 [alias.node.versions]
 current = "{{ exec(command='node --version') }}"
+
+# Using read_file to include content from a file
+[env]
+VERSION = "{{ read_file(path='VERSION') | trim }}"
 ```
 
 ### Exec Options

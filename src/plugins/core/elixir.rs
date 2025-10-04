@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -8,10 +9,10 @@ use crate::cmd::CmdLineRunner;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, config::Config};
-use crate::{file, plugins};
+use crate::{env, file, plugins};
 use async_trait::async_trait;
 use eyre::Result;
 use itertools::Itertools;
@@ -37,13 +38,13 @@ impl ElixirPlugin {
     async fn test_elixir(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("elixir --version".into());
         CmdLineRunner::new(self.elixir_bin(tv))
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
             .arg("--version")
             .execute()
     }
 
-    async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let version = &tv.version;
         let version = if regex!(r"^[0-9]").is_match(version) {
             &format!("v{version}")
@@ -110,7 +111,7 @@ impl Backend for ElixirPlugin {
         Ok(versions)
     }
 
-    fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
         Ok(vec![".exenv-version".into()])
     }
 
@@ -123,7 +124,7 @@ impl Backend for ElixirPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, &ctx.pr).await?;
+        let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path).await?;
         self.verify(ctx, &tv).await?;
@@ -139,6 +140,31 @@ impl Backend for ElixirPlugin {
             .iter()
             .map(|p| tv.install_path().join(p))
             .collect())
+    }
+
+    async fn exec_env(
+        &self,
+        config: &Arc<Config>,
+        _ts: &Toolset,
+        tv: &ToolVersion,
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        let mut map = BTreeMap::new();
+        let mut set = |k: &str, v: PathBuf| {
+            map.insert(k.to_string(), v.to_string_lossy().to_string());
+        };
+        let config_env = config.env().await?;
+        if !env::PRISTINE_ENV.contains_key("MIX_HOME") && !config_env.contains_key("MIX_HOME") {
+            set("MIX_HOME", tv.install_path().join(".mix"));
+        }
+        if !env::PRISTINE_ENV.contains_key("MIX_ARCHIVES")
+            && !config_env.contains_key("MIX_ARCHIVES")
+        {
+            set(
+                "MIX_ARCHIVES",
+                tv.install_path().join(".mix").join("archives"),
+            );
+        }
+        Ok(map)
     }
 }
 

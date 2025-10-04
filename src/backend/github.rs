@@ -45,6 +45,10 @@ impl Backend for UnifiedGitBackend {
             let releases = gitlab::list_releases_from_url(api_url.as_str(), &repo).await?;
             Ok(releases
                 .into_iter()
+                .filter(|r| {
+                    opts.get("version_prefix")
+                        .is_none_or(|p| r.tag_name.starts_with(p))
+                })
                 .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
                 .collect())
@@ -52,6 +56,10 @@ impl Backend for UnifiedGitBackend {
             let releases = github::list_releases_from_url(api_url.as_str(), &repo).await?;
             Ok(releases
                 .into_iter()
+                .filter(|r| {
+                    opts.get("version_prefix")
+                        .is_none_or(|p| r.tag_name.starts_with(p))
+                })
                 .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
                 .collect())
@@ -163,12 +171,12 @@ impl UnifiedGitBackend {
         platform_info.url = Some(asset_url.to_string());
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file_with_headers(asset_url, &file_path, &headers, Some(&ctx.pr))
+        HTTP.download_file_with_headers(asset_url, &file_path, &headers, Some(ctx.pr.as_ref()))
             .await?;
 
         // Verify and install
-        verify_artifact(tv, &file_path, opts, Some(&ctx.pr))?;
-        install_artifact(tv, &file_path, opts, Some(&ctx.pr))?;
+        verify_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
+        install_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
         self.verify_checksum(ctx, tv, &file_path)?;
 
         Ok(())

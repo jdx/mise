@@ -11,11 +11,8 @@ alias = "t"
 depends = ['test:setup-plugins']
 run = "cargo test"
 [tasks."test:setup-plugins"]
-run = [
-  "mkdir -p plugins",
-  "test -d plugins/nodejs || git clone https://github.com/version-fox/vfox-nodejs plugins/nodejs",
-  "test -d plugins/cmake || git clone https://github.com/version-fox/vfox-cmake plugins/cmake",
-]
+# No longer needed - using local test plugins instead
+run = "true"
 [tasks.lint-fix]
 run = "cargo fmt --all && cargo clippy --fix --all --all-features --allow-dirty --allow-staged -- -D warnings"
 [tasks.lint]

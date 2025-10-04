@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: CyberAgent
+    repo_name: reminder-lint
+    description: Code remind tool for any languages and any config files
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: reminder-lint-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        files:
+          - name: reminder-lint
+            src: "{{.AssetWithoutExt}}/reminder-lint"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            files:
+              - name: reminder-lint
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

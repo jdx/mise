@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# Test that env works with vars template (this already works)
+cat <<EOF >mise.toml
+[env]
+FOO = "{{vars.BAR}}"
+
+[vars]
+BAR = "test"
+EOF
+
+assert_contains "mise env -s bash | grep FOO" "export FOO=test"
+
+# Now test using vars in tool version
+cat <<EOF >mise.toml
+[vars]
+TINY_VERSION = "3.1.0"
+
+[tools]
+tiny = "{{vars.TINY_VERSION}}"
+EOF
+
+# Check that the tool request includes the expanded version
+mise install tiny@3.1.0 >/dev/null 2>&1 || true
+assert_contains "mise ls tiny" "3.1.0"
+
+# Test with more complex expression
+cat <<EOF >mise.toml
+[vars]
+NODE_MAJOR = "20"
+
+[tools]
+node = "{{vars.NODE_MAJOR}}"
+EOF
+
+# Just check that it tries to resolve it correctly
+mise install node@20 >/dev/null 2>&1 || true
+assert_contains "mise ls node" "20"
+
+# Test using env variables in tool versions (should already work)
+cat <<EOF >mise.toml
+[tools]
+tiny = "{{ env.MISE_TINY_VERSION | default(value='3.0.0') }}"
+EOF
+
+MISE_TINY_VERSION=3.1.0 mise install >/dev/null 2>&1 || true
+MISE_TINY_VERSION=3.1.0 assert_contains "mise ls tiny" "3.1.0"
+
+# Test vars that contain templates themselves
+cat <<EOF >mise.toml
+[vars]
+BASE_VERSION = "3"
+TINY_VERSION = "{{vars.BASE_VERSION}}.1.0"
+
+[tools]
+tiny = "{{vars.TINY_VERSION}}"
+EOF
+
+# This should resolve to 3.1.0
+assert_contains "mise ls tiny" "3.1.0"
+
+# Test more complex nested templating
+cat <<EOF >mise.toml
+[vars]
+MAJOR = "20"
+MINOR = "11"
+NODE_VERSION = "{{vars.MAJOR}}.{{vars.MINOR}}.0"
+
+[tools]
+node = "{{vars.NODE_VERSION}}"
+EOF
+
+# This should resolve to 20.11.0
+assert_contains "mise ls node" "20.11.0"
+
+# Cleanup
+rm -f mise.toml

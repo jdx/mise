@@ -114,7 +114,15 @@ export default withMermaid(
           text: "Environments",
           items: [
             { text: "Environment Variables", link: "/environments/" },
-            { text: "Secrets", link: "/environments/secrets" },
+            {
+              text: "Secrets",
+              link: "/environments/secrets/",
+              collapsed: true,
+              items: [
+                { text: "sops", link: "/environments/secrets/sops" },
+                { text: "age", link: "/environments/secrets/age" },
+              ],
+            },
             { text: "Hooks", link: "/hooks" },
             { text: "direnv", link: "/direnv" },
           ],

@@ -45,7 +45,7 @@ impl CachePrune {
         }
         let count = results.count;
         let size = bytes_str(results.size);
-        info!("cache pruned {count} files, {size} bytes");
+        info!("cache pruned {count} files, {size}");
         Ok(())
     }
 }

@@ -8,8 +8,9 @@ use crate::toolset::{ToolVersionOptions, install_state, parse_tool_options};
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
-use heck::ToKebabCase;
+use heck::{ToKebabCase, ToShoutySnakeCase};
 use std::collections::HashSet;
+use std::env;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::PathBuf;
@@ -175,6 +176,14 @@ impl BackendArg {
 
     pub fn full(&self) -> String {
         let short = unalias_backend(&self.short);
+
+        // Check for environment variable override first
+        // e.g., MISE_BACKENDS_MYTOOLS='github:myorg/mytools'
+        let env_key = format!("MISE_BACKENDS_{}", short.to_shouty_snake_case());
+        if let Ok(env_value) = env::var(&env_key) {
+            return env_value;
+        }
+
         if config::is_loaded() {
             if let Some(full) = Config::get_()
                 .all_aliases

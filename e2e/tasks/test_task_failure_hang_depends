@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# https://github.com/jdx/mise/discussions/6391
+
+cat <<EOF >mise.toml
+[tasks.clean]
+run = 'echo "Cleaning..."'
+
+[tasks.install]
+wait_for = "clean"
+run = "sleep 1"
+
+[tasks.lint]
+depends = "install"
+run = "exit 1"
+
+[tasks.test]
+depends = "install"
+run = "exit 1"
+
+[tasks."build:docker"]
+depends = "install"
+run = "exit 1"
+
+[tasks.check]
+depends = ["lint", "test", "build:docker"]
+
+[tasks."ci:check"]
+depends = ["clean", "check"] # this variant currently hangs
+
+# this variant now works after initial fix
+# run = [
+#   { task = "clean" },
+#   { task = "check" }
+# ]
+EOF
+
+# Test that task failure with dependencies does not hang
+timeout 5s mise run --jobs 1 ci:check 2>&1 && exit_code=0 || exit_code=$?
+
+# Check if it was a timeout (exit code 124)
+if [ "$exit_code" -eq 124 ]; then
+	echo "FAIL: Task hung after dependency failure (timeout reached)"
+	exit 1
+fi
+
+# The command should fail with exit code 1
+if [ "$exit_code" -ne 1 ]; then
+	echo "Expected exit code 1, got $exit_code"
+	exit 1
+fi
+
+echo "Test passed: task with failing dependency did not hang"

@@ -1,7 +1,6 @@
 ---
 source: src/config/config_file/mise_toml.rs
 expression: cf.env_entries().unwrap()
-snapshot_kind: text
 ---
 [
     Val(
@@ -9,7 +8,8 @@ snapshot_kind: text
         "production",
         EnvDirectiveOptions {
             tools: false,
-            redact: false,
+            redact: None,
+            required: False,
         },
     ),
 ]

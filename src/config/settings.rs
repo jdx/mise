@@ -132,7 +132,7 @@ impl Settings {
 
         settings = sb.load()?;
         if !settings.legacy_version_file {
-            settings.idiomatic_version_file = false;
+            settings.idiomatic_version_file = Some(false);
         }
         if settings.raw {
             settings.jobs = 1;

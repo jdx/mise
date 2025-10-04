@@ -44,10 +44,10 @@ impl PluginsUninstall {
             if plugin.is_installed() {
                 let prefix = format!("plugin:{}", style::eblue(&plugin.name()));
                 let pr = mpr.add(&prefix);
-                plugin.uninstall(&pr).await?;
+                plugin.uninstall(pr.as_ref()).await?;
                 if self.purge {
                     let backend = backend::get(&plugin_name.into()).unwrap();
-                    backend.purge(&pr)?;
+                    backend.purge(pr.as_ref())?;
                 }
                 pr.finish_with_message("uninstalled".into());
             } else {

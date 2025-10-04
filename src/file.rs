@@ -25,7 +25,7 @@ use zip::ZipArchive;
 #[cfg(windows)]
 use crate::config::Settings;
 use crate::ui::progress_report::SingleReport;
-use crate::{dirs, env};
+use crate::{cmd, dirs, env};
 
 pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
     let path = path.as_ref();
@@ -665,11 +665,23 @@ impl TarFormat {
     }
 }
 
-#[derive(Default)]
 pub struct TarOptions<'a> {
     pub format: TarFormat,
     pub strip_components: usize,
-    pub pr: Option<&'a Box<dyn SingleReport>>,
+    pub pr: Option<&'a dyn SingleReport>,
+    /// When false, files will be extracted with current timestamp instead of archive's mtime
+    pub preserve_mtime: bool,
+}
+
+impl<'a> Default for TarOptions<'a> {
+    fn default() -> Self {
+        Self {
+            format: TarFormat::default(),
+            strip_components: 0,
+            pr: None,
+            preserve_mtime: true, // Default to preserving mtime for backward compatibility
+        }
+    }
 }
 
 pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
@@ -731,17 +743,69 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     //     }
     // }
     create_dir_all(dest).wrap_err_with(err)?;
+
+    // Try to extract using the tar crate, detecting sparse files during extraction
+    let mut needs_system_tar = false;
     for entry in Archive::new(tar).entries().wrap_err_with(err)? {
         let mut entry = entry.wrap_err_with(err)?;
+
+        // Check if this is a GNU sparse file
+        if entry.header().entry_type().is_gnu_sparse() {
+            debug!("Detected GNU sparse file, falling back to system tar");
+            needs_system_tar = true;
+            // Clean up any partial extraction
+            remove_all(dest)?;
+            create_dir_all(dest)?;
+            break;
+        }
+
+        // Configure mtime preservation based on options
+        entry.set_preserve_mtime(opts.preserve_mtime);
+
         trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
         entry.unpack_in(dest).wrap_err_with(err)?;
         if let Some(pr) = &opts.pr {
             pr.set_length(entry.raw_file_position());
         }
     }
-    // if let Some(pr) = &opts.pr {
-    //     pr.set_position(total);
-    // }
+
+    // Check for the GNUSparseFile.0 directory which indicates the tar crate
+    // incorrectly handled a sparse file
+    if !needs_system_tar {
+        let sparse_dir = dest.join("GNUSparseFile.0");
+        if sparse_dir.exists() && sparse_dir.is_dir() {
+            debug!("Found GNUSparseFile.0 directory, using system tar");
+            needs_system_tar = true;
+            // Clean up the bad extraction
+            remove_all(dest)?;
+            create_dir_all(dest)?;
+        }
+    }
+
+    if needs_system_tar {
+        // Use system tar for archives with problematic sparse files
+        // The tar crate doesn't properly handle certain GNU sparse formats
+        debug!("Using system tar for: {}", archive.display());
+
+        // When preserve_mtime is false, use -m flag to not restore modification times
+        // This causes extracted files to have current time, which is important for
+        // cache invalidation and autopruning. Works on both BSD and GNU tar.
+        if !opts.preserve_mtime {
+            cmd!("tar", "-mxf", archive, "-C", dest)
+                .run()
+                .wrap_err_with(|| {
+                    format!("Failed to extract {} using system tar", archive.display())
+                })?;
+        } else {
+            cmd!("tar", "-xf", archive, "-C", dest)
+                .run()
+                .wrap_err_with(|| {
+                    format!("Failed to extract {} using system tar", archive.display())
+                })?;
+        }
+    }
+
+    // Always use our manual strip to ensure consistent behavior across backends
     strip_archive_path_components(dest, opts.strip_components).wrap_err_with(err)?;
     Ok(())
 }
@@ -775,22 +839,29 @@ fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
     }
 
     let top_level_paths = ls(dir)?;
-    let entries: Vec<PathBuf> = top_level_paths
-        .iter()
-        .map(|p| ls(p))
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    for entry in entries {
-        let mut new_dir = dir.to_path_buf();
-        new_dir.push(entry.file_name().unwrap());
-        fs::rename(entry, new_dir)?;
-    }
+
     for path in top_level_paths {
-        if path.symlink_metadata()?.is_dir() {
-            remove_dir(path)?;
+        if !path.symlink_metadata()?.is_dir() {
+            continue;
         }
+
+        // rename the directory to a temp name to avoid conflicts when moving files
+        let temp_path = path.with_file_name(format!(
+            "{}_tmp_strip",
+            path.file_name().unwrap().to_string_lossy()
+        ));
+        fs::rename(&path, &temp_path)?;
+
+        for entry in ls(&temp_path)? {
+            if let Some(file_name) = entry.file_name() {
+                let dest_path = dir.join(file_name);
+                fs::rename(entry, dest_path)?;
+            } else {
+                continue;
+            }
+        }
+
+        remove_dir(temp_path)?;
     }
     Ok(())
 }

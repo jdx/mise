@@ -63,7 +63,7 @@ Specifies a custom version prefix for release tags. By default, mise handles the
 
 When `version_prefix` is configured, mise will:
 
-- Strip the prefix when listing available versions
+- Filter available versions with the prefix and strip it
 - Add the prefix when searching for releases
 - Try both prefixed and non-prefixed versions during installation
 

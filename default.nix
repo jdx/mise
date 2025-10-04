@@ -2,7 +2,7 @@
 
 rustPlatform.buildRustPackage {
   pname = "mise";
-  version = "2025.9.15";
+  version = "2025.10.2";
 
   src = lib.cleanSource ./.;
 

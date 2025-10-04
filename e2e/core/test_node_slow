@@ -8,6 +8,9 @@ latest=$(mise latest node)
 echo "v$latest" >.node-version
 echo "zx" >"$MISE_NODE_DEFAULT_PACKAGES_FILE"
 
+# Enable idiomatic version files for node
+mise settings set idiomatic_version_file_enable_tools node
+
 mise i node@lts/hydrogen
 mise i -f node
 assert_contains "mise x node@lts/hydrogen -- node --version" "v18."
@@ -20,7 +23,3 @@ mise ls
 assert "mise x -- node --version" "v20.1.0"
 assert_contains "mise ls-remote nodejs" "20.1.0"
 mise use --rm node
-
-# MISE_LEGACY_VERSION_FILE env var
-assert_contains "MISE_LEGACY_VERSION_FILE=1 mise current node" "$latest"
-assert_not_contains "MISE_LEGACY_VERSION_FILE=0 mise current node" "$latest"

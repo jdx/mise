@@ -1,4 +1,3 @@
-use config_file::ConfigFileType;
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
@@ -14,7 +13,10 @@ use std::time::Duration;
 use tokio::{sync::OnceCell, task::JoinSet};
 use walkdir::WalkDir;
 
+use crate::backend::ABackend;
+use crate::cli::version;
 use crate::config::config_file::idiomatic_version::IdiomaticVersionFile;
+use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, Tasks};
 use crate::config::config_file::{ConfigFile, config_trust_root};
 use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
@@ -26,15 +28,12 @@ use crate::task::Task;
 use crate::toolset::{ToolRequestSet, ToolRequestSetBuilder, ToolVersion, Toolset, install_state};
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
-use crate::{backend::ABackend, cli::version::VERSION};
-use crate::{backend::Backend, cli::version};
 
 pub mod config_file;
 pub mod env_directive;
 pub mod settings;
 pub mod tracking;
 
-use crate::cli::self_update::SelfUpdate;
 use crate::env_diff::EnvMap;
 use crate::hook_env::WatchFilePattern;
 use crate::hooks::Hook;
@@ -62,6 +61,8 @@ pub struct Config {
     tasks: OnceCell<BTreeMap<String, Task>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
+    vars_loader: Option<Arc<Config>>,
+    vars_results: OnceCell<EnvResults>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -83,6 +84,9 @@ impl Config {
             return Ok(config.clone());
         }
         measure!("load config", { Self::load().await })
+    }
+    pub fn maybe_get() -> Option<Arc<Self>> {
+        _CONFIG.read().unwrap().as_ref().cloned()
     }
     pub fn get_() -> Arc<Self> {
         (*_CONFIG.read().unwrap()).clone().unwrap()
@@ -121,9 +125,6 @@ impl Config {
         let config_files = measure!("config::load config_files", {
             load_all_config_files(&config_paths, &idiomatic_files).await?
         });
-        measure!("config::load warn_about_idiomatic_version_files", {
-            warn_about_idiomatic_version_files(&config_files);
-        });
 
         let mut config = Self {
             tera_ctx: BASE_CONTEXT.clone(),
@@ -140,6 +141,8 @@ impl Config {
             project_root: Default::default(),
             repo_urls: Default::default(),
             vars: Default::default(),
+            vars_loader: None,
+            vars_results: OnceCell::new(),
         };
         let vars_config = Arc::new(Self {
             tera_ctx: config.tera_ctx.clone(),
@@ -156,9 +159,15 @@ impl Config {
             project_root: config.project_root.clone(),
             repo_urls: config.repo_urls.clone(),
             vars: config.vars.clone(),
+            vars_loader: None,
+            vars_results: OnceCell::new(),
         });
         let vars_results = measure!("config::load vars_results", {
-            load_vars(&vars_config).await?
+            let results = load_vars(&vars_config).await?;
+            vars_config.vars_results.set(results.clone()).ok();
+            config.vars_results.set(results.clone()).ok();
+            config.vars_loader = Some(vars_config.clone());
+            results
         });
         let vars: IndexMap<String, String> = vars_results
             .vars
@@ -262,6 +271,21 @@ impl Config {
         self.env
             .get_or_try_init(|| async { self.load_env().await })
             .await
+    }
+
+    pub async fn vars_results(self: &Arc<Self>) -> Result<&EnvResults> {
+        if let Some(loader) = &self.vars_loader {
+            if let Some(results) = loader.vars_results.get() {
+                return Ok(results);
+            }
+        }
+        self.vars_results
+            .get_or_try_init(|| async move { load_vars(self).await })
+            .await
+    }
+
+    pub fn vars_results_cached(&self) -> Option<&EnvResults> {
+        self.vars_results.get()
     }
     pub async fn path_dirs(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results().await?.env_paths)
@@ -415,20 +439,18 @@ impl Config {
         Ok(tasks)
     }
 
-    pub fn get_tracked_config_files(&self) -> Result<ConfigMap> {
-        let config_files = Tracker::list_all()?
-            .into_iter()
-            .map(|path| match config_file::parse(&path) {
-                Ok(cf) => Some((path, cf)),
-                Err(err) => {
-                    error!("Error loading config file: {:#}", err);
-                    None
+    pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
+        let mut config_files: ConfigMap = ConfigMap::default();
+        for path in Tracker::list_all()?.into_iter() {
+            match config_file::parse(&path).await {
+                Ok(cf) => {
+                    config_files.insert(path, cf);
                 }
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flatten()
-            .collect();
+                Err(err) => {
+                    error!("Error loading config file: {:?}", err);
+                }
+            }
+        }
         Ok(config_files)
     }
 
@@ -445,22 +467,36 @@ impl Config {
     }
 
     fn validate(&self) -> eyre::Result<()> {
+        self.validate_versions()?;
+        Ok(())
+    }
+
+    fn validate_versions(&self) -> eyre::Result<()> {
         for cf in self.config_files.values() {
-            if let Some(min) = cf.min_version() {
-                let cur = &*version::V;
-                if cur < min {
-                    let min = style::eyellow(min);
-                    let cur = style::eyellow(cur);
-                    if SelfUpdate::is_available() {
-                        bail!(
-                            "mise version {min} is required, but you are using {cur}\n\
-                            Run `mise self-update` to update mise",
-                        );
-                    } else {
-                        bail!("mise version {min} is required, but you are using {cur}");
-                    }
-                }
+            if let Some(spec) = cf.min_version() {
+                Self::enforce_min_version_spec(spec)?;
             }
+        }
+        Ok(())
+    }
+
+    pub fn enforce_min_version_spec(spec: &MinVersionSpec) -> eyre::Result<()> {
+        let cur = &*version::V;
+        if let Some(required) = spec.hard_violation(cur) {
+            let min = style::eyellow(required);
+            let cur = style::eyellow(cur);
+            let msg = format!("mise version {min} is required, but you are using {cur}");
+            bail!(crate::cli::self_update::append_self_update_instructions(
+                msg
+            ));
+        } else if let Some(recommended) = spec.soft_violation(cur) {
+            let min = style::eyellow(recommended);
+            let cur = style::eyellow(cur);
+            let msg = format!("mise version {min} is recommended, but you are using {cur}");
+            warn!(
+                "{}",
+                crate::cli::self_update::append_self_update_instructions(msg)
+            );
         }
         Ok(())
     }
@@ -488,6 +524,7 @@ impl Config {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::NonToolsOnly,
+                warn_on_missing_required: *env::WARN_ON_MISSING_REQUIRED_ENV,
             },
         )
         .await?;
@@ -662,7 +699,8 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
 }
 
 async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
-    if !Settings::get().idiomatic_version_file {
+    let enable_tools = Settings::get().idiomatic_version_file_enable_tools.clone();
+    if enable_tools.is_empty() {
         return BTreeMap::new();
     }
     if !Settings::get()
@@ -675,26 +713,13 @@ async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
         );
     }
     let mut jset = JoinSet::new();
-    let tool_is_enabled = |tool: &dyn Backend| {
-        if let Some(enable_tools) = &Settings::get().idiomatic_version_file_enable_tools {
-            enable_tools.contains(tool.id())
-        } else if !Settings::get()
-            .idiomatic_version_file_disable_tools
-            .is_empty()
-        {
-            !Settings::get()
-                .idiomatic_version_file_disable_tools
-                .contains(tool.id())
-        } else {
-            true
-        }
-    };
     for tool in backend::list() {
+        let enable_tools = enable_tools.clone();
         jset.spawn(async move {
-            if !tool_is_enabled(&*tool) {
+            if !enable_tools.contains(tool.id()) {
                 return vec![];
             }
-            match tool.idiomatic_filenames() {
+            match tool.idiomatic_filenames().await {
                 Ok(filenames) => filenames
                     .iter()
                     .map(|f| (f.to_string(), tool.id().to_string()))
@@ -1005,43 +1030,106 @@ pub fn local_toml_config_path() -> PathBuf {
         })
 }
 
+/// Options for resolving target config file path
+#[derive(Debug, Default)]
+pub struct ConfigPathOptions {
+    pub global: bool,
+    pub path: Option<PathBuf>,
+    pub env: Option<String>,
+    pub cwd: Option<PathBuf>,
+    pub prefer_toml: bool,
+    pub prevent_home_local: bool,
+}
+
+/// Unified config file path resolution for both `mise use` and `mise set`
+///
+/// This function centralizes the logic for determining which config file to target
+/// based on various options, ensuring consistent behavior between commands.
+pub fn resolve_target_config_path(opts: ConfigPathOptions) -> Result<PathBuf> {
+    let cwd = match opts.cwd {
+        Some(ref path) => path.clone(),
+        None => env::current_dir()?,
+    };
+
+    // If path is provided, handle it (file or directory) - explicit paths take precedence
+    if let Some(ref path) = opts.path {
+        if path.is_file() {
+            return Ok(path.clone());
+        } else if path.is_dir() {
+            let resolved = config_file_from_dir(path);
+            if opts.prefer_toml && !resolved.to_string_lossy().ends_with(".toml") {
+                // For TOML-only commands, ensure we get a TOML file in the specified directory
+                return Ok(path.join(&*env::MISE_DEFAULT_CONFIG_FILENAME));
+            }
+            return Ok(resolved);
+        } else {
+            // Path doesn't exist yet, return it as-is
+            return Ok(path.clone());
+        }
+    }
+
+    // If global flag is set and no explicit path provided, use global config
+    if opts.global {
+        return Ok(global_config_path());
+    }
+
+    // If env-specific config is requested
+    if let Some(ref env_name) = opts.env {
+        let dotfile_path = cwd.join(format!(".mise.{}.toml", env_name));
+        if dotfile_path.exists() {
+            return Ok(dotfile_path);
+        } else {
+            return Ok(cwd.join(format!("mise.{}.toml", env_name)));
+        }
+    }
+
+    // If we're in HOME directory and prevent_home_local is true, use global config
+    if opts.prevent_home_local && env::in_home_dir() {
+        return Ok(global_config_path());
+    }
+
+    // Default: determine based on current directory
+    if opts.prefer_toml {
+        // For mise set, prefer TOML and use local_toml_config_path logic
+        Ok(local_toml_config_path())
+    } else {
+        // For mise use, use existing config_file_from_dir logic which respects ASDF compat
+        Ok(config_file_from_dir(&cwd))
+    }
+}
+
 async fn load_all_config_files(
     config_filenames: &[PathBuf],
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<ConfigMap> {
     backend::load_tools().await?;
-    Ok(config_filenames
-        .iter()
-        .unique()
-        .map(|f| {
-            if f.is_dir() {
-                return Ok(None);
-            }
-            let cf = match parse_config_file(f, idiomatic_filenames) {
-                Ok(cfg) => cfg,
-                Err(err) => {
-                    if err.to_string().contains("are not trusted.") {
-                        warn!("{err}");
-                        return Ok(None);
-                    }
-                    return Err(err.wrap_err(format!(
-                        "error parsing config file: {}",
-                        style::ebold(display_path(f))
-                    )));
+    let mut config_map = ConfigMap::default();
+    for f in config_filenames.iter().unique() {
+        if f.is_dir() {
+            continue;
+        }
+        let cf = match parse_config_file(f, idiomatic_filenames).await {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                if err.to_string().contains("are not trusted.") {
+                    warn!("{err}");
+                    continue;
                 }
-            };
-            if let Err(err) = Tracker::track(f) {
-                warn!("tracking config: {err:#}");
+                return Err(err.wrap_err(format!(
+                    "error parsing config file: {}",
+                    style::ebold(display_path(f))
+                )));
             }
-            Ok(Some((f.clone(), cf)))
-        })
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect())
+        };
+        if let Err(err) = Tracker::track(f) {
+            warn!("tracking config: {err:#}");
+        }
+        config_map.insert(f.clone(), cf);
+    }
+    Ok(config_map)
 }
 
-fn parse_config_file(
+async fn parse_config_file(
     f: &PathBuf,
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<Arc<dyn ConfigFile>> {
@@ -1052,9 +1140,11 @@ fn parse_config_file(
                 .into_iter()
                 .filter(|f| plugin.contains(&f.to_string()))
                 .collect::<Vec<_>>();
-            IdiomaticVersionFile::parse(f.into(), tools).map(|f| Arc::new(f) as Arc<dyn ConfigFile>)
+            IdiomaticVersionFile::parse(f.into(), tools)
+                .await
+                .map(|f| Arc::new(f) as Arc<dyn ConfigFile>)
         }
-        None => config_file::parse(f),
+        None => config_file::parse(f).await,
     }
 }
 
@@ -1110,6 +1200,7 @@ async fn load_vars(config: &Arc<Config>) -> Result<EnvResults> {
         EnvResolveOptions {
             vars: true,
             tools: ToolsFilter::NonToolsOnly,
+            warn_on_missing_required: false,
         },
     )
     .await?;
@@ -1193,47 +1284,6 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     });
 
     Ok(())
-}
-
-fn warn_about_idiomatic_version_files(config_files: &ConfigMap) {
-    if Settings::get()
-        .idiomatic_version_file_enable_tools
-        .as_ref()
-        .is_some()
-    {
-        return;
-    }
-    debug_assert!(
-        !VERSION.starts_with("2025.10"),
-        "default idiomatic version files to disabled"
-    );
-    let Some((p, tool)) = config_files
-        .iter()
-        .filter(|(_, cf)| cf.config_type() == ConfigFileType::IdiomaticVersion)
-        .filter_map(|(p, cf)| cf.to_tool_request_set().ok().map(|ts| (p, ts.tools)))
-        .filter_map(|(p, tools)| tools.first().map(|(ba, _)| (p, ba.to_string())))
-        .next()
-    else {
-        return;
-    };
-    deprecated!(
-        "idiomatic_version_file_enable_tools",
-        r#"
-Idiomatic version files like {} are currently enabled by default. However, this will change in mise 2025.10.0 to instead default to disabled.
-
-You can remove this warning by explicitly enabling idiomatic version files for {} with:
-
-    mise settings add idiomatic_version_file_enable_tools {}
-
-You can disable idiomatic version files with:
-
-    mise settings add idiomatic_version_file_enable_tools "[]"
-
-See https://github.com/jdx/mise/discussions/4345 for more information."#,
-        display_path(p),
-        tool,
-        tool
-    );
 }
 
 async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {

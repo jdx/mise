@@ -119,7 +119,7 @@ impl Backend for GoBackend {
             }
 
             cmd.arg(format!("{}@{v}", self.tool_name()))
-                .with_pr(&ctx.pr)
+                .with_pr(ctx.pr.as_ref())
                 .envs(self.dependency_env(&ctx.config).await?)
                 .env("GOBIN", tv.install_path().join("bin"))
                 .execute()

@@ -365,7 +365,7 @@ impl AquaBackend {
             return Ok(());
         }
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(url, &tarball_path, Some(&ctx.pr))
+        HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))
             .await?;
         Ok(())
     }
@@ -398,7 +398,7 @@ impl AquaBackend {
                         AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
                     };
                     let checksum_path = download_path.join(format!("{filename}.checksum"));
-                    HTTP.download_file(&url, &checksum_path, Some(&ctx.pr))
+                    HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
                         .await?;
                     self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
                         .await?;
@@ -500,7 +500,8 @@ impl AquaBackend {
                         .map(|a| a.browser_download_url);
                     if let Some(url) = url {
                         let path = tv.download_path().join(asset);
-                        HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                            .await?;
                         path
                     } else {
                         warn!("no asset found for minisign of {tv}: {asset}");
@@ -510,7 +511,8 @@ impl AquaBackend {
                 AquaMinisignType::Http => {
                     let url = minisign.url(pkg, v, os(), arch())?;
                     let path = tv.download_path().join(filename).with_extension(".minisig");
-                    HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                    HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                        .await?;
                     path
                 }
             };
@@ -591,7 +593,8 @@ impl AquaBackend {
                         .map(|a| a.browser_download_url);
                     if let Some(url) = url {
                         let path = tv.download_path().join(asset);
-                        HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                            .await?;
                         path
                     } else {
                         warn!("no asset found for slsa verification of {tv}: {asset}");
@@ -603,7 +606,8 @@ impl AquaBackend {
                     let provenance_filename =
                         url.split('/').next_back().unwrap_or("provenance.json");
                     let path = tv.download_path().join(provenance_filename);
-                    HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                    HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                        .await?;
                     path
                 }
                 t => {
@@ -670,57 +674,51 @@ impl AquaBackend {
             return Ok(());
         }
 
-        // Check if this package expects attestations
-        let expects_attestations = pkg.github_artifact_attestations.is_some();
+        if let Some(github_attestations) = &pkg.github_artifact_attestations {
+            if github_attestations.enabled == Some(false) {
+                debug!("GitHub attestations verification is disabled for {tv}");
+                return Ok(());
+            }
 
-        if expects_attestations {
             ctx.pr.set_message("verify GitHub attestations".to_string());
-        }
 
-        let artifact_path = tv.download_path().join(filename);
+            let artifact_path = tv.download_path().join(filename);
 
-        // Use our new attestation verification library
-        let token = env::GITHUB_TOKEN.as_ref().cloned();
+            // Get expected workflow from registry
+            let signer_workflow = pkg
+                .github_artifact_attestations
+                .as_ref()
+                .and_then(|att| att.signer_workflow.clone());
 
-        // Get expected workflow from registry
-        let signer_workflow = pkg
-            .github_artifact_attestations
-            .as_ref()
-            .and_then(|att| att.signer_workflow.clone());
-
-        match sigstore_verification::verify_github_attestation(
-            &artifact_path,
-            &pkg.repo_owner,
-            &pkg.repo_name,
-            token.as_deref(),
-            signer_workflow.as_deref(),
-        )
-        .await
-        {
-            Ok(true) => {
-                ctx.pr
-                    .set_message("✓ GitHub attestations verified".to_string());
-                debug!("GitHub attestations verified successfully for {tv}");
-            }
-            Ok(false) => {
-                return Err(eyre!(
-                    "GitHub attestations verification returned false for {tv}"
-                ));
-            }
-            Err(sigstore_verification::AttestationError::NoAttestations) => {
-                if expects_attestations {
-                    // Package is configured to have attestations but none were found
+            match sigstore_verification::verify_github_attestation(
+                &artifact_path,
+                &pkg.repo_owner,
+                &pkg.repo_name,
+                env::GITHUB_TOKEN.as_deref(),
+                signer_workflow.as_deref(),
+            )
+            .await
+            {
+                Ok(true) => {
+                    ctx.pr
+                        .set_message("✓ GitHub attestations verified".to_string());
+                    debug!("GitHub attestations verified successfully for {tv}");
+                }
+                Ok(false) => {
+                    return Err(eyre!(
+                        "GitHub attestations verification returned false for {tv}"
+                    ));
+                }
+                Err(sigstore_verification::AttestationError::NoAttestations) => {
                     return Err(eyre!(
                         "No GitHub attestations found for {tv}, but attestations are expected per aqua registry configuration"
                     ));
-                } else {
-                    debug!("No GitHub attestations found for {tv}");
                 }
-            }
-            Err(e) => {
-                return Err(eyre!(
-                    "GitHub attestations verification failed for {tv}: {e}"
-                ));
+                Err(e) => {
+                    return Err(eyre!(
+                        "GitHub attestations verification failed for {tv}: {e}"
+                    ));
+                }
             }
         }
 
@@ -757,7 +755,7 @@ impl AquaBackend {
                     let key_path = if key_arg.starts_with("http") {
                         let key_filename = key_arg.split('/').next_back().unwrap_or("cosign.pub");
                         let key_path = download_path.join(key_filename);
-                        HTTP.download_file(&key_arg, &key_path, Some(&ctx.pr))
+                        HTTP.download_file(&key_arg, &key_path, Some(ctx.pr.as_ref()))
                             .await?;
                         key_path
                     } else {
@@ -772,7 +770,7 @@ impl AquaBackend {
                                 let sig_filename =
                                     sig_arg.split('/').next_back().unwrap_or("checksum.sig");
                                 let sig_path = download_path.join(sig_filename);
-                                HTTP.download_file(&sig_arg, &sig_path, Some(&ctx.pr))
+                                HTTP.download_file(&sig_arg, &sig_path, Some(ctx.pr.as_ref()))
                                     .await?;
                                 sig_path
                             } else {
@@ -815,7 +813,7 @@ impl AquaBackend {
                     let bundle_path = if bundle_arg.starts_with("http") {
                         let filename = bundle_arg.split('/').next_back().unwrap_or("bundle.json");
                         let bundle_path = download_path.join(filename);
-                        HTTP.download_file(&bundle_arg, &bundle_path, Some(&ctx.pr))
+                        HTTP.download_file(&bundle_arg, &bundle_path, Some(ctx.pr.as_ref()))
                             .await?;
                         bundle_path
                     } else {
@@ -839,32 +837,6 @@ impl AquaBackend {
                         }
                         Err(e) => {
                             return Err(eyre!("Cosign bundle verification error for {tv}: {e}"));
-                        }
-                    }
-                }
-            } else if cosign.experimental == Some(true) {
-                // Keyless verification with experimental mode
-                // This would need to download the signature/bundle from a default location
-                let sig_or_bundle_path = checksum_path.with_extension("bundle");
-                if sig_or_bundle_path.exists() {
-                    match sigstore_verification::verify_cosign_signature(
-                        checksum_path,
-                        &sig_or_bundle_path,
-                    )
-                    .await
-                    {
-                        Ok(true) => {
-                            ctx.pr.set_message(
-                                "✓ Cosign keyless verification successful".to_string(),
-                            );
-                            debug!("Cosign keyless verification successful for {tv}");
-                        }
-                        Ok(false) => {
-                            return Err(eyre!("Cosign keyless verification failed for {tv}"));
-                        }
-                        Err(e) => {
-                            // If keyless fails, it might not have the bundle, which is OK
-                            debug!("Cosign keyless verification not available for {tv}: {e}");
                         }
                     }
                 }
@@ -922,8 +894,9 @@ impl AquaBackend {
             .expect("at least one bin path should exist");
         let mut tar_opts = TarOptions {
             format: format.parse().unwrap_or_default(),
-            pr: Some(&ctx.pr),
+            pr: Some(ctx.pr.as_ref()),
             strip_components: 0,
+            ..Default::default()
         };
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {

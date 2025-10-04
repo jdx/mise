@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# Test basic age encryption with x25519 key
+export MISE_EXPERIMENTAL=true
+rm -f mise.toml age.txt
+
+# Generate test age key
+mise x age -- age-keygen -o age.txt 2>/dev/null
+AGE_PUBLIC_KEY=$(grep "# public key:" age.txt | cut -d: -f2 | tr -d ' ')
+AGE_SECRET_KEY=$(grep "AGE-SECRET-KEY-" age.txt)
+
+# Test encrypting a small value (should not compress, uses simplified TOML format)
+MISE_EXPERIMENTAL=true mise set SMALL_SECRET="my-secret-value" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
+assert_contains "cat mise.toml" 'SMALL_SECRET = { age = "'
+assert_not_contains "cat mise.toml" 'format ='
+
+# Test decrypting the value with mise set
+RESULT=$(MISE_EXPERIMENTAL=true MISE_AGE_KEY="$AGE_SECRET_KEY" mise set SMALL_SECRET)
+assert "echo $RESULT" "my-secret-value"
+
+# Test decrypting in env resolution with mise env
+assert_contains "MISE_EXPERIMENTAL=true MISE_AGE_KEY=\"$AGE_SECRET_KEY\" mise env -s bash | grep SMALL_SECRET" "export SMALL_SECRET=my-secret-value"
+
+# Test mise env shows decrypted value in list format
+ENV_OUTPUT=$(MISE_EXPERIMENTAL=true MISE_AGE_KEY="$AGE_SECRET_KEY" mise env)
+assert_contains "echo '$ENV_OUTPUT'" "SMALL_SECRET=my-secret-value"
+
+# Test encrypting a large value (should compress, uses complex TOML format)
+LARGE_VALUE=$(python3 -c 'print("x" * 2000)')
+MISE_EXPERIMENTAL=true mise set LARGE_SECRET="$LARGE_VALUE" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
+assert_contains "cat mise.toml" 'LARGE_SECRET = { age = { value ='
+assert_contains "cat mise.toml" 'format = "zstd"'
+
+# Test decrypting the large value with mise set
+RESULT=$(MISE_EXPERIMENTAL=true MISE_AGE_KEY="$AGE_SECRET_KEY" mise set LARGE_SECRET | head -c 10)
+assert "echo $RESULT" "xxxxxxxxxx"
+
+# Test large value decryption in mise env
+assert_contains "MISE_EXPERIMENTAL=true MISE_AGE_KEY=\"$AGE_SECRET_KEY\" mise env -s bash | grep LARGE_SECRET" "export LARGE_SECRET=$LARGE_VALUE"
+
+# Test mise env with multiple encrypted variables
+MISE_EXPERIMENTAL=true mise set ANOTHER_SECRET="another-value" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
+ENV_BASH=$(MISE_EXPERIMENTAL=true MISE_AGE_KEY="$AGE_SECRET_KEY" mise env -s bash)
+assert_contains "echo '$ENV_BASH'" "export SMALL_SECRET=my-secret-value"
+assert_contains "echo '$ENV_BASH'" "export ANOTHER_SECRET=another-value"
+
+# Test with multiple recipients
+rm -f age2.txt
+# Temporarily move mise.toml to avoid decryption errors when running mise x
+mv mise.toml mise.toml.tmp
+mise x age -- age-keygen -o age2.txt 2>/dev/null
+mv mise.toml.tmp mise.toml
+if [ ! -f age2.txt ]; then
+	echo "age2.txt not found after generation"
+	exit 1
+fi
+AGE_PUBLIC_KEY2=$(grep "# public key:" age2.txt | cut -d: -f2 | tr -d ' ')
+AGE_SECRET_KEY2=$(grep "AGE-SECRET-KEY-" age2.txt)
+
+MISE_EXPERIMENTAL=true mise set MULTI_SECRET="multi-recipient-secret" --age-encrypt \
+	--age-recipient "$AGE_PUBLIC_KEY" \
+	--age-recipient "$AGE_PUBLIC_KEY2"
+
+# Both keys should be able to decrypt via mise set
+RESULT=$(MISE_EXPERIMENTAL=true MISE_AGE_KEY="$AGE_SECRET_KEY" mise set MULTI_SECRET)
+assert "echo $RESULT" "multi-recipient-secret"
+
+RESULT=$(MISE_EXPERIMENTAL=true MISE_AGE_KEY="$AGE_SECRET_KEY2" mise set MULTI_SECRET)
+assert "echo $RESULT" "multi-recipient-secret"
+
+# Both keys should be able to decrypt via mise env
+assert_contains "MISE_EXPERIMENTAL=true MISE_AGE_KEY=\"$AGE_SECRET_KEY\" mise env | grep MULTI_SECRET" "MULTI_SECRET=multi-recipient-secret"
+
+# Test second key with clean environment (only multi-recipient variable)
+rm -f mise.toml
+MISE_EXPERIMENTAL=true mise set MULTI_SECRET="multi-recipient-secret" --age-encrypt \
+	--age-recipient "$AGE_PUBLIC_KEY" \
+	--age-recipient "$AGE_PUBLIC_KEY2"
+assert_contains "MISE_EXPERIMENTAL=true MISE_AGE_KEY=\"$AGE_SECRET_KEY2\" mise env | grep MULTI_SECRET" "MULTI_SECRET=multi-recipient-secret"
+
+# Test with age key file
+cat <<EOF >~/.config/mise/age.txt
+$AGE_SECRET_KEY
+EOF
+
+MISE_EXPERIMENTAL=true mise set KEY_FILE_SECRET="key-file-secret" --age-encrypt --age-key-file age.txt
+RESULT=$(MISE_EXPERIMENTAL=true mise set KEY_FILE_SECRET)
+assert "echo $RESULT" "key-file-secret"
+
+# Test key file decryption in mise env
+assert_contains "MISE_EXPERIMENTAL=true mise env | grep KEY_FILE_SECRET" "KEY_FILE_SECRET=key-file-secret"
+
+# Test SSH recipient (if SSH key exists)
+if [ -f ~/.ssh/id_ed25519.pub ]; then
+	MISE_EXPERIMENTAL=true mise set SSH_SECRET="ssh-encrypted-secret" --age-encrypt --age-ssh-recipient ~/.ssh/id_ed25519.pub
+
+	# Decrypt with SSH key via mise set
+	if command -v age >/dev/null 2>&1; then
+		# Only test if age CLI is available
+		RESULT=$(MISE_EXPERIMENTAL=true mise set SSH_SECRET)
+		assert_contains "echo $RESULT" "ssh-encrypted-secret"
+
+		# Test SSH key decryption in mise env
+		assert_contains "MISE_EXPERIMENTAL=true mise env | grep SSH_SECRET" "SSH_SECRET=ssh-encrypted-secret"
+	fi
+fi
+
+# Test default recipient behavior (uses age.txt if available)
+rm -f mise.toml
+cat <<EOF >~/.config/mise/age.txt
+$AGE_SECRET_KEY
+EOF
+
+# Should work with defaults when age.txt exists
+MISE_EXPERIMENTAL=true mise set DEFAULT_SECRET="uses-default-key" --age-encrypt
+RESULT=$(MISE_EXPERIMENTAL=true mise set DEFAULT_SECRET)
+assert "echo $RESULT" "uses-default-key"
+
+# Test default key decryption in mise env
+assert_contains "MISE_EXPERIMENTAL=true mise env | grep DEFAULT_SECRET" "DEFAULT_SECRET=uses-default-key"
+
+# Test error cases
+
+# Invalid recipient
+assert_fail "MISE_EXPERIMENTAL=true mise set INVALID=value --age-encrypt --age-recipient invalid-key"
+
+# No recipients available (remove defaults)
+rm -f ~/.config/mise/age.txt
+assert_fail "MISE_EXPERIMENTAL=true mise set NO_RECIPIENT=value --age-encrypt"
+
+# Decryption without key (strict mode should fail)
+rm -f ~/.config/mise/age.txt # Remove default key
+MISE_EXPERIMENTAL=true mise set ENCRYPTED_VALUE="encrypted" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
+# In strict mode, should fail when no key is available
+assert_fail "MISE_EXPERIMENTAL=true mise set ENCRYPTED_VALUE"
+
+# Test that mise env also fails when no key available (with encrypted values present)
+assert_fail "MISE_EXPERIMENTAL=true mise env"
+
+# Test mixed encrypted and plain values in mise env
+rm -f mise.toml
+cat <<EOF >~/.config/mise/age.txt
+$AGE_SECRET_KEY
+EOF
+
+MISE_EXPERIMENTAL=true mise set PLAIN_VAR="plain-value"
+MISE_EXPERIMENTAL=true mise set ENCRYPTED_VAR="encrypted-value" --age-encrypt --age-recipient "$AGE_PUBLIC_KEY"
+
+# Test mise env shows both correctly
+ENV_ALL=$(MISE_EXPERIMENTAL=true mise env)
+assert_contains "echo '$ENV_ALL'" "PLAIN_VAR=plain-value"
+assert_contains "echo '$ENV_ALL'" "ENCRYPTED_VAR=encrypted-value"
+
+# Test shell-specific output formats
+ENV_BASH=$(MISE_EXPERIMENTAL=true mise env -s bash)
+assert_contains "echo '$ENV_BASH'" "export PLAIN_VAR=plain-value"
+assert_contains "echo '$ENV_BASH'" "export ENCRYPTED_VAR=encrypted-value"
+
+ENV_FISH=$(MISE_EXPERIMENTAL=true mise env -s fish)
+assert_contains "echo '$ENV_FISH'" "set -gx PLAIN_VAR plain-value"
+assert_contains "echo '$ENV_FISH'" "set -gx ENCRYPTED_VAR encrypted-value"
+
+# Test --prompt flag with age encryption
+rm -f mise.toml
+cat <<EOF >~/.config/mise/age.txt
+$AGE_SECRET_KEY
+EOF
+
+# Test that --prompt works even when variable doesn't exist yet
+# This simulates: mise set --age-encrypt PROMPT_SECRET --prompt
+# User would enter "prompt-value" when prompted
+echo "prompt-value" | MISE_EXPERIMENTAL=true mise set --age-encrypt PROMPT_SECRET --prompt
+RESULT=$(MISE_EXPERIMENTAL=true mise set PROMPT_SECRET)
+assert "echo $RESULT" "prompt-value"
+
+# Verify it's actually encrypted in the file
+assert_contains "cat mise.toml" 'PROMPT_SECRET = { age = "'
+
+# Test that --prompt works even when variable already exists
+# This should re-prompt and overwrite
+echo "new-prompt-value" | MISE_EXPERIMENTAL=true mise set --age-encrypt PROMPT_SECRET --prompt
+RESULT=$(MISE_EXPERIMENTAL=true mise set PROMPT_SECRET)
+assert "echo $RESULT" "new-prompt-value"
+
+# Clean up
+rm -f mise.toml age.txt age2.txt ~/.config/mise/age.txt

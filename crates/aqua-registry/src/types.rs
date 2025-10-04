@@ -114,7 +114,6 @@ pub struct AquaCosignSignature {
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaCosign {
     pub enabled: Option<bool>,
-    pub experimental: Option<bool>,
     pub signature: Option<AquaCosignSignature>,
     pub key: Option<AquaCosignSignature>,
     pub certificate: Option<AquaCosignSignature>,
@@ -151,6 +150,7 @@ pub struct AquaMinisign {
 /// GitHub artifact attestations configuration
 #[derive(Debug, Deserialize, Clone)]
 pub struct AquaGithubArtifactAttestations {
+    pub enabled: Option<bool>,
     pub signer_workflow: Option<String>,
 }
 
@@ -565,9 +565,14 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     }
 
     if let Some(avo_checksum) = avo.checksum.clone() {
-        let mut checksum = orig.checksum.unwrap_or_else(|| avo_checksum.clone());
-        checksum.merge(avo_checksum);
-        orig.checksum = Some(checksum);
+        match &mut orig.checksum {
+            Some(checksum) => {
+                checksum.merge(avo_checksum.clone());
+            }
+            None => {
+                orig.checksum = Some(avo_checksum.clone());
+            }
+        }
     }
 
     if let Some(avo_cosign) = avo.cosign.clone() {
@@ -582,21 +587,36 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
     }
 
     if let Some(avo_slsa_provenance) = avo.slsa_provenance.clone() {
-        let mut slsa_provenance = orig
-            .slsa_provenance
-            .unwrap_or_else(|| avo_slsa_provenance.clone());
-        slsa_provenance.merge(avo_slsa_provenance);
-        orig.slsa_provenance = Some(slsa_provenance);
+        match &mut orig.slsa_provenance {
+            Some(slsa_provenance) => {
+                slsa_provenance.merge(avo_slsa_provenance.clone());
+            }
+            None => {
+                orig.slsa_provenance = Some(avo_slsa_provenance.clone());
+            }
+        }
     }
 
     if let Some(avo_minisign) = avo.minisign.clone() {
-        let mut minisign = orig.minisign.unwrap_or_else(|| avo_minisign.clone());
-        minisign.merge(avo_minisign);
-        orig.minisign = Some(minisign);
+        match &mut orig.minisign {
+            Some(minisign) => {
+                minisign.merge(avo_minisign.clone());
+            }
+            None => {
+                orig.minisign = Some(avo_minisign.clone());
+            }
+        }
     }
 
     if let Some(avo_attestations) = avo.github_artifact_attestations.clone() {
-        orig.github_artifact_attestations = Some(avo_attestations);
+        match &mut orig.github_artifact_attestations {
+            Some(orig_attestations) => {
+                orig_attestations.merge(avo_attestations.clone());
+            }
+            None => {
+                orig.github_artifact_attestations = Some(avo_attestations.clone());
+            }
+        }
     }
 
     if avo.no_asset {
@@ -700,9 +720,6 @@ impl AquaCosign {
     fn merge(&mut self, other: Self) {
         if let Some(enabled) = other.enabled {
             self.enabled = Some(enabled);
-        }
-        if let Some(experimental) = other.experimental {
-            self.experimental = Some(experimental);
         }
         if let Some(signature) = other.signature.clone() {
             if self.signature.is_none() {
@@ -890,6 +907,17 @@ impl AquaMinisign {
         }
         if let Some(public_key) = other.public_key {
             self.public_key = Some(public_key);
+        }
+    }
+}
+
+impl AquaGithubArtifactAttestations {
+    fn merge(&mut self, other: Self) {
+        if let Some(enabled) = other.enabled {
+            self.enabled = Some(enabled);
+        }
+        if let Some(signer_workflow) = other.signer_workflow {
+            self.signer_workflow = Some(signer_workflow);
         }
     }
 }

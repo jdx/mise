@@ -27,30 +27,25 @@ size = 4758557
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"
 
 [[tools.bun]]
-version = "1.2.22"
+version = "1.2.23"
 backend = "core:bun"
 
 [tools.bun.platforms.linux-x64]
-checksum = "blake3:bf32acffd6e77803ba760caf8d2909389da01c95613b81fe155fe87e2a8f8004"
-size = 39256266
+checksum = "blake3:b8ea90017983cdbac0ef8f7292d91554f70c6986b73d656c213eabc19d68b9af"
+size = 39383658
 
 [tools.bun.platforms.macos-arm64]
-checksum = "blake3:ec41528ae2badd9c5d41cefe2c463a307c46d9b5f0ccf157d6f406890340833e"
-size = 22178114
+checksum = "blake3:621c047bdd068c4972bf7b222a2e112908cd40b53256b690ec0921ea98676756"
+size = 22280328
 
 [[tools.cargo-binstall]]
-version = "1.15.5"
+version = "1.15.6"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "blake3:1a5fa23fb172db04713b8acd854227ad5df08480dcc0a2fbd71f4fd93c0693ca"
-size = 6790102
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.5/cargo-binstall-x86_64-unknown-linux-musl.tgz"
-
-[tools.cargo-binstall.platforms.macos-arm64]
-checksum = "blake3:4eff2c4ed16a8864b20b55fbe855821e60dfb633c04e40ab67679a0639f08b2f"
-size = 6004395
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.5/cargo-binstall-aarch64-apple-darwin.zip"
+checksum = "blake3:779d104f2f8a3b840a2a56659e3da44f96419d7a5378555b9c3dabe756ac4271"
+size = 6770808
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.6/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.7"
@@ -61,7 +56,7 @@ version = "1.43.2"
 backend = "cargo:cargo-insta"
 
 [[tools."cargo:cargo-release"]]
-version = "0.25.18"
+version = "0.25.19"
 backend = "cargo:cargo-release"
 
 [[tools."cargo:git-cliff"]]
@@ -73,22 +68,17 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [[tools."cargo:usage-cli"]]
-version = "2.2.2"
+version = "2.3.2"
 backend = "cargo:usage-cli"
 
 [[tools.cosign]]
-version = "2.6.0"
+version = "2.6.1"
 backend = "aqua:sigstore/cosign"
 
 [tools.cosign.platforms.linux-x64]
-checksum = "sha256:ea5c65f99425d6cfbb5c4b5de5dac035f14d09131c1a0ea7c7fc32eab39364f9"
-size = 155329864
-url = "https://github.com/sigstore/cosign/releases/download/v2.6.0/cosign-linux-amd64"
-
-[tools.cosign.platforms.macos-arm64]
-checksum = "sha256:dea5b83b8b375b99ac803c7bdb1f798963dbeb47789ceb72153202e7f20e8d07"
-size = 154611890
-url = "https://github.com/sigstore/cosign/releases/download/v2.6.0/cosign-darwin-arm64"
+checksum = "sha256:064954c5d8c7e3b28188eee5b1727b31c411550bc5fefd41aa672d3c761d103a"
+size = 155339383
+url = "https://github.com/sigstore/cosign/releases/download/v2.6.1/cosign-linux-amd64"
 
 [[tools.gh]]
 version = "2.62.0"
@@ -105,13 +95,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [[tools.hk]]
-version = "1.15.3"
+version = "1.16.0"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:ddfbc94d8c9f6fb12682ec4b02ce12a2e05961afc6139a2989a5e6bc4d94a259"
-size = 6982412
-url = "https://github.com/jdx/hk/releases/download/v1.15.3/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "blake3:c3668b4b8f7942d432a7137d34fb50fee92c62b6307d5cf7f0665738299523d1"
+size = 6958777
+url = "https://github.com/jdx/hk/releases/download/v1.16.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"
@@ -210,18 +200,13 @@ checksum = "blake3:6b7c72ece3e3cbd9db12dd8e261e594bb24721db140692d4f5cbdf508df45
 checksum = "blake3:af93f77462964b7eeb93b9f45ccedeefc641305f6618d9ffc2480d89b0cceed6"
 
 [[tools.sops]]
-version = "3.10.2"
+version = "3.11.0"
 backend = "aqua:getsops/sops"
 
 [tools.sops.platforms.linux-x64]
-checksum = "sha256:79b0f844237bd4b0446e4dc884dbc1765fc7dedc3968f743d5949c6f2e701739"
-size = 45011128
-url = "https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.linux.amd64"
-
-[tools.sops.platforms.macos-arm64]
-checksum = "sha256:99702df79737162b986641afb8d98251acb16a52e6cab556a6b6f57c608c059a"
-size = 44246082
-url = "https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.darwin.arm64"
+checksum = "sha256:775f1384d55decfad228e7196a3f683791914f92a473f78fc47700531c29dfef"
+size = 46346424
+url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.linux.amd64"
 
 [[tools.taplo]]
 version = "0.10.0"

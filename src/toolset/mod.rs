@@ -860,12 +860,43 @@ impl Toolset {
         config: &mut Arc<Config>,
         bin_name: &str,
     ) -> Result<Option<Vec<ToolVersion>>> {
+        // Strategy: Find backends that could provide this bin by checking:
+        // 1. Any currently installed versions that provide the bin
+        // 2. Any requested backends with installed versions (even if not current)
         let mut plugins = IndexSet::new();
+
+        // First check currently active installed versions
         for (p, tv) in self.list_current_installed_versions(config) {
             if let Ok(Some(_bin)) = p.which(config, &tv, bin_name).await {
                 plugins.insert(p);
             }
         }
+
+        // Also check backends that are requested but not currently active
+        // This handles the case where a user has tool@v1 globally and tool@v2 locally (not installed)
+        // When looking for a bin provided by the tool, we check if any installed version provides it
+        let all_installed = self.list_installed_versions(config).await?;
+        for (backend, _versions) in self.list_versions_by_plugin() {
+            // Skip if we already found this backend
+            if plugins.contains(&backend) {
+                continue;
+            }
+
+            // Check if this backend has ANY installed version that provides the bin
+            let backend_versions: Vec<_> = all_installed
+                .iter()
+                .filter(|(p, _)| p.ba() == backend.ba())
+                .collect();
+
+            for (_, tv) in backend_versions {
+                if let Ok(Some(_bin)) = backend.which(config, tv, bin_name).await {
+                    plugins.insert(backend.clone());
+                    break;
+                }
+            }
+        }
+
+        // Install missing versions for backends that provide this bin
         for plugin in plugins {
             let versions = self
                 .list_missing_versions(config)
@@ -981,6 +1012,7 @@ impl Toolset {
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::ToolsOnly,
+                warn_on_missing_required: *env::WARN_ON_MISSING_REQUIRED_ENV,
             },
         )
         .await?;

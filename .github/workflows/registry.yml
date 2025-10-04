@@ -86,7 +86,7 @@ jobs:
         with:
           name: mise
           path: target/debug
-      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
           path: |
@@ -97,7 +97,8 @@ jobs:
       - run: mise -v
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: mise i
-      - uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+      - name: Test tools
+        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30

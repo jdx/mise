@@ -22,9 +22,9 @@ env:
 jobs:
   publish-copr:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
     container:
-      image: ghcr.io/jdx/mise:copr@sha256:4276ecd5f8e845010c2827499c737c1226a0a1f1d5893efbe3e0342754e5ad44
+      image: ghcr.io/jdx/mise:copr@sha256:0f98c7756674b8f48206000cfdad8b8f210406f47d5d1aec8d8d1a638877444b
 
     steps:
       - name: Checkout repository

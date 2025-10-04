@@ -486,8 +486,16 @@ description = "Timeout in seconds for all HTTP requests in mise."
 env = "MISE_HTTP_TIMEOUT"
 type = "Duration"
 
+[http_retries]
+default = 0
+description = "Number of retries for HTTP requests in mise."
+docs = """
+Uses an exponential backoff strategy. The duration is calculated by taking the base (10ms) to the n-th power.
+"""
+env = "MISE_HTTP_RETRIES"
+type = "Integer"
+
 [idiomatic_version_file]
-default = true
 deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
 description = "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc."
 docs = """
@@ -499,6 +507,8 @@ information.
 Set to "false" to disable idiomatic version file parsing.
 """
 env = "MISE_IDIOMATIC_VERSION_FILE"
+hide = true
+optional = true
 type = "Bool"
 
 [idiomatic_version_file_disable_tools]
@@ -506,15 +516,27 @@ default = []
 deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
 description = "Specific tools to disable idiomatic version files for."
 env = "MISE_IDIOMATIC_VERSION_FILE_DISABLE_TOOLS"
+hide = true
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
 [idiomatic_version_file_enable_tools]
+default = []
 description = "Specific tools to enable idiomatic version files for like .node-version, .ruby-version, etc."
+docs = """
+By default, idiomatic version files are disabled. You can enable them for specific tools with this setting.
+
+For example, to enable idiomatic version files for node and python:
+
+    mise settings add idiomatic_version_file_enable_tools node
+    mise settings add idiomatic_version_file_enable_tools python
+
+See [Idiomatic Version Files](/configuration.html#idiomatic-version-files) for more information.
+"""
 env = "MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS"
 parse_env = "set_by_comma"
-rust_type = "Option<BTreeSet<String>>"
+rust_type = "BTreeSet<String>"
 type = "SetString"
 
 [ignored_config_paths]
@@ -1008,6 +1030,28 @@ type = "Path"
 description = "Suppress all `mise run|watch` output except errors—including what tasks output."
 env = "MISE_SILENT"
 type = "Bool"
+
+[age.identity_files]
+description = "[experimental] List of age identity files to use for decryption."
+env = "MISE_AGE_IDENTITY_FILES"
+optional = true
+rust_type = "Vec<PathBuf>"
+type = "ListPath"
+
+[age.key_file]
+default_docs = "~/.config/mise/age.txt"
+description = "[experimental] Path to the age private key file to use for encryption/decryption."
+env = "MISE_AGE_KEY_FILE"
+optional = true
+type = "Path"
+
+[age.ssh_identity_files]
+description = "[experimental] List of SSH identity files to use for age decryption."
+env = "MISE_AGE_SSH_IDENTITY_FILES"
+optional = true
+rust_type = "Vec<PathBuf>"
+type = "ListPath"
+
 
 [sops.age_key]
 description = "The age private key to use for sops secret decryption."

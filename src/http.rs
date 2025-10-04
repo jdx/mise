@@ -7,6 +7,8 @@ use regex::Regex;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use std::sync::LazyLock as Lazy;
+use tokio_retry::Retry;
+use tokio_retry::strategy::{ExponentialBackoff, jitter};
 use url::Url;
 
 use crate::cli::version;
@@ -184,7 +186,7 @@ impl Client {
         &self,
         url: U,
         path: &Path,
-        pr: Option<&Box<dyn SingleReport>>,
+        pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
         let url = url.into_url()?;
         let headers = github_headers(&url);
@@ -197,15 +199,16 @@ impl Client {
         url: U,
         path: &Path,
         headers: &HeaderMap,
-        pr: Option<&Box<dyn SingleReport>>,
+        pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
-
-        let mut resp = self.get_async_with_headers(url, headers).await?;
+        let mut resp = self.get_async_with_headers(url.clone(), headers).await?;
         if let Some(length) = resp.content_length() {
             if let Some(pr) = pr {
+                // Reset progress on each attempt
                 pr.set_length(length);
+                pr.set_position(0);
             }
         }
 
@@ -229,18 +232,29 @@ impl Client {
         headers: &HeaderMap,
         verb_label: &str,
     ) -> Result<Response> {
-        match self
-            .send_once(method.clone(), url.clone(), headers, verb_label)
-            .await
-        {
-            Ok(resp) => Ok(resp),
-            Err(_) if url.scheme() == "http" => {
-                let mut url = url;
-                url.set_scheme("https").unwrap();
-                self.send_once(method, url, headers, verb_label).await
-            }
-            Err(err) => Err(err),
-        }
+        Retry::spawn(
+            default_backoff_strategy(Settings::get().http_retries),
+            || {
+                let method = method.clone();
+                let url = url.clone();
+                let headers = headers.clone();
+                async move {
+                    match self
+                        .send_once(method.clone(), url.clone(), &headers, verb_label)
+                        .await
+                    {
+                        Ok(resp) => Ok(resp),
+                        Err(_err) if url.scheme() == "http" => {
+                            let mut url = url;
+                            url.set_scheme("https").unwrap();
+                            self.send_once(method, url, &headers, verb_label).await
+                        }
+                        Err(err) => Err(err),
+                    }
+                }
+            },
+        )
+        .await
     }
 
     async fn send_once(
@@ -414,6 +428,12 @@ fn display_github_rate_limit(resp: &Response) {
             );
         }
     }
+}
+
+fn default_backoff_strategy(retries: i64) -> impl Iterator<Item = std::time::Duration> {
+    ExponentialBackoff::from_millis(10)
+        .map(jitter)
+        .take(retries.max(0) as usize)
 }
 
 #[cfg(test)]
