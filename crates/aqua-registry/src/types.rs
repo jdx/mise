@@ -752,11 +752,11 @@ impl AquaCosign {
 }
 
 impl AquaCosignSignature {
-    pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+    fn _url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
         pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
 
-    pub fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+    fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
         pkg.parse_aqua_str(
             self.asset.as_ref().unwrap(),
             v,
@@ -766,7 +766,7 @@ impl AquaCosignSignature {
         )
     }
 
-    pub fn arg(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+    pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
         match self.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
                 let asset = self.asset(pkg, v, os, arch)?;
@@ -778,19 +778,18 @@ impl AquaCosignSignature {
                     .repo_name
                     .clone()
                     .unwrap_or_else(|| pkg.repo_name.clone());
-                let repo = format!("{repo_owner}/{repo_name}");
-                Ok(format!(
-                    "https://github.com/{repo}/releases/download/{v}/{asset}"
-                ))
+                Ok(Some(format!(
+                    "https://github.com/{repo_owner}/{repo_name}/releases/download/{v}/{asset}"
+                )))
             }
-            "http" => self.url(pkg, v, os, arch),
+            "http" => self._url(pkg, v, os, arch).map(Some),
             t => {
                 log::warn!(
                     "unsupported cosign signature type for {}/{}: {t}",
                     pkg.repo_owner,
                     pkg.repo_name
                 );
-                Ok(String::new())
+                Ok(None)
             }
         }
     }

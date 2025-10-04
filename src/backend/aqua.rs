@@ -11,7 +11,7 @@ use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
 use crate::{
     aqua::aqua_registry_wrapper::{
-        AQUA_REGISTRY, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
+        AQUA_REGISTRY, AquaChecksumType, AquaCosign, AquaMinisignType, AquaPackage, AquaPackageType,
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
@@ -400,7 +400,7 @@ impl AquaBackend {
                     let checksum_path = download_path.join(format!("{filename}.checksum"));
                     HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
                         .await?;
-                    self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
+                    self.verify_checksum_cosign(ctx, pkg, v, tv, &checksum_path, &download_path)
                         .await?;
                     let mut checksum_file = file::read_to_string(&checksum_path)?;
                     if checksum.file_format() == "regexp" {
@@ -519,35 +519,6 @@ impl AquaBackend {
             let data = file::read(tv.download_path().join(filename))?;
             let sig = file::read_to_string(sig_path)?;
             minisign::verify(&minisign.public_key(pkg, v, os(), arch())?, &data, &sig)?;
-        }
-        Ok(())
-    }
-
-    async fn verify_cosign(
-        &self,
-        ctx: &InstallContext,
-        tv: &mut ToolVersion,
-        pkg: &AquaPackage,
-        v: &str,
-        filename: &str,
-    ) -> Result<()> {
-        if !Settings::get().aqua.cosign {
-            return Ok(());
-        }
-        if let Some(cosign) = pkg.checksum.as_ref().and_then(|c| c.cosign.as_ref()) {
-            if cosign.enabled == Some(false) {
-                debug!("cosign is disabled for {tv}");
-                return Ok(());
-            }
-
-            ctx.pr
-                .set_message("verify checksums with cosign".to_string());
-
-            let checksum_path = tv.download_path().join(format!("{filename}.checksum"));
-            let download_path = tv.download_path();
-
-            self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
-                .await?;
         }
         Ok(())
     }
@@ -725,120 +696,154 @@ impl AquaBackend {
         Ok(())
     }
 
-    async fn cosign_checksums(
+    async fn verify_cosign(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        pkg: &AquaPackage,
+        v: &str,
+        filename: &str,
+    ) -> Result<()> {
+        if !Settings::get().aqua.cosign {
+            return Ok(());
+        }
+
+        if let Some(cosign) = &pkg.cosign {
+            if cosign.enabled == Some(false) {
+                debug!("cosign is disabled for {tv}");
+                return Ok(());
+            }
+            ctx.pr.set_message("verify cosign".to_string());
+            let artifact_path = tv.download_path().join(filename);
+            self.verify_cosign_signature(
+                ctx,
+                pkg,
+                v,
+                tv,
+                cosign,
+                &artifact_path,
+                &tv.download_path(),
+            )
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn verify_checksum_cosign(
         &self,
         ctx: &InstallContext,
         pkg: &AquaPackage,
         v: &str,
         tv: &ToolVersion,
-        checksum_path: &Path,
-        download_path: &Path,
+        artifact_path: &Path,
+        download_dir: &Path,
     ) -> Result<()> {
         if !Settings::get().aqua.cosign {
             return Ok(());
         }
         if let Some(cosign) = pkg.checksum.as_ref().and_then(|c| c.cosign.as_ref()) {
             if cosign.enabled == Some(false) {
-                debug!("cosign is disabled for {tv}");
+                debug!("cosign for checksum is disabled for {tv}");
                 return Ok(());
             }
-
             ctx.pr
-                .set_message("verify checksums with cosign".to_string());
+                .set_message("verify checksum with cosign".to_string());
+            self.verify_cosign_signature(ctx, pkg, v, tv, cosign, artifact_path, download_dir)
+                .await?;
+        }
+        Ok(())
+    }
 
-            // Use native sigstore-verification crate
-            if let Some(key) = &cosign.key {
-                // Key-based verification
-                let key_arg = key.arg(pkg, v, os(), arch())?;
-                if !key_arg.is_empty() {
-                    // Download or locate the public key
-                    let key_path = if key_arg.starts_with("http") {
-                        let key_filename = key_arg.split('/').next_back().unwrap_or("cosign.pub");
-                        let key_path = download_path.join(key_filename);
-                        HTTP.download_file(&key_arg, &key_path, Some(ctx.pr.as_ref()))
-                            .await?;
-                        key_path
-                    } else {
-                        PathBuf::from(key_arg)
-                    };
+    async fn verify_cosign_signature(
+        &self,
+        ctx: &InstallContext,
+        pkg: &AquaPackage,
+        v: &str,
+        tv: &ToolVersion,
+        cosign: &AquaCosign,
+        artifact_path: &Path,
+        download_path: &Path,
+    ) -> Result<()> {
+        // Use native sigstore-verification crate
+        if let Some(key_url) = cosign
+            .key
+            .as_ref()
+            .map(|k| k.url(pkg, v, os(), arch()))
+            .transpose()?
+            .flatten()
+        {
+            // Key-based verification
+            // Download or locate the public key
+            let key_filename = key_url.split('/').next_back().unwrap_or("cosign.pub");
+            let key_path = download_path.join(key_filename);
+            HTTP.download_file(key_url, &key_path, Some(ctx.pr.as_ref()))
+                .await?;
 
-                    // Download signature if specified
-                    let sig_path = if let Some(signature) = &cosign.signature {
-                        let sig_arg = signature.arg(pkg, v, os(), arch())?;
-                        if !sig_arg.is_empty() {
-                            if sig_arg.starts_with("http") {
-                                let sig_filename =
-                                    sig_arg.split('/').next_back().unwrap_or("checksum.sig");
-                                let sig_path = download_path.join(sig_filename);
-                                HTTP.download_file(&sig_arg, &sig_path, Some(ctx.pr.as_ref()))
-                                    .await?;
-                                sig_path
-                            } else {
-                                PathBuf::from(sig_arg)
-                            }
-                        } else {
-                            // Default signature path
-                            checksum_path.with_extension("sig")
-                        }
-                    } else {
-                        // Default signature path
-                        checksum_path.with_extension("sig")
-                    };
+            // Download signature if specified
+            let sig_path = if let Some(sig_url) = cosign
+                .signature
+                .as_ref()
+                .map(|s| s.url(pkg, v, os(), arch()))
+                .transpose()?
+                .flatten()
+            {
+                let sig_filename = sig_url.split('/').next_back().unwrap_or("checksum.sig");
+                let sig_path = download_path.join(sig_filename);
+                HTTP.download_file(sig_url, &sig_path, Some(ctx.pr.as_ref()))
+                    .await?;
+                sig_path
+            } else {
+                // Default signature path
+                artifact_path.with_extension("sig")
+            };
 
-                    // Verify with key
-                    match sigstore_verification::verify_cosign_signature_with_key(
-                        checksum_path,
-                        &sig_path,
-                        &key_path,
-                    )
-                    .await
-                    {
-                        Ok(true) => {
-                            ctx.pr
-                                .set_message("✓ Cosign signature verified with key".to_string());
-                            debug!("Cosign signature verified successfully with key for {tv}");
-                        }
-                        Ok(false) => {
-                            return Err(eyre!("Cosign signature verification failed for {tv}"));
-                        }
-                        Err(e) => {
-                            return Err(eyre!("Cosign verification error for {tv}: {e}"));
-                        }
-                    }
+            // Verify with key
+            match sigstore_verification::verify_cosign_signature_with_key(
+                artifact_path,
+                &sig_path,
+                &key_path,
+            )
+            .await
+            {
+                Ok(true) => {
+                    ctx.pr
+                        .set_message("✓ Cosign signature verified with key".to_string());
+                    debug!("Cosign signature verified successfully with key for {tv}");
                 }
-            } else if let Some(bundle) = &cosign.bundle {
-                // Bundle-based keyless verification
-                let bundle_arg = bundle.arg(pkg, v, os(), arch())?;
-                if !bundle_arg.is_empty() {
-                    let bundle_path = if bundle_arg.starts_with("http") {
-                        let filename = bundle_arg.split('/').next_back().unwrap_or("bundle.json");
-                        let bundle_path = download_path.join(filename);
-                        HTTP.download_file(&bundle_arg, &bundle_path, Some(ctx.pr.as_ref()))
-                            .await?;
-                        bundle_path
-                    } else {
-                        PathBuf::from(bundle_arg)
-                    };
+                Ok(false) => {
+                    return Err(eyre!("Cosign signature verification failed for {tv}"));
+                }
+                Err(e) => {
+                    return Err(eyre!("Cosign verification error for {tv}: {e}"));
+                }
+            }
+        } else if let Some(bundle_url) = cosign
+            .bundle
+            .as_ref()
+            .map(|b| b.url(pkg, v, os(), arch()))
+            .transpose()?
+            .flatten()
+        {
+            // Bundle-based keyless verification
+            let filename = bundle_url.split('/').next_back().unwrap_or("bundle.json");
+            let bundle_path = download_path.join(filename);
+            HTTP.download_file(bundle_url, &bundle_path, Some(ctx.pr.as_ref()))
+                .await?;
 
-                    // Verify with bundle (keyless)
-                    match sigstore_verification::verify_cosign_signature(
-                        checksum_path,
-                        &bundle_path,
-                    )
-                    .await
-                    {
-                        Ok(true) => {
-                            ctx.pr
-                                .set_message("✓ Cosign bundle verified (keyless)".to_string());
-                            debug!("Cosign bundle verified successfully for {tv}");
-                        }
-                        Ok(false) => {
-                            return Err(eyre!("Cosign bundle verification failed for {tv}"));
-                        }
-                        Err(e) => {
-                            return Err(eyre!("Cosign bundle verification error for {tv}: {e}"));
-                        }
-                    }
+            // Verify with bundle (keyless)
+            match sigstore_verification::verify_cosign_signature(artifact_path, &bundle_path).await
+            {
+                Ok(true) => {
+                    ctx.pr
+                        .set_message("✓ Cosign bundle verified (keyless)".to_string());
+                    debug!("Cosign bundle verified successfully for {tv}");
+                }
+                Ok(false) => {
+                    return Err(eyre!("Cosign bundle verification failed for {tv}"));
+                }
+                Err(e) => {
+                    return Err(eyre!("Cosign bundle verification error for {tv}: {e}"));
                 }
             }
         }

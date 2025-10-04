@@ -17,7 +17,7 @@ output=$(mise install aqua:getsops/sops@3.9.0 2>&1)
 echo "$output"
 
 # Verify the native Cosign verification was used
-if echo "$output" | grep -q "verify checksums with cosign"; then
+if echo "$output" | grep -q "verify checksum with cosign"; then
 	echo "✅ Native Cosign verification was used"
 else
 	echo "❌ ERROR: Cosign verification message not found in output"
