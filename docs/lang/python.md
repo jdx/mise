@@ -28,6 +28,13 @@ $ python3.11 -V
 3.11.0
 ```
 
+You can also install a specific python flavour. To get the latest version from a flavour just use the
+flavour prefix.
+
+```sh
+mise use -g python@anaconda         # latest version of anaconda
+```
+
 See the [Python Cookbook](/mise-cookbook/python.html) for common tasks and examples.
 
 ## `.python-version` support

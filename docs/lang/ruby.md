@@ -24,6 +24,13 @@ from source. Ensure that you have the necessary
 You can check its [README](https://github.com/rbenv/ruby-build/blob/master/README.md) for additional settings and some
 troubleshooting.
 
+You can also install a specific ruby flavour. To get the latest version from a flavour, just use the
+flavour prefix.
+
+```sh
+mise use -g ruby@truffleruby            # latest version of truffleruby
+```
+
 ## Default gems
 
 mise can automatically install a default set of gems right after installing a new ruby version.
