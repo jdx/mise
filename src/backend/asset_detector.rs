@@ -310,7 +310,7 @@ pub fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
     let mut detected_arch = None;
     let mut detected_libc = None;
 
-    let filename = get_filename_from_url(&url);
+    let filename = get_filename_from_url(url);
 
     // Try to detect OS
     for (os, pattern) in PLATFORM_PATTERNS.os_patterns.iter() {
