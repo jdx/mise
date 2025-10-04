@@ -4880,6 +4880,11 @@ backends = [
 description = "A command line tool for the Wren programming language"
 test = ["wren_cli --version", "wren {{version}}"]
 
+[tools.wrangler]
+backends = ["npm:wrangler"]
+description = "A command line tool for building Cloudflare Workers"
+test = ["wrangler --version", "{{version}}"]
+
 [tools.wrk]
 backends = ["asdf:mise-plugins/mise-wrk"]
 description = "Modern HTTP benchmarking tool"
