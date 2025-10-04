@@ -36,6 +36,8 @@ pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
@@ -47,16 +49,22 @@ impl TryFrom<toml::Value> for PlatformInfo {
         match value {
             toml::Value::String(checksum) => Ok(PlatformInfo {
                 checksum: Some(checksum),
+                name: None,
                 size: None,
                 url: None,
             }),
             toml::Value::Integer(size) => Ok(PlatformInfo {
                 checksum: None,
+                name: None,
                 size: Some(size.try_into()?),
                 url: None,
             }),
             toml::Value::Table(mut t) => {
                 let checksum = match t.remove("checksum") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
+                let name = match t.remove("name") {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
                 };
@@ -71,6 +79,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 };
                 Ok(PlatformInfo {
                     checksum,
+                    name,
                     size,
                     url,
                 })
@@ -85,6 +94,9 @@ impl From<PlatformInfo> for toml::Value {
         let mut table = toml::Table::new();
         if let Some(checksum) = platform_info.checksum {
             table.insert("checksum".to_string(), checksum.into());
+        }
+        if let Some(name) = platform_info.name {
+            table.insert("name".to_string(), name.into());
         }
         if let Some(size) = platform_info.size {
             table.insert("size".to_string(), (size as i64).into());
@@ -475,6 +487,7 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
                         platform.clone(),
                         PlatformInfo {
                             checksum: platform_info.checksum.clone(),
+                            name: platform_info.name.clone(),
                             size: platform_info.size,
                             url: platform_info.url.clone(),
                         },
@@ -590,8 +603,9 @@ backend = "core:python"
             "macos-arm64".to_string(),
             PlatformInfo {
                 checksum: Some("sha256:abc123".to_string()),
-                url: Some("https://example.com/node.tar.gz".to_string()),
+                name: Some("node.tar.gz".to_string()),
                 size: Some(12345678),
+                url: Some("https://example.com/node.tar.gz".to_string()),
             },
         );
 

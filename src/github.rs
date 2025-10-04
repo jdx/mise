@@ -34,6 +34,7 @@ pub struct GithubAsset {
     pub name: String,
     // pub size: u64,
     pub browser_download_url: String,
+    pub url: String,
 }
 
 type CacheGroup<T> = HashMap<String, CacheManager<T>>;
