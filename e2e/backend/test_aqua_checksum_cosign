@@ -13,7 +13,7 @@ echo "=== Testing Native Cosign Verification ==="
 echo "Installing sops with native Cosign verification..."
 
 # Capture the installation output to verify the native verification is being used
-output=$(mise install aqua:k0sproject/k0s@v1.33.4+k0s.0 2>&1)
+output=$(mise install aqua:getsops/sops@3.9.0 2>&1)
 echo "$output"
 
 # Verify the native Cosign verification was used
@@ -27,11 +27,11 @@ else
 fi
 
 # Verify the tool works
-assert_contains "mise x aqua:k0sproject/k0s@v1.33.4+k0s.0 -- k0s --version" "v1.33.4+k0s.0"
-echo "✓ k0s installed and working correctly"
+assert_contains "mise x aqua:getsops/sops@3.9.0 -- sops --version" "3.9.0"
+echo "✓ sops installed and working correctly"
 
 # Cleanup
-mise uninstall aqua:k0sproject/k0s@v1.33.4+k0s.0 || true
+mise uninstall aqua:getsops/sops@3.9.0 || true
 
 echo ""
 echo "=== Native Cosign Verification Test Passed ✓ ==="
