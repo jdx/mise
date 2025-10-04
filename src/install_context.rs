@@ -9,4 +9,5 @@ pub struct InstallContext {
     pub pr: Box<dyn SingleReport>,
     pub force: bool,
     pub dry_run: bool,
+    pub retry: u8,
 }

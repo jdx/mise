@@ -48,6 +48,10 @@ pub struct Install {
     /// This argument will print plugin output such as download, configuration, and compilation output.
     #[clap(long, short, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Retry installation if it fails due to transient errors, e.g. network issues.
+    #[clap(long, default_value_t = 0)]
+    retry: u8,
 }
 
 impl Install {
@@ -117,6 +121,7 @@ impl Install {
                 latest_versions: true,
             },
             dry_run: self.dry_run,
+            retry: self.retry,
             ..Default::default()
         }
     }

@@ -62,6 +62,7 @@ pub struct InstallOptions {
     pub auto_install_disable_tools: Option<Vec<String>>,
     pub resolve_options: ResolveOptions,
     pub dry_run: bool,
+    pub retry: u8,
 }
 
 impl Default for InstallOptions {
@@ -75,6 +76,7 @@ impl Default for InstallOptions {
             auto_install_disable_tools: Settings::get().auto_install_disable_tools.clone(),
             resolve_options: Default::default(),
             dry_run: false,
+            retry: 0,
         }
     }
 }
@@ -454,6 +456,7 @@ impl Toolset {
                             pr: mpr.add_with_options(&tv.style(), opts.dry_run),
                             force: opts.force,
                             dry_run: opts.dry_run,
+                            retry: opts.retry,
                         };
                         // Avoid wrapping the backend error here so the error location
                         // points to the backend implementation (more helpful for debugging).
