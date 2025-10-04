@@ -400,8 +400,16 @@ impl AquaBackend {
                     let checksum_path = download_path.join(format!("{filename}.checksum"));
                     HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
                         .await?;
-                    self.verify_checksum_cosign(ctx, pkg, v, tv, &checksum_path, &download_path)
-                        .await?;
+                    self.verify_checksum_cosign(
+                        ctx,
+                        tv,
+                        pkg,
+                        v,
+                        filename,
+                        &checksum_path,
+                        &download_path,
+                    )
+                    .await?;
                     let mut checksum_file = file::read_to_string(&checksum_path)?;
                     if checksum.file_format() == "regexp" {
                         let pattern = checksum.pattern();
@@ -717,12 +725,13 @@ impl AquaBackend {
             let artifact_path = tv.download_path().join(filename);
             self.verify_cosign_signature(
                 ctx,
+                tv,
                 pkg,
                 v,
-                tv,
-                cosign,
+                filename,
                 &artifact_path,
                 &tv.download_path(),
+                cosign,
             )
             .await?;
         }
@@ -733,9 +742,10 @@ impl AquaBackend {
     async fn verify_checksum_cosign(
         &self,
         ctx: &InstallContext,
+        tv: &ToolVersion,
         pkg: &AquaPackage,
         v: &str,
-        tv: &ToolVersion,
+        filename: &str,
         artifact_path: &Path,
         download_dir: &Path,
     ) -> Result<()> {
@@ -749,27 +759,38 @@ impl AquaBackend {
             }
             ctx.pr
                 .set_message("verify checksum with cosign".to_string());
-            self.verify_cosign_signature(ctx, pkg, v, tv, cosign, artifact_path, download_dir)
-                .await?;
+            self.verify_cosign_signature(
+                ctx,
+                tv,
+                pkg,
+                v,
+                filename,
+                artifact_path,
+                download_dir,
+                cosign,
+            )
+            .await?;
         }
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn verify_cosign_signature(
         &self,
         ctx: &InstallContext,
+        tv: &ToolVersion,
         pkg: &AquaPackage,
         v: &str,
-        tv: &ToolVersion,
-        cosign: &AquaCosign,
+        filename: &str,
         artifact_path: &Path,
         download_path: &Path,
+        cosign: &AquaCosign,
     ) -> Result<()> {
         // Use native sigstore-verification crate
         if let Some(key_url) = cosign
             .key
             .as_ref()
-            .map(|k| k.url(pkg, v, os(), arch()))
+            .map(|k| k.url(pkg, v, os(), arch(), filename))
             .transpose()?
             .flatten()
         {
@@ -784,7 +805,7 @@ impl AquaBackend {
             let sig_path = if let Some(sig_url) = cosign
                 .signature
                 .as_ref()
-                .map(|s| s.url(pkg, v, os(), arch()))
+                .map(|s| s.url(pkg, v, os(), arch(), filename))
                 .transpose()?
                 .flatten()
             {
@@ -821,7 +842,7 @@ impl AquaBackend {
         } else if let Some(bundle_url) = cosign
             .bundle
             .as_ref()
-            .map(|b| b.url(pkg, v, os(), arch()))
+            .map(|b| b.url(pkg, v, os(), arch(), filename))
             .transpose()?
             .flatten()
         {

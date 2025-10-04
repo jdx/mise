@@ -756,20 +756,30 @@ impl AquaCosignSignature {
         pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
 
-    fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
-        pkg.parse_aqua_str(
-            self.asset.as_ref().unwrap(),
-            v,
-            &Default::default(),
-            os,
-            arch,
-        )
+    fn asset(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        os: &str,
+        arch: &str,
+        filename: &str,
+    ) -> Result<String> {
+        let mut ctx = HashMap::new();
+        ctx.insert("Asset".to_string(), filename.to_string());
+        pkg.parse_aqua_str(self.asset.as_ref().unwrap(), v, &ctx, os, arch)
     }
 
-    pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Option<String>> {
+    pub fn url(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        os: &str,
+        arch: &str,
+        filename: &str,
+    ) -> Result<Option<String>> {
         match self.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
-                let asset = self.asset(pkg, v, os, arch)?;
+                let asset = self.asset(pkg, v, os, arch, filename)?;
                 let repo_owner = self
                     .repo_owner
                     .clone()
