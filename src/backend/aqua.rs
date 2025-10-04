@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
@@ -114,7 +115,7 @@ impl Backend for AquaBackend {
             .and_then(|asset| asset.url.clone());
         let (url, v, filename) = if let Some(existing_platform) = existing_platform.clone() {
             let url = existing_platform;
-            let filename = url.split('/').next_back().unwrap_or("download").to_string();
+            let filename = get_filename_from_url(&url);
             // Determine which version variant was used based on the URL or filename
             let v = if url.contains(&format!("v{}", tv.version))
                 || filename.contains(&format!("v{}", tv.version))
@@ -154,7 +155,7 @@ impl Backend for AquaBackend {
             } else {
                 (self.get_url(&pkg, &v).await.map(|(url, _)| url)?, v)
             };
-            let filename = url.split('/').next_back().unwrap().to_string();
+            let filename = get_filename_from_url(&url);
 
             (url, v.to_string(), filename)
         };
@@ -582,9 +583,7 @@ impl AquaBackend {
                 }
                 "http" => {
                     let url = slsa.url(pkg, v, os(), arch())?;
-                    let provenance_filename =
-                        url.split('/').next_back().unwrap_or("provenance.json");
-                    let path = tv.download_path().join(provenance_filename);
+                    let path = tv.download_path().join(get_filename_from_url(&url));
                     HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
                         .await?;
                     path
@@ -796,8 +795,7 @@ impl AquaBackend {
         {
             // Key-based verification
             // Download or locate the public key
-            let key_filename = key_url.split('/').next_back().unwrap_or("cosign.pub");
-            let key_path = download_path.join(key_filename);
+            let key_path = download_path.join(get_filename_from_url(&key_url));
             HTTP.download_file(key_url, &key_path, Some(ctx.pr.as_ref()))
                 .await?;
 
@@ -809,8 +807,7 @@ impl AquaBackend {
                 .transpose()?
                 .flatten()
             {
-                let sig_filename = sig_url.split('/').next_back().unwrap_or("checksum.sig");
-                let sig_path = download_path.join(sig_filename);
+                let sig_path = download_path.join(get_filename_from_url(&sig_url));
                 HTTP.download_file(sig_url, &sig_path, Some(ctx.pr.as_ref()))
                     .await?;
                 sig_path
@@ -847,8 +844,7 @@ impl AquaBackend {
             .flatten()
         {
             // Bundle-based keyless verification
-            let filename = bundle_url.split('/').next_back().unwrap_or("bundle.json");
-            let bundle_path = download_path.join(filename);
+            let bundle_path = download_path.join(get_filename_from_url(&bundle_url));
             HTTP.download_file(bundle_url, &bundle_path, Some(ctx.pr.as_ref()))
                 .await?;
 
