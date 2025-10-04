@@ -698,6 +698,18 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
     project_root
 }
 
+fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
+    // Find the config file that has task_config.experimental_monorepo_root = true
+    // This feature requires experimental mode
+    if !Settings::get().experimental {
+        return None;
+    }
+    config_files
+        .values()
+        .find(|cf| cf.task_config().experimental_monorepo_root == Some(true))
+        .and_then(|cf| cf.project_root().map(|p| p.to_path_buf()))
+}
+
 async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
     let enable_tools = Settings::get().idiomatic_version_file_enable_tools.clone();
     if enable_tools.is_empty() {
@@ -1287,14 +1299,85 @@ pub async fn rebuild_shims_and_runtime_symlinks(
 }
 
 async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
+    const MONOREPO_PATH_PREFIX: &str = "//";
+    const MONOREPO_TASK_SEPARATOR: &str = ":";
+
     let mut tasks = vec![];
+    let monorepo_root = find_monorepo_root(&config.config_files);
+
+    // Load tasks from parent directories (current working directory up to root)
     for d in file::all_dirs()? {
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
             continue;
         }
         tasks.extend(load_tasks_in_dir(config, &d, &config.config_files).await?);
     }
+
+    // If in a monorepo, also discover and load tasks from subdirectories
+    if let Some(monorepo_root) = &monorepo_root {
+        let subdirs = discover_monorepo_subdirs(monorepo_root)?;
+        for subdir in subdirs {
+            if cfg!(test) && !subdir.starts_with(*dirs::HOME) {
+                continue;
+            }
+            // Load config files from subdirectory
+            for config_filename in DEFAULT_CONFIG_FILENAMES.iter() {
+                let config_path = subdir.join(config_filename);
+                if config_path.exists() {
+                    if let Ok(cf) = config_file::parse(&config_path).await {
+                        let mut subdir_tasks = load_config_and_file_tasks(config, cf).await?;
+
+                        // Prefix task names with relative path from monorepo root
+                        if let Ok(rel_path) = subdir.strip_prefix(monorepo_root) {
+                            if !rel_path.as_os_str().is_empty() {
+                                let prefix = rel_path.to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/");
+                                for task in subdir_tasks.iter_mut() {
+                                    task.name = format!("{}{}{}{}", MONOREPO_PATH_PREFIX, prefix, MONOREPO_TASK_SEPARATOR, task.name);
+                                }
+                            }
+                        }
+
+                        tasks.extend(subdir_tasks);
+                    }
+                }
+            }
+        }
+    }
+
     Ok(tasks)
+}
+
+fn discover_monorepo_subdirs(root: &Path) -> Result<Vec<PathBuf>> {
+    const MAX_MONOREPO_DEPTH: usize = 5;
+    const IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
+
+    let mut subdirs = Vec::new();
+
+    // Walk the monorepo root to find subdirectories with config files
+    for entry in WalkDir::new(root)
+        .min_depth(1)
+        .max_depth(MAX_MONOREPO_DEPTH)
+        .into_iter()
+        .filter_entry(|e| {
+            // Skip hidden directories and common ignore patterns
+            let name = e.file_name().to_string_lossy();
+            !name.starts_with('.') && !IGNORED_DIRS.contains(&name.as_ref())
+        })
+    {
+        let entry = entry?;
+        if entry.file_type().is_dir() {
+            let dir = entry.path();
+            // Check if this directory has a mise config file
+            let has_config = DEFAULT_CONFIG_FILENAMES
+                .iter()
+                .any(|f| dir.join(f).exists());
+            if has_config {
+                subdirs.push(dir.to_path_buf());
+            }
+        }
+    }
+
+    Ok(subdirs)
 }
 
 async fn load_global_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
