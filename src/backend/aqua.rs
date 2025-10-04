@@ -160,7 +160,6 @@ impl Backend for AquaBackend {
             (url, v.to_string(), filename)
         };
 
-        debug!("filename: {filename}");
         self.download(ctx, &tv, &url, &filename).await?;
 
         if existing_platform.is_none() {
