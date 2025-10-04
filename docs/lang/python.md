@@ -56,6 +56,7 @@ _.python.venv = { path = ".venv", create = true, uv_create_args = ['--seed'] }
 ```
 
 The venv will need to be created manually with `python -m venv /path/to/venv` unless `create=true`.
+See [env-directives](https://mise.jdx.dev/environments/#env-directives) for `_.python.venv`.
 
 ## mise & uv
 
