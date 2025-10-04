@@ -4883,7 +4883,7 @@ test = ["wren_cli --version", "wren {{version}}"]
 [tools.wrangler]
 backends = ["npm:wrangler"]
 description = "A command line tool for building Cloudflare Workers"
-test = ["wrangler --version", "wrangler {{version}}"]
+test = ["wrangler --version", "{{version}}"]
 
 [tools.wrk]
 backends = ["asdf:mise-plugins/mise-wrk"]
