@@ -526,6 +526,7 @@ impl Hash for dyn ConfigFile {
 pub struct TaskConfig {
     pub includes: Option<Vec<PathBuf>>,
     pub dir: Option<String>,
+    pub experimental_monorepo_root: Option<bool>,
 }
 
 #[cfg(test)]

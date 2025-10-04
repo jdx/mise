@@ -780,7 +780,18 @@ where
     T: Eq + Hash,
 {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
-        let normalized = pat.split(':').collect::<PathBuf>();
+        // Normalize pattern: convert //path:task or path:task to normalized form
+        // If pattern starts with //, it's an absolute monorepo path
+        let normalized_pat = if pat.starts_with("//") {
+            pat.to_string()
+        } else if pat.contains(':') && !pat.starts_with("//") {
+            // Relative path like projects/1:task could match //projects/1:task
+            format!("//{}", pat)
+        } else {
+            pat.to_string()
+        };
+
+        let normalized = normalized_pat.split(':').collect::<PathBuf>();
         let matcher = GlobBuilder::new(&normalized.to_string_lossy())
             .literal_separator(true)
             .build()?
@@ -790,9 +801,27 @@ where
             .iter()
             .filter(|(k, _)| {
                 let path: PathBuf = k.split(':').collect();
+                // Direct match
                 if matcher.is_match(&path) {
                     return true;
                 }
+                // Try matching without // prefix for relative patterns
+                if !pat.starts_with("//") {
+                    let stripped_key = k.strip_prefix("//").unwrap_or(k);
+                    let stripped_path: PathBuf = stripped_key.split(':').collect();
+                    let rel_normalized = pat.split(':').collect::<PathBuf>();
+                    let rel_matcher = GlobBuilder::new(&rel_normalized.to_string_lossy())
+                        .literal_separator(true)
+                        .build()
+                        .ok()
+                        .map(|b| b.compile_matcher());
+                    if let Some(rel_matcher) = rel_matcher {
+                        if rel_matcher.is_match(&stripped_path) {
+                            return true;
+                        }
+                    }
+                }
+                // Try with file stem
                 if let Some(stem) = path.file_stem() {
                     let base_path = path.with_file_name(stem);
                     return matcher.is_match(&base_path);
