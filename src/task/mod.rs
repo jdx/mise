@@ -651,7 +651,7 @@ impl Task {
         // Use the config file path as source for proper path resolution
         let env_directives = self
             .env
-            .0
+            .inner()
             .iter()
             .map(|directive| (directive.clone(), self.config_source.clone()))
             .collect();

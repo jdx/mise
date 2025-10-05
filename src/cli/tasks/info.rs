@@ -89,7 +89,7 @@ impl TasksInfo {
         if !task.env.is_empty() {
             let env_display = task
                 .env
-                .0
+                .inner()
                 .iter()
                 .map(|directive| directive.to_string())
                 .collect::<Vec<_>>()

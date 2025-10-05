@@ -90,7 +90,7 @@ pub struct MiseTomlTool {
 pub struct Tasks(pub BTreeMap<String, Task>);
 
 #[derive(Debug, Default, Clone)]
-pub struct EnvList(pub(crate) Vec<EnvDirective>);
+pub struct EnvList(Vec<EnvDirective>);
 
 impl EnvList {
     pub fn from_env_directives(env_directives: &[EnvDirective]) -> Self {
