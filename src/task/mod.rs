@@ -912,12 +912,6 @@ fn strip_extension(name: &str) -> &str {
     if result.is_empty() { name } else { result }
 }
 
-/// Helper function to extract the task portion from a task key
-/// e.g., "//path:task" -> "task", "task" -> "task"
-fn extract_task_name(key: &str) -> &str {
-    key.split_once(':').map(|x| x.1).unwrap_or(key)
-}
-
 impl<T> GetMatchingExt<T> for BTreeMap<String, T>
 where
     T: Eq + Hash,
@@ -931,11 +925,7 @@ where
                 .iter()
                 .filter(|(k, _)| {
                     // Check if task name exactly matches, or matches without extension
-                    let task_part = extract_task_name(k);
-                    k.as_str() == pat
-                        || strip_extension(k) == pat
-                        || task_part == pat
-                        || strip_extension(task_part) == pat
+                    k.as_str() == pat || strip_extension(k) == pat
                 })
                 .map(|(_, v)| v)
                 .collect());
