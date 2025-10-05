@@ -876,11 +876,7 @@ pub trait GetMatchingExt<T> {
 fn strip_extension(name: &str) -> &str {
     let result = name.rsplitn(2, '.').last().unwrap_or(name);
     // Don't strip extension if it would result in empty string (hidden files)
-    if result.is_empty() {
-        name
-    } else {
-        result
-    }
+    if result.is_empty() { name } else { result }
 }
 
 /// Helper function to extract the task portion from a task key

@@ -441,6 +441,7 @@ task.monorepo_depth = 3  # Only search 3 levels deep
 ```
 
 This limits how deep mise will search for task files. For example:
+
 - `1` = immediate children only (`monorepo_root/projects/`)
 - `2` = grandchildren (`monorepo_root/projects/frontend/`)
 - `5` = default (5 levels deep)
