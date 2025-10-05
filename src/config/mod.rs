@@ -1450,16 +1450,17 @@ fn discover_monorepo_subdirs(
 
     let mut subdirs = Vec::new();
     let settings = Settings::get();
-    let respect_gitignore = settings.task_monorepo_respect_gitignore;
-    let max_depth = settings.task_depth as usize;
+    let respect_gitignore = settings.task.monorepo_respect_gitignore;
+    let max_depth = settings.task.monorepo_depth as usize;
 
     // Build the list of excluded directories
     // If user defined custom exclude dirs, use only those, otherwise use defaults
-    let excluded_dirs: Vec<&str> = if settings.task_monorepo_exclude_dirs.is_empty() {
+    let excluded_dirs: Vec<&str> = if settings.task.monorepo_exclude_dirs.is_empty() {
         DEFAULT_IGNORED_DIRS.to_vec()
     } else {
         settings
-            .task_monorepo_exclude_dirs
+            .task
+            .monorepo_exclude_dirs
             .iter()
             .map(|s| s.as_str())
             .collect()

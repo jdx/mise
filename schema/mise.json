@@ -1223,22 +1223,28 @@
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"
         },
-        "task_depth": {
-          "default": 5,
-          "description": "Maximum depth to search for task files in monorepo subdirectories.",
-          "type": "number"
-        },
-        "task_monorepo_respect_gitignore": {
-          "default": true,
-          "description": "Whether to respect .gitignore files when discovering monorepo subdirectories.",
-          "type": "boolean"
-        },
-        "task_monorepo_exclude_dirs": {
-          "default": [],
-          "description": "Directory patterns to exclude when discovering monorepo subdirectories.",
-          "type": "array",
-          "items": {
-            "type": "string"
+        "task": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "monorepo_depth": {
+              "default": 5,
+              "description": "Maximum depth to search for task files in monorepo subdirectories.",
+              "type": "number"
+            },
+            "monorepo_exclude_dirs": {
+              "default": [],
+              "description": "Directory patterns to exclude when discovering monorepo subdirectories.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "monorepo_respect_gitignore": {
+              "default": true,
+              "description": "Whether to respect .gitignore files when discovering monorepo subdirectories.",
+              "type": "boolean"
+            }
           }
         }
       }

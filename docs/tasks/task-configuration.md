@@ -431,51 +431,6 @@ them all from the root directory.
   - Task wildcards (`*`) match any characters in task names
 - When a monorepo root config is trusted, all descendant configs are automatically trusted
 
-### Monorepo Configuration Settings
-
-The following settings control monorepo task discovery behavior. These can be set globally in `~/.config/mise/config.toml` or per-project in `mise.toml`:
-
-#### `task_depth`
-
-- **Type**: `integer`
-- **Default**: `5`
-- **Env**: `MISE_TASK_DEPTH`
-
-Maximum depth to search for task files in monorepo subdirectories. Set to 1 for immediate children only, 2 for grandchildren, etc.
-
-```toml
-[settings]
-task_depth = 3  # Only search 3 levels deep
-```
-
-#### `task_monorepo_respect_gitignore`
-
-- **Type**: `bool`
-- **Default**: `true`
-- **Env**: `MISE_TASK_MONOREPO_RESPECT_GITIGNORE`
-
-Whether to respect `.gitignore` files when discovering monorepo subdirectories. When enabled, gitignored directories will be skipped.
-
-```toml
-[settings]
-task_monorepo_respect_gitignore = false  # Disable gitignore checking
-```
-
-#### `task_monorepo_exclude_dirs`
-
-- **Type**: `string[]`
-- **Default**: `[]`
-- **Env**: `MISE_TASK_MONOREPO_EXCLUDE_DIRS` (comma-separated)
-
-Directory patterns to exclude when discovering monorepo subdirectories. If empty (default), uses default exclusions: `node_modules`, `target`, `dist`, `build`.
-
-**Important**: If you specify any patterns, ONLY those patterns will be excluded (defaults are NOT included).
-
-```toml
-[settings]
-task_monorepo_exclude_dirs = ["tmp", "cache", "vendor"]  # Only exclude these, not the defaults
-```
-
 ## `redactions` <Badge type="warning" text="experimental" />
 
 - **Type**: `string[]`
@@ -515,3 +470,13 @@ _.file = ".env"
 ```
 
 [Secrets](/environments/secrets/) are also supported as vars.
+
+## Task Configuration Settings
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+
+The following settings control task behavior. These can be set globally in `~/.config/mise/config.toml` or per-project in `mise.toml`:
+
+<Settings :level="3" prefix="task" />
