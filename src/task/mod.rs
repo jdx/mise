@@ -1257,4 +1257,49 @@ echo "hello world"
             "//a/b/c/d:dep"
         );
     }
+
+    #[test]
+    fn test_strip_extension() {
+        use super::strip_extension;
+
+        // Test 1: Single extension
+        assert_eq!(strip_extension("task.sh"), "task");
+        assert_eq!(strip_extension("build.js"), "build");
+        assert_eq!(strip_extension("test.py"), "test");
+
+        // Test 2: Multiple extensions (only strips rightmost one)
+        assert_eq!(strip_extension("backup.test.js"), "backup.test");
+        assert_eq!(strip_extension("file.tar.gz"), "file.tar");
+        assert_eq!(strip_extension("archive.tar.bz2"), "archive.tar");
+
+        // Test 3: No extension
+        assert_eq!(strip_extension("task"), "task");
+        assert_eq!(strip_extension("build"), "build");
+
+        // Test 4: Hidden files (starting with dot)
+        // Note: ".hidden" is treated as extension, leaving empty string
+        assert_eq!(strip_extension(".hidden"), "");
+        assert_eq!(strip_extension(".gitignore"), "");
+
+        // Test 5: Hidden files with extension
+        assert_eq!(strip_extension(".hidden.sh"), ".hidden");
+        assert_eq!(strip_extension(".config.json"), ".config");
+
+        // Test 6: Empty string
+        assert_eq!(strip_extension(""), "");
+
+        // Test 7: Only extension separator
+        assert_eq!(strip_extension("."), "");
+
+        // Test 8: Multiple dots with extension
+        assert_eq!(strip_extension("my.task.name.js"), "my.task.name");
+
+        // Test 9: Path-like names (shouldn't treat / as special)
+        assert_eq!(strip_extension("path/to/task.sh"), "path/to/task");
+        assert_eq!(strip_extension("path/task"), "path/task");
+
+        // Test 10: Task names with dots in the middle
+        assert_eq!(strip_extension("test.unit"), "test");
+        assert_eq!(strip_extension("build.prod.js"), "build.prod");
+    }
 }
