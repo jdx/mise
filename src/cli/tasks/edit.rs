@@ -26,12 +26,7 @@ impl TasksEdit {
         let project_root = config.project_root.clone().unwrap_or(cwd);
         let path = Task::task_dir().await.join(&self.task);
 
-        let task = if let Some(task) = config
-            .tasks_with_aliases()
-            .await?
-            .remove(&self.task)
-            .cloned()
-        {
+        let task = if let Some(task) = config.tasks_with_aliases().await?.remove(&self.task) {
             task
         } else {
             Task::from_path(&config, &path, path.parent().unwrap(), &project_root)

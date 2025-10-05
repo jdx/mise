@@ -306,7 +306,7 @@ impl Task {
             .collect()
     }
 
-    pub fn all_depends(&self, tasks: &BTreeMap<String, &Task>) -> Result<Vec<Task>> {
+    pub fn all_depends(&self, tasks: &BTreeMap<String, Task>) -> Result<Vec<Task>> {
         let mut depends: Vec<Task> = self
             .depends
             .iter()
@@ -653,12 +653,12 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
     }
 }
 
-fn match_tasks(tasks: &BTreeMap<String, &Task>, td: &TaskDep) -> Result<Vec<Task>> {
+fn match_tasks(tasks: &BTreeMap<String, Task>, td: &TaskDep) -> Result<Vec<Task>> {
     let matches = tasks
         .get_matching(&td.task)?
         .into_iter()
         .map(|t| {
-            let mut t = (*t).clone();
+            let mut t = t.clone();
             t.args = td.args.clone();
             t
         })

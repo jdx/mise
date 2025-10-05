@@ -1,3 +1,4 @@
+use dashmap::DashMap;
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
@@ -58,7 +59,7 @@ pub struct Config {
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
     hooks: OnceCell<Vec<(PathBuf, Hook)>>,
-    tasks: OnceCell<BTreeMap<String, Task>>,
+    tasks_cache: Arc<DashMap<bool, Arc<BTreeMap<String, Task>>>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
     vars_loader: Option<Arc<Config>>,
@@ -133,7 +134,7 @@ impl Config {
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
             hooks: OnceCell::new(),
-            tasks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -151,7 +152,7 @@ impl Config {
             env_with_sources: OnceCell::new(),
             shorthands: config.shorthands.clone(),
             hooks: OnceCell::new(),
-            tasks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: config.all_aliases.clone(),
@@ -327,46 +328,43 @@ impl Config {
             })
     }
 
-    pub async fn tasks(&self) -> Result<&BTreeMap<String, Task>> {
+    pub async fn tasks(&self) -> Result<Arc<BTreeMap<String, Task>>> {
         self.tasks_with_context(None).await
     }
 
     pub async fn tasks_with_context(
         &self,
         ctx: Option<&crate::task::TaskLoadContext>,
-    ) -> Result<&BTreeMap<String, Task>> {
-        // When no context is provided, use the cached tasks
-        if ctx.is_none() {
-            return self
-                .tasks
-                .get_or_try_init(|| async {
-                    measure!("config::load_all_tasks", { self.load_all_tasks().await })
-                })
-                .await;
+    ) -> Result<Arc<BTreeMap<String, Task>>> {
+        // Determine cache key based on context
+        let load_all = ctx.map_or(false, |c| c.load_all);
+
+        // Check if already cached
+        if let Some(cached) = self.tasks_cache.get(&load_all) {
+            return Ok(cached.value().clone());
         }
 
-        // When a context is provided, we can't use the cache
-        // This is a limitation - we return the cached value for now
-        // TODO: Implement proper context-aware caching or remove caching for context calls
-        self.tasks
-            .get_or_try_init(|| async {
-                measure!("config::load_all_tasks_with_context", {
-                    self.load_all_tasks_with_context(ctx).await
-                })
-            })
-            .await
+        // Not cached, load tasks
+        let tasks = measure!("config::load_all_tasks_with_context", {
+            self.load_all_tasks_with_context(ctx).await?
+        });
+        let tasks_arc = Arc::new(tasks);
+
+        // Insert into cache
+        self.tasks_cache.insert(load_all, tasks_arc.clone());
+
+        Ok(tasks_arc)
     }
 
-    pub async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, &Task>> {
-        Ok(self
-            .tasks()
-            .await?
+    pub async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, Task>> {
+        let tasks = self.tasks().await?;
+        Ok(tasks
             .iter()
             .flat_map(|(_, t)| {
                 t.aliases
                     .iter()
-                    .map(|a| (a.to_string(), t))
-                    .chain(once((t.name.clone(), t)))
+                    .map(|a| (a.to_string(), t.clone()))
+                    .chain(once((t.name.clone(), t.clone())))
                     .collect::<Vec<_>>()
             })
             .collect())
@@ -417,10 +415,6 @@ impl Config {
         }
 
         aliases
-    }
-
-    async fn load_all_tasks(&self) -> Result<BTreeMap<String, Task>> {
-        self.load_all_tasks_with_context(None).await
     }
 
     async fn load_all_tasks_with_context(
@@ -1249,7 +1243,8 @@ impl Debug for Config {
             .collect::<Vec<_>>();
         let mut s = f.debug_struct("Config");
         s.field("Config Files", &config_files);
-        if let Some(tasks) = self.tasks.get() {
+        // Note: tasks are now lazily loaded and cached, so we can't access them synchronously here
+        if let Some(tasks) = self.tasks_cache.get(&false) {
             s.field(
                 "Tasks",
                 &tasks.values().map(|t| t.to_string()).collect_vec(),
