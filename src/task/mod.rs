@@ -861,6 +861,7 @@ where
                 };
 
                 // Match task part with asterisk support
+                // Also check without extension (e.g., test-e2e matches test-e2e.js)
                 let task_matches = if task_glob == "*" {
                     true
                 } else {
@@ -870,8 +871,10 @@ where
                         .ok()
                         .map(|b| b.compile_matcher());
 
-                    if let Some(matcher) = task_matcher {
-                        matcher.is_match(key_task)
+                    if let Some(matcher) = &task_matcher {
+                        // Check exact match OR match without extension
+                        let key_task_no_ext = key_task.rsplitn(2, '.').last().unwrap_or(key_task);
+                        matcher.is_match(key_task) || matcher.is_match(key_task_no_ext)
                     } else {
                         false
                     }
@@ -911,8 +914,10 @@ where
                             .ok()
                             .map(|b| b.compile_matcher());
 
-                        if let Some(matcher) = task_matcher {
-                            matcher.is_match(stripped_task)
+                        if let Some(matcher) = &task_matcher {
+                            // Check exact match OR match without extension
+                            let stripped_task_no_ext = stripped_task.rsplitn(2, '.').last().unwrap_or(stripped_task);
+                            matcher.is_match(stripped_task) || matcher.is_match(stripped_task_no_ext)
                         } else {
                             false
                         }

@@ -1669,7 +1669,7 @@ async fn load_file_tasks(
         .task_config()
         .includes
         .clone()
-        .unwrap_or(vec!["tasks".into()])
+        .unwrap_or_else(default_task_includes)
         .into_iter()
         .map(|p| cf.get_path().parent().unwrap().join(p))
         .collect::<Vec<_>>();
