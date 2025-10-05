@@ -229,6 +229,21 @@ min_version = { hard = '2024.11.1', soft = '2024.9.0' }
 
 When a soft minimum is not met, mise will print a warning and (if available) show self-update instructions. When a hard minimum is not met, mise errors and shows self-update instructions.
 
+### Monorepo root <Badge type="warning" text="experimental" />
+
+Mark a configuration file as a monorepo root to enable Bazel/Buck2-style target paths for tasks. Requires `MISE_EXPERIMENTAL=1`.
+
+```toml
+experimental_monorepo_root = true
+```
+
+When enabled:
+- Tasks in subdirectories are automatically discovered and namespaced with paths (e.g., `//projects/frontend:build`)
+- All descendant config files are **implicitly trusted** when the root is trusted
+- Eliminates the need to individually trust each subdirectory's configuration
+
+See [Task Configuration: Monorepo Support](/tasks/task-configuration#monorepo-support) for detailed usage and examples.
+
 ### `mise.toml` schema
 
 - You can find the JSON schema for `mise.toml` in [schema/mise.json](https://github.com/jdx/mise/blob/main/schema/mise.json) or at <https://mise.jdx.dev/schema/mise.json>.
