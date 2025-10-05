@@ -941,8 +941,12 @@ where
             // If we reach here, it means the expansion didn't happen properly
             bail!("':task' pattern should be expanded before matching")
         } else if pat.contains(':') && !pat.starts_with("//") {
-            // Relative path like projects/1:task could match //projects/1:task
-            format!("//{}", pat)
+            // Relative path syntax is not supported - must use // prefix or : prefix
+            bail!(
+                "relative path syntax '{}' is not supported, use '//{}'  or ':task' for current directory",
+                pat,
+                pat
+            )
         } else {
             pat.to_string()
         };

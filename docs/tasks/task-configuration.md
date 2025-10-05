@@ -399,14 +399,14 @@ Tasks will be automatically namespaced:
 - `//projects/backend:build`
 - `//projects/backend:test`
 
-You can run these tasks using either absolute or relative syntax:
+You can run these tasks using monorepo path syntax:
 
 ```bash
-# Absolute path (with // prefix)
+# Absolute path from monorepo root (with // prefix)
 mise run '//projects/frontend:build'
 
-# Relative path (without // prefix)
-mise run 'projects/frontend:build'
+# Current directory task (with : prefix)
+mise run ':build'                  # Run 'build' task in current directory
 
 # With wildcard patterns
 mise run '//...:test'              # Run 'test' task in all projects (ellipsis for paths)
