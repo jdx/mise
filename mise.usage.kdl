@@ -826,6 +826,7 @@ cmd tasks help="Manage tasks" {
     flag "-g --global" help="Only show global tasks" global=#true
     flag "-J --json" help="Output in JSON format" global=#true
     flag "-l --local" help="Only show non-global tasks" global=#true
+    flag --all help="Load all tasks from the entire monorepo, including sibling directories.\nBy default, only tasks from the current directory hierarchy are loaded." global=#true
     flag --sort help="Sort by column. Default is name." global=#true {
         arg <COLUMN> {
             choices name alias description source
@@ -905,6 +906,7 @@ cmd tasks help="Manage tasks" {
         flag "-g --global" help="Only show global tasks" global=#true
         flag "-J --json" help="Output in JSON format" global=#true
         flag "-l --local" help="Only show non-global tasks" global=#true
+        flag --all help="Load all tasks from the entire monorepo, including sibling directories.\nBy default, only tasks from the current directory hierarchy are loaded." global=#true
         flag --sort help="Sort by column. Default is name." global=#true {
             arg <COLUMN> {
                 choices name alias description source
