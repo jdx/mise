@@ -1,5 +1,23 @@
 # Changelog
 
+## [2025.10.3](https://github.com/jdx/mise/compare/v2025.10.2..v2025.10.3) - 2025-10-05
+
+### 📦 Registry
+
+- added cloudflare wrangler by @moisesmorillo in [#6534](https://github.com/jdx/mise/pull/6534)
+
+### 🚀 Features
+
+- support latest suffix for Java, Python and Ruby flavoured versions by @roele in [#6533](https://github.com/jdx/mise/pull/6533)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** decode filename extracted from url by @risu729 in [#6536](https://github.com/jdx/mise/pull/6536)
+
+### New Contributors
+
+- @moisesmorillo made their first contribution in [#6534](https://github.com/jdx/mise/pull/6534)
+
 ## [2025.10.2](https://github.com/jdx/mise/compare/v2025.10.1..v2025.10.2) - 2025-10-03
 
 ### 🐛 Bug Fixes

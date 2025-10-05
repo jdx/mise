@@ -1,8 +1,10 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
 packages:
-  - name: oracle/truffleruby/oracle-native
+  - name: truffleruby/truffleruby/oracle-native
+    aliases:
+      - name: oracle/truffleruby/oracle-native
     type: github_release
-    repo_owner: oracle
+    repo_owner: truffleruby
     repo_name: truffleruby
     description: |
       A high performance implementation of the Ruby programming language, built on GraalVM
