@@ -103,6 +103,10 @@ pub trait ConfigFile: Debug + Send + Sync {
         &DEFAULT_TASK_CONFIG
     }
 
+    fn experimental_monorepo_root(&self) -> Option<bool> {
+        None
+    }
+
     fn redactions(&self) -> &Redactions {
         static DEFAULT_REDACTIONS: Lazy<Redactions> = Lazy::new(Redactions::default);
         &DEFAULT_REDACTIONS
@@ -554,16 +558,6 @@ impl Hash for dyn ConfigFile {
 pub struct TaskConfig {
     pub includes: Option<Vec<PathBuf>>,
     pub dir: Option<String>,
-    pub experimental_monorepo_root: Option<bool>,
-    /// Whether to respect .gitignore files when discovering monorepo subdirectories
-    /// Defaults to true
-    pub monorepo_respect_gitignore: Option<bool>,
-    /// Additional directory patterns to exclude when discovering monorepo subdirectories
-    /// These are in addition to the default exclusions (node_modules, target, dist, build)
-    pub monorepo_exclude_dirs: Option<Vec<String>>,
-    /// Maximum depth to search for task files in monorepo subdirectories
-    /// Defaults to unlimited (None). Set to 1 for immediate children only, 2 for grandchildren, etc.
-    pub depth: Option<usize>,
 }
 
 #[cfg(test)]

@@ -713,14 +713,14 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
 }
 
 fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
-    // Find the config file that has task_config.experimental_monorepo_root = true
+    // Find the config file that has experimental_monorepo_root = true
     // This feature requires experimental mode
     if !Settings::get().experimental {
         return None;
     }
     config_files
         .values()
-        .find(|cf| cf.task_config().experimental_monorepo_root == Some(true))
+        .find(|cf| cf.experimental_monorepo_root() == Some(true))
         .and_then(|cf| cf.project_root().map(|p| p.to_path_buf()))
 }
 
@@ -1152,7 +1152,7 @@ async fn load_all_config_files(
         }
 
         // Mark monorepo roots so descendant configs are implicitly trusted
-        if cf.task_config().experimental_monorepo_root == Some(true) {
+        if cf.experimental_monorepo_root() == Some(true) {
             if let Err(err) = config_file::mark_as_monorepo_root(f) {
                 warn!("failed to mark monorepo root: {err:#}");
             }
@@ -1379,14 +1379,7 @@ async fn load_local_tasks_with_context(
             return Ok(tasks);
         }
 
-        // Get task_config from the monorepo root config file
-        let task_config = config
-            .config_files
-            .values()
-            .find(|cf| cf.task_config().experimental_monorepo_root == Some(true))
-            .map(|cf| cf.task_config().clone())
-            .unwrap_or_default();
-        let subdirs = discover_monorepo_subdirs(monorepo_root, &task_config, ctx)?;
+        let subdirs = discover_monorepo_subdirs(monorepo_root, ctx)?;
         for subdir in subdirs {
             if cfg!(test) && !subdir.starts_with(*dirs::HOME) {
                 continue;
@@ -1428,21 +1421,26 @@ async fn load_local_tasks_with_context(
 
 fn discover_monorepo_subdirs(
     root: &Path,
-    task_config: &config_file::TaskConfig,
     ctx: Option<&crate::task::TaskLoadContext>,
 ) -> Result<Vec<PathBuf>> {
-    const DEFAULT_MAX_DEPTH: usize = 5;
-    const IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
+    const DEFAULT_IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
 
     let mut subdirs = Vec::new();
-    let respect_gitignore = task_config.monorepo_respect_gitignore.unwrap_or(true);
-    let max_depth = task_config.depth.unwrap_or(DEFAULT_MAX_DEPTH);
+    let settings = Settings::get();
+    let respect_gitignore = settings.task_monorepo_respect_gitignore;
+    let max_depth = settings.task_depth as usize;
 
     // Build the list of excluded directories
-    let mut excluded_dirs: Vec<&str> = IGNORED_DIRS.to_vec();
-    if let Some(ref extra_excludes) = task_config.monorepo_exclude_dirs {
-        excluded_dirs.extend(extra_excludes.iter().map(|s| s.as_str()));
-    }
+    // If user defined custom exclude dirs, use only those, otherwise use defaults
+    let excluded_dirs: Vec<&str> = if settings.task_monorepo_exclude_dirs.is_empty() {
+        DEFAULT_IGNORED_DIRS.to_vec()
+    } else {
+        settings
+            .task_monorepo_exclude_dirs
+            .iter()
+            .map(|s| s.as_str())
+            .collect()
+    };
 
     if respect_gitignore {
         // Use the `ignore` crate which respects .gitignore files

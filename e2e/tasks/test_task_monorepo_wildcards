@@ -5,7 +5,6 @@ export MISE_EXPERIMENTAL=1
 
 # Create monorepo root config
 cat <<EOF >mise.toml
-[task_config]
 experimental_monorepo_root = true
 
 [tasks.root-task]
