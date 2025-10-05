@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+# Test validation for monorepo task paths
+
+# Test 1: Running monorepo task without MISE_EXPERIMENTAL should error
+unset MISE_EXPERIMENTAL
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[tasks.local]
+run = 'echo "local task"'
+EOF
+
+# Should fail with helpful error about MISE_EXPERIMENTAL
+assert_fail "mise run '//some:task'" "require experimental mode"
+
+# Test 2: Running monorepo task with MISE_EXPERIMENTAL but without monorepo root should error
+export MISE_EXPERIMENTAL=1
+cat <<EOF >mise.toml
+[tasks.local]
+run = 'echo "local task"'
+EOF
+
+# Should fail with helpful error about experimental_monorepo_root
+assert_fail "mise run '//some:task'" "require a monorepo root configuration"
+
+# Test 3: Wildcard patterns should also trigger validation
+unset MISE_EXPERIMENTAL
+cat <<EOF >mise.toml
+[tasks.local]
+run = 'echo "local task"'
+EOF
+
+# Wildcard pattern without experimental mode should fail
+assert_fail "mise run '//...:build'" "require experimental mode"
+
+# Test 4: Three-dot syntax should also trigger validation
+assert_fail "mise run '...:build'" "require experimental mode"

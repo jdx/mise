@@ -1554,6 +1554,41 @@ fn last_modified_file(files: impl IntoIterator<Item = PathBuf>) -> Result<Option
         .max())
 }
 
+fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
+    // Check if experimental mode is enabled
+    if !Settings::get().experimental {
+        bail!(
+            "Monorepo task paths (like `//path:task` or `:task`) require experimental mode.\n\
+            \n\
+            To enable experimental features, set:\n\
+            {}\n\
+            \n\
+            Or run with: {}",
+            style::eyellow("  export MISE_EXPERIMENTAL=true"),
+            style::eyellow("MISE_EXPERIMENTAL=1 mise run ...")
+        );
+    }
+
+    // Check if a monorepo root is configured
+    if !config.is_monorepo() {
+        bail!(
+            "Monorepo task paths (like `//path:task` or `:task`) require a monorepo root configuration.\n\
+            \n\
+            To set up monorepo support, add this to your root mise.toml:\n\
+            {}\n\
+            \n\
+            Then create task files in subdirectories that will be automatically discovered.\n\
+            See {} for more information.",
+            style::eyellow("  experimental_monorepo_root = true"),
+            style::eunderline(
+                "https://mise.jdx.dev/tasks/task-configuration.html#monorepo-support"
+            )
+        );
+    }
+
+    Ok(())
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
@@ -1742,7 +1777,7 @@ pub async fn get_task_lists(
         let monorepo_patterns: Vec<&str> = args
             .iter()
             .filter_map(|(t, _)| {
-                if t.starts_with("//") || t.contains("...") {
+                if t.starts_with("//") || t.contains("...") || t.starts_with(':') {
                     Some(t.as_str())
                 } else {
                     None
@@ -1753,6 +1788,9 @@ pub async fn get_task_lists(
         if monorepo_patterns.is_empty() {
             None
         } else {
+            // Validate monorepo setup before attempting to load tasks
+            validate_monorepo_setup(config)?;
+
             // Merge all path hints from the patterns into a single context
             Some(TaskLoadContext::from_patterns(
                 monorepo_patterns.into_iter(),
@@ -1762,7 +1800,41 @@ pub async fn get_task_lists(
 
     let mut tasks = vec![];
     let arg_re = regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#);
-    for (t, args) in args {
+    for (mut t, args) in args {
+        // Expand :task pattern to match tasks in current directory's config root
+        if t.starts_with(':') {
+            // Get the monorepo root (the config file with experimental_monorepo_root = true)
+            let monorepo_root = config
+                .config_files
+                .values()
+                .find(|cf| cf.experimental_monorepo_root() == Some(true))
+                .and_then(|cf| cf.project_root());
+
+            // Determine the current directory relative to monorepo root
+            if let (Some(monorepo_root), Some(cwd)) = (monorepo_root, &*dirs::CWD) {
+                if let Ok(rel_path) = cwd.strip_prefix(monorepo_root) {
+                    // Convert relative path to monorepo path format
+                    let path_str = rel_path
+                        .to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, "/");
+                    if path_str.is_empty() {
+                        // We're at the root - :task should match root-level tasks (//: prefix)
+                        // In monorepo mode, root tasks have // prefix
+                        t = format!("//{}", t);
+                    } else {
+                        // We're in a subdirectory - match //path:task
+                        t = format!("//{}{}", path_str, t);
+                    }
+                } else {
+                    // CWD is not within monorepo root
+                    bail!("Cannot use :task syntax outside of monorepo root directory");
+                }
+            } else {
+                // This should have been caught by validate_monorepo_setup
+                bail!("Cannot use :task syntax without a monorepo root");
+            }
+        }
+
         // can be any of the following:
         // - ./path/to/script
         // - ~/path/to/script

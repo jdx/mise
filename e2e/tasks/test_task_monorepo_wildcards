@@ -96,9 +96,8 @@ assert_contains "mise run '//projects/frontend:test:*'" "frontend test:unit"
 assert_contains "mise run '//projects/frontend:test:*'" "frontend test:integration"
 assert_not_contains "mise run '//projects/frontend:test:*'" "frontend build"
 
-# Test relative patterns (without //)
-assert_contains "mise run 'projects/...:build'" "frontend build"
-assert_contains "mise run 'projects/...:build'" "backend build"
+# Test that relative patterns (without //) are not supported
+assert_fail "mise run 'projects/...:build'" "relative path syntax"
 
 # Test combined patterns - ellipsis in path, asterisk in task
 assert_contains "mise run '//projects/...:test*'" "frontend test"
