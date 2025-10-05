@@ -1339,7 +1339,26 @@ async fn load_local_tasks_with_context(
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
             continue;
         }
-        tasks.extend(load_tasks_in_dir(config, &d, &config.config_files).await?);
+        let mut dir_tasks = load_tasks_in_dir(config, &d, &config.config_files).await?;
+
+        // In monorepo mode, prefix tasks with their monorepo path
+        if let Some(ref monorepo_root) = monorepo_root {
+            if let Ok(rel_path) = d.strip_prefix(monorepo_root) {
+                if !rel_path.as_os_str().is_empty() {
+                    let prefix = rel_path
+                        .to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, "/");
+                    for task in dir_tasks.iter_mut() {
+                        task.name = format!(
+                            "{}{}{}{}",
+                            MONOREPO_PATH_PREFIX, prefix, MONOREPO_TASK_SEPARATOR, task.name
+                        );
+                    }
+                }
+            }
+        }
+
+        tasks.extend(dir_tasks);
     }
 
     // Determine if we should load all monorepo tasks or just current hierarchy

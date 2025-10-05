@@ -61,11 +61,11 @@ assert_not_contains "mise tasks ls" "//projects/frontend:build"
 assert_not_contains "mise tasks ls" "//projects/backend:build"
 assert_not_contains "mise tasks ls" "//libs/shared:build"
 
-# Test from subdirectory - shows local tasks normally (not at root)
+# Test from subdirectory - shows local tasks with full monorepo paths
 cd projects/frontend
 assert_contains "mise tasks ls" "root-task"
-assert_contains "mise tasks ls" "build"
-assert_contains "mise tasks ls" "test"
+assert_contains "mise tasks ls" "//projects/frontend:build"
+assert_contains "mise tasks ls" "//projects/frontend:test"
 assert_not_contains "mise tasks ls" "//projects/backend:build"
 assert_not_contains "mise tasks ls" "//libs/shared:build"
 
