@@ -1,7 +1,7 @@
 use crate::cli::version::VERSION;
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
-use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
+use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config};
 use crate::path_env::PathEnv;
 use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
@@ -232,9 +232,9 @@ impl Task {
         Ok(task)
     }
 
-    pub fn derive_env(&self, env_directives: &[EnvDirective]) -> Self {
+    pub fn derive_env(&self, env_list: &EnvList) -> Self {
         let mut new_task = self.clone();
-        new_task.env.0.extend_from_slice(env_directives);
+        new_task.env.inner_mut().extend_from_slice(env_list.inner());
         new_task
     }
 

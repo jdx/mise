@@ -90,8 +90,23 @@ pub struct Tasks(pub BTreeMap<String, Task>);
 pub struct EnvList(pub(crate) Vec<EnvDirective>);
 
 impl EnvList {
+    pub fn from_env_directives(env_directives: &[EnvDirective]) -> Self {
+        Self(env_directives.to_vec())
+    }
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+    pub fn inner(&self) -> &Vec<EnvDirective> {
+        &self.0
+    }
+    pub fn inner_mut(&mut self) -> &mut Vec<EnvDirective> {
+        &mut self.0
+    }
+}
+
+impl From<&[EnvDirective]> for EnvList {
+    fn from(env_directives: &[EnvDirective]) -> Self {
+        EnvList::from_env_directives(env_directives)
     }
 }
 
@@ -421,7 +436,7 @@ impl ConfigFile for MiseToml {
     }
 
     fn env_entries(&self) -> eyre::Result<Vec<EnvDirective>> {
-        let env_entries = self.env.0.iter().cloned();
+        let env_entries = self.env.inner().iter().cloned();
         let path_entries = self
             .env_path
             .iter()

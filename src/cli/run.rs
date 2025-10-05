@@ -856,7 +856,7 @@ impl Run {
                     match rx.try_recv() {
                         Ok(Some(task)) => {
                             any = true;
-                            let task = task.derive_env(&task_env_directives);
+                            let task = task.derive_env(&task_env_directives.as_slice().into());
                             trace!("inject initial leaf: {} {}", task.name, task.args.join(" "));
                             let _ = sched_tx.send((task, sub_deps_clone.clone()));
                         }
@@ -887,7 +887,7 @@ impl Run {
                                 task.name,
                                 task.args.join(" ")
                             );
-                            let task = task.derive_env(&task_env_directives);
+                            let task = task.derive_env(&task_env_directives.as_slice().into());
                             let _ = sched_tx.send((task, sub_deps_clone.clone()));
                         }
                         None => {
@@ -1742,9 +1742,13 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
     let all_tasks = config.tasks_with_aliases().await?;
     tasks
         .into_iter()
-        .map(|t| {
-            let depends = t.all_depends(&all_tasks)?;
-            Ok(once(t).chain(depends).collect::<Vec<_>>())
+        .map(|parent_t| {
+            let env_list = parent_t.env.clone();
+            let depends = parent_t
+                .all_depends(&all_tasks)?
+                .into_iter()
+                .map(|t| t.derive_env(&env_list));
+            Ok(once(parent_t).chain(depends).collect::<Vec<_>>())
         })
         .flatten_ok()
         .collect()

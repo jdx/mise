@@ -113,7 +113,7 @@ impl TasksInfo {
             "depends": task.depends,
             "depends_post": task.depends_post,
             "wait_for": task.wait_for,
-            "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
+            "env": task.env.inner().iter().map(|d| d.to_string()).collect::<Vec<_>>(),
             "dir": task.dir,
             "hide": task.hide,
             "raw": task.raw,
