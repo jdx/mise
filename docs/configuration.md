@@ -238,7 +238,8 @@ experimental_monorepo_root = true
 ```
 
 When enabled:
-- Tasks in subdirectories are automatically discovered and namespaced with paths (e.g., `//projects/frontend:build`)
+- Tasks in subdirectories are available with namespaced paths (e.g., `//projects/frontend:build`)
+- Tasks are only loaded when needed (e.g., when running them, or with `mise tasks ls --all`)
 - All descendant config files are **implicitly trusted** when the root is trusted
 - Eliminates the need to individually trust each subdirectory's configuration
 
