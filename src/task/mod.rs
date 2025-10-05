@@ -792,12 +792,9 @@ where
                     // Check if task name exactly matches, or matches without extension
                     k.as_str() == pat
                         || k.rsplitn(2, '.').last().unwrap_or_default() == pat
+                        || (k.contains(':') && k.split_once(':').map(|x| x.1).unwrap_or_default() == pat)
                         || (k.contains(':')
-                            && k.splitn(2, ':').nth(1).unwrap_or_default()
-                                == pat)
-                        || (k.contains(':')
-                            && k.splitn(2, ':')
-                                .nth(1)
+                            && k.split_once(':').map(|x| x.1)
                                 .unwrap_or_default()
                                 .rsplitn(2, '.')
                                 .last()
@@ -916,8 +913,12 @@ where
 
                         if let Some(matcher) = &task_matcher {
                             // Check exact match OR match without extension
-                            let stripped_task_no_ext = stripped_task.rsplitn(2, '.').last().unwrap_or(stripped_task);
-                            matcher.is_match(stripped_task) || matcher.is_match(stripped_task_no_ext)
+                            let stripped_task_no_ext = stripped_task
+                                .rsplitn(2, '.')
+                                .last()
+                                .unwrap_or(stripped_task);
+                            matcher.is_match(stripped_task)
+                                || matcher.is_match(stripped_task_no_ext)
                         } else {
                             false
                         }
