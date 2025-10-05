@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::LazyLock as Lazy;
@@ -311,7 +312,7 @@ impl Task {
             .depends
             .iter()
             .chain(self.depends_post.iter())
-            .map(|td| match_tasks(tasks, td))
+            .map(|td| match_tasks_with_context(tasks, td, Some(self)))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
@@ -329,25 +330,74 @@ impl Task {
         config: &Arc<Config>,
         tasks_to_run: &[Task],
     ) -> Result<(Vec<Task>, Vec<Task>)> {
+        use crate::task::TaskLoadContext;
+
         let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
-        let tasks = config.tasks_with_aliases().await?;
+
+        // Build context with path hints from self, tasks_to_run, and dependency patterns
+        let extract_path_hint = |name: &str| -> Option<String> {
+            // Extract path from monorepo task names like "//projects/frontend:test"
+            // Remove the "//" prefix for use in should_load_subdir
+            if name.starts_with("//") {
+                name.rsplit_once(':')
+                    .map(|x| x.0)
+                    .and_then(|s| s.strip_prefix("//"))
+                    .map(|s| s.to_string())
+            } else {
+                None
+            }
+        };
+
+        let path_hints: Vec<String> = once(&self.name)
+            .chain(tasks_to_run.iter().map(|t| &t.name))
+            .filter_map(|name| extract_path_hint(name))
+            .chain(
+                self.depends
+                    .iter()
+                    .chain(self.wait_for.iter())
+                    .chain(self.depends_post.iter())
+                    .filter_map(|td| extract_path_hint(&td.task)),
+            )
+            .unique()
+            .collect();
+
+        let ctx = if !path_hints.is_empty() {
+            Some(TaskLoadContext {
+                path_hints,
+                load_all: false,
+            })
+        } else {
+            None
+        };
+
+        let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+        let tasks: BTreeMap<String, Task> = all_tasks
+            .iter()
+            .flat_map(|(_, t)| {
+                t.aliases
+                    .iter()
+                    .map(|a| (a.to_string(), t.clone()))
+                    .chain(once((t.name.clone(), t.clone())))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         let depends = self
             .depends
             .iter()
-            .map(|td| match_tasks(&tasks, td))
+            .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
             .flatten_ok()
             .collect_vec();
         let wait_for = self
             .wait_for
             .iter()
-            .map(|td| match_tasks(&tasks, td))
+            .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
             .flatten_ok()
             .filter_ok(|t| tasks_to_run.contains(t))
             .collect_vec();
         let depends_post = self
             .depends_post
             .iter()
-            .map(|td| match_tasks(&tasks, td))
+            .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
@@ -653,9 +703,31 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
     }
 }
 
-fn match_tasks(tasks: &BTreeMap<String, Task>, td: &TaskDep) -> Result<Vec<Task>> {
+/// Resolve a task dependency pattern, optionally relative to a parent task
+/// If pattern starts with ":" and parent_task is provided, resolve relative to parent's path
+/// For example: parent "//projects/frontend:test" with pattern ":build" -> "//projects/frontend:build"
+fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) -> String {
+    // If pattern starts with ":" and we have a parent task, resolve relatively
+    if pattern.starts_with(':') && !pattern.starts_with("::") {
+        if let Some(parent) = parent_task {
+            // Extract the path portion from the parent task name
+            // For monorepo tasks like "//projects/frontend:test", extract "//projects/frontend"
+            if let Some((path, _)) = parent.name.rsplit_once(':') {
+                return format!("{}{}", path, pattern);
+            }
+        }
+    }
+    pattern.to_string()
+}
+
+fn match_tasks_with_context(
+    tasks: &BTreeMap<String, Task>,
+    td: &TaskDep,
+    parent_task: Option<&Task>,
+) -> Result<Vec<Task>> {
+    let resolved_pattern = resolve_task_pattern(&td.task, parent_task);
     let matches = tasks
-        .get_matching(&td.task)?
+        .get_matching(&resolved_pattern)?
         .into_iter()
         .map(|t| {
             let mut t = t.clone();
@@ -1107,6 +1179,82 @@ echo "hello world"
             error
                 .to_string()
                 .contains("failed to parse task header TOML")
+        );
+    }
+
+    #[test]
+    fn test_resolve_task_pattern() {
+        use super::resolve_task_pattern;
+
+        // Create a mock task for testing
+        let mut parent_task = Task::default();
+
+        // Test 1: Relative pattern with monorepo parent task
+        parent_task.name = "//projects/frontend:test".to_string();
+        assert_eq!(
+            resolve_task_pattern(":build", Some(&parent_task)),
+            "//projects/frontend:build"
+        );
+
+        // Test 2: Relative pattern with different parent
+        parent_task.name = "//libs/shared:lint".to_string();
+        assert_eq!(
+            resolve_task_pattern(":compile", Some(&parent_task)),
+            "//libs/shared:compile"
+        );
+
+        // Test 3: Absolute pattern should not be modified
+        parent_task.name = "//projects/frontend:test".to_string();
+        assert_eq!(
+            resolve_task_pattern("//projects/backend:build", Some(&parent_task)),
+            "//projects/backend:build"
+        );
+
+        // Test 4: Simple task name without parent context
+        assert_eq!(
+            resolve_task_pattern("build", Some(&parent_task)),
+            "build"
+        );
+
+        // Test 5: Relative pattern without parent task (no resolution)
+        assert_eq!(
+            resolve_task_pattern(":build", None),
+            ":build"
+        );
+
+        // Test 6: Non-monorepo task (no colon in parent name)
+        parent_task.name = "test".to_string();
+        assert_eq!(
+            resolve_task_pattern(":build", Some(&parent_task)),
+            ":build"
+        );
+
+        // Test 7: Root monorepo task (empty path)
+        parent_task.name = "//:root-task".to_string();
+        assert_eq!(
+            resolve_task_pattern(":other", Some(&parent_task)),
+            "//:other"
+        );
+
+        // Test 8: Double colon should not be treated as relative
+        parent_task.name = "//projects/frontend:test".to_string();
+        assert_eq!(
+            resolve_task_pattern("::global", Some(&parent_task)),
+            "::global"
+        );
+
+        // Test 9: Pattern with wildcards
+        parent_task.name = "//projects/frontend:test".to_string();
+        assert_eq!(
+            resolve_task_pattern(":test*", Some(&parent_task)),
+            "//projects/frontend:test*"
+        );
+
+        // Test 10: Deep nested path
+        parent_task.name = "//a/b/c/d:task".to_string();
+        assert_eq!(
+            resolve_task_pattern(":dep", Some(&parent_task)),
+            "//a/b/c/d:dep"
         );
     }
 }

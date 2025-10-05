@@ -1785,11 +1785,63 @@ pub async fn get_task_lists(
 }
 
 pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<Vec<Task>> {
-    let all_tasks = config.tasks_with_aliases().await?;
+    use crate::task::TaskLoadContext;
+
+    // Build a context that includes all paths from the input tasks and their dependencies
+    // This ensures dependency resolution can find tasks in the same monorepo paths
+    let extract_path_hint = |name: &str| -> Option<String> {
+        // Extract path from monorepo task names like "//projects/frontend:test"
+        // Remove the "//" prefix for use in should_load_subdir
+        if name.starts_with("//") {
+            name.rsplit_once(':')
+                .map(|x| x.0)
+                .and_then(|s| s.strip_prefix("//"))
+                .map(|s| s.to_string())
+        } else {
+            None
+        }
+    };
+
+    let path_hints: Vec<String> = tasks
+        .iter()
+        .filter_map(|t| extract_path_hint(&t.name))
+        .chain(
+            tasks.iter().flat_map(|t| {
+                t.depends
+                    .iter()
+                    .chain(t.wait_for.iter())
+                    .chain(t.depends_post.iter())
+                    .filter_map(|td| extract_path_hint(&td.task))
+            }),
+        )
+        .unique()
+        .collect();
+
+    let ctx = if !path_hints.is_empty() {
+        Some(TaskLoadContext {
+            path_hints,
+            load_all: false,
+        })
+    } else {
+        None
+    };
+
+    let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+    let all_tasks_map: BTreeMap<String, Task> = all_tasks
+        .iter()
+        .flat_map(|(_, t)| {
+            t.aliases
+                .iter()
+                .map(|a| (a.to_string(), t.clone()))
+                .chain(once((t.name.clone(), t.clone())))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
     tasks
         .into_iter()
         .map(|t| {
-            let depends = t.all_depends(&all_tasks)?;
+            let depends = t.all_depends(&all_tasks_map)?;
             Ok(once(t).chain(depends).collect::<Vec<_>>())
         })
         .flatten_ok()
