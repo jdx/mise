@@ -573,7 +573,12 @@ impl Task {
         Ok(tera_ctx)
     }
 
-    pub fn cf<'a>(&self, config: &'a Config) -> Option<&'a Arc<dyn ConfigFile>> {
+    pub fn cf<'a>(&'a self, config: &'a Config) -> Option<&'a Arc<dyn ConfigFile>> {
+        // For monorepo tasks, use the stored config file reference
+        if let Some(ref cf) = self.cf {
+            return Some(cf);
+        }
+        // Fallback to looking up in config.config_files
         config.config_files.get(&self.config_source)
     }
 

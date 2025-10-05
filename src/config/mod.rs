@@ -1399,7 +1399,7 @@ async fn load_local_tasks_with_context(
                         if config_path.exists() {
                             if let Ok(cf) = config_file::parse(&config_path).await {
                                 let mut subdir_tasks =
-                                    load_config_and_file_tasks(&config, cf).await?;
+                                    load_config_and_file_tasks(&config, cf.clone()).await?;
 
                                 // Prefix task names with relative path from monorepo root
                                 if let Ok(rel_path) = subdir.strip_prefix(&monorepo_root) {
@@ -1415,6 +1415,8 @@ async fn load_local_tasks_with_context(
                                                 MONOREPO_TASK_SEPARATOR,
                                                 task.name
                                             );
+                                            // Store reference to config file for later use
+                                            task.cf = Some(cf.clone());
                                         }
                                     }
                                 }

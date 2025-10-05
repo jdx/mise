@@ -694,8 +694,14 @@ impl Run {
         // For monorepo tasks, build toolset from the task's config file context
         // This ensures tools and env from subdirectory mise.toml files are used
         let ts = if let Some(task_cf) = task.cf(config) {
+            trace!(
+                "task {} using config file context from {}",
+                task.name,
+                task_cf.get_path().display()
+            );
             // Build a toolset from the task's config file
             let mut task_ts = task_cf.to_toolset()?;
+            trace!("task {} toolset from config file: {:?}", task.name, task_ts);
 
             // Add task-specific tools and CLI args
             let arg_toolset = ToolsetBuilder::new()
@@ -710,6 +716,10 @@ impl Run {
             task_ts.resolve(config).await?;
             task_ts
         } else {
+            trace!(
+                "task {} no config file found, using standard toolset",
+                task.name
+            );
             // Fallback to standard behavior if no config file found
             ToolsetBuilder::new()
                 .with_args(&tools)
