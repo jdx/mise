@@ -1150,6 +1150,14 @@ async fn load_all_config_files(
         if let Err(err) = Tracker::track(f) {
             warn!("tracking config: {err:#}");
         }
+
+        // Mark monorepo roots so descendant configs are implicitly trusted
+        if cf.task_config().experimental_monorepo_root == Some(true) {
+            if let Err(err) = config_file::mark_as_monorepo_root(f) {
+                warn!("failed to mark monorepo root: {err:#}");
+            }
+        }
+
         config_map.insert(f.clone(), cf);
     }
     Ok(config_map)

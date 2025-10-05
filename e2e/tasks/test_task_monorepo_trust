@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Test that trusting a monorepo root implicitly trusts all descendant configs
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<EOF >mise.toml
+[task_config]
+experimental_monorepo_root = true
+
+[tasks.root-task]
+run = 'echo "root task"'
+EOF
+
+# Create nested project structure
+mkdir -p projects/frontend/components
+cat <<EOF >projects/frontend/mise.toml
+[tasks.build]
+run = 'echo "frontend build"'
+EOF
+
+cat <<EOF >projects/frontend/components/mise.toml
+[tasks.test]
+run = 'echo "component test"'
+EOF
+
+# Trust the root config
+mise trust
+
+# Verify that all tasks are accessible without additional trust prompts
+# The lack of "not trusted" warnings in stderr indicates implicit trust is working
+assert_contains "mise tasks ls --all 2>&1" "//:root-task"
+assert_contains "mise tasks ls --all 2>&1" "//projects/frontend:build"
+assert_contains "mise tasks ls --all 2>&1" "//projects/frontend/components:test"
+
+# Verify no trust warnings appear
+assert_not_contains "mise tasks ls --all 2>&1" "not trusted"
+assert_not_contains "mise tasks ls --all 2>&1" "Trust them"
+
+# Verify we can run tasks from nested configs
+assert_contains "mise run '//projects/frontend:build'" "frontend build"
+assert_contains "mise run '//projects/frontend/components:test'" "component test"
