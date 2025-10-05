@@ -364,17 +364,19 @@ run = "echo task4"
 
 If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
 
-### `task_config.experimental_monorepo_root` <Badge type="warning" text="experimental" />
+## Monorepo Support <Badge type="warning" text="experimental" />
+
+### `experimental_monorepo_root`
 
 - **Type**: `bool`
 - **Default**: `false`
 - **Requires**: `MISE_EXPERIMENTAL=1`
+- **Location**: Top-level in `mise.toml`
 
 Enable monorepo task support with bazel/buck2-style target paths. When enabled, mise will automatically
 discover tasks in subdirectories and prefix them with their relative path from the monorepo root.
 
 ```toml
-[task_config]
 experimental_monorepo_root = true
 ```
 
@@ -414,7 +416,7 @@ mise run '//projects/frontend:test:*' # Run all tasks starting with 'test:' in p
 ```
 
 This is useful for large monorepos where multiple projects need their own tasks but you want to run
-them all from the root directory. Tasks in subdirectories up to 5 levels deep will be discovered.
+them all from the root directory.
 
 **Notes:**
 
@@ -422,39 +424,56 @@ them all from the root directory. Tasks in subdirectories up to 5 levels deep wi
 - Quote task names in shell commands to prevent interpretation of `/` and `:`
 - Subdirectories with `.mise.toml`, `mise.toml`, `.mise/config.toml`, or `.config/mise/config.toml` will be scanned
 - Hidden directories and common build artifacts (`node_modules`, `target`, `dist`, `build`) are automatically excluded
-- By default, directories listed in `.gitignore` files are also excluded (configurable via `monorepo_respect_gitignore`)
 - **Wildcard syntax:**
   - Use `...` (ellipsis) for path matching: `//...:task` or `//path/.../subpath:task`
   - Use `*` (asterisk) for task name matching: `//path:task*` or `//path:*`
   - Path wildcards (`...`) match any directory depth
   - Task wildcards (`*`) match any characters in task names
+- When a monorepo root config is trusted, all descendant configs are automatically trusted
 
-### `task_config.monorepo_respect_gitignore`
+### Monorepo Configuration Settings
+
+The following settings control monorepo task discovery behavior. These can be set globally in `~/.config/mise/config.toml` or per-project in `mise.toml`:
+
+#### `task_depth`
+
+- **Type**: `integer`
+- **Default**: `5`
+- **Env**: `MISE_TASK_DEPTH`
+
+Maximum depth to search for task files in monorepo subdirectories. Set to 1 for immediate children only, 2 for grandchildren, etc.
+
+```toml
+[settings]
+task_depth = 3  # Only search 3 levels deep
+```
+
+#### `task_monorepo_respect_gitignore`
 
 - **Type**: `bool`
 - **Default**: `true`
+- **Env**: `MISE_TASK_MONOREPO_RESPECT_GITIGNORE`
 
-When `experimental_monorepo_root` is enabled, this controls whether `.gitignore` files should be respected
-when discovering subdirectories. This defaults to `true`, which means gitignored directories will be skipped.
+Whether to respect `.gitignore` files when discovering monorepo subdirectories. When enabled, gitignored directories will be skipped.
 
 ```toml
-[task_config]
-experimental_monorepo_root = true
-monorepo_respect_gitignore = false  # Disable gitignore checking
+[settings]
+task_monorepo_respect_gitignore = false  # Disable gitignore checking
 ```
 
-### `task_config.monorepo_exclude_dirs`
+#### `task_monorepo_exclude_dirs`
 
 - **Type**: `string[]`
 - **Default**: `[]`
+- **Env**: `MISE_TASK_MONOREPO_EXCLUDE_DIRS` (comma-separated)
 
-Additional directory names to exclude when discovering monorepo subdirectories. These are in addition to
-the default exclusions (`node_modules`, `target`, `dist`, `build`) and any patterns from `.gitignore` files.
+Directory patterns to exclude when discovering monorepo subdirectories. If empty (default), uses default exclusions: `node_modules`, `target`, `dist`, `build`.
+
+**Important**: If you specify any patterns, ONLY those patterns will be excluded (defaults are NOT included).
 
 ```toml
-[task_config]
-experimental_monorepo_root = true
-monorepo_exclude_dirs = ["tmp", "cache", "vendor"]
+[settings]
+task_monorepo_exclude_dirs = ["tmp", "cache", "vendor"]  # Only exclude these, not the defaults
 ```
 
 ## `redactions` <Badge type="warning" text="experimental" />
