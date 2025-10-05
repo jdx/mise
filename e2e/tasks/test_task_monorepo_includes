@@ -54,12 +54,12 @@ assert_contains "mise run '//projects/frontend:another.long-name.sh'" "task with
 
 # Verify running from a subdirectory
 cd projects/frontend
-assert_contains "mise run toml-task" "task from toml"
-assert_contains "mise run script-task" "task from script"
-assert_contains "mise run another.long-name" "task with long name"
+assert_contains "mise run :toml-task" "task from toml"
+assert_contains "mise run :script-task" "task from script"
+assert_contains "mise run :another.long-name" "task with long name"
 
 # Verify wildcard execution from subdirectory
-output=$(mise run '*')
+output=$(mise run ':*')
 assert_contains "echo '$output'" "task from toml"
 assert_contains "echo '$output'" "task from script"
 assert_contains "echo '$output'" "task with long name"
