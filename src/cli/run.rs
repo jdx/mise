@@ -1805,15 +1805,13 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
     let path_hints: Vec<String> = tasks
         .iter()
         .filter_map(|t| extract_path_hint(&t.name))
-        .chain(
-            tasks.iter().flat_map(|t| {
-                t.depends
-                    .iter()
-                    .chain(t.wait_for.iter())
-                    .chain(t.depends_post.iter())
-                    .filter_map(|td| extract_path_hint(&td.task))
-            }),
-        )
+        .chain(tasks.iter().flat_map(|t| {
+            t.depends
+                .iter()
+                .chain(t.wait_for.iter())
+                .chain(t.depends_post.iter())
+                .filter_map(|td| extract_path_hint(&td.task))
+        }))
         .unique()
         .collect();
 

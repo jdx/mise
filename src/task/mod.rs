@@ -1211,23 +1211,14 @@ echo "hello world"
         );
 
         // Test 4: Simple task name without parent context
-        assert_eq!(
-            resolve_task_pattern("build", Some(&parent_task)),
-            "build"
-        );
+        assert_eq!(resolve_task_pattern("build", Some(&parent_task)), "build");
 
         // Test 5: Relative pattern without parent task (no resolution)
-        assert_eq!(
-            resolve_task_pattern(":build", None),
-            ":build"
-        );
+        assert_eq!(resolve_task_pattern(":build", None), ":build");
 
         // Test 6: Non-monorepo task (no colon in parent name)
         parent_task.name = "test".to_string();
-        assert_eq!(
-            resolve_task_pattern(":build", Some(&parent_task)),
-            ":build"
-        );
+        assert_eq!(resolve_task_pattern(":build", Some(&parent_task)), ":build");
 
         // Test 7: Root monorepo task (empty path)
         parent_task.name = "//:root-task".to_string();

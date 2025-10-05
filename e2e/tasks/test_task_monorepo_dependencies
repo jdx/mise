@@ -68,10 +68,10 @@ output=$(mise run '//projects/frontend:test' 2>&1)
 build_line=$(echo "$output" | grep -n "frontend build" | head -1 | cut -d: -f1)
 test_line=$(echo "$output" | grep -n "frontend test" | head -1 | cut -d: -f1)
 if [ "$build_line" -lt "$test_line" ]; then
-    echo "SUCCESS: build ran before test"
+	echo "SUCCESS: build ran before test"
 else
-    echo "ERROR: build should run before test"
-    exit 1
+	echo "ERROR: build should run before test"
+	exit 1
 fi
 
 # Test 3: Multiple dependencies (relative + absolute)
@@ -93,8 +93,8 @@ assert_contains "echo '$output'" "backend build"
 assert_contains "echo '$output'" "backend test"
 # Should NOT contain frontend build
 if echo "$output" | grep -q "frontend build"; then
-    echo "ERROR: backend:test should not depend on frontend:build"
-    exit 1
+	echo "ERROR: backend:test should not depend on frontend:build"
+	exit 1
 fi
 echo "SUCCESS: backend dependencies are isolated"
 
