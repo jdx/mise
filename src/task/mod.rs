@@ -778,11 +778,24 @@ pub trait GetMatchingExt<T> {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
 }
 
+/// Helper function to strip file extension from a task name
+/// e.g., "test.js" -> "test", "build" -> "build"
+fn strip_extension(name: &str) -> &str {
+    name.rsplitn(2, '.').last().unwrap_or(name)
+}
+
+/// Helper function to extract the task portion from a task key
+/// e.g., "//path:task" -> "task", "task" -> "task"
+fn extract_task_name(key: &str) -> &str {
+    key.split_once(':').map(|x| x.1).unwrap_or(key)
+}
+
 impl<T> GetMatchingExt<T> for BTreeMap<String, T>
 where
     T: Eq + Hash,
 {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
+        // === Simple pattern matching (no monorepo syntax) ===
         // If pattern doesn't contain ':' or '//', it's a simple task name (non-monorepo)
         // In this case, use the existing task matching logic
         if !pat.contains(':') && !pat.starts_with("//") {
@@ -790,23 +803,17 @@ where
                 .iter()
                 .filter(|(k, _)| {
                     // Check if task name exactly matches, or matches without extension
+                    let task_part = extract_task_name(k);
                     k.as_str() == pat
-                        || k.rsplitn(2, '.').last().unwrap_or_default() == pat
-                        || (k.contains(':')
-                            && k.split_once(':').map(|x| x.1).unwrap_or_default() == pat)
-                        || (k.contains(':')
-                            && k.split_once(':')
-                                .map(|x| x.1)
-                                .unwrap_or_default()
-                                .rsplitn(2, '.')
-                                .last()
-                                .unwrap_or_default()
-                                == pat)
+                        || strip_extension(k) == pat
+                        || task_part == pat
+                        || strip_extension(task_part) == pat
                 })
                 .map(|(_, v)| v)
                 .collect());
         }
 
+        // === Parse monorepo pattern ===
         // Normalize pattern: convert //path:task or path:task to normalized form
         // If pattern starts with //, it's an absolute monorepo path
         let normalized_pat = if pat.starts_with("//") {
@@ -827,6 +834,7 @@ where
             _ => (normalized_pat.as_str(), "*"),
         };
 
+        // === Convert ellipsis to glob syntax ===
         // Convert ellipsis (...) to glob pattern (**)
         // //... matches everything, //foo/... matches foo and all subdirs
         let path_glob = path_pattern.replace("...", "**");
@@ -835,6 +843,52 @@ where
         // e.g., test:* matches test:unit, test:integration, etc.
         let task_glob = task_pattern;
 
+        // === Build glob matchers once (performance optimization) ===
+        // Build path matcher for absolute patterns
+        let path_matcher = GlobBuilder::new(&path_glob)
+            .literal_separator(true)
+            .build()
+            .ok()
+            .map(|b| b.compile_matcher());
+
+        // Build task matcher if not wildcard
+        let task_matcher = if task_glob != "*" {
+            GlobBuilder::new(task_glob)
+                .literal_separator(false) // Allow * to match : in task names
+                .build()
+                .ok()
+                .map(|b| b.compile_matcher())
+        } else {
+            None
+        };
+
+        // Build relative pattern matchers if needed
+        let (rel_path_matcher, rel_task_matcher) = if !pat.starts_with("//") {
+            let rel_path_pattern = path_pattern.strip_prefix("//").unwrap_or(path_pattern);
+            let rel_path_glob = rel_path_pattern.replace("...", "**");
+
+            let rel_path = GlobBuilder::new(&rel_path_glob)
+                .literal_separator(true)
+                .build()
+                .ok()
+                .map(|b| b.compile_matcher());
+
+            let rel_task = if task_glob != "*" {
+                GlobBuilder::new(task_glob)
+                    .literal_separator(false)
+                    .build()
+                    .ok()
+                    .map(|b| b.compile_matcher())
+            } else {
+                None
+            };
+
+            (rel_path, rel_task)
+        } else {
+            (None, None)
+        };
+
+        // === Match tasks with extension stripping ===
         Ok(self
             .iter()
             .filter(|(k, _)| {
@@ -847,36 +901,20 @@ where
                 };
 
                 // Match path part with ellipsis support
-                let path_matcher = GlobBuilder::new(&path_glob)
-                    .literal_separator(true)
-                    .build()
-                    .ok()
-                    .map(|b| b.compile_matcher());
-
-                let path_matches = if let Some(matcher) = path_matcher {
+                let path_matches = if let Some(ref matcher) = path_matcher {
                     matcher.is_match(key_path)
                 } else {
                     false
                 };
 
-                // Match task part with asterisk support
-                // Also check without extension (e.g., test-e2e matches test-e2e.js)
+                // Match task part with asterisk support and extension stripping
                 let task_matches = if task_glob == "*" {
                     true
+                } else if let Some(ref matcher) = task_matcher {
+                    // Check exact match OR match without extension
+                    matcher.is_match(key_task) || matcher.is_match(strip_extension(key_task))
                 } else {
-                    let task_matcher = GlobBuilder::new(task_glob)
-                        .literal_separator(false) // Allow * to match : in task names
-                        .build()
-                        .ok()
-                        .map(|b| b.compile_matcher());
-
-                    if let Some(matcher) = &task_matcher {
-                        // Check exact match OR match without extension
-                        let key_task_no_ext = key_task.rsplitn(2, '.').last().unwrap_or(key_task);
-                        matcher.is_match(key_task) || matcher.is_match(key_task_no_ext)
-                    } else {
-                        false
-                    }
+                    false
                 };
 
                 // Try matching without // prefix for relative patterns
@@ -889,16 +927,7 @@ where
                         _ => (stripped_key, ""),
                     };
 
-                    let rel_path_pattern = path_pattern.strip_prefix("//").unwrap_or(path_pattern);
-                    let rel_path_glob = rel_path_pattern.replace("...", "**");
-
-                    let rel_path_matcher = GlobBuilder::new(&rel_path_glob)
-                        .literal_separator(true)
-                        .build()
-                        .ok()
-                        .map(|b| b.compile_matcher());
-
-                    let rel_path_matches = if let Some(matcher) = rel_path_matcher {
+                    let rel_path_matches = if let Some(ref matcher) = rel_path_matcher {
                         matcher.is_match(stripped_path)
                     } else {
                         false
@@ -906,24 +935,12 @@ where
 
                     let rel_task_matches = if task_glob == "*" {
                         true
+                    } else if let Some(ref matcher) = rel_task_matcher {
+                        // Check exact match OR match without extension
+                        matcher.is_match(stripped_task)
+                            || matcher.is_match(strip_extension(stripped_task))
                     } else {
-                        let task_matcher = GlobBuilder::new(task_glob)
-                            .literal_separator(false)
-                            .build()
-                            .ok()
-                            .map(|b| b.compile_matcher());
-
-                        if let Some(matcher) = &task_matcher {
-                            // Check exact match OR match without extension
-                            let stripped_task_no_ext = stripped_task
-                                .rsplitn(2, '.')
-                                .last()
-                                .unwrap_or(stripped_task);
-                            matcher.is_match(stripped_task)
-                                || matcher.is_match(stripped_task_no_ext)
-                        } else {
-                            false
-                        }
+                        false
                     };
 
                     rel_path_matches && rel_task_matches

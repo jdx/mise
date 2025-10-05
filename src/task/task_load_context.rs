@@ -94,6 +94,8 @@ impl TaskLoadContext {
 
     /// Check if a subdirectory should be loaded based on the context
     pub fn should_load_subdir(&self, subdir: &str, _monorepo_root: &str) -> bool {
+        use std::path::Path;
+
         // If load_all is true, load everything
         if self.load_all {
             return true;
@@ -104,21 +106,21 @@ impl TaskLoadContext {
             return false;
         }
 
-        // Normalize subdir for comparison (remove leading/trailing slashes)
-        let subdir = subdir.trim_matches('/');
+        // Use Path APIs for more robust path comparison
+        let subdir_path = Path::new(subdir);
 
         // Check if subdir matches or is a parent/child of any hint
         for hint in &self.path_hints {
-            let hint = hint.trim_matches('/');
+            let hint_path = Path::new(hint);
 
             // Check if subdir matches or is a parent/child of this hint
             // e.g., hint "foo/bar" should match:
             // - "foo/bar" (exact match)
-            // - "foo/bar/baz" (child)
-            // - "foo" (parent, might contain the target)
-            if subdir == hint
-                || subdir.starts_with(&format!("{}/", hint))
-                || hint.starts_with(&format!("{}/", subdir))
+            // - "foo/bar/baz" (child - subdir starts with hint)
+            // - "foo" (parent - hint starts with subdir, might contain the target)
+            if subdir_path == hint_path
+                || subdir_path.starts_with(hint_path)
+                || hint_path.starts_with(subdir_path)
             {
                 return true;
             }
