@@ -1640,7 +1640,43 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
             }
         }
     }
-    bail!("no task {} found", style::ered(name));
+
+    // Suggest similar tasks using fuzzy matching for monorepo tasks
+    let mut err_msg = format!("no task {} found", style::ered(name));
+    if name.starts_with("//") {
+        // Load ALL monorepo tasks for suggestions
+        use crate::task::TaskLoadContext;
+        if let Ok(tasks) = config
+            .tasks_with_context(Some(&TaskLoadContext::all()))
+            .await
+        {
+            use fuzzy_matcher::FuzzyMatcher;
+            use fuzzy_matcher::skim::SkimMatcherV2;
+
+            let matcher = SkimMatcherV2::default().use_cache(true).smart_case();
+            let similar: Vec<String> = tasks
+                .keys()
+                .filter(|k| k.starts_with("//"))
+                .filter_map(|k| {
+                    matcher
+                        .fuzzy_match(&k.to_lowercase(), &name.to_lowercase())
+                        .map(|score| (score, k.clone()))
+                })
+                .sorted_by_key(|(score, _)| -1 * *score)
+                .take(5)
+                .map(|(_, k)| k)
+                .collect();
+
+            if !similar.is_empty() {
+                err_msg.push_str("\n\nDid you mean one of these?");
+                for task_name in similar {
+                    err_msg.push_str(&format!("\n  - {}", task_name));
+                }
+            }
+        }
+    }
+
+    bail!(err_msg);
 }
 
 async fn prompt_for_task() -> Result<Task> {
@@ -1680,6 +1716,8 @@ pub async fn get_task_lists(
     args: &[String],
     prompt: bool,
 ) -> Result<Vec<Task>> {
+    use crate::task::TaskLoadContext;
+
     let args = args
         .iter()
         .map(|s| vec![s.to_string()])
@@ -1694,6 +1732,34 @@ pub async fn get_task_lists(
         })
         .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
         .collect::<Vec<_>>();
+
+    // Determine the appropriate task loading context based on patterns
+    // For monorepo patterns, we need to load tasks from the relevant parts of the monorepo
+    let task_context = if args.is_empty() {
+        None
+    } else {
+        // Collect all monorepo patterns
+        let monorepo_patterns: Vec<&str> = args
+            .iter()
+            .filter_map(|(t, _)| {
+                if t.starts_with("//") || t.contains("...") {
+                    Some(t.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if monorepo_patterns.is_empty() {
+            None
+        } else {
+            // Merge all path hints from the patterns into a single context
+            Some(TaskLoadContext::from_patterns(
+                monorepo_patterns.into_iter(),
+            ))
+        }
+    };
+
     let mut tasks = vec![];
     let arg_re = regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#);
     for (t, args) in args {
@@ -1716,9 +1782,25 @@ pub async fn get_task_lists(
                 return Ok(vec![task.with_args(args)]);
             }
         }
-        let cur_tasks = config
-            .tasks_with_aliases()
-            .await?
+        // Load tasks with the appropriate context
+        let all_tasks = if let Some(ref ctx) = task_context {
+            config.tasks_with_context(Some(ctx)).await?
+        } else {
+            config.tasks().await?
+        };
+
+        let tasks_with_aliases: BTreeMap<String, &Task> = all_tasks
+            .iter()
+            .flat_map(|(_, t)| {
+                t.aliases
+                    .iter()
+                    .map(|a| (a.to_string(), t))
+                    .chain(once((t.name.clone(), t)))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        let cur_tasks = tasks_with_aliases
             .get_matching(&t)?
             .into_iter()
             .cloned()
@@ -1739,11 +1821,48 @@ pub async fn get_task_lists(
 }
 
 pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<Vec<Task>> {
-    let all_tasks = config.tasks_with_aliases().await?;
+    use crate::task::{TaskLoadContext, extract_monorepo_path};
+
+    // Build a context that includes all paths from the input tasks and their dependencies
+    // This ensures dependency resolution can find tasks in the same monorepo paths
+    let path_hints: Vec<String> = tasks
+        .iter()
+        .filter_map(|t| extract_monorepo_path(&t.name))
+        .chain(tasks.iter().flat_map(|t| {
+            t.depends
+                .iter()
+                .chain(t.wait_for.iter())
+                .chain(t.depends_post.iter())
+                .filter_map(|td| extract_monorepo_path(&td.task))
+        }))
+        .unique()
+        .collect();
+
+    let ctx = if !path_hints.is_empty() {
+        Some(TaskLoadContext {
+            path_hints,
+            load_all: false,
+        })
+    } else {
+        None
+    };
+
+    let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+    let all_tasks_map: BTreeMap<String, Task> = all_tasks
+        .iter()
+        .flat_map(|(_, t)| {
+            t.aliases
+                .iter()
+                .map(|a| (a.to_string(), t.clone()))
+                .chain(once((t.name.clone(), t.clone())))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
     tasks
         .into_iter()
         .map(|t| {
-            let depends = t.all_depends(&all_tasks)?;
+            let depends = t.all_depends(&all_tasks_map)?;
             Ok(once(t).chain(depends).collect::<Vec<_>>())
         })
         .flatten_ok()

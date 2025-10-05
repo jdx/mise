@@ -2362,6 +2362,12 @@ esac`),
               isRepeatable: false,
             },
             {
+              name: "--all",
+              description:
+                "Load all tasks from the entire monorepo, including sibling directories.\nBy default, only tasks from the current directory hierarchy are loaded.",
+              isRepeatable: false,
+            },
+            {
               name: "--sort",
               description: "Sort by column. Default is name.",
               isRepeatable: false,
@@ -2552,6 +2558,12 @@ esac`),
         {
           name: ["-l", "--local"],
           description: "Only show non-global tasks",
+          isRepeatable: false,
+        },
+        {
+          name: "--all",
+          description:
+            "Load all tasks from the entire monorepo, including sibling directories.\nBy default, only tasks from the current directory hierarchy are loaded.",
           isRepeatable: false,
         },
         {

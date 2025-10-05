@@ -103,6 +103,10 @@ pub trait ConfigFile: Debug + Send + Sync {
         &DEFAULT_TASK_CONFIG
     }
 
+    fn experimental_monorepo_root(&self) -> Option<bool> {
+        None
+    }
+
     fn redactions(&self) -> &Redactions {
         static DEFAULT_REDACTIONS: Lazy<Redactions> = Lazy::new(Redactions::default);
         &DEFAULT_REDACTIONS
@@ -321,6 +325,22 @@ pub fn is_trusted(path: &Path) -> bool {
             return true;
         }
     }
+
+    // Check if this path is within a trusted monorepo root
+    // Monorepo roots are marked with a special marker file when trusted
+    if settings.experimental {
+        if let Some(parent) = canonicalized_path.parent() {
+            let mut current = parent;
+            while let Some(dir) = current.parent() {
+                let monorepo_marker = trust_path(dir).with_extension("monorepo");
+                if monorepo_marker.exists() {
+                    add_trusted(canonicalized_path.to_path_buf());
+                    return true;
+                }
+                current = dir;
+            }
+        }
+    }
     if settings.paranoid {
         let trusted = trust_file_hash(path).unwrap_or_else(|e| {
             warn!("trust_file_hash: {e}");
@@ -398,6 +418,18 @@ pub fn trust(path: &Path) -> Result<()> {
         let trust_hash_path = hashed_path.with_extension("hash");
         let hash = hash::file_hash_sha256(path, None)?;
         file::write(trust_hash_path, hash)?;
+    }
+    Ok(())
+}
+
+/// Marks a trusted config as a monorepo root, allowing all descendant configs to be trusted
+pub fn mark_as_monorepo_root(path: &Path) -> Result<()> {
+    let config_root = config_trust_root(path);
+    let hashed_path = trust_path(&config_root);
+    let monorepo_marker = hashed_path.with_extension("monorepo");
+    if !monorepo_marker.exists() {
+        file::create_dir_all(monorepo_marker.parent().unwrap())?;
+        file::write(&monorepo_marker, "")?;
     }
     Ok(())
 }

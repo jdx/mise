@@ -140,7 +140,11 @@ impl TasksDeps {
         let tasks = config
             .tasks()
             .await
-            .map(|t| t.values().map(|v| &v.display_name).collect::<Vec<_>>())
+            .map(|t| {
+                t.values()
+                    .map(|v| v.display_name.clone())
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default();
         let task_names = tasks.into_iter().map(style::ecyan).join(", ");
         let t = style(&t).yellow().for_stderr();

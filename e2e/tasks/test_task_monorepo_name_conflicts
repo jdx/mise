@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+# Test monorepo task name conflicts and resolution
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root with a "build" task
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[tasks.build]
+run = 'echo "root build"'
+EOF
+
+# Create project with also a "build" task
+mkdir -p projects/frontend
+cat <<EOF >projects/frontend/mise.toml
+[tasks.build]
+run = 'echo "frontend build"'
+EOF
+
+mise trust
+
+# Test 1: Non-prefixed task name runs local/nearest task
+echo "=== Test 1: Non-prefixed 'build' runs root build ==="
+output=$(mise run build 2>&1)
+if echo "$output" | grep -q "root build"; then
+	echo "SUCCESS: Non-prefixed name runs root task"
+else
+	echo "ERROR: Expected 'root build' in output"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Test 2: Monorepo path runs specific task
+echo "=== Test 2: Prefixed path runs specific task ==="
+output=$(mise run '//projects/frontend:build' 2>&1)
+if echo "$output" | grep -q "frontend build"; then
+	echo "SUCCESS: Monorepo path runs specific task"
+else
+	echo "ERROR: Expected 'frontend build' in output"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Test 3: From subdirectory, non-prefixed runs local
+echo "=== Test 3: From subdirectory runs local task ==="
+cd projects/frontend
+output=$(mise run build 2>&1)
+# From subdirectory, should run local task
+if echo "$output" | grep -q "frontend build"; then
+	echo "SUCCESS: From subdirectory runs local task"
+else
+	echo "ERROR: Expected 'frontend build' from subdirectory"
+	echo "Output: $output"
+	exit 1
+fi
+cd ../..
+
+# Test 4: Tasks list shows both with full paths
+echo "=== Test 4: Tasks list shows both ==="
+output=$(mise tasks ls --all 2>&1)
+if echo "$output" | grep -q "//:build" && echo "$output" | grep -q "//projects/frontend:build"; then
+	echo "SUCCESS: Both tasks visible in list"
+else
+	echo "ERROR: Expected both tasks in list"
+	echo "Output: $output"
+	exit 1
+fi

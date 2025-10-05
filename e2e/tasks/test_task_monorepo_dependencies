@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+
+# Test monorepo task dependencies with relative and absolute paths
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[tasks.root-task]
+run = 'echo "root task"'
+EOF
+
+# Create frontend project with task dependencies
+mkdir -p projects/frontend
+cat <<EOF >projects/frontend/mise.toml
+[tasks.build]
+run = 'echo "frontend build"'
+
+[tasks.test]
+run = 'echo "frontend test"'
+# Relative dependency - should resolve to //projects/frontend:build
+depends = [":build"]
+
+[tasks.deploy]
+run = 'echo "frontend deploy"'
+# Multiple dependencies: one relative, one absolute
+depends = [":test", "//projects/backend:build"]
+EOF
+
+# Create backend project
+mkdir -p projects/backend
+cat <<EOF >projects/backend/mise.toml
+[tasks.build]
+run = 'echo "backend build"'
+
+[tasks.test]
+run = 'echo "backend test"'
+# Relative dependency within backend
+depends = [":build"]
+
+[tasks.package]
+run = 'echo "backend package"'
+# Absolute dependency to another project
+depends = ["//projects/frontend:build"]
+EOF
+
+# Create shared lib
+mkdir -p libs/shared
+cat <<EOF >libs/shared/mise.toml
+[tasks.build]
+run = 'echo "shared build"'
+
+[tasks.lint]
+run = 'echo "shared lint"'
+depends = [":build"]
+EOF
+
+# Test 1: Relative dependency within same project
+# When running //projects/frontend:test, it should run :build from frontend first
+echo "=== Test 1: Relative dependency ==="
+assert_contains "mise run '//projects/frontend:test'" "frontend build"
+assert_contains "mise run '//projects/frontend:test'" "frontend test"
+
+# Test 2: Dependency order - build should run before test
+# Check that "build" appears before "test" in output
+output=$(mise run '//projects/frontend:test' 2>&1)
+build_line=$(echo "$output" | grep -n "frontend build" | head -1 | cut -d: -f1)
+test_line=$(echo "$output" | grep -n "frontend test" | head -1 | cut -d: -f1)
+if [ "$build_line" -lt "$test_line" ]; then
+	echo "SUCCESS: build ran before test"
+else
+	echo "ERROR: build should run before test"
+	exit 1
+fi
+
+# Test 3: Multiple dependencies (relative + absolute)
+echo "=== Test 3: Multiple dependencies ==="
+assert_contains "mise run '//projects/frontend:deploy'" "frontend build"
+assert_contains "mise run '//projects/frontend:deploy'" "frontend test"
+assert_contains "mise run '//projects/frontend:deploy'" "backend build"
+assert_contains "mise run '//projects/frontend:deploy'" "frontend deploy"
+
+# Test 4: Cross-project absolute dependency
+echo "=== Test 4: Cross-project dependency ==="
+assert_contains "mise run '//projects/backend:package'" "frontend build"
+assert_contains "mise run '//projects/backend:package'" "backend package"
+
+# Test 5: Relative dependency in backend (should NOT use frontend:build)
+echo "=== Test 5: Relative dependency isolation ==="
+output=$(mise run '//projects/backend:test' 2>&1)
+assert_contains "echo '$output'" "backend build"
+assert_contains "echo '$output'" "backend test"
+# Should NOT contain frontend build
+if echo "$output" | grep -q "frontend build"; then
+	echo "ERROR: backend:test should not depend on frontend:build"
+	exit 1
+fi
+echo "SUCCESS: backend dependencies are isolated"
+
+# Test 6: Run from different directory - dependencies should still be relative to task location
+echo "=== Test 6: Dependencies from different directory ==="
+cd projects/backend
+assert_contains "mise run '//projects/frontend:test'" "frontend build"
+assert_contains "mise run '//projects/frontend:test'" "frontend test"
+cd ../..
+
+# Test 7: Wildcard with dependencies
+echo "=== Test 7: Wildcard with dependencies ==="
+# All test tasks should run their respective build dependencies
+output=$(mise run '//projects/...:test' 2>&1)
+assert_contains "echo '$output'" "frontend build"
+assert_contains "echo '$output'" "frontend test"
+assert_contains "echo '$output'" "backend build"
+assert_contains "echo '$output'" "backend test"
+
+# Test 8: Transitive dependencies
+echo "=== Test 8: Transitive dependencies ==="
+# deploy depends on test, which depends on build
+# So deploy should transitively run build
+output=$(mise run '//projects/frontend:deploy' 2>&1)
+# Check all three run
+assert_contains "echo '$output'" "frontend build"
+assert_contains "echo '$output'" "frontend test"
+assert_contains "echo '$output'" "frontend deploy"
