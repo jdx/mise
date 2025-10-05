@@ -783,6 +783,31 @@ where
     T: Eq + Hash,
 {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
+        // If pattern doesn't contain ':' or '//', it's a simple task name (non-monorepo)
+        // In this case, use the existing task matching logic
+        if !pat.contains(':') && !pat.starts_with("//") {
+            return Ok(self
+                .iter()
+                .filter(|(k, _)| {
+                    // Check if task name exactly matches, or matches without extension
+                    k.as_str() == pat
+                        || k.rsplitn(2, '.').last().unwrap_or_default() == pat
+                        || (k.contains(':')
+                            && k.splitn(2, ':').nth(1).unwrap_or_default()
+                                == pat)
+                        || (k.contains(':')
+                            && k.splitn(2, ':')
+                                .nth(1)
+                                .unwrap_or_default()
+                                .rsplitn(2, '.')
+                                .last()
+                                .unwrap_or_default()
+                                == pat)
+                })
+                .map(|(_, v)| v)
+                .collect());
+        }
+
         // Normalize pattern: convert //path:task or path:task to normalized form
         // If pattern starts with //, it's an absolute monorepo path
         let normalized_pat = if pat.starts_with("//") {
