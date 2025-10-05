@@ -847,14 +847,16 @@ impl Run {
         task_cf: &Arc<dyn ConfigFile>,
         ts: &Toolset,
     ) -> Result<(BTreeMap<String, String>, Vec<(String, String)>)> {
-        // Early return: if task's config root matches current config root, use standard behavior
-        // This avoids redundant resolution for tasks that don't need special context
+        // Early return: if task's config root matches current config root and there are no
+        // config-level env directives, use standard behavior. This avoids redundant resolution
+        // for tasks that don't need special context
+        let config_has_env = !task_cf.env_entries()?.is_empty();
         if let (Some(task_config_root), Some(current_config_root)) =
             (task_cf.project_root(), config.project_root.as_ref())
         {
-            if task_config_root == current_config_root && task.env.0.is_empty() {
+            if task_config_root == current_config_root && !config_has_env {
                 trace!(
-                    "task {} config root matches current, using standard env resolution",
+                    "task {} config root matches current and no config env, using standard env resolution",
                     task.name
                 );
                 return task.render_env(config, ts).await;
@@ -932,15 +934,27 @@ impl Run {
         )
         .await?;
 
-        // Build task_env from ONLY the task-specific directives
-        let task_env: Vec<(String, String)> = task_env_results
+        // Build task_env from BOTH config-level and task-specific directives
+        // This matches the behavior of Task::render_env but includes config context
+        let mut task_env: Vec<(String, String)> = config_env_results
             .env
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect();
 
+        // Add task-specific env vars (these override config-level vars with same key)
+        for (k, (v, _)) in &task_env_results.env {
+            if let Some(existing) = task_env.iter_mut().find(|(key, _)| key == k) {
+                existing.1 = v.clone();
+            } else {
+                task_env.push((k.clone(), v.clone()));
+            }
+        }
+
         // Apply task-specific env to the environment
-        env.extend(task_env.clone());
+        for (k, (v, _)) in &task_env_results.env {
+            env.insert(k.clone(), v.clone());
+        }
         for key in &task_env_results.env_remove {
             env.remove(key);
         }

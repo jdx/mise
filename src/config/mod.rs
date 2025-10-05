@@ -1397,31 +1397,40 @@ async fn load_local_tasks_with_context(
                     for config_filename in DEFAULT_CONFIG_FILENAMES.iter() {
                         let config_path = subdir.join(config_filename);
                         if config_path.exists() {
-                            if let Ok(cf) = config_file::parse(&config_path).await {
-                                let mut subdir_tasks =
-                                    load_config_and_file_tasks(&config, cf.clone()).await?;
+                            match config_file::parse(&config_path).await {
+                                Ok(cf) => {
+                                    let mut subdir_tasks =
+                                        load_config_and_file_tasks(&config, cf.clone()).await?;
 
-                                // Prefix task names with relative path from monorepo root
-                                if let Ok(rel_path) = subdir.strip_prefix(&monorepo_root) {
-                                    if !rel_path.as_os_str().is_empty() {
-                                        let prefix = rel_path
-                                            .to_string_lossy()
-                                            .replace(std::path::MAIN_SEPARATOR, "/");
-                                        for task in subdir_tasks.iter_mut() {
-                                            task.name = format!(
-                                                "{}{}{}{}",
-                                                MONOREPO_PATH_PREFIX,
-                                                prefix,
-                                                MONOREPO_TASK_SEPARATOR,
-                                                task.name
-                                            );
-                                            // Store reference to config file for later use
-                                            task.cf = Some(cf.clone());
+                                    // Prefix task names with relative path from monorepo root
+                                    if let Ok(rel_path) = subdir.strip_prefix(&monorepo_root) {
+                                        if !rel_path.as_os_str().is_empty() {
+                                            let prefix = rel_path
+                                                .to_string_lossy()
+                                                .replace(std::path::MAIN_SEPARATOR, "/");
+                                            for task in subdir_tasks.iter_mut() {
+                                                task.name = format!(
+                                                    "{}{}{}{}",
+                                                    MONOREPO_PATH_PREFIX,
+                                                    prefix,
+                                                    MONOREPO_TASK_SEPARATOR,
+                                                    task.name
+                                                );
+                                                // Store reference to config file for later use
+                                                task.cf = Some(cf.clone());
+                                            }
                                         }
                                     }
-                                }
 
-                                all_tasks.extend(subdir_tasks);
+                                    all_tasks.extend(subdir_tasks);
+                                }
+                                Err(err) => {
+                                    warn!(
+                                        "Failed to parse config file {}: {}",
+                                        config_path.display(),
+                                        err
+                                    );
+                                }
                             }
                         }
                     }
