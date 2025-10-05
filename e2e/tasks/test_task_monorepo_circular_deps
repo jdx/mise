@@ -11,6 +11,9 @@ experimental_monorepo_root = true
 run = 'echo "root task"'
 EOF
 
+# Trust the root config so it can run
+mise trust
+
 # Test 1: Direct circular dependency (a -> b -> a)
 echo "=== Test 1: Direct circular dependency ==="
 mkdir -p projects/circ1
@@ -24,20 +27,14 @@ run = 'echo "task b"'
 depends = [":a"]
 EOF
 
-# Should error with circular dependency or timeout
-# Use timeout to prevent infinite loop (3 seconds should be enough)
+# Should error with circular dependency
 output=$(timeout 3 mise run '//projects/circ1:a' 2>&1 || true)
-if echo "$output" | grep -qiE "(circular|cycle|loop|stack overflow)"; then
-	echo "SUCCESS: Direct circular dependency detected (or caused stack overflow)"
-elif [ $? -eq 124 ]; then
-	echo "WARNING: Task timed out - possible circular dependency not detected"
-	# Still consider this a pass since we're protected by timeout
-	echo "SUCCESS: Protected by timeout (circular dependency may not be explicitly detected)"
+if echo "$output" | grep -qiE "circular dependency detected"; then
+    echo "SUCCESS: Direct circular dependency detected"
 else
-	echo "Output: $output"
-	echo "WARNING: Expected circular dependency error, stack overflow, or timeout"
-	echo "This is a known issue - circular dependencies cause stack overflow"
-	# Don't fail the test, just warn
+    echo "Output: $output"
+    echo "ERROR: Expected circular dependency detection"
+    exit 1
 fi
 
 # Test 2: Transitive circular dependency (a -> b -> c -> a)
@@ -58,13 +55,12 @@ depends = [":a"]
 EOF
 
 output=$(timeout 3 mise run '//projects/circ2:a' 2>&1 || true)
-if echo "$output" | grep -qiE "(circular|cycle|loop|stack overflow)"; then
-	echo "SUCCESS: Transitive circular dependency detected (or caused stack overflow)"
-elif [ $? -eq 124 ]; then
-	echo "SUCCESS: Protected by timeout"
+if echo "$output" | grep -qiE "circular dependency detected"; then
+    echo "SUCCESS: Transitive circular dependency detected"
 else
-	echo "Output: $output"
-	echo "WARNING: Expected error or timeout (known issue)"
+    echo "Output: $output"
+    echo "ERROR: Expected circular dependency detection"
+    exit 1
 fi
 
 # Test 3: Cross-project circular dependency
@@ -83,13 +79,12 @@ depends = ["//projects/frontend:build"]
 EOF
 
 output=$(timeout 3 mise run '//projects/frontend:build' 2>&1 || true)
-if echo "$output" | grep -qiE "(circular|cycle|loop|stack overflow)"; then
-	echo "SUCCESS: Cross-project circular dependency detected (or caused stack overflow)"
-elif [ $? -eq 124 ]; then
-	echo "SUCCESS: Protected by timeout"
+if echo "$output" | grep -qiE "circular dependency detected"; then
+    echo "SUCCESS: Cross-project circular dependency detected"
 else
-	echo "Output: $output"
-	echo "WARNING: Expected error or timeout (known issue)"
+    echo "Output: $output"
+    echo "ERROR: Expected circular dependency detection"
+    exit 1
 fi
 
 # Test 4: Self-dependency (should be caught)
@@ -102,16 +97,11 @@ depends = [":build"]
 EOF
 
 output=$(timeout 3 mise run '//projects/self:build' 2>&1 || true)
-if echo "$output" | grep -qiE "(circular|cycle|loop|itself|stack overflow)"; then
-	echo "SUCCESS: Self-dependency detected (or caused stack overflow)"
-elif [ $? -eq 124 ]; then
-	echo "SUCCESS: Protected by timeout"
+# Self-dependency is filtered out at line 327 in mod.rs, so it should run successfully
+if echo "$output" | grep -q "build"; then
+    echo "SUCCESS: Self-dependency silently filtered (task ran once)"
 else
-	# Self-dependency might be silently filtered out, which is also acceptable
-	if echo "$output" | grep -q "build"; then
-		echo "SUCCESS: Self-dependency silently filtered (task ran once)"
-	else
-		echo "Output: $output"
-		echo "WARNING: Unexpected behavior with self-dependency (known issue)"
-	fi
+    echo "Output: $output"
+    echo "ERROR: Expected self-dependency to be filtered and task to run"
+    exit 1
 fi

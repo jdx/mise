@@ -308,6 +308,15 @@ impl Task {
     }
 
     pub fn all_depends(&self, tasks: &BTreeMap<String, Task>) -> Result<Vec<Task>> {
+        let mut path = vec![self.name.clone()];
+        self.all_depends_recursive(tasks, &mut path)
+    }
+
+    fn all_depends_recursive(
+        &self,
+        tasks: &BTreeMap<String, Task>,
+        path: &mut Vec<String>,
+    ) -> Result<Vec<Task>> {
         let mut depends: Vec<Task> = self
             .depends
             .iter()
@@ -316,8 +325,21 @@ impl Task {
             .flatten_ok()
             .filter_ok(|t| t.name != self.name)
             .collect::<Result<Vec<_>>>()?;
+
+        // Collect transitive dependencies with cycle detection
         for dep in depends.clone() {
-            let mut extra = dep.all_depends(tasks)?;
+            if path.contains(&dep.name) {
+                // Circular dependency detected - build path string for error message
+                let cycle_path = path
+                    .iter()
+                    .skip_while(|&name| name != &dep.name)
+                    .chain(std::iter::once(&dep.name))
+                    .join(" -> ");
+                return Err(eyre!("circular dependency detected: {}", cycle_path));
+            }
+            path.push(dep.name.clone());
+            let mut extra = dep.all_depends_recursive(tasks, path)?;
+            path.pop(); // Remove from path after processing this branch
             extra.retain(|t| t.name != self.name); // prevent depending on ourself
             depends.extend(extra);
         }
@@ -1315,5 +1337,128 @@ echo "hello world"
         // Test 10: Task names with dots in the middle
         assert_eq!(strip_extension("test.unit"), "test");
         assert_eq!(strip_extension("build.prod.js"), "build.prod");
+    }
+
+    #[test]
+    fn test_circular_dependency_detection() {
+        use super::Task;
+        use std::collections::BTreeMap;
+
+        let mut tasks = BTreeMap::new();
+
+        // Create circular dependency: task_a -> task_b -> task_a
+        let mut task_a = Task::default();
+        task_a.name = "task_a".to_string();
+        task_a.depends = vec![crate::task::task_dep::TaskDep {
+            task: "task_b".to_string(),
+            args: vec![],
+        }];
+
+        let mut task_b = Task::default();
+        task_b.name = "task_b".to_string();
+        task_b.depends = vec![crate::task::task_dep::TaskDep {
+            task: "task_a".to_string(),
+            args: vec![],
+        }];
+
+        tasks.insert("task_a".to_string(), task_a.clone());
+        tasks.insert("task_b".to_string(), task_b);
+
+        // Should detect circular dependency
+        let result = task_a.all_depends(&tasks);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("circular dependency detected"));
+    }
+
+    #[test]
+    fn test_transitive_circular_dependency_detection() {
+        use super::Task;
+        use std::collections::BTreeMap;
+
+        let mut tasks = BTreeMap::new();
+
+        // Create transitive circular dependency: a -> b -> c -> a
+        let mut task_a = Task::default();
+        task_a.name = "task_a".to_string();
+        task_a.depends = vec![crate::task::task_dep::TaskDep {
+            task: "task_b".to_string(),
+            args: vec![],
+        }];
+
+        let mut task_b = Task::default();
+        task_b.name = "task_b".to_string();
+        task_b.depends = vec![crate::task::task_dep::TaskDep {
+            task: "task_c".to_string(),
+            args: vec![],
+        }];
+
+        let mut task_c = Task::default();
+        task_c.name = "task_c".to_string();
+        task_c.depends = vec![crate::task::task_dep::TaskDep {
+            task: "task_a".to_string(),
+            args: vec![],
+        }];
+
+        tasks.insert("task_a".to_string(), task_a.clone());
+        tasks.insert("task_b".to_string(), task_b);
+        tasks.insert("task_c".to_string(), task_c);
+
+        // Should detect circular dependency
+        let result = task_a.all_depends(&tasks);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("circular dependency detected"));
+    }
+
+    #[test]
+    fn test_no_false_positive_for_diamond_dependency() {
+        use super::Task;
+        use std::collections::BTreeMap;
+
+        let mut tasks = BTreeMap::new();
+
+        // Create diamond dependency (NOT circular): root -> [a, b] -> common
+        let mut root = Task::default();
+        root.name = "root".to_string();
+        root.depends = vec![
+            crate::task::task_dep::TaskDep {
+                task: "task_a".to_string(),
+                args: vec![],
+            },
+            crate::task::task_dep::TaskDep {
+                task: "task_b".to_string(),
+                args: vec![],
+            },
+        ];
+
+        let mut task_a = Task::default();
+        task_a.name = "task_a".to_string();
+        task_a.depends = vec![crate::task::task_dep::TaskDep {
+            task: "common".to_string(),
+            args: vec![],
+        }];
+
+        let mut task_b = Task::default();
+        task_b.name = "task_b".to_string();
+        task_b.depends = vec![crate::task::task_dep::TaskDep {
+            task: "common".to_string(),
+            args: vec![],
+        }];
+
+        let mut common = Task::default();
+        common.name = "common".to_string();
+
+        tasks.insert("root".to_string(), root.clone());
+        tasks.insert("task_a".to_string(), task_a);
+        tasks.insert("task_b".to_string(), task_b);
+        tasks.insert("common".to_string(), common);
+
+        // Should NOT detect circular dependency (diamond is OK)
+        let result = root.all_depends(&tasks);
+        assert!(result.is_ok());
+        let deps = result.unwrap();
+        // Should have task_a, task_b, and common (deduplicated)
+        assert_eq!(deps.len(), 3);
     }
 }
