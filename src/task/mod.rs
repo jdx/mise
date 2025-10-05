@@ -1242,25 +1242,31 @@ echo "hello world"
     fn test_resolve_task_pattern() {
         use super::resolve_task_pattern;
 
-        // Create a mock task for testing
-        let mut parent_task = Task::default();
-
         // Test 1: Relative pattern with monorepo parent task
-        parent_task.name = "//projects/frontend:test".to_string();
+        let parent_task = Task {
+            name: "//projects/frontend:test".to_string(),
+            ..Default::default()
+        };
         assert_eq!(
             resolve_task_pattern(":build", Some(&parent_task)),
             "//projects/frontend:build"
         );
 
         // Test 2: Relative pattern with different parent
-        parent_task.name = "//libs/shared:lint".to_string();
+        let parent_task = Task {
+            name: "//libs/shared:lint".to_string(),
+            ..Default::default()
+        };
         assert_eq!(
             resolve_task_pattern(":compile", Some(&parent_task)),
             "//libs/shared:compile"
         );
 
         // Test 3: Absolute pattern should not be modified
-        parent_task.name = "//projects/frontend:test".to_string();
+        let parent_task = Task {
+            name: "//projects/frontend:test".to_string(),
+            ..Default::default()
+        };
         assert_eq!(
             resolve_task_pattern("//projects/backend:build", Some(&parent_task)),
             "//projects/backend:build"
@@ -1273,32 +1279,47 @@ echo "hello world"
         assert_eq!(resolve_task_pattern(":build", None), ":build");
 
         // Test 6: Non-monorepo task (no colon in parent name)
-        parent_task.name = "test".to_string();
+        let parent_task = Task {
+            name: "test".to_string(),
+            ..Default::default()
+        };
         assert_eq!(resolve_task_pattern(":build", Some(&parent_task)), ":build");
 
         // Test 7: Root monorepo task (empty path)
-        parent_task.name = "//:root-task".to_string();
+        let parent_task = Task {
+            name: "//:root-task".to_string(),
+            ..Default::default()
+        };
         assert_eq!(
             resolve_task_pattern(":other", Some(&parent_task)),
             "//:other"
         );
 
         // Test 8: Double colon should not be treated as relative
-        parent_task.name = "//projects/frontend:test".to_string();
+        let parent_task = Task {
+            name: "//projects/frontend:test".to_string(),
+            ..Default::default()
+        };
         assert_eq!(
             resolve_task_pattern("::global", Some(&parent_task)),
             "::global"
         );
 
         // Test 9: Pattern with wildcards
-        parent_task.name = "//projects/frontend:test".to_string();
+        let parent_task = Task {
+            name: "//projects/frontend:test".to_string(),
+            ..Default::default()
+        };
         assert_eq!(
             resolve_task_pattern(":test*", Some(&parent_task)),
             "//projects/frontend:test*"
         );
 
         // Test 10: Deep nested path
-        parent_task.name = "//a/b/c/d:task".to_string();
+        let parent_task = Task {
+            name: "//a/b/c/d:task".to_string(),
+            ..Default::default()
+        };
         assert_eq!(
             resolve_task_pattern(":dep", Some(&parent_task)),
             "//a/b/c/d:dep"
@@ -1358,19 +1379,23 @@ echo "hello world"
         let mut tasks = BTreeMap::new();
 
         // Create circular dependency: task_a -> task_b -> task_a
-        let mut task_a = Task::default();
-        task_a.name = "task_a".to_string();
-        task_a.depends = vec![crate::task::task_dep::TaskDep {
-            task: "task_b".to_string(),
-            args: vec![],
-        }];
+        let task_a = Task {
+            name: "task_a".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "task_b".to_string(),
+                args: vec![],
+            }],
+            ..Default::default()
+        };
 
-        let mut task_b = Task::default();
-        task_b.name = "task_b".to_string();
-        task_b.depends = vec![crate::task::task_dep::TaskDep {
-            task: "task_a".to_string(),
-            args: vec![],
-        }];
+        let task_b = Task {
+            name: "task_b".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "task_a".to_string(),
+                args: vec![],
+            }],
+            ..Default::default()
+        };
 
         tasks.insert("task_a".to_string(), task_a.clone());
         tasks.insert("task_b".to_string(), task_b);
@@ -1390,26 +1415,32 @@ echo "hello world"
         let mut tasks = BTreeMap::new();
 
         // Create transitive circular dependency: a -> b -> c -> a
-        let mut task_a = Task::default();
-        task_a.name = "task_a".to_string();
-        task_a.depends = vec![crate::task::task_dep::TaskDep {
-            task: "task_b".to_string(),
-            args: vec![],
-        }];
+        let task_a = Task {
+            name: "task_a".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "task_b".to_string(),
+                args: vec![],
+            }],
+            ..Default::default()
+        };
 
-        let mut task_b = Task::default();
-        task_b.name = "task_b".to_string();
-        task_b.depends = vec![crate::task::task_dep::TaskDep {
-            task: "task_c".to_string(),
-            args: vec![],
-        }];
+        let task_b = Task {
+            name: "task_b".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "task_c".to_string(),
+                args: vec![],
+            }],
+            ..Default::default()
+        };
 
-        let mut task_c = Task::default();
-        task_c.name = "task_c".to_string();
-        task_c.depends = vec![crate::task::task_dep::TaskDep {
-            task: "task_a".to_string(),
-            args: vec![],
-        }];
+        let task_c = Task {
+            name: "task_c".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "task_a".to_string(),
+                args: vec![],
+            }],
+            ..Default::default()
+        };
 
         tasks.insert("task_a".to_string(), task_a.clone());
         tasks.insert("task_b".to_string(), task_b);
@@ -1430,35 +1461,43 @@ echo "hello world"
         let mut tasks = BTreeMap::new();
 
         // Create diamond dependency (NOT circular): root -> [a, b] -> common
-        let mut root = Task::default();
-        root.name = "root".to_string();
-        root.depends = vec![
-            crate::task::task_dep::TaskDep {
-                task: "task_a".to_string(),
+        let root = Task {
+            name: "root".to_string(),
+            depends: vec![
+                crate::task::task_dep::TaskDep {
+                    task: "task_a".to_string(),
+                    args: vec![],
+                },
+                crate::task::task_dep::TaskDep {
+                    task: "task_b".to_string(),
+                    args: vec![],
+                },
+            ],
+            ..Default::default()
+        };
+
+        let task_a = Task {
+            name: "task_a".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "common".to_string(),
                 args: vec![],
-            },
-            crate::task::task_dep::TaskDep {
-                task: "task_b".to_string(),
+            }],
+            ..Default::default()
+        };
+
+        let task_b = Task {
+            name: "task_b".to_string(),
+            depends: vec![crate::task::task_dep::TaskDep {
+                task: "common".to_string(),
                 args: vec![],
-            },
-        ];
+            }],
+            ..Default::default()
+        };
 
-        let mut task_a = Task::default();
-        task_a.name = "task_a".to_string();
-        task_a.depends = vec![crate::task::task_dep::TaskDep {
-            task: "common".to_string(),
-            args: vec![],
-        }];
-
-        let mut task_b = Task::default();
-        task_b.name = "task_b".to_string();
-        task_b.depends = vec![crate::task::task_dep::TaskDep {
-            task: "common".to_string(),
-            args: vec![],
-        }];
-
-        let mut common = Task::default();
-        common.name = "common".to_string();
+        let common = Task {
+            name: "common".to_string(),
+            ..Default::default()
+        };
 
         tasks.insert("root".to_string(), root.clone());
         tasks.insert("task_a".to_string(), task_a);

@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn test_should_load_subdir_multiple_hints() {
         let ctx =
-            TaskLoadContext::from_patterns(["//foo/bar:task", "//baz/qux:task"].iter().map(|s| *s));
+            TaskLoadContext::from_patterns(["//foo/bar:task", "//baz/qux:task"].iter().copied());
 
         // Should load exact matches for both hints
         assert!(ctx.should_load_subdir("foo/bar", "/root"));
