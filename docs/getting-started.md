@@ -82,7 +82,7 @@ See the [copr page](https://copr.fedorainfracloud.org/coprs/jdxcode/mise/) for m
 == Snap (beta)
 
 ```sh
-sudo snap install mise --beta
+sudo snap install mise --classic --beta
 ```
 
 See the [snapcraft.io page](https://snapcraft.io/mise) for more information.

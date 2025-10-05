@@ -167,7 +167,7 @@ dnf install mise
 ### Snap (Linux, currently in beta)
 
 ```sh
-sudo snap install mise --beta
+sudo snap install mise --classic --beta
 ```
 
 [snapcraft.io page](https://snapcraft.io/mise)
