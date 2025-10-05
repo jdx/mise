@@ -332,15 +332,6 @@ impl Config {
         find_monorepo_root(&self.config_files).is_some()
     }
 
-    pub fn is_at_monorepo_root(&self) -> bool {
-        if let Some(monorepo_root) = find_monorepo_root(&self.config_files) {
-            let cwd = dirs::CWD.as_ref();
-            cwd == Some(&monorepo_root)
-        } else {
-            false
-        }
-    }
-
     pub async fn tasks(&self) -> Result<Arc<BTreeMap<String, Task>>> {
         self.tasks_with_context(None).await
     }
@@ -1344,11 +1335,18 @@ async fn load_local_tasks_with_context(
         // In monorepo mode, prefix tasks with their monorepo path
         if let Some(ref monorepo_root) = monorepo_root {
             if let Ok(rel_path) = d.strip_prefix(monorepo_root) {
-                if !rel_path.as_os_str().is_empty() {
-                    let prefix = rel_path
-                        .to_string_lossy()
-                        .replace(std::path::MAIN_SEPARATOR, "/");
-                    for task in dir_tasks.iter_mut() {
+                let prefix = rel_path
+                    .to_string_lossy()
+                    .replace(std::path::MAIN_SEPARATOR, "/");
+                for task in dir_tasks.iter_mut() {
+                    if prefix.is_empty() {
+                        // At monorepo root, use //:task format
+                        task.name = format!(
+                            "{}{}{}",
+                            MONOREPO_PATH_PREFIX, MONOREPO_TASK_SEPARATOR, task.name
+                        );
+                    } else {
+                        // In subdirectories, add //path:task
                         task.name = format!(
                             "{}{}{}{}",
                             MONOREPO_PATH_PREFIX, prefix, MONOREPO_TASK_SEPARATOR, task.name

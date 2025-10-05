@@ -103,10 +103,6 @@ impl TasksLs {
             None
         };
 
-        // Check if we're in monorepo mode and at the root
-        let in_monorepo = config.is_monorepo();
-        let at_monorepo_root = in_monorepo && config.is_at_monorepo_root();
-
         let tasks = config
             .tasks_with_context(ctx.as_ref())
             .await?
@@ -114,15 +110,6 @@ impl TasksLs {
             .filter(|t| self.hidden || !t.hide)
             .filter(|t| !self.local || !t.global)
             .filter(|t| !self.global || t.global)
-            .filter(|t| {
-                // At monorepo root without --all: only show monorepo-style tasks (starting with //)
-                // In subdirectories: show local tasks normally
-                if at_monorepo_root && !self.all {
-                    t.name.starts_with("//")
-                } else {
-                    true
-                }
-            })
             .cloned()
             .sorted_by(|a, b| self.sort(a, b))
             .collect::<Vec<Task>>();
