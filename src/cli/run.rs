@@ -1640,7 +1640,40 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
             }
         }
     }
-    bail!("no task {} found", style::ered(name));
+
+    // Suggest similar tasks using fuzzy matching for monorepo tasks
+    let mut err_msg = format!("no task {} found", style::ered(name));
+    if name.starts_with("//") {
+        // Load ALL monorepo tasks for suggestions
+        use crate::task::TaskLoadContext;
+        if let Ok(tasks) = config.tasks_with_context(Some(&TaskLoadContext::all())).await {
+            use fuzzy_matcher::skim::SkimMatcherV2;
+            use fuzzy_matcher::FuzzyMatcher;
+
+            let matcher = SkimMatcherV2::default().use_cache(true).smart_case();
+            let similar: Vec<String> = tasks
+                .keys()
+                .filter(|k| k.starts_with("//"))
+                .filter_map(|k| {
+                    matcher
+                        .fuzzy_match(&k.to_lowercase(), &name.to_lowercase())
+                        .map(|score| (score, k.clone()))
+                })
+                .sorted_by_key(|(score, _)| -1 * *score)
+                .take(5)
+                .map(|(_, k)| k)
+                .collect();
+
+            if !similar.is_empty() {
+                err_msg.push_str("\n\nDid you mean one of these?");
+                for task_name in similar {
+                    err_msg.push_str(&format!("\n  - {}", task_name));
+                }
+            }
+        }
+    }
+
+    bail!(err_msg);
 }
 
 async fn prompt_for_task() -> Result<Task> {

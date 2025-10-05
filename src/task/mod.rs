@@ -10,6 +10,8 @@ use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
 use console::{Color, measure_text_width, truncate_str};
 use eyre::{Result, eyre};
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use globset::GlobBuilder;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -27,6 +29,9 @@ use std::sync::Arc;
 use std::sync::LazyLock as Lazy;
 use std::{ffi, fmt, path};
 use xx::regex;
+
+static FUZZY_MATCHER: Lazy<SkimMatcherV2> =
+    Lazy::new(|| SkimMatcherV2::default().use_cache(true).smart_case());
 
 mod deps;
 mod task_dep;
@@ -761,17 +766,23 @@ fn match_tasks_with_context(
     if matches.is_empty() {
         let mut err_msg = format!("task not found: {}", td.task);
 
-        // In monorepo mode, suggest similar tasks
+        // In monorepo mode, suggest similar tasks using fuzzy matching
         if resolved_pattern.starts_with("//") {
             let similar: Vec<String> = tasks
                 .keys()
                 .filter(|k| k.starts_with("//"))
+                .filter_map(|k| {
+                    FUZZY_MATCHER
+                        .fuzzy_match(&k.to_lowercase(), &resolved_pattern.to_lowercase())
+                        .map(|score| (score, k.clone()))
+                })
+                .sorted_by_key(|(score, _)| -1 * *score)
                 .take(5)
-                .map(|k| k.to_string())
+                .map(|(_, k)| k)
                 .collect();
 
             if !similar.is_empty() {
-                err_msg.push_str("\n\nAvailable monorepo tasks:");
+                err_msg.push_str("\n\nDid you mean one of these?");
                 for task_name in similar {
                     err_msg.push_str(&format!("\n  - {}", task_name));
                 }

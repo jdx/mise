@@ -36,14 +36,14 @@ impl TaskLoadContext {
 
     /// Create a context from multiple patterns, merging their path hints
     pub fn from_patterns<'a>(patterns: impl Iterator<Item = &'a str>) -> Self {
-        let mut path_hints = Vec::new();
+        use std::collections::HashSet;
+
+        let mut path_hints_set = HashSet::new();
         let mut load_all = false;
 
         for pattern in patterns {
             if let Some(hint) = Self::extract_path_hint(pattern) {
-                if !path_hints.contains(&hint) {
-                    path_hints.push(hint);
-                }
+                path_hints_set.insert(hint);
             } else {
                 // If any pattern has no hint, we need to load all
                 load_all = true;
@@ -51,7 +51,7 @@ impl TaskLoadContext {
         }
 
         Self {
-            path_hints,
+            path_hints: path_hints_set.into_iter().collect(),
             load_all,
         }
     }
