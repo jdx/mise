@@ -72,8 +72,8 @@ output=$(mise run '//projects/app:build' 2>&1 || true)
 echo "$output"
 # Should mention that dependency could not be found
 if echo "$output" | grep -q "should not run"; then
-  echo "FAIL: Task with missing dependency should not execute"
-  exit 1
+	echo "FAIL: Task with missing dependency should not execute"
+	exit 1
 fi
 
 # Test 4: Task without experimental mode should fail

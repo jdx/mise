@@ -14,7 +14,7 @@ run = 'echo "PATH=\$PATH"'
 EOF
 
 mkdir -p root-bin
-echo "root-bin-file" > root-bin/root-tool
+echo "root-bin-file" >root-bin/root-tool
 
 # Create frontend project with its own _.path
 mkdir -p projects/frontend
@@ -30,8 +30,8 @@ EOF
 
 mkdir -p projects/frontend/bin
 mkdir -p projects/frontend/node_modules/.bin
-echo "frontend-bin" > projects/frontend/bin/frontend-tool
-echo "node-module" > projects/frontend/node_modules/.bin/npm
+echo "frontend-bin" >projects/frontend/bin/frontend-tool
+echo "node-module" >projects/frontend/node_modules/.bin/npm
 
 # Create backend project with _.path
 mkdir -p projects/backend
@@ -44,7 +44,7 @@ run = 'echo "PATH=\$PATH"'
 EOF
 
 mkdir -p projects/backend/scripts
-echo "backend-script" > projects/backend/scripts/deploy
+echo "backend-script" >projects/backend/scripts/deploy
 
 # Test 1: Frontend task should have both root-bin and frontend paths
 echo "=== Test 1: Frontend _.path includes subdirectory paths ==="

@@ -78,8 +78,8 @@ output=$(mise run //:root-task)
 echo "$output"
 # Root DIR should not contain projects/ subdirectory path
 if echo "$output" | grep -q "ROOT_DIR=.*projects/"; then
-  echo "FAIL: Root config_root should not include projects/ path"
-  exit 1
+	echo "FAIL: Root config_root should not include projects/ path"
+	exit 1
 fi
 echo "$output" | grep -q "ROOT_DIR=" || (echo "FAIL: ROOT_DIR not set" && exit 1)
 

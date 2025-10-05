@@ -13,7 +13,7 @@ ROOT_DATA = "./root-data.txt"
 run = 'cat "\$ROOT_DATA"'
 EOF
 
-echo "root-data-content" > root-data.txt
+echo "root-data-content" >root-data.txt
 
 # Create frontend project with relative path env
 mkdir -p projects/frontend
@@ -33,14 +33,14 @@ cat "$NESTED_FILE"
 '''
 EOF
 
-cat <<'EOF' > projects/frontend/config.json
+cat <<'EOF' >projects/frontend/config.json
 {"name": "frontend"}
 EOF
 mkdir -p projects/frontend/data
 
 # Create shared directory for nested relative path test
 mkdir -p shared
-echo "shared-content" > shared/shared.txt
+echo "shared-content" >shared/shared.txt
 
 # Create backend project with relative paths
 mkdir -p projects/backend
@@ -56,11 +56,11 @@ cat "$SETTINGS_FILE"
 '''
 EOF
 
-cat <<'EOF' > projects/backend/.env
+cat <<'EOF' >projects/backend/.env
 DATABASE_URL=postgres://localhost/db
 EOF
 
-cat <<'EOF' > projects/backend/settings.toml
+cat <<'EOF' >projects/backend/settings.toml
 [server]
 port = 8080
 EOF
