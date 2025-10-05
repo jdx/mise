@@ -1,5 +1,5 @@
 /// Context for loading tasks with optional filtering hints
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Hash, Eq, PartialEq)]
 pub struct TaskLoadContext {
     /// If Some, only load tasks from this specific path
     /// e.g., "foo/bar" from pattern "//foo/bar:task"

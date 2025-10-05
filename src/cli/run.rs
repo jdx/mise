@@ -1697,11 +1697,34 @@ pub async fn get_task_lists(
         .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
         .collect::<Vec<_>>();
 
-    // Check if any of the task patterns are monorepo patterns
-    // If so, we need to load all tasks to match them
-    let has_monorepo_pattern = args
-        .iter()
-        .any(|(t, _)| t.starts_with("//") || t.contains("..."));
+    // Determine the appropriate task loading context based on patterns
+    // For monorepo patterns, we need to load tasks from the relevant parts of the monorepo
+    let task_context = if args.is_empty() {
+        None
+    } else {
+        // Find the most permissive context needed to match all patterns
+        let contexts: Vec<TaskLoadContext> = args
+            .iter()
+            .filter_map(|(t, _)| {
+                if t.starts_with("//") || t.contains("...") {
+                    Some(TaskLoadContext::from_pattern(t))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if contexts.is_empty() {
+            None
+        } else if contexts.iter().any(|c| c.load_all && c.path_hint.is_none()) {
+            // If any pattern needs everything, use load_all
+            Some(TaskLoadContext::all())
+        } else {
+            // For now, if any monorepo pattern is present, load all
+            // TODO: In the future, we could optimize by merging path hints
+            Some(TaskLoadContext::all())
+        }
+    };
 
     let mut tasks = vec![];
     let arg_re = regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#);
@@ -1725,10 +1748,9 @@ pub async fn get_task_lists(
                 return Ok(vec![task.with_args(args)]);
             }
         }
-        // If we detected monorepo patterns, load all tasks
-        let all_tasks = if has_monorepo_pattern {
-            let ctx = TaskLoadContext::all();
-            config.tasks_with_context(Some(&ctx)).await?
+        // Load tasks with the appropriate context
+        let all_tasks = if let Some(ref ctx) = task_context {
+            config.tasks_with_context(Some(ctx)).await?
         } else {
             config.tasks().await?
         };

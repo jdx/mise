@@ -59,7 +59,7 @@ pub struct Config {
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
     hooks: OnceCell<Vec<(PathBuf, Hook)>>,
-    tasks_cache: Arc<DashMap<bool, Arc<BTreeMap<String, Task>>>>,
+    tasks_cache: Arc<DashMap<crate::task::TaskLoadContext, Arc<BTreeMap<String, Task>>>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
     vars_loader: Option<Arc<Config>>,
@@ -336,11 +336,12 @@ impl Config {
         &self,
         ctx: Option<&crate::task::TaskLoadContext>,
     ) -> Result<Arc<BTreeMap<String, Task>>> {
-        // Determine cache key based on context
-        let load_all = ctx.map_or(false, |c| c.load_all);
+        // Use the entire context as cache key
+        // Default context (None) becomes TaskLoadContext::default()
+        let cache_key = ctx.cloned().unwrap_or_default();
 
         // Check if already cached
-        if let Some(cached) = self.tasks_cache.get(&load_all) {
+        if let Some(cached) = self.tasks_cache.get(&cache_key) {
             return Ok(cached.value().clone());
         }
 
@@ -351,7 +352,7 @@ impl Config {
         let tasks_arc = Arc::new(tasks);
 
         // Insert into cache
-        self.tasks_cache.insert(load_all, tasks_arc.clone());
+        self.tasks_cache.insert(cache_key, tasks_arc.clone());
 
         Ok(tasks_arc)
     }
@@ -1244,7 +1245,9 @@ impl Debug for Config {
         let mut s = f.debug_struct("Config");
         s.field("Config Files", &config_files);
         // Note: tasks are now lazily loaded and cached, so we can't access them synchronously here
-        if let Some(tasks) = self.tasks_cache.get(&false) {
+        // Try to get the default (current hierarchy) cache entry
+        let default_ctx = crate::task::TaskLoadContext::default();
+        if let Some(tasks) = self.tasks_cache.get(&default_ctx) {
             s.field(
                 "Tasks",
                 &tasks.values().map(|t| t.to_string()).collect_vec(),
