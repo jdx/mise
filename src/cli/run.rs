@@ -1646,9 +1646,12 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
     if name.starts_with("//") {
         // Load ALL monorepo tasks for suggestions
         use crate::task::TaskLoadContext;
-        if let Ok(tasks) = config.tasks_with_context(Some(&TaskLoadContext::all())).await {
-            use fuzzy_matcher::skim::SkimMatcherV2;
+        if let Ok(tasks) = config
+            .tasks_with_context(Some(&TaskLoadContext::all()))
+            .await
+        {
             use fuzzy_matcher::FuzzyMatcher;
+            use fuzzy_matcher::skim::SkimMatcherV2;
 
             let matcher = SkimMatcherV2::default().use_cache(true).smart_case();
             let similar: Vec<String> = tasks
