@@ -792,9 +792,11 @@ where
                     // Check if task name exactly matches, or matches without extension
                     k.as_str() == pat
                         || k.rsplitn(2, '.').last().unwrap_or_default() == pat
-                        || (k.contains(':') && k.split_once(':').map(|x| x.1).unwrap_or_default() == pat)
                         || (k.contains(':')
-                            && k.split_once(':').map(|x| x.1)
+                            && k.split_once(':').map(|x| x.1).unwrap_or_default() == pat)
+                        || (k.contains(':')
+                            && k.split_once(':')
+                                .map(|x| x.1)
                                 .unwrap_or_default()
                                 .rsplitn(2, '.')
                                 .last()
