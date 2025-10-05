@@ -1423,11 +1423,12 @@ fn discover_monorepo_subdirs(
     task_config: &config_file::TaskConfig,
     ctx: Option<&crate::task::TaskLoadContext>,
 ) -> Result<Vec<PathBuf>> {
-    const MAX_MONOREPO_DEPTH: usize = 5;
+    const DEFAULT_MAX_DEPTH: usize = 5;
     const IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
 
     let mut subdirs = Vec::new();
     let respect_gitignore = task_config.monorepo_respect_gitignore.unwrap_or(true);
+    let max_depth = task_config.depth.unwrap_or(DEFAULT_MAX_DEPTH);
 
     // Build the list of excluded directories
     let mut excluded_dirs: Vec<&str> = IGNORED_DIRS.to_vec();
@@ -1438,7 +1439,7 @@ fn discover_monorepo_subdirs(
     if respect_gitignore {
         // Use the `ignore` crate which respects .gitignore files
         let walker = ignore::WalkBuilder::new(root)
-            .max_depth(Some(MAX_MONOREPO_DEPTH))
+            .max_depth(Some(max_depth))
             .hidden(true) // Skip hidden files/dirs
             .git_ignore(true) // Respect .gitignore
             .git_global(true) // Respect global .gitignore
@@ -1487,7 +1488,7 @@ fn discover_monorepo_subdirs(
         // Fall back to WalkDir for non-gitignore-aware walking
         for entry in WalkDir::new(root)
             .min_depth(1)
-            .max_depth(MAX_MONOREPO_DEPTH)
+            .max_depth(max_depth)
             .into_iter()
             .filter_entry(|e| {
                 // Skip hidden directories and excluded patterns

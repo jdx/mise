@@ -533,6 +533,9 @@ pub struct TaskConfig {
     /// Additional directory patterns to exclude when discovering monorepo subdirectories
     /// These are in addition to the default exclusions (node_modules, target, dist, build)
     pub monorepo_exclude_dirs: Option<Vec<String>>,
+    /// Maximum depth to search for task files in monorepo subdirectories
+    /// Defaults to unlimited (None). Set to 1 for immediate children only, 2 for grandchildren, etc.
+    pub depth: Option<usize>,
 }
 
 #[cfg(test)]
