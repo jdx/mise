@@ -847,14 +847,17 @@ impl Run {
         task_cf: &Arc<dyn ConfigFile>,
         ts: &Toolset,
     ) -> Result<(BTreeMap<String, String>, Vec<(String, String)>)> {
+        // Get env directives from the task's config file once
+        // Cache this to avoid calling env_entries() multiple times
+        let config_env_entries = task_cf.env_entries()?;
+
         // Early return: if task's config root matches current config root and there are no
         // config-level env directives, use standard behavior. This avoids redundant resolution
         // for tasks that don't need special context
-        let config_has_env = !task_cf.env_entries()?.is_empty();
         if let (Some(task_config_root), Some(current_config_root)) =
             (task_cf.project_root(), config.project_root.as_ref())
         {
-            if task_config_root == current_config_root && !config_has_env {
+            if task_config_root == current_config_root && config_env_entries.is_empty() {
                 trace!(
                     "task {} config root matches current and no config env, using standard env resolution",
                     task.name
@@ -866,11 +869,11 @@ impl Run {
         // Start with the toolset's env
         let mut env = ts.full_env(config).await?;
 
-        // Get env directives from the task's config file
-        let config_env_directives: Vec<(EnvDirective, PathBuf)> = task_cf
-            .env_entries()?
+        // Build env directives from the cached entries
+        // Use the config file's path for proper relative path resolution
+        let config_env_directives: Vec<(EnvDirective, PathBuf)> = config_env_entries
             .into_iter()
-            .map(|directive| (directive, task.config_source.clone()))
+            .map(|directive| (directive, task_cf.get_path().to_path_buf()))
             .collect();
 
         // Get task-specific env directives
@@ -882,9 +885,10 @@ impl Run {
             .collect();
 
         // Build tera context
+        // Use the task's config file project root for monorepo context
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
-        if let Some(root) = &config.project_root {
-            tera_ctx.insert("config_root", &root);
+        if let Some(root) = task_cf.project_root() {
+            tera_ctx.insert("config_root", root);
         }
 
         // Resolve config-level env directives first
@@ -903,22 +907,7 @@ impl Run {
         .await?;
 
         // Apply config-level env
-        for (k, (v, _)) in &config_env_results.env {
-            env.insert(k.clone(), v.clone());
-        }
-        for key in &config_env_results.env_remove {
-            env.remove(key);
-        }
-        if !config_env_results.env_paths.is_empty() {
-            use crate::path_env::PathEnv;
-            let mut path_env = PathEnv::from_iter(env::split_paths(
-                &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
-            ));
-            for path in config_env_results.env_paths {
-                path_env.add(path);
-            }
-            env.insert(env::PATH_KEY.to_string(), path_env.to_string());
-        }
+        Self::apply_env_results(&mut env, &config_env_results);
 
         // Now resolve task-specific env directives
         let task_env_results = EnvResults::resolve(
@@ -934,42 +923,47 @@ impl Run {
         )
         .await?;
 
-        // Build task_env from BOTH config-level and task-specific directives
-        // This matches the behavior of Task::render_env but includes config context
-        let mut task_env: Vec<(String, String)> = config_env_results
+        // Build task_env from ONLY task-specific directives
+        // This matches the behavior of Task::render_env (only task.env, not config env)
+        let task_env: Vec<(String, String)> = task_env_results
             .env
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
             .collect();
 
-        // Add task-specific env vars (these override config-level vars with same key)
-        for (k, (v, _)) in &task_env_results.env {
-            if let Some(existing) = task_env.iter_mut().find(|(key, _)| key == k) {
-                existing.1 = v.clone();
-            } else {
-                task_env.push((k.clone(), v.clone()));
-            }
-        }
-
         // Apply task-specific env to the environment
-        for (k, (v, _)) in &task_env_results.env {
+        Self::apply_env_results(&mut env, &task_env_results);
+
+        Ok((env, task_env))
+    }
+
+    /// Apply EnvResults to an environment map
+    /// Handles env vars, env_remove, and env_paths (PATH modifications)
+    fn apply_env_results(
+        env: &mut BTreeMap<String, String>,
+        results: &crate::config::env_directive::EnvResults,
+    ) {
+        // Apply environment variables
+        for (k, (v, _)) in &results.env {
             env.insert(k.clone(), v.clone());
         }
-        for key in &task_env_results.env_remove {
+
+        // Remove explicitly unset variables
+        for key in &results.env_remove {
             env.remove(key);
         }
-        if !task_env_results.env_paths.is_empty() {
+
+        // Apply path additions
+        if !results.env_paths.is_empty() {
             use crate::path_env::PathEnv;
             let mut path_env = PathEnv::from_iter(env::split_paths(
                 &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
             ));
-            for path in task_env_results.env_paths {
-                path_env.add(path);
+            for path in &results.env_paths {
+                path_env.add(path.clone());
             }
             env.insert(env::PATH_KEY.to_string(), path_env.to_string());
         }
-
-        Ok((env, task_env))
     }
 
     async fn exec_task_run_entries(

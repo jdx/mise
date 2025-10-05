@@ -1425,9 +1425,13 @@ async fn load_local_tasks_with_context(
                                     all_tasks.extend(subdir_tasks);
                                 }
                                 Err(err) => {
+                                    let rel_path = subdir
+                                        .strip_prefix(&monorepo_root)
+                                        .unwrap_or(&subdir);
                                     warn!(
-                                        "Failed to parse config file {}: {}",
+                                        "Failed to parse config file {} in monorepo subdirectory {}: {}. Tasks from this directory will not be loaded.",
                                         config_path.display(),
+                                        rel_path.display(),
                                         err
                                     );
                                 }
