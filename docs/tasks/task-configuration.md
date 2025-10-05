@@ -406,9 +406,11 @@ mise run '//projects/frontend:build'
 # Relative path (without // prefix)
 mise run 'projects/frontend:build'
 
-# With glob patterns
-mise run '//projects/*:test'      # Run test in all projects
-mise tasks ls '//projects/*:*'    # List all tasks in projects/
+# With wildcard patterns
+mise run '//...:test'              # Run 'test' task in all projects (ellipsis for paths)
+mise run '//projects/...:build'    # Run 'build' in all subdirs under projects/
+mise run '//projects/frontend:*'   # Run all tasks in projects/frontend (asterisk for task names)
+mise run '//projects/frontend:test:*' # Run all tasks starting with 'test:' in projects/frontend
 ```
 
 This is useful for large monorepos where multiple projects need their own tasks but you want to run
@@ -421,6 +423,11 @@ them all from the root directory. Tasks in subdirectories up to 5 levels deep wi
 - Subdirectories with `.mise.toml`, `mise.toml`, `.mise/config.toml`, or `.config/mise/config.toml` will be scanned
 - Hidden directories and common build artifacts (`node_modules`, `target`, `dist`, `build`) are automatically excluded
 - By default, directories listed in `.gitignore` files are also excluded (configurable via `monorepo_respect_gitignore`)
+- **Wildcard syntax:**
+  - Use `...` (ellipsis) for path matching: `//...:task` or `//path/.../subpath:task`
+  - Use `*` (asterisk) for task name matching: `//path:task*` or `//path:*`
+  - Path wildcards (`...`) match any directory depth
+  - Task wildcards (`*`) match any characters in task names
 
 ### `task_config.monorepo_respect_gitignore`
 

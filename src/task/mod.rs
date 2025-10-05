@@ -791,42 +791,111 @@ where
             pat.to_string()
         };
 
-        let normalized = normalized_pat.split(':').collect::<PathBuf>();
-        let matcher = GlobBuilder::new(&normalized.to_string_lossy())
-            .literal_separator(true)
-            .build()?
-            .compile_matcher();
+        // Split pattern into path and task parts
+        // Pattern format: //path/...:task* or //path:task*
+        let parts: Vec<&str> = normalized_pat.splitn(2, ':').collect();
+        let (path_pattern, task_pattern) = match parts.as_slice() {
+            [path, task] => (*path, *task),
+            [path] => (*path, "*"),
+            _ => (normalized_pat.as_str(), "*"),
+        };
+
+        // Convert ellipsis (...) to glob pattern (**)
+        // //... matches everything, //foo/... matches foo and all subdirs
+        let path_glob = path_pattern.replace("...", "**");
+
+        // For task patterns, * only matches within the task name portion (after final :)
+        // e.g., test:* matches test:unit, test:integration, etc.
+        let task_glob = task_pattern;
 
         Ok(self
             .iter()
             .filter(|(k, _)| {
-                let path: PathBuf = k.split(':').collect();
-                // Direct match
-                if matcher.is_match(&path) {
-                    return true;
-                }
+                // Split task name into path and task parts
+                let key_parts: Vec<&str> = k.splitn(2, ':').collect();
+                let (key_path, key_task) = match key_parts.as_slice() {
+                    [path, task] => (*path, *task),
+                    [path] => (*path, ""),
+                    _ => (k.as_str(), ""),
+                };
+
+                // Match path part with ellipsis support
+                let path_matcher = GlobBuilder::new(&path_glob)
+                    .literal_separator(true)
+                    .build()
+                    .ok()
+                    .map(|b| b.compile_matcher());
+
+                let path_matches = if let Some(matcher) = path_matcher {
+                    matcher.is_match(key_path)
+                } else {
+                    false
+                };
+
+                // Match task part with asterisk support
+                let task_matches = if task_glob == "*" {
+                    true
+                } else {
+                    let task_matcher = GlobBuilder::new(task_glob)
+                        .literal_separator(false) // Allow * to match : in task names
+                        .build()
+                        .ok()
+                        .map(|b| b.compile_matcher());
+
+                    if let Some(matcher) = task_matcher {
+                        matcher.is_match(key_task)
+                    } else {
+                        false
+                    }
+                };
+
                 // Try matching without // prefix for relative patterns
-                if !pat.starts_with("//") {
+                let relative_match = if !pat.starts_with("//") {
                     let stripped_key = k.strip_prefix("//").unwrap_or(k);
-                    let stripped_path: PathBuf = stripped_key.split(':').collect();
-                    let rel_normalized = pat.split(':').collect::<PathBuf>();
-                    let rel_matcher = GlobBuilder::new(&rel_normalized.to_string_lossy())
+                    let stripped_parts: Vec<&str> = stripped_key.splitn(2, ':').collect();
+                    let (stripped_path, stripped_task) = match stripped_parts.as_slice() {
+                        [path, task] => (*path, *task),
+                        [path] => (*path, ""),
+                        _ => (stripped_key, ""),
+                    };
+
+                    let rel_path_pattern = path_pattern.strip_prefix("//").unwrap_or(path_pattern);
+                    let rel_path_glob = rel_path_pattern.replace("...", "**");
+
+                    let rel_path_matcher = GlobBuilder::new(&rel_path_glob)
                         .literal_separator(true)
                         .build()
                         .ok()
                         .map(|b| b.compile_matcher());
-                    if let Some(rel_matcher) = rel_matcher {
-                        if rel_matcher.is_match(&stripped_path) {
-                            return true;
+
+                    let rel_path_matches = if let Some(matcher) = rel_path_matcher {
+                        matcher.is_match(stripped_path)
+                    } else {
+                        false
+                    };
+
+                    let rel_task_matches = if task_glob == "*" {
+                        true
+                    } else {
+                        let task_matcher = GlobBuilder::new(task_glob)
+                            .literal_separator(false)
+                            .build()
+                            .ok()
+                            .map(|b| b.compile_matcher());
+
+                        if let Some(matcher) = task_matcher {
+                            matcher.is_match(stripped_task)
+                        } else {
+                            false
                         }
-                    }
-                }
-                // Try with file stem
-                if let Some(stem) = path.file_stem() {
-                    let base_path = path.with_file_name(stem);
-                    return matcher.is_match(&base_path);
-                }
-                false
+                    };
+
+                    rel_path_matches && rel_task_matches
+                } else {
+                    false
+                };
+
+                (path_matches && task_matches) || relative_match
             })
             .map(|(_, t)| t)
             .unique()
