@@ -391,6 +391,7 @@ myproject/
 ```
 
 Tasks will be automatically namespaced:
+
 - `//projects/frontend:build`
 - `//projects/frontend:test`
 - `//projects/backend:build`
@@ -414,10 +415,40 @@ This is useful for large monorepos where multiple projects need their own tasks 
 them all from the root directory. Tasks in subdirectories up to 5 levels deep will be discovered.
 
 **Notes:**
+
 - Task names use `:` as the separator between path and task name
 - Quote task names in shell commands to prevent interpretation of `/` and `:`
 - Subdirectories with `.mise.toml`, `mise.toml`, `.mise/config.toml`, or `.config/mise/config.toml` will be scanned
 - Hidden directories and common build artifacts (`node_modules`, `target`, `dist`, `build`) are automatically excluded
+- By default, directories listed in `.gitignore` files are also excluded (configurable via `monorepo_respect_gitignore`)
+
+### `task_config.monorepo_respect_gitignore`
+
+- **Type**: `bool`
+- **Default**: `true`
+
+When `experimental_monorepo_root` is enabled, this controls whether `.gitignore` files should be respected
+when discovering subdirectories. This defaults to `true`, which means gitignored directories will be skipped.
+
+```toml
+[task_config]
+experimental_monorepo_root = true
+monorepo_respect_gitignore = false  # Disable gitignore checking
+```
+
+### `task_config.monorepo_exclude_dirs`
+
+- **Type**: `string[]`
+- **Default**: `[]`
+
+Additional directory names to exclude when discovering monorepo subdirectories. These are in addition to
+the default exclusions (`node_modules`, `target`, `dist`, `build`) and any patterns from `.gitignore` files.
+
+```toml
+[task_config]
+experimental_monorepo_root = true
+monorepo_exclude_dirs = ["tmp", "cache", "vendor"]
+```
 
 ## `redactions` <Badge type="warning" text="experimental" />
 

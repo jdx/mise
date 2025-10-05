@@ -1594,6 +1594,10 @@
           "description": "default directory to run tasks in defined in this file",
           "type": "string"
         },
+        "experimental_monorepo_root": {
+          "description": "enable monorepo task support with bazel/buck2-style target paths (requires MISE_EXPERIMENTAL=1)",
+          "type": "boolean"
+        },
         "includes": {
           "description": "files/directories to include searching for tasks",
           "items": {
@@ -1601,6 +1605,17 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "monorepo_exclude_dirs": {
+          "description": "additional directory names to exclude when discovering monorepo subdirectories (in addition to node_modules, target, dist, build)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "monorepo_respect_gitignore": {
+          "description": "whether to respect .gitignore files when discovering monorepo subdirectories (defaults to true)",
+          "type": "boolean"
         }
       }
     },

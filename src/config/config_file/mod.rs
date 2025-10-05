@@ -527,6 +527,12 @@ pub struct TaskConfig {
     pub includes: Option<Vec<PathBuf>>,
     pub dir: Option<String>,
     pub experimental_monorepo_root: Option<bool>,
+    /// Whether to respect .gitignore files when discovering monorepo subdirectories
+    /// Defaults to true
+    pub monorepo_respect_gitignore: Option<bool>,
+    /// Additional directory patterns to exclude when discovering monorepo subdirectories
+    /// These are in addition to the default exclusions (node_modules, target, dist, build)
+    pub monorepo_exclude_dirs: Option<Vec<String>>,
 }
 
 #[cfg(test)]

@@ -1315,7 +1315,14 @@ async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
 
     // If in a monorepo, also discover and load tasks from subdirectories
     if let Some(monorepo_root) = &monorepo_root {
-        let subdirs = discover_monorepo_subdirs(monorepo_root)?;
+        // Get task_config from the monorepo root config file
+        let task_config = config
+            .config_files
+            .values()
+            .find(|cf| cf.task_config().experimental_monorepo_root == Some(true))
+            .map(|cf| cf.task_config().clone())
+            .unwrap_or_default();
+        let subdirs = discover_monorepo_subdirs(monorepo_root, &task_config)?;
         for subdir in subdirs {
             if cfg!(test) && !subdir.starts_with(*dirs::HOME) {
                 continue;
@@ -1330,9 +1337,17 @@ async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
                         // Prefix task names with relative path from monorepo root
                         if let Ok(rel_path) = subdir.strip_prefix(monorepo_root) {
                             if !rel_path.as_os_str().is_empty() {
-                                let prefix = rel_path.to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/");
+                                let prefix = rel_path
+                                    .to_string_lossy()
+                                    .replace(std::path::MAIN_SEPARATOR, "/");
                                 for task in subdir_tasks.iter_mut() {
-                                    task.name = format!("{}{}{}{}", MONOREPO_PATH_PREFIX, prefix, MONOREPO_TASK_SEPARATOR, task.name);
+                                    task.name = format!(
+                                        "{}{}{}{}",
+                                        MONOREPO_PATH_PREFIX,
+                                        prefix,
+                                        MONOREPO_TASK_SEPARATOR,
+                                        task.name
+                                    );
                                 }
                             }
                         }
@@ -1347,32 +1362,80 @@ async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
     Ok(tasks)
 }
 
-fn discover_monorepo_subdirs(root: &Path) -> Result<Vec<PathBuf>> {
+fn discover_monorepo_subdirs(
+    root: &Path,
+    task_config: &config_file::TaskConfig,
+) -> Result<Vec<PathBuf>> {
     const MAX_MONOREPO_DEPTH: usize = 5;
     const IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
 
     let mut subdirs = Vec::new();
+    let respect_gitignore = task_config.monorepo_respect_gitignore.unwrap_or(true);
 
-    // Walk the monorepo root to find subdirectories with config files
-    for entry in WalkDir::new(root)
-        .min_depth(1)
-        .max_depth(MAX_MONOREPO_DEPTH)
-        .into_iter()
-        .filter_entry(|e| {
-            // Skip hidden directories and common ignore patterns
-            let name = e.file_name().to_string_lossy();
-            !name.starts_with('.') && !IGNORED_DIRS.contains(&name.as_ref())
-        })
-    {
-        let entry = entry?;
-        if entry.file_type().is_dir() {
-            let dir = entry.path();
-            // Check if this directory has a mise config file
-            let has_config = DEFAULT_CONFIG_FILENAMES
-                .iter()
-                .any(|f| dir.join(f).exists());
-            if has_config {
-                subdirs.push(dir.to_path_buf());
+    // Build the list of excluded directories
+    let mut excluded_dirs: Vec<&str> = IGNORED_DIRS.to_vec();
+    if let Some(ref extra_excludes) = task_config.monorepo_exclude_dirs {
+        excluded_dirs.extend(extra_excludes.iter().map(|s| s.as_str()));
+    }
+
+    if respect_gitignore {
+        // Use the `ignore` crate which respects .gitignore files
+        let walker = ignore::WalkBuilder::new(root)
+            .max_depth(Some(MAX_MONOREPO_DEPTH))
+            .hidden(true) // Skip hidden files/dirs
+            .git_ignore(true) // Respect .gitignore
+            .git_global(true) // Respect global .gitignore
+            .git_exclude(true) // Respect .git/info/exclude
+            .require_git(false) // Don't require a git repo
+            .build();
+
+        for entry in walker {
+            let entry = entry?;
+            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                let dir = entry.path();
+
+                // Skip if depth is 0 (root itself)
+                if dir == root {
+                    continue;
+                }
+
+                // Check against excluded directories
+                let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if excluded_dirs.contains(&name) {
+                    continue;
+                }
+
+                // Check if this directory has a mise config file
+                let has_config = DEFAULT_CONFIG_FILENAMES
+                    .iter()
+                    .any(|f| dir.join(f).exists());
+                if has_config {
+                    subdirs.push(dir.to_path_buf());
+                }
+            }
+        }
+    } else {
+        // Fall back to WalkDir for non-gitignore-aware walking
+        for entry in WalkDir::new(root)
+            .min_depth(1)
+            .max_depth(MAX_MONOREPO_DEPTH)
+            .into_iter()
+            .filter_entry(|e| {
+                // Skip hidden directories and excluded patterns
+                let name = e.file_name().to_string_lossy();
+                !name.starts_with('.') && !excluded_dirs.contains(&name.as_ref())
+            })
+        {
+            let entry = entry?;
+            if entry.file_type().is_dir() {
+                let dir = entry.path();
+                // Check if this directory has a mise config file
+                let has_config = DEFAULT_CONFIG_FILENAMES
+                    .iter()
+                    .any(|f| dir.join(f).exists());
+                if has_config {
+                    subdirs.push(dir.to_path_buf());
+                }
             }
         }
     }
