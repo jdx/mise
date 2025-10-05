@@ -1,9 +1,9 @@
 /// Context for loading tasks with optional filtering hints
 #[derive(Debug, Clone, Default, Hash, Eq, PartialEq)]
 pub struct TaskLoadContext {
-    /// If Some, only load tasks from this specific path
-    /// e.g., "foo/bar" from pattern "//foo/bar:task"
-    pub path_hint: Option<String>,
+    /// Specific paths to load tasks from
+    /// e.g., ["foo/bar", "baz/qux"] from patterns "//foo/bar:task" and "//baz/qux:task"
+    pub path_hints: Vec<String>,
 
     /// If true, load all tasks from the entire monorepo (for `mise tasks ls --all`)
     /// If false (default), only load tasks from current directory hierarchy
@@ -14,7 +14,7 @@ impl TaskLoadContext {
     /// Create a new context that loads all tasks
     pub fn all() -> Self {
         Self {
-            path_hint: None,
+            path_hints: vec![],
             load_all: true,
         }
     }
@@ -22,11 +22,37 @@ impl TaskLoadContext {
     /// Create a context from a task pattern like "//foo/bar:task" or "//foo/bar/..."
     pub fn from_pattern(pattern: &str) -> Self {
         // Extract path hint from pattern
-        let path_hint = Self::extract_path_hint(pattern);
+        let path_hints = if let Some(hint) = Self::extract_path_hint(pattern) {
+            vec![hint]
+        } else {
+            vec![]
+        };
 
         Self {
-            path_hint,
+            path_hints,
             load_all: false,
+        }
+    }
+
+    /// Create a context from multiple patterns, merging their path hints
+    pub fn from_patterns<'a>(patterns: impl Iterator<Item = &'a str>) -> Self {
+        let mut path_hints = Vec::new();
+        let mut load_all = false;
+
+        for pattern in patterns {
+            if let Some(hint) = Self::extract_path_hint(pattern) {
+                if !path_hints.contains(&hint) {
+                    path_hints.push(hint);
+                }
+            } else {
+                // If any pattern has no hint, we need to load all
+                load_all = true;
+            }
+        }
+
+        Self {
+            path_hints,
+            load_all,
         }
     }
 
@@ -73,24 +99,32 @@ impl TaskLoadContext {
             return true;
         }
 
-        // If no path hint, don't load anything (unless load_all is true)
-        let Some(ref hint) = self.path_hint else {
+        // If no path hints, don't load anything (unless load_all is true)
+        if self.path_hints.is_empty() {
             return false;
-        };
+        }
 
-        // Normalize paths for comparison (remove leading/trailing slashes)
-        let hint = hint.trim_matches('/');
+        // Normalize subdir for comparison (remove leading/trailing slashes)
         let subdir = subdir.trim_matches('/');
 
-        // Check if subdir matches or is a parent/child of the hint
-        // e.g., hint "foo/bar" should match:
-        // - "foo/bar" (exact match)
-        // - "foo/bar/baz" (child)
-        // - "foo" (parent, might contain the target)
+        // Check if subdir matches or is a parent/child of any hint
+        for hint in &self.path_hints {
+            let hint = hint.trim_matches('/');
 
-        subdir == hint
-            || subdir.starts_with(&format!("{}/", hint))
-            || hint.starts_with(&format!("{}/", subdir))
+            // Check if subdir matches or is a parent/child of this hint
+            // e.g., hint "foo/bar" should match:
+            // - "foo/bar" (exact match)
+            // - "foo/bar/baz" (child)
+            // - "foo" (parent, might contain the target)
+            if subdir == hint
+                || subdir.starts_with(&format!("{}/", hint))
+                || hint.starts_with(&format!("{}/", subdir))
+            {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
@@ -132,6 +166,28 @@ mod tests {
 
         // Should not load unrelated paths
         assert!(!ctx.should_load_subdir("baz/qux", "/root"));
+    }
+
+    #[test]
+    fn test_should_load_subdir_multiple_hints() {
+        let ctx = TaskLoadContext::from_patterns(
+            ["//foo/bar:task", "//baz/qux:task"].iter().map(|s| *s),
+        );
+
+        // Should load exact matches for both hints
+        assert!(ctx.should_load_subdir("foo/bar", "/root"));
+        assert!(ctx.should_load_subdir("baz/qux", "/root"));
+
+        // Should load children of both hints
+        assert!(ctx.should_load_subdir("foo/bar/child", "/root"));
+        assert!(ctx.should_load_subdir("baz/qux/child", "/root"));
+
+        // Should load parents of both hints
+        assert!(ctx.should_load_subdir("foo", "/root"));
+        assert!(ctx.should_load_subdir("baz", "/root"));
+
+        // Should not load unrelated paths
+        assert!(!ctx.should_load_subdir("other/path", "/root"));
     }
 
     #[test]

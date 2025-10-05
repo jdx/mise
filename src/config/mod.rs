@@ -1367,52 +1367,75 @@ async fn load_local_tasks_with_context(
         tasks.extend(dir_tasks);
     }
 
-    // Determine if we should load all monorepo tasks or just current hierarchy
-    let load_all_monorepo_tasks = ctx.is_some_and(|c| c.load_all);
+    // Determine if we should load monorepo tasks from subdirectories
+    // We should load subdirs if:
+    // 1. load_all is true (--all flag or wildcard patterns like //...:task)
+    // 2. OR we have specific path_hints (patterns like //foo/bar:task)
+    let should_load_subdirs = ctx.is_some_and(|c| c.load_all || !c.path_hints.is_empty());
 
     // If in a monorepo, also discover and load tasks from subdirectories
     if let Some(monorepo_root) = &monorepo_root {
         // By default, only load tasks from current directory hierarchy (already loaded above)
-        // With --all flag, also load tasks from sibling directories
-        if !load_all_monorepo_tasks {
+        // With --all flag or path hints, also load tasks from matching subdirectories
+        if !should_load_subdirs {
             // Default: don't load any additional monorepo subdirs (they're not in our hierarchy)
             return Ok(tasks);
         }
 
         let subdirs = discover_monorepo_subdirs(monorepo_root, ctx)?;
-        for subdir in subdirs {
-            if cfg!(test) && !subdir.starts_with(*dirs::HOME) {
-                continue;
-            }
-            // Load config files from subdirectory
-            for config_filename in DEFAULT_CONFIG_FILENAMES.iter() {
-                let config_path = subdir.join(config_filename);
-                if config_path.exists() {
-                    if let Ok(cf) = config_file::parse(&config_path).await {
-                        let mut subdir_tasks = load_config_and_file_tasks(config, cf).await?;
 
-                        // Prefix task names with relative path from monorepo root
-                        if let Ok(rel_path) = subdir.strip_prefix(monorepo_root) {
-                            if !rel_path.as_os_str().is_empty() {
-                                let prefix = rel_path
-                                    .to_string_lossy()
-                                    .replace(std::path::MAIN_SEPARATOR, "/");
-                                for task in subdir_tasks.iter_mut() {
-                                    task.name = format!(
-                                        "{}{}{}{}",
-                                        MONOREPO_PATH_PREFIX,
-                                        prefix,
-                                        MONOREPO_TASK_SEPARATOR,
-                                        task.name
-                                    );
+        // Load tasks from subdirectories in parallel
+        let subdir_tasks_futures: Vec<_> = subdirs
+            .into_iter()
+            .filter(|subdir| !cfg!(test) || subdir.starts_with(*dirs::HOME))
+            .map(|subdir| {
+                let config = config.clone();
+                let monorepo_root = monorepo_root.clone();
+                async move {
+                    let mut all_tasks = Vec::new();
+                    // Load config files from subdirectory
+                    for config_filename in DEFAULT_CONFIG_FILENAMES.iter() {
+                        let config_path = subdir.join(config_filename);
+                        if config_path.exists() {
+                            if let Ok(cf) = config_file::parse(&config_path).await {
+                                let mut subdir_tasks = load_config_and_file_tasks(&config, cf).await?;
+
+                                // Prefix task names with relative path from monorepo root
+                                if let Ok(rel_path) = subdir.strip_prefix(&monorepo_root) {
+                                    if !rel_path.as_os_str().is_empty() {
+                                        let prefix = rel_path
+                                            .to_string_lossy()
+                                            .replace(std::path::MAIN_SEPARATOR, "/");
+                                        for task in subdir_tasks.iter_mut() {
+                                            task.name = format!(
+                                                "{}{}{}{}",
+                                                MONOREPO_PATH_PREFIX,
+                                                prefix,
+                                                MONOREPO_TASK_SEPARATOR,
+                                                task.name
+                                            );
+                                        }
+                                    }
                                 }
+
+                                all_tasks.extend(subdir_tasks);
                             }
                         }
-
-                        tasks.extend(subdir_tasks);
                     }
+                    Ok::<Vec<Task>, eyre::Report>(all_tasks)
                 }
-            }
+            })
+            .collect();
+
+        // Wait for all subdirectory tasks to load
+        use tokio::task::JoinSet;
+        let mut join_set = JoinSet::new();
+        for future in subdir_tasks_futures {
+            join_set.spawn(future);
+        }
+
+        while let Some(result) = join_set.join_next().await {
+            tasks.extend(result??);
         }
     }
 

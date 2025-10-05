@@ -1702,27 +1702,23 @@ pub async fn get_task_lists(
     let task_context = if args.is_empty() {
         None
     } else {
-        // Find the most permissive context needed to match all patterns
-        let contexts: Vec<TaskLoadContext> = args
+        // Collect all monorepo patterns
+        let monorepo_patterns: Vec<&str> = args
             .iter()
             .filter_map(|(t, _)| {
                 if t.starts_with("//") || t.contains("...") {
-                    Some(TaskLoadContext::from_pattern(t))
+                    Some(t.as_str())
                 } else {
                     None
                 }
             })
             .collect();
 
-        if contexts.is_empty() {
+        if monorepo_patterns.is_empty() {
             None
-        } else if contexts.iter().any(|c| c.load_all && c.path_hint.is_none()) {
-            // If any pattern needs everything, use load_all
-            Some(TaskLoadContext::all())
         } else {
-            // For now, if any monorepo pattern is present, load all
-            // TODO: In the future, we could optimize by merging path hints
-            Some(TaskLoadContext::all())
+            // Merge all path hints from the patterns into a single context
+            Some(TaskLoadContext::from_patterns(monorepo_patterns.into_iter()))
         }
     };
 
