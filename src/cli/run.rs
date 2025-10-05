@@ -13,12 +13,13 @@ use std::time::{Duration, SystemTime};
 use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::cmd::CmdLineRunner;
+use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Deps, GetMatchingExt, Task};
-use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::{ctrlc, prompt, style, time};
@@ -691,41 +692,13 @@ impl Run {
         }
         let ts_build_start = std::time::Instant::now();
 
-        // For monorepo tasks, build toolset from the task's config file context
-        // This ensures tools and env from subdirectory mise.toml files are used
-        let ts = if let Some(task_cf) = task.cf(config) {
-            trace!(
-                "task {} using config file context from {}",
-                task.name,
-                task_cf.get_path().display()
-            );
-            // Build a toolset from the task's config file
-            let mut task_ts = task_cf.to_toolset()?;
-            trace!("task {} toolset from config file: {:?}", task.name, task_ts);
+        // Check if we need special handling for monorepo tasks with config file context
+        let task_cf = task.cf(config);
 
-            // Add task-specific tools and CLI args
-            let arg_toolset = ToolsetBuilder::new()
-                .with_args(&tools)
-                .build(config)
-                .await?;
-
-            // Merge task-specific tools into the config file's toolset
-            task_ts.merge(arg_toolset);
-
-            // Resolve the final toolset
-            task_ts.resolve(config).await?;
-            task_ts
-        } else {
-            trace!(
-                "task {} no config file found, using standard toolset",
-                task.name
-            );
-            // Fallback to standard behavior if no config file found
-            ToolsetBuilder::new()
-                .with_args(&tools)
-                .build(config)
-                .await?
-        };
+        // Build toolset - either from task's config file or standard way
+        let ts = self
+            .build_toolset_for_task(config, task, task_cf, &tools)
+            .await?;
 
         trace!(
             "task {} ToolsetBuilder::build took {}ms",
@@ -734,85 +707,15 @@ impl Run {
         );
         let env_render_start = std::time::Instant::now();
 
-        // Build env with config file context for monorepo tasks
-        let (mut env, task_env) = if let Some(task_cf) = task.cf(config) {
-            // Start with the toolset's env
-            let mut env = ts.full_env(config).await?;
-
-            // Add env directives from the task's config file
-            let config_env_directives: Vec<(EnvDirective, PathBuf)> = task_cf
-                .env_entries()?
-                .into_iter()
-                .map(|directive| (directive, task.config_source.clone()))
-                .collect();
-
-            // Add task-specific env directives
-            let task_env_directives: Vec<(EnvDirective, PathBuf)> = task
-                .env
-                .0
-                .iter()
-                .map(|directive| (directive.clone(), task.config_source.clone()))
-                .collect();
-
-            // Combine config and task env directives
-            let all_env_directives = config_env_directives
-                .into_iter()
-                .chain(task_env_directives)
-                .collect::<Vec<_>>();
-
-            // Build tera context
-            let mut tera_ctx = ts.tera_ctx(config).await?.clone();
-            if let Some(root) = &config.project_root {
-                tera_ctx.insert("config_root", &root);
-            }
-
-            // Resolve all env directives
-            use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
-            let env_results = EnvResults::resolve(
-                config,
-                tera_ctx.clone(),
-                &env,
-                all_env_directives.clone(),
-                EnvResolveOptions {
-                    vars: false,
-                    tools: ToolsFilter::Both,
-                    warn_on_missing_required: false,
-                },
-            )
-            .await?;
-
-            // Build task_env from the resolved env (only the directives we just resolved)
-            let task_env: Vec<(String, String)> = env_results
-                .env
-                .iter()
-                .map(|(k, (v, _))| (k.clone(), v.clone()))
-                .collect();
-
-            // Apply resolved env to the environment
-            env.extend(task_env.clone());
-
-            // Remove environment variables that were explicitly unset
-            for key in &env_results.env_remove {
-                env.remove(key);
-            }
-
-            // Apply path additions from _.path directives
-            if !env_results.env_paths.is_empty() {
-                use crate::path_env::PathEnv;
-                let mut path_env = PathEnv::from_iter(env::split_paths(
-                    &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
-                ));
-                for path in env_results.env_paths {
-                    path_env.add(path);
-                }
-                env.insert(env::PATH_KEY.to_string(), path_env.to_string());
-            }
-
-            (env, task_env)
+        // Build environment - either from task's config file context or standard way
+        let (mut env, task_env) = if let Some(task_cf) = task_cf {
+            self.resolve_task_env_with_config(config, task, task_cf, &ts)
+                .await?
         } else {
             // Fallback to standard behavior
             task.render_env(config, &ts).await?
         };
+
         trace!(
             "task {} render_env took {}ms",
             task.name,
@@ -895,6 +798,164 @@ impl Run {
         self.save_checksum(task)?;
 
         Ok(())
+    }
+
+    /// Build toolset for a task, optionally using its config file context for monorepo tasks
+    async fn build_toolset_for_task(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        task_cf: Option<&Arc<dyn ConfigFile>>,
+        tools: &[ToolArg],
+    ) -> Result<Toolset> {
+        if let Some(task_cf) = task_cf {
+            trace!(
+                "task {} using config file context from {}",
+                task.name,
+                task_cf.get_path().display()
+            );
+
+            // Build a toolset from the task's config file
+            let mut task_ts = task_cf.to_toolset()?;
+            trace!("task {} toolset from config file: {:?}", task.name, task_ts);
+
+            // Add task-specific tools and CLI args
+            let arg_toolset = ToolsetBuilder::new().with_args(tools).build(config).await?;
+
+            // Merge task-specific tools into the config file's toolset
+            task_ts.merge(arg_toolset);
+
+            // Resolve the final toolset
+            task_ts.resolve(config).await?;
+            Ok(task_ts)
+        } else {
+            trace!(
+                "task {} no config file found, using standard toolset",
+                task.name
+            );
+            // Standard toolset build
+            ToolsetBuilder::new().with_args(tools).build(config).await
+        }
+    }
+
+    /// Resolve environment variables for a task using its config file context
+    /// This is used for monorepo tasks to load env vars from subdirectory mise.toml files
+    async fn resolve_task_env_with_config(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        task_cf: &Arc<dyn ConfigFile>,
+        ts: &Toolset,
+    ) -> Result<(BTreeMap<String, String>, Vec<(String, String)>)> {
+        // Early return: if task's config root matches current config root, use standard behavior
+        // This avoids redundant resolution for tasks that don't need special context
+        if let (Some(task_config_root), Some(current_config_root)) =
+            (task_cf.project_root(), config.project_root.as_ref())
+        {
+            if task_config_root == current_config_root && task.env.0.is_empty() {
+                trace!(
+                    "task {} config root matches current, using standard env resolution",
+                    task.name
+                );
+                return task.render_env(config, ts).await;
+            }
+        }
+
+        // Start with the toolset's env
+        let mut env = ts.full_env(config).await?;
+
+        // Get env directives from the task's config file
+        let config_env_directives: Vec<(EnvDirective, PathBuf)> = task_cf
+            .env_entries()?
+            .into_iter()
+            .map(|directive| (directive, task.config_source.clone()))
+            .collect();
+
+        // Get task-specific env directives
+        let task_env_directives: Vec<(EnvDirective, PathBuf)> = task
+            .env
+            .0
+            .iter()
+            .map(|directive| (directive.clone(), task.config_source.clone()))
+            .collect();
+
+        // Build tera context
+        let mut tera_ctx = ts.tera_ctx(config).await?.clone();
+        if let Some(root) = &config.project_root {
+            tera_ctx.insert("config_root", &root);
+        }
+
+        // Resolve config-level env directives first
+        use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
+        let config_env_results = EnvResults::resolve(
+            config,
+            tera_ctx.clone(),
+            &env,
+            config_env_directives,
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await?;
+
+        // Apply config-level env
+        for (k, (v, _)) in &config_env_results.env {
+            env.insert(k.clone(), v.clone());
+        }
+        for key in &config_env_results.env_remove {
+            env.remove(key);
+        }
+        if !config_env_results.env_paths.is_empty() {
+            use crate::path_env::PathEnv;
+            let mut path_env = PathEnv::from_iter(env::split_paths(
+                &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
+            ));
+            for path in config_env_results.env_paths {
+                path_env.add(path);
+            }
+            env.insert(env::PATH_KEY.to_string(), path_env.to_string());
+        }
+
+        // Now resolve task-specific env directives
+        let task_env_results = EnvResults::resolve(
+            config,
+            tera_ctx,
+            &env,
+            task_env_directives,
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await?;
+
+        // Build task_env from ONLY the task-specific directives
+        let task_env: Vec<(String, String)> = task_env_results
+            .env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+
+        // Apply task-specific env to the environment
+        env.extend(task_env.clone());
+        for key in &task_env_results.env_remove {
+            env.remove(key);
+        }
+        if !task_env_results.env_paths.is_empty() {
+            use crate::path_env::PathEnv;
+            let mut path_env = PathEnv::from_iter(env::split_paths(
+                &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
+            ));
+            for path in task_env_results.env_paths {
+                path_env.add(path);
+            }
+            env.insert(env::PATH_KEY.to_string(), path_env.to_string());
+        }
+
+        Ok((env, task_env))
     }
 
     async fn exec_task_run_entries(
