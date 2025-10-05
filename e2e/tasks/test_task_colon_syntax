@@ -20,8 +20,8 @@ export MISE_EXPERIMENTAL=1
 cat <<'EOF' >mise.toml
 experimental_monorepo_root = true
 
-[tasks.global]
-run = 'echo "global task"'
+[tasks.build]
+run = 'echo "root build task"'
 EOF
 
 mkdir -p project
@@ -36,10 +36,37 @@ cat <<'EOF' >app/mise.toml
 run = 'echo "app build task"'
 EOF
 
-# Running ':build' should match all tasks ending with :build
-# Should run both project:build and app:build
+# Running ':build' from root should match root-level build task (not monorepo tasks)
+assert_contains "mise run ':build'" "root build task"
+
+# Should NOT run project:build or app:build from root
+OUTPUT_ROOT=$(mise run ':build')
+if echo "$OUTPUT_ROOT" | grep -E "project build task|app build task"; then
+	echo "ERROR: 'mise run :build' from root incorrectly matched child tasks"
+	exit 1
+fi
+
+# Running ':build' from project dir should only match //project:build
+cd project
 assert_contains "mise run ':build'" "project build task"
+
+# Should NOT run app:build when we're in project directory
+OUTPUT=$(mise run ':build')
+if echo "$OUTPUT" | grep -q "app build task"; then
+	echo "ERROR: 'mise run :build' from project dir incorrectly matched //app:build"
+	exit 1
+fi
+
+# Running ':build' from app dir should only match //app:build
+cd ../app
 assert_contains "mise run ':build'" "app build task"
+
+# Should NOT run project:build when we're in app directory
+OUTPUT2=$(mise run ':build')
+if echo "$OUTPUT2" | grep -q "project build task"; then
+	echo "ERROR: 'mise run :build' from app dir incorrectly matched //project:build"
+	exit 1
+fi
 
 # Test 3: Verify that 'mise run build' does NOT match monorepo tasks
 unset MISE_EXPERIMENTAL

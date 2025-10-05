@@ -9,7 +9,7 @@ use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
 use console::{Color, measure_text_width, truncate_str};
-use eyre::{Result, eyre};
+use eyre::{Result, bail, eyre};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use globset::GlobBuilder;
@@ -937,9 +937,9 @@ where
         let normalized_pat = if pat.starts_with("//") {
             pat.to_string()
         } else if pat.starts_with(':') {
-            // Special case: :task means match any path with this task name
-            // Convert :task to //...:task (match any path)
-            format!("//...{}", pat)
+            // Special case: :task should have been expanded before calling get_matching
+            // If we reach here, it means the expansion didn't happen properly
+            bail!("':task' pattern should be expanded before matching")
         } else if pat.contains(':') && !pat.starts_with("//") {
             // Relative path like projects/1:task could match //projects/1:task
             format!("//{}", pat)
