@@ -1861,13 +1861,13 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
 
     tasks
         .into_iter()
-        .map(|parent_t| {
-            let env_list = parent_t.env.clone();
-            let depends = parent_t
+        .map(|parent_task| {
+            let env_list = parent_task.env.clone();
+            let depends = parent_task
                 .all_depends(&all_tasks_map)?
                 .into_iter()
                 .map(|t| t.derive_env(&env_list));
-            Ok(once(parent_t).chain(depends).collect::<Vec<_>>())
+            Ok(once(parent_task).chain(depends).collect::<Vec<_>>())
         })
         .flatten_ok()
         .collect()
