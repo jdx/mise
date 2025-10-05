@@ -1718,7 +1718,9 @@ pub async fn get_task_lists(
             None
         } else {
             // Merge all path hints from the patterns into a single context
-            Some(TaskLoadContext::from_patterns(monorepo_patterns.into_iter()))
+            Some(TaskLoadContext::from_patterns(
+                monorepo_patterns.into_iter(),
+            ))
         }
     };
 

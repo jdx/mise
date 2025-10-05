@@ -1398,7 +1398,8 @@ async fn load_local_tasks_with_context(
                         let config_path = subdir.join(config_filename);
                         if config_path.exists() {
                             if let Ok(cf) = config_file::parse(&config_path).await {
-                                let mut subdir_tasks = load_config_and_file_tasks(&config, cf).await?;
+                                let mut subdir_tasks =
+                                    load_config_and_file_tasks(&config, cf).await?;
 
                                 // Prefix task names with relative path from monorepo root
                                 if let Ok(rel_path) = subdir.strip_prefix(&monorepo_root) {
