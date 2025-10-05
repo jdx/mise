@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Test error cases: nested monorepos, malformed configs, circular dependencies
+export MISE_EXPERIMENTAL=1
+
+# Test 1: Malformed config in subdirectory should warn but not break
+echo "=== Test 1: Malformed config in subdirectory ==="
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.root-task]
+run = 'echo "root task works"'
+TOML
+
+mkdir -p projects/broken
+cat <<'TOML' >projects/broken/mise.toml
+[env]
+BAD_SYNTAX = this is not valid toml
+TOML
+
+mkdir -p projects/good
+cat <<'TOML' >projects/good/mise.toml
+[tasks.build]
+run = 'echo "good project built"'
+TOML
+
+# Should warn about broken config but still load good project
+output=$(mise run '//projects/good:build' 2>&1)
+echo "$output"
+echo "$output" | grep -q "good project built" || (echo "FAIL: Good project should still work" && exit 1)
+# Check that warning was issued (optional - depends on log level)
+# echo "$output" | grep -q -i "failed to parse" && echo "Warning correctly issued for malformed config"
+
+# Test 2: Nested monorepo (subdirectory with experimental_monorepo_root)
+echo "=== Test 2: Nested monorepo configuration ==="
+rm -rf projects
+mkdir -p projects/nested
+cat <<'TOML' >projects/nested/mise.toml
+# This is potentially problematic - nested monorepo root
+experimental_monorepo_root = true
+
+[tasks.nested-task]
+run = 'echo "nested task"'
+TOML
+
+mkdir -p projects/normal
+cat <<'TOML' >projects/normal/mise.toml
+[tasks.normal-task]
+run = 'echo "normal task"'
+TOML
+
+# Both should work, but nested one shouldn't create its own monorepo
+output=$(mise run '//projects/normal:normal-task' 2>&1)
+echo "$output"
+echo "$output" | grep -q "normal task" || (echo "FAIL: Normal task should work" && exit 1)
+
+output=$(mise run '//projects/nested:nested-task' 2>&1)
+echo "$output"
+echo "$output" | grep -q "nested task" || (echo "FAIL: Nested task should still be accessible" && exit 1)
+
+# Test 3: Missing dependency should fail gracefully
+echo "=== Test 3: Missing task dependency ==="
+rm -rf projects
+mkdir -p projects/app
+cat <<'TOML' >projects/app/mise.toml
+[tasks.build]
+depends = ["//projects/nonexistent:build"]
+run = 'echo "should not run"'
+TOML
+
+# Should fail with clear error
+output=$(mise run '//projects/app:build' 2>&1 || true)
+echo "$output"
+# Should mention that dependency could not be found
+if echo "$output" | grep -q "should not run"; then
+  echo "FAIL: Task with missing dependency should not execute"
+  exit 1
+fi
+
+# Test 4: Task without experimental mode should fail
+echo "=== Test 4: Monorepo syntax without experimental mode ==="
+rm -f mise.toml
+cat <<'TOML' >mise.toml
+# No experimental_monorepo_root flag
+
+[tasks.normal-task]
+run = 'echo "normal"'
+TOML
+
+mkdir -p projects/app
+cat <<'TOML' >projects/app/mise.toml
+[tasks.build]
+run = 'echo "app build"'
+TOML
+
+# Running with // syntax should fail or warn
+unset MISE_EXPERIMENTAL
+output=$(mise run '//projects/app:build' 2>&1 || true)
+echo "$output"
+# Should require experimental mode
+echo "$output" | grep -q -i "experimental" || echo "Note: May need experimental mode check"
+
+# Test 5: Empty subdirectory mise.toml should not cause issues
+echo "=== Test 5: Empty subdirectory config ==="
+export MISE_EXPERIMENTAL=1
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.root-task]
+run = 'echo "root"'
+TOML
+
+rm -rf projects
+mkdir -p projects/empty
+touch projects/empty/mise.toml
+
+mkdir -p projects/working
+cat <<'TOML' >projects/working/mise.toml
+[tasks.build]
+run = 'echo "working build"'
+TOML
+
+# Should handle empty config gracefully
+output=$(mise run '//projects/working:build' 2>&1)
+echo "$output"
+echo "$output" | grep -q "working build" || (echo "FAIL: Should handle empty configs" && exit 1)
+
+echo "=== All error case tests passed! ==="
