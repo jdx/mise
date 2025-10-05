@@ -1554,6 +1554,41 @@ fn last_modified_file(files: impl IntoIterator<Item = PathBuf>) -> Result<Option
         .max())
 }
 
+fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
+    // Check if experimental mode is enabled
+    if !Settings::get().experimental {
+        bail!(
+            "Monorepo task paths (like `//path:task`) require experimental mode.\n\
+            \n\
+            To enable experimental features, set:\n\
+            {}\n\
+            \n\
+            Or run with: {}",
+            style::eyellow("  export MISE_EXPERIMENTAL=true"),
+            style::eyellow("MISE_EXPERIMENTAL=1 mise run ...")
+        );
+    }
+
+    // Check if a monorepo root is configured
+    if !config.is_monorepo() {
+        bail!(
+            "Monorepo task paths (like `//path:task`) require a monorepo root configuration.\n\
+            \n\
+            To set up monorepo support, add this to your root mise.toml:\n\
+            {}\n\
+            \n\
+            Then create task files in subdirectories that will be automatically discovered.\n\
+            See {} for more information.",
+            style::eyellow("  experimental_monorepo_root = true"),
+            style::eunderline(
+                "https://mise.jdx.dev/tasks/task-configuration.html#monorepo-support"
+            )
+        );
+    }
+
+    Ok(())
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
