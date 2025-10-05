@@ -328,6 +328,19 @@ impl Config {
             })
     }
 
+    pub fn is_monorepo(&self) -> bool {
+        find_monorepo_root(&self.config_files).is_some()
+    }
+
+    pub fn is_at_monorepo_root(&self) -> bool {
+        if let Some(monorepo_root) = find_monorepo_root(&self.config_files) {
+            let cwd = dirs::CWD.as_ref();
+            cwd.map_or(false, |cwd| cwd == &monorepo_root)
+        } else {
+            false
+        }
+    }
+
     pub async fn tasks(&self) -> Result<Arc<BTreeMap<String, Task>>> {
         self.tasks_with_context(None).await
     }

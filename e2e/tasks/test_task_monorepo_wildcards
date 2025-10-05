@@ -54,13 +54,14 @@ assert_contains "mise tasks ls --all" "//projects/frontend:build"
 assert_contains "mise tasks ls --all" "//projects/backend:build"
 assert_contains "mise tasks ls --all" "//libs/shared:build"
 
-# By default (without --all), only current hierarchy tasks are shown
-assert_contains "mise tasks ls" "root-task"
+# By default (without --all), in monorepo mode only monorepo-style tasks are shown
+# root-task should NOT be shown because it's not prefixed with //
+assert_not_contains "mise tasks ls" "root-task"
 assert_not_contains "mise tasks ls" "//projects/frontend:build"
 assert_not_contains "mise tasks ls" "//projects/backend:build"
 assert_not_contains "mise tasks ls" "//libs/shared:build"
 
-# Test from subdirectory - should see parent tasks but not sibling tasks
+# Test from subdirectory - shows local tasks normally (not at root)
 cd projects/frontend
 assert_contains "mise tasks ls" "root-task"
 assert_contains "mise tasks ls" "build"
