@@ -1680,6 +1680,8 @@ pub async fn get_task_lists(
     args: &[String],
     prompt: bool,
 ) -> Result<Vec<Task>> {
+    use crate::task::TaskLoadContext;
+
     let args = args
         .iter()
         .map(|s| vec![s.to_string()])
@@ -1694,6 +1696,13 @@ pub async fn get_task_lists(
         })
         .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
         .collect::<Vec<_>>();
+
+    // Check if any of the task patterns are monorepo patterns
+    // If so, we need to load all tasks to match them
+    let has_monorepo_pattern = args
+        .iter()
+        .any(|(t, _)| t.starts_with("//") || t.contains("..."));
+
     let mut tasks = vec![];
     let arg_re = regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#);
     for (t, args) in args {
@@ -1716,9 +1725,26 @@ pub async fn get_task_lists(
                 return Ok(vec![task.with_args(args)]);
             }
         }
-        let cur_tasks = config
-            .tasks_with_aliases()
-            .await?
+        // If we detected monorepo patterns, load all tasks
+        let all_tasks = if has_monorepo_pattern {
+            let ctx = TaskLoadContext::all();
+            config.tasks_with_context(Some(&ctx)).await?
+        } else {
+            config.tasks().await?
+        };
+
+        let tasks_with_aliases: BTreeMap<String, &Task> = all_tasks
+            .iter()
+            .flat_map(|(_, t)| {
+                t.aliases
+                    .iter()
+                    .map(|a| (a.to_string(), t))
+                    .chain(once((t.name.clone(), t)))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        let cur_tasks = tasks_with_aliases
             .get_matching(&t)?
             .into_iter()
             .cloned()

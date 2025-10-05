@@ -328,9 +328,31 @@ impl Config {
     }
 
     pub async fn tasks(&self) -> Result<&BTreeMap<String, Task>> {
+        self.tasks_with_context(None).await
+    }
+
+    pub async fn tasks_with_context(
+        &self,
+        ctx: Option<&crate::task::TaskLoadContext>,
+    ) -> Result<&BTreeMap<String, Task>> {
+        // When no context is provided, use the cached tasks
+        if ctx.is_none() {
+            return self
+                .tasks
+                .get_or_try_init(|| async {
+                    measure!("config::load_all_tasks", { self.load_all_tasks().await })
+                })
+                .await;
+        }
+
+        // When a context is provided, we can't use the cache
+        // This is a limitation - we return the cached value for now
+        // TODO: Implement proper context-aware caching or remove caching for context calls
         self.tasks
             .get_or_try_init(|| async {
-                measure!("config::load_all_tasks", { self.load_all_tasks().await })
+                measure!("config::load_all_tasks_with_context", {
+                    self.load_all_tasks_with_context(ctx).await
+                })
             })
             .await
     }
@@ -398,23 +420,16 @@ impl Config {
     }
 
     async fn load_all_tasks(&self) -> Result<BTreeMap<String, Task>> {
+        self.load_all_tasks_with_context(None).await
+    }
+
+    async fn load_all_tasks_with_context(
+        &self,
+        ctx: Option<&crate::task::TaskLoadContext>,
+    ) -> Result<BTreeMap<String, Task>> {
         let config = Config::get().await?;
         time!("load_all_tasks");
-        // let (file_tasks, global_tasks, system_tasks) = tokio::join!(
-        //     {
-        //         let config = config.clone();
-        //         tokio::task::spawn(async move { load_local_tasks(&config).await })
-        //     },
-        //     {
-        //         let config = config.clone();
-        //         tokio::task::spawn(async move { load_global_tasks(&config).await })
-        //     },
-        //     {
-        //         let config = config.clone();
-        //         tokio::task::spawn(async move { load_system_tasks(&config).await })
-        //     },
-        // );
-        let file_tasks = load_local_tasks(&config).await?;
+        let file_tasks = load_local_tasks_with_context(&config, ctx).await?;
         let global_tasks = load_global_tasks(&config).await?;
         let system_tasks = load_system_tasks(&config).await?;
         let mut tasks: BTreeMap<String, Task> = file_tasks
@@ -1298,7 +1313,10 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     Ok(())
 }
 
-async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
+async fn load_local_tasks_with_context(
+    config: &Arc<Config>,
+    ctx: Option<&crate::task::TaskLoadContext>,
+) -> Result<Vec<Task>> {
     const MONOREPO_PATH_PREFIX: &str = "//";
     const MONOREPO_TASK_SEPARATOR: &str = ":";
 
@@ -1313,8 +1331,18 @@ async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
         tasks.extend(load_tasks_in_dir(config, &d, &config.config_files).await?);
     }
 
+    // Determine if we should load all monorepo tasks or just current hierarchy
+    let load_all_monorepo_tasks = ctx.map_or(false, |c| c.load_all);
+
     // If in a monorepo, also discover and load tasks from subdirectories
     if let Some(monorepo_root) = &monorepo_root {
+        // By default, only load tasks from current directory hierarchy (already loaded above)
+        // With --all flag, also load tasks from sibling directories
+        if !load_all_monorepo_tasks {
+            // Default: don't load any additional monorepo subdirs (they're not in our hierarchy)
+            return Ok(tasks);
+        }
+
         // Get task_config from the monorepo root config file
         let task_config = config
             .config_files
@@ -1322,7 +1350,7 @@ async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
             .find(|cf| cf.task_config().experimental_monorepo_root == Some(true))
             .map(|cf| cf.task_config().clone())
             .unwrap_or_default();
-        let subdirs = discover_monorepo_subdirs(monorepo_root, &task_config)?;
+        let subdirs = discover_monorepo_subdirs(monorepo_root, &task_config, ctx)?;
         for subdir in subdirs {
             if cfg!(test) && !subdir.starts_with(*dirs::HOME) {
                 continue;
@@ -1365,6 +1393,7 @@ async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
 fn discover_monorepo_subdirs(
     root: &Path,
     task_config: &config_file::TaskConfig,
+    ctx: Option<&crate::task::TaskLoadContext>,
 ) -> Result<Vec<PathBuf>> {
     const MAX_MONOREPO_DEPTH: usize = 5;
     const IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
@@ -1410,7 +1439,19 @@ fn discover_monorepo_subdirs(
                     .iter()
                     .any(|f| dir.join(f).exists());
                 if has_config {
-                    subdirs.push(dir.to_path_buf());
+                    // Apply context filtering if provided
+                    if let Some(ctx) = ctx {
+                        let rel_path = dir
+                            .strip_prefix(root)
+                            .ok()
+                            .and_then(|p| p.to_str())
+                            .unwrap_or("");
+                        if ctx.should_load_subdir(rel_path, root.to_str().unwrap_or("")) {
+                            subdirs.push(dir.to_path_buf());
+                        }
+                    } else {
+                        subdirs.push(dir.to_path_buf());
+                    }
                 }
             }
         }
@@ -1434,7 +1475,19 @@ fn discover_monorepo_subdirs(
                     .iter()
                     .any(|f| dir.join(f).exists());
                 if has_config {
-                    subdirs.push(dir.to_path_buf());
+                    // Apply context filtering if provided
+                    if let Some(ctx) = ctx {
+                        let rel_path = dir
+                            .strip_prefix(root)
+                            .ok()
+                            .and_then(|p| p.to_str())
+                            .unwrap_or("");
+                        if ctx.should_load_subdir(rel_path, root.to_str().unwrap_or("")) {
+                            subdirs.push(dir.to_path_buf());
+                        }
+                    } else {
+                        subdirs.push(dir.to_path_buf());
+                    }
                 }
             }
         }

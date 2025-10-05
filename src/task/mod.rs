@@ -30,8 +30,11 @@ use xx::regex;
 mod deps;
 mod task_dep;
 pub mod task_file_providers;
+mod task_load_context;
 mod task_script_parser;
 pub mod task_sources;
+
+pub use task_load_context::TaskLoadContext;
 
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;

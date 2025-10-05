@@ -49,10 +49,32 @@ run = 'echo "shared build"'
 run = 'echo "shared lint"'
 EOF
 
-# Verify monorepo tasks are discovered
-assert_contains "mise tasks ls" "//projects/frontend:build"
-assert_contains "mise tasks ls" "//projects/backend:build"
-assert_contains "mise tasks ls" "//libs/shared:build"
+# Verify monorepo tasks are discovered with --all flag
+assert_contains "mise tasks ls --all" "//projects/frontend:build"
+assert_contains "mise tasks ls --all" "//projects/backend:build"
+assert_contains "mise tasks ls --all" "//libs/shared:build"
+
+# By default (without --all), only current hierarchy tasks are shown
+assert_contains "mise tasks ls" "root-task"
+assert_not_contains "mise tasks ls" "//projects/frontend:build"
+assert_not_contains "mise tasks ls" "//projects/backend:build"
+assert_not_contains "mise tasks ls" "//libs/shared:build"
+
+# Test from subdirectory - should see parent tasks but not sibling tasks
+cd projects/frontend
+assert_contains "mise tasks ls" "root-task"
+assert_contains "mise tasks ls" "build"
+assert_contains "mise tasks ls" "test"
+assert_not_contains "mise tasks ls" "//projects/backend:build"
+assert_not_contains "mise tasks ls" "//libs/shared:build"
+
+# From subdirectory with --all - should see everything
+assert_contains "mise tasks ls --all" "//projects/frontend:build"
+assert_contains "mise tasks ls --all" "//projects/backend:build"
+assert_contains "mise tasks ls --all" "//libs/shared:build"
+
+# Go back to root
+cd ../..
 
 # Test ellipsis for path matching - match all build tasks
 assert_contains "mise run '//...:build'" "frontend build"
