@@ -1711,6 +1711,43 @@ async fn prompt_for_task() -> Result<Task> {
     }
 }
 
+fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
+    use crate::config::Settings;
+
+    // Check if experimental mode is enabled
+    if !Settings::get().experimental {
+        bail!(
+            "Monorepo task paths (like `//path:task` or `:task`) require experimental mode.\n\
+            \n\
+            To enable experimental features, set:\n\
+            {}\n\
+            \n\
+            Or run with: {}",
+            style::eyellow("  export MISE_EXPERIMENTAL=true"),
+            style::eyellow("MISE_EXPERIMENTAL=1 mise run ...")
+        );
+    }
+
+    // Check if a monorepo root is configured
+    if !config.is_monorepo() {
+        bail!(
+            "Monorepo task paths (like `//path:task` or `:task`) require a monorepo root configuration.\n\
+            \n\
+            To set up monorepo support, add this to your root mise.toml:\n\
+            {}\n\
+            \n\
+            Then create task files in subdirectories that will be automatically discovered.\n\
+            See {} for more information.",
+            style::eyellow("  experimental_monorepo_root = true"),
+            style::eunderline(
+                "https://mise.jdx.dev/tasks/task-configuration.html#monorepo-support"
+            )
+        );
+    }
+
+    Ok(())
+}
+
 pub async fn get_task_lists(
     config: &Arc<Config>,
     args: &[String],
@@ -1742,7 +1779,7 @@ pub async fn get_task_lists(
         let monorepo_patterns: Vec<&str> = args
             .iter()
             .filter_map(|(t, _)| {
-                if t.starts_with("//") || t.contains("...") {
+                if t.starts_with("//") || t.contains("...") || t.starts_with(':') {
                     Some(t.as_str())
                 } else {
                     None
@@ -1753,6 +1790,9 @@ pub async fn get_task_lists(
         if monorepo_patterns.is_empty() {
             None
         } else {
+            // Validate monorepo setup before attempting to load tasks
+            validate_monorepo_setup(config)?;
+
             // Merge all path hints from the patterns into a single context
             Some(TaskLoadContext::from_patterns(
                 monorepo_patterns.into_iter(),

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+# Test that :task syntax only works in monorepos
+
+# Test 1: Outside monorepo, :build should NOT work
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = 'echo "build task"'
+
+[tasks."project:build"]
+run = 'echo "project:build task"'
+EOF
+
+# Should fail with helpful error about monorepo setup
+assert_fail "mise run ':build'" "require a monorepo root configuration"
+
+# Test 2: In monorepo with experimental mode, :build SHOULD work
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.global]
+run = 'echo "global task"'
+EOF
+
+mkdir -p project
+cat <<'EOF' >project/mise.toml
+[tasks.build]
+run = 'echo "project build task"'
+EOF
+
+mkdir -p app
+cat <<'EOF' >app/mise.toml
+[tasks.build]
+run = 'echo "app build task"'
+EOF
+
+# Running ':build' should match all tasks ending with :build
+# Should run both project:build and app:build
+assert_contains "mise run ':build'" "project build task"
+assert_contains "mise run ':build'" "app build task"
+
+# Test 3: Verify that 'mise run build' does NOT match monorepo tasks
+unset MISE_EXPERIMENTAL
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = 'echo "root build"'
+
+[tasks."project:build"]
+run = 'echo "project build"'
+EOF
+
+# Should only run 'build', not 'project:build'
+OUTPUT2=$(mise run build)
+
+assert_contains "mise run build" "root build"
+
+if echo "$OUTPUT2" | grep -q "project build"; then
+	echo "ERROR: 'mise run build' incorrectly matched 'project:build'"
+	exit 1
+fi

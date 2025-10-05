@@ -936,6 +936,10 @@ where
         // If pattern starts with //, it's an absolute monorepo path
         let normalized_pat = if pat.starts_with("//") {
             pat.to_string()
+        } else if pat.starts_with(':') {
+            // Special case: :task means match any path with this task name
+            // Convert :task to //...:task (match any path)
+            format!("//...{}", pat)
         } else if pat.contains(':') && !pat.starts_with("//") {
             // Relative path like projects/1:task could match //projects/1:task
             format!("//{}", pat)
