@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+
+# Test monorepo task wildcards with ellipsis for paths and asterisk for task names
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<EOF >mise.toml
+[task_config]
+experimental_monorepo_root = true
+
+[tasks.root-task]
+run = 'echo "root task"'
+EOF
+
+# Create project structure with nested tasks
+mkdir -p projects/frontend
+cat <<EOF >projects/frontend/mise.toml
+[tasks.build]
+run = 'echo "frontend build"'
+
+[tasks.test]
+run = 'echo "frontend test"'
+
+[tasks."test:unit"]
+run = 'echo "frontend test:unit"'
+
+[tasks."test:integration"]
+run = 'echo "frontend test:integration"'
+EOF
+
+mkdir -p projects/backend
+cat <<EOF >projects/backend/mise.toml
+[tasks.build]
+run = 'echo "backend build"'
+
+[tasks.test]
+run = 'echo "backend test"'
+
+[tasks.deploy]
+run = 'echo "backend deploy"'
+EOF
+
+mkdir -p libs/shared
+cat <<EOF >libs/shared/mise.toml
+[tasks.build]
+run = 'echo "shared build"'
+
+[tasks.lint]
+run = 'echo "shared lint"'
+EOF
+
+# Verify monorepo tasks are discovered
+assert_contains "mise tasks ls" "//projects/frontend:build"
+assert_contains "mise tasks ls" "//projects/backend:build"
+assert_contains "mise tasks ls" "//libs/shared:build"
+
+# Test ellipsis for path matching - match all build tasks
+assert_contains "mise run '//...:build'" "frontend build"
+assert_contains "mise run '//...:build'" "backend build"
+assert_contains "mise run '//...:build'" "shared build"
+
+# Test ellipsis with path prefix - match all test tasks under projects/
+assert_contains "mise run '//projects/...:test'" "frontend test"
+assert_contains "mise run '//projects/...:test'" "backend test"
+assert_not_contains "mise run '//projects/...:test'" "shared"
+
+# Test asterisk for task name matching - all tasks in backend
+assert_contains "mise run '//projects/backend:*'" "backend build"
+assert_contains "mise run '//projects/backend:*'" "backend test"
+assert_contains "mise run '//projects/backend:*'" "backend deploy"
+
+# Test asterisk with prefix - match tasks starting with test:
+assert_contains "mise run '//projects/frontend:test:*'" "frontend test:unit"
+assert_contains "mise run '//projects/frontend:test:*'" "frontend test:integration"
+assert_not_contains "mise run '//projects/frontend:test:*'" "frontend build"
+
+# Test relative patterns (without //)
+assert_contains "mise run 'projects/...:build'" "frontend build"
+assert_contains "mise run 'projects/...:build'" "backend build"
+
+# Test combined patterns - ellipsis in path, asterisk in task
+assert_contains "mise run '//projects/...:test*'" "frontend test"
+assert_contains "mise run '//projects/...:test*'" "frontend test:unit"
+assert_contains "mise run '//projects/...:test*'" "frontend test:integration"
+assert_contains "mise run '//projects/...:test*'" "backend test"
