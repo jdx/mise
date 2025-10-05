@@ -929,15 +929,19 @@ where
                     pat
                 )
             }
-            // Regular task name (including tasks with colons like "build:linux")
-            return Ok(self
-                .iter()
-                .filter(|(k, _)| {
-                    // Check if task name exactly matches, or matches without extension
-                    k.as_str() == pat || strip_extension(k) == pat
-                })
-                .map(|(_, v)| v)
-                .collect());
+            // If it doesn't contain wildcards or ':', it's a simple task name
+            if !pat.contains('*') && !pat.contains("...") && !pat.contains(':') {
+                return Ok(self
+                    .iter()
+                    .filter(|(k, _)| {
+                        // Check if task name exactly matches, or matches without extension
+                        k.as_str() == pat || strip_extension(k) == pat
+                    })
+                    .map(|(_, v)| v)
+                    .collect());
+            }
+            // Has wildcards or colon but no /, so it's a regular task pattern like "render:*" or "build:linux"
+            // Process with glob matching below
         }
 
         // === Parse monorepo pattern ===
