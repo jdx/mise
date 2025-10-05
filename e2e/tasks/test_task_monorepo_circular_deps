@@ -30,11 +30,11 @@ EOF
 # Should error with circular dependency
 output=$(timeout 3 mise run '//projects/circ1:a' 2>&1 || true)
 if echo "$output" | grep -qiE "circular dependency detected"; then
-    echo "SUCCESS: Direct circular dependency detected"
+	echo "SUCCESS: Direct circular dependency detected"
 else
-    echo "Output: $output"
-    echo "ERROR: Expected circular dependency detection"
-    exit 1
+	echo "Output: $output"
+	echo "ERROR: Expected circular dependency detection"
+	exit 1
 fi
 
 # Test 2: Transitive circular dependency (a -> b -> c -> a)
@@ -56,11 +56,11 @@ EOF
 
 output=$(timeout 3 mise run '//projects/circ2:a' 2>&1 || true)
 if echo "$output" | grep -qiE "circular dependency detected"; then
-    echo "SUCCESS: Transitive circular dependency detected"
+	echo "SUCCESS: Transitive circular dependency detected"
 else
-    echo "Output: $output"
-    echo "ERROR: Expected circular dependency detection"
-    exit 1
+	echo "Output: $output"
+	echo "ERROR: Expected circular dependency detection"
+	exit 1
 fi
 
 # Test 3: Cross-project circular dependency
@@ -80,11 +80,11 @@ EOF
 
 output=$(timeout 3 mise run '//projects/frontend:build' 2>&1 || true)
 if echo "$output" | grep -qiE "circular dependency detected"; then
-    echo "SUCCESS: Cross-project circular dependency detected"
+	echo "SUCCESS: Cross-project circular dependency detected"
 else
-    echo "Output: $output"
-    echo "ERROR: Expected circular dependency detection"
-    exit 1
+	echo "Output: $output"
+	echo "ERROR: Expected circular dependency detection"
+	exit 1
 fi
 
 # Test 4: Self-dependency (should be caught)
@@ -99,9 +99,9 @@ EOF
 output=$(timeout 3 mise run '//projects/self:build' 2>&1 || true)
 # Self-dependency is filtered out at line 327 in mod.rs, so it should run successfully
 if echo "$output" | grep -q "build"; then
-    echo "SUCCESS: Self-dependency silently filtered (task ran once)"
+	echo "SUCCESS: Self-dependency silently filtered (task ran once)"
 else
-    echo "Output: $output"
-    echo "ERROR: Expected self-dependency to be filtered and task to run"
-    exit 1
+	echo "Output: $output"
+	echo "ERROR: Expected self-dependency to be filtered and task to run"
+	exit 1
 fi
