@@ -335,28 +335,15 @@ impl Task {
         let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
 
         // Build context with path hints from self, tasks_to_run, and dependency patterns
-        let extract_path_hint = |name: &str| -> Option<String> {
-            // Extract path from monorepo task names like "//projects/frontend:test"
-            // Remove the "//" prefix for use in should_load_subdir
-            if name.starts_with("//") {
-                name.rsplit_once(':')
-                    .map(|x| x.0)
-                    .and_then(|s| s.strip_prefix("//"))
-                    .map(|s| s.to_string())
-            } else {
-                None
-            }
-        };
-
         let path_hints: Vec<String> = once(&self.name)
             .chain(tasks_to_run.iter().map(|t| &t.name))
-            .filter_map(|name| extract_path_hint(name))
+            .filter_map(|name| extract_monorepo_path(name))
             .chain(
                 self.depends
                     .iter()
                     .chain(self.wait_for.iter())
                     .chain(self.depends_post.iter())
-                    .filter_map(|td| extract_path_hint(&td.task)),
+                    .filter_map(|td| extract_monorepo_path(&td.task)),
             )
             .unique()
             .collect();
@@ -703,6 +690,20 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
     }
 }
 
+/// Extract monorepo path from a task name
+/// e.g., "//projects/frontend:test" -> Some("projects/frontend")
+/// Returns None if the task name doesn't have monorepo syntax
+pub(crate) fn extract_monorepo_path(name: &str) -> Option<String> {
+    if name.starts_with("//") {
+        name.rsplit_once(':')
+            .map(|x| x.0)
+            .and_then(|s| s.strip_prefix("//"))
+            .map(|s| s.to_string())
+    } else {
+        None
+    }
+}
+
 /// Resolve a task dependency pattern, optionally relative to a parent task
 /// If pattern starts with ":" and parent_task is provided, resolve relative to parent's path
 /// For example: parent "//projects/frontend:test" with pattern ":build" -> "//projects/frontend:build"
@@ -736,7 +737,26 @@ fn match_tasks_with_context(
         })
         .collect_vec();
     if matches.is_empty() {
-        return Err(eyre!("task not found: {td}"));
+        let mut err_msg = format!("task not found: {}", td.task);
+
+        // In monorepo mode, suggest similar tasks
+        if resolved_pattern.starts_with("//") {
+            let similar: Vec<String> = tasks
+                .keys()
+                .filter(|k| k.starts_with("//"))
+                .take(5)
+                .map(|k| k.to_string())
+                .collect();
+
+            if !similar.is_empty() {
+                err_msg.push_str("\n\nAvailable monorepo tasks:");
+                for task_name in similar {
+                    err_msg.push_str(&format!("\n  - {}", task_name));
+                }
+            }
+        }
+
+        return Err(eyre!(err_msg));
     };
 
     Ok(matches)
@@ -852,8 +872,15 @@ pub trait GetMatchingExt<T> {
 
 /// Helper function to strip file extension from a task name
 /// e.g., "test.js" -> "test", "build" -> "build"
+/// Special case: hidden files like ".hidden" are preserved to avoid empty strings
 fn strip_extension(name: &str) -> &str {
-    name.rsplitn(2, '.').last().unwrap_or(name)
+    let result = name.rsplitn(2, '.').last().unwrap_or(name);
+    // Don't strip extension if it would result in empty string (hidden files)
+    if result.is_empty() {
+        name
+    } else {
+        result
+    }
 }
 
 /// Helper function to extract the task portion from a task key
@@ -1268,9 +1295,9 @@ echo "hello world"
         assert_eq!(strip_extension("build"), "build");
 
         // Test 4: Hidden files (starting with dot)
-        // Note: ".hidden" is treated as extension, leaving empty string
-        assert_eq!(strip_extension(".hidden"), "");
-        assert_eq!(strip_extension(".gitignore"), "");
+        // Now preserved to avoid empty strings
+        assert_eq!(strip_extension(".hidden"), ".hidden");
+        assert_eq!(strip_extension(".gitignore"), ".gitignore");
 
         // Test 5: Hidden files with extension
         assert_eq!(strip_extension(".hidden.sh"), ".hidden");
@@ -1279,8 +1306,8 @@ echo "hello world"
         // Test 6: Empty string
         assert_eq!(strip_extension(""), "");
 
-        // Test 7: Only extension separator
-        assert_eq!(strip_extension("."), "");
+        // Test 7: Only extension separator (preserved to avoid empty string)
+        assert_eq!(strip_extension("."), ".");
 
         // Test 8: Multiple dots with extension
         assert_eq!(strip_extension("my.task.name.js"), "my.task.name");

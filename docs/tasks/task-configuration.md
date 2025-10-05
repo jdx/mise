@@ -431,6 +431,22 @@ them all from the root directory.
   - Task wildcards (`*`) match any characters in task names
 - When a monorepo root config is trusted, all descendant configs are automatically trusted
 
+**Performance tuning:**
+
+For large monorepos, you can control task discovery depth with the `task.monorepo_depth` setting (default: 5):
+
+```toml
+[settings]
+task.monorepo_depth = 3  # Only search 3 levels deep
+```
+
+This limits how deep mise will search for task files. For example:
+- `1` = immediate children only (`monorepo_root/projects/`)
+- `2` = grandchildren (`monorepo_root/projects/frontend/`)
+- `5` = default (5 levels deep)
+
+Reduce this value if you notice slow task discovery in very large monorepos, especially if your projects are concentrated at a specific depth level.
+
 ## `redactions` <Badge type="warning" text="experimental" />
 
 - **Type**: `string[]`

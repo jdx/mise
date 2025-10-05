@@ -1785,33 +1785,22 @@ pub async fn get_task_lists(
 }
 
 pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<Vec<Task>> {
-    use crate::task::TaskLoadContext;
+    use crate::task::{TaskLoadContext, extract_monorepo_path};
 
     // Build a context that includes all paths from the input tasks and their dependencies
     // This ensures dependency resolution can find tasks in the same monorepo paths
-    let extract_path_hint = |name: &str| -> Option<String> {
-        // Extract path from monorepo task names like "//projects/frontend:test"
-        // Remove the "//" prefix for use in should_load_subdir
-        if name.starts_with("//") {
-            name.rsplit_once(':')
-                .map(|x| x.0)
-                .and_then(|s| s.strip_prefix("//"))
-                .map(|s| s.to_string())
-        } else {
-            None
-        }
-    };
-
     let path_hints: Vec<String> = tasks
         .iter()
-        .filter_map(|t| extract_path_hint(&t.name))
-        .chain(tasks.iter().flat_map(|t| {
-            t.depends
-                .iter()
-                .chain(t.wait_for.iter())
-                .chain(t.depends_post.iter())
-                .filter_map(|td| extract_path_hint(&td.task))
-        }))
+        .filter_map(|t| extract_monorepo_path(&t.name))
+        .chain(
+            tasks.iter().flat_map(|t| {
+                t.depends
+                    .iter()
+                    .chain(t.wait_for.iter())
+                    .chain(t.depends_post.iter())
+                    .filter_map(|td| extract_monorepo_path(&td.task))
+            }),
+        )
         .unique()
         .collect();
 

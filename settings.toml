@@ -1338,8 +1338,27 @@ type = "Bool"
 default = 5
 description = "Maximum depth to search for task files in monorepo subdirectories."
 docs = """
-When using monorepo mode, this controls how deep mise will search for task files.
-Set to 1 for immediate children only, 2 for grandchildren, etc.
+When using monorepo mode (experimental_monorepo_root = true), this controls how deep
+mise will search for task files in subdirectories.
+
+**Depth levels:**
+- 1 = immediate children only (monorepo_root/projects/)
+- 2 = grandchildren (monorepo_root/projects/frontend/)
+- 5 = default (5 levels deep)
+
+**Performance tip:** Reduce this value if you have a very large monorepo and notice
+slow task discovery. For example, if your projects are all at `projects/*`, set to 2.
+
+**Example:**
+```toml
+[settings]
+task.monorepo_depth = 3  # Only search 3 levels deep
+```
+
+Or via environment variable:
+```bash
+export MISE_TASK_MONOREPO_DEPTH=3
+```
 """
 env = "MISE_TASK_MONOREPO_DEPTH"
 type = "Integer"
