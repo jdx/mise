@@ -917,10 +917,19 @@ where
     T: Eq + Hash,
 {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
-        // === Simple pattern matching (no monorepo syntax) ===
-        // If pattern doesn't contain ':' or '//', it's a simple task name (non-monorepo)
-        // In this case, use the existing task matching logic
-        if !pat.contains(':') && !pat.starts_with("//") {
+        // === Monorepo pattern matching ===
+        // Only patterns starting with '//' or ':' are monorepo patterns
+        // Reject patterns that look like monorepo paths but use wrong syntax (have / and : but don't start with // or :)
+        if !pat.starts_with("//") && !pat.starts_with(':') {
+            // Check if this looks like an attempt at a monorepo path with wrong syntax
+            if pat.contains('/') && pat.contains(':') {
+                bail!(
+                    "relative path syntax '{}' is not supported, use '//{}'  or ':task' for current directory",
+                    pat,
+                    pat
+                )
+            }
+            // Regular task name (including tasks with colons like "build:linux")
             return Ok(self
                 .iter()
                 .filter(|(k, _)| {
@@ -932,21 +941,12 @@ where
         }
 
         // === Parse monorepo pattern ===
-        // Normalize pattern: convert //path:task or path:task to normalized form
-        // If pattern starts with //, it's an absolute monorepo path
         let normalized_pat = if pat.starts_with("//") {
             pat.to_string()
         } else if pat.starts_with(':') {
             // Special case: :task should have been expanded before calling get_matching
             // If we reach here, it means the expansion didn't happen properly
             bail!("':task' pattern should be expanded before matching")
-        } else if pat.contains(':') && !pat.starts_with("//") {
-            // Relative path syntax is not supported - must use // prefix or : prefix
-            bail!(
-                "relative path syntax '{}' is not supported, use '//{}'  or ':task' for current directory",
-                pat,
-                pat
-            )
         } else {
             pat.to_string()
         };
