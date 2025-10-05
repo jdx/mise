@@ -43,6 +43,8 @@ parts:
 
     build-packages:
       - libssl-dev
+    build-attributes:
+      - enable-patchelf
 
   update-instructions:
     plugin: dump
