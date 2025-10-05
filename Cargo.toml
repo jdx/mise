@@ -15,18 +15,18 @@ license = "MIT"
 keywords = ["mise"]
 categories = ["command-line-utilities"]
 include = [
-    "/Cargo.lock",
-    "/LICENSE",
-    "/README.md",
-    "/build.rs",
-    "/completions/*",
-    "/minisign.pub",
-    "/registry.toml",
-    "/settings.toml",
-    "/zipsign.pub",
-    "/src/**/*.rs",
-    "/src/assets/**",
-    "/src/plugins/core/assets/**",
+  "/Cargo.lock",
+  "/LICENSE",
+  "/README.md",
+  "/build.rs",
+  "/completions/*",
+  "/minisign.pub",
+  "/registry.toml",
+  "/settings.toml",
+  "/zipsign.pub",
+  "/src/**/*.rs",
+  "/src/assets/**",
+  "/src/plugins/core/assets/**",
 ]
 build = "build.rs"
 rust-version = "1.85"
@@ -56,14 +56,14 @@ age = { version = "0.11", features = ["ssh"] }
 async-backtrace = "0.2"
 async-trait = "0.1"
 aws-lc-rs = { version = "1", optional = true, features = [
-    "bindgen",
+  "bindgen",
 ] } # TODO: this is only for armv7 currently
 base64 = "0.22"
 bzip2 = "0.6"
 calm_io = "0.1"
 chrono = { version = "0.4", default-features = false, features = [
-    "std",
-    "clock",
+  "std",
+  "clock",
 ] }
 ci_info = "0.14"
 clap = { version = "4", features = ["env", "derive", "string"] }
@@ -112,22 +112,22 @@ petgraph = "0.8"
 rand = "0.9"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = [
-    "json",
-    "gzip",
-    "zstd",
-    "charset",
-    "http2",
-    "macos-system-configuration",
+  "json",
+  "gzip",
+  "zstd",
+  "charset",
+  "http2",
+  "macos-system-configuration",
 ] }
 rmcp = { version = "0.3", features = ["server", "transport-io", "schemars"] }
 rmcp-macros = "0.3"
 rmp-serde = "1"
 rops = { version = "0.1", default-features = false, features = [
-    "aes-gcm",
-    "sha2",
-    "yaml",
-    "json",
-    "age",
+  "aes-gcm",
+  "sha2",
+  "yaml",
+  "json",
+  "age",
 ] }
 serde = "1"
 serde_derive = "1"
@@ -172,18 +172,18 @@ zstd = "0.13"
 exec = "0.3"
 nix = { version = "0.30", features = ["signal", "user"] }
 self_update = { version = "0.42", optional = true, default-features = false, features = [
-    "archive-tar",
-    "compression-flate2",
-    "signatures",
-    "rustls",
+  "archive-tar",
+  "compression-flate2",
+  "signatures",
+  "rustls",
 ] }
 
 [target.'cfg(windows)'.dependencies]
 self_update = { version = "0.42", optional = true, default-features = false, features = [
-    "archive-zip",
-    "compression-zip-deflate",
-    "signatures",
-    "rustls",
+  "archive-zip",
+  "compression-zip-deflate",
+  "signatures",
+  "rustls",
 ] }
 sevenz-rust = "0.6"
 winapi = { version = "0.3.9", features = ["consoleapi", "minwindef"] }
@@ -206,30 +206,30 @@ test-log = "0.2"
 [features]
 default = ["native-tls", "vfox/vendored-lua", "self_update"]
 native-tls = [
-    "gix/blocking-http-transport-reqwest-native-tls",
-    "reqwest/native-tls",
-    "sigstore-verification/native-tls",
-    "ubi/native-tls",
-    "vfox/native-tls",
-    "xx/native-tls",
+  "gix/blocking-http-transport-reqwest-native-tls",
+  "reqwest/native-tls",
+  "sigstore-verification/native-tls",
+  "ubi/native-tls",
+  "vfox/native-tls",
+  "xx/native-tls",
 ]
 rustls = [
-    "gix/blocking-http-transport-reqwest-rust-tls",
-    "reqwest/rustls-tls",
-    "self_update/rustls",
-    "sigstore-verification/rustls",
-    "ubi/rustls-tls",
-    "vfox/rustls",
-    "xx/rustls",
+  "gix/blocking-http-transport-reqwest-rust-tls",
+  "reqwest/rustls-tls",
+  "self_update/rustls",
+  "sigstore-verification/rustls",
+  "ubi/rustls-tls",
+  "vfox/rustls",
+  "xx/rustls",
 ]
 rustls-native-roots = [
-    "gix/blocking-http-transport-reqwest-rust-tls",
-    "reqwest/rustls-tls-native-roots",
-    "self_update/rustls",
-    "sigstore-verification/rustls-native-roots",
-    "ubi/rustls-tls-native-roots",
-    "vfox/rustls-native-roots",
-    "xx/rustls-native-roots",
+  "gix/blocking-http-transport-reqwest-rust-tls",
+  "reqwest/rustls-tls-native-roots",
+  "self_update/rustls",
+  "sigstore-verification/rustls-native-roots",
+  "ubi/rustls-tls-native-roots",
+  "vfox/rustls-native-roots",
+  "xx/rustls-native-roots",
 ]
 
 [package.metadata.binstall]
@@ -250,7 +250,7 @@ ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl", "rmcp-macros"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = [
-    'cfg(coverage,coverage_nightly)',
+  'cfg(coverage,coverage_nightly)',
 ] }
 
 [lints.clippy]
