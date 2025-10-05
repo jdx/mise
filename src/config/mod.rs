@@ -1,3 +1,4 @@
+use dashmap::DashMap;
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
@@ -58,7 +59,7 @@ pub struct Config {
     env: OnceCell<EnvResults>,
     env_with_sources: OnceCell<EnvWithSources>,
     hooks: OnceCell<Vec<(PathBuf, Hook)>>,
-    tasks: OnceCell<BTreeMap<String, Task>>,
+    tasks_cache: Arc<DashMap<crate::task::TaskLoadContext, Arc<BTreeMap<String, Task>>>>,
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
     vars_loader: Option<Arc<Config>>,
@@ -133,7 +134,7 @@ impl Config {
             env_with_sources: OnceCell::new(),
             shorthands: get_shorthands(&Settings::get()),
             hooks: OnceCell::new(),
-            tasks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: Default::default(),
@@ -151,7 +152,7 @@ impl Config {
             env_with_sources: OnceCell::new(),
             shorthands: config.shorthands.clone(),
             hooks: OnceCell::new(),
-            tasks: OnceCell::new(),
+            tasks_cache: Arc::new(DashMap::new()),
             tool_request_set: OnceCell::new(),
             toolset: OnceCell::new(),
             all_aliases: config.all_aliases.clone(),
@@ -327,24 +328,48 @@ impl Config {
             })
     }
 
-    pub async fn tasks(&self) -> Result<&BTreeMap<String, Task>> {
-        self.tasks
-            .get_or_try_init(|| async {
-                measure!("config::load_all_tasks", { self.load_all_tasks().await })
-            })
-            .await
+    pub fn is_monorepo(&self) -> bool {
+        find_monorepo_root(&self.config_files).is_some()
     }
 
-    pub async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, &Task>> {
-        Ok(self
-            .tasks()
-            .await?
+    pub async fn tasks(&self) -> Result<Arc<BTreeMap<String, Task>>> {
+        self.tasks_with_context(None).await
+    }
+
+    pub async fn tasks_with_context(
+        &self,
+        ctx: Option<&crate::task::TaskLoadContext>,
+    ) -> Result<Arc<BTreeMap<String, Task>>> {
+        // Use the entire context as cache key
+        // Default context (None) becomes TaskLoadContext::default()
+        let cache_key = ctx.cloned().unwrap_or_default();
+
+        // Check if already cached
+        if let Some(cached) = self.tasks_cache.get(&cache_key) {
+            return Ok(cached.value().clone());
+        }
+
+        // Not cached, load tasks
+        let tasks = measure!("config::load_all_tasks_with_context", {
+            self.load_all_tasks_with_context(ctx).await?
+        });
+        let tasks_arc = Arc::new(tasks);
+
+        // Insert into cache
+        self.tasks_cache.insert(cache_key, tasks_arc.clone());
+
+        Ok(tasks_arc)
+    }
+
+    pub async fn tasks_with_aliases(&self) -> Result<BTreeMap<String, Task>> {
+        let tasks = self.tasks().await?;
+        Ok(tasks
             .iter()
             .flat_map(|(_, t)| {
                 t.aliases
                     .iter()
-                    .map(|a| (a.to_string(), t))
-                    .chain(once((t.name.clone(), t)))
+                    .map(|a| (a.to_string(), t.clone()))
+                    .chain(once((t.name.clone(), t.clone())))
                     .collect::<Vec<_>>()
             })
             .collect())
@@ -397,24 +422,13 @@ impl Config {
         aliases
     }
 
-    async fn load_all_tasks(&self) -> Result<BTreeMap<String, Task>> {
+    async fn load_all_tasks_with_context(
+        &self,
+        ctx: Option<&crate::task::TaskLoadContext>,
+    ) -> Result<BTreeMap<String, Task>> {
         let config = Config::get().await?;
         time!("load_all_tasks");
-        // let (file_tasks, global_tasks, system_tasks) = tokio::join!(
-        //     {
-        //         let config = config.clone();
-        //         tokio::task::spawn(async move { load_local_tasks(&config).await })
-        //     },
-        //     {
-        //         let config = config.clone();
-        //         tokio::task::spawn(async move { load_global_tasks(&config).await })
-        //     },
-        //     {
-        //         let config = config.clone();
-        //         tokio::task::spawn(async move { load_system_tasks(&config).await })
-        //     },
-        // );
-        let file_tasks = load_local_tasks(&config).await?;
+        let file_tasks = load_local_tasks_with_context(&config, ctx).await?;
         let global_tasks = load_global_tasks(&config).await?;
         let system_tasks = load_system_tasks(&config).await?;
         let mut tasks: BTreeMap<String, Task> = file_tasks
@@ -696,6 +710,18 @@ fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
         .map(|pr| pr.to_path_buf());
     trace!("project_root: {project_root:?}");
     project_root
+}
+
+fn find_monorepo_root(config_files: &ConfigMap) -> Option<PathBuf> {
+    // Find the config file that has experimental_monorepo_root = true
+    // This feature requires experimental mode
+    if !Settings::get().experimental {
+        return None;
+    }
+    config_files
+        .values()
+        .find(|cf| cf.experimental_monorepo_root() == Some(true))
+        .and_then(|cf| cf.project_root().map(|p| p.to_path_buf()))
 }
 
 async fn load_idiomatic_files() -> BTreeMap<String, Vec<String>> {
@@ -1124,6 +1150,14 @@ async fn load_all_config_files(
         if let Err(err) = Tracker::track(f) {
             warn!("tracking config: {err:#}");
         }
+
+        // Mark monorepo roots so descendant configs are implicitly trusted
+        if cf.experimental_monorepo_root() == Some(true) {
+            if let Err(err) = config_file::mark_as_monorepo_root(f) {
+                warn!("failed to mark monorepo root: {err:#}");
+            }
+        }
+
         config_map.insert(f.clone(), cf);
     }
     Ok(config_map)
@@ -1222,7 +1256,10 @@ impl Debug for Config {
             .collect::<Vec<_>>();
         let mut s = f.debug_struct("Config");
         s.field("Config Files", &config_files);
-        if let Some(tasks) = self.tasks.get() {
+        // Note: tasks are now lazily loaded and cached, so we can't access them synchronously here
+        // Try to get the default (current hierarchy) cache entry
+        let default_ctx = crate::task::TaskLoadContext::default();
+        if let Some(tasks) = self.tasks_cache.get(&default_ctx) {
             s.field(
                 "Tasks",
                 &tasks.values().map(|t| t.to_string()).collect_vec(),
@@ -1286,15 +1323,237 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     Ok(())
 }
 
-async fn load_local_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
+async fn load_local_tasks_with_context(
+    config: &Arc<Config>,
+    ctx: Option<&crate::task::TaskLoadContext>,
+) -> Result<Vec<Task>> {
+    const MONOREPO_PATH_PREFIX: &str = "//";
+    const MONOREPO_TASK_SEPARATOR: &str = ":";
+
     let mut tasks = vec![];
+    let monorepo_root = find_monorepo_root(&config.config_files);
+
+    // Load tasks from parent directories (current working directory up to root)
     for d in file::all_dirs()? {
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
             continue;
         }
-        tasks.extend(load_tasks_in_dir(config, &d, &config.config_files).await?);
+        let mut dir_tasks = load_tasks_in_dir(config, &d, &config.config_files).await?;
+
+        // In monorepo mode, prefix tasks with their monorepo path
+        if let Some(ref monorepo_root) = monorepo_root {
+            if let Ok(rel_path) = d.strip_prefix(monorepo_root) {
+                let prefix = rel_path
+                    .to_string_lossy()
+                    .replace(std::path::MAIN_SEPARATOR, "/");
+                for task in dir_tasks.iter_mut() {
+                    if prefix.is_empty() {
+                        // At monorepo root, use //:task format
+                        task.name = format!(
+                            "{}{}{}",
+                            MONOREPO_PATH_PREFIX, MONOREPO_TASK_SEPARATOR, task.name
+                        );
+                    } else {
+                        // In subdirectories, add //path:task
+                        task.name = format!(
+                            "{}{}{}{}",
+                            MONOREPO_PATH_PREFIX, prefix, MONOREPO_TASK_SEPARATOR, task.name
+                        );
+                    }
+                }
+            }
+        }
+
+        tasks.extend(dir_tasks);
     }
+
+    // Determine if we should load monorepo tasks from subdirectories
+    // We should load subdirs if:
+    // 1. load_all is true (--all flag or wildcard patterns like //...:task)
+    // 2. OR we have specific path_hints (patterns like //foo/bar:task)
+    let should_load_subdirs = ctx.is_some_and(|c| c.load_all || !c.path_hints.is_empty());
+
+    // If in a monorepo, also discover and load tasks from subdirectories
+    if let Some(monorepo_root) = &monorepo_root {
+        // By default, only load tasks from current directory hierarchy (already loaded above)
+        // With --all flag or path hints, also load tasks from matching subdirectories
+        if !should_load_subdirs {
+            // Default: don't load any additional monorepo subdirs (they're not in our hierarchy)
+            return Ok(tasks);
+        }
+
+        let subdirs = discover_monorepo_subdirs(monorepo_root, ctx)?;
+
+        // Load tasks from subdirectories in parallel
+        let subdir_tasks_futures: Vec<_> = subdirs
+            .into_iter()
+            .filter(|subdir| !cfg!(test) || subdir.starts_with(*dirs::HOME))
+            .map(|subdir| {
+                let config = config.clone();
+                let monorepo_root = monorepo_root.clone();
+                async move {
+                    let mut all_tasks = Vec::new();
+                    // Load config files from subdirectory
+                    for config_filename in DEFAULT_CONFIG_FILENAMES.iter() {
+                        let config_path = subdir.join(config_filename);
+                        if config_path.exists() {
+                            if let Ok(cf) = config_file::parse(&config_path).await {
+                                let mut subdir_tasks =
+                                    load_config_and_file_tasks(&config, cf).await?;
+
+                                // Prefix task names with relative path from monorepo root
+                                if let Ok(rel_path) = subdir.strip_prefix(&monorepo_root) {
+                                    if !rel_path.as_os_str().is_empty() {
+                                        let prefix = rel_path
+                                            .to_string_lossy()
+                                            .replace(std::path::MAIN_SEPARATOR, "/");
+                                        for task in subdir_tasks.iter_mut() {
+                                            task.name = format!(
+                                                "{}{}{}{}",
+                                                MONOREPO_PATH_PREFIX,
+                                                prefix,
+                                                MONOREPO_TASK_SEPARATOR,
+                                                task.name
+                                            );
+                                        }
+                                    }
+                                }
+
+                                all_tasks.extend(subdir_tasks);
+                            }
+                        }
+                    }
+                    Ok::<Vec<Task>, eyre::Report>(all_tasks)
+                }
+            })
+            .collect();
+
+        // Wait for all subdirectory tasks to load
+        use tokio::task::JoinSet;
+        let mut join_set = JoinSet::new();
+        for future in subdir_tasks_futures {
+            join_set.spawn(future);
+        }
+
+        while let Some(result) = join_set.join_next().await {
+            tasks.extend(result??);
+        }
+    }
+
     Ok(tasks)
+}
+
+fn discover_monorepo_subdirs(
+    root: &Path,
+    ctx: Option<&crate::task::TaskLoadContext>,
+) -> Result<Vec<PathBuf>> {
+    const DEFAULT_IGNORED_DIRS: &[&str] = &["node_modules", "target", "dist", "build"];
+
+    let mut subdirs = Vec::new();
+    let settings = Settings::get();
+    let respect_gitignore = settings.task.monorepo_respect_gitignore;
+    let max_depth = settings.task.monorepo_depth as usize;
+
+    // Build the list of excluded directories
+    // If user defined custom exclude dirs, use only those, otherwise use defaults
+    let excluded_dirs: Vec<&str> = if settings.task.monorepo_exclude_dirs.is_empty() {
+        DEFAULT_IGNORED_DIRS.to_vec()
+    } else {
+        settings
+            .task
+            .monorepo_exclude_dirs
+            .iter()
+            .map(|s| s.as_str())
+            .collect()
+    };
+
+    if respect_gitignore {
+        // Use the `ignore` crate which respects .gitignore files
+        let walker = ignore::WalkBuilder::new(root)
+            .max_depth(Some(max_depth))
+            .hidden(true) // Skip hidden files/dirs
+            .git_ignore(true) // Respect .gitignore
+            .git_global(true) // Respect global .gitignore
+            .git_exclude(true) // Respect .git/info/exclude
+            .require_git(false) // Don't require a git repo
+            .build();
+
+        for entry in walker {
+            let entry = entry?;
+            if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                let dir = entry.path();
+
+                // Skip if depth is 0 (root itself)
+                if dir == root {
+                    continue;
+                }
+
+                // Check against excluded directories
+                let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if excluded_dirs.contains(&name) {
+                    continue;
+                }
+
+                // Check if this directory has a mise config file
+                let has_config = DEFAULT_CONFIG_FILENAMES
+                    .iter()
+                    .any(|f| dir.join(f).exists());
+                if has_config {
+                    // Apply context filtering if provided
+                    if let Some(ctx) = ctx {
+                        let rel_path = dir
+                            .strip_prefix(root)
+                            .ok()
+                            .and_then(|p| p.to_str())
+                            .unwrap_or("");
+                        if ctx.should_load_subdir(rel_path, root.to_str().unwrap_or("")) {
+                            subdirs.push(dir.to_path_buf());
+                        }
+                    } else {
+                        subdirs.push(dir.to_path_buf());
+                    }
+                }
+            }
+        }
+    } else {
+        // Fall back to WalkDir for non-gitignore-aware walking
+        for entry in WalkDir::new(root)
+            .min_depth(1)
+            .max_depth(max_depth)
+            .into_iter()
+            .filter_entry(|e| {
+                // Skip hidden directories and excluded patterns
+                let name = e.file_name().to_string_lossy();
+                !name.starts_with('.') && !excluded_dirs.contains(&name.as_ref())
+            })
+        {
+            let entry = entry?;
+            if entry.file_type().is_dir() {
+                let dir = entry.path();
+                // Check if this directory has a mise config file
+                let has_config = DEFAULT_CONFIG_FILENAMES
+                    .iter()
+                    .any(|f| dir.join(f).exists());
+                if has_config {
+                    // Apply context filtering if provided
+                    if let Some(ctx) = ctx {
+                        let rel_path = dir
+                            .strip_prefix(root)
+                            .ok()
+                            .and_then(|p| p.to_str())
+                            .unwrap_or("");
+                        if ctx.should_load_subdir(rel_path, root.to_str().unwrap_or("")) {
+                            subdirs.push(dir.to_path_buf());
+                        }
+                    } else {
+                        subdirs.push(dir.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(subdirs)
 }
 
 async fn load_global_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
@@ -1410,7 +1669,7 @@ async fn load_file_tasks(
         .task_config()
         .includes
         .clone()
-        .unwrap_or(vec!["tasks".into()])
+        .unwrap_or_else(default_task_includes)
         .into_iter()
         .map(|p| cf.get_path().parent().unwrap().join(p))
         .collect::<Vec<_>>();

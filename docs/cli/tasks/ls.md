@@ -38,6 +38,11 @@ Output in JSON format
 
 Only show non-global tasks
 
+### `--all`
+
+Load all tasks from the entire monorepo, including sibling directories.
+By default, only tasks from the current directory hierarchy are loaded.
+
 ### `--sort <COLUMN>`
 
 Sort by column. Default is name.

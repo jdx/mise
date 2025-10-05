@@ -1333,3 +1333,55 @@ type = "String"
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."
 env = "MISE_YES"
 type = "Bool"
+
+[task.monorepo_depth]
+default = 5
+description = "Maximum depth to search for task files in monorepo subdirectories."
+docs = """
+When using monorepo mode (experimental_monorepo_root = true), this controls how deep
+mise will search for task files in subdirectories.
+
+**Depth levels:**
+- 1 = immediate children only (monorepo_root/projects/)
+- 2 = grandchildren (monorepo_root/projects/frontend/)
+- 5 = default (5 levels deep)
+
+**Performance tip:** Reduce this value if you have a very large monorepo and notice
+slow task discovery. For example, if your projects are all at `projects/*`, set to 2.
+
+**Example:**
+```toml
+[settings]
+task.monorepo_depth = 3  # Only search 3 levels deep
+```
+
+Or via environment variable:
+```bash
+export MISE_TASK_MONOREPO_DEPTH=3
+```
+"""
+env = "MISE_TASK_MONOREPO_DEPTH"
+type = "Integer"
+
+[task.monorepo_exclude_dirs]
+default = []
+description = "Directory patterns to exclude when discovering monorepo subdirectories."
+docs = """
+If empty (default), uses default exclusions: node_modules, target, dist, build.
+If you specify any patterns, ONLY those patterns will be excluded (defaults are NOT included).
+For example, setting to [".temp", "vendor"] will exclude only those two directories.
+"""
+env = "MISE_TASK_MONOREPO_EXCLUDE_DIRS"
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
+[task.monorepo_respect_gitignore]
+default = true
+description = "Whether to respect .gitignore files when discovering monorepo subdirectories."
+docs = """
+When enabled, mise will skip directories that are ignored by .gitignore files
+when discovering tasks in a monorepo.
+"""
+env = "MISE_TASK_MONOREPO_RESPECT_GITIGNORE"
+type = "Bool"

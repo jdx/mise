@@ -1222,6 +1222,30 @@
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"
+        },
+        "task": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "monorepo_depth": {
+              "default": 5,
+              "description": "Maximum depth to search for task files in monorepo subdirectories.",
+              "type": "number"
+            },
+            "monorepo_exclude_dirs": {
+              "default": [],
+              "description": "Directory patterns to exclude when discovering monorepo subdirectories.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "monorepo_respect_gitignore": {
+              "default": true,
+              "description": "Whether to respect .gitignore files when discovering monorepo subdirectories.",
+              "type": "boolean"
+            }
+          }
         }
       }
     },
@@ -1604,6 +1628,10 @@
         }
       }
     },
+    "experimental_monorepo_root": {
+      "description": "Marks this config as a monorepo root, enabling target path syntax for tasks. Requires MISE_EXPERIMENTAL=1. When enabled, tasks can be referenced with paths like //projects/frontend:build",
+      "type": "boolean"
+    },
     "tool": {
       "oneOf": [
         {
@@ -1786,6 +1814,9 @@
           }
         }
       ]
+    },
+    "experimental_monorepo_root": {
+      "$ref": "#/$defs/experimental_monorepo_root"
     },
     "min_version": {
       "description": "minimum version of mise required to use this config",

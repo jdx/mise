@@ -72,6 +72,9 @@ pub struct MiseToml {
     vars: EnvList,
     #[serde(default)]
     settings: SettingsPartial,
+    /// Marks this config as a monorepo root, enabling target path syntax for tasks
+    #[serde(default)]
+    experimental_monorepo_root: Option<bool>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -657,6 +660,10 @@ impl ConfigFile for MiseToml {
         &self.task_config
     }
 
+    fn experimental_monorepo_root(&self) -> Option<bool> {
+        self.experimental_monorepo_root
+    }
+
     fn redactions(&self) -> &Redactions {
         &self.redactions
     }
@@ -763,6 +770,7 @@ impl Clone for MiseToml {
             settings: self.settings.clone(),
             watch_files: self.watch_files.clone(),
             vars: self.vars.clone(),
+            experimental_monorepo_root: self.experimental_monorepo_root,
         }
     }
 }

@@ -358,6 +358,7 @@ impl Settings {
             .iter()
             .filter(|p| !p.to_string_lossy().is_empty())
             .map(file::replace_path)
+            .filter_map(|p| p.canonicalize().ok())
     }
 
     pub fn global_tools_file(&self) -> PathBuf {
