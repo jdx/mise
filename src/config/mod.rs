@@ -335,7 +335,7 @@ impl Config {
     pub fn is_at_monorepo_root(&self) -> bool {
         if let Some(monorepo_root) = find_monorepo_root(&self.config_files) {
             let cwd = dirs::CWD.as_ref();
-            cwd.map_or(false, |cwd| cwd == &monorepo_root)
+            cwd == Some(&monorepo_root)
         } else {
             false
         }
@@ -1362,7 +1362,7 @@ async fn load_local_tasks_with_context(
     }
 
     // Determine if we should load all monorepo tasks or just current hierarchy
-    let load_all_monorepo_tasks = ctx.map_or(false, |c| c.load_all);
+    let load_all_monorepo_tasks = ctx.is_some_and(|c| c.load_all);
 
     // If in a monorepo, also discover and load tasks from subdirectories
     if let Some(monorepo_root) = &monorepo_root {
