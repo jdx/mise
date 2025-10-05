@@ -9,7 +9,7 @@ use crate::tera::get_tera;
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
 use console::{Color, measure_text_width, truncate_str};
-use eyre::{Result, eyre};
+use eyre::{Result, bail, eyre};
 use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use globset::GlobBuilder;
@@ -912,43 +912,45 @@ fn strip_extension(name: &str) -> &str {
     if result.is_empty() { name } else { result }
 }
 
-/// Helper function to extract the task portion from a task key
-/// e.g., "//path:task" -> "task", "task" -> "task"
-fn extract_task_name(key: &str) -> &str {
-    key.split_once(':').map(|x| x.1).unwrap_or(key)
-}
-
 impl<T> GetMatchingExt<T> for BTreeMap<String, T>
 where
     T: Eq + Hash,
 {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>> {
-        // === Simple pattern matching (no monorepo syntax) ===
-        // If pattern doesn't contain ':' or '//', it's a simple task name (non-monorepo)
-        // In this case, use the existing task matching logic
-        if !pat.contains(':') && !pat.starts_with("//") {
-            return Ok(self
-                .iter()
-                .filter(|(k, _)| {
-                    // Check if task name exactly matches, or matches without extension
-                    let task_part = extract_task_name(k);
-                    k.as_str() == pat
-                        || strip_extension(k) == pat
-                        || task_part == pat
-                        || strip_extension(task_part) == pat
-                })
-                .map(|(_, v)| v)
-                .collect());
+        // === Monorepo pattern matching ===
+        // Only patterns starting with '//' or ':' are monorepo patterns
+        // Reject patterns that look like monorepo paths but use wrong syntax (have / and : but don't start with // or :)
+        if !pat.starts_with("//") && !pat.starts_with(':') {
+            // Check if this looks like an attempt at a monorepo path with wrong syntax
+            if pat.contains('/') && pat.contains(':') {
+                bail!(
+                    "relative path syntax '{}' is not supported, use '//{}'  or ':task' for current directory",
+                    pat,
+                    pat
+                )
+            }
+            // If it doesn't contain wildcards or ':', it's a simple task name
+            if !pat.contains('*') && !pat.contains("...") && !pat.contains(':') {
+                return Ok(self
+                    .iter()
+                    .filter(|(k, _)| {
+                        // Check if task name exactly matches, or matches without extension
+                        k.as_str() == pat || strip_extension(k) == pat
+                    })
+                    .map(|(_, v)| v)
+                    .collect());
+            }
+            // Has wildcards or colon but no /, so it's a regular task pattern like "render:*" or "build:linux"
+            // Process with glob matching below
         }
 
         // === Parse monorepo pattern ===
-        // Normalize pattern: convert //path:task or path:task to normalized form
-        // If pattern starts with //, it's an absolute monorepo path
         let normalized_pat = if pat.starts_with("//") {
             pat.to_string()
-        } else if pat.contains(':') && !pat.starts_with("//") {
-            // Relative path like projects/1:task could match //projects/1:task
-            format!("//{}", pat)
+        } else if pat.starts_with(':') {
+            // Special case: :task should have been expanded before calling get_matching
+            // If we reach here, it means the expansion didn't happen properly
+            bail!("':task' pattern should be expanded before matching")
         } else {
             pat.to_string()
         };
