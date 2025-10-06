@@ -917,9 +917,29 @@ impl Run {
                 }
             }
 
-            // Build a toolset from the task's config file
-            let mut task_ts = task_cf.to_toolset()?;
-            trace!("task {} toolset from config file: {:?}", task.name, task_ts);
+            // Build a toolset from all config files in the hierarchy
+            // This ensures tools are inherited from parent configs
+
+            // Start by building a toolset from all global config files
+            // This includes parent configs but NOT the subdirectory config
+            let mut task_ts = ToolsetBuilder::new().build(config).await?;
+            trace!(
+                "task {} base toolset from global configs: {:?}",
+                task.name, task_ts
+            );
+
+            // Then merge the subdirectory's config file tools on top
+            // This allows subdirectories to override parent tools
+            let subdir_toolset = task_cf.to_toolset()?;
+            trace!(
+                "task {} merging subdirectory tools from {}: {:?}",
+                task.name,
+                task_cf.get_path().display(),
+                subdir_toolset
+            );
+            task_ts.merge(subdir_toolset);
+
+            trace!("task {} final merged toolset: {:?}", task.name, task_ts);
 
             // Add task-specific tools and CLI args
             if !tools.is_empty() {
