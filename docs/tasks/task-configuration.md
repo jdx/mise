@@ -366,87 +366,16 @@ If you want auto-completion/validation in included toml tasks files, you can use
 
 ## Monorepo Support <Badge type="warning" text="experimental" />
 
-### `experimental_monorepo_root`
+mise supports monorepo-style task organization with target path syntax. Enable it by setting `experimental_monorepo_root = true` in your root `mise.toml`.
 
-- **Type**: `bool`
-- **Default**: `false`
-- **Requires**: `MISE_EXPERIMENTAL=1`
-- **Location**: Top-level in `mise.toml`
+For complete documentation on monorepo tasks including:
 
-Enable monorepo task support with bazel/buck2-style target paths. When enabled, mise will automatically
-discover tasks in subdirectories and prefix them with their relative path from the monorepo root.
+- Task path syntax and wildcards
+- Tool inheritance from parent configs
+- Performance tuning
+- Best practices and troubleshooting
 
-```toml
-experimental_monorepo_root = true
-```
-
-With this enabled and the following structure:
-
-```
-myproject/
-├── mise.toml (with experimental_monorepo_root = true)
-├── projects/
-│   ├── frontend/
-│   │   └── mise.toml (with tasks: build, test)
-│   └── backend/
-│       └── mise.toml (with tasks: build, test)
-```
-
-Tasks will be automatically namespaced:
-
-- `//projects/frontend:build`
-- `//projects/frontend:test`
-- `//projects/backend:build`
-- `//projects/backend:test`
-
-You can run these tasks using monorepo path syntax:
-
-```bash
-# Absolute path from monorepo root (with // prefix)
-mise run '//projects/frontend:build'
-
-# Current directory task (with : prefix)
-mise run ':build'                  # Run 'build' task in current directory
-
-# With wildcard patterns
-mise run '//...:test'              # Run 'test' task in all projects (ellipsis for paths)
-mise run '//projects/...:build'    # Run 'build' in all subdirs under projects/
-mise run '//projects/frontend:*'   # Run all tasks in projects/frontend (asterisk for task names)
-mise run '//projects/frontend:test:*' # Run all tasks starting with 'test:' in projects/frontend
-```
-
-This is useful for large monorepos where multiple projects need their own tasks but you want to run
-them all from the root directory.
-
-**Notes:**
-
-- Task names use `:` as the separator between path and task name
-- Quote task names in shell commands to prevent interpretation of `/` and `:`
-- Subdirectories with `.mise.toml`, `mise.toml`, `.mise/config.toml`, or `.config/mise/config.toml` will be scanned
-- Hidden directories and common build artifacts (`node_modules`, `target`, `dist`, `build`) are automatically excluded
-- **Wildcard syntax:**
-  - Use `...` (ellipsis) for path matching: `//...:task` or `//path/.../subpath:task`
-  - Use `*` (asterisk) for task name matching: `//path:task*` or `//path:*`
-  - Path wildcards (`...`) match any directory depth
-  - Task wildcards (`*`) match any characters in task names
-- When a monorepo root config is trusted, all descendant configs are automatically trusted
-
-**Performance tuning:**
-
-For large monorepos, you can control task discovery depth with the `task.monorepo_depth` setting (default: 5):
-
-```toml
-[settings]
-task.monorepo_depth = 3  # Only search 3 levels deep
-```
-
-This limits how deep mise will search for task files. For example:
-
-- `1` = immediate children only (`monorepo_root/projects/`)
-- `2` = grandchildren (`monorepo_root/projects/frontend/`)
-- `5` = default (5 levels deep)
-
-Reduce this value if you notice slow task discovery in very large monorepos, especially if your projects are concentrated at a specific depth level.
+See the dedicated [Monorepo Tasks](/tasks/monorepo) documentation.
 
 ## `redactions` <Badge type="warning" text="experimental" />
 
