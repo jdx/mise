@@ -285,24 +285,29 @@ impl Task {
             return true;
         }
 
-        // For pattern matching, handle colon-separated task names
-        let (name_without_ext, pat_without_ext) =
-            if let Some((_, task_part)) = self.name.rsplit_once(':') {
-                // Task name has a colon (e.g., "//projects/my.app:build.sh")
-                let name_ext_stripped = task_part.rsplitn(2, '.').last().unwrap_or_default();
-                let pat_ext_stripped = if let Some((_, pat_task)) = pat.rsplit_once(':') {
-                    pat_task.rsplitn(2, '.').last().unwrap_or_default()
-                } else {
-                    pat.rsplitn(2, '.').last().unwrap_or_default()
-                };
-                (name_ext_stripped, pat_ext_stripped)
-            } else {
-                // Simple task name without colon
-                (
-                    self.name.rsplitn(2, '.').last().unwrap_or_default(),
-                    pat.rsplitn(2, '.').last().unwrap_or_default(),
-                )
-            };
+        // For pattern matching, strip extensions but keep the full path/prefix
+        let name_without_ext = if let Some((prefix, task_part)) = self.name.rsplit_once(':') {
+            // Task name has a colon (e.g., "//projects/my.app:build.sh")
+            // Strip extension from task part only, keep prefix
+            let task_stripped = task_part.rsplitn(2, '.').last().unwrap_or_default();
+            format!("{}:{}", prefix, task_stripped)
+        } else {
+            // Simple task name without colon (e.g., "build.sh")
+            self.name
+                .rsplitn(2, '.')
+                .last()
+                .unwrap_or_default()
+                .to_string()
+        };
+
+        let pat_without_ext = if let Some((prefix, task_part)) = pat.rsplit_once(':') {
+            // Pattern has a colon (e.g., "//projects/my.app:build.sh")
+            let task_stripped = task_part.rsplitn(2, '.').last().unwrap_or_default();
+            format!("{}:{}", prefix, task_stripped)
+        } else {
+            // Simple pattern without colon (e.g., "build.sh")
+            pat.rsplitn(2, '.').last().unwrap_or_default().to_string()
+        };
 
         name_without_ext == pat_without_ext || self.aliases.contains(&pat.to_string())
     }

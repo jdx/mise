@@ -77,4 +77,17 @@ echo "$output"
 echo "$output" | grep -q "testing my.app" || (echo "FAIL: my.app test not run" && exit 1)
 echo "$output" | grep -q "testing feature.v2.beta" || (echo "FAIL: feature.v2.beta test not run" && exit 1)
 
+# Test 9: Verify no false positive matches between different projects
+echo "=== Test 9: Verify no false positive task matching ==="
+# Running //projects/my.app:build should NOT run //projects/my.service.api:build
+output=$(mise run '//projects/my.app:build')
+echo "$output"
+echo "$output" | grep -q "building my.app" || (echo "FAIL: my.app build not run" && exit 1)
+# Verify my.service.api:build was NOT run (would contain "building my.service.api")
+if echo "$output" | grep -q "building my.service.api"; then
+	echo "FAIL: False positive - my.service.api:build should not have run"
+	exit 1
+fi
+echo "SUCCESS: No false positive matches"
+
 echo "=== All tests with dots in directory names passed! ==="
