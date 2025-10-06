@@ -1611,7 +1611,7 @@ async fn load_tasks_includes(
     root: &Path,
     config_root: &Path,
 ) -> Result<Vec<Task>> {
-    if root.is_file() {
+    if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
         load_task_file(config, root, config_root).await
     } else if root.is_dir() {
         let files = WalkDir::new(root)
