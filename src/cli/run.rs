@@ -767,7 +767,13 @@ impl Run {
         let ts_build_start = std::time::Instant::now();
 
         // Check if we need special handling for monorepo tasks with config file context
-        let task_cf = task.cf(config);
+        // Remote tasks (from git::/http:/https: URLs) should NOT use config file context
+        // because they need tools from the full config hierarchy, not just the local config
+        let task_cf = if task.is_remote() {
+            None
+        } else {
+            task.cf(config)
+        };
 
         // Build toolset - either from task's config file or standard way
         let ts = self

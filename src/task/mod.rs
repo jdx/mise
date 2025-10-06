@@ -582,6 +582,20 @@ impl Task {
         config.config_files.get(&self.config_source)
     }
 
+    /// Check if this task is a remote task (loaded from git:// or http:// URL)
+    /// Remote tasks should not use monorepo config file context because they need
+    /// access to tools from the full config hierarchy, not just the local config file
+    pub fn is_remote(&self) -> bool {
+        // Check if the task file is from a remote source
+        if let Some(file) = &self.file {
+            let file_str = file.to_string_lossy();
+            return file_str.starts_with("git::")
+                || file_str.starts_with("http://")
+                || file_str.starts_with("https://");
+        }
+        false
+    }
+
     pub fn shell(&self) -> Option<Vec<String>> {
         self.shell.as_ref().and_then(|shell| {
             let shell_cmd = shell

@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Test that remote git tasks can access tools from mise.toml hierarchy
+# This reproduces issue #6557 where v2025.10.3 broke remote task tool resolution
+
+set -euo pipefail
+
+echo "=== Setting up test for remote task with tools ==="
+
+# Create a parent directory with tool definition
+mkdir -p parent/child
+cd parent
+
+# Parent mise.toml with the tool
+cat >mise.toml <<'EOF'
+[tools]
+ripgrep = "latest"
+EOF
+
+# Install the tool
+mise install
+
+# Verify tool is installed and accessible
+if ! mise where ripgrep >/dev/null 2>&1; then
+	echo "ERROR: ripgrep not installed"
+	exit 1
+fi
+
+cd child
+
+# Child mise.toml with remote task from mise repo (NO tools defined here)
+# This task uses ripgrep which should come from parent/mise.toml
+cat >mise.toml <<'EOF'
+[tasks.remote_lint]
+file = "git::https://github.com/jdx/mise.git//xtasks/lint/ripgrep?ref=main"
+EOF
+
+# Trust and try to run the remote task
+mise trust
+
+echo "=== Running remote task that needs ripgrep from parent config ==="
+
+# First, let's check what happens with a simple command task that uses rg
+cat >>mise.toml <<'EOF'
+
+[tasks.test_tool]
+run = "rg --version"
+EOF
+
+mise trust
+
+# Run the simple local task to see if rg is available
+echo "Testing local task with rg:"
+if mise run test_tool 2>&1 | tee /tmp/test_tool_output.txt | grep -q "ripgrep"; then
+	echo "✓ Local task can find rg"
+else
+	echo "✗ Local task cannot find rg"
+	cat /tmp/test_tool_output.txt
+fi
+
+# Now run the remote task
+echo "Testing remote task with rg:"
+if mise run remote_lint 2>&1 | tee /tmp/remote_lint_output.txt | grep -E "(command not found|rg: not found)"; then
+	echo "✗ FAIL: Remote task could not find ripgrep from parent config"
+	echo "Remote task output:"
+	cat /tmp/remote_lint_output.txt
+	exit 1
+else
+	echo "✓ PASS: Remote task successfully accessed ripgrep from parent config"
+	echo "Remote task ran successfully (may have linting errors but rg was found)"
+	exit 0
+fi
