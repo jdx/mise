@@ -1363,7 +1363,6 @@ async fn load_local_tasks_with_context(
         }
         let mut dir_tasks = load_tasks_in_dir(config, &d, &config.config_files).await?;
 
-        // In monorepo mode, prefix tasks with their monorepo path
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);
         }
@@ -1401,18 +1400,32 @@ async fn load_local_tasks_with_context(
                     for config_filename in DEFAULT_CONFIG_FILENAMES.iter() {
                         let config_path = subdir.join(config_filename);
                         if config_path.exists() {
-                            if let Ok(cf) = config_file::parse(&config_path).await {
-                                let mut subdir_tasks =
-                                    load_config_and_file_tasks(&config, cf).await?;
+                            match config_file::parse(&config_path).await {
+                                Ok(cf) => {
+                                    let mut subdir_tasks =
+                                        load_config_and_file_tasks(&config, cf.clone()).await?;
 
-                                // Prefix task names with relative path from monorepo root
-                                prefix_monorepo_task_names(
-                                    &mut subdir_tasks,
-                                    &subdir,
-                                    &monorepo_root,
-                                );
+                                    if let Ok(rel_path) = subdir.strip_prefix(&monorepo_root) {
+                                        prefix_monorepo_task_names(&mut subdir_tasks, &rel_path, &monorepo_root);
+                                    }
+                                    for task in subdir_tasks.iter_mut() {
+                                        // Store reference to config file for later use
+                                        task.cf = Some(cf.clone());
+                                    }
 
-                                all_tasks.extend(subdir_tasks);
+                                    all_tasks.extend(subdir_tasks);
+                                }
+                                Err(err) => {
+                                    let rel_path = subdir
+                                        .strip_prefix(&monorepo_root)
+                                        .unwrap_or(&subdir);
+                                    warn!(
+                                        "Failed to parse config file {} in monorepo subdirectory {}: {}. Tasks from this directory will not be loaded.",
+                                        config_path.display(),
+                                        rel_path.display(),
+                                        err
+                                    );
+                                }
                             }
                         }
                     }
