@@ -211,7 +211,15 @@ pub struct Run {
     pub timed_outputs: Arc<std::sync::Mutex<IndexMap<String, (SystemTime, String)>>>,
 
     #[clap(skip)]
-    pub toolset_cache: std::sync::Mutex<IndexMap<PathBuf, Arc<Toolset>>>,
+    pub toolset_cache: std::sync::RwLock<IndexMap<PathBuf, Arc<Toolset>>>,
+
+    #[clap(skip)]
+    pub tool_request_set_cache:
+        std::sync::RwLock<IndexMap<PathBuf, Arc<crate::toolset::ToolRequestSet>>>,
+
+    #[clap(skip)]
+    pub env_resolution_cache:
+        std::sync::RwLock<IndexMap<PathBuf, (BTreeMap<String, String>, Vec<(String, String)>)>>,
 }
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
@@ -330,24 +338,70 @@ impl Run {
         let mut all_tools = this.tool.clone();
         let all_tasks: Vec<_> = tasks.all().collect();
         trace!("Collecting tools from {} tasks", all_tasks.len());
+
         for t in &all_tasks {
             // Collect tools from task.tools (task-level tool overrides)
             for (k, v) in &t.tools {
                 all_tools.push(format!("{k}@{v}").parse()?);
             }
+
             // Collect tools from monorepo task config files
             if let Some(task_cf) = t.cf(&config) {
-                if let Ok(tool_request_set) = task_cf.to_tool_request_set() {
-                    trace!(
-                        "Found {} tools in config file for task {}",
-                        tool_request_set.tools.len(),
-                        t.name
-                    );
-                    for (ba, requests) in tool_request_set.tools.iter() {
-                        for req in requests {
-                            trace!("Adding tool from config: {}", req);
-                            all_tools.push(format!("{}@{}", ba.short, req.version()).parse()?);
+                let config_path = Self::canonicalize_path(task_cf.get_path());
+
+                // Check cache first
+                let tool_request_set = {
+                    if let Ok(cache) = this.tool_request_set_cache.read() {
+                        if let Some(cached) = cache.get(&config_path) {
+                            trace!(
+                                "Using cached tool request set from {}",
+                                config_path.display()
+                            );
+                            Some(Arc::clone(cached))
+                        } else {
+                            None
                         }
+                    } else {
+                        None
+                    }
+                };
+
+                let tool_request_set = match tool_request_set {
+                    Some(trs) => trs,
+                    None => {
+                        // Not in cache, parse and cache it
+                        match task_cf.to_tool_request_set() {
+                            Ok(trs) => {
+                                let trs = Arc::new(trs);
+                                if let Ok(mut cache) = this.tool_request_set_cache.write() {
+                                    cache.insert(config_path.clone(), Arc::clone(&trs));
+                                    trace!("Cached tool request set to {}", config_path.display());
+                                }
+                                trs
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to parse tools from {} for task {}: {}",
+                                    task_cf.get_path().display(),
+                                    t.name,
+                                    e
+                                );
+                                continue;
+                            }
+                        }
+                    }
+                };
+
+                trace!(
+                    "Found {} tools in config file for task {}",
+                    tool_request_set.tools.len(),
+                    t.name
+                );
+
+                for (ba, requests) in tool_request_set.tools.iter() {
+                    for req in requests {
+                        trace!("Adding tool from config: {}", req);
+                        all_tools.push(format!("{}@{}", ba.short, req.version()).parse()?);
                     }
                 }
             }
@@ -832,7 +886,7 @@ impl Run {
         tools: &[ToolArg],
     ) -> Result<Toolset> {
         if let Some(task_cf) = task_cf {
-            let config_path = task_cf.get_path().to_path_buf();
+            let config_path = Self::canonicalize_path(task_cf.get_path());
 
             trace!(
                 "task {} using config file context from {}",
@@ -842,14 +896,15 @@ impl Run {
 
             // Check cache first if no task-specific tools
             if tools.is_empty() {
-                if let Ok(cache) = self.toolset_cache.lock() {
+                if let Ok(cache) = self.toolset_cache.read() {
                     if let Some(cached_ts) = cache.get(&config_path) {
                         trace!(
                             "task {} using cached toolset from {}",
                             task.name,
                             config_path.display()
                         );
-                        return Ok((**cached_ts).clone());
+                        // Return cloned Arc instead of cloning entire Toolset
+                        return Ok((*cached_ts).as_ref().clone());
                     }
                 }
             }
@@ -870,7 +925,7 @@ impl Run {
 
             // Cache the toolset if no task-specific tools
             if tools.is_empty() {
-                if let Ok(mut cache) = self.toolset_cache.lock() {
+                if let Ok(mut cache) = self.toolset_cache.write() {
                     cache.insert(config_path.clone(), Arc::new(task_ts.clone()));
                     trace!(
                         "task {} cached toolset to {}",
@@ -907,6 +962,22 @@ impl Run {
             return task.render_env(config, ts).await;
         }
 
+        let config_path = Self::canonicalize_path(task_cf.get_path());
+
+        // Check cache first if task has no task-specific env directives
+        if task.env.0.is_empty() {
+            if let Ok(cache) = self.env_resolution_cache.read() {
+                if let Some(cached_env) = cache.get(&config_path) {
+                    trace!(
+                        "task {} using cached env resolution from {}",
+                        task.name,
+                        config_path.display()
+                    );
+                    return Ok(cached_env.clone());
+                }
+            }
+        }
+
         let mut env = ts.full_env(config).await?;
         let tera_ctx = self.build_tera_context(task_cf, ts, config).await?;
 
@@ -925,7 +996,25 @@ impl Run {
         let task_env = self.extract_task_env(&task_env_results);
         Self::apply_env_results(&mut env, &task_env_results);
 
+        // Cache the result if no task-specific env directives
+        if task.env.0.is_empty() {
+            if let Ok(mut cache) = self.env_resolution_cache.write() {
+                cache.insert(config_path.clone(), (env.clone(), task_env.clone()));
+                trace!(
+                    "task {} cached env resolution to {}",
+                    task.name,
+                    config_path.display()
+                );
+            }
+        }
+
         Ok((env, task_env))
+    }
+
+    /// Canonicalize a path for use as cache key
+    /// Falls back to original path if canonicalization fails
+    fn canonicalize_path(path: &Path) -> PathBuf {
+        path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
     }
 
     /// Check if standard env resolution should be used instead of special context

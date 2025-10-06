@@ -393,6 +393,8 @@ impl Cli {
                         task_prs: Default::default(),
                         timed_outputs: Default::default(),
                         toolset_cache: Default::default(),
+                        tool_request_set_cache: Default::default(),
+                        env_resolution_cache: Default::default(),
                         no_cache: Default::default(),
                         timeout: None,
                     }));
