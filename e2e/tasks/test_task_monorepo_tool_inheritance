@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Test that monorepo tasks inherit tools from parent mise.toml files
+export MISE_EXPERIMENTAL=1
+export MISE_NODE_VERIFY=0 # Skip GPG verification to avoid keyboxd issues
+
+# Create monorepo root config with shared tools
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[tools]
+# Root defines node that should be inherited by all subdirectories
+node = "20"
+
+[tasks.root-task]
+run = 'node --version'
+EOF
+
+# Create frontend project that overrides node version
+mkdir -p projects/frontend
+cat <<EOF >projects/frontend/mise.toml
+[tools]
+# Frontend overrides with node 18
+node = "18"
+
+[tasks.build]
+run = 'echo "NODE_VERSION=\$(node --version | sed "s/v//" | cut -d. -f1)"'
+EOF
+
+# Create backend project with NO tools defined - should inherit from root
+mkdir -p projects/backend
+cat <<EOF >projects/backend/mise.toml
+# No tools section - should inherit node 20 from root
+
+[tasks.build]
+run = 'echo "NODE_VERSION=\$(node --version | sed "s/v//" | cut -d. -f1)"'
+EOF
+
+# Create nested project to test multi-level inheritance
+mkdir -p projects/backend/api
+cat <<EOF >projects/backend/api/mise.toml
+# No tools section - should inherit from parent hierarchy
+
+[tasks.build]
+run = 'echo "NODE_VERSION=\$(node --version | sed "s/v//" | cut -d. -f1)"'
+EOF
+
+# Install tools
+mise install
+
+# Test 1: Root task should use node 20 from root config
+echo "=== Test 1: Root task uses node 20 from root config ==="
+assert_contains "mise run //:root-task" "v20"
+
+# Test 2: Frontend task should use node 18 (overridden)
+echo "=== Test 2: Frontend task uses node 18 (overridden) ==="
+assert_contains "mise run //projects/frontend:build" "NODE_VERSION=18"
+
+# Test 3: Backend task should inherit node 20 from root
+echo "=== Test 3: Backend task inherits node 20 from root ==="
+assert_contains "mise run //projects/backend:build" "NODE_VERSION=20"
+
+# Test 4: Nested api task should inherit node 20 from root through parent
+echo "=== Test 4: Nested api task inherits node 20 from root ==="
+assert_contains "mise run //projects/backend/api:build" "NODE_VERSION=20"
+
+echo "=== All tool inheritance tests passed! ==="

@@ -888,11 +888,13 @@ impl Run {
         task_cf: Option<&Arc<dyn ConfigFile>>,
         tools: &[ToolArg],
     ) -> Result<Toolset> {
-        if let Some(task_cf) = task_cf {
+        // Only use task-specific config file context for monorepo tasks
+        // (tasks with self.cf set, not just those with a config_source)
+        if let (Some(task_cf), Some(_)) = (task_cf, &task.cf) {
             let config_path = Self::canonicalize_path(task_cf.get_path());
 
             trace!(
-                "task {} using config file context from {}",
+                "task {} using monorepo config file context from {}",
                 task.name,
                 config_path.display()
             );
@@ -914,9 +916,29 @@ impl Run {
                 }
             }
 
-            // Build a toolset from the task's config file
-            let mut task_ts = task_cf.to_toolset()?;
-            trace!("task {} toolset from config file: {:?}", task.name, task_ts);
+            // Build a toolset from all config files in the hierarchy
+            // This ensures tools are inherited from parent configs
+
+            // Start by building a toolset from all global config files
+            // This includes parent configs but NOT the subdirectory config
+            let mut task_ts = ToolsetBuilder::new().build(config).await?;
+            trace!(
+                "task {} base toolset from global configs: {:?}",
+                task.name, task_ts
+            );
+
+            // Then merge the subdirectory's config file tools on top
+            // This allows subdirectories to override parent tools
+            let subdir_toolset = task_cf.to_toolset()?;
+            trace!(
+                "task {} merging subdirectory tools from {}: {:?}",
+                task.name,
+                task_cf.get_path().display(),
+                subdir_toolset
+            );
+            task_ts.merge(subdir_toolset);
+
+            trace!("task {} final merged toolset: {:?}", task.name, task_ts);
 
             // Add task-specific tools and CLI args
             if !tools.is_empty() {
@@ -944,11 +966,8 @@ impl Run {
 
             Ok(task_ts)
         } else {
-            trace!(
-                "task {} no config file found, using standard toolset",
-                task.name
-            );
-            // Standard toolset build
+            trace!("task {} using standard toolset build", task.name);
+            // Standard toolset build - includes all config files
             ToolsetBuilder::new().with_args(tools).build(config).await
         }
     }
