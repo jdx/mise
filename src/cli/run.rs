@@ -890,8 +890,7 @@ impl Run {
     ) -> Result<Toolset> {
         // Only use task-specific config file context for monorepo tasks
         // (tasks with self.cf set, not just those with a config_source)
-        if task_cf.is_some() && task.cf.is_some() {
-            let task_cf = task_cf.unwrap();
+        if let (Some(task_cf), Some(_)) = (task_cf, &task.cf) {
             let config_path = Self::canonicalize_path(task_cf.get_path());
 
             trace!(
