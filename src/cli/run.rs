@@ -209,6 +209,9 @@ pub struct Run {
 
     #[clap(skip)]
     pub timed_outputs: Arc<std::sync::Mutex<IndexMap<String, (SystemTime, String)>>>,
+
+    #[clap(skip)]
+    pub toolset_cache: std::sync::Mutex<IndexMap<PathBuf, Arc<Toolset>>>,
 }
 
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
@@ -829,24 +832,54 @@ impl Run {
         tools: &[ToolArg],
     ) -> Result<Toolset> {
         if let Some(task_cf) = task_cf {
+            let config_path = task_cf.get_path().to_path_buf();
+
             trace!(
                 "task {} using config file context from {}",
                 task.name,
-                task_cf.get_path().display()
+                config_path.display()
             );
+
+            // Check cache first if no task-specific tools
+            if tools.is_empty() {
+                if let Ok(cache) = self.toolset_cache.lock() {
+                    if let Some(cached_ts) = cache.get(&config_path) {
+                        trace!(
+                            "task {} using cached toolset from {}",
+                            task.name,
+                            config_path.display()
+                        );
+                        return Ok((**cached_ts).clone());
+                    }
+                }
+            }
 
             // Build a toolset from the task's config file
             let mut task_ts = task_cf.to_toolset()?;
             trace!("task {} toolset from config file: {:?}", task.name, task_ts);
 
             // Add task-specific tools and CLI args
-            let arg_toolset = ToolsetBuilder::new().with_args(tools).build(config).await?;
-
-            // Merge task-specific tools into the config file's toolset
-            task_ts.merge(arg_toolset);
+            if !tools.is_empty() {
+                let arg_toolset = ToolsetBuilder::new().with_args(tools).build(config).await?;
+                // Merge task-specific tools into the config file's toolset
+                task_ts.merge(arg_toolset);
+            }
 
             // Resolve the final toolset
             task_ts.resolve(config).await?;
+
+            // Cache the toolset if no task-specific tools
+            if tools.is_empty() {
+                if let Ok(mut cache) = self.toolset_cache.lock() {
+                    cache.insert(config_path.clone(), Arc::new(task_ts.clone()));
+                    trace!(
+                        "task {} cached toolset to {}",
+                        task.name,
+                        config_path.display()
+                    );
+                }
+            }
+
             Ok(task_ts)
         } else {
             trace!(

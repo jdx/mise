@@ -392,6 +392,7 @@ impl Cli {
                         keep_order_output: Default::default(),
                         task_prs: Default::default(),
                         timed_outputs: Default::default(),
+                        toolset_cache: Default::default(),
                         no_cache: Default::default(),
                         timeout: None,
                     }));
