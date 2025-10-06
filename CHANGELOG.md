@@ -1,5 +1,21 @@
 # Changelog
 
+## [2025.10.4](https://github.com/jdx/mise/compare/v2025.10.3..v2025.10.4) - 2025-10-06
+
+### 🐛 Bug Fixes
+
+- **(installing-mise.md)** broken link by @equirosa in [#6555](https://github.com/jdx/mise/pull/6555)
+- **(task)** remote git tasks now properly inherit tools from parent configs by @jdx in [#6558](https://github.com/jdx/mise/pull/6558)
+- **(tasks)** restore tool loading from idiomatic version files by @jdx in [#6559](https://github.com/jdx/mise/pull/6559)
+
+### 🚜 Refactor
+
+- **(task)** remove duplicated codes by @risu729 in [#6553](https://github.com/jdx/mise/pull/6553)
+
+### New Contributors
+
+- @equirosa made their first contribution in [#6555](https://github.com/jdx/mise/pull/6555)
+
 ## [2025.10.3](https://github.com/jdx/mise/compare/v2025.10.2..v2025.10.3) - 2025-10-06
 
 ### 📦 Registry
