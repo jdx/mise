@@ -371,12 +371,10 @@ impl Run {
                                 .write()
                                 .expect("tool_request_set_cache RwLock poisoned");
                             // Double-check: another thread may have populated while we were parsing
-                            cache
-                                .entry(config_path.clone())
-                                .or_insert_with(|| {
-                                    trace!("Cached tool request set to {}", config_path.display());
-                                    Arc::clone(&trs)
-                                });
+                            cache.entry(config_path.clone()).or_insert_with(|| {
+                                trace!("Cached tool request set to {}", config_path.display());
+                                Arc::clone(&trs)
+                            });
                             trs
                         }
                         Err(e) => {
