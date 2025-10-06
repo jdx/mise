@@ -225,7 +225,7 @@ pub enum Commands {
     Prune(prune::Prune),
     Registry(registry::Registry),
     Reshim(reshim::Reshim),
-    Run(run::Run),
+    Run(Box<run::Run>),
     Search(search::Search),
     #[cfg(feature = "self_update")]
     SelfUpdate(self_update::SelfUpdate),
@@ -294,7 +294,7 @@ impl Commands {
             Self::Prune(cmd) => cmd.run().await,
             Self::Registry(cmd) => cmd.run().await,
             Self::Reshim(cmd) => cmd.run().await,
-            Self::Run(cmd) => cmd.run().await,
+            Self::Run(cmd) => (*cmd).run().await,
             Self::Search(cmd) => cmd.run().await,
             #[cfg(feature = "self_update")]
             Self::SelfUpdate(cmd) => cmd.run().await,
@@ -367,7 +367,7 @@ impl Cli {
             if let Some(task) = self.task {
                 let config = Config::get().await?;
                 if config.tasks().await?.iter().any(|(_, t)| t.is_match(&task)) {
-                    return Ok(Commands::Run(run::Run {
+                    return Ok(Commands::Run(Box::new(run::Run {
                         task,
                         args: self.task_args.unwrap_or_default(),
                         args_last: self.task_args_last,
@@ -397,7 +397,7 @@ impl Cli {
                         env_resolution_cache: Default::default(),
                         no_cache: Default::default(),
                         timeout: None,
-                    }));
+                    })));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(
                         &task.into(),
