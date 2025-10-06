@@ -58,8 +58,7 @@ With this structure, tasks will be automatically namespaced:
 
 ## Task Path Syntax
 
-Monorepo tasks use special path syntax with `//` and `:` prefixes. You can run these tasks directly with `mise` or with `mise run`. With non-monorepo tasks, the guidance is not to use the direct syntax for scripts because it could conflict
-with future core mise commands, but mise will never define commands with a `//` or `:` prefix so that guidance does not apply to monorepo tasks.
+Monorepo tasks use special path syntax with `//` and `:` prefixes. You can run these tasks directly with `mise` or with `mise run`. With non-monorepo tasks, the guidance is to avoid using the direct syntax for scripts because it could conflict with future core mise commands. However, mise will never define commands with a `//` or `:` prefix, so this guidance does not apply to monorepo tasks.
 
 ```bash
 # Direct syntax (preferred for monorepo tasks)
