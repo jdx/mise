@@ -882,11 +882,14 @@ impl Run {
         task_cf: Option<&Arc<dyn ConfigFile>>,
         tools: &[ToolArg],
     ) -> Result<Toolset> {
-        if let Some(task_cf) = task_cf {
+        // Only use task-specific config file context for monorepo tasks
+        // (tasks with self.cf set, not just those with a config_source)
+        if task_cf.is_some() && task.cf.is_some() {
+            let task_cf = task_cf.unwrap();
             let config_path = Self::canonicalize_path(task_cf.get_path());
 
             trace!(
-                "task {} using config file context from {}",
+                "task {} using monorepo config file context from {}",
                 task.name,
                 config_path.display()
             );
@@ -938,11 +941,8 @@ impl Run {
 
             Ok(task_ts)
         } else {
-            trace!(
-                "task {} no config file found, using standard toolset",
-                task.name
-            );
-            // Standard toolset build
+            trace!("task {} using standard toolset build", task.name);
+            // Standard toolset build - includes all config files
             ToolsetBuilder::new().with_args(tools).build(config).await
         }
     }
