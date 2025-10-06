@@ -41,7 +41,7 @@ chmod +x projects/frontend/tasks/another.long-name.sh
 # --- Assertions ---
 
 # Verify all tasks are discovered
-assert_contains "mise tasks ls --all" "//:root-task"
+assert_contains "mise tasks ls --debug --all" "//:root-task"
 assert_contains "mise tasks ls --all" "//projects/frontend:toml-task"
 assert_contains "mise tasks ls --all" "//projects/frontend:script-task"
 assert_contains "mise tasks ls --all" "//projects/frontend:another.long-name"
