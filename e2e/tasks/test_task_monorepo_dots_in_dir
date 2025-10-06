@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Test monorepo tasks with dots in directory names
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.root-task]
+run = 'echo "root task executed"'
+TOML
+
+# Create projects with dots in directory names
+mkdir -p "projects/my.app"
+cat <<'TOML' >"projects/my.app/mise.toml"
+[tasks.build]
+run = 'echo "building my.app"'
+
+[tasks.test]
+run = 'echo "testing my.app"'
+TOML
+
+mkdir -p "projects/my.service.api"
+cat <<'TOML' >"projects/my.service.api/mise.toml"
+[tasks.build]
+run = 'echo "building my.service.api"'
+
+[tasks.deploy]
+depends = ["//projects/my.app:build"]
+run = 'echo "deploying my.service.api"'
+TOML
+
+mkdir -p "projects/feature.v2.beta"
+cat <<'TOML' >"projects/feature.v2.beta/mise.toml"
+[tasks.test]
+run = 'echo "testing feature.v2.beta"'
+TOML
+
+# Test 1: List tasks for directory with single dot
+echo "=== Test 1: List tasks for my.app ==="
+assert_contains "mise tasks ls --all" "//projects/my.app:build"
+assert_contains "mise tasks ls --all" "//projects/my.app:test"
+
+# Test 2: List tasks for directory with multiple dots
+echo "=== Test 2: List tasks for my.service.api ==="
+assert_contains "mise tasks ls --all" "//projects/my.service.api:build"
+assert_contains "mise tasks ls --all" "//projects/my.service.api:deploy"
+
+# Test 3: List tasks for directory with version-like dots
+echo "=== Test 3: List tasks for feature.v2.beta ==="
+assert_contains "mise tasks ls --all" "//projects/feature.v2.beta:test"
+
+# Test 4: Run task from directory with single dot
+echo "=== Test 4: Run build task from my.app ==="
+assert_contains "mise run '//projects/my.app:build'" "building my.app"
+
+# Test 5: Run task from directory with multiple dots
+echo "=== Test 5: Run build task from my.service.api ==="
+assert_contains "mise run '//projects/my.service.api:build'" "building my.service.api"
+
+# Test 6: Run task with dependency across directories with dots
+echo "=== Test 6: Run deploy with cross-directory dependency ==="
+output=$(mise run '//projects/my.service.api:deploy')
+echo "$output"
+echo "$output" | grep -q "building my.app" || (echo "FAIL: Dependency task from my.app not run" && exit 1)
+echo "$output" | grep -q "deploying my.service.api" || (echo "FAIL: Deploy task not run" && exit 1)
+
+# Test 7: Wildcard matching with dots in directory names
+echo "=== Test 7: Wildcard matching ==="
+assert_contains "mise run '//projects/...:build'" "building my.app"
+assert_contains "mise run '//projects/...:build'" "building my.service.api"
+
+# Test 8: Run all test tasks
+echo "=== Test 8: Run all test tasks ==="
+output=$(mise run '//...:test')
+echo "$output"
+echo "$output" | grep -q "testing my.app" || (echo "FAIL: my.app test not run" && exit 1)
+echo "$output" | grep -q "testing feature.v2.beta" || (echo "FAIL: feature.v2.beta test not run" && exit 1)
+
+echo "=== All tests with dots in directory names passed! ==="

@@ -254,12 +254,24 @@ impl Task {
 
     /// prints the task name without an extension
     pub fn display_name(&self, all_tasks: &BTreeMap<String, Task>) -> String {
-        let display_name = self
-            .name
-            .rsplitn(2, '.')
-            .last()
-            .unwrap_or_default()
-            .to_string();
+        // For task names, only strip extensions after the last colon (:)
+        // This handles monorepo task names like "//projects/my.app:build.sh"
+        // where we want to strip ".sh" but keep "my.app" intact
+        let display_name = if let Some((prefix, task_part)) = self.name.rsplit_once(':') {
+            // Has a colon separator (e.g., "//projects/my.app:build.sh")
+            // Strip extension from the task part only
+            let task_without_ext = task_part.rsplitn(2, '.').last().unwrap_or_default();
+            format!("{}:{}", prefix, task_without_ext)
+        } else {
+            // No colon separator (e.g., "build.sh")
+            // Strip extension from the whole name
+            self.name
+                .rsplitn(2, '.')
+                .last()
+                .unwrap_or_default()
+                .to_string()
+        };
+
         if all_tasks.contains_key(&display_name) {
             // this means another task has the name without an extension so use the full name
             self.name.clone()
@@ -272,9 +284,27 @@ impl Task {
         if self.name == pat || self.aliases.contains(&pat.to_string()) {
             return true;
         }
-        let pat = pat.rsplitn(2, '.').last().unwrap_or_default();
-        self.name.rsplitn(2, '.').last().unwrap_or_default() == pat
-            || self.aliases.contains(&pat.to_string())
+
+        // For pattern matching, handle colon-separated task names
+        let (name_without_ext, pat_without_ext) =
+            if let Some((_, task_part)) = self.name.rsplit_once(':') {
+                // Task name has a colon (e.g., "//projects/my.app:build.sh")
+                let name_ext_stripped = task_part.rsplitn(2, '.').last().unwrap_or_default();
+                let pat_ext_stripped = if let Some((_, pat_task)) = pat.rsplit_once(':') {
+                    pat_task.rsplitn(2, '.').last().unwrap_or_default()
+                } else {
+                    pat.rsplitn(2, '.').last().unwrap_or_default()
+                };
+                (name_ext_stripped, pat_ext_stripped)
+            } else {
+                // Simple task name without colon
+                (
+                    self.name.rsplitn(2, '.').last().unwrap_or_default(),
+                    pat.rsplitn(2, '.').last().unwrap_or_default(),
+                )
+            };
+
+        name_without_ext == pat_without_ext || self.aliases.contains(&pat.to_string())
     }
 
     pub async fn task_dir() -> PathBuf {
