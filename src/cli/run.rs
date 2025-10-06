@@ -900,13 +900,42 @@ impl Run {
         task_cf: &Arc<dyn ConfigFile>,
         ts: &Toolset,
     ) -> Result<(BTreeMap<String, String>, Vec<(String, String)>)> {
-        // Get env directives from the task's config file once
-        // Cache this to avoid calling env_entries() multiple times
         let config_env_entries = task_cf.env_entries()?;
 
-        // Early return: if task's config root matches current config root and there are no
-        // config-level env directives, use standard behavior. This avoids redundant resolution
-        // for tasks that don't need special context
+        // Early return if no special context needed
+        if self.should_use_standard_env_resolution(task, task_cf, config, &config_env_entries) {
+            return task.render_env(config, ts).await;
+        }
+
+        let mut env = ts.full_env(config).await?;
+        let tera_ctx = self.build_tera_context(task_cf, ts, config).await?;
+
+        // Resolve config-level env first, then task-specific env
+        let config_env_directives = self.build_config_env_directives(task_cf, config_env_entries);
+        let config_env_results = self
+            .resolve_env_directives(config, &tera_ctx, &env, config_env_directives)
+            .await?;
+        Self::apply_env_results(&mut env, &config_env_results);
+
+        let task_env_directives = self.build_task_env_directives(task);
+        let task_env_results = self
+            .resolve_env_directives(config, &tera_ctx, &env, task_env_directives)
+            .await?;
+
+        let task_env = self.extract_task_env(&task_env_results);
+        Self::apply_env_results(&mut env, &task_env_results);
+
+        Ok((env, task_env))
+    }
+
+    /// Check if standard env resolution should be used instead of special context
+    fn should_use_standard_env_resolution(
+        &self,
+        task: &Task,
+        task_cf: &Arc<dyn ConfigFile>,
+        config: &Arc<Config>,
+        config_env_entries: &[EnvDirective],
+    ) -> bool {
         if let (Some(task_config_root), Some(current_config_root)) =
             (task_cf.project_root(), config.project_root.as_ref())
         {
@@ -915,79 +944,80 @@ impl Run {
                     "task {} config root matches current and no config env, using standard env resolution",
                     task.name
                 );
-                return task.render_env(config, ts).await;
+                return true;
             }
         }
+        false
+    }
 
-        // Start with the toolset's env
-        let mut env = ts.full_env(config).await?;
-
-        // Build env directives from the cached entries
-        // Use the config file's path for proper relative path resolution
-        let config_env_directives: Vec<(EnvDirective, PathBuf)> = config_env_entries
-            .into_iter()
-            .map(|directive| (directive, task_cf.get_path().to_path_buf()))
-            .collect();
-
-        // Get task-specific env directives
-        let task_env_directives: Vec<(EnvDirective, PathBuf)> = task
-            .env
-            .0
-            .iter()
-            .map(|directive| (directive.clone(), task.config_source.clone()))
-            .collect();
-
-        // Build tera context
-        // Use the task's config file project root for monorepo context
+    /// Build tera context with config_root for monorepo tasks
+    async fn build_tera_context(
+        &self,
+        task_cf: &Arc<dyn ConfigFile>,
+        ts: &Toolset,
+        config: &Arc<Config>,
+    ) -> Result<tera::Context> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         if let Some(root) = task_cf.project_root() {
             tera_ctx.insert("config_root", root);
         }
+        Ok(tera_ctx)
+    }
 
-        // Resolve config-level env directives first
+    /// Build env directives from config file entries
+    fn build_config_env_directives(
+        &self,
+        task_cf: &Arc<dyn ConfigFile>,
+        config_env_entries: Vec<EnvDirective>,
+    ) -> Vec<(EnvDirective, PathBuf)> {
+        config_env_entries
+            .into_iter()
+            .map(|directive| (directive, task_cf.get_path().to_path_buf()))
+            .collect()
+    }
+
+    /// Build env directives from task-specific env
+    fn build_task_env_directives(&self, task: &Task) -> Vec<(EnvDirective, PathBuf)> {
+        task.env
+            .0
+            .iter()
+            .map(|directive| (directive.clone(), task.config_source.clone()))
+            .collect()
+    }
+
+    /// Resolve env directives using EnvResults
+    async fn resolve_env_directives(
+        &self,
+        config: &Arc<Config>,
+        tera_ctx: &tera::Context,
+        env: &BTreeMap<String, String>,
+        directives: Vec<(EnvDirective, PathBuf)>,
+    ) -> Result<crate::config::env_directive::EnvResults> {
         use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
-        let config_env_results = EnvResults::resolve(
+        EnvResults::resolve(
             config,
             tera_ctx.clone(),
-            &env,
-            config_env_directives,
+            env,
+            directives,
             EnvResolveOptions {
                 vars: false,
                 tools: ToolsFilter::Both,
                 warn_on_missing_required: false,
             },
         )
-        .await?;
+        .await
+    }
 
-        // Apply config-level env
-        Self::apply_env_results(&mut env, &config_env_results);
-
-        // Now resolve task-specific env directives
-        let task_env_results = EnvResults::resolve(
-            config,
-            tera_ctx,
-            &env,
-            task_env_directives,
-            EnvResolveOptions {
-                vars: false,
-                tools: ToolsFilter::Both,
-                warn_on_missing_required: false,
-            },
-        )
-        .await?;
-
-        // Build task_env from ONLY task-specific directives
-        // This matches the behavior of Task::render_env (only task.env, not config env)
-        let task_env: Vec<(String, String)> = task_env_results
+    /// Extract task env from EnvResults (only task-specific directives)
+    fn extract_task_env(
+        &self,
+        task_env_results: &crate::config::env_directive::EnvResults,
+    ) -> Vec<(String, String)> {
+        task_env_results
             .env
             .iter()
             .map(|(k, (v, _))| (k.clone(), v.clone()))
-            .collect();
-
-        // Apply task-specific env to the environment
-        Self::apply_env_results(&mut env, &task_env_results);
-
-        Ok((env, task_env))
+            .collect()
     }
 
     /// Apply EnvResults to an environment map
