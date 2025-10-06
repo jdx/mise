@@ -2369,6 +2369,11 @@ backends = ["aqua:sourcemeta/jsonschema", "ubi:sourcemeta/jsonschema"]
 description = "The CLI for working with JSON Schema. Covers formatting, linting, testing, bundling, and more for both local development and CI/CD pipelines"
 test = ["jsonschema version", "{{version}}"]
 
+[tools.jules]
+backends = ["npm:@google/jules"]
+description = "Jules, the asynchronous coding agent from Google, in the terminal"
+test = ["jules version", "Version: v{{version}}"]
+
 [tools.julia]
 backends = ["asdf:mise-plugins/mise-julia"]
 description = "The Julia Programming Language"
