@@ -90,4 +90,24 @@ if echo "$output" | grep -q "building my.service.api"; then
 fi
 echo "SUCCESS: No false positive matches"
 
+# Test 10: Verify simple patterns can match monorepo tasks
+echo "=== Test 10: Simple pattern matching ==="
+# Create a simple task in the current directory for comparison
+cat <<'TOML' >>mise.toml
+
+[tasks.local-build]
+run = 'echo "local build"'
+TOML
+
+# Test that pattern "build" matches monorepo tasks
+output=$(mise tasks ls --all)
+echo "$output"
+# Count how many "build" tasks exist (should be at least 3: my.app, my.service.api, and local-build)
+build_count=$(echo "$output" | grep -c ":build\|local-build" || true)
+if [ "$build_count" -lt 3 ]; then
+	echo "FAIL: Expected at least 3 build tasks, found $build_count"
+	exit 1
+fi
+echo "SUCCESS: Found $build_count build tasks"
+
 echo "=== All tests with dots in directory names passed! ==="
