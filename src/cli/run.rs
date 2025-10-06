@@ -325,11 +325,31 @@ impl Run {
         let this = Arc::new(self);
 
         let mut all_tools = this.tool.clone();
-        for t in tasks.all() {
+        let all_tasks: Vec<_> = tasks.all().collect();
+        trace!("Collecting tools from {} tasks", all_tasks.len());
+        for t in &all_tasks {
+            // Collect tools from task.tools (task-level tool overrides)
             for (k, v) in &t.tools {
                 all_tools.push(format!("{k}@{v}").parse()?);
             }
+            // Collect tools from monorepo task config files
+            if let Some(task_cf) = t.cf(&config) {
+                if let Ok(tool_request_set) = task_cf.to_tool_request_set() {
+                    trace!(
+                        "Found {} tools in config file for task {}",
+                        tool_request_set.tools.len(),
+                        t.name
+                    );
+                    for (ba, requests) in tool_request_set.tools.iter() {
+                        for req in requests {
+                            trace!("Adding tool from config: {}", req);
+                            all_tools.push(format!("{}@{}", ba.short, req.version()).parse()?);
+                        }
+                    }
+                }
+            }
         }
+        trace!("All tools to install: {:?}", all_tools);
         let mut ts = ToolsetBuilder::new()
             .with_args(&all_tools)
             .build(&config)

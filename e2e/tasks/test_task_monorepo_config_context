@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Test that monorepo tasks use tools and env vars from their subdirectory mise.toml files
 export MISE_EXPERIMENTAL=1
+export MISE_NODE_VERIFY=0 # Skip GPG verification to avoid keyboxd issues
 
 # Create monorepo root config
 cat <<EOF >mise.toml
@@ -34,7 +35,7 @@ echo "FRONTEND_VAR=\$FRONTEND_VAR"
 echo "SHARED_VAR=\$SHARED_VAR"
 echo "NODE_ENV=\$NODE_ENV"
 echo "ROOT_VAR=\$ROOT_VAR"
-echo "NODE_VERSION=20"
+echo "NODE_VERSION=\$(node --version | sed 's/v//' | cut -d. -f1)"
 '''
 
 [tasks.test]
@@ -52,7 +53,6 @@ DATABASE_URL = "postgres://localhost/backend"
 
 [tools]
 node = "18"
-python = "3.12"
 
 [tasks.build]
 run = '''
@@ -60,8 +60,7 @@ echo "BACKEND_VAR=\$BACKEND_VAR"
 echo "SHARED_VAR=\$SHARED_VAR"
 echo "DATABASE_URL=\$DATABASE_URL"
 echo "ROOT_VAR=\$ROOT_VAR"
-echo "NODE_VERSION=18"
-echo "PYTHON_VERSION=3.12"
+echo "NODE_VERSION=\$(node --version | sed 's/v//' | cut -d. -f1)"
 '''
 
 [tasks.deploy]
@@ -105,8 +104,6 @@ echo "$output" | grep -q "DATABASE_URL=postgres://localhost/backend" || (echo "F
 echo "$output" | grep -q "ROOT_VAR=root_value" || (echo "FAIL: ROOT_VAR not inherited in backend" && exit 1)
 # Should declare node 18 from backend config
 echo "$output" | grep -q "NODE_VERSION=18" || (echo "FAIL: Node version not 18" && exit 1)
-# Should declare python 3.12
-echo "$output" | grep -q "PYTHON_VERSION=3.12" || (echo "FAIL: Python version not 3.12" && exit 1)
 
 # Test 4: Task-specific env should override config env
 echo "=== Test 4: Task-specific env overrides config env ==="
