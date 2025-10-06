@@ -218,10 +218,10 @@ pub struct Run {
         std::sync::RwLock<IndexMap<PathBuf, Arc<crate::toolset::ToolRequestSet>>>,
 
     #[clap(skip)]
-    pub env_resolution_cache:
-        std::sync::RwLock<IndexMap<PathBuf, (BTreeMap<String, String>, Vec<(String, String)>)>>,
+    pub env_resolution_cache: std::sync::RwLock<IndexMap<PathBuf, EnvResolutionResult>>,
 }
 
+type EnvResolutionResult = (BTreeMap<String, String>, Vec<(String, String)>);
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
 
 struct SpawnCtx {

@@ -30,7 +30,7 @@ enum Commands {
     Edit(edit::TasksEdit),
     Info(info::TasksInfo),
     Ls(ls::TasksLs),
-    Run(run::Run),
+    Run(Box<run::Run>),
 }
 
 impl Commands {
@@ -41,7 +41,7 @@ impl Commands {
             Self::Edit(cmd) => cmd.run().await,
             Self::Info(cmd) => cmd.run().await,
             Self::Ls(cmd) => cmd.run().await,
-            Self::Run(cmd) => cmd.run().await,
+            Self::Run(cmd) => (*cmd).run().await,
         }
     }
 }
