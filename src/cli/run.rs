@@ -767,7 +767,13 @@ impl Run {
         let ts_build_start = std::time::Instant::now();
 
         // Check if we need special handling for monorepo tasks with config file context
-        let task_cf = task.cf(config);
+        // Remote tasks (from git::/http:/https: URLs) should NOT use config file context
+        // because they need tools from the full config hierarchy, not just the local config
+        let task_cf = if task.is_remote() {
+            None
+        } else {
+            task.cf(config)
+        };
 
         // Build toolset - either from task's config file or standard way
         let ts = self
@@ -1833,6 +1839,9 @@ impl Run {
 
                 let local_path = provider.unwrap().get_local_path(&source).await?;
 
+                // Store the original remote source before replacing with local path
+                // This is used to determine if the task should use monorepo config file context
+                t.remote_file_source = Some(source);
                 t.file = Some(local_path);
             }
         }
