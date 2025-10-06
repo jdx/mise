@@ -1334,17 +1334,10 @@ fn prefix_monorepo_task_names(tasks: &mut [Task], dir: &Path, monorepo_root: &Pa
             .to_string_lossy()
             .replace(std::path::MAIN_SEPARATOR, "/");
         for task in tasks.iter_mut() {
-            if prefix.is_empty() {
-                task.name = format!(
-                    "{}{}{}",
-                    MONOREPO_PATH_PREFIX, MONOREPO_TASK_SEPARATOR, task.name
-                );
-            } else {
-                task.name = format!(
-                    "{}{}{}{}",
-                    MONOREPO_PATH_PREFIX, prefix, MONOREPO_TASK_SEPARATOR, task.name
-                );
-            }
+            task.name = format!(
+                "{}{}{}{}",
+                MONOREPO_PATH_PREFIX, prefix, MONOREPO_TASK_SEPARATOR, task.name
+            );
         }
     }
 }
@@ -1405,9 +1398,7 @@ async fn load_local_tasks_with_context(
                                     let mut subdir_tasks =
                                         load_config_and_file_tasks(&config, cf.clone()).await?;
 
-                                    if let Ok(rel_path) = subdir.strip_prefix(&monorepo_root) {
-                                        prefix_monorepo_task_names(&mut subdir_tasks, rel_path, &monorepo_root);
-                                    }
+                                    prefix_monorepo_task_names(&mut subdir_tasks, &subdir, &monorepo_root);
                                     for task in subdir_tasks.iter_mut() {
                                         // Store reference to config file for later use
                                         task.cf = Some(cf.clone());
