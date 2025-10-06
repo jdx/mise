@@ -149,6 +149,11 @@ pub struct Task {
     // file type
     #[serde(default)]
     pub file: Option<PathBuf>,
+
+    // Store the original remote file source (git::/http:/https:) before it's replaced with local path
+    // This is used to determine if the task should use monorepo config file context
+    #[serde(skip)]
+    pub remote_file_source: Option<String>,
 }
 
 impl Task {
@@ -586,12 +591,11 @@ impl Task {
     /// Remote tasks should not use monorepo config file context because they need
     /// access to tools from the full config hierarchy, not just the local config file
     pub fn is_remote(&self) -> bool {
-        // Check if the task file is from a remote source
-        if let Some(file) = &self.file {
-            let file_str = file.to_string_lossy();
-            return file_str.starts_with("git::")
-                || file_str.starts_with("http://")
-                || file_str.starts_with("https://");
+        // Check the stored remote file source (set before file is replaced with local path)
+        if let Some(source) = &self.remote_file_source {
+            return source.starts_with("git::")
+                || source.starts_with("http://")
+                || source.starts_with("https://");
         }
         false
     }
@@ -845,6 +849,7 @@ impl Default for Task {
             tools: Default::default(),
             usage: "".to_string(),
             timeout: None,
+            remote_file_source: None,
         }
     }
 }

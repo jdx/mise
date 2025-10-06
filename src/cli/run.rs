@@ -1839,6 +1839,9 @@ impl Run {
 
                 let local_path = provider.unwrap().get_local_path(&source).await?;
 
+                // Store the original remote source before replacing with local path
+                // This is used to determine if the task should use monorepo config file context
+                t.remote_file_source = Some(source);
                 t.file = Some(local_path);
             }
         }
