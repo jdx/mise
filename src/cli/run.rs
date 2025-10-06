@@ -350,44 +350,38 @@ impl Run {
                 let config_path = Self::canonicalize_path(task_cf.get_path());
 
                 // Check cache first
-                let tool_request_set = {
-                    if let Ok(cache) = this.tool_request_set_cache.read() {
-                        if let Some(cached) = cache.get(&config_path) {
-                            trace!(
-                                "Using cached tool request set from {}",
-                                config_path.display()
-                            );
-                            Some(Arc::clone(cached))
-                        } else {
-                            None
+                let cache = this
+                    .tool_request_set_cache
+                    .read()
+                    .expect("tool_request_set_cache RwLock poisoned");
+                let tool_request_set = if let Some(cached) = cache.get(&config_path) {
+                    trace!(
+                        "Using cached tool request set from {}",
+                        config_path.display()
+                    );
+                    Arc::clone(cached)
+                } else {
+                    drop(cache); // Release read lock before write
+                    // Not in cache, parse and cache it
+                    match task_cf.to_tool_request_set() {
+                        Ok(trs) => {
+                            let trs = Arc::new(trs);
+                            let mut cache = this
+                                .tool_request_set_cache
+                                .write()
+                                .expect("tool_request_set_cache RwLock poisoned");
+                            cache.insert(config_path.clone(), Arc::clone(&trs));
+                            trace!("Cached tool request set to {}", config_path.display());
+                            trs
                         }
-                    } else {
-                        None
-                    }
-                };
-
-                let tool_request_set = match tool_request_set {
-                    Some(trs) => trs,
-                    None => {
-                        // Not in cache, parse and cache it
-                        match task_cf.to_tool_request_set() {
-                            Ok(trs) => {
-                                let trs = Arc::new(trs);
-                                if let Ok(mut cache) = this.tool_request_set_cache.write() {
-                                    cache.insert(config_path.clone(), Arc::clone(&trs));
-                                    trace!("Cached tool request set to {}", config_path.display());
-                                }
-                                trs
-                            }
-                            Err(e) => {
-                                warn!(
-                                    "Failed to parse tools from {} for task {}: {}",
-                                    task_cf.get_path().display(),
-                                    t.name,
-                                    e
-                                );
-                                continue;
-                            }
+                        Err(e) => {
+                            warn!(
+                                "Failed to parse tools from {} for task {}: {}",
+                                task_cf.get_path().display(),
+                                t.name,
+                                e
+                            );
+                            continue;
                         }
                     }
                 };
@@ -894,18 +888,20 @@ impl Run {
                 config_path.display()
             );
 
-            // Check cache first if no task-specific tools
-            if tools.is_empty() {
-                if let Ok(cache) = self.toolset_cache.read() {
-                    if let Some(cached_ts) = cache.get(&config_path) {
-                        trace!(
-                            "task {} using cached toolset from {}",
-                            task.name,
-                            config_path.display()
-                        );
-                        // Return cloned Arc instead of cloning entire Toolset
-                        return Ok((*cached_ts).as_ref().clone());
-                    }
+            // Check cache first if no task-specific tools or CLI args
+            if tools.is_empty() && task.tools.is_empty() {
+                let cache = self
+                    .toolset_cache
+                    .read()
+                    .expect("toolset_cache RwLock poisoned");
+                if let Some(cached_ts) = cache.get(&config_path) {
+                    trace!(
+                        "task {} using cached toolset from {}",
+                        task.name,
+                        config_path.display()
+                    );
+                    // Clone Arc, not the entire Toolset
+                    return Ok(Arc::unwrap_or_clone(Arc::clone(cached_ts)));
                 }
             }
 
@@ -923,16 +919,18 @@ impl Run {
             // Resolve the final toolset
             task_ts.resolve(config).await?;
 
-            // Cache the toolset if no task-specific tools
-            if tools.is_empty() {
-                if let Ok(mut cache) = self.toolset_cache.write() {
-                    cache.insert(config_path.clone(), Arc::new(task_ts.clone()));
-                    trace!(
-                        "task {} cached toolset to {}",
-                        task.name,
-                        config_path.display()
-                    );
-                }
+            // Cache the toolset if no task-specific tools or CLI args
+            if tools.is_empty() && task.tools.is_empty() {
+                let mut cache = self
+                    .toolset_cache
+                    .write()
+                    .expect("toolset_cache RwLock poisoned");
+                cache.insert(config_path.clone(), Arc::new(task_ts.clone()));
+                trace!(
+                    "task {} cached toolset to {}",
+                    task.name,
+                    config_path.display()
+                );
             }
 
             Ok(task_ts)
@@ -966,15 +964,17 @@ impl Run {
 
         // Check cache first if task has no task-specific env directives
         if task.env.0.is_empty() {
-            if let Ok(cache) = self.env_resolution_cache.read() {
-                if let Some(cached_env) = cache.get(&config_path) {
-                    trace!(
-                        "task {} using cached env resolution from {}",
-                        task.name,
-                        config_path.display()
-                    );
-                    return Ok(cached_env.clone());
-                }
+            let cache = self
+                .env_resolution_cache
+                .read()
+                .expect("env_resolution_cache RwLock poisoned");
+            if let Some(cached_env) = cache.get(&config_path) {
+                trace!(
+                    "task {} using cached env resolution from {}",
+                    task.name,
+                    config_path.display()
+                );
+                return Ok(cached_env.clone());
             }
         }
 
@@ -998,14 +998,16 @@ impl Run {
 
         // Cache the result if no task-specific env directives
         if task.env.0.is_empty() {
-            if let Ok(mut cache) = self.env_resolution_cache.write() {
-                cache.insert(config_path.clone(), (env.clone(), task_env.clone()));
-                trace!(
-                    "task {} cached env resolution to {}",
-                    task.name,
-                    config_path.display()
-                );
-            }
+            let mut cache = self
+                .env_resolution_cache
+                .write()
+                .expect("env_resolution_cache RwLock poisoned");
+            cache.insert(config_path.clone(), (env.clone(), task_env.clone()));
+            trace!(
+                "task {} cached env resolution to {}",
+                task.name,
+                config_path.display()
+            );
         }
 
         Ok((env, task_env))
