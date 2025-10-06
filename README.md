@@ -170,6 +170,18 @@ Find more examples in the [mise cookbook](https://mise.jdx.dev/mise-cookbook/).
 
 See [mise.jdx.dev](https://mise.jdx.dev)
 
+## GitHub Issues & Discussions
+
+Due to the volume of issue submissions mise received, using GitHub Issues became unsustainable for
+the project. Instead, mise uses GitHub Discussions which provide a more community-centric platform
+for communication and require less management on the part of the maintainers.
+
+Please note the following discussion categories, which match how issues are often used:
+
+- [Announcements](https://github.com/jdx/mise/discussions/categories/announcements)
+- [Ideas](https://github.com/jdx/mise/discussions/categories/ideas): for feature requests, etc.
+- [Troubleshooting & Bug Reports](https://github.com/jdx/mise/discussions/categories/troubleshooting-and-bug-reports)
+
 ## Special Thanks
 
 We're grateful for Cloudflare's support through [Project Alexandria](https://www.cloudflare.com/lp/project-alexandria/).
