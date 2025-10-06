@@ -25,23 +25,23 @@ pub struct Tasks {
 
 #[derive(Subcommand)]
 enum Commands {
-    Add(add::TasksAdd),
+    Add(Box<add::TasksAdd>),
     Deps(deps::TasksDeps),
     Edit(edit::TasksEdit),
     Info(info::TasksInfo),
     Ls(ls::TasksLs),
-    Run(run::Run),
+    Run(Box<run::Run>),
 }
 
 impl Commands {
     pub async fn run(self) -> Result<()> {
         match self {
-            Self::Add(cmd) => cmd.run().await,
+            Self::Add(cmd) => (*cmd).run().await,
             Self::Deps(cmd) => cmd.run().await,
             Self::Edit(cmd) => cmd.run().await,
             Self::Info(cmd) => cmd.run().await,
             Self::Ls(cmd) => cmd.run().await,
-            Self::Run(cmd) => cmd.run().await,
+            Self::Run(cmd) => (*cmd).run().await,
         }
     }
 }

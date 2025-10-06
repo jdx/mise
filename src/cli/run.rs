@@ -13,12 +13,13 @@ use std::time::{Duration, SystemTime};
 use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::cmd::CmdLineRunner;
+use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Deps, GetMatchingExt, Task};
-use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::{ctrlc, prompt, style, time};
@@ -208,8 +209,19 @@ pub struct Run {
 
     #[clap(skip)]
     pub timed_outputs: Arc<std::sync::Mutex<IndexMap<String, (SystemTime, String)>>>,
+
+    #[clap(skip)]
+    pub toolset_cache: std::sync::RwLock<IndexMap<PathBuf, Arc<Toolset>>>,
+
+    #[clap(skip)]
+    pub tool_request_set_cache:
+        std::sync::RwLock<IndexMap<PathBuf, Arc<crate::toolset::ToolRequestSet>>>,
+
+    #[clap(skip)]
+    pub env_resolution_cache: std::sync::RwLock<IndexMap<PathBuf, EnvResolutionResult>>,
 }
 
+type EnvResolutionResult = (BTreeMap<String, String>, Vec<(String, String)>);
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
 
 struct SpawnCtx {
@@ -324,11 +336,74 @@ impl Run {
         let this = Arc::new(self);
 
         let mut all_tools = this.tool.clone();
-        for t in tasks.all() {
+        let all_tasks: Vec<_> = tasks.all().collect();
+        trace!("Collecting tools from {} tasks", all_tasks.len());
+
+        for t in &all_tasks {
+            // Collect tools from task.tools (task-level tool overrides)
             for (k, v) in &t.tools {
                 all_tools.push(format!("{k}@{v}").parse()?);
             }
+
+            // Collect tools from monorepo task config files
+            if let Some(task_cf) = t.cf(&config) {
+                let config_path = Self::canonicalize_path(task_cf.get_path());
+
+                // Check cache first
+                let cache = this
+                    .tool_request_set_cache
+                    .read()
+                    .expect("tool_request_set_cache RwLock poisoned");
+                let tool_request_set = if let Some(cached) = cache.get(&config_path) {
+                    trace!(
+                        "Using cached tool request set from {}",
+                        config_path.display()
+                    );
+                    Arc::clone(cached)
+                } else {
+                    drop(cache); // Release read lock before write
+                    // Not in cache, parse it
+                    match task_cf.to_tool_request_set() {
+                        Ok(trs) => {
+                            let trs = Arc::new(trs);
+                            let mut cache = this
+                                .tool_request_set_cache
+                                .write()
+                                .expect("tool_request_set_cache RwLock poisoned");
+                            // Double-check: another thread may have populated while we were parsing
+                            cache.entry(config_path.clone()).or_insert_with(|| {
+                                trace!("Cached tool request set to {}", config_path.display());
+                                Arc::clone(&trs)
+                            });
+                            trs
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to parse tools from {} for task {}: {}",
+                                task_cf.get_path().display(),
+                                t.name,
+                                e
+                            );
+                            continue;
+                        }
+                    }
+                };
+
+                trace!(
+                    "Found {} tools in config file for task {}",
+                    tool_request_set.tools.len(),
+                    t.name
+                );
+
+                for (ba, requests) in tool_request_set.tools.iter() {
+                    for req in requests {
+                        trace!("Adding tool from config: {}", req);
+                        all_tools.push(format!("{}@{}", ba.short, req.version()).parse()?);
+                    }
+                }
+            }
         }
+        trace!("All tools to install: {:?}", all_tools);
         let mut ts = ToolsetBuilder::new()
             .with_args(&all_tools)
             .build(&config)
@@ -690,17 +765,37 @@ impl Run {
             tools.push(format!("{k}@{v}").parse()?);
         }
         let ts_build_start = std::time::Instant::now();
-        let ts = ToolsetBuilder::new()
-            .with_args(&tools)
-            .build(config)
+
+        // Check if we need special handling for monorepo tasks with config file context
+        // Remote tasks (from git::/http:/https: URLs) should NOT use config file context
+        // because they need tools from the full config hierarchy, not just the local config
+        let task_cf = if task.is_remote() {
+            None
+        } else {
+            task.cf(config)
+        };
+
+        // Build toolset - either from task's config file or standard way
+        let ts = self
+            .build_toolset_for_task(config, task, task_cf, &tools)
             .await?;
+
         trace!(
             "task {} ToolsetBuilder::build took {}ms",
             task.name,
             ts_build_start.elapsed().as_millis()
         );
         let env_render_start = std::time::Instant::now();
-        let (mut env, task_env) = task.render_env(config, &ts).await?;
+
+        // Build environment - either from task's config file context or standard way
+        let (mut env, task_env) = if let Some(task_cf) = task_cf {
+            self.resolve_task_env_with_config(config, task, task_cf, &ts)
+                .await?
+        } else {
+            // Fallback to standard behavior
+            task.render_env(config, &ts).await?
+        };
+
         trace!(
             "task {} render_env took {}ms",
             task.name,
@@ -783,6 +878,297 @@ impl Run {
         self.save_checksum(task)?;
 
         Ok(())
+    }
+
+    /// Build toolset for a task, optionally using its config file context for monorepo tasks
+    async fn build_toolset_for_task(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        task_cf: Option<&Arc<dyn ConfigFile>>,
+        tools: &[ToolArg],
+    ) -> Result<Toolset> {
+        // Only use task-specific config file context for monorepo tasks
+        // (tasks with self.cf set, not just those with a config_source)
+        if let (Some(task_cf), Some(_)) = (task_cf, &task.cf) {
+            let config_path = Self::canonicalize_path(task_cf.get_path());
+
+            trace!(
+                "task {} using monorepo config file context from {}",
+                task.name,
+                config_path.display()
+            );
+
+            // Check cache first if no task-specific tools or CLI args
+            if tools.is_empty() && task.tools.is_empty() {
+                let cache = self
+                    .toolset_cache
+                    .read()
+                    .expect("toolset_cache RwLock poisoned");
+                if let Some(cached_ts) = cache.get(&config_path) {
+                    trace!(
+                        "task {} using cached toolset from {}",
+                        task.name,
+                        config_path.display()
+                    );
+                    // Clone Arc, not the entire Toolset
+                    return Ok(Arc::unwrap_or_clone(Arc::clone(cached_ts)));
+                }
+            }
+
+            // Build a toolset from all config files in the hierarchy
+            // This ensures tools are inherited from parent configs
+
+            // Start by building a toolset from all global config files
+            // This includes parent configs but NOT the subdirectory config
+            let mut task_ts = ToolsetBuilder::new().build(config).await?;
+            trace!(
+                "task {} base toolset from global configs: {:?}",
+                task.name, task_ts
+            );
+
+            // Then merge the subdirectory's config file tools on top
+            // This allows subdirectories to override parent tools
+            let subdir_toolset = task_cf.to_toolset()?;
+            trace!(
+                "task {} merging subdirectory tools from {}: {:?}",
+                task.name,
+                task_cf.get_path().display(),
+                subdir_toolset
+            );
+            task_ts.merge(subdir_toolset);
+
+            trace!("task {} final merged toolset: {:?}", task.name, task_ts);
+
+            // Add task-specific tools and CLI args
+            if !tools.is_empty() {
+                let arg_toolset = ToolsetBuilder::new().with_args(tools).build(config).await?;
+                // Merge task-specific tools into the config file's toolset
+                task_ts.merge(arg_toolset);
+            }
+
+            // Resolve the final toolset
+            task_ts.resolve(config).await?;
+
+            // Cache the toolset if no task-specific tools or CLI args
+            if tools.is_empty() && task.tools.is_empty() {
+                let mut cache = self
+                    .toolset_cache
+                    .write()
+                    .expect("toolset_cache RwLock poisoned");
+                cache.insert(config_path.clone(), Arc::new(task_ts.clone()));
+                trace!(
+                    "task {} cached toolset to {}",
+                    task.name,
+                    config_path.display()
+                );
+            }
+
+            Ok(task_ts)
+        } else {
+            trace!("task {} using standard toolset build", task.name);
+            // Standard toolset build - includes all config files
+            ToolsetBuilder::new().with_args(tools).build(config).await
+        }
+    }
+
+    /// Resolve environment variables for a task using its config file context
+    /// This is used for monorepo tasks to load env vars from subdirectory mise.toml files
+    async fn resolve_task_env_with_config(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        task_cf: &Arc<dyn ConfigFile>,
+        ts: &Toolset,
+    ) -> Result<(BTreeMap<String, String>, Vec<(String, String)>)> {
+        let config_env_entries = task_cf.env_entries()?;
+
+        // Early return if no special context needed
+        if self.should_use_standard_env_resolution(task, task_cf, config, &config_env_entries) {
+            return task.render_env(config, ts).await;
+        }
+
+        let config_path = Self::canonicalize_path(task_cf.get_path());
+
+        // Check cache first if task has no task-specific env directives
+        if task.env.0.is_empty() {
+            let cache = self
+                .env_resolution_cache
+                .read()
+                .expect("env_resolution_cache RwLock poisoned");
+            if let Some(cached_env) = cache.get(&config_path) {
+                trace!(
+                    "task {} using cached env resolution from {}",
+                    task.name,
+                    config_path.display()
+                );
+                return Ok(cached_env.clone());
+            }
+        }
+
+        let mut env = ts.full_env(config).await?;
+        let tera_ctx = self.build_tera_context(task_cf, ts, config).await?;
+
+        // Resolve config-level env first, then task-specific env
+        let config_env_directives = self.build_config_env_directives(task_cf, config_env_entries);
+        let config_env_results = self
+            .resolve_env_directives(config, &tera_ctx, &env, config_env_directives)
+            .await?;
+        Self::apply_env_results(&mut env, &config_env_results);
+
+        let task_env_directives = self.build_task_env_directives(task);
+        let task_env_results = self
+            .resolve_env_directives(config, &tera_ctx, &env, task_env_directives)
+            .await?;
+
+        let task_env = self.extract_task_env(&task_env_results);
+        Self::apply_env_results(&mut env, &task_env_results);
+
+        // Cache the result if no task-specific env directives
+        if task.env.0.is_empty() {
+            let mut cache = self
+                .env_resolution_cache
+                .write()
+                .expect("env_resolution_cache RwLock poisoned");
+            // Double-check: another thread may have populated while we were resolving
+            cache.entry(config_path.clone()).or_insert_with(|| {
+                trace!(
+                    "task {} cached env resolution to {}",
+                    task.name,
+                    config_path.display()
+                );
+                (env.clone(), task_env.clone())
+            });
+        }
+
+        Ok((env, task_env))
+    }
+
+    /// Canonicalize a path for use as cache key
+    /// Falls back to original path if canonicalization fails
+    fn canonicalize_path(path: &Path) -> PathBuf {
+        path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    }
+
+    /// Check if standard env resolution should be used instead of special context
+    fn should_use_standard_env_resolution(
+        &self,
+        task: &Task,
+        task_cf: &Arc<dyn ConfigFile>,
+        config: &Arc<Config>,
+        config_env_entries: &[EnvDirective],
+    ) -> bool {
+        if let (Some(task_config_root), Some(current_config_root)) =
+            (task_cf.project_root(), config.project_root.as_ref())
+        {
+            if task_config_root == current_config_root && config_env_entries.is_empty() {
+                trace!(
+                    "task {} config root matches current and no config env, using standard env resolution",
+                    task.name
+                );
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Build tera context with config_root for monorepo tasks
+    async fn build_tera_context(
+        &self,
+        task_cf: &Arc<dyn ConfigFile>,
+        ts: &Toolset,
+        config: &Arc<Config>,
+    ) -> Result<tera::Context> {
+        let mut tera_ctx = ts.tera_ctx(config).await?.clone();
+        if let Some(root) = task_cf.project_root() {
+            tera_ctx.insert("config_root", root);
+        }
+        Ok(tera_ctx)
+    }
+
+    /// Build env directives from config file entries
+    fn build_config_env_directives(
+        &self,
+        task_cf: &Arc<dyn ConfigFile>,
+        config_env_entries: Vec<EnvDirective>,
+    ) -> Vec<(EnvDirective, PathBuf)> {
+        config_env_entries
+            .into_iter()
+            .map(|directive| (directive, task_cf.get_path().to_path_buf()))
+            .collect()
+    }
+
+    /// Build env directives from task-specific env
+    fn build_task_env_directives(&self, task: &Task) -> Vec<(EnvDirective, PathBuf)> {
+        task.env
+            .0
+            .iter()
+            .map(|directive| (directive.clone(), task.config_source.clone()))
+            .collect()
+    }
+
+    /// Resolve env directives using EnvResults
+    async fn resolve_env_directives(
+        &self,
+        config: &Arc<Config>,
+        tera_ctx: &tera::Context,
+        env: &BTreeMap<String, String>,
+        directives: Vec<(EnvDirective, PathBuf)>,
+    ) -> Result<crate::config::env_directive::EnvResults> {
+        use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
+        EnvResults::resolve(
+            config,
+            tera_ctx.clone(),
+            env,
+            directives,
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+    }
+
+    /// Extract task env from EnvResults (only task-specific directives)
+    fn extract_task_env(
+        &self,
+        task_env_results: &crate::config::env_directive::EnvResults,
+    ) -> Vec<(String, String)> {
+        task_env_results
+            .env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect()
+    }
+
+    /// Apply EnvResults to an environment map
+    /// Handles env vars, env_remove, and env_paths (PATH modifications)
+    fn apply_env_results(
+        env: &mut BTreeMap<String, String>,
+        results: &crate::config::env_directive::EnvResults,
+    ) {
+        // Apply environment variables
+        for (k, (v, _)) in &results.env {
+            env.insert(k.clone(), v.clone());
+        }
+
+        // Remove explicitly unset variables
+        for key in &results.env_remove {
+            env.remove(key);
+        }
+
+        // Apply path additions
+        if !results.env_paths.is_empty() {
+            use crate::path_env::PathEnv;
+            let mut path_env = PathEnv::from_iter(env::split_paths(
+                &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
+            ));
+            for path in &results.env_paths {
+                path_env.add(path.clone());
+            }
+            env.insert(env::PATH_KEY.to_string(), path_env.to_string());
+        }
     }
 
     async fn exec_task_run_entries(
@@ -1472,6 +1858,9 @@ impl Run {
 
                 let local_path = provider.unwrap().get_local_path(&source).await?;
 
+                // Store the original remote source before replacing with local path
+                // This is used to determine if the task should use monorepo config file context
+                t.remote_file_source = Some(source);
                 t.file = Some(local_path);
             }
         }

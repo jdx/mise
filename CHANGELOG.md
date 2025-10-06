@@ -1,5 +1,59 @@
 # Changelog
 
+## [2025.10.4](https://github.com/jdx/mise/compare/v2025.10.3..v2025.10.4) - 2025-10-06
+
+### 🐛 Bug Fixes
+
+- **(installing-mise.md)** broken link by @equirosa in [#6555](https://github.com/jdx/mise/pull/6555)
+- **(task)** remote git tasks now properly inherit tools from parent configs by @jdx in [#6558](https://github.com/jdx/mise/pull/6558)
+- **(tasks)** restore tool loading from idiomatic version files by @jdx in [#6559](https://github.com/jdx/mise/pull/6559)
+
+### 🚜 Refactor
+
+- **(task)** remove duplicated codes by @risu729 in [#6553](https://github.com/jdx/mise/pull/6553)
+
+### New Contributors
+
+- @equirosa made their first contribution in [#6555](https://github.com/jdx/mise/pull/6555)
+
+## [2025.10.3](https://github.com/jdx/mise/compare/v2025.10.2..v2025.10.3) - 2025-10-06
+
+### 📦 Registry
+
+- added cloudflare wrangler by @moisesmorillo in [#6534](https://github.com/jdx/mise/pull/6534)
+
+### 🚀 Features
+
+- **(tasks)** add experimental monorepo task support with target paths by @jdx in [#6535](https://github.com/jdx/mise/pull/6535)
+- **(tasks)** respect local config_roots for monorepo tasks by @jdx in [#6552](https://github.com/jdx/mise/pull/6552)
+- support latest suffix for Java, Python and Ruby flavoured versions by @roele in [#6533](https://github.com/jdx/mise/pull/6533)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** decode filename extracted from url by @risu729 in [#6536](https://github.com/jdx/mise/pull/6536)
+- **(snapcraft)** use classic confinement by @phanect in [#6542](https://github.com/jdx/mise/pull/6542)
+- **(task)** fix task pattern matching and add :task syntax for monorepos by @risu729 in [#6549](https://github.com/jdx/mise/pull/6549)
+- **(tasks)** validate monorepo setup before running monorepo tasks by @jdx in [#6551](https://github.com/jdx/mise/pull/6551)
+- Add bash option in example by @Its-Just-Nans in [#6541](https://github.com/jdx/mise/pull/6541)
+- suppress ignore crate logs by @risu729 in [#6547](https://github.com/jdx/mise/pull/6547)
+
+### 📚 Documentation
+
+- Update Python virtual environment documentation by @Konfekt in [#6538](https://github.com/jdx/mise/pull/6538)
+
+### Chore
+
+- **(hk)** bump to v1.18.1 by @jdx in [#6546](https://github.com/jdx/mise/pull/6546)
+
+### Hk
+
+- bump to 1.18.1 by @jdx in [0ab65cd](https://github.com/jdx/mise/commit/0ab65cd9c6827fd4738e5184be6d743f94be34b2)
+
+### New Contributors
+
+- @Konfekt made their first contribution in [#6538](https://github.com/jdx/mise/pull/6538)
+- @moisesmorillo made their first contribution in [#6534](https://github.com/jdx/mise/pull/6534)
+
 ## [2025.10.2](https://github.com/jdx/mise/compare/v2025.10.1..v2025.10.2) - 2025-10-03
 
 ### 🐛 Bug Fixes
