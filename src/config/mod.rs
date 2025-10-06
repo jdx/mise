@@ -1714,7 +1714,7 @@ pub async fn load_tasks_in_dir(
     }
     let mut file_tasks = vec![];
     for p in task_includes_for_dir(dir, config_files) {
-        file_tasks.extend(load_tasks_includes(&config, &p, &dir).await?);
+        file_tasks.extend(load_tasks_includes(config, &p, dir).await?);
     }
     let mut tasks = file_tasks
         .into_iter()
