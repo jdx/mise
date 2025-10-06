@@ -333,6 +333,79 @@ mise //services/...:build  # Build all services
 mise //apps/...:test       # Test all apps
 ```
 
+## Comparison to Other Tools
+
+The monorepo ecosystem offers many excellent tools, each with different strengths. Here's how mise's Monorepo Tasks compares:
+
+### Simple Task Runners
+
+**Taskfile** and **Just** are fantastic for single-project task automation. They're lightweight and easy to set up, but they weren't designed with monorepos in mind. While you can have multiple Taskfiles/Justfiles in a repo, they don't provide unified task discovery, cross-project wildcards, or automatic tool/environment inheritance across projects.
+
+**mise's advantage:** Automatic task discovery across the entire monorepo with a unified namespace and powerful wildcard patterns.
+
+### JavaScript-Focused Tools
+
+**Nx**, **Turborepo**, and **Lerna** are powerful tools specifically designed for JavaScript/TypeScript monorepos.
+
+- **Nx** offers incredible features like dependency graph visualization, affected project detection, code generation, and computation caching. It has a massive plugin ecosystem and excels at frontend monorepos.
+- **Turborepo** focuses on blazing-fast task caching and parallel execution with minimal configuration.
+- **Lerna** pioneered JavaScript monorepo management with package versioning and publishing workflows.
+
+**mise's advantage:** Language-agnostic support. While these tools excel in JS/TS ecosystems, mise works equally well with Rust, Go, Python, Ruby, or any mix of languages. You also get unified tool version management (not just tasks) and environment variables across your entire stack.
+
+### Large-Scale Build Systems
+
+**Bazel** (Google) and **Buck2** (Meta) are industrial-strength build systems designed for massive, multi-language monorepos at companies with thousands of engineers.
+
+- **Bazel** offers incredible features like distributed caching, remote execution, and hermetic builds with fine-grained dependency tracking.
+- **Buck2** is a modern rewrite with a clean architecture and impressive performance optimizations.
+
+Both are extremely powerful but come with significant complexity:
+
+- Hermetic builds require strict isolation and complete dependency control
+- Steep learning curve with specialized DSLs (Starlark, etc.)
+- Complex configuration requiring dedicated build engineers
+- Heavy investment in infrastructure for remote caching
+- Stricter constraints on how you structure your code
+
+**mise's advantage:** Simplicity through non-hermetic builds. mise doesn't try to control your entire build environment in isolation - instead, it manages tools and tasks in a flexible, practical way. This "non-hermetic" approach means you can use mise without restructuring your entire codebase or learning a new language. You get powerful monorepo task management with simple TOML configuration - enough power for most teams without the enterprise-level complexity that hermetic builds require.
+
+### Other Notable Tools
+
+**Rush** (Microsoft) offers strict dependency management and build orchestration for JavaScript monorepos, with a focus on safety and convention adherence.
+
+**Moon** is a newer Rust-based build system that aims to be developer-friendly while supporting multiple languages.
+
+### The mise Sweet Spot
+
+mise's Monorepo Tasks aims to hit the sweet spot between simplicity and power:
+
+| Feature                 | Simple Runners | JS-Focused | Build Systems | mise |
+| ----------------------- | -------------- | ---------- | ------------- | ---- |
+| Multi-language support  | ✅             | ❌         | ✅            | ✅   |
+| Easy to learn           | ✅             | ⚠️         | ❌            | ✅   |
+| Unified task discovery  | ❌             | ✅         | ✅            | ✅   |
+| Wildcard patterns       | ❌             | ⚠️         | ✅            | ✅   |
+| Tool version management | ❌             | ❌         | ⚠️            | ✅   |
+| Environment inheritance | ❌             | ⚠️         | ❌            | ✅   |
+| Minimal setup           | ✅             | ⚠️         | ❌            | ✅   |
+| Task caching            | ❌             | ✅         | ✅            | ❌   |
+
+**When to choose mise:**
+
+- ✅ Polyglot monorepos (multiple languages)
+- ✅ You want unified tool + task management
+- ✅ You prefer simplicity over maximum performance
+- ✅ You're already using mise for tool management
+
+**When to consider alternatives:**
+
+- You're exclusively JavaScript/TypeScript → Nx or Turborepo might offer more JS-specific features
+- You're at Google/Meta scale with thousands of engineers → Bazel or Buck2 offer distributed build infrastructure
+- You need advanced task caching → Nx, Turborepo, or Bazel offer sophisticated caching systems
+
+The best tool is the one that fits your team's needs. mise's Monorepo Tasks is designed for teams who want powerful monorepo management without the complexity overhead, especially when working across multiple languages.
+
 ## Related
 
 - [Task Configuration](/tasks/task-configuration) - All task configuration options
