@@ -1611,36 +1611,39 @@ async fn load_tasks_includes(
     root: &Path,
     config_root: &Path,
 ) -> Result<Vec<Task>> {
-    if !root.is_dir() {
-        return Ok(vec![]);
+    if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
+        load_task_file(config, root, config_root).await
+    } else if root.is_dir() {
+        let files = WalkDir::new(root)
+            .follow_links(true)
+            .into_iter()
+            // skip hidden directories (if the root is hidden that's ok)
+            .filter_entry(|e| e.path() == root || !e.file_name().to_string_lossy().starts_with('.'))
+            .filter_ok(|e| e.file_type().is_file())
+            .map_ok(|e| e.path().to_path_buf())
+            .try_collect::<_, Vec<PathBuf>, _>()?
+            .into_iter()
+            .filter(|p| file::is_executable(p))
+            .filter(|p| {
+                !Settings::get()
+                    .task_disable_paths
+                    .iter()
+                    .any(|d| p.starts_with(d))
+            })
+            .collect::<Vec<_>>();
+        let mut tasks = vec![];
+        let root = Arc::new(root.to_path_buf());
+        let config_root = Arc::new(config_root.to_path_buf());
+        for path in files {
+            let root = root.clone();
+            let config_root = config_root.clone();
+            let config = config.clone();
+            tasks.push(Task::from_path(&config, &path, &root, &config_root).await?);
+        }
+        Ok(tasks)
+    } else {
+        Ok(vec![])
     }
-    let files = WalkDir::new(root)
-        .follow_links(true)
-        .into_iter()
-        // skip hidden directories (if the root is hidden that's ok)
-        .filter_entry(|e| e.path() == root || !e.file_name().to_string_lossy().starts_with('.'))
-        .filter_ok(|e| e.file_type().is_file())
-        .map_ok(|e| e.path().to_path_buf())
-        .try_collect::<_, Vec<PathBuf>, _>()?
-        .into_iter()
-        .filter(|p| file::is_executable(p))
-        .filter(|p| {
-            !Settings::get()
-                .task_disable_paths
-                .iter()
-                .any(|d| p.starts_with(d))
-        })
-        .collect::<Vec<_>>();
-    let mut tasks = vec![];
-    let root = Arc::new(root.to_path_buf());
-    let config_root = Arc::new(config_root.to_path_buf());
-    for path in files {
-        let root = root.clone();
-        let config_root = config_root.clone();
-        let config = config.clone();
-        tasks.push(Task::from_path(&config, &path, &root, &config_root).await?);
-    }
-    Ok(tasks)
 }
 
 async fn load_file_tasks(
@@ -1692,22 +1695,9 @@ pub async fn load_tasks_in_dir(
         let dir = dir.to_path_buf();
         config_tasks.extend(load_config_tasks(config, cf.clone(), &dir).await?);
     }
-    let includes = task_includes_for_dir(dir, config_files);
-    let extra_tasks = includes
-        .iter()
-        .filter(|p| p.is_file() && p.extension().unwrap_or_default().to_string_lossy() == "toml");
-    for p in extra_tasks {
-        let p = p.clone();
-        let dir = dir.to_path_buf();
-        let config = config.clone();
-        config_tasks.extend(load_task_file(&config, &p, &dir).await?);
-    }
     let mut file_tasks = vec![];
-    for p in includes {
-        let dir = dir.to_path_buf();
-        let p = p.clone();
-        let config = config.clone();
-        file_tasks.extend(load_tasks_includes(&config, &p, &dir).await?);
+    for p in task_includes_for_dir(dir, config_files) {
+        file_tasks.extend(load_tasks_includes(config, &p, dir).await?);
     }
     let mut tasks = file_tasks
         .into_iter()

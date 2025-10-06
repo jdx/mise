@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+# Test monorepo task edge cases: multiple dot extensions
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[tasks.root-task]
+run = 'echo "root task"'
+EOF
+
+# Create project structure with task_config.includes
+mkdir -p projects/frontend/tasks
+cat <<EOF >projects/frontend/mise.toml
+[task_config]
+includes = ["tasks.toml", "tasks"]
+EOF
+
+# Create included TOML file with a task
+cat <<EOF >projects/frontend/tasks.toml
+[toml-task]
+run = 'echo "task from toml"'
+EOF
+
+# Create included script task
+cat <<'EOF' >projects/frontend/tasks/script-task.sh
+#!/usr/bin/env bash
+echo "task from script"
+EOF
+chmod +x projects/frontend/tasks/script-task.sh
+
+# Create included script task with multiple extensions
+cat <<'EOF' >projects/frontend/tasks/another.long-name.sh
+#!/usr/bin/env bash
+echo "task with long name"
+EOF
+chmod +x projects/frontend/tasks/another.long-name.sh
+
+# --- Assertions ---
+
+# Verify all tasks are discovered
+assert_contains "mise tasks ls --debug --all" "//:root-task"
+assert_contains "mise tasks ls --all" "//projects/frontend:toml-task"
+assert_contains "mise tasks ls --all" "//projects/frontend:script-task"
+assert_contains "mise tasks ls --all" "//projects/frontend:another.long-name"
+
+# Verify running tasks from root
+assert_contains "mise run '//projects/frontend:toml-task'" "task from toml"
+assert_contains "mise run '//projects/frontend:script-task'" "task from script"
+assert_contains "mise run '//projects/frontend:another.long-name'" "task with long name"
+assert_contains "mise run '//projects/frontend:another.long-name.sh'" "task with long name"
+
+# Verify running from a subdirectory
+cd projects/frontend
+assert_contains "mise run :toml-task" "task from toml"
+assert_contains "mise run :script-task" "task from script"
+assert_contains "mise run :another.long-name" "task with long name"
+
+# Verify wildcard execution from subdirectory
+output=$(mise run ':*')
+assert_contains "echo '$output'" "task from toml"
+assert_contains "echo '$output'" "task from script"
+assert_contains "echo '$output'" "task with long name"
+
+cd ../..
+
+# Verify wildcard execution from root
+output=$(mise run '//projects/frontend:*')
+assert_contains "echo '$output'" "task from toml"
+assert_contains "echo '$output'" "task from script"
+assert_contains "echo '$output'" "task with long name"
