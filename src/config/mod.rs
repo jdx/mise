@@ -429,8 +429,10 @@ impl Config {
         let config = Config::get().await?;
         time!("load_all_tasks");
         let file_tasks = load_local_tasks_with_context(&config, ctx).await?;
-        let global_tasks = load_global_tasks(&config).await?;
-        let system_tasks = load_system_tasks(&config).await?;
+        let global_tasks =
+            load_tasks_by_filter(&config, |cf| is_global_config(cf.get_path())).await?;
+        let system_tasks =
+            load_tasks_by_filter(&config, |cf| is_system_config(cf.get_path())).await?;
         let mut tasks: BTreeMap<String, Task> = file_tasks
             .into_iter()
             .chain(global_tasks)
@@ -1323,13 +1325,34 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     Ok(())
 }
 
+fn prefix_monorepo_task_names(tasks: &mut [Task], dir: &Path, monorepo_root: &Path) {
+    const MONOREPO_PATH_PREFIX: &str = "//";
+    const MONOREPO_TASK_SEPARATOR: &str = ":";
+
+    if let Ok(rel_path) = dir.strip_prefix(monorepo_root) {
+        let prefix = rel_path
+            .to_string_lossy()
+            .replace(std::path::MAIN_SEPARATOR, "/");
+        for task in tasks.iter_mut() {
+            if prefix.is_empty() {
+                task.name = format!(
+                    "{}{}{}",
+                    MONOREPO_PATH_PREFIX, MONOREPO_TASK_SEPARATOR, task.name
+                );
+            } else {
+                task.name = format!(
+                    "{}{}{}{}",
+                    MONOREPO_PATH_PREFIX, prefix, MONOREPO_TASK_SEPARATOR, task.name
+                );
+            }
+        }
+    }
+}
+
 async fn load_local_tasks_with_context(
     config: &Arc<Config>,
     ctx: Option<&crate::task::TaskLoadContext>,
 ) -> Result<Vec<Task>> {
-    const MONOREPO_PATH_PREFIX: &str = "//";
-    const MONOREPO_TASK_SEPARATOR: &str = ":";
-
     let mut tasks = vec![];
     let monorepo_root = find_monorepo_root(&config.config_files);
 
@@ -1342,26 +1365,7 @@ async fn load_local_tasks_with_context(
 
         // In monorepo mode, prefix tasks with their monorepo path
         if let Some(ref monorepo_root) = monorepo_root {
-            if let Ok(rel_path) = d.strip_prefix(monorepo_root) {
-                let prefix = rel_path
-                    .to_string_lossy()
-                    .replace(std::path::MAIN_SEPARATOR, "/");
-                for task in dir_tasks.iter_mut() {
-                    if prefix.is_empty() {
-                        // At monorepo root, use //:task format
-                        task.name = format!(
-                            "{}{}{}",
-                            MONOREPO_PATH_PREFIX, MONOREPO_TASK_SEPARATOR, task.name
-                        );
-                    } else {
-                        // In subdirectories, add //path:task
-                        task.name = format!(
-                            "{}{}{}{}",
-                            MONOREPO_PATH_PREFIX, prefix, MONOREPO_TASK_SEPARATOR, task.name
-                        );
-                    }
-                }
-            }
+            prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);
         }
 
         tasks.extend(dir_tasks);
@@ -1402,22 +1406,11 @@ async fn load_local_tasks_with_context(
                                     load_config_and_file_tasks(&config, cf).await?;
 
                                 // Prefix task names with relative path from monorepo root
-                                if let Ok(rel_path) = subdir.strip_prefix(&monorepo_root) {
-                                    if !rel_path.as_os_str().is_empty() {
-                                        let prefix = rel_path
-                                            .to_string_lossy()
-                                            .replace(std::path::MAIN_SEPARATOR, "/");
-                                        for task in subdir_tasks.iter_mut() {
-                                            task.name = format!(
-                                                "{}{}{}{}",
-                                                MONOREPO_PATH_PREFIX,
-                                                prefix,
-                                                MONOREPO_TASK_SEPARATOR,
-                                                task.name
-                                            );
-                                        }
-                                    }
-                                }
+                                prefix_monorepo_task_names(
+                                    &mut subdir_tasks,
+                                    &subdir,
+                                    &monorepo_root,
+                                );
 
                                 all_tasks.extend(subdir_tasks);
                             }
@@ -1556,32 +1549,18 @@ fn discover_monorepo_subdirs(
     Ok(subdirs)
 }
 
-async fn load_global_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
-    let global_config_files = config
+async fn load_tasks_by_filter<F>(config: &Arc<Config>, filter: F) -> Result<Vec<Task>>
+where
+    F: Fn(&dyn ConfigFile) -> bool,
+{
+    let config_files = config
         .config_files
         .values()
-        .filter(|cf| is_global_config(cf.get_path()))
+        .filter(|cf| filter(cf.as_ref()))
         .collect::<Vec<_>>();
     let mut tasks = vec![];
-    for cf in global_config_files {
-        let cf = cf.clone();
-        let config = config.clone();
-        tasks.extend(load_config_and_file_tasks(&config, cf).await?);
-    }
-    Ok(tasks)
-}
-
-async fn load_system_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
-    let system_config_files = config
-        .config_files
-        .values()
-        .filter(|cf| is_system_config(cf.get_path()))
-        .collect::<Vec<_>>();
-    let mut tasks = vec![];
-    for cf in system_config_files {
-        let cf = cf.clone();
-        let config = config.clone();
-        tasks.extend(load_config_and_file_tasks(&config, cf).await?);
+    for cf in config_files {
+        tasks.extend(load_config_and_file_tasks(config, cf.clone()).await?);
     }
     Ok(tasks)
 }
