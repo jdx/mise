@@ -1406,7 +1406,7 @@ async fn load_local_tasks_with_context(
                                         load_config_and_file_tasks(&config, cf.clone()).await?;
 
                                     if let Ok(rel_path) = subdir.strip_prefix(&monorepo_root) {
-                                        prefix_monorepo_task_names(&mut subdir_tasks, &rel_path, &monorepo_root);
+                                        prefix_monorepo_task_names(&mut subdir_tasks, rel_path, &monorepo_root);
                                     }
                                     for task in subdir_tasks.iter_mut() {
                                         // Store reference to config file for later use
