@@ -362,7 +362,7 @@ impl Run {
                     Arc::clone(cached)
                 } else {
                     drop(cache); // Release read lock before write
-                    // Not in cache, parse and cache it
+                    // Not in cache, parse it
                     match task_cf.to_tool_request_set() {
                         Ok(trs) => {
                             let trs = Arc::new(trs);
@@ -370,8 +370,13 @@ impl Run {
                                 .tool_request_set_cache
                                 .write()
                                 .expect("tool_request_set_cache RwLock poisoned");
-                            cache.insert(config_path.clone(), Arc::clone(&trs));
-                            trace!("Cached tool request set to {}", config_path.display());
+                            // Double-check: another thread may have populated while we were parsing
+                            cache
+                                .entry(config_path.clone())
+                                .or_insert_with(|| {
+                                    trace!("Cached tool request set to {}", config_path.display());
+                                    Arc::clone(&trs)
+                                });
                             trs
                         }
                         Err(e) => {
@@ -1002,12 +1007,15 @@ impl Run {
                 .env_resolution_cache
                 .write()
                 .expect("env_resolution_cache RwLock poisoned");
-            cache.insert(config_path.clone(), (env.clone(), task_env.clone()));
-            trace!(
-                "task {} cached env resolution to {}",
-                task.name,
-                config_path.display()
-            );
+            // Double-check: another thread may have populated while we were resolving
+            cache.entry(config_path.clone()).or_insert_with(|| {
+                trace!(
+                    "task {} cached env resolution to {}",
+                    task.name,
+                    config_path.display()
+                );
+                (env.clone(), task_env.clone())
+            });
         }
 
         Ok((env, task_env))
