@@ -3109,7 +3109,7 @@ backends = ["asdf:mise-plugins/mise-monarch"]
 description = "Monarch is a tool for Flutter developers. It makes building front-ends a pleasant experience"
 
 [tools.mongodb]
-backends = ["asdf:mise-plugins/mise-mongodb"]
+backends = ["asdf:mise-plugins/mise-mongodb", "vfox:echocat/vfox-mongod"]
 description = "MongoDB"
 
 [tools.mongosh]

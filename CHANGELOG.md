@@ -1,5 +1,24 @@
 # Changelog
 
+## [2025.10.5](https://github.com/jdx/mise/compare/v2025.10.4..v2025.10.5) - 2025-10-07
+
+### 📦 Registry
+
+- add jules by @alefteris in [#6568](https://github.com/jdx/mise/pull/6568)
+
+### 🐛 Bug Fixes
+
+- **(docs)** improve favicon support for Safari by @jdx in [#6567](https://github.com/jdx/mise/pull/6567)
+- **(github)** download assets via API to respect GITHUB_TOKEN by @roele in [#6496](https://github.com/jdx/mise/pull/6496)
+- **(task)** load toml tasks in `task_config.includes` in system/global config and monorepo subdirs by @risu729 in [#6545](https://github.com/jdx/mise/pull/6545)
+- **(task)** handle dots in monorepo directory names correctly by @jdx in [#6571](https://github.com/jdx/mise/pull/6571)
+
+### 📚 Documentation
+
+- **(readme)** add GitHub Issues & Discussions section by @rsyring in [#6573](https://github.com/jdx/mise/pull/6573)
+- **(tasks)** create dedicated monorepo tasks documentation by @jdx in [#6561](https://github.com/jdx/mise/pull/6561)
+- **(tasks)** enhance monorepo documentation with tool comparisons by @jdx in [#6563](https://github.com/jdx/mise/pull/6563)
+
 ## [2025.10.4](https://github.com/jdx/mise/compare/v2025.10.3..v2025.10.4) - 2025-10-06
 
 ### 🐛 Bug Fixes
