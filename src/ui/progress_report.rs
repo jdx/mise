@@ -78,21 +78,22 @@ static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
 
 /// Renders a progress bar with text overlaid on top
 /// The text background alternates based on progress:
-/// - Filled portion: cyan/blue background
-/// - Unfilled portion: default background
+/// - Filled portion: white text on cyan background
+/// - Unfilled portion: dim text on default background
 fn render_progress_bar_with_overlay(text: &str, progress: f64, width: usize) -> String {
+    use console::Style;
+
     let progress = progress.clamp(0.0, 1.0);
     let filled_width = (width as f64 * progress) as usize;
 
-    // Create the base progress bar characters
-    let filled_char = '█';
-    let empty_char = '░';
+    // Strip any existing ANSI codes from text
+    let clean_text = console::strip_ansi_codes(text);
 
     // If text is longer than width, truncate it
-    let display_text = if text.chars().count() > width {
-        text.chars().take(width - 3).collect::<String>() + "..."
+    let display_text = if clean_text.chars().count() > width {
+        clean_text.chars().take(width - 3).collect::<String>() + "..."
     } else {
-        text.to_string()
+        clean_text.to_string()
     };
 
     let text_len = display_text.chars().count();
@@ -101,13 +102,18 @@ fn render_progress_bar_with_overlay(text: &str, progress: f64, width: usize) -> 
     // Build the bar with text overlay
     let mut result = String::new();
 
+    // Styles for different regions
+    let filled_bar_style = Style::new().cyan();
+    let filled_text_style = Style::new().white().on_cyan();
+    let empty_text_style = Style::new().dim();
+
     for i in 0..width {
         if i < padding || i >= padding + text_len {
             // No text here, just show the bar
             if i < filled_width {
-                result.push_str(&style::ecyan(filled_char.to_string()).to_string());
+                result.push_str(&filled_bar_style.apply_to('█').to_string());
             } else {
-                result.push(empty_char);
+                result.push('░');
             }
         } else {
             // Text overlay
@@ -115,11 +121,11 @@ fn render_progress_bar_with_overlay(text: &str, progress: f64, width: usize) -> 
             let ch = display_text.chars().nth(text_idx).unwrap();
 
             if i < filled_width {
-                // Filled portion: cyan background with the text character
-                result.push_str(&style::ecyan(&format!("{}", ch)).on_blue().to_string());
+                // Filled portion: white text on cyan background
+                result.push_str(&filled_text_style.apply_to(ch).to_string());
             } else {
-                // Unfilled portion: normal text
-                result.push(ch);
+                // Unfilled portion: dim text
+                result.push_str(&empty_text_style.apply_to(ch).to_string());
             }
         }
     }
