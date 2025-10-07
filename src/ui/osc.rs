@@ -10,21 +10,24 @@ use std::io::{self, Write};
 pub enum ProgressState {
     /// No progress indicator (clears any existing progress)
     None,
+    /// Normal progress bar with percentage (typically shows as default color, often blue/cyan)
+    Normal,
+    /// Error state (typically shows as red)
+    Error,
     /// Indeterminate progress (spinner/activity indicator)
     Indeterminate,
-    /// Progress bar with percentage
-    Progress,
-    /// Error state
-    Error,
+    /// Warning state (typically shows as yellow)
+    Warning,
 }
 
 impl ProgressState {
     fn as_code(&self) -> u8 {
         match self {
             ProgressState::None => 0,
-            ProgressState::Indeterminate => 1,
-            ProgressState::Progress => 2,
-            ProgressState::Error => 3,
+            ProgressState::Normal => 1,
+            ProgressState::Error => 2,
+            ProgressState::Indeterminate => 3,
+            ProgressState::Warning => 4,
         }
     }
 }
@@ -39,8 +42,8 @@ impl ProgressState {
 /// ```no_run
 /// use mise::ui::osc::{set_progress, ProgressState};
 ///
-/// // Show 50% progress
-/// set_progress(ProgressState::Progress, 50);
+/// // Show 50% progress with normal (blue/cyan) color
+/// set_progress(ProgressState::Normal, 50);
 ///
 /// // Show indeterminate progress
 /// set_progress(ProgressState::Indeterminate, 0);
@@ -79,15 +82,16 @@ mod tests {
     #[test]
     fn test_progress_state_codes() {
         assert_eq!(ProgressState::None.as_code(), 0);
-        assert_eq!(ProgressState::Indeterminate.as_code(), 1);
-        assert_eq!(ProgressState::Progress.as_code(), 2);
-        assert_eq!(ProgressState::Error.as_code(), 3);
+        assert_eq!(ProgressState::Normal.as_code(), 1);
+        assert_eq!(ProgressState::Error.as_code(), 2);
+        assert_eq!(ProgressState::Indeterminate.as_code(), 3);
+        assert_eq!(ProgressState::Warning.as_code(), 4);
     }
 
     #[test]
     fn test_set_progress_doesnt_panic() {
         // Just ensure it doesn't panic when called
-        set_progress(ProgressState::Progress, 50);
+        set_progress(ProgressState::Normal, 50);
         set_progress(ProgressState::Indeterminate, 0);
         clear_progress();
     }
@@ -95,6 +99,6 @@ mod tests {
     #[test]
     fn test_progress_clamping() {
         // Verify that progress values over 100 are clamped
-        set_progress(ProgressState::Progress, 150);
+        set_progress(ProgressState::Normal, 150);
     }
 }

@@ -10,6 +10,7 @@ use std::{
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::LazyLock as Lazy;
 
+use crate::progress_trace;
 use crate::ui::style;
 use crate::{backend, env, ui};
 
@@ -47,11 +48,12 @@ pub trait SingleReport: Send + Sync + std::fmt::Debug {
     }
     fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {}
 
-    /// Start a new sub-step with a given weight (0.0-1.0) relative to total progress
-    /// For example, if download is 50% and extract is 50%, call:
-    /// - start_substep(0.5) before download
-    /// - start_substep(0.5) before extract
-    fn start_substep(&self, _weight: f64) {}
+    /// Declare how many operations this progress report will have
+    /// Each operation will get equal space (1/count)
+    /// For example, if there are 3 operations (download, checksum, extract):
+    /// - start_operations(3) at the beginning
+    /// Then each set_length() call will allocate 33.33% of the total progress
+    fn start_operations(&self, _count: usize) {}
 }
 
 static SPIN_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
@@ -88,9 +90,10 @@ static HEADER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
 pub struct ProgressReport {
     pub pb: ProgressBar,
     report_id: Option<usize>,
-    // Track sub-steps: accumulated_progress + (current_weight * current_step_progress)
-    substep_base: Mutex<f64>,    // Progress accumulated from completed substeps (0.0-1.0)
-    substep_weight: Mutex<f64>,  // Weight of current substep (0.0-1.0)
+    total_operations: Mutex<Option<usize>>, // Total operations declared upfront (None if unknown)
+    operation_count: Mutex<u32>,            // How many operations have started (1, 2, 3...)
+    operation_base: Mutex<u64>,             // Base progress for current operation (0, 333333, 666666...)
+    operation_length: Mutex<u64>,           // Allocated length for current operation
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
@@ -127,8 +130,10 @@ impl ProgressReport {
         ProgressReport {
             pb,
             report_id,
-            substep_base: Mutex::new(0.0),
-            substep_weight: Mutex::new(1.0), // Default: single step with full weight
+            total_operations: Mutex::new(Some(3)), // Default to 3 operations
+            operation_count: Mutex::new(0),
+            operation_base: Mutex::new(0),
+            operation_length: Mutex::new(1_000_000), // Full range initially
         }
     }
 
@@ -143,36 +148,47 @@ impl ProgressReport {
         ProgressReport {
             pb,
             report_id: None,
-            substep_base: Mutex::new(0.0),
-            substep_weight: Mutex::new(1.0),
+            total_operations: Mutex::new(None),
+            operation_count: Mutex::new(0),
+            operation_base: Mutex::new(0),
+            operation_length: Mutex::new(length),
         }
     }
 
     fn update_terminal_progress(&self) {
-        // Update the multi-progress report with this report's progress
-        // accounting for substep weights
+        // Map progress bar position to allocated range to prevent backwards progress
         if let Some(report_id) = self.report_id {
             if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
-                let substep_base = *self.substep_base.lock().unwrap();
-                let substep_weight = *self.substep_weight.lock().unwrap();
+                // Check if we're spinning (no length set yet)
+                if self.pb.length().is_none() {
+                    // During spinning, report minimal progress to show activity
+                    progress_trace!("update_terminal_progress[{}]: spinning, reporting 1%", report_id);
+                    mpr.update_report_progress(report_id, 10_000, 1_000_000); // 1%
+                    return;
+                }
 
-                let current_step_progress = if let Some(length) = self.pb.length() {
-                    if length > 0 {
-                        self.pb.position() as f64 / length as f64
-                    } else {
-                        0.0
-                    }
+                let base = *self.operation_base.lock().unwrap();
+                let allocated_length = *self.operation_length.lock().unwrap();
+
+                // Get progress bar state (position/length in bytes)
+                let pb_pos = self.pb.position();
+                let pb_len = self.pb.length().unwrap(); // Safe because we checked above
+
+                // Calculate progress as 0.0-1.0
+                let pb_progress = if pb_len > 0 {
+                    (pb_pos as f64 / pb_len as f64).clamp(0.0, 1.0)
                 } else {
                     0.0
                 };
 
-                // Total progress = base + (weight * current_step)
-                let total_progress = substep_base + (substep_weight * current_step_progress);
-                let total_progress = total_progress.clamp(0.0, 1.0);
+                // Map to allocated range (base to base+allocated_length)
+                let mapped_position = base + (pb_progress * allocated_length as f64) as u64;
 
-                // Convert to position/length for MultiProgressReport (using 100 as the fixed length)
-                let position = (total_progress * 100.0) as u64;
-                mpr.update_report_progress(report_id, position, 100);
+                progress_trace!("update_terminal_progress[{}]: pb=({}/{}) {:.1}%, base={}, alloc={}, mapped={}",
+                    report_id, pb_pos, pb_len, pb_progress * 100.0, base, allocated_length, mapped_position);
+
+                // Always report against fixed 1,000,000 scale
+                mpr.update_report_progress(report_id, mapped_position, 1_000_000);
             }
         }
     }
@@ -190,6 +206,7 @@ impl SingleReport for ProgressReport {
     }
     fn inc(&self, delta: u64) {
         self.pb.inc(delta);
+        progress_trace!("inc[{:?}]: delta={}, new_pos={}", self.report_id, delta, self.pb.position());
         self.update_terminal_progress();
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
@@ -198,6 +215,7 @@ impl SingleReport for ProgressReport {
     }
     fn set_position(&self, pos: u64) {
         self.pb.set_position(pos);
+        progress_trace!("set_position[{:?}]: pos={}", self.report_id, pos);
         self.update_terminal_progress();
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
@@ -205,22 +223,42 @@ impl SingleReport for ProgressReport {
         }
     }
     fn set_length(&self, length: u64) {
-        // If we already have a length, treat the previous operation as a substep that completed
-        // This handles the case where tools call set_length multiple times (download, extract, etc.)
-        if let Some(prev_length) = self.pb.length() {
-            if prev_length > 0 {
-                let mut substep_base = self.substep_base.lock().unwrap();
-                let substep_weight = *self.substep_weight.lock().unwrap();
+        // Increment operation count
+        let mut op_count = self.operation_count.lock().unwrap();
+        *op_count += 1;
+        let count = *op_count;
+        drop(op_count);
 
-                // Add progress from the completed substep
-                let completed_progress = self.pb.position() as f64 / prev_length as f64;
-                *substep_base += substep_weight * completed_progress;
+        // When starting a new operation (count > 1), complete the previous operation first
+        if count > 1 {
+            let prev_base = *self.operation_base.lock().unwrap();
+            let prev_allocated = *self.operation_length.lock().unwrap();
+            let completed_position = prev_base + prev_allocated;
 
-                // Each subsequent operation gets less weight (geometric series)
-                // This way even if we don't know total substeps, progress still moves forward
-                *self.substep_weight.lock().unwrap() = substep_weight * 0.5;
+            progress_trace!("set_length[{:?}]: completing op {}, moving base {} -> {}",
+                self.report_id, count - 1, prev_base, completed_position);
+
+            // Report completion of previous operation
+            if let Some(report_id) = self.report_id {
+                if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
+                    mpr.update_report_progress(report_id, completed_position, 1_000_000);
+                }
             }
+
+            // New operation starts where previous ended
+            *self.operation_base.lock().unwrap() = completed_position;
         }
+
+        // Equal allocation: each operation gets 1/N of the total space
+        let total_ops = self.total_operations.lock().unwrap();
+        let total = total_ops.expect("start_operations() must be called before set_length()");
+        let base = *self.operation_base.lock().unwrap();
+        let per_operation = 1_000_000 / total as u64;
+
+        *self.operation_length.lock().unwrap() = per_operation;
+
+        progress_trace!("set_length[{:?}]: op={}/{}, base={}, allocated={}, pb_length={}",
+            self.report_id, count, total, base, per_operation, length);
 
         self.pb.set_position(0);
         self.pb.set_style(PROG_TEMPLATE.clone());
@@ -232,35 +270,20 @@ impl SingleReport for ProgressReport {
         self.pb.abandon();
     }
     fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {
+        progress_trace!("finish_with_icon[{:?}]", self.report_id);
         self.pb.finish_and_clear();
-        // Mark this report as complete (100%)
+        // Mark this report as complete (100%) using fixed 0-1,000,000 range
         if let Some(report_id) = self.report_id {
             if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
-                mpr.update_report_progress(report_id, 100, 100);
+                progress_trace!("finish_with_icon[{}]: marking as 100% complete", report_id);
+                mpr.update_report_progress(report_id, 1_000_000, 1_000_000);
             }
         }
     }
 
-    fn start_substep(&self, weight: f64) {
-        let weight = weight.clamp(0.0, 1.0);
-
-        // Save progress from completed substeps and start new substep
-        let mut substep_base = self.substep_base.lock().unwrap();
-        let current_weight = *self.substep_weight.lock().unwrap();
-
-        // Add the completed portion of the previous substep to the base
-        if let Some(length) = self.pb.length() {
-            if length > 0 {
-                let prev_progress = self.pb.position() as f64 / length as f64;
-                *substep_base += current_weight * prev_progress;
-            }
-        }
-
-        // Set new weight for this substep
-        *self.substep_weight.lock().unwrap() = weight;
-
-        // Update terminal progress with the accumulated progress before resetting
-        self.update_terminal_progress();
+    fn start_operations(&self, count: usize) {
+        progress_trace!("start_operations[{:?}]: declaring {} operations", self.report_id, count);
+        *self.total_operations.lock().unwrap() = Some(count);
     }
 }
 
