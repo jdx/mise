@@ -2787,6 +2787,11 @@ backends = ["aqua:jesseduffield/lazydocker", "ubi:jesseduffield/lazydocker"]
 description = "The lazier way to manage everything docker"
 test = ["lazydocker --version", "Version: {{version}}"]
 
+[tools.lazy-ecs]
+backends = ["pipx:lazy-ecs"]
+description = "A CLI tool for navigating AWS ECS clusters interactively"
+test = ["lazy-ecs --version", "{{version}}"]
+
 [tools.lazygit]
 backends = ["aqua:jesseduffield/lazygit", "asdf:nklmilojevic/asdf-lazygit"]
 description = "simple terminal UI for git commands"
