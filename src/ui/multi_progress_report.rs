@@ -40,14 +40,16 @@ impl MultiProgressReport {
     fn new() -> Self {
         let settings = Settings::get();
         let has_stderr = console::user_attended_stderr();
+        let force_progress = *crate::env::MISE_PROGRESS_TRACE; // Force progress bars when tracing
         progress_trace!(
-            "MultiProgressReport::new: raw={}, quiet={}, verbose={}, user_attended_stderr={}",
+            "MultiProgressReport::new: raw={}, quiet={}, verbose={}, user_attended_stderr={}, force_progress={}",
             settings.raw,
             settings.quiet,
             settings.verbose,
-            has_stderr
+            has_stderr,
+            force_progress
         );
-        let mp = match settings.raw || settings.quiet || settings.verbose || !has_stderr {
+        let mp = match (settings.raw || settings.quiet || settings.verbose || !has_stderr) && !force_progress {
             true => {
                 progress_trace!(
                     "MultiProgressReport::new: mp=None (one of the conditions is true)"
