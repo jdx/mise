@@ -3,12 +3,12 @@ use std::sync::{Arc, Mutex};
 
 use indicatif::MultiProgress;
 
+use crate::cli::version::VERSION_PLAIN;
 use crate::config::Settings;
 use crate::progress_trace;
 use crate::ui::osc::{self, ProgressState};
 use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
 use crate::ui::style;
-use crate::cli::version::VERSION_PLAIN;
 
 #[derive(Debug)]
 pub struct MultiProgressReport {
@@ -40,15 +40,18 @@ impl MultiProgressReport {
     fn new() -> Self {
         let settings = Settings::get();
         let has_stderr = console::user_attended_stderr();
-        progress_trace!("MultiProgressReport::new: raw={}, quiet={}, verbose={}, user_attended_stderr={}",
-                       settings.raw, settings.quiet, settings.verbose, has_stderr);
-        let mp = match settings.raw
-            || settings.quiet
-            || settings.verbose
-            || !has_stderr
-        {
+        progress_trace!(
+            "MultiProgressReport::new: raw={}, quiet={}, verbose={}, user_attended_stderr={}",
+            settings.raw,
+            settings.quiet,
+            settings.verbose,
+            has_stderr
+        );
+        let mp = match settings.raw || settings.quiet || settings.verbose || !has_stderr {
             true => {
-                progress_trace!("MultiProgressReport::new: mp=None (one of the conditions is true)");
+                progress_trace!(
+                    "MultiProgressReport::new: mp=None (one of the conditions is true)"
+                );
                 None
             }
             false => {
@@ -73,11 +76,17 @@ impl MultiProgressReport {
     pub fn add_with_options(&self, prefix: &str, dry_run: bool) -> Box<dyn SingleReport> {
         match &self.mp {
             _ if self.quiet => {
-                progress_trace!("add_with_options[{}]: creating QuietReport (quiet=true)", prefix);
+                progress_trace!(
+                    "add_with_options[{}]: creating QuietReport (quiet=true)",
+                    prefix
+                );
                 Box::new(QuietReport::new())
             }
             Some(mp) if !dry_run => {
-                progress_trace!("add_with_options[{}]: creating ProgressReport with MultiProgress", prefix);
+                progress_trace!(
+                    "add_with_options[{}]: creating ProgressReport with MultiProgress",
+                    prefix
+                );
                 let mut pr = ProgressReport::new(prefix.into());
                 // Always use add() to append progress bars
                 // The header should already be at position 0 if it exists
@@ -85,7 +94,12 @@ impl MultiProgressReport {
                 Box::new(pr)
             }
             _ => {
-                progress_trace!("add_with_options[{}]: creating VerboseReport (mp={:?}, dry_run={})", prefix, self.mp.is_some(), dry_run);
+                progress_trace!(
+                    "add_with_options[{}]: creating VerboseReport (mp={:?}, dry_run={})",
+                    prefix,
+                    self.mp.is_some(),
+                    dry_run
+                );
                 Box::new(VerboseReport::new(prefix.to_string()))
             }
         }
@@ -98,7 +112,11 @@ impl MultiProgressReport {
 
         // Set total count for overall progress tracking
         *self.total_count.lock().unwrap() = total_count;
-        progress_trace!("init_header: total_count={}, total_units={}", total_count, total_count * 1_000_000);
+        progress_trace!(
+            "init_header: total_count={}, total_units={}",
+            total_count,
+            total_count * 1_000_000
+        );
 
         // Initialize OSC progress if enabled
         if Settings::get().terminal_progress {
@@ -158,7 +176,12 @@ impl MultiProgressReport {
 
     /// Update a report's progress and recalculate overall progress
     pub fn update_report_progress(&self, report_id: usize, position: u64, length: u64) {
-        progress_trace!("update_report_progress: report_id={}, position={}, length={}", report_id, position, length);
+        progress_trace!(
+            "update_report_progress: report_id={}, position={}, length={}",
+            report_id,
+            position,
+            length
+        );
         let mut progress = self.report_progress.lock().unwrap();
         progress.insert(report_id, (position, length));
         drop(progress); // Release lock before calling update_overall_progress
@@ -182,8 +205,12 @@ impl MultiProgressReport {
         let weight_per_report = 1.0 / total_count as f64;
         let mut total_progress = 0.0f64;
 
-        progress_trace!("update_overall_progress: total_count={}, weight_per_report={:.3}, num_reports={}",
-               total_count, weight_per_report, progress.len());
+        progress_trace!(
+            "update_overall_progress: total_count={}, weight_per_report={:.3}, num_reports={}",
+            total_count,
+            weight_per_report,
+            progress.len()
+        );
 
         for (report_id, (position, length)) in progress.iter() {
             let report_progress = if *length > 0 {
@@ -194,12 +221,21 @@ impl MultiProgressReport {
             let weighted_progress = weight_per_report * report_progress;
             total_progress += weighted_progress;
 
-            progress_trace!("  report_id={}: pos={}, len={}, progress={:.3}, weighted={:.3}",
-                   report_id, position, length, report_progress, weighted_progress);
+            progress_trace!(
+                "  report_id={}: pos={}, len={}, progress={:.3}, weighted={:.3}",
+                report_id,
+                position,
+                length,
+                report_progress,
+                weighted_progress
+            );
         }
 
         total_progress = total_progress.clamp(0.0, 1.0);
-        progress_trace!("update_overall_progress: total_progress={:.3}", total_progress);
+        progress_trace!(
+            "update_overall_progress: total_progress={:.3}",
+            total_progress
+        );
 
         // Update header bar - convert to units for display
         let header_units = (total_progress * (total_count * 1_000_000) as f64).round() as u64;
@@ -213,7 +249,10 @@ impl MultiProgressReport {
             let mut last_pct = self.last_osc_percentage.lock().unwrap();
 
             if *last_pct != Some(overall_percentage) {
-                progress_trace!("update_overall_progress: OSC progress={}%", overall_percentage);
+                progress_trace!(
+                    "update_overall_progress: OSC progress={}%",
+                    overall_percentage
+                );
                 osc::set_progress(ProgressState::Normal, overall_percentage);
                 *last_pct = Some(overall_percentage);
             }

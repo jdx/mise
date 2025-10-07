@@ -92,8 +92,8 @@ pub struct ProgressReport {
     report_id: Option<usize>,
     total_operations: Mutex<Option<usize>>, // Total operations declared upfront (None if unknown)
     operation_count: Mutex<u32>,            // How many operations have started (1, 2, 3...)
-    operation_base: Mutex<u64>,             // Base progress for current operation (0, 333333, 666666...)
-    operation_length: Mutex<u64>,           // Allocated length for current operation
+    operation_base: Mutex<u64>, // Base progress for current operation (0, 333333, 666666...)
+    operation_length: Mutex<u64>, // Allocated length for current operation
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
@@ -162,7 +162,10 @@ impl ProgressReport {
                 // Check if we're spinning (no length set yet)
                 if self.pb.length().is_none() {
                     // During spinning, report minimal progress to show activity
-                    progress_trace!("update_terminal_progress[{}]: spinning, reporting 1%", report_id);
+                    progress_trace!(
+                        "update_terminal_progress[{}]: spinning, reporting 1%",
+                        report_id
+                    );
                     mpr.update_report_progress(report_id, 10_000, 1_000_000); // 1%
                     return;
                 }
@@ -184,8 +187,16 @@ impl ProgressReport {
                 // Map to allocated range (base to base+allocated_length)
                 let mapped_position = base + (pb_progress * allocated_length as f64) as u64;
 
-                progress_trace!("update_terminal_progress[{}]: pb=({}/{}) {:.1}%, base={}, alloc={}, mapped={}",
-                    report_id, pb_pos, pb_len, pb_progress * 100.0, base, allocated_length, mapped_position);
+                progress_trace!(
+                    "update_terminal_progress[{}]: pb=({}/{}) {:.1}%, base={}, alloc={}, mapped={}",
+                    report_id,
+                    pb_pos,
+                    pb_len,
+                    pb_progress * 100.0,
+                    base,
+                    allocated_length,
+                    mapped_position
+                );
 
                 // Always report against fixed 1,000,000 scale
                 mpr.update_report_progress(report_id, mapped_position, 1_000_000);
@@ -206,7 +217,12 @@ impl SingleReport for ProgressReport {
     }
     fn inc(&self, delta: u64) {
         self.pb.inc(delta);
-        progress_trace!("inc[{:?}]: delta={}, new_pos={}", self.report_id, delta, self.pb.position());
+        progress_trace!(
+            "inc[{:?}]: delta={}, new_pos={}",
+            self.report_id,
+            delta,
+            self.pb.position()
+        );
         self.update_terminal_progress();
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
@@ -235,8 +251,13 @@ impl SingleReport for ProgressReport {
             let prev_allocated = *self.operation_length.lock().unwrap();
             let completed_position = prev_base + prev_allocated;
 
-            progress_trace!("set_length[{:?}]: completing op {}, moving base {} -> {}",
-                self.report_id, count - 1, prev_base, completed_position);
+            progress_trace!(
+                "set_length[{:?}]: completing op {}, moving base {} -> {}",
+                self.report_id,
+                count - 1,
+                prev_base,
+                completed_position
+            );
 
             // Report completion of previous operation
             if let Some(report_id) = self.report_id {
@@ -257,8 +278,15 @@ impl SingleReport for ProgressReport {
 
         *self.operation_length.lock().unwrap() = per_operation;
 
-        progress_trace!("set_length[{:?}]: op={}/{}, base={}, allocated={}, pb_length={}",
-            self.report_id, count, total, base, per_operation, length);
+        progress_trace!(
+            "set_length[{:?}]: op={}/{}, base={}, allocated={}, pb_length={}",
+            self.report_id,
+            count,
+            total,
+            base,
+            per_operation,
+            length
+        );
 
         self.pb.set_position(0);
         self.pb.set_style(PROG_TEMPLATE.clone());
@@ -282,7 +310,11 @@ impl SingleReport for ProgressReport {
     }
 
     fn start_operations(&self, count: usize) {
-        progress_trace!("start_operations[{:?}]: declaring {} operations", self.report_id, count);
+        progress_trace!(
+            "start_operations[{:?}]: declaring {} operations",
+            self.report_id,
+            count
+        );
         *self.total_operations.lock().unwrap() = Some(count);
     }
 }
