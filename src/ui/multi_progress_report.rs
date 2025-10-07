@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use indicatif::MultiProgress;
+use indicatif::{MultiProgress, ProgressBar};
 
 use crate::cli::version::VERSION_PLAIN;
 use crate::config::Settings;
@@ -15,6 +15,7 @@ pub struct MultiProgressReport {
     mp: Option<MultiProgress>,
     quiet: bool,
     header: Mutex<Option<Box<dyn SingleReport>>>,
+    footer_pb: Mutex<Option<ProgressBar>>, // Reference to footer bar for inserting before it
     // Track overall progress: total expected progress units and current progress per report
     total_count: Mutex<usize>,
     report_progress: Mutex<HashMap<usize, (u64, u64)>>, // report_id -> (position, length)
@@ -67,6 +68,7 @@ impl MultiProgressReport {
             mp,
             quiet: settings.quiet,
             header: Mutex::new(None),
+            footer_pb: Mutex::new(None),
             total_count: Mutex::new(0),
             report_progress: Mutex::new(HashMap::new()),
             next_report_id: Mutex::new(0),
@@ -92,9 +94,13 @@ impl MultiProgressReport {
                     prefix
                 );
                 let mut pr = ProgressReport::new(prefix.into());
-                // Always use add() to append progress bars
-                // The header should already be at position 0 if it exists
-                pr.pb = mp.add(pr.pb);
+                // Insert before footer if it exists, otherwise just add
+                let footer_pb = self.footer_pb.lock().unwrap();
+                pr.pb = if let Some(footer) = footer_pb.as_ref() {
+                    mp.insert_before(footer, pr.pb)
+                } else {
+                    mp.add(pr.pb)
+                };
                 Box::new(pr)
             }
             _ => {
@@ -129,23 +135,27 @@ impl MultiProgressReport {
         }
 
         let version = &*VERSION_PLAIN;
-        let prefix = format!(
+        // Footer text without the dash, will be shown inside the progress bar
+        let footer_text = format!(
             "{} {}",
             style::emagenta("mise").bold(),
-            style::edim(format!("{version} by @jdx –")),
+            style::edim(format!("{version} by @jdx")),
         );
         *hdr = Some(match &self.mp {
             _ if self.quiet => return,
             Some(mp) if !dry_run => {
-                // Header length is total_count * 1,000,000 to show progress with high granularity
-                let header_length = (total_count * 1_000_000) as u64;
-                let mut header =
-                    ProgressReport::new_header(prefix, header_length, message.to_string());
-                header.pb = mp.add(header.pb);
-                Box::new(header)
+                // Footer length is total_count * 1,000,000 to show progress with high granularity
+                let footer_length = (total_count * 1_000_000) as u64;
+                let mut footer =
+                    ProgressReport::new_header(footer_text, footer_length, message.to_string());
+                // Add footer to the end (it will be the last bar initially)
+                footer.pb = mp.add(footer.pb);
+                // Store reference to footer bar for inserting other bars before it
+                *self.footer_pb.lock().unwrap() = Some(footer.pb.clone());
+                Box::new(footer)
             }
             _ => {
-                let header = VerboseReport::new(prefix);
+                let header = VerboseReport::new(footer_text);
                 header.set_message(message.to_string());
                 Box::new(header)
             }

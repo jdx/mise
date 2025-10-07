@@ -77,13 +77,10 @@ static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
 });
 
 static HEADER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
-    let width = match *env::TERM_WIDTH {
-        0..=79 => 10,
-        80..=99 => 15,
-        _ => 20,
-    };
-    // Don't show pos/len numbers, just the progress bar
-    let tmpl = format!(r#"{{prefix}} {{bar:{width}.cyan/blue}}"#);
+    let width = *env::TERM_WIDTH;
+    // Full-width footer with text inside the progress bar
+    // Format: mise 2025.10.5 by @jdx ████████████░░░░░░░░░
+    let tmpl = format!(r#"{{msg}} {{wide_bar:{width}.cyan/blue}}"#);
     ProgressStyle::with_template(&tmpl).unwrap()
 });
 
@@ -138,13 +135,12 @@ impl ProgressReport {
         }
     }
 
-    pub fn new_header(prefix: String, length: u64, message: String) -> ProgressReport {
+    pub fn new_header(prefix: String, length: u64, _message: String) -> ProgressReport {
         ui::ctrlc::show_cursor_after_ctrl_c();
-        let pad = *LONGEST_PLUGIN_NAME;
+        // Footer shows text inside the progress bar without prefix
         let pb = ProgressBar::new(length)
             .with_style(HEADER_TEMPLATE.clone())
-            .with_prefix(pad_prefix(pad, &prefix))
-            .with_message(message);
+            .with_message(prefix); // Use prefix as the message (text inside bar)
         pb.enable_steady_tick(TICK_INTERVAL);
         ProgressReport {
             pb,
