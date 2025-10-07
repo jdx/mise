@@ -1580,7 +1580,7 @@ async fn load_config_tasks(
         if is_global {
             t.global = true;
         }
-        match t.render(&config, &config_root).await {
+        match t.render(config, config_root).await {
             Ok(()) => {
                 tasks.push(t);
             }
@@ -1615,7 +1615,7 @@ async fn load_tasks_includes(
             .collect::<Vec<_>>();
         let mut tasks = vec![];
         for path in files {
-            tasks.push(Task::from_path(&config, &path, root, config_root).await?);
+            tasks.push(Task::from_path(config, &path, root, config_root).await?);
         }
         Ok(tasks)
     } else {
@@ -1640,7 +1640,7 @@ async fn load_file_tasks(
         .collect::<Vec<_>>();
     let mut tasks = vec![];
     for p in includes {
-        tasks.extend(load_tasks_includes(&config, &p, config_root).await?);
+        tasks.extend(load_tasks_includes(config, &p, config_root).await?);
     }
     Ok(tasks)
 }
@@ -1648,13 +1648,12 @@ async fn load_file_tasks(
 pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
     configs_at_root(dir, config_files)
         .into_iter()
-        .map(|cf| {
+        .flat_map(|cf| {
             cf.task_config()
                 .includes
                 .clone()
                 .unwrap_or_else(default_task_includes)
         })
-        .flatten()
         .map(|p| if p.is_absolute() { p } else { dir.join(p) })
         .filter(|p| p.exists())
         .unique()
@@ -1669,8 +1668,8 @@ pub async fn load_tasks_in_dir(
     let configs = configs_at_root(dir, config_files);
     let mut tasks = vec![];
     for cf in configs {
-        tasks.extend(load_config_tasks(config, cf.clone(), &dir).await?);
-        tasks.extend(load_file_tasks(config, cf.clone(), &dir).await?);
+        tasks.extend(load_config_tasks(config, cf.clone(), dir).await?);
+        tasks.extend(load_file_tasks(config, cf.clone(), dir).await?);
     }
     let mut tasks = tasks
         .into_iter()
