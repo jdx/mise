@@ -428,15 +428,11 @@ impl Config {
     ) -> Result<BTreeMap<String, Task>> {
         let config = Config::get().await?;
         time!("load_all_tasks");
-        let file_tasks = load_local_tasks_with_context(&config, ctx).await?;
-        let global_tasks =
-            load_tasks_by_filter(&config, |cf| is_global_config(cf.get_path())).await?;
-        let system_tasks =
-            load_tasks_by_filter(&config, |cf| is_system_config(cf.get_path())).await?;
-        let mut tasks: BTreeMap<String, Task> = file_tasks
+        let local_tasks = load_local_tasks_with_context(&config, ctx).await?;
+        let global_tasks = load_global_tasks(&config).await?;
+        let mut tasks: BTreeMap<String, Task> = local_tasks
             .into_iter()
             .chain(global_tasks)
-            .chain(system_tasks)
             .rev()
             .inspect(|t| {
                 trace!(
@@ -943,10 +939,6 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
 
 pub fn is_global_config(path: &Path) -> bool {
     global_config_files().contains(path) || system_config_files().contains(path)
-}
-
-pub fn is_system_config(path: &Path) -> bool {
-    system_config_files().contains(path)
 }
 
 static GLOBAL_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
@@ -1553,14 +1545,11 @@ fn discover_monorepo_subdirs(
     Ok(subdirs)
 }
 
-async fn load_tasks_by_filter<F>(config: &Arc<Config>, filter: F) -> Result<Vec<Task>>
-where
-    F: Fn(&dyn ConfigFile) -> bool,
-{
+async fn load_global_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
     let config_files = config
         .config_files
         .values()
-        .filter(|cf| filter(cf.as_ref()))
+        .filter(|cf| is_global_config(cf.get_path()))
         .collect::<Vec<_>>();
     let mut tasks = vec![];
     for cf in config_files {
@@ -1585,11 +1574,8 @@ async fn load_config_tasks(
     config_root: &Path,
 ) -> Result<Vec<Task>> {
     let is_global = is_global_config(cf.get_path());
-    let config_root = Arc::new(config_root.to_path_buf());
     let mut tasks = vec![];
     for t in cf.tasks().into_iter() {
-        let config_root = config_root.clone();
-        let config = config.clone();
         let mut t = t.clone();
         if is_global {
             t.global = true;
@@ -1657,31 +1643,31 @@ async fn load_file_tasks(
         .clone()
         .unwrap_or_else(default_task_includes)
         .into_iter()
-        .map(|p| cf.get_path().parent().unwrap().join(p))
+        .map(|p| config_root.join(p))
+        .filter(|p| p.exists())
+        .unique()
         .collect::<Vec<_>>();
     let mut tasks = vec![];
-    let config_root = Arc::new(config_root.to_path_buf());
     for p in includes {
-        let config_root = config_root.clone();
-        let config = config.clone();
-        tasks.extend(load_tasks_includes(&config, &p, &config_root).await?);
+        tasks.extend(load_tasks_includes(&config, &p, config_root).await?);
     }
     Ok(tasks)
 }
 
-pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
+fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
     configs_at_root(dir, config_files)
-        .iter()
-        .rev()
-        .find_map(|cf| cf.task_config().includes.clone())
-        .unwrap_or_else(default_task_includes)
         .into_iter()
+        .map(|cf| {
+            cf.task_config()
+                .includes
+                .clone()
+                .unwrap_or_else(default_task_includes)
+        })
+        .flatten()
         .map(|p| if p.is_absolute() { p } else { dir.join(p) })
         .filter(|p| p.exists())
-        .collect::<Vec<_>>()
-        .into_iter()
         .unique()
-        .collect::<Vec<_>>()
+        .collect()
 }
 
 pub async fn load_tasks_in_dir(
@@ -1690,18 +1676,13 @@ pub async fn load_tasks_in_dir(
     config_files: &ConfigMap,
 ) -> Result<Vec<Task>> {
     let configs = configs_at_root(dir, config_files);
-    let mut config_tasks = vec![];
+    let mut tasks = vec![];
     for cf in configs {
-        let dir = dir.to_path_buf();
-        config_tasks.extend(load_config_tasks(config, cf.clone(), &dir).await?);
+        tasks.extend(load_config_tasks(config, cf.clone(), &dir).await?);
+        tasks.extend(load_file_tasks(config, cf.clone(), &dir).await?);
     }
-    let mut file_tasks = vec![];
-    for p in task_includes_for_dir(dir, config_files) {
-        file_tasks.extend(load_tasks_includes(config, &p, dir).await?);
-    }
-    let mut tasks = file_tasks
+    let mut tasks = tasks
         .into_iter()
-        .chain(config_tasks)
         .sorted_by_cached_key(|t| t.name.clone())
         .collect::<Vec<_>>();
     let all_tasks = tasks
