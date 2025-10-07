@@ -499,6 +499,11 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
         ctx.pr.set_message("install".into());
+
+        // Default to 3 operations: download, verify, extract/install
+        // Backends can override by calling start_operations() themselves
+        ctx.pr.start_operations(3);
+
         let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
         self.create_install_dirs(&tv)?;
 

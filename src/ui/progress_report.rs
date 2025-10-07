@@ -130,7 +130,7 @@ impl ProgressReport {
         ProgressReport {
             pb,
             report_id,
-            total_operations: Mutex::new(Some(3)), // Default to 3 operations
+            total_operations: Mutex::new(None), // Must call start_operations()
             operation_count: Mutex::new(0),
             operation_base: Mutex::new(0),
             operation_length: Mutex::new(1_000_000), // Full range initially
@@ -310,6 +310,7 @@ impl SingleReport for ProgressReport {
     }
 
     fn start_operations(&self, count: usize) {
+        assert!(count > 0, "start_operations() count must be greater than 0");
         progress_trace!(
             "start_operations[{:?}]: declaring {} operations",
             self.report_id,

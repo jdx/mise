@@ -32,6 +32,7 @@ slsa-verifier = "latest"
 taplo = "latest"
 wait-for-gh-rate-limit = "latest"
 sops = "latest"
+node = "24"
 
 [task_config]
 includes = ["tasks.toml", "xtasks"]
