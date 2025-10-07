@@ -486,6 +486,17 @@ impl Backend for NodePlugin {
         let settings = Settings::get();
         let opts = BuildOpts::new(ctx, &tv).await?;
         trace!("node build opts: {:#?}", opts);
+
+        // Node installation has multiple operations
+        // Precompiled: download, checksum, verify size, extract, test node, test npm (6 operations)
+        // Compilation: download source, extract, configure, make, make install, test node, test npm (7 operations)
+        let op_count = if cfg!(windows) || settings.node.compile != Some(true) {
+            6 // precompiled path
+        } else {
+            7 // compilation path
+        };
+        ctx.pr.start_operations(op_count);
+
         if cfg!(windows) {
             self.install_windows(ctx, &mut tv, &opts).await?;
         } else if settings.node.compile == Some(true) {
