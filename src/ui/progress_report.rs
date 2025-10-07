@@ -46,6 +46,12 @@ pub trait SingleReport: Send + Sync + std::fmt::Debug {
         self.finish_with_icon(message, ProgressIcon::Success);
     }
     fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {}
+
+    /// Start a new sub-step with a given weight (0.0-1.0) relative to total progress
+    /// For example, if download is 50% and extract is 50%, call:
+    /// - start_substep(0.5) before download
+    /// - start_substep(0.5) before extract
+    fn start_substep(&self, _weight: f64) {}
 }
 
 static SPIN_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
@@ -80,6 +86,10 @@ static HEADER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
 #[derive(Debug)]
 pub struct ProgressReport {
     pub pb: ProgressBar,
+    report_id: Option<usize>,
+    // Track sub-steps: accumulated_progress + (current_weight * current_step_progress)
+    substep_base: Mutex<f64>,    // Progress accumulated from completed substeps (0.0-1.0)
+    substep_weight: Mutex<f64>,  // Weight of current substep (0.0-1.0)
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
@@ -108,7 +118,17 @@ impl ProgressReport {
             .with_style(SPIN_TEMPLATE.clone())
             .with_prefix(normal_prefix(pad, &prefix));
         pb.enable_steady_tick(TICK_INTERVAL);
-        ProgressReport { pb }
+
+        // Allocate a report ID for multi-progress tracking
+        let report_id = ui::multi_progress_report::MultiProgressReport::try_get()
+            .map(|mpr| mpr.allocate_report_id());
+
+        ProgressReport {
+            pb,
+            report_id,
+            substep_base: Mutex::new(0.0),
+            substep_weight: Mutex::new(1.0), // Default: single step with full weight
+        }
     }
 
     pub fn new_header(prefix: String, length: u64, message: String) -> ProgressReport {
@@ -119,7 +139,41 @@ impl ProgressReport {
             .with_prefix(pad_prefix(pad, &prefix))
             .with_message(message);
         pb.enable_steady_tick(TICK_INTERVAL);
-        ProgressReport { pb }
+        ProgressReport {
+            pb,
+            report_id: None,
+            substep_base: Mutex::new(0.0),
+            substep_weight: Mutex::new(1.0),
+        }
+    }
+
+    fn update_terminal_progress(&self) {
+        // Update the multi-progress report with this report's progress
+        // accounting for substep weights
+        if let Some(report_id) = self.report_id {
+            if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
+                let substep_base = *self.substep_base.lock().unwrap();
+                let substep_weight = *self.substep_weight.lock().unwrap();
+
+                let current_step_progress = if let Some(length) = self.pb.length() {
+                    if length > 0 {
+                        self.pb.position() as f64 / length as f64
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
+                };
+
+                // Total progress = base + (weight * current_step)
+                let total_progress = substep_base + (substep_weight * current_step_progress);
+                let total_progress = total_progress.clamp(0.0, 1.0);
+
+                // Convert to position/length for MultiProgressReport (using 100 as the fixed length)
+                let position = (total_progress * 100.0) as u64;
+                mpr.update_report_progress(report_id, position, 100);
+            }
+        }
     }
 }
 
@@ -135,6 +189,7 @@ impl SingleReport for ProgressReport {
     }
     fn inc(&self, delta: u64) {
         self.pb.inc(delta);
+        self.update_terminal_progress();
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
             self.pb.enable_steady_tick(TICK_INTERVAL);
@@ -142,6 +197,7 @@ impl SingleReport for ProgressReport {
     }
     fn set_position(&self, pos: u64) {
         self.pb.set_position(pos);
+        self.update_terminal_progress();
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
             self.pb.enable_steady_tick(Duration::from_millis(250));
@@ -152,12 +208,42 @@ impl SingleReport for ProgressReport {
         self.pb.set_style(PROG_TEMPLATE.clone());
         self.pb.disable_steady_tick();
         self.pb.set_length(length);
+        self.update_terminal_progress();
     }
     fn abandon(&self) {
         self.pb.abandon();
     }
     fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {
         self.pb.finish_and_clear();
+        // Mark this report as complete (100%)
+        if let Some(report_id) = self.report_id {
+            if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
+                mpr.update_report_progress(report_id, 100, 100);
+            }
+        }
+    }
+
+    fn start_substep(&self, weight: f64) {
+        let weight = weight.clamp(0.0, 1.0);
+
+        // Save progress from completed substeps and start new substep
+        let mut substep_base = self.substep_base.lock().unwrap();
+        let current_weight = *self.substep_weight.lock().unwrap();
+
+        // Add the completed portion of the previous substep to the base
+        if let Some(length) = self.pb.length() {
+            if length > 0 {
+                let prev_progress = self.pb.position() as f64 / length as f64;
+                *substep_base += current_weight * prev_progress;
+            }
+        }
+
+        // Set new weight for this substep
+        *self.substep_weight.lock().unwrap() = weight;
+
+        // Reset the progress bar for this substep
+        self.pb.set_position(0);
+        self.pb.set_length(100); // Use a standard length
     }
 }
 

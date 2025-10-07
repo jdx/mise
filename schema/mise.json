@@ -942,6 +942,11 @@
           "description": "Connect stdin/stdout/stderr to child processes.",
           "type": "boolean"
         },
+        "terminal_progress": {
+          "default": true,
+          "description": "Enable terminal progress indicators (OSC 9;4) for compatible terminals.",
+          "type": "boolean"
+        },
         "ruby": {
           "type": "object",
           "additionalProperties": false,
