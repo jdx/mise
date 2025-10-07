@@ -56,7 +56,7 @@ version = "1.43.2"
 backend = "cargo:cargo-insta"
 
 [[tools."cargo:cargo-release"]]
-version = "0.25.19"
+version = "0.25.20"
 backend = "cargo:cargo-release"
 
 [[tools."cargo:git-cliff"]]
@@ -95,18 +95,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [[tools.hk]]
-version = "1.18.1"
+version = "1.18.2"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:bc8be608f0909940687158ca66ce8a2c35a68a8257b2d051272ca441d13382ba"
-size = 7170910
-url = "https://github.com/jdx/hk/releases/download/v1.18.1/hk-x86_64-unknown-linux-gnu.tar.gz"
-
-[tools.hk.platforms.macos-arm64]
-checksum = "blake3:a48bf25b18f27f9a0f306ca77a0791d4963a999e85aee4251eb8cbc175884353"
-size = 6206992
-url = "https://github.com/jdx/hk/releases/download/v1.18.1/hk-aarch64-apple-darwin.tar.gz"
+checksum = "blake3:e61406636570d5ecdda7d5eee809585cbb7a6a1d1b8ac87fd6f2827c931fef1a"
+size = 7177308
+url = "https://github.com/jdx/hk/releases/download/v1.18.2/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"
