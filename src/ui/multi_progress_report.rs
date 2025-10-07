@@ -39,7 +39,7 @@ impl MultiProgressReport {
     }
     fn new() -> Self {
         let settings = Settings::get();
-        let has_stderr = true; // TODO: temporarily forcing attended for testing - was: console::user_attended_stderr();
+        let has_stderr = console::user_attended_stderr();
         progress_trace!("MultiProgressReport::new: raw={}, quiet={}, verbose={}, user_attended_stderr={}",
                        settings.raw, settings.quiet, settings.verbose, has_stderr);
         let mp = match settings.raw
