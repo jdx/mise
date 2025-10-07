@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Test that tera templating works correctly with {{config_root}} in subdirectory configs
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[env]
+ROOT_DIR = "{{config_root}}"
+PROJECT_NAME = "monorepo"
+
+[tasks.root-task]
+run = 'echo "ROOT_DIR=$ROOT_DIR"'
+TOML
+
+# Create frontend with tera templates
+mkdir -p projects/frontend
+cat <<'TOML' >projects/frontend/mise.toml
+[env]
+FRONTEND_ROOT = "{{config_root}}"
+BUILD_DIR = "{{config_root}}/dist"
+ASSETS_PATH = "{{config_root}}/assets"
+# Test nested template evaluation
+FULL_PATH = "{{env.FRONTEND_ROOT}}/src"
+
+[tasks.build]
+run = '''
+echo "FRONTEND_ROOT=$FRONTEND_ROOT"
+echo "BUILD_DIR=$BUILD_DIR"
+echo "ASSETS_PATH=$ASSETS_PATH"
+echo "FULL_PATH=$FULL_PATH"
+'''
+TOML
+
+mkdir -p projects/frontend/dist
+mkdir -p projects/frontend/assets
+
+# Create backend with tera templates
+mkdir -p projects/backend
+cat <<'TOML' >projects/backend/mise.toml
+[env]
+BACKEND_ROOT = "{{config_root}}"
+LOG_FILE = "{{config_root}}/logs/app.log"
+CONFIG_PATH = "{{config_root}}/config"
+
+[tasks.start]
+run = '''
+echo "BACKEND_ROOT=$BACKEND_ROOT"
+echo "LOG_FILE=$LOG_FILE"
+echo "CONFIG_PATH=$CONFIG_PATH"
+'''
+TOML
+
+mkdir -p projects/backend/logs
+mkdir -p projects/backend/config
+
+# Test 1: Frontend config_root resolves to frontend directory
+echo "=== Test 1: Frontend {{config_root}} resolves to subdirectory ==="
+output=$(mise run '//projects/frontend:build')
+echo "$output"
+echo "$output" | grep -q "FRONTEND_ROOT=.*projects/frontend" || (echo "FAIL: FRONTEND_ROOT should point to projects/frontend" && exit 1)
+echo "$output" | grep -q "BUILD_DIR=.*projects/frontend/dist" || (echo "FAIL: BUILD_DIR incorrect" && exit 1)
+echo "$output" | grep -q "ASSETS_PATH=.*projects/frontend/assets" || (echo "FAIL: ASSETS_PATH incorrect" && exit 1)
+echo "$output" | grep -q "FULL_PATH=.*projects/frontend/src" || (echo "FAIL: Nested template not evaluated" && exit 1)
+
+# Test 2: Backend config_root resolves to backend directory
+echo "=== Test 2: Backend {{config_root}} resolves to subdirectory ==="
+output=$(mise run '//projects/backend:start')
+echo "$output"
+echo "$output" | grep -q "BACKEND_ROOT=.*projects/backend" || (echo "FAIL: BACKEND_ROOT should point to projects/backend" && exit 1)
+echo "$output" | grep -q "LOG_FILE=.*projects/backend/logs/app.log" || (echo "FAIL: LOG_FILE incorrect" && exit 1)
+echo "$output" | grep -q "CONFIG_PATH=.*projects/backend/config" || (echo "FAIL: CONFIG_PATH incorrect" && exit 1)
+
+# Test 3: Root task config_root resolves to monorepo root
+echo "=== Test 3: Root {{config_root}} resolves to monorepo root ==="
+output=$(mise run //:root-task)
+echo "$output"
+# Root DIR should not contain projects/ subdirectory path
+if echo "$output" | grep -q "ROOT_DIR=.*projects/"; then
+	echo "FAIL: Root config_root should not include projects/ path"
+	exit 1
+fi
+echo "$output" | grep -q "ROOT_DIR=" || (echo "FAIL: ROOT_DIR not set" && exit 1)
+
+echo "=== All tera template tests passed! ==="

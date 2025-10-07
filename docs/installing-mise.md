@@ -164,6 +164,14 @@ dnf copr enable jdxcode/mise
 dnf install mise
 ```
 
+### Snap (Linux, currently in beta)
+
+```sh
+sudo snap install mise --classic --beta
+```
+
+[snapcraft.io page](https://snapcraft.io/mise)
+
 ### Docker
 
 ```sh
@@ -289,7 +297,7 @@ echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 For homebrew and possibly other installs mise is automatically activated so
 this is not necessary.
 
-See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise_fish_auto_activate1) for more information.
+See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise-fish-auto-activate-1) for more information.
 :::
 
 ### Powershell

@@ -844,6 +844,15 @@ backends = ["aqua:cocogitto/cocogitto"]
 description = "The Conventional Commits toolbox"
 test = ["cog --version", "cog {{version}}"]
 
+[tools.code]
+backends = [
+  "aqua:just-every/code",
+  "ubi:just-every/code",
+  "npm:@just-every/code",
+]
+description = "Fast, effective, mind-blowing, coding CLI. Browser integration, multi-agents, theming, and reasoning control. Orchestrate agents from OpenAI, Claude, Gemini or any provider."
+test = ["code --version", "code {{version}}"]
+
 [tools.codebuff]
 backends = ["npm:codebuff"]
 description = "Codebuff is a CLI tool that writes code for you"
@@ -2360,6 +2369,11 @@ backends = ["aqua:sourcemeta/jsonschema", "ubi:sourcemeta/jsonschema"]
 description = "The CLI for working with JSON Schema. Covers formatting, linting, testing, bundling, and more for both local development and CI/CD pipelines"
 test = ["jsonschema version", "{{version}}"]
 
+[tools.jules]
+backends = ["npm:@google/jules"]
+description = "Jules, the asynchronous coding agent from Google, in the terminal"
+test = ["jules version", "Version: v{{version}}"]
+
 [tools.julia]
 backends = ["asdf:mise-plugins/mise-julia"]
 description = "The Julia Programming Language"
@@ -2423,8 +2437,9 @@ description = "K3k, Kubernetes in Kubernetes, is a tool that empowers you to cre
 test = ["k3k --version", "k3kcli version v{{version}}"]
 
 [tools.k3s]
-backends = ["asdf:mise-plugins/mise-k3s"]
+backends = ["aqua:k3s-io/k3s", "asdf:mise-plugins/mise-k3s"]
 description = "The certified Kubernetes distribution built for IoT & Edge computing"
+test = ["k3s --version", "k3s version v{{version}}"]
 
 [tools.k3sup]
 backends = ["aqua:alexellis/k3sup", "asdf:cgroschupp/asdf-k3sup"]
@@ -4518,6 +4533,11 @@ backends = [
 description = "Count your code, quickly"
 test = ["tokei --version", "tokei {{version}}"]
 
+[tools.tombi]
+backends = ["aqua:tombi-toml/tombi", "ubi:tombi-toml/tombi"]
+description = "TOML Formatter / Linter / Language Server"
+test = ["tombi --version", "tombi {{version}}"]
+
 [tools.tomcat]
 backends = ["asdf:mise-plugins/mise-tomcat"]
 description = "The Apache Tomcat® software is an open source implementation of the Jakarta Servlet, Jakarta Pages, Jakarta Expression Language, Jakarta WebSocket, Jakarta Annotations and Jakarta Authentication specifications. These specifications are part of the Jakarta EE platform"
@@ -4864,6 +4884,11 @@ backends = [
 ]
 description = "A command line tool for the Wren programming language"
 test = ["wren_cli --version", "wren {{version}}"]
+
+[tools.wrangler]
+backends = ["npm:wrangler"]
+description = "A command line tool for building Cloudflare Workers"
+test = ["wrangler --version", "{{version}}"]
 
 [tools.wrk]
 backends = ["asdf:mise-plugins/mise-wrk"]

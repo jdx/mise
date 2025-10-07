@@ -132,7 +132,7 @@ impl Settings {
 
         settings = sb.load()?;
         if !settings.legacy_version_file {
-            settings.idiomatic_version_file = false;
+            settings.idiomatic_version_file = Some(false);
         }
         if settings.raw {
             settings.jobs = 1;
@@ -358,6 +358,7 @@ impl Settings {
             .iter()
             .filter(|p| !p.to_string_lossy().is_empty())
             .map(file::replace_path)
+            .filter_map(|p| p.canonicalize().ok())
     }
 
     pub fn global_tools_file(&self) -> PathBuf {

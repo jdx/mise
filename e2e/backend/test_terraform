@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
 
+# Enable idiomatic version files for terraform
+mise settings set idiomatic_version_file_enable_tools terraform
+
 echo "1.10.0" >.terraform-version
 assert_contains "mise tool terraform" "1.10.0"

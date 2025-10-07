@@ -59,6 +59,11 @@ pub struct TasksLs {
     )]
     pub local: bool,
 
+    /// Load all tasks from the entire monorepo, including sibling directories.
+    /// By default, only tasks from the current directory hierarchy are loaded.
+    #[clap(long, global = true, verbatim_doc_comment)]
+    pub all: bool,
+
     /// Sort by column. Default is name.
     #[clap(long, global = true, value_name = "COLUMN", verbatim_doc_comment)]
     pub sort: Option<SortColumn>,
@@ -87,9 +92,19 @@ pub enum SortOrder {
 
 impl TasksLs {
     pub async fn run(self) -> Result<()> {
+        use crate::task::TaskLoadContext;
+
         let config = Config::get().await?;
+
+        // Create context based on --all flag
+        let ctx = if self.all {
+            Some(TaskLoadContext::all())
+        } else {
+            None
+        };
+
         let tasks = config
-            .tasks()
+            .tasks_with_context(ctx.as_ref())
             .await?
             .values()
             .filter(|t| self.hidden || !t.hide)

@@ -56,7 +56,7 @@ version = "1.43.2"
 backend = "cargo:cargo-insta"
 
 [[tools."cargo:cargo-release"]]
-version = "0.25.19"
+version = "0.25.20"
 backend = "cargo:cargo-release"
 
 [[tools."cargo:git-cliff"]]
@@ -72,18 +72,13 @@ version = "2.3.2"
 backend = "cargo:usage-cli"
 
 [[tools.cosign]]
-version = "2.6.0"
+version = "2.6.1"
 backend = "aqua:sigstore/cosign"
 
 [tools.cosign.platforms.linux-x64]
-checksum = "sha256:ea5c65f99425d6cfbb5c4b5de5dac035f14d09131c1a0ea7c7fc32eab39364f9"
-size = 155329864
-url = "https://github.com/sigstore/cosign/releases/download/v2.6.0/cosign-linux-amd64"
-
-[tools.cosign.platforms.macos-arm64]
-checksum = "sha256:dea5b83b8b375b99ac803c7bdb1f798963dbeb47789ceb72153202e7f20e8d07"
-size = 154611890
-url = "https://github.com/sigstore/cosign/releases/download/v2.6.0/cosign-darwin-arm64"
+checksum = "sha256:064954c5d8c7e3b28188eee5b1727b31c411550bc5fefd41aa672d3c761d103a"
+size = 155339383
+url = "https://github.com/sigstore/cosign/releases/download/v2.6.1/cosign-linux-amd64"
 
 [[tools.gh]]
 version = "2.62.0"
@@ -100,13 +95,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [[tools.hk]]
-version = "1.15.7"
+version = "1.18.2"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:f4d35bcfb24c82d065ef7f65331386ec8f4721b2a9ae501bce977de91a1c8658"
-size = 6986299
-url = "https://github.com/jdx/hk/releases/download/v1.15.7/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "blake3:e61406636570d5ecdda7d5eee809585cbb7a6a1d1b8ac87fd6f2827c931fef1a"
+size = 7177308
+url = "https://github.com/jdx/hk/releases/download/v1.18.2/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"

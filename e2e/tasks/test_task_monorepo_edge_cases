@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# Test monorepo task edge cases: multiple dot extensions
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[tasks.root-task]
+run = 'echo "root task"'
+EOF
+
+# Create project structure with edge case tasks
+mkdir -p projects/frontend/mise-tasks
+cat <<EOF >projects/frontend/mise.toml
+[tasks.simple]
+run = 'echo "simple task"'
+EOF
+
+# Test: Multiple dot extensions (e.g., backup.test.js)
+# When stripped, should become "backup.test" not "backup"
+cat <<'EOF' >projects/frontend/mise-tasks/backup.test.js
+#!/usr/bin/env node
+console.log("backup test");
+EOF
+chmod +x projects/frontend/mise-tasks/backup.test.js
+
+# Verify task is discovered (display name strips one extension: backup.test)
+assert_contains "mise tasks ls --all" "//projects/frontend:backup.test"
+
+# Test running with display name (without .js)
+assert_contains "mise run '//projects/frontend:backup.test'" "backup test"
+
+# Test running with full name (with .js)
+assert_contains "mise run '//projects/frontend:backup.test.js'" "backup test"
+
+# Test wildcard matching
+assert_contains "mise run '//projects/...:backup*'" "backup test"
