@@ -71,6 +71,18 @@ If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` w
 
 Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
 
+The value `"system"` for `python` has been deprecated. To still use the system version, for example if other tools were linked to it by compile time (such as `vim`), note that
+
+- If no value (of such a Python version) is set as env-directive, then
+
+    - if `tools.python` is set, then that version is used.
+    - If not, or `settings.disable-tools = ["python"]`, then the latest Python version of `uv` is used.
+
+- If a value is set as env-directive, then `uv` uses the system python version if
+
+    - either no corresponding managed version was installed in `uv`,
+    - or `python.python-preference = "system"` is set in `uv`.
+
 See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for more examples.
 
 ## Default Python packages
