@@ -1109,7 +1109,7 @@ type = "Bool"
 [status.show_tools]
 description = "Show configured tools when entering a directory with a mise.toml file."
 docs = """
-It also shows all global tools, such as `usage` for shell completion, 
+It also shows all global tools, such as `usage` for shell completion,
 on shell startup independent of the existence of a mise.toml in the working directory.
 """
 env = "MISE_STATUS_MESSAGE_SHOW_TOOLS"
