@@ -1,83 +1,83 @@
-## `aqua-tester`
+## ``
 
-- **Usage**: `aqua-tester`
+- **Usage**: ``
 
 Test Aqua configuration with fish shell
 
-## `build`
+## ``
 
-- **Usage**: `build`
+- **Usage**: ``
 - **Aliases**: `b`
 
 Build the project
 
-## `ci`
+## ``
 
 - Depends: format, build, test
 
-- **Usage**: `ci`
+- **Usage**: ``
 
 Run all CI checks
 
-## `clean`
+## ``
 
-- **Usage**: `clean`
+- **Usage**: ``
 
 Clean build artifacts
 
-## `docs`
+## ``
 
 - Depends: docs:setup
 
-- **Usage**: `docs`
+- **Usage**: ``
 
 Start the documentation development server
 
-## `docs:build`
+## ``
 
 - Depends: docs:setup
 
-- **Usage**: `docs:build`
+- **Usage**: ``
 
 Build the documentation site
 
-## `docs:demos`
+## ``
 
-- **Usage**: `docs:demos`
+- **Usage**: ``
 
 Create recordings with vhs
 
-## `docs:preview`
+## ``
 
 - Depends: docs:build
 
-- **Usage**: `docs:preview`
+- **Usage**: ``
 
 Preview the documentation site
 
-## `docs:release`
+## ``
 
 - Depends: docs:build
 
-- **Usage**: `docs:release`
+- **Usage**: ``
 
 Release documentation site to production or remote
 
-## `docs:setup`
+## ``
 
-- **Usage**: `docs:setup`
+- **Usage**: ``
 
 Install documentation dependencies
 
-## `fetch-gpg-keys`
+## ``
 
-- **Usage**: `fetch-gpg-keys`
+- **Usage**: ``
 
 Fetch GPG keys for signing or verification
 
-## `filetask`
+## ``
 
-- **Usage**: `filetask [-f --force] [-u --user <user>] [file] [arg_with_default]`
+- **Usage**: `[-f --force] [-u --user <user>] [file] [arg_with_default]`
 - **Aliases**: `ft`
 
 This is a test build script
@@ -106,215 +106,215 @@ Overwrite existing &lt;file>
 
 User to run as
 
-## `filetask.bat`
+## ``
 
-- **Usage**: `filetask.bat`
+- **Usage**: ``
 
-## `flamegraph`
+## ``
 
-- **Usage**: `flamegraph`
+- **Usage**: ``
 
 Generate a flamegraph for performance analysis
 
-## `install-dev`
+## ``
 
-- **Usage**: `install-dev`
+- **Usage**: ``
 
 Install the current project in debug mode
 
-## `lint`
+## ``
 
 - Depends: lint:*
 
-- **Usage**: `lint`
+- **Usage**: ``
 
 Run all lint checks
 
-## `lint-fix`
+## ``
 
-- **Usage**: `lint-fix`
+- **Usage**: ``
 - **Aliases**: `format`, `fix`
 
 Automatically fix lint issues
 
-## `lint:actionlint`
+## ``
 
-- **Usage**: `lint:actionlint`
+- **Usage**: ``
 
 Lint GitHub Actions workflows
 
-## `lint:cargo-fmt`
+## ``
 
-- **Usage**: `lint:cargo-fmt`
+- **Usage**: ``
 
 Check Rust code formatting with cargo fmt
 
-## `lint:hk`
+## ``
 
-- **Usage**: `lint:hk`
+- **Usage**: ``
 
 Lint HK files
 
-## `lint:markdownlint`
+## ``
 
-- **Usage**: `lint:markdownlint`
+- **Usage**: ``
 
 Lint Markdown files
 
-## `lint:ripgrep`
+## ``
 
-- **Usage**: `lint:ripgrep`
+- **Usage**: ``
 
 Lint using ripgrep
 
-## `lint:schema`
+## ``
 
-- **Usage**: `lint:schema`
+- **Usage**: ``
 
 Lint schemas
 
-## `pre-commit`
+## ``
 
-- **Usage**: `pre-commit`
+- **Usage**: ``
 
 Run pre-commit hooks
 
-## `release`
+## ``
 
-- **Usage**: `release`
+- **Usage**: ``
 
 Release the project
 
-## `release-plz`
+## ``
 
-- **Usage**: `release-plz`
+- **Usage**: ``
 
 Release with release-plz
 
-## `render`
+## ``
 
 - Depends: render:*
 
-- **Usage**: `render`
+- **Usage**: ``
 
 Run all render tasks
 
-## `render:completions`
+## ``
 
 - Depends: build
 
-- **Usage**: `render:completions`
+- **Usage**: ``
 
 Generate shell completions
 
-## `render:fig`
+## ``
 
 - Depends: docs:setup
 
-- **Usage**: `render:fig`
+- **Usage**: ``
 
 Generate Fig completion spec
 
-## `render:help`
+## ``
 
 - Depends: build
 
-- **Usage**: `render:help`
+- **Usage**: ``
 
 Render help documentation
 
-## `render:mangen`
+## ``
 
 - Depends: build
 
-- **Usage**: `render:mangen`
+- **Usage**: ``
 
 Generate man pages
 
-## `render:schema`
+## ``
 
 - Depends: docs:setup
 
-- **Usage**: `render:schema`
+- **Usage**: ``
 
 Render JSON schema
 
-## `render:usage`
+## ``
 
 - Depends: build
 
-- **Usage**: `render:usage`
+- **Usage**: ``
 
 Generate usage documentation
 
-## `show-output-on-failure`
+## ``
 
-- **Usage**: `show-output-on-failure`
+- **Usage**: ``
 
 Show output on failure for documentation generation
 
-## `signal-test`
+## ``
 
-- **Usage**: `signal-test`
+- **Usage**: ``
 
 Test signal handling in Node.js
 
-## `snapshots`
+## ``
 
-- **Usage**: `snapshots`
+- **Usage**: ``
 
 update test snapshots
 
-## `test`
+## ``
 
-- **Usage**: `test`
+- **Usage**: ``
 - **Aliases**: `t`
 
 run all tests
 
-## `test:build-perf-workspace`
+## ``
 
-- **Usage**: `test:build-perf-workspace`
+- **Usage**: ``
 
 task description
 
-## `test:coverage`
+## ``
 
-- **Usage**: `test:coverage`
+- **Usage**: ``
 
 Run all tests with coverage report
 
-## `test:e2e`
+## ``
 
 - Depends: build
 
-- **Usage**: `test:e2e`
+- **Usage**: ``
 - **Aliases**: `e`, `e2e`
 
 Run end-to-end tests
 
-## `test:perf`
+## ``
 
 - Depends: test:build-perf-workspace
 
-- **Usage**: `test:perf`
+- **Usage**: ``
 
 Run performance tests
 
-## `test:shuffle`
+## ``
 
-- **Usage**: `test:shuffle`
+- **Usage**: ``
 
 Run tests with shuffling enabled
 
-## `test:unit`
+## ``
 
-- **Usage**: `test:unit`
+- **Usage**: ``
 
 run unit tests
 
-## `update-descriptions`
+## ``
 
-- **Usage**: `update-descriptions`
+- **Usage**: ``
 
 Update all task descriptions in the project
