@@ -121,6 +121,11 @@ url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
 version = "24.9.0"
 backend = "core:node"
 
+[tools.node.platforms.linux-x64]
+checksum = "sha256:d57d6c28a35785f58f33899a0aa0bfc83f7a8ef4448b6cf3f7d0961efc7b9189"
+size = 58864014
+url = "https://nodejs.org/dist/v24.9.0/node-v24.9.0-linux-x64.tar.gz"
+
 [tools.node.platforms.macos-arm64]
 checksum = "sha256:961024296c2a8e60daed0784f8b61e0fab5c51d197502a92eff052c72b53209b"
 size = 51124089
