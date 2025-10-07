@@ -239,16 +239,16 @@ impl SingleReport for ProgressReport {
         }
     }
     fn set_length(&self, length: u64) {
-        // Increment operation count
+        // Atomically update operation count and base together to prevent race conditions
         let mut op_count = self.operation_count.lock().unwrap();
         *op_count += 1;
         let count = *op_count;
-        drop(op_count);
 
         // When starting a new operation (count > 1), complete the previous operation first
-        if count > 1 {
-            let prev_base = *self.operation_base.lock().unwrap();
+        let (base, per_operation, completed_position) = if count > 1 {
+            let mut base_guard = self.operation_base.lock().unwrap();
             let prev_allocated = *self.operation_length.lock().unwrap();
+            let prev_base = *base_guard;
             let completed_position = prev_base + prev_allocated;
 
             progress_trace!(
@@ -267,17 +267,29 @@ impl SingleReport for ProgressReport {
             }
 
             // New operation starts where previous ended
-            *self.operation_base.lock().unwrap() = completed_position;
-        }
+            *base_guard = completed_position;
 
-        // Equal allocation: each operation gets 1/N of the total space
-        let total_ops = self.total_operations.lock().unwrap();
-        let total = total_ops.unwrap_or(1);
-        let base = *self.operation_base.lock().unwrap();
-        let per_operation = 1_000_000 / total as u64;
+            // Calculate allocation with the new base
+            let total_ops = self.total_operations.lock().unwrap();
+            let total = (*total_ops).unwrap_or(1).max(1); // Ensure at least 1 to prevent division by zero
+            let per_operation = 1_000_000 / total as u64;
+
+            (completed_position, per_operation, Some(completed_position))
+        } else {
+            // First operation
+            let total_ops = self.total_operations.lock().unwrap();
+            let total = (*total_ops).unwrap_or(1).max(1); // Ensure at least 1 to prevent division by zero
+            let base = *self.operation_base.lock().unwrap();
+            let per_operation = 1_000_000 / total as u64;
+
+            (base, per_operation, None)
+        };
+
+        drop(op_count); // Release operation_count lock
 
         *self.operation_length.lock().unwrap() = per_operation;
 
+        let total = self.total_operations.lock().unwrap().unwrap_or(1).max(1);
         progress_trace!(
             "set_length[{:?}]: op={}/{}, base={}, allocated={}, pb_length={}",
             self.report_id,
@@ -317,6 +329,12 @@ impl SingleReport for ProgressReport {
         );
         if count > 0 {
             *self.total_operations.lock().unwrap() = Some(count);
+        } else {
+            // Silently ignore invalid count of 0, keep default of 1
+            progress_trace!(
+                "start_operations[{:?}]: ignoring invalid count of 0, keeping default",
+                self.report_id
+            );
         }
     }
 }
