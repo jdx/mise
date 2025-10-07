@@ -281,7 +281,7 @@ like to hide even the output that the task emits, use [`silent`](#silent).
 - **Type**: `bool`
 - **Default**: `false`
 
-Suppress all output from the task. 
+Suppress all output from the task.
 
 ### `usage`
 
