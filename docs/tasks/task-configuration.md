@@ -278,10 +278,10 @@ like to hide even the output that the task emits, use [`silent`](#silent).
 
 ### `silent`
 
-- **Type**: `bool | "stdout" | "stderr"`
+- **Type**: `bool 
 - **Default**: `false`
 
-Suppress all output from the task. If set to `"stdout"` or `"stderr"`, only that stream will be suppressed.
+Suppress all output from the task. 
 
 ### `usage`
 
