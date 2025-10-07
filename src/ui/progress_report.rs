@@ -130,7 +130,7 @@ impl ProgressReport {
         ProgressReport {
             pb,
             report_id,
-            total_operations: Mutex::new(None), // Must call start_operations()
+            total_operations: Mutex::new(Some(1)), // Default to 1 operation (100% of progress)
             operation_count: Mutex::new(0),
             operation_base: Mutex::new(0),
             operation_length: Mutex::new(1_000_000), // Full range initially
@@ -272,7 +272,7 @@ impl SingleReport for ProgressReport {
 
         // Equal allocation: each operation gets 1/N of the total space
         let total_ops = self.total_operations.lock().unwrap();
-        let total = total_ops.expect("start_operations() must be called before set_length()");
+        let total = total_ops.unwrap_or(1);
         let base = *self.operation_base.lock().unwrap();
         let per_operation = 1_000_000 / total as u64;
 
@@ -310,13 +310,14 @@ impl SingleReport for ProgressReport {
     }
 
     fn start_operations(&self, count: usize) {
-        assert!(count > 0, "start_operations() count must be greater than 0");
         progress_trace!(
             "start_operations[{:?}]: declaring {} operations",
             self.report_id,
             count
         );
-        *self.total_operations.lock().unwrap() = Some(count);
+        if count > 0 {
+            *self.total_operations.lock().unwrap() = Some(count);
+        }
     }
 }
 
