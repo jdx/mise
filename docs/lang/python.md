@@ -71,7 +71,7 @@ If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` w
 
 Note that `uv` does not include `pip` by default (as `uv` provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
 
-The value `"system"` for `python` has been deprecated. To still use the system version, for example if other tools were linked to it by compile time (such as `vim`), note that
+The value `"system"` for `python` has been deprecated. To still use the system version, for example if other tools were linked to it at compile time (such as `vim`), note that
 
 - If no value (of such a Python version) is set as env-directive, then
 
