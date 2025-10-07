@@ -52,6 +52,7 @@ pub trait SingleReport: Send + Sync + std::fmt::Debug {
     /// Each operation will get equal space (1/count)
     /// For example, if there are 3 operations (download, checksum, extract):
     /// - start_operations(3) at the beginning
+    ///
     /// Then each set_length() call will allocate 33.33% of the total progress
     fn start_operations(&self, _count: usize) {}
 }
@@ -245,7 +246,7 @@ impl SingleReport for ProgressReport {
         let count = *op_count;
 
         // When starting a new operation (count > 1), complete the previous operation first
-        let (base, per_operation, completed_position) = if count > 1 {
+        let (base, per_operation) = if count > 1 {
             let mut base_guard = self.operation_base.lock().unwrap();
             let prev_allocated = *self.operation_length.lock().unwrap();
             let prev_base = *base_guard;
@@ -274,7 +275,7 @@ impl SingleReport for ProgressReport {
             let total = (*total_ops).unwrap_or(1).max(1); // Ensure at least 1 to prevent division by zero
             let per_operation = 1_000_000 / total as u64;
 
-            (completed_position, per_operation, Some(completed_position))
+            (completed_position, per_operation)
         } else {
             // First operation
             let total_ops = self.total_operations.lock().unwrap();
@@ -282,7 +283,7 @@ impl SingleReport for ProgressReport {
             let base = *self.operation_base.lock().unwrap();
             let per_operation = 1_000_000 / total as u64;
 
-            (base, per_operation, None)
+            (base, per_operation)
         };
 
         drop(op_count); // Release operation_count lock
