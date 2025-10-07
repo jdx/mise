@@ -1061,7 +1061,7 @@ impl Run {
         if let (Some(task_config_root), Some(current_config_root)) =
             (task_cf.project_root(), config.project_root.as_ref())
         {
-            if task_config_root == current_config_root && config_env_entries.is_empty() {
+            if task_config_root == *current_config_root && config_env_entries.is_empty() {
                 trace!(
                     "task {} config root matches current and no config env, using standard env resolution",
                     task.name
@@ -1081,7 +1081,7 @@ impl Run {
     ) -> Result<tera::Context> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         if let Some(root) = task_cf.project_root() {
-            tera_ctx.insert("config_root", root);
+            tera_ctx.insert("config_root", &root);
         }
         Ok(tera_ctx)
     }
