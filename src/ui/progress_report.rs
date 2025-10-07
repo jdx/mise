@@ -146,7 +146,7 @@ pub struct ProgressReport {
     operation_count: Mutex<u32>,            // How many operations have started (1, 2, 3...)
     operation_base: Mutex<u64>, // Base progress for current operation (0, 333333, 666666...)
     operation_length: Mutex<u64>, // Allocated length for current operation
-    footer_text: Option<String>,  // If set, this is a footer bar with text overlay
+    footer_text: Option<String>, // If set, this is a footer bar with text overlay
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
