@@ -83,32 +83,32 @@ mod tests {
     #[test]
     fn test_config_root() {
         for p in &[
-            "/foo/mise/.config/mise/conf.d/config.toml",
-            "/foo/mise/.config/mise/conf.d/foo.toml",
-            "/foo/mise/.config/mise/config.local.toml",
-            "/foo/mise/.config/mise/config.toml",
-            "/foo/mise/.config/mise.local.toml",
-            "/foo/mise/.config/mise.toml",
-            "/foo/mise/.mise.env.toml",
-            "/foo/mise/.mise.local.toml",
-            "/foo/mise/.mise.toml",
-            "/foo/mise/.mise/conf.d/config.toml",
-            "/foo/mise/.mise/conf.d/foo.toml",
-            "/foo/mise/.mise/config.local.toml",
-            "/foo/mise/.mise/config.toml",
-            "/foo/mise/.tool-versions",
-            "/foo/mise/mise.env.toml",
-            "/foo/mise/mise.local.toml",
-            "/foo/mise/mise.toml",
-            "/foo/mise/mise/config.local.toml",
-            "/foo/mise/mise/config.toml",
-            "/foo/mise/.config/mise/config.env.toml",
-            "/foo/mise/.config/mise.env.toml",
-            "/foo/mise/.mise/config.env.toml",
-            "/foo/mise/.mise.env.toml",
+            "/foo/bar/.config/mise/conf.d/config.toml",
+            "/foo/bar/.config/mise/conf.d/foo.toml",
+            "/foo/bar/.config/mise/config.local.toml",
+            "/foo/bar/.config/mise/config.toml",
+            "/foo/bar/.config/mise.local.toml",
+            "/foo/bar/.config/mise.toml",
+            "/foo/bar/.mise.env.toml",
+            "/foo/bar/.mise.local.toml",
+            "/foo/bar/.mise.toml",
+            "/foo/bar/.mise/conf.d/config.toml",
+            "/foo/bar/.mise/conf.d/foo.toml",
+            "/foo/bar/.mise/config.local.toml",
+            "/foo/bar/.mise/config.toml",
+            "/foo/bar/.tool-versions",
+            "/foo/bar/mise.env.toml",
+            "/foo/bar/mise.local.toml",
+            "/foo/bar/mise.toml",
+            "/foo/bar/mise/config.local.toml",
+            "/foo/bar/mise/config.toml",
+            "/foo/bar/.config/mise/config.env.toml",
+            "/foo/bar/.config/mise.env.toml",
+            "/foo/bar/.mise/config.env.toml",
+            "/foo/bar/.mise.env.toml",
         ] {
             println!("{p}");
-            assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/mise"));
+            assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/bar"));
         }
     }
 
