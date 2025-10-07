@@ -49,7 +49,9 @@ impl MultiProgressReport {
             has_stderr,
             force_progress
         );
-        let mp = match (settings.raw || settings.quiet || settings.verbose || !has_stderr) && !force_progress {
+        let mp = match (settings.raw || settings.quiet || settings.verbose || !has_stderr)
+            && !force_progress
+        {
             true => {
                 progress_trace!(
                     "MultiProgressReport::new: mp=None (one of the conditions is true)"
