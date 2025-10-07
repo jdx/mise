@@ -719,15 +719,7 @@ impl Task {
 fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String> {
     let name = path
         .as_ref()
-        .strip_prefix(prefix)
-        .map(|p| match p {
-            p if p.starts_with("mise-tasks") => p.strip_prefix("mise-tasks"),
-            p if p.starts_with(".mise-tasks") => p.strip_prefix(".mise-tasks"),
-            p if p.starts_with(".mise/tasks") => p.strip_prefix(".mise/tasks"),
-            p if p.starts_with("mise/tasks") => p.strip_prefix("mise/tasks"),
-            p if p.starts_with(".config/mise/tasks") => p.strip_prefix(".config/mise/tasks"),
-            _ => Ok(p),
-        })??
+        .strip_prefix(prefix)?
         .components()
         .map(path::Component::as_os_str)
         .map(ffi::OsStr::to_string_lossy)

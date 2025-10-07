@@ -1562,9 +1562,9 @@ async fn load_config_and_file_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
 ) -> Result<Vec<Task>> {
-    let project_root = cf.project_root().unwrap_or(&*env::HOME);
-    let tasks = load_config_tasks(config, cf.clone(), project_root).await?;
-    let file_tasks = load_file_tasks(config, cf.clone(), project_root).await?;
+    let config_root = cf.config_root();
+    let tasks = load_config_tasks(config, cf.clone(), &config_root).await?;
+    let file_tasks = load_file_tasks(config, cf.clone(), &config_root).await?;
     Ok(tasks.into_iter().chain(file_tasks).collect())
 }
 
@@ -1600,6 +1600,7 @@ async fn load_tasks_includes(
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
         load_task_file(config, root, config_root).await
     } else if root.is_dir() {
+        let task_disable_paths = &Settings::get().task_disable_paths;
         let files = WalkDir::new(root)
             .follow_links(true)
             .into_iter()
@@ -1610,21 +1611,11 @@ async fn load_tasks_includes(
             .try_collect::<_, Vec<PathBuf>, _>()?
             .into_iter()
             .filter(|p| file::is_executable(p))
-            .filter(|p| {
-                !Settings::get()
-                    .task_disable_paths
-                    .iter()
-                    .any(|d| p.starts_with(d))
-            })
+            .filter(|p| !task_disable_paths.iter().any(|d| p.starts_with(d)))
             .collect::<Vec<_>>();
         let mut tasks = vec![];
-        let root = Arc::new(root.to_path_buf());
-        let config_root = Arc::new(config_root.to_path_buf());
         for path in files {
-            let root = root.clone();
-            let config_root = config_root.clone();
-            let config = config.clone();
-            tasks.push(Task::from_path(&config, &path, &root, &config_root).await?);
+            tasks.push(Task::from_path(&config, &path, root, config_root).await?);
         }
         Ok(tasks)
     } else {
@@ -1654,7 +1645,7 @@ async fn load_file_tasks(
     Ok(tasks)
 }
 
-fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
+pub fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Vec<PathBuf> {
     configs_at_root(dir, config_files)
         .into_iter()
         .map(|cf| {
