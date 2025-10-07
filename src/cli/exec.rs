@@ -71,7 +71,6 @@ impl Exec {
             // in that case the user probably just wants that one tool
             missing_args_only: !self.tool.is_empty()
                 || !Settings::get().exec_auto_install
-                || !console::user_attended_stderr()
                 || *env::__MISE_SHIM,
             resolve_options: Default::default(),
             ..Default::default()
