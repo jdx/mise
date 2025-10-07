@@ -62,7 +62,7 @@ echo "Test 4: Passed"
 # Test 5: Ceiling path with non-existent directory
 echo "Test 5: With non-existent ceiling path, should find all configs"
 export MISE_CEILING_PATHS="$TEST_ROOT/nonexistent"
-assert_contains "mise env" export "GRANDCHILD=true"
+assert_contains "mise env" "export GRANDCHILD=true"
 assert_contains "mise env" "export CHILD=true"
 assert_contains "mise env" "export PARENT=true"
 echo "Test 5: Passed"
