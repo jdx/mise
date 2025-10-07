@@ -75,13 +75,13 @@ The value `"system"` for `python` has been deprecated. To still use the system v
 
 - If no value (of such a Python version) is set as env-directive, then
 
-    - if `tools.python` is set, then that version is used.
-    - If not, or `settings.disable-tools = ["python"]`, then the latest Python version of `uv` is used.
+  - if `tools.python` is set, then that version is used.
+  - If not, or `settings.disable-tools = ["python"]`, then the latest Python version of `uv` is used.
 
 - If a value is set as env-directive, then `uv` uses the system python version if
 
-    - either no corresponding managed version was installed in `uv`,
-    - or `python.python-preference = "system"` is set in `uv`.
+  - either no corresponding managed version was installed in `uv`,
+  - or `python.python-preference = "system"` is set in `uv`.
 
 See the [mise + uv Cookbook](/mise-cookbook/python.html#mise-uv) for more examples.
 
