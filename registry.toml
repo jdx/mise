@@ -402,9 +402,16 @@ description = "Tools for building Bazel targets when source files change"
 test = ["ibazel version 2>&1", "iBazel - Version v{{version}}"]
 
 [tools.bazelisk]
-backends = ["aqua:bazelbuild/bazelisk", "npm:@bazel/bazelisk", "asdf:josephtate/asdf-bazelisk"]
+backends = [
+  "aqua:bazelbuild/bazelisk",
+  "npm:@bazel/bazelisk",
+  "asdf:josephtate/asdf-bazelisk",
+]
 description = "A user-friendly launcher for Bazel"
-test = ["bazelisk --version", "bazel"] # shows bazel version, not bazelisk version
+test = [
+  "bazelisk --version",
+  "bazel",
+] # shows bazel version, not bazelisk version
 
 [tools.bbr-s3-config-validator]
 backends = ["asdf:mise-plugins/tanzu-plug-in-for-asdf"]
