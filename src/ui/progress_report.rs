@@ -78,7 +78,7 @@ static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
 
 /// Renders a progress bar with text overlaid on top
 /// The text background alternates based on progress:
-/// - Filled portion: white text on cyan background
+/// - Filled portion: black text on cyan background
 /// - Unfilled portion: dim text on default background
 fn render_progress_bar_with_overlay(text: &str, progress: f64, width: usize) -> String {
     use console::Style;
@@ -104,7 +104,7 @@ fn render_progress_bar_with_overlay(text: &str, progress: f64, width: usize) -> 
 
     // Styles for different regions
     let filled_bar_style = Style::new().cyan();
-    let filled_text_style = Style::new().white().on_cyan();
+    let filled_text_style = Style::new().black().on_cyan();
     let empty_text_style = Style::new().dim();
 
     for i in 0..width {
@@ -121,7 +121,7 @@ fn render_progress_bar_with_overlay(text: &str, progress: f64, width: usize) -> 
             let ch = display_text.chars().nth(text_idx).unwrap();
 
             if i < filled_width {
-                // Filled portion: white text on cyan background
+                // Filled portion: black text on cyan background
                 result.push_str(&filled_text_style.apply_to(ch).to_string());
             } else {
                 // Unfilled portion: dim text
