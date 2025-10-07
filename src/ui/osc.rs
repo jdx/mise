@@ -56,9 +56,11 @@ pub fn set_progress(state: ProgressState, progress: u8) {
 fn write_progress(state: ProgressState, progress: u8) -> io::Result<()> {
     let mut stderr = io::stderr();
     // OSC 9;4 format: ESC ] 9 ; 4 ; <state> ; <progress> BEL
+    // Note: The color is controlled by the terminal theme
+    // Ghostty may show cyan automatically for normal progress
     write!(
         stderr,
-        "\x1b]9;4;{};{}\x07",
+        "\x1b]9;4;{};{}\x1b\\",
         state.as_code(),
         progress
     )?;

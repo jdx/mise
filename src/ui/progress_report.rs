@@ -79,7 +79,8 @@ static HEADER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
         80..=99 => 15,
         _ => 20,
     };
-    let tmpl = format!(r#"{{prefix}} {{bar:{width}.cyan/blue}} {{pos}}/{{len:2}}"#);
+    // Don't show pos/len numbers, just the progress bar
+    let tmpl = format!(r#"{{prefix}} {{bar:{width}.cyan/blue}}"#);
     ProgressStyle::with_template(&tmpl).unwrap()
 });
 
@@ -204,6 +205,23 @@ impl SingleReport for ProgressReport {
         }
     }
     fn set_length(&self, length: u64) {
+        // If we already have a length, treat the previous operation as a substep that completed
+        // This handles the case where tools call set_length multiple times (download, extract, etc.)
+        if let Some(prev_length) = self.pb.length() {
+            if prev_length > 0 {
+                let mut substep_base = self.substep_base.lock().unwrap();
+                let substep_weight = *self.substep_weight.lock().unwrap();
+
+                // Add progress from the completed substep
+                let completed_progress = self.pb.position() as f64 / prev_length as f64;
+                *substep_base += substep_weight * completed_progress;
+
+                // Each subsequent operation gets less weight (geometric series)
+                // This way even if we don't know total substeps, progress still moves forward
+                *self.substep_weight.lock().unwrap() = substep_weight * 0.5;
+            }
+        }
+
         self.pb.set_position(0);
         self.pb.set_style(PROG_TEMPLATE.clone());
         self.pb.disable_steady_tick();
@@ -241,9 +259,8 @@ impl SingleReport for ProgressReport {
         // Set new weight for this substep
         *self.substep_weight.lock().unwrap() = weight;
 
-        // Reset the progress bar for this substep
-        self.pb.set_position(0);
-        self.pb.set_length(100); // Use a standard length
+        // Update terminal progress with the accumulated progress before resetting
+        self.update_terminal_progress();
     }
 }
 

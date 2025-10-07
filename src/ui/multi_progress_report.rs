@@ -170,7 +170,8 @@ impl MultiProgressReport {
 
         // Update terminal OSC progress
         if Settings::get().terminal_progress {
-            let overall_percentage = ((current_units as f64 / total_units as f64) * 100.0) as u8;
+            let overall_percentage = ((current_units as f64 / total_units as f64) * 100.0)
+                .clamp(0.0, 100.0) as u8;
             osc::set_progress(ProgressState::Progress, overall_percentage);
         }
     }
