@@ -19,7 +19,7 @@ use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::{Deps, GetMatchingExt, Task};
-use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ToolSource, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::{ctrlc, prompt, style, time};
@@ -336,6 +336,7 @@ impl Run {
         let this = Arc::new(self);
 
         let mut all_tools = this.tool.clone();
+        let mut all_tool_requests = vec![];
         let all_tasks: Vec<_> = tasks.all().collect();
         trace!("Collecting tools from {} tasks", all_tasks.len());
 
@@ -395,19 +396,31 @@ impl Run {
                     t.name
                 );
 
-                for (ba, requests) in tool_request_set.tools.iter() {
-                    for req in requests {
-                        trace!("Adding tool from config: {}", req);
-                        all_tools.push(format!("{}@{}", ba.short, req.version()).parse()?);
-                    }
+                // Add the tools directly from the ToolRequestSet to preserve backend options
+                for (_, reqs) in tool_request_set.tools.iter() {
+                    all_tool_requests.extend(reqs.iter().cloned());
                 }
             }
         }
-        trace!("All tools to install: {:?}", all_tools);
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&all_tools)
-            .build(&config)
-            .await?;
+
+        // Build toolset from both parsed tool args and direct ToolRequests
+        let source = ToolSource::Argument;
+        let mut ts = Toolset::new(source.clone());
+
+        // Add tools from CLI args and task.tools (these are parsed from strings)
+        for tool_arg in all_tools {
+            if let Some(tvr) = tool_arg.tvr {
+                ts.add_version(tvr);
+            }
+        }
+
+        // Add tools from config files (these already have proper backend options)
+        for tr in all_tool_requests {
+            trace!("Adding tool from config: {}", tr);
+            ts.add_version(tr);
+        }
+
+        ts.resolve(&config).await?;
 
         ts.install_missing_versions(
             &mut config,

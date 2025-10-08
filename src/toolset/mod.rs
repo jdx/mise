@@ -145,7 +145,7 @@ impl Toolset {
         config: &mut Arc<Config>,
         opts: &InstallOptions,
     ) -> Result<Vec<ToolVersion>> {
-        let versions = self
+        let mut versions = self
             .list_missing_versions(config)
             .await
             .into_iter()
@@ -162,6 +162,8 @@ impl Toolset {
             })
             .map(|tv| tv.request)
             .collect_vec();
+        // Ensure options from toolset are preserved during auto-install
+        self.init_request_options(&mut versions);
         let versions = self.install_all_versions(config, versions, opts).await?;
         if !versions.is_empty() {
             let ts = config.get_toolset().await?;
@@ -191,19 +193,18 @@ impl Toolset {
     /// but this tool has options inside mise.toml
     fn init_request_options(&self, requests: &mut Vec<ToolRequest>) {
         for tr in requests {
-            // TODO: tr.options() probably should be Option<ToolVersionOptions>
-            // to differentiate between no options and empty options
-            // without that it might not be possible to unset the options if they are set
-            if !tr.options().is_empty() {
-                continue;
-            }
             if let Some(tvl) = self.versions.get(tr.ba()) {
                 if tvl.requests.len() != 1 {
                     // TODO: handle this case with multiple versions
                     continue;
                 }
-                let options = tvl.requests[0].options();
-                tr.set_options(options);
+                let options = tvl.backend.opts();
+                // TODO: tr.options() probably should be Option<ToolVersionOptions>
+                // to differentiate between no options and empty options
+                // without that it might not be possible to unset the options if they are set
+                if tr.options().is_empty() || tr.options() != options {
+                    tr.set_options(options);
+                }
             }
         }
     }
