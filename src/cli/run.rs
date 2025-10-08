@@ -218,7 +218,7 @@ pub struct Run {
         std::sync::RwLock<IndexMap<PathBuf, Arc<crate::toolset::ToolRequestSet>>>,
 
     #[clap(skip)]
-    pub env_resolution_cache: std::sync::RwLock<IndexMap<PathBuf, EnvResolutionResult>>,
+    pub env_resolution_cache: std::sync::RwLock<IndexMap<u64, EnvResolutionResult>>,
 }
 
 type EnvResolutionResult = (BTreeMap<String, String>, Vec<(String, String)>);
@@ -1003,19 +1003,28 @@ impl Run {
             return task.render_env(config, ts).await;
         }
 
-        let config_path = Self::canonicalize_path(task_cf.get_path());
-
         // Check cache first if task has no task-specific env directives
-        if task.env.0.is_empty() {
+        let cache_key = if task.env.0.is_empty() {
+            Some(Self::compute_env_cache_key(
+                task_cf,
+                &config_env_entries,
+                ts,
+                config,
+            )?)
+        } else {
+            None
+        };
+
+        if let Some(key) = cache_key {
             let cache = self
                 .env_resolution_cache
                 .read()
                 .expect("env_resolution_cache RwLock poisoned");
-            if let Some(cached_env) = cache.get(&config_path) {
+            if let Some(cached_env) = cache.get(&key) {
                 trace!(
-                    "task {} using cached env resolution from {}",
+                    "task {} using cached env resolution (key: {})",
                     task.name,
-                    config_path.display()
+                    key
                 );
                 return Ok(cached_env.clone());
             }
@@ -1039,23 +1048,72 @@ impl Run {
         Self::apply_env_results(&mut env, &task_env_results);
 
         // Cache the result if no task-specific env directives
-        if task.env.0.is_empty() {
+        if let Some(key) = cache_key {
             let mut cache = self
                 .env_resolution_cache
                 .write()
                 .expect("env_resolution_cache RwLock poisoned");
             // Double-check: another thread may have populated while we were resolving
-            cache.entry(config_path.clone()).or_insert_with(|| {
-                trace!(
-                    "task {} cached env resolution to {}",
-                    task.name,
-                    config_path.display()
-                );
+            cache.entry(key).or_insert_with(|| {
+                trace!("task {} cached env resolution (key: {})", task.name, key);
                 (env.clone(), task_env.clone())
             });
         }
 
         Ok((env, task_env))
+    }
+
+    /// Compute a cache key for environment resolution
+    /// The key includes all factors that affect the resolved environment:
+    /// - Task config file path and modification time
+    /// - All config files with env entries and their modification times
+    /// - Toolset state (installed tools and versions)
+    fn compute_env_cache_key(
+        task_cf: &Arc<dyn ConfigFile>,
+        config_env_entries: &[(EnvDirective, PathBuf)],
+        ts: &Toolset,
+        config: &Arc<Config>,
+    ) -> Result<u64> {
+        let mut hasher = DefaultHasher::new();
+
+        // Hash task config file path and mtime
+        let task_path = task_cf.get_path();
+        task_path.hash(&mut hasher);
+        if let Ok(metadata) = fs::metadata(task_path) {
+            if let Ok(mtime) = metadata.modified() {
+                if let Ok(duration) = mtime.duration_since(SystemTime::UNIX_EPOCH) {
+                    duration.as_secs().hash(&mut hasher);
+                }
+            }
+        }
+
+        // Hash all config files that contribute env entries
+        let mut config_paths: Vec<_> = config_env_entries
+            .iter()
+            .map(|(_, path)| path)
+            .collect();
+        config_paths.sort();
+        config_paths.dedup();
+
+        for path in config_paths {
+            path.hash(&mut hasher);
+            if let Ok(metadata) = fs::metadata(path) {
+                if let Ok(mtime) = metadata.modified() {
+                    if let Ok(duration) = mtime.duration_since(SystemTime::UNIX_EPOCH) {
+                        duration.as_secs().hash(&mut hasher);
+                    }
+                }
+            }
+        }
+
+        // Hash toolset state (tool versions that are installed)
+        for (backend, tv) in ts.list_current_installed_versions(config) {
+            backend.get_type().hash(&mut hasher);
+            backend.id().hash(&mut hasher);
+            tv.version.hash(&mut hasher);
+        }
+
+        Ok(hasher.finish())
     }
 
     /// Canonicalize a path for use as cache key
