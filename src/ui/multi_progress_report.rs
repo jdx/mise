@@ -146,8 +146,11 @@ impl MultiProgressReport {
             Some(mp) if !dry_run => {
                 // Footer length is total_count * 1,000,000 to show progress with high granularity
                 let footer_length = (total_count * 1_000_000) as u64;
-                let mut footer_bar =
-                    ProgressReport::new_footer(footer_text.clone(), footer_length, message.to_string());
+                let mut footer_bar = ProgressReport::new_footer(
+                    footer_text.clone(),
+                    footer_length,
+                    message.to_string(),
+                );
                 // Add footer to the end (it will be the last bar initially)
                 footer_bar.pb = mp.add(footer_bar.pb);
                 // Store reference to footer bar for inserting other bars before it
