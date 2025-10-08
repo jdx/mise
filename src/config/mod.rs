@@ -887,7 +887,7 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
 }
 
 fn all_dirs() -> Result<Vec<PathBuf>> {
-    file::all_dirs(env::current_dir().ok().unwrap(), &env::MISE_CEILING_PATHS)
+    file::all_dirs(env::current_dir()?, &env::MISE_CEILING_PATHS)
 }
 
 pub fn config_file_from_dir(p: &Path) -> PathBuf {
