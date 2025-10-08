@@ -76,15 +76,66 @@ static PROG_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     ProgressStyle::with_template(tmpl).unwrap()
 });
 
-static HEADER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
-    let width = match *env::TERM_WIDTH {
-        0..=79 => 10,
-        80..=99 => 15,
-        _ => 20,
+/// Renders a progress bar with text overlaid on top
+/// The text background alternates based on progress:
+/// - Filled portion: black text on cyan background
+/// - Unfilled portion: dim text on default background
+fn render_progress_bar_with_overlay(text: &str, progress: f64, width: usize) -> String {
+    use console::Style;
+
+    let progress = progress.clamp(0.0, 1.0);
+    let filled_width = (width as f64 * progress) as usize;
+
+    // Strip any existing ANSI codes from text
+    let clean_text = console::strip_ansi_codes(text);
+
+    // If text is longer than width, truncate it
+    let display_text = if clean_text.chars().count() > width {
+        clean_text.chars().take(width - 3).collect::<String>() + "..."
+    } else {
+        clean_text.to_string()
     };
-    // Don't show pos/len numbers, just the progress bar
-    let tmpl = format!(r#"{{prefix}} {{bar:{width}.cyan/blue}}"#);
-    ProgressStyle::with_template(&tmpl).unwrap()
+
+    let text_len = display_text.chars().count();
+    let padding = (width.saturating_sub(text_len)) / 2;
+
+    // Build the bar with text overlay
+    let mut result = String::new();
+
+    // Styles for different regions
+    let filled_bar_style = Style::new().cyan();
+    let filled_text_style = Style::new().black().on_cyan();
+    let empty_text_style = Style::new().dim();
+
+    for i in 0..width {
+        if i < padding || i >= padding + text_len {
+            // No text here, just show the bar
+            if i < filled_width {
+                result.push_str(&filled_bar_style.apply_to('█').to_string());
+            } else {
+                result.push('░');
+            }
+        } else {
+            // Text overlay
+            let text_idx = i - padding;
+            let ch = display_text.chars().nth(text_idx).unwrap();
+
+            if i < filled_width {
+                // Filled portion: black text on cyan background
+                result.push_str(&filled_text_style.apply_to(ch).to_string());
+            } else {
+                // Unfilled portion: dim text
+                result.push_str(&empty_text_style.apply_to(ch).to_string());
+            }
+        }
+    }
+
+    result
+}
+
+static FOOTER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
+    // Simple template - we'll update the message with our custom rendered bar
+    ProgressStyle::with_template("{wide_msg}").unwrap()
 });
 
 #[derive(Debug)]
@@ -95,6 +146,7 @@ pub struct ProgressReport {
     operation_count: Mutex<u32>,            // How many operations have started (1, 2, 3...)
     operation_base: Mutex<u64>, // Base progress for current operation (0, 333333, 666666...)
     operation_length: Mutex<u64>, // Allocated length for current operation
+    footer_text: Option<String>, // If set, this is a footer bar with text overlay
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
@@ -135,17 +187,19 @@ impl ProgressReport {
             operation_count: Mutex::new(0),
             operation_base: Mutex::new(0),
             operation_length: Mutex::new(1_000_000), // Full range initially
+            footer_text: None,
         }
     }
 
-    pub fn new_header(prefix: String, length: u64, message: String) -> ProgressReport {
+    pub fn new_footer(footer_text: String, length: u64, _message: String) -> ProgressReport {
         ui::ctrlc::show_cursor_after_ctrl_c();
-        let pad = *LONGEST_PLUGIN_NAME;
-        let pb = ProgressBar::new(length)
-            .with_style(HEADER_TEMPLATE.clone())
-            .with_prefix(pad_prefix(pad, &prefix))
-            .with_message(message);
+        // Footer shows text inside the progress bar with custom overlay rendering
+        let pb = ProgressBar::new(length).with_style(FOOTER_TEMPLATE.clone());
         pb.enable_steady_tick(TICK_INTERVAL);
+
+        // Don't set initial message here - it will be set after adding to MultiProgress
+        // to prevent ghost output before the bar is part of the managed display
+
         ProgressReport {
             pb,
             report_id: None,
@@ -153,6 +207,23 @@ impl ProgressReport {
             operation_count: Mutex::new(0),
             operation_base: Mutex::new(0),
             operation_length: Mutex::new(length),
+            footer_text: Some(footer_text),
+        }
+    }
+
+    fn update_footer_display(&self) {
+        // Update footer bar with custom text overlay rendering
+        if let Some(footer_text) = &self.footer_text {
+            let pos = self.pb.position();
+            let len = self.pb.length().unwrap_or(1);
+            let progress = if len > 0 {
+                pos as f64 / len as f64
+            } else {
+                0.0
+            };
+            let width = *env::TERM_WIDTH;
+            let rendered = render_progress_bar_with_overlay(footer_text, progress, width);
+            self.pb.set_message(rendered);
         }
     }
 
@@ -208,7 +279,7 @@ impl ProgressReport {
 
 impl SingleReport for ProgressReport {
     fn println(&self, message: String) {
-        // Suspend the entire MultiProgress to prevent header duplication
+        // Suspend the entire MultiProgress to prevent footer duplication
         crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
             eprintln!("{message}");
         });
@@ -234,6 +305,7 @@ impl SingleReport for ProgressReport {
         self.pb.set_position(pos);
         progress_trace!("set_position[{:?}]: pos={}", self.report_id, pos);
         self.update_terminal_progress();
+        self.update_footer_display();
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
             self.pb.enable_steady_tick(Duration::from_millis(250));
@@ -312,7 +384,12 @@ impl SingleReport for ProgressReport {
     }
     fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {
         progress_trace!("finish_with_icon[{:?}]", self.report_id);
-        self.pb.finish_and_clear();
+        // For footer bars with text overlay, use finish_with_message to clear it
+        if self.footer_text.is_some() {
+            self.pb.finish_with_message("");
+        } else {
+            self.pb.finish_and_clear();
+        }
         // Mark this report as complete (100%) using fixed 0-1,000,000 range
         if let Some(report_id) = self.report_id {
             if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
