@@ -402,15 +402,7 @@ impl SingleReport for ProgressReport {
             self.report_id,
             count
         );
-        if count > 0 {
-            *self.total_operations.lock().unwrap() = Some(count);
-        } else {
-            // Silently ignore invalid count of 0, keep default of 1
-            progress_trace!(
-                "start_operations[{:?}]: ignoring invalid count of 0, keeping default",
-                self.report_id
-            );
-        }
+        *self.total_operations.lock().unwrap() = Some(count.max(1));
     }
 }
 
