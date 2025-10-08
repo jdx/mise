@@ -133,7 +133,7 @@ fn render_progress_bar_with_overlay(text: &str, progress: f64, width: usize) -> 
     result
 }
 
-static HEADER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
+static FOOTER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
     // Simple template - we'll update the message with our custom rendered bar
     ProgressStyle::with_template("{wide_msg}").unwrap()
 });
@@ -191,16 +191,14 @@ impl ProgressReport {
         }
     }
 
-    pub fn new_header(footer_text: String, length: u64, _message: String) -> ProgressReport {
+    pub fn new_footer(footer_text: String, length: u64, _message: String) -> ProgressReport {
         ui::ctrlc::show_cursor_after_ctrl_c();
         // Footer shows text inside the progress bar with custom overlay rendering
-        let pb = ProgressBar::new(length).with_style(HEADER_TEMPLATE.clone());
+        let pb = ProgressBar::new(length).with_style(FOOTER_TEMPLATE.clone());
         pb.enable_steady_tick(TICK_INTERVAL);
 
-        // Render initial state (0% progress)
-        let width = *env::TERM_WIDTH;
-        let rendered = render_progress_bar_with_overlay(&footer_text, 0.0, width);
-        pb.set_message(rendered);
+        // Don't set initial message here - it will be set after adding to MultiProgress
+        // to prevent ghost output before the bar is part of the managed display
 
         ProgressReport {
             pb,
@@ -281,7 +279,7 @@ impl ProgressReport {
 
 impl SingleReport for ProgressReport {
     fn println(&self, message: String) {
-        // Suspend the entire MultiProgress to prevent header duplication
+        // Suspend the entire MultiProgress to prevent footer duplication
         crate::ui::multi_progress_report::MultiProgressReport::suspend_if_active(|| {
             eprintln!("{message}");
         });
@@ -386,7 +384,12 @@ impl SingleReport for ProgressReport {
     }
     fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {
         progress_trace!("finish_with_icon[{:?}]", self.report_id);
-        self.pb.finish_and_clear();
+        // For footer bars with text overlay, use finish_with_message to clear it
+        if self.footer_text.is_some() {
+            self.pb.finish_with_message("");
+        } else {
+            self.pb.finish_and_clear();
+        }
         // Mark this report as complete (100%) using fixed 0-1,000,000 range
         if let Some(report_id) = self.report_id {
             if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
