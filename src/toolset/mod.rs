@@ -145,7 +145,7 @@ impl Toolset {
         config: &mut Arc<Config>,
         opts: &InstallOptions,
     ) -> Result<Vec<ToolVersion>> {
-        let versions = self
+        let mut versions = self
             .list_missing_versions(config)
             .await
             .into_iter()
@@ -162,6 +162,8 @@ impl Toolset {
             })
             .map(|tv| tv.request)
             .collect_vec();
+        // Ensure options from toolset are preserved during auto-install
+        self.init_request_options(&mut versions);
         let versions = self.install_all_versions(config, versions, opts).await?;
         if !versions.is_empty() {
             let ts = config.get_toolset().await?;
@@ -191,19 +193,18 @@ impl Toolset {
     /// but this tool has options inside mise.toml
     fn init_request_options(&self, requests: &mut Vec<ToolRequest>) {
         for tr in requests {
-            // TODO: tr.options() probably should be Option<ToolVersionOptions>
-            // to differentiate between no options and empty options
-            // without that it might not be possible to unset the options if they are set
-            if !tr.options().is_empty() {
-                continue;
-            }
             if let Some(tvl) = self.versions.get(tr.ba()) {
                 if tvl.requests.len() != 1 {
                     // TODO: handle this case with multiple versions
                     continue;
                 }
-                let options = tvl.requests[0].options();
-                tr.set_options(options);
+                let options = tvl.backend.opts();
+                // TODO: tr.options() probably should be Option<ToolVersionOptions>
+                // to differentiate between no options and empty options
+                // without that it might not be possible to unset the options if they are set
+                if tr.options().is_empty() || tr.options() != options {
+                    tr.set_options(options);
+                }
             }
         }
     }
@@ -219,14 +220,14 @@ impl Toolset {
             return Ok(vec![]);
         }
 
-        // Initialize a header for the entire install session once (before batching)
+        // Initialize a footer for the entire install session once (before batching)
         let mpr = MultiProgressReport::get();
-        let header_reason = if opts.dry_run {
+        let footer_reason = if opts.dry_run {
             format!("{} (dry-run)", opts.reason)
         } else {
             opts.reason.clone()
         };
-        mpr.init_header(opts.dry_run, &header_reason, versions.len());
+        mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
 
         // Skip hooks in dry-run mode
         if !opts.dry_run {
@@ -252,8 +253,8 @@ impl Toolset {
                     successful_installations,
                     failed_installations,
                 }) => {
-                    // Count both successes and failures toward header progress
-                    mpr.header_inc(successful_installations.len() + failed_installations.len());
+                    // Count both successes and failures toward footer progress
+                    mpr.footer_inc(successful_installations.len() + failed_installations.len());
                     installed.extend(successful_installations);
 
                     return Err(Error::InstallFailed {
@@ -310,9 +311,9 @@ impl Toolset {
             let _ = hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
         }
 
-        // Finish the global header
+        // Finish the global footer
         if !opts.dry_run {
-            mpr.header_finish();
+            mpr.footer_finish();
         }
         Ok(installed)
     }
@@ -462,8 +463,8 @@ impl Toolset {
                     .await;
 
                     results.push((tr, result));
-                    // Bump header for each completed tool
-                    MultiProgressReport::get().header_inc(1);
+                    // Bump footer for each completed tool
+                    MultiProgressReport::get().footer_inc(1);
                 }
                 results
             });

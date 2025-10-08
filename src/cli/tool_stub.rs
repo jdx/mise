@@ -131,7 +131,7 @@ impl ToolStubFile {
     pub fn to_tool_request(&self, stub_path: &Path) -> Result<ToolRequest> {
         use crate::cli::args::BackendArg;
 
-        let backend_arg = BackendArg::from(&self.tool_name);
+        let mut backend_arg = BackendArg::from(&self.tool_name);
         let source = ToolSource::ToolStub(stub_path.to_path_buf());
 
         // Create ToolVersionOptions from our fields
@@ -148,6 +148,9 @@ impl ToolStubFile {
             install_env: self.install_env.clone(),
             opts: opts.clone(),
         };
+
+        // Set options on the BackendArg so they're available to the backend
+        backend_arg.set_opts(Some(options.clone()));
 
         // For HTTP backend with "latest" version, use URL+checksum hash as version for stability
         let version = if self.tool_name.starts_with("http:") && self.version == "latest" {

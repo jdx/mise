@@ -1,5 +1,30 @@
 # Changelog
 
+## [2025.10.6](https://github.com/jdx/mise/compare/v2025.10.5..v2025.10.6) - 2025-10-08
+
+### 📦 Registry
+
+- add vfox-mongod by @blaubaer in [#6586](https://github.com/jdx/mise/pull/6586)
+
+### 🚀 Features
+
+- add OSC 9;4 terminal progress indicators by @jdx in [#6584](https://github.com/jdx/mise/pull/6584)
+- make progress bar a footer by @jdx in [#6590](https://github.com/jdx/mise/pull/6590)
+
+### 🐛 Bug Fixes
+
+- **(task)** preserve ubi tool options during auto-install by @jdx in [#6600](https://github.com/jdx/mise/pull/6600)
+- unify project_root and config_root resolution by @risu729 in [#6588](https://github.com/jdx/mise/pull/6588)
+
+### 🚜 Refactor
+
+- **(exec)** remove redundant tty check for auto-install by @jdx in [#6589](https://github.com/jdx/mise/pull/6589)
+- remove duplicated task loads by @risu729 in [#6594](https://github.com/jdx/mise/pull/6594)
+
+### New Contributors
+
+- @blaubaer made their first contribution in [#6586](https://github.com/jdx/mise/pull/6586)
+
 ## [2025.10.5](https://github.com/jdx/mise/compare/v2025.10.4..v2025.10.5) - 2025-10-07
 
 ### 📦 Registry
@@ -870,7 +895,7 @@
 ### 📦 Registry
 
 - add container-use ([aqua:dagger/container-use](https://github.com/dagger/container-use)) by @TyceHerrman in [#6029](https://github.com/jdx/mise/pull/6029)
-- add prek ([aqua:j178/prek](https://github.com/j178/prek)) by @HenryZhang-ZHY in [#6023](https://github.com/jdx/mise/pull/6023)
+- add prek ([aqua:j178/prek](https://github.com/j178/prek)) by Henry Zhang in [#6023](https://github.com/jdx/mise/pull/6023)
 
 ### 🚀 Features
 
@@ -897,7 +922,6 @@
 ### New Contributors
 
 - @br3ndonland made their first contribution in [#6047](https://github.com/jdx/mise/pull/6047)
-- @HenryZhang-ZHY made their first contribution in [#6023](https://github.com/jdx/mise/pull/6023)
 - @lfromanini made their first contribution in [#6037](https://github.com/jdx/mise/pull/6037)
 
 ## [2025.8.10](https://github.com/jdx/mise/compare/v2025.8.9..v2025.8.10) - 2025-08-14

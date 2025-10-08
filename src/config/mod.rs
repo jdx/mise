@@ -428,15 +428,11 @@ impl Config {
     ) -> Result<BTreeMap<String, Task>> {
         let config = Config::get().await?;
         time!("load_all_tasks");
-        let file_tasks = load_local_tasks_with_context(&config, ctx).await?;
-        let global_tasks =
-            load_tasks_by_filter(&config, |cf| is_global_config(cf.get_path())).await?;
-        let system_tasks =
-            load_tasks_by_filter(&config, |cf| is_system_config(cf.get_path())).await?;
-        let mut tasks: BTreeMap<String, Task> = file_tasks
+        let local_tasks = load_local_tasks_with_context(&config, ctx).await?;
+        let global_tasks = load_global_tasks(&config).await?;
+        let mut tasks: BTreeMap<String, Task> = local_tasks
             .into_iter()
             .chain(global_tasks)
-            .chain(system_tasks)
             .rev()
             .inspect(|t| {
                 trace!(
@@ -949,10 +945,6 @@ pub fn is_global_config(path: &Path) -> bool {
     global_config_files().contains(path) || system_config_files().contains(path)
 }
 
-pub fn is_system_config(path: &Path) -> bool {
-    system_config_files().contains(path)
-}
-
 static GLOBAL_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
 static SYSTEM_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
 
@@ -1354,11 +1346,18 @@ async fn load_local_tasks_with_context(
     let monorepo_root = find_monorepo_root(&config.config_files);
 
     // Load tasks from parent directories (current working directory up to root)
+
+    let local_config_files = config
+        .config_files
+        .iter()
+        .filter(|(_, cf)| !is_global_config(cf.get_path()))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect::<IndexMap<_, _>>();
     for d in all_dirs()? {
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
             continue;
         }
-        let mut dir_tasks = load_tasks_in_dir(config, &d, &config.config_files).await?;
+        let mut dir_tasks = load_tasks_in_dir(config, &d, &local_config_files).await?;
 
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);
@@ -1557,14 +1556,11 @@ fn discover_monorepo_subdirs(
     Ok(subdirs)
 }
 
-async fn load_tasks_by_filter<F>(config: &Arc<Config>, filter: F) -> Result<Vec<Task>>
-where
-    F: Fn(&dyn ConfigFile) -> bool,
-{
+async fn load_global_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
     let config_files = config
         .config_files
         .values()
-        .filter(|cf| filter(cf.as_ref()))
+        .filter(|cf| is_global_config(cf.get_path()))
         .collect::<Vec<_>>();
     let mut tasks = vec![];
     for cf in config_files {
@@ -1577,9 +1573,9 @@ async fn load_config_and_file_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
 ) -> Result<Vec<Task>> {
-    let project_root = cf.project_root().unwrap_or(&*env::HOME);
-    let tasks = load_config_tasks(config, cf.clone(), project_root).await?;
-    let file_tasks = load_file_tasks(config, cf.clone(), project_root).await?;
+    let project_root = cf.project_root().unwrap_or(env::HOME.clone());
+    let tasks = load_config_tasks(config, cf.clone(), &project_root).await?;
+    let file_tasks = load_file_tasks(config, cf.clone(), &project_root).await?;
     Ok(tasks.into_iter().chain(file_tasks).collect())
 }
 
