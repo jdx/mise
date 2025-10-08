@@ -220,14 +220,14 @@ impl Toolset {
             return Ok(vec![]);
         }
 
-        // Initialize a header for the entire install session once (before batching)
+        // Initialize a footer for the entire install session once (before batching)
         let mpr = MultiProgressReport::get();
-        let header_reason = if opts.dry_run {
+        let footer_reason = if opts.dry_run {
             format!("{} (dry-run)", opts.reason)
         } else {
             opts.reason.clone()
         };
-        mpr.init_header(opts.dry_run, &header_reason, versions.len());
+        mpr.init_footer(opts.dry_run, &footer_reason, versions.len());
 
         // Skip hooks in dry-run mode
         if !opts.dry_run {
@@ -253,8 +253,8 @@ impl Toolset {
                     successful_installations,
                     failed_installations,
                 }) => {
-                    // Count both successes and failures toward header progress
-                    mpr.header_inc(successful_installations.len() + failed_installations.len());
+                    // Count both successes and failures toward footer progress
+                    mpr.footer_inc(successful_installations.len() + failed_installations.len());
                     installed.extend(successful_installations);
 
                     return Err(Error::InstallFailed {
@@ -311,9 +311,9 @@ impl Toolset {
             let _ = hooks::run_one_hook(config, self, Hooks::Postinstall, None).await;
         }
 
-        // Finish the global header
+        // Finish the global footer
         if !opts.dry_run {
-            mpr.header_finish();
+            mpr.footer_finish();
         }
         Ok(installed)
     }
@@ -463,8 +463,8 @@ impl Toolset {
                     .await;
 
                     results.push((tr, result));
-                    // Bump header for each completed tool
-                    MultiProgressReport::get().header_inc(1);
+                    // Bump footer for each completed tool
+                    MultiProgressReport::get().footer_inc(1);
                 }
                 results
             });
