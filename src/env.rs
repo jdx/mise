@@ -171,6 +171,17 @@ pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         })
         .unwrap_or_default()
 });
+pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
+    var("MISE_CEILING_PATHS")
+        .ok()
+        .map(|v| {
+            split_paths(&v)
+                .filter(|p| !p.as_os_str().is_empty())
+                .map(replace_path)
+                .collect()
+        })
+        .unwrap_or_default()
+});
 pub static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| !var_is_false("MISE_USE_TOML"));
 pub static MISE_LIST_ALL_VERSIONS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LIST_ALL_VERSIONS"));
 pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
