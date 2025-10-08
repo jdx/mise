@@ -18,7 +18,7 @@ cargo-binstall = "latest"
 cosign = "latest"
 gh = "2.62.0"
 hk = "latest"
-"jq" = "latest"
+jq = "latest"
 "npm:markdownlint-cli" = "latest"
 "npm:prettier" = "3"
 "npm:ajv-cli" = "latest"
@@ -32,6 +32,7 @@ slsa-verifier = "latest"
 taplo = "latest"
 wait-for-gh-rate-limit = "latest"
 sops = "latest"
+node = "24"
 
 [task_config]
 includes = ["tasks.toml", "xtasks"]

@@ -10,6 +10,7 @@ use std::{
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::LazyLock as Lazy;
 
+use crate::progress_trace;
 use crate::ui::style;
 use crate::{backend, env, ui};
 
@@ -46,6 +47,14 @@ pub trait SingleReport: Send + Sync + std::fmt::Debug {
         self.finish_with_icon(message, ProgressIcon::Success);
     }
     fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {}
+
+    /// Declare how many operations this progress report will have
+    /// Each operation will get equal space (1/count)
+    /// For example, if there are 3 operations (download, checksum, extract):
+    /// - start_operations(3) at the beginning
+    ///
+    /// Then each set_length() call will allocate 33.33% of the total progress
+    fn start_operations(&self, _count: usize) {}
 }
 
 static SPIN_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
@@ -73,13 +82,19 @@ static HEADER_TEMPLATE: Lazy<ProgressStyle> = Lazy::new(|| {
         80..=99 => 15,
         _ => 20,
     };
-    let tmpl = format!(r#"{{prefix}} {{bar:{width}.cyan/blue}} {{pos}}/{{len:2}}"#);
+    // Don't show pos/len numbers, just the progress bar
+    let tmpl = format!(r#"{{prefix}} {{bar:{width}.cyan/blue}}"#);
     ProgressStyle::with_template(&tmpl).unwrap()
 });
 
 #[derive(Debug)]
 pub struct ProgressReport {
     pub pb: ProgressBar,
+    report_id: Option<usize>,
+    total_operations: Mutex<Option<usize>>, // Total operations declared upfront (None if unknown)
+    operation_count: Mutex<u32>,            // How many operations have started (1, 2, 3...)
+    operation_base: Mutex<u64>, // Base progress for current operation (0, 333333, 666666...)
+    operation_length: Mutex<u64>, // Allocated length for current operation
 }
 
 static LONGEST_PLUGIN_NAME: Lazy<usize> = Lazy::new(|| {
@@ -108,7 +123,19 @@ impl ProgressReport {
             .with_style(SPIN_TEMPLATE.clone())
             .with_prefix(normal_prefix(pad, &prefix));
         pb.enable_steady_tick(TICK_INTERVAL);
-        ProgressReport { pb }
+
+        // Allocate a report ID for multi-progress tracking
+        let report_id = ui::multi_progress_report::MultiProgressReport::try_get()
+            .map(|mpr| mpr.allocate_report_id());
+
+        ProgressReport {
+            pb,
+            report_id,
+            total_operations: Mutex::new(Some(1)), // Default to 1 operation (100% of progress)
+            operation_count: Mutex::new(0),
+            operation_base: Mutex::new(0),
+            operation_length: Mutex::new(1_000_000), // Full range initially
+        }
     }
 
     pub fn new_header(prefix: String, length: u64, message: String) -> ProgressReport {
@@ -119,7 +146,63 @@ impl ProgressReport {
             .with_prefix(pad_prefix(pad, &prefix))
             .with_message(message);
         pb.enable_steady_tick(TICK_INTERVAL);
-        ProgressReport { pb }
+        ProgressReport {
+            pb,
+            report_id: None,
+            total_operations: Mutex::new(None),
+            operation_count: Mutex::new(0),
+            operation_base: Mutex::new(0),
+            operation_length: Mutex::new(length),
+        }
+    }
+
+    fn update_terminal_progress(&self) {
+        // Map progress bar position to allocated range to prevent backwards progress
+        if let Some(report_id) = self.report_id {
+            if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
+                // Check if we're spinning (no length set yet)
+                if self.pb.length().is_none() {
+                    // During spinning, report minimal progress to show activity
+                    progress_trace!(
+                        "update_terminal_progress[{}]: spinning, reporting 1%",
+                        report_id
+                    );
+                    mpr.update_report_progress(report_id, 10_000, 1_000_000); // 1%
+                    return;
+                }
+
+                let base = *self.operation_base.lock().unwrap();
+                let allocated_length = *self.operation_length.lock().unwrap();
+
+                // Get progress bar state (position/length in bytes)
+                let pb_pos = self.pb.position();
+                let pb_len = self.pb.length().unwrap(); // Safe because we checked above
+
+                // Calculate progress as 0.0-1.0
+                let pb_progress = if pb_len > 0 {
+                    (pb_pos as f64 / pb_len as f64).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+
+                // Map to allocated range (base to base+allocated_length)
+                let mapped_position = base + (pb_progress * allocated_length as f64) as u64;
+
+                progress_trace!(
+                    "update_terminal_progress[{}]: pb=({}/{}) {:.1}%, base={}, alloc={}, mapped={}",
+                    report_id,
+                    pb_pos,
+                    pb_len,
+                    pb_progress * 100.0,
+                    base,
+                    allocated_length,
+                    mapped_position
+                );
+
+                // Always report against fixed 1,000,000 scale
+                mpr.update_report_progress(report_id, mapped_position, 1_000_000);
+            }
+        }
     }
 }
 
@@ -135,6 +218,13 @@ impl SingleReport for ProgressReport {
     }
     fn inc(&self, delta: u64) {
         self.pb.inc(delta);
+        progress_trace!(
+            "inc[{:?}]: delta={}, new_pos={}",
+            self.report_id,
+            delta,
+            self.pb.position()
+        );
+        self.update_terminal_progress();
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
             self.pb.enable_steady_tick(TICK_INTERVAL);
@@ -142,22 +232,103 @@ impl SingleReport for ProgressReport {
     }
     fn set_position(&self, pos: u64) {
         self.pb.set_position(pos);
+        progress_trace!("set_position[{:?}]: pos={}", self.report_id, pos);
+        self.update_terminal_progress();
         if Some(self.pb.position()) == self.pb.length() {
             self.pb.set_style(SPIN_TEMPLATE.clone());
             self.pb.enable_steady_tick(Duration::from_millis(250));
         }
     }
     fn set_length(&self, length: u64) {
+        // Atomically update operation count and base together to prevent race conditions
+        let mut op_count = self.operation_count.lock().unwrap();
+        *op_count += 1;
+        let count = *op_count;
+
+        // When starting a new operation (count > 1), complete the previous operation first
+        let (base, per_operation) = if count > 1 {
+            let mut base_guard = self.operation_base.lock().unwrap();
+            let prev_allocated = *self.operation_length.lock().unwrap();
+            let prev_base = *base_guard;
+            let completed_position = prev_base + prev_allocated;
+
+            progress_trace!(
+                "set_length[{:?}]: completing op {}, moving base {} -> {}",
+                self.report_id,
+                count - 1,
+                prev_base,
+                completed_position
+            );
+
+            // Report completion of previous operation
+            if let Some(report_id) = self.report_id {
+                if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
+                    mpr.update_report_progress(report_id, completed_position, 1_000_000);
+                }
+            }
+
+            // New operation starts where previous ended
+            *base_guard = completed_position;
+
+            // Calculate allocation with the new base
+            let total_ops = self.total_operations.lock().unwrap();
+            let total = (*total_ops).unwrap_or(1).max(1); // Ensure at least 1 to prevent division by zero
+            let per_operation = 1_000_000 / total as u64;
+
+            (completed_position, per_operation)
+        } else {
+            // First operation
+            let total_ops = self.total_operations.lock().unwrap();
+            let total = (*total_ops).unwrap_or(1).max(1); // Ensure at least 1 to prevent division by zero
+            let base = *self.operation_base.lock().unwrap();
+            let per_operation = 1_000_000 / total as u64;
+
+            (base, per_operation)
+        };
+
+        drop(op_count); // Release operation_count lock
+
+        *self.operation_length.lock().unwrap() = per_operation;
+
+        let total = self.total_operations.lock().unwrap().unwrap_or(1).max(1);
+        progress_trace!(
+            "set_length[{:?}]: op={}/{}, base={}, allocated={}, pb_length={}",
+            self.report_id,
+            count,
+            total,
+            base,
+            per_operation,
+            length
+        );
+
         self.pb.set_position(0);
         self.pb.set_style(PROG_TEMPLATE.clone());
         self.pb.disable_steady_tick();
         self.pb.set_length(length);
+        self.update_terminal_progress();
     }
     fn abandon(&self) {
         self.pb.abandon();
     }
     fn finish_with_icon(&self, _message: String, _icon: ProgressIcon) {
+        progress_trace!("finish_with_icon[{:?}]", self.report_id);
         self.pb.finish_and_clear();
+        // Mark this report as complete (100%) using fixed 0-1,000,000 range
+        if let Some(report_id) = self.report_id {
+            if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
+                progress_trace!("finish_with_icon[{}]: marking as 100% complete", report_id);
+                mpr.update_report_progress(report_id, 1_000_000, 1_000_000);
+            }
+        }
+    }
+
+    fn start_operations(&self, count: usize) {
+        progress_trace!(
+            "start_operations[{:?}]: declaring {} operations",
+            self.report_id,
+            count
+        );
+        *self.total_operations.lock().unwrap() = Some(count.max(1));
     }
 }
 
