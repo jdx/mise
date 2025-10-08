@@ -1568,9 +1568,9 @@ async fn load_config_and_file_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
 ) -> Result<Vec<Task>> {
-    let project_root = cf.project_root().unwrap_or(&*env::HOME);
-    let tasks = load_config_tasks(config, cf.clone(), project_root).await?;
-    let file_tasks = load_file_tasks(config, cf.clone(), project_root).await?;
+    let project_root = cf.project_root().unwrap_or(env::HOME.clone());
+    let tasks = load_config_tasks(config, cf.clone(), &project_root).await?;
+    let file_tasks = load_file_tasks(config, cf.clone(), &project_root).await?;
     Ok(tasks.into_iter().chain(file_tasks).collect())
 }
 
