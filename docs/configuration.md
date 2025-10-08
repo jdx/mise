@@ -47,7 +47,8 @@ When mise needs configuration, it follows this process:
 
 ```
 /
-├── etc/mise/                          # System-wide config (highest precedence)
+├── etc/mise/                          # System-wide config on Unix (highest precedence)
+│   │                                  # On Windows: C:\ProgramData\mise
 │   ├── conf.d/*.toml                 # System fragments, loaded alphabetically
 │   ├── config.toml                   # System defaults
 │   └── config.<env>.toml             # Env-specific system config (MISE_ENV or -E)
@@ -311,10 +312,15 @@ status = { missing_tools = "if_other_versions_installed", show_env = false, show
 foo = "bar"
 ```
 
-## System config: `/etc/mise/config.toml`
+## System config: `/etc/mise/config.toml` (Unix) or `C:\ProgramData\mise\config.toml` (Windows)
 
 Similar to `~/.config/mise/config.toml` but for all users on the system. This is useful for
 setting defaults for all users.
+
+The system config directory is:
+
+- **Unix/Linux/macOS**: `/etc/mise/`
+- **Windows**: `C:\ProgramData\mise\` (or `%PROGRAMDATA%\mise`)
 
 ## `.tool-versions`
 
@@ -441,7 +447,10 @@ This is used for temporary storage such as when installing tools.
 
 ### `MISE_SYSTEM_DIR`
 
-Default: `/etc/mise`
+Default:
+
+- **Unix/Linux/macOS**: `/etc/mise`
+- **Windows**: `%PROGRAMDATA%\mise` (typically `C:\ProgramData\mise`)
 
 This is the directory where mise stores system-wide configuration.
 

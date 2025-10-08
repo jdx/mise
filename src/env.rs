@@ -113,8 +113,15 @@ pub static MISE_STATE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_STATE_DIR").unwrap_or_else(|| XDG_STATE_HOME.join("mise")));
 pub static MISE_TMP_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_TMP_DIR").unwrap_or_else(|| temp_dir().join("mise")));
+#[cfg(unix)]
 pub static MISE_SYSTEM_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_SYSTEM_DIR").unwrap_or_else(|| PathBuf::from("/etc/mise")));
+#[cfg(windows)]
+pub static MISE_SYSTEM_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_SYSTEM_DIR")
+        .or_else(|| var_path("PROGRAMDATA").map(|p| p.join("mise")))
+        .unwrap_or_else(|| PathBuf::from("C:\\ProgramData\\mise"))
+});
 
 // data subdirs
 pub static MISE_INSTALLS_DIR: Lazy<PathBuf> =
@@ -713,5 +720,50 @@ mod tests {
         remove_var("MISE_GITHUB_TOKEN");
         remove_var("GITHUB_TOKEN");
         remove_var("GITHUB_API_TOKEN");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_mise_system_dir_unix_default() {
+        // Test that MISE_SYSTEM_DIR defaults to /etc/mise on Unix
+        remove_var("MISE_SYSTEM_DIR");
+        // Force re-evaluation by creating a new lazy value
+        let system_dir = var_path("MISE_SYSTEM_DIR").unwrap_or_else(|| PathBuf::from("/etc/mise"));
+        assert_eq!(system_dir, PathBuf::from("/etc/mise"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_mise_system_dir_windows_default() {
+        // Test that MISE_SYSTEM_DIR defaults to ProgramData\mise on Windows
+        remove_var("MISE_SYSTEM_DIR");
+        remove_var("PROGRAMDATA");
+        // Force re-evaluation by creating a new lazy value
+        let system_dir = var_path("MISE_SYSTEM_DIR")
+            .or_else(|| var_path("PROGRAMDATA").map(|p| p.join("mise")))
+            .unwrap_or_else(|| PathBuf::from("C:\\ProgramData\\mise"));
+        assert_eq!(system_dir, PathBuf::from("C:\\ProgramData\\mise"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_mise_system_dir_windows_programdata() {
+        // Test that MISE_SYSTEM_DIR uses PROGRAMDATA env var if set
+        remove_var("MISE_SYSTEM_DIR");
+        set_var("PROGRAMDATA", "D:\\CustomProgramData");
+        let system_dir = var_path("MISE_SYSTEM_DIR")
+            .or_else(|| var_path("PROGRAMDATA").map(|p| p.join("mise")))
+            .unwrap_or_else(|| PathBuf::from("C:\\ProgramData\\mise"));
+        assert_eq!(system_dir, PathBuf::from("D:\\CustomProgramData\\mise"));
+        remove_var("PROGRAMDATA");
+    }
+
+    #[test]
+    fn test_mise_system_dir_override() {
+        // Test that MISE_SYSTEM_DIR env var overrides defaults on all platforms
+        set_var("MISE_SYSTEM_DIR", "/custom/system/dir");
+        let system_dir = var_path("MISE_SYSTEM_DIR");
+        assert_eq!(system_dir.unwrap(), PathBuf::from("/custom/system/dir"));
+        remove_var("MISE_SYSTEM_DIR");
     }
 }
