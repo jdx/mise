@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+# Test that tasks in project root collect environment variables from global configs
+# Bug: Global configs were being ignored when task_cf has a project_root
+
+# Set up global config
+mkdir -p "$HOME/.config/mise"
+cat <<EOF >"$HOME/.config/mise/config.toml"
+[env]
+GLOBAL_VAR = "from_global_config"
+OVERRIDE_VAR = "global_value"
+EOF
+
+# Set up project config
+cat <<EOF >mise.toml
+[tasks.show-env]
+run = 'echo "GLOBAL=\$GLOBAL_VAR PROJECT=\$PROJECT_VAR OVERRIDE=\$OVERRIDE_VAR"'
+
+[env]
+PROJECT_VAR = "from_project"
+OVERRIDE_VAR = "project_value"
+EOF
+
+# Test 1: Global config vars should be available in project tasks
+assert_contains "mise run show-env" "GLOBAL=from_global_config"
+
+# Test 2: Project config should override global config
+assert_contains "mise run show-env" "OVERRIDE=project_value"
+
+# Test 3: Full output check
+assert "mise run show-env" "GLOBAL=from_global_config PROJECT=from_project OVERRIDE=project_value"
+
+# Test 4: With environment-specific global config
+cat <<EOF >"$HOME/.config/mise/config.production.toml"
+[env]
+ENV_SPECIFIC_VAR = "from_global_env_config"
+EOF
+
+cat <<EOF >mise.toml
+[tasks.show-env-specific]
+run = 'echo "GLOBAL=\$GLOBAL_VAR ENV_SPECIFIC=\$ENV_SPECIFIC_VAR PROJECT=\$PROJECT_VAR"'
+
+[env]
+PROJECT_VAR = "from_project"
+EOF
+
+export MISE_ENV=production
+assert "mise run show-env-specific" "GLOBAL=from_global_config ENV_SPECIFIC=from_global_env_config PROJECT=from_project"
+unset MISE_ENV
+
+# Test 5: Global config with directives
+echo "DIRECTIVE_GLOBAL_VAR=from_global_directive" >"$HOME/.config/mise/.env.test"
+cat <<EOF >"$HOME/.config/mise/config.toml"
+[env]
+GLOBAL_VAR = "from_global"
+_.file = "$HOME/.config/mise/.env.test"
+EOF
+
+cat <<EOF >mise.toml
+[tasks.show-directive]
+run = 'echo "GLOBAL=\$GLOBAL_VAR DIRECTIVE=\$DIRECTIVE_GLOBAL_VAR PROJECT=\$PROJECT_VAR"'
+
+[env]
+PROJECT_VAR = "from_project"
+EOF
+
+assert "mise run show-directive" "GLOBAL=from_global DIRECTIVE=from_global_directive PROJECT=from_project"
+
+echo "All task global config tests passed!"
+
+# Clean up
+rm -f "$HOME/.config/mise/config.toml" "$HOME/.config/mise/config.production.toml" "$HOME/.config/mise/.env.test"

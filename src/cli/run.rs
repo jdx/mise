@@ -994,7 +994,9 @@ impl Run {
         task_cf: &Arc<dyn ConfigFile>,
         ts: &Toolset,
     ) -> Result<(BTreeMap<String, String>, Vec<(String, String)>)> {
-        let config_env_entries = task_cf.env_entries()?;
+        // Collect env entries from all config files in the hierarchy
+        // This ensures environment-specific configs (e.g., mise.{env}.toml) are included
+        let config_env_entries = self.collect_config_env_entries(config, task_cf)?;
 
         // Early return if no special context needed
         if self.should_use_standard_env_resolution(task, task_cf, config, &config_env_entries) {
@@ -1023,9 +1025,8 @@ impl Run {
         let tera_ctx = self.build_tera_context(task_cf, ts, config).await?;
 
         // Resolve config-level env first, then task-specific env
-        let config_env_directives = self.build_config_env_directives(task_cf, config_env_entries);
         let config_env_results = self
-            .resolve_env_directives(config, &tera_ctx, &env, config_env_directives)
+            .resolve_env_directives(config, &tera_ctx, &env, config_env_entries)
             .await?;
         Self::apply_env_results(&mut env, &config_env_results);
 
@@ -1069,7 +1070,7 @@ impl Run {
         task: &Task,
         task_cf: &Arc<dyn ConfigFile>,
         config: &Arc<Config>,
-        config_env_entries: &[EnvDirective],
+        config_env_entries: &[(EnvDirective, PathBuf)],
     ) -> bool {
         if let (Some(task_config_root), Some(current_config_root)) =
             (task_cf.project_root(), config.project_root.as_ref())
@@ -1099,16 +1100,49 @@ impl Run {
         Ok(tera_ctx)
     }
 
-    /// Build env directives from config file entries
-    fn build_config_env_directives(
+    /// Collect env entries from all config files in the hierarchy
+    /// This ensures environment-specific configs (e.g., mise.{env}.toml) are included
+    /// when running tasks, matching the behavior of `mise env`
+    /// Returns entries with their source paths, in the correct precedence order
+    fn collect_config_env_entries(
         &self,
+        config: &Arc<Config>,
         task_cf: &Arc<dyn ConfigFile>,
-        config_env_entries: Vec<EnvDirective>,
-    ) -> Vec<(EnvDirective, PathBuf)> {
-        config_env_entries
-            .into_iter()
-            .map(|directive| (directive, task_cf.get_path().to_path_buf()))
-            .collect()
+    ) -> Result<Vec<(EnvDirective, PathBuf)>> {
+        let task_cf_path = task_cf.get_path();
+        let task_config_root = task_cf.project_root();
+
+        // Collect env entries from all config files that are in the same hierarchy as task_cf
+        // We need to include all config files from the same directory, including environment-specific ones
+        // Process in reverse order (like Config::load_env) so later files override earlier ones
+        let mut entries = vec![];
+
+        for (source, cf) in config.config_files.iter().rev() {
+            // Include config files that:
+            // 1. Are in the same directory as task_cf, OR
+            // 2. Are ancestors of task_cf (global/system configs)
+            let should_include = if let Some(ref task_root) = task_config_root {
+                // For task configs with a project root, include configs from the same project
+                // OR global/system configs which should always be included
+                cf.project_root().as_ref() == Some(task_root) || config::is_global_config(source)
+            } else if let (Some(task_parent), Some(cf_parent)) =
+                (task_cf_path.parent(), source.parent())
+            {
+                // For configs without project root, check if they're in the same directory
+                task_parent == cf_parent || config::is_global_config(source)
+            } else {
+                config::is_global_config(source)
+            };
+
+            if should_include {
+                // Map each entry to include its source path for proper precedence
+                for entry in cf.env_entries()? {
+                    entries.push((entry, source.clone()));
+                }
+            }
+        }
+
+        Ok(entries)
     }
 
     /// Build env directives from task-specific env

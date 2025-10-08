@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+# Test that tasks collect environment variables from all config files in the hierarchy
+# This includes environment-specific config files like mise.{env}.toml
+
+# Test 1: Basic environment-specific config file
+cat <<EOF >mise.toml
+[tasks.show-env]
+run = 'echo "BASE_VAR=\$BASE_VAR ENV_VAR=\$ENV_VAR"'
+
+[env]
+BASE_VAR = "from_base"
+EOF
+
+cat <<EOF >mise.local.toml
+[env]
+ENV_VAR = "from_local"
+EOF
+
+assert "mise run show-env" "BASE_VAR=from_base ENV_VAR=from_local"
+
+# Test 2: Environment-specific config overriding base config
+cat <<EOF >mise.toml
+[tasks.show-override]
+run = 'echo "SHARED_VAR=\$SHARED_VAR OVERRIDE_VAR=\$OVERRIDE_VAR"'
+
+[env]
+SHARED_VAR = "base_value"
+OVERRIDE_VAR = "base_override"
+EOF
+
+cat <<EOF >mise.production.toml
+[env]
+SHARED_VAR = "production_value"
+EOF
+
+export MISE_ENV=production
+assert "mise run show-override" "SHARED_VAR=production_value OVERRIDE_VAR=base_override"
+unset MISE_ENV
+
+# Test 3: Multiple environment-specific configs
+cat <<EOF >mise.toml
+[tasks.show-multi]
+run = 'echo "VAR1=\$VAR1 VAR2=\$VAR2 VAR3=\$VAR3"'
+
+[env]
+VAR1 = "from_base"
+EOF
+
+cat <<EOF >mise.local.toml
+[env]
+VAR2 = "from_local"
+EOF
+
+cat <<EOF >mise.development.toml
+[env]
+VAR3 = "from_development"
+EOF
+
+export MISE_ENV=development
+assert "mise run show-multi" "VAR1=from_base VAR2=from_local VAR3=from_development"
+unset MISE_ENV
+
+# Test 4: Task-specific env overrides config hierarchy
+cat <<EOF >mise.toml
+[tasks.task-override]
+run = 'echo "CONFIG_VAR=\$CONFIG_VAR TASK_VAR=\$TASK_VAR"'
+env = { TASK_VAR = "from_task", CONFIG_VAR = "task_override" }
+
+[env]
+CONFIG_VAR = "from_config"
+TASK_VAR = "config_value"
+EOF
+
+cat <<EOF >mise.local.toml
+[env]
+CONFIG_VAR = "from_local_config"
+EOF
+
+assert "mise run task-override" "CONFIG_VAR=task_override TASK_VAR=from_task"
+
+# Test 5: Complex hierarchy with directives
+echo "DIRECTIVE_VAR=from_directive_file" >.env.test
+cat <<EOF >mise.toml
+[tasks.complex]
+run = 'echo "BASE=\$BASE_VAR LOCAL=\$LOCAL_VAR DIRECTIVE=\$DIRECTIVE_VAR TASK=\$TASK_VAR"'
+env = { TASK_VAR = "from_task" }
+
+[env]
+BASE_VAR = "from_base"
+EOF
+
+cat <<EOF >mise.local.toml
+[env]
+LOCAL_VAR = "from_local"
+_.file = ".env.test"
+EOF
+
+assert "mise run complex" "BASE=from_base LOCAL=from_local DIRECTIVE=from_directive_file TASK=from_task"
+
+echo "All task environment hierarchy tests passed!"
+
+# Clean up
+rm -f .env.test mise.production.toml mise.development.toml
