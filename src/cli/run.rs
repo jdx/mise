@@ -1023,8 +1023,7 @@ impl Run {
             if let Some(cached_env) = cache.get(&key) {
                 trace!(
                     "task {} using cached env resolution (key: {})",
-                    task.name,
-                    key
+                    task.name, key
                 );
                 return Ok(cached_env.clone());
             }
@@ -1088,10 +1087,7 @@ impl Run {
         }
 
         // Hash all config files that contribute env entries
-        let mut config_paths: Vec<_> = config_env_entries
-            .iter()
-            .map(|(_, path)| path)
-            .collect();
+        let mut config_paths: Vec<_> = config_env_entries.iter().map(|(_, path)| path).collect();
         config_paths.sort();
         config_paths.dedup();
 
