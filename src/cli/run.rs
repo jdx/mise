@@ -18,7 +18,7 @@ use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
-use crate::task::{Deps, GetMatchingExt, Task};
+use crate::task::{Deps, GetMatchingExt, Task, TaskLoadContext};
 use crate::toolset::{InstallOptions, ToolSource, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -1225,7 +1225,22 @@ impl Run {
     ) -> Result<()> {
         trace!("inject start: {}", specs.join(", "));
         // Build tasks list from specs
-        let tasks_map = config.tasks_with_aliases().await?;
+        // Create a TaskLoadContext from the specs to ensure project tasks are loaded
+        let ctx = TaskLoadContext::from_patterns(specs.iter().map(|s| {
+            let (name, _) = split_task_spec(s);
+            name
+        }));
+        let tasks = config.tasks_with_context(Some(&ctx)).await?;
+        let tasks_map: BTreeMap<String, Task> = tasks
+            .iter()
+            .flat_map(|(_, t)| {
+                t.aliases
+                    .iter()
+                    .map(|a| (a.to_string(), t.clone()))
+                    .chain(once((t.name.clone(), t.clone())))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         let mut to_run: Vec<Task> = vec![];
         for spec in specs {
             let (name, args) = split_task_spec(spec);
