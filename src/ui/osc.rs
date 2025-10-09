@@ -57,6 +57,10 @@ pub fn set_progress(state: ProgressState, progress: u8) {
 }
 
 fn write_progress(state: ProgressState, progress: u8) -> io::Result<()> {
+    // Only write OSC sequences if stderr is actually a terminal
+    if !console::user_attended_stderr() {
+        return Ok(());
+    }
     let mut stderr = io::stderr();
     // OSC 9;4 format: ESC ] 9 ; 4 ; <state> ; <progress> BEL
     // Note: The color is controlled by the terminal theme
