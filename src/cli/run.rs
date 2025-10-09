@@ -994,10 +994,42 @@ impl Run {
         task_cf: &Arc<dyn ConfigFile>,
         ts: &Toolset,
     ) -> Result<(BTreeMap<String, String>, Vec<(String, String)>)> {
-        let config_env_entries = task_cf.env_entries()?;
+        // Determine if this is a monorepo task (task config differs from current project root)
+        let is_monorepo_task = task_cf.project_root() != config.project_root;
+
+        // Get env entries - different strategy for monorepo vs regular tasks
+        let all_config_env_entries: Vec<(crate::config::env_directive::EnvDirective, PathBuf)> =
+            if is_monorepo_task {
+                // For monorepo tasks: preserve original behavior by using only task's config
+                // file, but the global environment (from ts.full_env) already includes MISE_ENV
+                if let Ok(task_entries) = task_cf.env_entries() {
+                    task_entries
+                        .into_iter()
+                        .map(|e| (e, task_cf.get_path().to_path_buf()))
+                        .collect()
+                } else {
+                    vec![]
+                }
+            } else {
+                // For regular tasks: use ALL config files (including MISE_ENV-specific ones)
+                // This fixes the MISE_ENV inheritance issue for regular tasks
+                config
+                    .config_files
+                    .iter()
+                    .rev()
+                    .filter_map(|(source, cf)| {
+                        cf.env_entries()
+                            .ok()
+                            .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
+                    })
+                    .flatten()
+                    .collect()
+            };
 
         // Early return if no special context needed
-        if self.should_use_standard_env_resolution(task, task_cf, config, &config_env_entries) {
+        // Check using task_cf entries for compatibility with existing logic
+        let task_cf_env_entries = task_cf.env_entries()?;
+        if self.should_use_standard_env_resolution(task, task_cf, config, &task_cf_env_entries) {
             return task.render_env(config, ts).await;
         }
 
@@ -1022,10 +1054,9 @@ impl Run {
         let mut env = ts.full_env(config).await?;
         let tera_ctx = self.build_tera_context(task_cf, ts, config).await?;
 
-        // Resolve config-level env first, then task-specific env
-        let config_env_directives = self.build_config_env_directives(task_cf, config_env_entries);
+        // Resolve config-level env from ALL config files, not just task_cf
         let config_env_results = self
-            .resolve_env_directives(config, &tera_ctx, &env, config_env_directives)
+            .resolve_env_directives(config, &tera_ctx, &env, all_config_env_entries)
             .await?;
         Self::apply_env_results(&mut env, &config_env_results);
 
@@ -1097,18 +1128,6 @@ impl Run {
             tera_ctx.insert("config_root", &root);
         }
         Ok(tera_ctx)
-    }
-
-    /// Build env directives from config file entries
-    fn build_config_env_directives(
-        &self,
-        task_cf: &Arc<dyn ConfigFile>,
-        config_env_entries: Vec<EnvDirective>,
-    ) -> Vec<(EnvDirective, PathBuf)> {
-        config_env_entries
-            .into_iter()
-            .map(|directive| (directive, task_cf.get_path().to_path_buf()))
-            .collect()
     }
 
     /// Build env directives from task-specific env
