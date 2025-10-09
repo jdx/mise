@@ -71,15 +71,6 @@ backend = "cargo:toml-cli"
 version = "2.3.2"
 backend = "cargo:usage-cli"
 
-[[tools.cosign]]
-version = "3.0.1"
-backend = "aqua:sigstore/cosign"
-
-[tools.cosign.platforms.linux-x64]
-checksum = "sha256:23c9ff889672f03676b673539de07d5ad4e8efc8247a3ad55c9bc00169aa2305"
-size = 155395688
-url = "https://github.com/sigstore/cosign/releases/download/v3.0.1/cosign-linux-amd64"
-
 [[tools.gh]]
 version = "2.62.0"
 backend = "aqua:cli/cli"
@@ -202,16 +193,6 @@ backend = "aqua:mvdan/sh"
 checksum = "sha256:d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a745ea"
 size = 2916536
 url = "https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_linux_amd64"
-
-[[tools.slsa-verifier]]
-version = "2.7.1"
-backend = "ubi:slsa-framework/slsa-verifier"
-
-[tools.slsa-verifier.platforms.linux-x64-slsa-verifier]
-checksum = "blake3:6b7c72ece3e3cbd9db12dd8e261e594bb24721db140692d4f5cbdf508df45156"
-
-[tools.slsa-verifier.platforms.macos-arm64-slsa-verifier]
-checksum = "blake3:af93f77462964b7eeb93b9f45ccedeefc641305f6618d9ffc2480d89b0cceed6"
 
 [[tools.sops]]
 version = "3.11.0"
