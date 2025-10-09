@@ -2054,6 +2054,9 @@ pub enum TaskOutput {
 }
 
 fn trunc(prefix: &str, msg: &str) -> String {
+    if Settings::get().ci {
+        return msg.to_string();
+    }
     let prefix_len = console::measure_text_width(prefix);
     let msg = msg.lines().next().unwrap_or_default();
     // Ensure we have at least 20 characters for the message, even with very long prefixes
