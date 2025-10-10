@@ -1,5 +1,48 @@
 # Changelog
 
+## [2025.10.7](https://github.com/jdx/mise/compare/v2025.10.6..v2025.10.7) - 2025-10-10
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`kachick/selfup`](https://github.com/kachick/selfup)
+- [`madelynnblue/sqlfmt`](https://github.com/madelynnblue/sqlfmt)
+- [`yonaskolb/XcodeGen`](https://github.com/yonaskolb/XcodeGen)
+
+#### Updated Packages (6)
+
+- [`AGWA/git-crypt`](https://github.com/AGWA/git-crypt)
+- [`apache/maven-mvnd`](https://github.com/apache/maven-mvnd)
+- [`benbjohnson/litestream`](https://github.com/benbjohnson/litestream)
+- [`dex4er/tf`](https://github.com/dex4er/tf)
+- [`oxc-project/oxc/oxlint`](https://github.com/oxc-project/oxc/oxlint)
+- [`sigstore/cosign`](https://github.com/sigstore/cosign)
+### 📦 Registry
+
+- add lazyssh by @TyceHerrman in [#6610](https://github.com/jdx/mise/pull/6610)
+
+### 🚀 Features
+
+- **(config)** Add a ceiling to how mise searchs for config & tasks by @richardthe3rd in [#6041](https://github.com/jdx/mise/pull/6041)
+- **(release)** include aqua-registry updates in changelog and release notes by @jdx in [#6623](https://github.com/jdx/mise/pull/6623)
+
+### 🐛 Bug Fixes
+
+- **(task)** use config_root instead of project_root for task base path by @risu729 in [#6609](https://github.com/jdx/mise/pull/6609)
+- **(task)** resolve project tasks in run blocks using TaskLoadContext by @jdx in [#6614](https://github.com/jdx/mise/pull/6614)
+- **(task)** dont truncate task message when CI is set by @roele in [#6620](https://github.com/jdx/mise/pull/6620)
+- **(tasks)** restore MISE_ENV environment inheritance for tasks by @glasser in [#6621](https://github.com/jdx/mise/pull/6621)
+- **(ui)** prevent OSC 9;4 progress sequences from being written to non-terminals by @jdx in [#6615](https://github.com/jdx/mise/pull/6615)
+
+### Chore
+
+- remove cosign/slsa-verifier from mise.toml by @jdx in [#6616](https://github.com/jdx/mise/pull/6616)
+
+### New Contributors
+
+- @richardthe3rd made their first contribution in [#6041](https://github.com/jdx/mise/pull/6041)
+
 ## [2025.10.6](https://github.com/jdx/mise/compare/v2025.10.5..v2025.10.6) - 2025-10-08
 
 ### 📦 Registry
@@ -895,7 +938,7 @@
 ### 📦 Registry
 
 - add container-use ([aqua:dagger/container-use](https://github.com/dagger/container-use)) by @TyceHerrman in [#6029](https://github.com/jdx/mise/pull/6029)
-- add prek ([aqua:j178/prek](https://github.com/j178/prek)) by Henry Zhang in [#6023](https://github.com/jdx/mise/pull/6023)
+- add prek ([aqua:j178/prek](https://github.com/j178/prek)) by @HenryZhang-ZHY in [#6023](https://github.com/jdx/mise/pull/6023)
 
 ### 🚀 Features
 
@@ -922,6 +965,7 @@
 ### New Contributors
 
 - @br3ndonland made their first contribution in [#6047](https://github.com/jdx/mise/pull/6047)
+- @HenryZhang-ZHY made their first contribution in [#6023](https://github.com/jdx/mise/pull/6023)
 - @lfromanini made their first contribution in [#6037](https://github.com/jdx/mise/pull/6037)
 
 ## [2025.8.10](https://github.com/jdx/mise/compare/v2025.8.9..v2025.8.10) - 2025-08-14
