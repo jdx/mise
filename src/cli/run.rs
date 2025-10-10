@@ -17,7 +17,7 @@ use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::task::task_file_providers::{get_local_path};
+use crate::task::task_file_providers::get_local_path;
 use crate::task::{Deps, GetMatchingExt, Task, TaskLoadContext};
 use crate::toolset::{InstallOptions, ToolSource, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
