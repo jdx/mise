@@ -1014,7 +1014,8 @@ impl Run {
                 let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
                 trace!("Found {} config files in hierarchy", config_paths.len());
 
-                let task_config_files = crate::config::load_config_files_from_paths(&config_paths).await?;
+                let task_config_files =
+                    crate::config::load_config_files_from_paths(&config_paths).await?;
 
                 // Extract env entries from all config files
                 task_config_files
