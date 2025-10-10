@@ -971,7 +971,11 @@ pub fn system_config_files() -> IndexSet<PathBuf> {
     if let Some(p) = &*env::MISE_SYSTEM_CONFIG_FILE {
         return vec![p.clone()].into_iter().collect();
     }
-    let config_files = config_files_from_dir(&dirs::SYSTEM);
+    let config_files = if let Some(system_dir) = &*dirs::SYSTEM {
+        config_files_from_dir(system_dir)
+    } else {
+        IndexSet::new()
+    };
     *s = Some(config_files.clone());
     config_files
 }
