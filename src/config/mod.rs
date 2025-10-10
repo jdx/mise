@@ -886,6 +886,11 @@ fn all_dirs() -> Result<Vec<PathBuf>> {
     file::all_dirs(env::current_dir()?, &env::MISE_CEILING_PATHS)
 }
 
+/// Get all directories in the hierarchy from a starting directory up to ceiling paths
+fn all_dirs_from(start_dir: &Path) -> Result<Vec<PathBuf>> {
+    file::all_dirs(start_dir, &env::MISE_CEILING_PATHS)
+}
+
 pub fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
@@ -939,6 +944,50 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
                 || !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p))
         })
         .collect()
+}
+
+/// Load config hierarchy from a specific directory (for monorepo tasks)
+/// This loads all config files from start_dir up through parent directories,
+/// including MISE_ENV-specific configs
+pub fn load_config_hierarchy_from_dir(start_dir: &Path) -> Result<Vec<PathBuf>> {
+    if Settings::no_config() {
+        return Ok(vec![]);
+    }
+
+    let config_filenames = DEFAULT_CONFIG_FILENAMES.iter().cloned().collect_vec();
+
+    // Get all directories from start_dir up to root/ceiling
+    let dirs = all_dirs_from(start_dir)?;
+
+    let mut config_files = dirs
+        .iter()
+        .flat_map(|dir| {
+            if env::MISE_IGNORED_CONFIG_PATHS
+                .iter()
+                .any(|p| dir.starts_with(p))
+            {
+                vec![]
+            } else {
+                config_filenames
+                    .iter()
+                    .rev()
+                    .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
+                    .collect()
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // Add global and system configs
+    config_files.extend(global_config_files());
+    config_files.extend(system_config_files());
+
+    let paths = config_files
+        .into_iter()
+        .unique_by(|p| file::desymlink_path(p))
+        .filter(|p| !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p)))
+        .collect();
+
+    Ok(paths)
 }
 
 pub fn is_global_config(path: &Path) -> bool {
@@ -1155,6 +1204,35 @@ async fn load_all_config_files(
                 warn!("failed to mark monorepo root: {err:#}");
             }
         }
+
+        config_map.insert(f.clone(), cf);
+    }
+    Ok(config_map)
+}
+
+/// Load config files from a list of paths (for monorepo task config contexts)
+pub async fn load_config_files_from_paths(config_paths: &[PathBuf]) -> Result<ConfigMap> {
+    backend::load_tools().await?;
+    let idiomatic_filenames = BTreeMap::new(); // TODO: support idiomatic files in config hierarchy loading
+    let mut config_map = ConfigMap::default();
+
+    for f in config_paths.iter().unique() {
+        if f.is_dir() {
+            continue;
+        }
+        let cf = match parse_config_file(f, &idiomatic_filenames).await {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                if err.to_string().contains("are not trusted.") {
+                    trace!("skipping untrusted config: {}", display_path(f));
+                    continue;
+                }
+                return Err(err.wrap_err(format!(
+                    "error parsing config file: {}",
+                    style::ebold(display_path(f))
+                )));
+            }
+        };
 
         config_map.insert(f.clone(), cf);
     }

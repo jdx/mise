@@ -997,19 +997,37 @@ impl Run {
         // Determine if this is a monorepo task (task config differs from current project root)
         let is_monorepo_task = task_cf.project_root() != config.project_root;
 
-        // Get env entries - different strategy for monorepo vs regular tasks
+        // Get env entries - load the FULL config hierarchy for monorepo tasks
         let all_config_env_entries: Vec<(crate::config::env_directive::EnvDirective, PathBuf)> =
             if is_monorepo_task {
-                // For monorepo tasks: preserve original behavior by using only task's config
-                // file, but the global environment (from ts.full_env) already includes MISE_ENV
-                if let Ok(task_entries) = task_cf.env_entries() {
-                    task_entries
-                        .into_iter()
-                        .map(|e| (e, task_cf.get_path().to_path_buf()))
-                        .collect()
-                } else {
-                    vec![]
-                }
+                // For monorepo tasks: Load the FULL config hierarchy from the task's directory
+                // This includes parent configs AND MISE_ENV-specific configs
+                let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
+
+                trace!(
+                    "Loading config hierarchy for monorepo task {} from {}",
+                    task.name,
+                    task_dir.display()
+                );
+
+                // Load all config files in the hierarchy
+                let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+                trace!("Found {} config files in hierarchy", config_paths.len());
+
+                let task_config_files =
+                    crate::config::load_config_files_from_paths(&config_paths).await?;
+
+                // Extract env entries from all config files
+                task_config_files
+                    .iter()
+                    .rev()
+                    .filter_map(|(source, cf)| {
+                        cf.env_entries()
+                            .ok()
+                            .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
+                    })
+                    .flatten()
+                    .collect()
             } else {
                 // For regular tasks: use ALL config files (including MISE_ENV-specific ones)
                 // This fixes the MISE_ENV inheritance issue for regular tasks
