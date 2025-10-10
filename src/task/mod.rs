@@ -637,7 +637,7 @@ impl Task {
     }
 
     async fn parse_script(file: &PathBuf, no_cache: bool) -> usage::Spec {
-        let (_, local_path) = get_local_path(file, no_cache);
+        let (_, local_path) = get_local_path(file, no_cache).await;
 
         usage::Spec::parse_script(&local_path)
             .inspect_err(|e| {
