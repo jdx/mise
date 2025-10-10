@@ -28,8 +28,15 @@ while IFS= read -r pkg; do
 	fi
 done <<<"$COMMON_PKGS"
 
-NEW_COUNT=$(echo "$NEW_PACKAGES" | grep -c . || echo "0")
-UPDATED_COUNT=$(echo "$UPDATED_PACKAGES" | grep -c . || echo "0")
+NEW_COUNT=$(echo "$NEW_PACKAGES" | grep -c . || true)
+if [[ -z $NEW_COUNT ]] || [[ $NEW_COUNT -eq 0 ]]; then
+	NEW_COUNT=0
+fi
+
+UPDATED_COUNT=$(echo "$UPDATED_PACKAGES" | grep -c . || true)
+if [[ -z $UPDATED_COUNT ]] || [[ $UPDATED_COUNT -eq 0 ]]; then
+	UPDATED_COUNT=0
+fi
 
 # If no changes, exit
 if [[ $NEW_COUNT -eq 0 ]] && [[ $UPDATED_COUNT -eq 0 ]]; then
