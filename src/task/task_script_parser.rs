@@ -899,59 +899,57 @@ mod tests {
         assert_eq!(flag.help, Some("".to_string()));
         assert_eq!(flag.help_first_line, None);
     }
-    
+
     #[tokio::test]
     async fn test_task_parse_task_source_files() {
-        let cases: &[(&[&str], &str, &str)] = &[(
-            &[],
-            "echo {{ task_source_files() }}",
-            "echo []"
-        ),
-        (
-            &["**/filetask"],
-            "echo {{ task_source_files() | first }}",
-            "echo .mise/tasks/filetask"  // created by constructor in `src/test.rs`, guaranteed to exist
-        ),
-        (
-            &["nonexistent/*.xyz"],
-            "echo {{ task_source_files() }}",
-            "echo []"
-        ),
-        (
-            &["../../Cargo.toml"],
-            "echo {{ task_source_files() | first }}",
-            "echo ../../Cargo.toml"
-        ),
-        (
-            &[concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")],
-            "echo {{ task_source_files() | first }}",
-            concat!("echo ", env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")
-        ),
-        #[cfg(not(windows))]  // TODO: this cases panics on windows currently
-        (
-            &["{{ env.HOME }}/file.txt", "src/*.rs"],
-            "echo {{ task_source_files() | first }}",
-            "echo {{ env.HOME }}/file.txt"
-        ),
-        (
-            &["[invalid"],
-            "echo {{ task_source_files() | first }}",
-            "echo [invalid"
-        ),
-        (
-            &[
-                concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
-                concat!(env!("CARGO_MANIFEST_DIR"), "/README.md")
-            ],
-            "{% for file in task_source_files() %}echo {{ file }}; {% endfor %}",
-            concat!(
-                "echo ",
-                env!("CARGO_MANIFEST_DIR"),
-                "/Cargo.toml; echo ",
-                env!("CARGO_MANIFEST_DIR"),
-                "/README.md; ",
+        let cases: &[(&[&str], &str, &str)] = &[
+            (&[], "echo {{ task_source_files() }}", "echo []"),
+            (
+                &["**/filetask"],
+                "echo {{ task_source_files() | first }}",
+                "echo .mise/tasks/filetask", // created by constructor in `src/test.rs`, guaranteed to exist
             ),
-        )];
+            (
+                &["nonexistent/*.xyz"],
+                "echo {{ task_source_files() }}",
+                "echo []",
+            ),
+            (
+                &["../../Cargo.toml"],
+                "echo {{ task_source_files() | first }}",
+                "echo ../../Cargo.toml",
+            ),
+            (
+                &[concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")],
+                "echo {{ task_source_files() | first }}",
+                concat!("echo ", env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
+            ),
+            #[cfg(not(windows))] // TODO: this cases panics on windows currently
+            (
+                &["{{ env.HOME }}/file.txt", "src/*.rs"],
+                "echo {{ task_source_files() | first }}",
+                "echo {{ env.HOME }}/file.txt",
+            ),
+            (
+                &["[invalid"],
+                "echo {{ task_source_files() | first }}",
+                "echo [invalid",
+            ),
+            (
+                &[
+                    concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
+                    concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"),
+                ],
+                "{% for file in task_source_files() %}echo {{ file }}; {% endfor %}",
+                concat!(
+                    "echo ",
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/Cargo.toml; echo ",
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/README.md; ",
+                ),
+            ),
+        ];
 
         for (sources, template, expected) in cases {
             let (mut task, scripts, parser, config) = (
@@ -973,7 +971,5 @@ mod tests {
 
             assert_eq!(parsed, vec![*expected]);
         }
-
-
     }
 }
