@@ -200,7 +200,6 @@ ctor = "0.4"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1.6.1"
 pretty_assertions = "1"
-rstest = "0.26"
 test-log = "0.2"
 
 [features]
