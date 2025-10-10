@@ -4513,7 +4513,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.9.24"
+version = "2025.10.7"
 dependencies = [
  "age",
  "aqua-registry",
@@ -4554,6 +4554,7 @@ dependencies = [
  "heck",
  "homedir",
  "humansize",
+ "ignore",
  "indenter",
  "indexmap 2.11.4",
  "indicatif 0.18.0",
