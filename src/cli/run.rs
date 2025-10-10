@@ -17,9 +17,7 @@ use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::task::task_file_providers::{
-    TaskFileProviders, TaskFileProvidersBuilder, get_local_path,
-};
+use crate::task::task_file_providers::{get_local_path};
 use crate::task::{Deps, GetMatchingExt, Task, TaskLoadContext};
 use crate::toolset::{InstallOptions, ToolSource, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -1918,7 +1916,8 @@ impl Run {
     async fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
         for t in tasks {
             if let Some(file) = &t.file {
-                let (source, local_path) = get_local_path(file, self.no_cache).await?;
+                let source = file.to_string_lossy().to_string();
+                let local_path = get_local_path(&source, self.no_cache).await?;
 
                 // Store the original remote source before replacing with local path
                 // This is used to determine if the task should use monorepo config file context
