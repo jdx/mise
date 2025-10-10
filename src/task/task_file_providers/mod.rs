@@ -4,7 +4,9 @@ mod local_task;
 mod remote_task_git;
 mod remote_task_http;
 use crate::Result;
+use crate::config::Settings;
 use async_trait::async_trait;
+use eyre::{Report, bail};
 use local_task::LocalTask;
 use remote_task_git::RemoteTaskGitBuilder;
 use remote_task_http::RemoteTaskHttpBuilder;
@@ -62,6 +64,27 @@ impl TaskFileProviders {
     pub fn get_provider(&self, file: &str) -> Option<Box<dyn TaskFileProvider>> {
         self.get_providers().into_iter().find(|p| p.is_match(file))
     }
+}
+
+pub async fn get_local_path(
+    file: &PathBuf,
+    no_cache: bool,
+) -> eyre::Result<(String, PathBuf), Report> {
+    let no_cache = no_cache || Settings::get().task_remote_no_cache.unwrap_or(false);
+    let task_file_providers = TaskFileProvidersBuilder::new()
+        .with_cache(!no_cache)
+        .build();
+
+    let source = file.to_string_lossy().to_string();
+
+    let provider = task_file_providers.get_provider(&source);
+
+    if provider.is_none() {
+        bail!("No provider found for file: {}", source);
+    }
+
+    let local_path = provider.unwrap().get_local_path(&source).await?;
+    Ok((source, local_path))
 }
 
 #[cfg(test)]
