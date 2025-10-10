@@ -952,9 +952,11 @@ mod tests {
         ];
 
         for (sources, template, expected) in cases {
+            let (sources, template, expected) = (*sources, *template, *expected);
+
             let (mut task, scripts, parser, config) = (
                 Task::default(),
-                vec![template.to_string()],
+                vec![template.into()],
                 TaskScriptParser::new(None),
                 Config::get().await.unwrap(),
             );
@@ -969,7 +971,7 @@ mod tests {
             #[cfg(windows)]
             let expected = expected.replace("/", r"\"); // 🙄
 
-            assert_eq!(parsed, vec![*expected]);
+            assert_eq!(parsed, vec![expected]);
         }
     }
 }
