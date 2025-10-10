@@ -2,7 +2,7 @@ use crate::cli::version::VERSION;
 use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
-use crate::config::{self, Config, Settings};
+use crate::config::{self, Config};
 use crate::path_env::PathEnv;
 use crate::task::task_script_parser::{TaskScriptParser, has_any_args_defined};
 use crate::tera::get_tera;
@@ -60,7 +60,7 @@ pub use task_output::TaskOutput;
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::task::task_file_providers::{TaskFileProvidersBuilder, get_local_path};
+use crate::task::task_file_providers::{get_local_path};
 use crate::toolset::Toolset;
 use crate::ui::style;
 pub use deps::Deps;
@@ -609,7 +609,7 @@ impl Task {
         env: &EnvMap,
     ) -> Result<(usage::Spec, Vec<String>)> {
         let (mut spec, scripts) = if let Some(file) = &self.file {
-            (Self::parse_script(file, no_cache), vec![])
+            (Self::parse_script(file, no_cache).await?, vec![])
         } else {
             let scripts_only = self.run_script_strings();
             let (scripts, spec) = TaskScriptParser::new(cwd)
@@ -625,7 +625,7 @@ impl Task {
     pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
         let dir = self.dir(config).await?;
         let mut spec = if let Some(file) = &self.file {
-            Self::parse_script(file, false)
+            Self::parse_script(file, false).await?
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(dir)
@@ -636,17 +636,18 @@ impl Task {
         Ok(spec)
     }
 
-    async fn parse_script(file: &PathBuf, no_cache: bool) -> usage::Spec {
-        let (_, local_path) = get_local_path(file, no_cache).await;
+    async fn parse_script(file: &PathBuf, no_cache: bool) -> Result<usage::Spec> {
+        let source = file.to_string_lossy().to_string();
+        let local_path = get_local_path(&source, no_cache).await?;
 
-        usage::Spec::parse_script(&local_path)
+        Ok(usage::Spec::parse_script(&local_path)
             .inspect_err(|e| {
                 warn!(
                     "failed to parse task file {} with usage: {e:?}",
                     display_path(file)
                 )
             })
-            .unwrap_or_default()
+            .unwrap_or_default())
     }
 
     pub async fn render_run_scripts_with_args(
