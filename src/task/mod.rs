@@ -60,7 +60,7 @@ pub use task_output::TaskOutput;
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::task::task_file_providers::{get_local_path};
+use crate::task::task_file_providers::get_local_path;
 use crate::toolset::Toolset;
 use crate::ui::style;
 pub use deps::Deps;
