@@ -56,7 +56,7 @@ version = "1.43.2"
 backend = "cargo:cargo-insta"
 
 [[tools."cargo:cargo-release"]]
-version = "0.25.19"
+version = "0.25.20"
 backend = "cargo:cargo-release"
 
 [[tools."cargo:git-cliff"]]
@@ -70,20 +70,6 @@ backend = "cargo:toml-cli"
 [[tools."cargo:usage-cli"]]
 version = "2.3.2"
 backend = "cargo:usage-cli"
-
-[[tools.cosign]]
-version = "2.6.0"
-backend = "aqua:sigstore/cosign"
-
-[tools.cosign.platforms.linux-x64]
-checksum = "sha256:ea5c65f99425d6cfbb5c4b5de5dac035f14d09131c1a0ea7c7fc32eab39364f9"
-size = 155329864
-url = "https://github.com/sigstore/cosign/releases/download/v2.6.0/cosign-linux-amd64"
-
-[tools.cosign.platforms.macos-arm64]
-checksum = "sha256:dea5b83b8b375b99ac803c7bdb1f798963dbeb47789ceb72153202e7f20e8d07"
-size = 154611890
-url = "https://github.com/sigstore/cosign/releases/download/v2.6.0/cosign-darwin-arm64"
 
 [[tools.gh]]
 version = "2.62.0"
@@ -100,13 +86,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [[tools.hk]]
-version = "1.15.7"
+version = "1.18.3"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:f4d35bcfb24c82d065ef7f65331386ec8f4721b2a9ae501bce977de91a1c8658"
-size = 6986299
-url = "https://github.com/jdx/hk/releases/download/v1.15.7/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "blake3:dcb3b961bcaf97961bd6fea889954b7e38ff7ee3a3c37001632d5e4e65402d36"
+size = 7169077
+url = "https://github.com/jdx/hk/releases/download/v1.18.3/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"
@@ -121,6 +107,20 @@ url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"
 checksum = "sha256:a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263603"
 size = 841408
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
+
+[[tools.node]]
+version = "24.9.0"
+backend = "core:node"
+
+[tools.node.platforms.linux-x64]
+checksum = "sha256:d57d6c28a35785f58f33899a0aa0bfc83f7a8ef4448b6cf3f7d0961efc7b9189"
+size = 58864014
+url = "https://nodejs.org/dist/v24.9.0/node-v24.9.0-linux-x64.tar.gz"
+
+[tools.node.platforms.macos-arm64]
+checksum = "sha256:961024296c2a8e60daed0784f8b61e0fab5c51d197502a92eff052c72b53209b"
+size = 51124089
+url = "https://nodejs.org/dist/v24.9.0/node-v24.9.0-darwin-arm64.tar.gz"
 
 [[tools."npm:ajv-cli"]]
 version = "5.0.0"
@@ -193,16 +193,6 @@ backend = "aqua:mvdan/sh"
 checksum = "sha256:d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a745ea"
 size = 2916536
 url = "https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_linux_amd64"
-
-[[tools.slsa-verifier]]
-version = "2.7.1"
-backend = "ubi:slsa-framework/slsa-verifier"
-
-[tools.slsa-verifier.platforms.linux-x64-slsa-verifier]
-checksum = "blake3:6b7c72ece3e3cbd9db12dd8e261e594bb24721db140692d4f5cbdf508df45156"
-
-[tools.slsa-verifier.platforms.macos-arm64-slsa-verifier]
-checksum = "blake3:af93f77462964b7eeb93b9f45ccedeefc641305f6618d9ffc2480d89b0cceed6"
 
 [[tools.sops]]
 version = "3.11.0"

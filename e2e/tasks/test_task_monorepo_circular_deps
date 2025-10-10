@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+
+# Test monorepo task circular dependency detection
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[tasks.root-task]
+run = 'echo "root task"'
+EOF
+
+# Trust the root config so it can run
+mise trust
+
+# Test 1: Direct circular dependency (a -> b -> a)
+echo "=== Test 1: Direct circular dependency ==="
+mkdir -p projects/circ1
+cat <<EOF >projects/circ1/mise.toml
+[tasks.a]
+run = 'echo "task a"'
+depends = [":b"]
+
+[tasks.b]
+run = 'echo "task b"'
+depends = [":a"]
+EOF
+
+# Should error with circular dependency
+output=$(timeout 3 mise run '//projects/circ1:a' 2>&1 || true)
+if echo "$output" | grep -qiE "circular dependency detected"; then
+	echo "SUCCESS: Direct circular dependency detected"
+else
+	echo "Output: $output"
+	echo "ERROR: Expected circular dependency detection"
+	exit 1
+fi
+
+# Test 2: Transitive circular dependency (a -> b -> c -> a)
+echo "=== Test 2: Transitive circular dependency ==="
+mkdir -p projects/circ2
+cat <<EOF >projects/circ2/mise.toml
+[tasks.a]
+run = 'echo "task a"'
+depends = [":b"]
+
+[tasks.b]
+run = 'echo "task b"'
+depends = [":c"]
+
+[tasks.c]
+run = 'echo "task c"'
+depends = [":a"]
+EOF
+
+output=$(timeout 3 mise run '//projects/circ2:a' 2>&1 || true)
+if echo "$output" | grep -qiE "circular dependency detected"; then
+	echo "SUCCESS: Transitive circular dependency detected"
+else
+	echo "Output: $output"
+	echo "ERROR: Expected circular dependency detection"
+	exit 1
+fi
+
+# Test 3: Cross-project circular dependency
+echo "=== Test 3: Cross-project circular dependency ==="
+mkdir -p projects/frontend projects/backend
+cat <<EOF >projects/frontend/mise.toml
+[tasks.build]
+run = 'echo "frontend build"'
+depends = ["//projects/backend:build"]
+EOF
+
+cat <<EOF >projects/backend/mise.toml
+[tasks.build]
+run = 'echo "backend build"'
+depends = ["//projects/frontend:build"]
+EOF
+
+output=$(timeout 3 mise run '//projects/frontend:build' 2>&1 || true)
+if echo "$output" | grep -qiE "circular dependency detected"; then
+	echo "SUCCESS: Cross-project circular dependency detected"
+else
+	echo "Output: $output"
+	echo "ERROR: Expected circular dependency detection"
+	exit 1
+fi
+
+# Test 4: Self-dependency (should be caught)
+echo "=== Test 4: Self-dependency ==="
+mkdir -p projects/self
+cat <<EOF >projects/self/mise.toml
+[tasks.build]
+run = 'echo "build"'
+depends = [":build"]
+EOF
+
+output=$(timeout 3 mise run '//projects/self:build' 2>&1 || true)
+# Self-dependency is filtered out at line 327 in mod.rs, so it should run successfully
+if echo "$output" | grep -q "build"; then
+	echo "SUCCESS: Self-dependency silently filtered (task ran once)"
+else
+	echo "Output: $output"
+	echo "ERROR: Expected self-dependency to be filtered and task to run"
+	exit 1
+fi

@@ -397,6 +397,9 @@ impl Backend for JavaPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        // Java installation has 3 operations: download, install (extract), verify
+        ctx.pr.start_operations(3);
+
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
         let (metadata, tarball_path) =
@@ -456,17 +459,11 @@ impl Backend for JavaPlugin {
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
-        let query_trim = regex::escape(query.trim_end_matches('-'));
-        let query_version = format!("{}[0-9.]+", regex::escape(query));
-        let query_trim_version = format!("{query_trim}-[0-9.]+");
+        let query_escaped = regex::escape(query);
         let query = match query {
             "latest" => "[0-9].*",
-            // ends with a dash; use <query><version>
-            q if q.ends_with('-') => &query_version,
-            // not a shorthand version; use <query>-<version>
-            q if regex!("^[a-zA-Z]+$").is_match(q) => &query_trim_version,
-            // else; use trimmed query
-            _ => &query_trim,
+            // else; use escaped query
+            _ => &query_escaped,
         };
         let query_regex = Regex::new(&format!("^{query}([+-.].+)?$")).unwrap();
 

@@ -3,7 +3,7 @@ members = ["crates/vfox", "crates/aqua-registry"]
 
 [package]
 name = "mise"
-version = "2025.9.24"
+version = "2025.10.7"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -89,6 +89,7 @@ fuzzy-matcher = "0.3"
 gix = { version = "<1", features = ["worktree-mutation"] }
 glob = "0.3"
 globset = "0.4"
+ignore = { version = "0.4", features = [] }
 heck = "0.5"
 humansize = "2"
 indenter = "0.3"

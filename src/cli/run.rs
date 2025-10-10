@@ -13,12 +13,13 @@ use std::time::{Duration, SystemTime};
 use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::cmd::CmdLineRunner;
+use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
-use crate::task::{Deps, GetMatchingExt, Task};
-use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::task::{Deps, GetMatchingExt, Task, TaskLoadContext};
+use crate::toolset::{InstallOptions, ToolSource, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::{ctrlc, prompt, style, time};
@@ -208,8 +209,19 @@ pub struct Run {
 
     #[clap(skip)]
     pub timed_outputs: Arc<std::sync::Mutex<IndexMap<String, (SystemTime, String)>>>,
+
+    #[clap(skip)]
+    pub toolset_cache: std::sync::RwLock<IndexMap<PathBuf, Arc<Toolset>>>,
+
+    #[clap(skip)]
+    pub tool_request_set_cache:
+        std::sync::RwLock<IndexMap<PathBuf, Arc<crate::toolset::ToolRequestSet>>>,
+
+    #[clap(skip)]
+    pub env_resolution_cache: std::sync::RwLock<IndexMap<PathBuf, EnvResolutionResult>>,
 }
 
+type EnvResolutionResult = (BTreeMap<String, String>, Vec<(String, String)>);
 type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
 
 struct SpawnCtx {
@@ -324,15 +336,91 @@ impl Run {
         let this = Arc::new(self);
 
         let mut all_tools = this.tool.clone();
-        for t in tasks.all() {
+        let mut all_tool_requests = vec![];
+        let all_tasks: Vec<_> = tasks.all().collect();
+        trace!("Collecting tools from {} tasks", all_tasks.len());
+
+        for t in &all_tasks {
+            // Collect tools from task.tools (task-level tool overrides)
             for (k, v) in &t.tools {
                 all_tools.push(format!("{k}@{v}").parse()?);
             }
+
+            // Collect tools from monorepo task config files
+            if let Some(task_cf) = t.cf(&config) {
+                let config_path = Self::canonicalize_path(task_cf.get_path());
+
+                // Check cache first
+                let cache = this
+                    .tool_request_set_cache
+                    .read()
+                    .expect("tool_request_set_cache RwLock poisoned");
+                let tool_request_set = if let Some(cached) = cache.get(&config_path) {
+                    trace!(
+                        "Using cached tool request set from {}",
+                        config_path.display()
+                    );
+                    Arc::clone(cached)
+                } else {
+                    drop(cache); // Release read lock before write
+                    // Not in cache, parse it
+                    match task_cf.to_tool_request_set() {
+                        Ok(trs) => {
+                            let trs = Arc::new(trs);
+                            let mut cache = this
+                                .tool_request_set_cache
+                                .write()
+                                .expect("tool_request_set_cache RwLock poisoned");
+                            // Double-check: another thread may have populated while we were parsing
+                            cache.entry(config_path.clone()).or_insert_with(|| {
+                                trace!("Cached tool request set to {}", config_path.display());
+                                Arc::clone(&trs)
+                            });
+                            trs
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to parse tools from {} for task {}: {}",
+                                task_cf.get_path().display(),
+                                t.name,
+                                e
+                            );
+                            continue;
+                        }
+                    }
+                };
+
+                trace!(
+                    "Found {} tools in config file for task {}",
+                    tool_request_set.tools.len(),
+                    t.name
+                );
+
+                // Add the tools directly from the ToolRequestSet to preserve backend options
+                for (_, reqs) in tool_request_set.tools.iter() {
+                    all_tool_requests.extend(reqs.iter().cloned());
+                }
+            }
         }
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&all_tools)
-            .build(&config)
-            .await?;
+
+        // Build toolset from both parsed tool args and direct ToolRequests
+        let source = ToolSource::Argument;
+        let mut ts = Toolset::new(source.clone());
+
+        // Add tools from CLI args and task.tools (these are parsed from strings)
+        for tool_arg in all_tools {
+            if let Some(tvr) = tool_arg.tvr {
+                ts.add_version(tvr);
+            }
+        }
+
+        // Add tools from config files (these already have proper backend options)
+        for tr in all_tool_requests {
+            trace!("Adding tool from config: {}", tr);
+            ts.add_version(tr);
+        }
+
+        ts.resolve(&config).await?;
 
         ts.install_missing_versions(
             &mut config,
@@ -690,17 +778,37 @@ impl Run {
             tools.push(format!("{k}@{v}").parse()?);
         }
         let ts_build_start = std::time::Instant::now();
-        let ts = ToolsetBuilder::new()
-            .with_args(&tools)
-            .build(config)
+
+        // Check if we need special handling for monorepo tasks with config file context
+        // Remote tasks (from git::/http:/https: URLs) should NOT use config file context
+        // because they need tools from the full config hierarchy, not just the local config
+        let task_cf = if task.is_remote() {
+            None
+        } else {
+            task.cf(config)
+        };
+
+        // Build toolset - either from task's config file or standard way
+        let ts = self
+            .build_toolset_for_task(config, task, task_cf, &tools)
             .await?;
+
         trace!(
             "task {} ToolsetBuilder::build took {}ms",
             task.name,
             ts_build_start.elapsed().as_millis()
         );
         let env_render_start = std::time::Instant::now();
-        let (mut env, task_env) = task.render_env(config, &ts).await?;
+
+        // Build environment - either from task's config file context or standard way
+        let (mut env, task_env) = if let Some(task_cf) = task_cf {
+            self.resolve_task_env_with_config(config, task, task_cf, &ts)
+                .await?
+        } else {
+            // Fallback to standard behavior
+            task.render_env(config, &ts).await?
+        };
+
         trace!(
             "task {} render_env took {}ms",
             task.name,
@@ -785,6 +893,334 @@ impl Run {
         Ok(())
     }
 
+    /// Build toolset for a task, optionally using its config file context for monorepo tasks
+    async fn build_toolset_for_task(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        task_cf: Option<&Arc<dyn ConfigFile>>,
+        tools: &[ToolArg],
+    ) -> Result<Toolset> {
+        // Only use task-specific config file context for monorepo tasks
+        // (tasks with self.cf set, not just those with a config_source)
+        if let (Some(task_cf), Some(_)) = (task_cf, &task.cf) {
+            let config_path = Self::canonicalize_path(task_cf.get_path());
+
+            trace!(
+                "task {} using monorepo config file context from {}",
+                task.name,
+                config_path.display()
+            );
+
+            // Check cache first if no task-specific tools or CLI args
+            if tools.is_empty() && task.tools.is_empty() {
+                let cache = self
+                    .toolset_cache
+                    .read()
+                    .expect("toolset_cache RwLock poisoned");
+                if let Some(cached_ts) = cache.get(&config_path) {
+                    trace!(
+                        "task {} using cached toolset from {}",
+                        task.name,
+                        config_path.display()
+                    );
+                    // Clone Arc, not the entire Toolset
+                    return Ok(Arc::unwrap_or_clone(Arc::clone(cached_ts)));
+                }
+            }
+
+            // Build a toolset from all config files in the hierarchy
+            // This ensures tools are inherited from parent configs
+
+            // Start by building a toolset from all global config files
+            // This includes parent configs but NOT the subdirectory config
+            let mut task_ts = ToolsetBuilder::new().build(config).await?;
+            trace!(
+                "task {} base toolset from global configs: {:?}",
+                task.name, task_ts
+            );
+
+            // Then merge the subdirectory's config file tools on top
+            // This allows subdirectories to override parent tools
+            let subdir_toolset = task_cf.to_toolset()?;
+            trace!(
+                "task {} merging subdirectory tools from {}: {:?}",
+                task.name,
+                task_cf.get_path().display(),
+                subdir_toolset
+            );
+            task_ts.merge(subdir_toolset);
+
+            trace!("task {} final merged toolset: {:?}", task.name, task_ts);
+
+            // Add task-specific tools and CLI args
+            if !tools.is_empty() {
+                let arg_toolset = ToolsetBuilder::new().with_args(tools).build(config).await?;
+                // Merge task-specific tools into the config file's toolset
+                task_ts.merge(arg_toolset);
+            }
+
+            // Resolve the final toolset
+            task_ts.resolve(config).await?;
+
+            // Cache the toolset if no task-specific tools or CLI args
+            if tools.is_empty() && task.tools.is_empty() {
+                let mut cache = self
+                    .toolset_cache
+                    .write()
+                    .expect("toolset_cache RwLock poisoned");
+                cache.insert(config_path.clone(), Arc::new(task_ts.clone()));
+                trace!(
+                    "task {} cached toolset to {}",
+                    task.name,
+                    config_path.display()
+                );
+            }
+
+            Ok(task_ts)
+        } else {
+            trace!("task {} using standard toolset build", task.name);
+            // Standard toolset build - includes all config files
+            ToolsetBuilder::new().with_args(tools).build(config).await
+        }
+    }
+
+    /// Resolve environment variables for a task using its config file context
+    /// This is used for monorepo tasks to load env vars from subdirectory mise.toml files
+    async fn resolve_task_env_with_config(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        task_cf: &Arc<dyn ConfigFile>,
+        ts: &Toolset,
+    ) -> Result<(BTreeMap<String, String>, Vec<(String, String)>)> {
+        // Determine if this is a monorepo task (task config differs from current project root)
+        let is_monorepo_task = task_cf.project_root() != config.project_root;
+
+        // Get env entries - load the FULL config hierarchy for monorepo tasks
+        let all_config_env_entries: Vec<(crate::config::env_directive::EnvDirective, PathBuf)> =
+            if is_monorepo_task {
+                // For monorepo tasks: Load the FULL config hierarchy from the task's directory
+                // This includes parent configs AND MISE_ENV-specific configs
+                let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
+
+                trace!(
+                    "Loading config hierarchy for monorepo task {} from {}",
+                    task.name,
+                    task_dir.display()
+                );
+
+                // Load all config files in the hierarchy
+                let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+                trace!("Found {} config files in hierarchy", config_paths.len());
+
+                let task_config_files =
+                    crate::config::load_config_files_from_paths(&config_paths).await?;
+
+                // Extract env entries from all config files
+                task_config_files
+                    .iter()
+                    .rev()
+                    .filter_map(|(source, cf)| {
+                        cf.env_entries()
+                            .ok()
+                            .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
+                    })
+                    .flatten()
+                    .collect()
+            } else {
+                // For regular tasks: use ALL config files (including MISE_ENV-specific ones)
+                // This fixes the MISE_ENV inheritance issue for regular tasks
+                config
+                    .config_files
+                    .iter()
+                    .rev()
+                    .filter_map(|(source, cf)| {
+                        cf.env_entries()
+                            .ok()
+                            .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
+                    })
+                    .flatten()
+                    .collect()
+            };
+
+        // Early return if no special context needed
+        // Check using task_cf entries for compatibility with existing logic
+        let task_cf_env_entries = task_cf.env_entries()?;
+        if self.should_use_standard_env_resolution(task, task_cf, config, &task_cf_env_entries) {
+            return task.render_env(config, ts).await;
+        }
+
+        let config_path = Self::canonicalize_path(task_cf.get_path());
+
+        // Check cache first if task has no task-specific env directives
+        if task.env.0.is_empty() {
+            let cache = self
+                .env_resolution_cache
+                .read()
+                .expect("env_resolution_cache RwLock poisoned");
+            if let Some(cached_env) = cache.get(&config_path) {
+                trace!(
+                    "task {} using cached env resolution from {}",
+                    task.name,
+                    config_path.display()
+                );
+                return Ok(cached_env.clone());
+            }
+        }
+
+        let mut env = ts.full_env(config).await?;
+        let tera_ctx = self.build_tera_context(task_cf, ts, config).await?;
+
+        // Resolve config-level env from ALL config files, not just task_cf
+        let config_env_results = self
+            .resolve_env_directives(config, &tera_ctx, &env, all_config_env_entries)
+            .await?;
+        Self::apply_env_results(&mut env, &config_env_results);
+
+        let task_env_directives = self.build_task_env_directives(task);
+        let task_env_results = self
+            .resolve_env_directives(config, &tera_ctx, &env, task_env_directives)
+            .await?;
+
+        let task_env = self.extract_task_env(&task_env_results);
+        Self::apply_env_results(&mut env, &task_env_results);
+
+        // Cache the result if no task-specific env directives
+        if task.env.0.is_empty() {
+            let mut cache = self
+                .env_resolution_cache
+                .write()
+                .expect("env_resolution_cache RwLock poisoned");
+            // Double-check: another thread may have populated while we were resolving
+            cache.entry(config_path.clone()).or_insert_with(|| {
+                trace!(
+                    "task {} cached env resolution to {}",
+                    task.name,
+                    config_path.display()
+                );
+                (env.clone(), task_env.clone())
+            });
+        }
+
+        Ok((env, task_env))
+    }
+
+    /// Canonicalize a path for use as cache key
+    /// Falls back to original path if canonicalization fails
+    fn canonicalize_path(path: &Path) -> PathBuf {
+        path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    }
+
+    /// Check if standard env resolution should be used instead of special context
+    fn should_use_standard_env_resolution(
+        &self,
+        task: &Task,
+        task_cf: &Arc<dyn ConfigFile>,
+        config: &Arc<Config>,
+        config_env_entries: &[EnvDirective],
+    ) -> bool {
+        if let (Some(task_config_root), Some(current_config_root)) =
+            (task_cf.project_root(), config.project_root.as_ref())
+        {
+            if task_config_root == *current_config_root && config_env_entries.is_empty() {
+                trace!(
+                    "task {} config root matches current and no config env, using standard env resolution",
+                    task.name
+                );
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Build tera context with config_root for monorepo tasks
+    async fn build_tera_context(
+        &self,
+        task_cf: &Arc<dyn ConfigFile>,
+        ts: &Toolset,
+        config: &Arc<Config>,
+    ) -> Result<tera::Context> {
+        let mut tera_ctx = ts.tera_ctx(config).await?.clone();
+        if let Some(root) = task_cf.project_root() {
+            tera_ctx.insert("config_root", &root);
+        }
+        Ok(tera_ctx)
+    }
+
+    /// Build env directives from task-specific env
+    fn build_task_env_directives(&self, task: &Task) -> Vec<(EnvDirective, PathBuf)> {
+        task.env
+            .0
+            .iter()
+            .map(|directive| (directive.clone(), task.config_source.clone()))
+            .collect()
+    }
+
+    /// Resolve env directives using EnvResults
+    async fn resolve_env_directives(
+        &self,
+        config: &Arc<Config>,
+        tera_ctx: &tera::Context,
+        env: &BTreeMap<String, String>,
+        directives: Vec<(EnvDirective, PathBuf)>,
+    ) -> Result<crate::config::env_directive::EnvResults> {
+        use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
+        EnvResults::resolve(
+            config,
+            tera_ctx.clone(),
+            env,
+            directives,
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+    }
+
+    /// Extract task env from EnvResults (only task-specific directives)
+    fn extract_task_env(
+        &self,
+        task_env_results: &crate::config::env_directive::EnvResults,
+    ) -> Vec<(String, String)> {
+        task_env_results
+            .env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect()
+    }
+
+    /// Apply EnvResults to an environment map
+    /// Handles env vars, env_remove, and env_paths (PATH modifications)
+    fn apply_env_results(
+        env: &mut BTreeMap<String, String>,
+        results: &crate::config::env_directive::EnvResults,
+    ) {
+        // Apply environment variables
+        for (k, (v, _)) in &results.env {
+            env.insert(k.clone(), v.clone());
+        }
+
+        // Remove explicitly unset variables
+        for key in &results.env_remove {
+            env.remove(key);
+        }
+
+        // Apply path additions
+        if !results.env_paths.is_empty() {
+            use crate::path_env::PathEnv;
+            let mut path_env = PathEnv::from_iter(env::split_paths(
+                &env.get(&*env::PATH_KEY).cloned().unwrap_or_default(),
+            ));
+            for path in &results.env_paths {
+                path_env.add(path.clone());
+            }
+            env.insert(env::PATH_KEY.to_string(), path_env.to_string());
+        }
+    }
+
     async fn exec_task_run_entries(
         &self,
         config: &Arc<Config>,
@@ -826,7 +1262,22 @@ impl Run {
     ) -> Result<()> {
         trace!("inject start: {}", specs.join(", "));
         // Build tasks list from specs
-        let tasks_map = config.tasks_with_aliases().await?;
+        // Create a TaskLoadContext from the specs to ensure project tasks are loaded
+        let ctx = TaskLoadContext::from_patterns(specs.iter().map(|s| {
+            let (name, _) = split_task_spec(s);
+            name
+        }));
+        let tasks = config.tasks_with_context(Some(&ctx)).await?;
+        let tasks_map: BTreeMap<String, Task> = tasks
+            .iter()
+            .flat_map(|(_, t)| {
+                t.aliases
+                    .iter()
+                    .map(|a| (a.to_string(), t.clone()))
+                    .chain(once((t.name.clone(), t.clone())))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         let mut to_run: Vec<Task> = vec![];
         for spec in specs {
             let (name, args) = split_task_spec(spec);
@@ -1472,6 +1923,9 @@ impl Run {
 
                 let local_path = provider.unwrap().get_local_path(&source).await?;
 
+                // Store the original remote source before replacing with local path
+                // This is used to determine if the task should use monorepo config file context
+                t.remote_file_source = Some(source);
                 t.file = Some(local_path);
             }
         }
@@ -1554,6 +2008,41 @@ fn last_modified_file(files: impl IntoIterator<Item = PathBuf>) -> Result<Option
         .max())
 }
 
+fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
+    // Check if experimental mode is enabled
+    if !Settings::get().experimental {
+        bail!(
+            "Monorepo task paths (like `//path:task` or `:task`) require experimental mode.\n\
+            \n\
+            To enable experimental features, set:\n\
+            {}\n\
+            \n\
+            Or run with: {}",
+            style::eyellow("  export MISE_EXPERIMENTAL=true"),
+            style::eyellow("MISE_EXPERIMENTAL=1 mise run ...")
+        );
+    }
+
+    // Check if a monorepo root is configured
+    if !config.is_monorepo() {
+        bail!(
+            "Monorepo task paths (like `//path:task` or `:task`) require a monorepo root configuration.\n\
+            \n\
+            To set up monorepo support, add this to your root mise.toml:\n\
+            {}\n\
+            \n\
+            Then create task files in subdirectories that will be automatically discovered.\n\
+            See {} for more information.",
+            style::eyellow("  experimental_monorepo_root = true"),
+            style::eunderline(
+                "https://mise.jdx.dev/tasks/task-configuration.html#monorepo-support"
+            )
+        );
+    }
+
+    Ok(())
+}
+
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
@@ -1602,6 +2091,9 @@ pub enum TaskOutput {
 }
 
 fn trunc(prefix: &str, msg: &str) -> String {
+    if Settings::get().ci {
+        return msg.to_string();
+    }
     let prefix_len = console::measure_text_width(prefix);
     let msg = msg.lines().next().unwrap_or_default();
     // Ensure we have at least 20 characters for the message, even with very long prefixes
@@ -1640,7 +2132,43 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
             }
         }
     }
-    bail!("no task {} found", style::ered(name));
+
+    // Suggest similar tasks using fuzzy matching for monorepo tasks
+    let mut err_msg = format!("no task {} found", style::ered(name));
+    if name.starts_with("//") {
+        // Load ALL monorepo tasks for suggestions
+        use crate::task::TaskLoadContext;
+        if let Ok(tasks) = config
+            .tasks_with_context(Some(&TaskLoadContext::all()))
+            .await
+        {
+            use fuzzy_matcher::FuzzyMatcher;
+            use fuzzy_matcher::skim::SkimMatcherV2;
+
+            let matcher = SkimMatcherV2::default().use_cache(true).smart_case();
+            let similar: Vec<String> = tasks
+                .keys()
+                .filter(|k| k.starts_with("//"))
+                .filter_map(|k| {
+                    matcher
+                        .fuzzy_match(&k.to_lowercase(), &name.to_lowercase())
+                        .map(|score| (score, k.clone()))
+                })
+                .sorted_by_key(|(score, _)| -1 * *score)
+                .take(5)
+                .map(|(_, k)| k)
+                .collect();
+
+            if !similar.is_empty() {
+                err_msg.push_str("\n\nDid you mean one of these?");
+                for task_name in similar {
+                    err_msg.push_str(&format!("\n  - {}", task_name));
+                }
+            }
+        }
+    }
+
+    bail!(err_msg);
 }
 
 async fn prompt_for_task() -> Result<Task> {
@@ -1680,6 +2208,8 @@ pub async fn get_task_lists(
     args: &[String],
     prompt: bool,
 ) -> Result<Vec<Task>> {
+    use crate::task::TaskLoadContext;
+
     let args = args
         .iter()
         .map(|s| vec![s.to_string()])
@@ -1694,9 +2224,74 @@ pub async fn get_task_lists(
         })
         .flat_map(|args| args.split_first().map(|(t, a)| (t.clone(), a.to_vec())))
         .collect::<Vec<_>>();
+
+    // Determine the appropriate task loading context based on patterns
+    // For monorepo patterns, we need to load tasks from the relevant parts of the monorepo
+    let task_context = if args.is_empty() {
+        None
+    } else {
+        // Collect all monorepo patterns
+        let monorepo_patterns: Vec<&str> = args
+            .iter()
+            .filter_map(|(t, _)| {
+                if t.starts_with("//") || t.contains("...") || t.starts_with(':') {
+                    Some(t.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if monorepo_patterns.is_empty() {
+            None
+        } else {
+            // Validate monorepo setup before attempting to load tasks
+            validate_monorepo_setup(config)?;
+
+            // Merge all path hints from the patterns into a single context
+            Some(TaskLoadContext::from_patterns(
+                monorepo_patterns.into_iter(),
+            ))
+        }
+    };
+
     let mut tasks = vec![];
     let arg_re = regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#);
-    for (t, args) in args {
+    for (mut t, args) in args {
+        // Expand :task pattern to match tasks in current directory's config root
+        if t.starts_with(':') {
+            // Get the monorepo root (the config file with experimental_monorepo_root = true)
+            let monorepo_root = config
+                .config_files
+                .values()
+                .find(|cf| cf.experimental_monorepo_root() == Some(true))
+                .and_then(|cf| cf.project_root());
+
+            // Determine the current directory relative to monorepo root
+            if let (Some(monorepo_root), Some(cwd)) = (monorepo_root, &*dirs::CWD) {
+                if let Ok(rel_path) = cwd.strip_prefix(monorepo_root) {
+                    // Convert relative path to monorepo path format
+                    let path_str = rel_path
+                        .to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, "/");
+                    if path_str.is_empty() {
+                        // We're at the root - :task should match root-level tasks (//: prefix)
+                        // In monorepo mode, root tasks have // prefix
+                        t = format!("//{}", t);
+                    } else {
+                        // We're in a subdirectory - match //path:task
+                        t = format!("//{}{}", path_str, t);
+                    }
+                } else {
+                    // CWD is not within monorepo root
+                    bail!("Cannot use :task syntax outside of monorepo root directory");
+                }
+            } else {
+                // This should have been caught by validate_monorepo_setup
+                bail!("Cannot use :task syntax without a monorepo root");
+            }
+        }
+
         // can be any of the following:
         // - ./path/to/script
         // - ~/path/to/script
@@ -1716,9 +2311,25 @@ pub async fn get_task_lists(
                 return Ok(vec![task.with_args(args)]);
             }
         }
-        let cur_tasks = config
-            .tasks_with_aliases()
-            .await?
+        // Load tasks with the appropriate context
+        let all_tasks = if let Some(ref ctx) = task_context {
+            config.tasks_with_context(Some(ctx)).await?
+        } else {
+            config.tasks().await?
+        };
+
+        let tasks_with_aliases: BTreeMap<String, &Task> = all_tasks
+            .iter()
+            .flat_map(|(_, t)| {
+                t.aliases
+                    .iter()
+                    .map(|a| (a.to_string(), t))
+                    .chain(once((t.name.clone(), t)))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        let cur_tasks = tasks_with_aliases
             .get_matching(&t)?
             .into_iter()
             .cloned()
@@ -1739,11 +2350,48 @@ pub async fn get_task_lists(
 }
 
 pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<Vec<Task>> {
-    let all_tasks = config.tasks_with_aliases().await?;
+    use crate::task::{TaskLoadContext, extract_monorepo_path};
+
+    // Build a context that includes all paths from the input tasks and their dependencies
+    // This ensures dependency resolution can find tasks in the same monorepo paths
+    let path_hints: Vec<String> = tasks
+        .iter()
+        .filter_map(|t| extract_monorepo_path(&t.name))
+        .chain(tasks.iter().flat_map(|t| {
+            t.depends
+                .iter()
+                .chain(t.wait_for.iter())
+                .chain(t.depends_post.iter())
+                .filter_map(|td| extract_monorepo_path(&td.task))
+        }))
+        .unique()
+        .collect();
+
+    let ctx = if !path_hints.is_empty() {
+        Some(TaskLoadContext {
+            path_hints,
+            load_all: false,
+        })
+    } else {
+        None
+    };
+
+    let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+    let all_tasks_map: BTreeMap<String, Task> = all_tasks
+        .iter()
+        .flat_map(|(_, t)| {
+            t.aliases
+                .iter()
+                .map(|a| (a.to_string(), t.clone()))
+                .chain(once((t.name.clone(), t.clone())))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
     tasks
         .into_iter()
         .map(|t| {
-            let depends = t.all_depends(&all_tasks)?;
+            let depends = t.all_depends(&all_tasks_map)?;
             Ok(once(t).chain(depends).collect::<Vec<_>>())
         })
         .flatten_ok()

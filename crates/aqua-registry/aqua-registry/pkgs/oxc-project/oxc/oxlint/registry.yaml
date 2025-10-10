@@ -8,6 +8,11 @@ packages:
     version_constraint: "false"
     version_prefix: oxlint_v
     version_overrides:
+      - version_constraint: semver(">= 1.17.0")
+        error_message: |
+          aqua can't support oxlint 1.17.0 or later. 
+          > Newer versions of Oxlint require node.js. There isn’t a native executable alternative anymore.
+          https://github.com/oxc-project/oxc/discussions/14452#discussioncomment-14631344
       - version_constraint: semver("<= 0.0.8")
         asset: oxlint-{{.OS}}-{{.Arch}}
         files:

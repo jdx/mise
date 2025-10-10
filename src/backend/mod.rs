@@ -936,9 +936,11 @@ pub trait Backend: Debug + Send + Sync {
         // 2. Potentially download to get checksum
         // 3. Handle any URL-specific logic
         Ok(PlatformInfo {
-            url: Some(tarball_url.to_string()),
             checksum: None, // TODO: Implement checksum fetching
+            name: None,     // TODO: Implement name extraction from URL if needed
             size: None,     // TODO: Implement size fetching via HEAD request
+            url: Some(tarball_url.to_string()),
+            url_api: None,
         })
     }
 
@@ -962,9 +964,11 @@ pub trait Backend: Debug + Send + Sync {
         });
 
         Ok(PlatformInfo {
-            url: asset_url,
             checksum: None, // TODO: Implement checksum fetching from releases
+            name: None,     // TODO: Implement asset name fetching from releases
             size: None,     // TODO: Implement size fetching from GitHub API
+            url: asset_url,
+            url_api: None,
         })
     }
 
@@ -978,9 +982,11 @@ pub trait Backend: Debug + Send + Sync {
         // This is the fallback - no external metadata available
         // The tool would need to be installed to generate platform info
         Ok(PlatformInfo {
-            url: None,
             checksum: None,
             size: None,
+            name: None,
+            url: None,
+            url_api: None,
         })
     }
 }

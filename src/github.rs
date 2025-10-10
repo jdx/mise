@@ -34,6 +34,7 @@ pub struct GithubAsset {
     pub name: String,
     // pub size: u64,
     pub browser_download_url: String,
+    pub url: String,
 }
 
 type CacheGroup<T> = HashMap<String, CacheManager<T>>;
@@ -230,6 +231,13 @@ pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
         }
     } else if let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN.as_ref() {
         set_headers(token);
+    }
+
+    if url.path().contains("/releases/assets/") {
+        headers.insert(
+            "accept",
+            HeaderValue::from_static("application/octet-stream"),
+        );
     }
 
     headers

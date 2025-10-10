@@ -33,7 +33,7 @@ leave = "echo 'I left the project'"
 
 ## Preinstall/postinstall hook
 
-These hooks are run before tools are installed. Unlike other hooks, these hooks do not require `mise activate`.
+These hooks are run before and after tools are installed (respectively). Unlike other hooks, these hooks do not require `mise activate`.
 
 ```toml
 [hooks]

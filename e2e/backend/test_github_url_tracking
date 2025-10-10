@@ -29,7 +29,9 @@ assert_contains "cat mise.lock" 'backend = "github:jdx/mise-test-fixtures"'
 # Get the current platform key
 PLATFORM_KEY=$(mise x --cd . -- bash -c "echo \"\$(uname -s | tr '[:upper:]' '[:lower:]' | sed 's/darwin/macos/')-\$(uname -m | sed 's/x86_64/x64/' | sed 's/aarch64/arm64/')\"")
 assert_contains "cat mise.lock" "[tools.\"github:jdx/mise-test-fixtures\".platforms.$PLATFORM_KEY]"
+assert_contains "cat mise.lock" 'name = "hello-world-1.0.0.tar.gz"'
 assert_contains "cat mise.lock" 'url = "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world-1.0.0.tar.gz"'
+assert_contains "cat mise.lock" 'url_api = "https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/272317030"'
 
 echo "Lockfile after installation:"
 cat mise.lock

@@ -1,0 +1,60 @@
+# To test this snap package on your local Linux machine,
+# Install snapcraft (`snap install snapcraft --classic`) and
+# run the following commands:
+#
+# ```shell
+# snapcraft pack
+# snap install ./mise_20xx.xx.x_amd64.snap --dangerous --classic
+# ```
+
+name: mise
+title: mise-en-place
+version: "2025.10.7"
+summary: dev tools, env vars, task runner
+description: |
+  dev tools, env vars, task runner
+license: MIT
+website: https://mise.jdx.dev
+source-code: https://github.com/jdx/mise.git
+issues: https://github.com/jdx/mise/discussions
+contact:
+  - https://github.com/jdx/mise/discussions
+  - https://phanective.org
+donation:
+  - https://github.com/sponsors/jdx
+
+grade: devel
+confinement: classic
+
+platforms:
+  amd64:
+  arm64:
+  armhf:
+
+base: core24
+
+parts:
+  mise:
+    source: "."
+    source-type: local
+
+    plugin: rust
+    rust-channel: stable
+
+    build-packages:
+      - libssl-dev
+    build-attributes:
+      - enable-patchelf
+
+  update-instructions:
+    plugin: dump
+    source: ./packaging/snapcraft
+    source-type: local
+    organize:
+      "mise-self-update-instructions.toml": lib/
+    stage:
+      - lib/
+
+apps:
+  mise:
+    command: bin/mise

@@ -1,5 +1,245 @@
 # Changelog
 
+## [2025.10.7](https://github.com/jdx/mise/compare/v2025.10.6..v2025.10.7) - 2025-10-10
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`kachick/selfup`](https://github.com/kachick/selfup)
+- [`madelynnblue/sqlfmt`](https://github.com/madelynnblue/sqlfmt)
+- [`yonaskolb/XcodeGen`](https://github.com/yonaskolb/XcodeGen)
+
+#### Updated Packages (6)
+
+- [`AGWA/git-crypt`](https://github.com/AGWA/git-crypt)
+- [`apache/maven-mvnd`](https://github.com/apache/maven-mvnd)
+- [`benbjohnson/litestream`](https://github.com/benbjohnson/litestream)
+- [`dex4er/tf`](https://github.com/dex4er/tf)
+- [`oxc-project/oxc/oxlint`](https://github.com/oxc-project/oxc/oxlint)
+- [`sigstore/cosign`](https://github.com/sigstore/cosign)
+### 📦 Registry
+
+- add lazyssh by @TyceHerrman in [#6610](https://github.com/jdx/mise/pull/6610)
+
+### 🚀 Features
+
+- **(config)** Add a ceiling to how mise searchs for config & tasks by @richardthe3rd in [#6041](https://github.com/jdx/mise/pull/6041)
+- **(release)** include aqua-registry updates in changelog and release notes by @jdx in [#6623](https://github.com/jdx/mise/pull/6623)
+
+### 🐛 Bug Fixes
+
+- **(task)** use config_root instead of project_root for task base path by @risu729 in [#6609](https://github.com/jdx/mise/pull/6609)
+- **(task)** resolve project tasks in run blocks using TaskLoadContext by @jdx in [#6614](https://github.com/jdx/mise/pull/6614)
+- **(task)** dont truncate task message when CI is set by @roele in [#6620](https://github.com/jdx/mise/pull/6620)
+- **(tasks)** restore MISE_ENV environment inheritance for tasks by @glasser in [#6621](https://github.com/jdx/mise/pull/6621)
+- **(ui)** prevent OSC 9;4 progress sequences from being written to non-terminals by @jdx in [#6615](https://github.com/jdx/mise/pull/6615)
+
+### Chore
+
+- remove cosign/slsa-verifier from mise.toml by @jdx in [#6616](https://github.com/jdx/mise/pull/6616)
+
+### New Contributors
+
+- @richardthe3rd made their first contribution in [#6041](https://github.com/jdx/mise/pull/6041)
+
+## [2025.10.6](https://github.com/jdx/mise/compare/v2025.10.5..v2025.10.6) - 2025-10-08
+
+### 📦 Registry
+
+- add vfox-mongod by @blaubaer in [#6586](https://github.com/jdx/mise/pull/6586)
+
+### 🚀 Features
+
+- add OSC 9;4 terminal progress indicators by @jdx in [#6584](https://github.com/jdx/mise/pull/6584)
+- make progress bar a footer by @jdx in [#6590](https://github.com/jdx/mise/pull/6590)
+
+### 🐛 Bug Fixes
+
+- **(task)** preserve ubi tool options during auto-install by @jdx in [#6600](https://github.com/jdx/mise/pull/6600)
+- unify project_root and config_root resolution by @risu729 in [#6588](https://github.com/jdx/mise/pull/6588)
+
+### 🚜 Refactor
+
+- **(exec)** remove redundant tty check for auto-install by @jdx in [#6589](https://github.com/jdx/mise/pull/6589)
+- remove duplicated task loads by @risu729 in [#6594](https://github.com/jdx/mise/pull/6594)
+
+### New Contributors
+
+- @blaubaer made their first contribution in [#6586](https://github.com/jdx/mise/pull/6586)
+
+## [2025.10.5](https://github.com/jdx/mise/compare/v2025.10.4..v2025.10.5) - 2025-10-07
+
+### 📦 Registry
+
+- add jules by @alefteris in [#6568](https://github.com/jdx/mise/pull/6568)
+
+### 🐛 Bug Fixes
+
+- **(docs)** improve favicon support for Safari by @jdx in [#6567](https://github.com/jdx/mise/pull/6567)
+- **(github)** download assets via API to respect GITHUB_TOKEN by @roele in [#6496](https://github.com/jdx/mise/pull/6496)
+- **(task)** load toml tasks in `task_config.includes` in system/global config and monorepo subdirs by @risu729 in [#6545](https://github.com/jdx/mise/pull/6545)
+- **(task)** handle dots in monorepo directory names correctly by @jdx in [#6571](https://github.com/jdx/mise/pull/6571)
+
+### 📚 Documentation
+
+- **(readme)** add GitHub Issues & Discussions section by @rsyring in [#6573](https://github.com/jdx/mise/pull/6573)
+- **(tasks)** create dedicated monorepo tasks documentation by @jdx in [#6561](https://github.com/jdx/mise/pull/6561)
+- **(tasks)** enhance monorepo documentation with tool comparisons by @jdx in [#6563](https://github.com/jdx/mise/pull/6563)
+
+## [2025.10.4](https://github.com/jdx/mise/compare/v2025.10.3..v2025.10.4) - 2025-10-06
+
+### 🐛 Bug Fixes
+
+- **(installing-mise.md)** broken link by @equirosa in [#6555](https://github.com/jdx/mise/pull/6555)
+- **(task)** remote git tasks now properly inherit tools from parent configs by @jdx in [#6558](https://github.com/jdx/mise/pull/6558)
+- **(tasks)** restore tool loading from idiomatic version files by @jdx in [#6559](https://github.com/jdx/mise/pull/6559)
+
+### 🚜 Refactor
+
+- **(task)** remove duplicated codes by @risu729 in [#6553](https://github.com/jdx/mise/pull/6553)
+
+### New Contributors
+
+- @equirosa made their first contribution in [#6555](https://github.com/jdx/mise/pull/6555)
+
+## [2025.10.3](https://github.com/jdx/mise/compare/v2025.10.2..v2025.10.3) - 2025-10-06
+
+### 📦 Registry
+
+- added cloudflare wrangler by @moisesmorillo in [#6534](https://github.com/jdx/mise/pull/6534)
+
+### 🚀 Features
+
+- **(tasks)** add experimental monorepo task support with target paths by @jdx in [#6535](https://github.com/jdx/mise/pull/6535)
+- **(tasks)** respect local config_roots for monorepo tasks by @jdx in [#6552](https://github.com/jdx/mise/pull/6552)
+- support latest suffix for Java, Python and Ruby flavoured versions by @roele in [#6533](https://github.com/jdx/mise/pull/6533)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** decode filename extracted from url by @risu729 in [#6536](https://github.com/jdx/mise/pull/6536)
+- **(snapcraft)** use classic confinement by @phanect in [#6542](https://github.com/jdx/mise/pull/6542)
+- **(task)** fix task pattern matching and add :task syntax for monorepos by @risu729 in [#6549](https://github.com/jdx/mise/pull/6549)
+- **(tasks)** validate monorepo setup before running monorepo tasks by @jdx in [#6551](https://github.com/jdx/mise/pull/6551)
+- Add bash option in example by @Its-Just-Nans in [#6541](https://github.com/jdx/mise/pull/6541)
+- suppress ignore crate logs by @risu729 in [#6547](https://github.com/jdx/mise/pull/6547)
+
+### 📚 Documentation
+
+- Update Python virtual environment documentation by @Konfekt in [#6538](https://github.com/jdx/mise/pull/6538)
+
+### Chore
+
+- **(hk)** bump to v1.18.1 by @jdx in [#6546](https://github.com/jdx/mise/pull/6546)
+
+### Hk
+
+- bump to 1.18.1 by @jdx in [0ab65cd](https://github.com/jdx/mise/commit/0ab65cd9c6827fd4738e5184be6d743f94be34b2)
+
+### New Contributors
+
+- @Konfekt made their first contribution in [#6538](https://github.com/jdx/mise/pull/6538)
+- @moisesmorillo made their first contribution in [#6534](https://github.com/jdx/mise/pull/6534)
+
+## [2025.10.2](https://github.com/jdx/mise/compare/v2025.10.1..v2025.10.2) - 2025-10-03
+
+### 🐛 Bug Fixes
+
+- **(shell)** prevent infinite loop in zsh command-not-found handler by @yordis in [#6516](https://github.com/jdx/mise/pull/6516)
+- **(snapcraft)** add missing home plug for the home directory access permission by @phanect in [#6525](https://github.com/jdx/mise/pull/6525)
+- **(vfox)** implement headers support on http mod by @BasixKOR in [#6521](https://github.com/jdx/mise/pull/6521)
+- set MIX_HOME and MIX_ARCHIVES when using the elixir plugin by @numso in [#6504](https://github.com/jdx/mise/pull/6504)
+
+### 📦️ Dependency Updates
+
+- update docker/login-action digest to 5e57cd1 by @renovate[bot] in [#6522](https://github.com/jdx/mise/pull/6522)
+- update fedora:43 docker digest to 2c0d72b by @renovate[bot] in [#6523](https://github.com/jdx/mise/pull/6523)
+
+### Security
+
+- verify macOS binary signature during self-update by @jdx in [#6528](https://github.com/jdx/mise/pull/6528)
+
+### New Contributors
+
+- @yordis made their first contribution in [#6516](https://github.com/jdx/mise/pull/6516)
+- @numso made their first contribution in [#6504](https://github.com/jdx/mise/pull/6504)
+- @BasixKOR made their first contribution in [#6521](https://github.com/jdx/mise/pull/6521)
+
+## [2025.10.1](https://github.com/jdx/mise/compare/v2025.10.0..v2025.10.1) - 2025-10-03
+
+### 📦 Registry
+
+- add tombi by @TyceHerrman in [#6520](https://github.com/jdx/mise/pull/6520)
+
+### 🚀 Features
+
+- **(snapcraft)** add snap package by @phanect in [#6472](https://github.com/jdx/mise/pull/6472)
+
+### 🐛 Bug Fixes
+
+- **(cache)** remove duplicate bytes in prune output by @risu729 in [#6515](https://github.com/jdx/mise/pull/6515)
+
+### Chore
+
+- **(copr)** increase COPR publish timeout by 60 minutes by @Copilot in [#6512](https://github.com/jdx/mise/pull/6512)
+
+### New Contributors
+
+- @phanect made their first contribution in [#6472](https://github.com/jdx/mise/pull/6472)
+
+## [2025.10.0](https://github.com/jdx/mise/compare/v2025.9.25..v2025.10.0) - 2025-10-01
+
+### 📦 Registry
+
+- add code by @TyceHerrman in [#6492](https://github.com/jdx/mise/pull/6492)
+
+### 🚀 Features
+
+- change idiomatic_version_file to default disabled by @jdx in [#6501](https://github.com/jdx/mise/pull/6501)
+
+### 🐛 Bug Fixes
+
+- **(self-update)** add missing functions to self_update stub by @jdx in [#6502](https://github.com/jdx/mise/pull/6502)
+- **(set)** allow --prompt flag to work with `mise set` by @jdx in [#6485](https://github.com/jdx/mise/pull/6485)
+
+### 📚 Documentation
+
+- **(hooks)** clarify pre/post-install hooks description. by @minusfive in [#6497](https://github.com/jdx/mise/pull/6497)
+- remove link to issue by @jdx in [e13d980](https://github.com/jdx/mise/commit/e13d98012fda05e5032b7dfc18f562c28f140cf9)
+
+### 🧪 Testing
+
+- **(e2e)** remove deprecated MISE_LEGACY_VERSION_FILE assertions by @jdx in [#6505](https://github.com/jdx/mise/pull/6505)
+
+### New Contributors
+
+- @minusfive made their first contribution in [#6497](https://github.com/jdx/mise/pull/6497)
+
+## [2025.9.25](https://github.com/jdx/mise/compare/v2025.9.24..v2025.9.25) - 2025-09-30
+
+### 📦 Registry
+
+- prefer k3s from Aqua over ASDF plugin by @TobiX in [#6486](https://github.com/jdx/mise/pull/6486)
+
+### 🐛 Bug Fixes
+
+- **(auto-install)** support installing non-active backend versions by @jdx in [#6484](https://github.com/jdx/mise/pull/6484)
+- **(install)** remove duplicate 'mise' text in install header by @jdx in [#6489](https://github.com/jdx/mise/pull/6489)
+- **(task)** prevent hang when tasks with multiple dependencies fail by @stempler in [#6481](https://github.com/jdx/mise/pull/6481)
+
+### 🧪 Testing
+
+- **(e2e)** use local HTTP server instead of httpbin.org for tool-stub tests by @jdx in [#6488](https://github.com/jdx/mise/pull/6488)
+
+### Chore
+
+- **(ci)** prevent release workflow from running on release branch pushes by @jdx in [#6490](https://github.com/jdx/mise/pull/6490)
+- **(ci)** parallelize release workflow to start e2e tests earlier by @jdx in [#6491](https://github.com/jdx/mise/pull/6491)
+
+### New Contributors
+
+- @stempler made their first contribution in [#6481](https://github.com/jdx/mise/pull/6481)
+
 ## [2025.9.24](https://github.com/jdx/mise/compare/v2025.9.23..v2025.9.24) - 2025-09-29
 
 ### 📦 Registry

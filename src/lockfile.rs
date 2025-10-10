@@ -36,9 +36,13 @@ pub struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url_api: Option<String>,
 }
 
 impl TryFrom<toml::Value> for PlatformInfo {
@@ -47,16 +51,24 @@ impl TryFrom<toml::Value> for PlatformInfo {
         match value {
             toml::Value::String(checksum) => Ok(PlatformInfo {
                 checksum: Some(checksum),
+                name: None,
                 size: None,
                 url: None,
+                url_api: None,
             }),
             toml::Value::Integer(size) => Ok(PlatformInfo {
                 checksum: None,
+                name: None,
                 size: Some(size.try_into()?),
                 url: None,
+                url_api: None,
             }),
             toml::Value::Table(mut t) => {
                 let checksum = match t.remove("checksum") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
+                let name = match t.remove("name") {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
                 };
@@ -69,10 +81,16 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
                 };
+                let url_api = match t.remove("url_api") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
                 Ok(PlatformInfo {
                     checksum,
+                    name,
                     size,
                     url,
+                    url_api,
                 })
             }
             _ => bail!("unsupported asset info format"),
@@ -86,11 +104,17 @@ impl From<PlatformInfo> for toml::Value {
         if let Some(checksum) = platform_info.checksum {
             table.insert("checksum".to_string(), checksum.into());
         }
+        if let Some(name) = platform_info.name {
+            table.insert("name".to_string(), name.into());
+        }
         if let Some(size) = platform_info.size {
             table.insert("size".to_string(), (size as i64).into());
         }
         if let Some(url) = platform_info.url {
             table.insert("url".to_string(), url.into());
+        }
+        if let Some(url_api) = platform_info.url_api {
+            table.insert("url_api".to_string(), url_api.into());
         }
         toml::Value::Table(table)
     }
@@ -475,8 +499,10 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
                         platform.clone(),
                         PlatformInfo {
                             checksum: platform_info.checksum.clone(),
+                            name: platform_info.name.clone(),
                             size: platform_info.size,
                             url: platform_info.url.clone(),
+                            url_api: platform_info.url_api.clone(),
                         },
                     );
                 }
@@ -590,8 +616,10 @@ backend = "core:python"
             "macos-arm64".to_string(),
             PlatformInfo {
                 checksum: Some("sha256:abc123".to_string()),
-                url: Some("https://example.com/node.tar.gz".to_string()),
+                name: Some("node.tar.gz".to_string()),
                 size: Some(12345678),
+                url: Some("https://example.com/node.tar.gz".to_string()),
+                url_api: Some("https://api.github.com.com/repos/test/1234".to_string()),
             },
         );
 

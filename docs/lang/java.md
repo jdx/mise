@@ -19,9 +19,11 @@ mise use -g java@openjdk-21
 mise use -g java@21         # alternate shorthands for openjdk-only
 ```
 
-You can also install a jdk from a different vendor:
+You can also install a jdk from a different vendor. To get the latest version from a vendor just use the
+vendor prefix.
 
 ```sh
+mise use -g java@temurin        # latest version from Temurin
 mise use -g java@temurin-21
 mise use -g java@zulu-21
 mise use -g java@corretto-21

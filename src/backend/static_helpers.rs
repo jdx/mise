@@ -167,8 +167,24 @@ pub fn template_string(template: &str, tv: &ToolVersion) -> String {
     template.replace("{version}", version)
 }
 
-pub fn get_filename_from_url(url: &str) -> String {
-    url.split('/').next_back().unwrap_or("download").to_string()
+pub fn get_filename_from_url(url_str: &str) -> String {
+    let filename = if let Ok(url) = url::Url::parse(url_str) {
+        // Use proper URL parsing to get the path and extract filename
+        url.path_segments()
+            .and_then(|mut segments| segments.next_back())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| url_str.to_string())
+    } else {
+        // Fallback to simple parsing for non-URL strings or malformed URLs
+        url_str
+            .split('/')
+            .next_back()
+            .unwrap_or(url_str)
+            .to_string()
+    };
+    urlencoding::decode(&filename)
+        .map(|s| s.to_string())
+        .unwrap_or(filename)
 }
 
 pub fn install_artifact(
