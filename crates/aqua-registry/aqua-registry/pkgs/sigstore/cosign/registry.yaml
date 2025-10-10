@@ -91,7 +91,7 @@ packages:
           type: github_release
           asset: cosign_checksums.txt
           algorithm: sha256
-      - version_constraint: "true"
+      - version_constraint: semver("<= 2.6.1")
         asset: cosign-{{.OS}}-{{.Arch}}
         format: raw
         windows_arm_emulation: true
@@ -109,3 +109,20 @@ packages:
               - https://accounts.google.com
               - --signature
               - https://github.com/sigstore/cosign/releases/download/{{.Version}}/cosign_checksums.txt-keyless.sig
+      - version_constraint: "true"
+        asset: cosign-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: cosign_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: cosign_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - keyless@projectsigstore.iam.gserviceaccount.com
+              - --certificate-oidc-issuer
+              - https://accounts.google.com
