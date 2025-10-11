@@ -104,3 +104,20 @@ assert_contains "mise run '//projects/...:test*'" "frontend test"
 assert_contains "mise run '//projects/...:test*'" "frontend test:unit"
 assert_contains "mise run '//projects/...:test*'" "frontend test:integration"
 assert_contains "mise run '//projects/...:test*'" "backend test"
+
+# Test for issue: wildcard in middle of path pattern
+# Pattern like //.../graph:task should match paths ending with /graph
+mkdir -p go/api/cmd/graph
+cat <<SUBEOF >go/api/cmd/graph/mise.toml
+[tasks.generate]
+run = 'echo "Generate graph SVG"'
+SUBEOF
+
+# Test pattern with ... in middle: //.../graph:generate
+assert_contains "mise run '//.../graph:generate'" "Generate graph SVG"
+
+# Test pattern with ... in middle: //.../cmd/graph:generate
+assert_contains "mise run '//.../cmd/graph:generate'" "Generate graph SVG"
+
+# Test that these patterns are also recognized in task listing
+assert_contains "mise tasks --all" "//go/api/cmd/graph:generate"
