@@ -872,6 +872,11 @@ description = "CodeQL CLI"
 backends = ["aqua:coder/coder", "asdf:mise-plugins/asdf-coder"]
 description = "Provision remote development environments via Terraform"
 
+[tools.codex]
+backends = ["aqua:openai/codex", "npm:@openai/codex"]
+description = "Lightweight coding agent that runs in your terminal"
+test = ["codex --version", "codex-cli {{version}}"]
+
 [tools.colima]
 backends = [
   "aqua:abiosoft/colima",
