@@ -18,8 +18,8 @@ use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
-use crate::task::{Deps, GetMatchingExt, Task};
-use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
+use crate::task::{Deps, GetMatchingExt, Task, TaskLoadContext};
+use crate::toolset::{InstallOptions, ToolSource, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::{ctrlc, prompt, style, time};
@@ -336,6 +336,7 @@ impl Run {
         let this = Arc::new(self);
 
         let mut all_tools = this.tool.clone();
+        let mut all_tool_requests = vec![];
         let all_tasks: Vec<_> = tasks.all().collect();
         trace!("Collecting tools from {} tasks", all_tasks.len());
 
@@ -395,19 +396,31 @@ impl Run {
                     t.name
                 );
 
-                for (ba, requests) in tool_request_set.tools.iter() {
-                    for req in requests {
-                        trace!("Adding tool from config: {}", req);
-                        all_tools.push(format!("{}@{}", ba.short, req.version()).parse()?);
-                    }
+                // Add the tools directly from the ToolRequestSet to preserve backend options
+                for (_, reqs) in tool_request_set.tools.iter() {
+                    all_tool_requests.extend(reqs.iter().cloned());
                 }
             }
         }
-        trace!("All tools to install: {:?}", all_tools);
-        let mut ts = ToolsetBuilder::new()
-            .with_args(&all_tools)
-            .build(&config)
-            .await?;
+
+        // Build toolset from both parsed tool args and direct ToolRequests
+        let source = ToolSource::Argument;
+        let mut ts = Toolset::new(source.clone());
+
+        // Add tools from CLI args and task.tools (these are parsed from strings)
+        for tool_arg in all_tools {
+            if let Some(tvr) = tool_arg.tvr {
+                ts.add_version(tvr);
+            }
+        }
+
+        // Add tools from config files (these already have proper backend options)
+        for tr in all_tool_requests {
+            trace!("Adding tool from config: {}", tr);
+            ts.add_version(tr);
+        }
+
+        ts.resolve(&config).await?;
 
         ts.install_missing_versions(
             &mut config,
@@ -981,10 +994,60 @@ impl Run {
         task_cf: &Arc<dyn ConfigFile>,
         ts: &Toolset,
     ) -> Result<(BTreeMap<String, String>, Vec<(String, String)>)> {
-        let config_env_entries = task_cf.env_entries()?;
+        // Determine if this is a monorepo task (task config differs from current project root)
+        let is_monorepo_task = task_cf.project_root() != config.project_root;
+
+        // Get env entries - load the FULL config hierarchy for monorepo tasks
+        let all_config_env_entries: Vec<(crate::config::env_directive::EnvDirective, PathBuf)> =
+            if is_monorepo_task {
+                // For monorepo tasks: Load the FULL config hierarchy from the task's directory
+                // This includes parent configs AND MISE_ENV-specific configs
+                let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
+
+                trace!(
+                    "Loading config hierarchy for monorepo task {} from {}",
+                    task.name,
+                    task_dir.display()
+                );
+
+                // Load all config files in the hierarchy
+                let config_paths = crate::config::load_config_hierarchy_from_dir(task_dir)?;
+                trace!("Found {} config files in hierarchy", config_paths.len());
+
+                let task_config_files =
+                    crate::config::load_config_files_from_paths(&config_paths).await?;
+
+                // Extract env entries from all config files
+                task_config_files
+                    .iter()
+                    .rev()
+                    .filter_map(|(source, cf)| {
+                        cf.env_entries()
+                            .ok()
+                            .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
+                    })
+                    .flatten()
+                    .collect()
+            } else {
+                // For regular tasks: use ALL config files (including MISE_ENV-specific ones)
+                // This fixes the MISE_ENV inheritance issue for regular tasks
+                config
+                    .config_files
+                    .iter()
+                    .rev()
+                    .filter_map(|(source, cf)| {
+                        cf.env_entries()
+                            .ok()
+                            .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
+                    })
+                    .flatten()
+                    .collect()
+            };
 
         // Early return if no special context needed
-        if self.should_use_standard_env_resolution(task, task_cf, config, &config_env_entries) {
+        // Check using task_cf entries for compatibility with existing logic
+        let task_cf_env_entries = task_cf.env_entries()?;
+        if self.should_use_standard_env_resolution(task, task_cf, config, &task_cf_env_entries) {
             return task.render_env(config, ts).await;
         }
 
@@ -1009,10 +1072,9 @@ impl Run {
         let mut env = ts.full_env(config).await?;
         let tera_ctx = self.build_tera_context(task_cf, ts, config).await?;
 
-        // Resolve config-level env first, then task-specific env
-        let config_env_directives = self.build_config_env_directives(task_cf, config_env_entries);
+        // Resolve config-level env from ALL config files, not just task_cf
         let config_env_results = self
-            .resolve_env_directives(config, &tera_ctx, &env, config_env_directives)
+            .resolve_env_directives(config, &tera_ctx, &env, all_config_env_entries)
             .await?;
         Self::apply_env_results(&mut env, &config_env_results);
 
@@ -1061,7 +1123,7 @@ impl Run {
         if let (Some(task_config_root), Some(current_config_root)) =
             (task_cf.project_root(), config.project_root.as_ref())
         {
-            if task_config_root == current_config_root && config_env_entries.is_empty() {
+            if task_config_root == *current_config_root && config_env_entries.is_empty() {
                 trace!(
                     "task {} config root matches current and no config env, using standard env resolution",
                     task.name
@@ -1081,21 +1143,9 @@ impl Run {
     ) -> Result<tera::Context> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         if let Some(root) = task_cf.project_root() {
-            tera_ctx.insert("config_root", root);
+            tera_ctx.insert("config_root", &root);
         }
         Ok(tera_ctx)
-    }
-
-    /// Build env directives from config file entries
-    fn build_config_env_directives(
-        &self,
-        task_cf: &Arc<dyn ConfigFile>,
-        config_env_entries: Vec<EnvDirective>,
-    ) -> Vec<(EnvDirective, PathBuf)> {
-        config_env_entries
-            .into_iter()
-            .map(|directive| (directive, task_cf.get_path().to_path_buf()))
-            .collect()
     }
 
     /// Build env directives from task-specific env
@@ -1212,7 +1262,22 @@ impl Run {
     ) -> Result<()> {
         trace!("inject start: {}", specs.join(", "));
         // Build tasks list from specs
-        let tasks_map = config.tasks_with_aliases().await?;
+        // Create a TaskLoadContext from the specs to ensure project tasks are loaded
+        let ctx = TaskLoadContext::from_patterns(specs.iter().map(|s| {
+            let (name, _) = split_task_spec(s);
+            name
+        }));
+        let tasks = config.tasks_with_context(Some(&ctx)).await?;
+        let tasks_map: BTreeMap<String, Task> = tasks
+            .iter()
+            .flat_map(|(_, t)| {
+                t.aliases
+                    .iter()
+                    .map(|a| (a.to_string(), t.clone()))
+                    .chain(once((t.name.clone(), t.clone())))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         let mut to_run: Vec<Task> = vec![];
         for spec in specs {
             let (name, args) = split_task_spec(spec);
@@ -2026,6 +2091,9 @@ pub enum TaskOutput {
 }
 
 fn trunc(prefix: &str, msg: &str) -> String {
+    if Settings::get().ci {
+        return msg.to_string();
+    }
     let prefix_len = console::measure_text_width(prefix);
     let msg = msg.lines().next().unwrap_or_default();
     // Ensure we have at least 20 characters for the message, even with very long prefixes

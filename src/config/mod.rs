@@ -428,15 +428,11 @@ impl Config {
     ) -> Result<BTreeMap<String, Task>> {
         let config = Config::get().await?;
         time!("load_all_tasks");
-        let file_tasks = load_local_tasks_with_context(&config, ctx).await?;
-        let global_tasks =
-            load_tasks_by_filter(&config, |cf| is_global_config(cf.get_path())).await?;
-        let system_tasks =
-            load_tasks_by_filter(&config, |cf| is_system_config(cf.get_path())).await?;
-        let mut tasks: BTreeMap<String, Task> = file_tasks
+        let local_tasks = load_local_tasks_with_context(&config, ctx).await?;
+        let global_tasks = load_global_tasks(&config).await?;
+        let mut tasks: BTreeMap<String, Task> = local_tasks
             .into_iter()
             .chain(global_tasks)
-            .chain(system_tasks)
             .rev()
             .inspect(|t| {
                 trace!(
@@ -886,11 +882,20 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
         .collect()
 }
 
+fn all_dirs() -> Result<Vec<PathBuf>> {
+    file::all_dirs(env::current_dir()?, &env::MISE_CEILING_PATHS)
+}
+
+/// Get all directories in the hierarchy from a starting directory up to ceiling paths
+fn all_dirs_from(start_dir: &Path) -> Result<Vec<PathBuf>> {
+    file::all_dirs(start_dir, &env::MISE_CEILING_PATHS)
+}
+
 pub fn config_file_from_dir(p: &Path) -> PathBuf {
     if !p.is_dir() {
         return p.to_path_buf();
     }
-    for dir in file::all_dirs().unwrap_or_default() {
+    for dir in all_dirs().unwrap_or_default() {
         if let Some(cf) = self::config_files_in_dir(&dir).last() {
             if !is_global_config(cf) {
                 return cf.clone();
@@ -907,7 +912,7 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
     if Settings::no_config() {
         return vec![];
     }
-    let dirs = file::all_dirs().unwrap_or_default();
+    let dirs = all_dirs().unwrap_or_default();
 
     let mut config_files = dirs
         .iter()
@@ -941,12 +946,52 @@ pub fn load_config_paths(config_filenames: &[String], include_ignored: bool) -> 
         .collect()
 }
 
-pub fn is_global_config(path: &Path) -> bool {
-    global_config_files().contains(path) || system_config_files().contains(path)
+/// Load config hierarchy from a specific directory (for monorepo tasks)
+/// This loads all config files from start_dir up through parent directories,
+/// including MISE_ENV-specific configs
+pub fn load_config_hierarchy_from_dir(start_dir: &Path) -> Result<Vec<PathBuf>> {
+    if Settings::no_config() {
+        return Ok(vec![]);
+    }
+
+    let config_filenames = DEFAULT_CONFIG_FILENAMES.iter().cloned().collect_vec();
+
+    // Get all directories from start_dir up to root/ceiling
+    let dirs = all_dirs_from(start_dir)?;
+
+    let mut config_files = dirs
+        .iter()
+        .flat_map(|dir| {
+            if env::MISE_IGNORED_CONFIG_PATHS
+                .iter()
+                .any(|p| dir.starts_with(p))
+            {
+                vec![]
+            } else {
+                config_filenames
+                    .iter()
+                    .rev()
+                    .flat_map(|f| glob(dir, f).unwrap_or_default().into_iter().rev())
+                    .collect()
+            }
+        })
+        .collect::<Vec<_>>();
+
+    // Add global and system configs
+    config_files.extend(global_config_files());
+    config_files.extend(system_config_files());
+
+    let paths = config_files
+        .into_iter()
+        .unique_by(|p| file::desymlink_path(p))
+        .filter(|p| !(config_file::is_ignored(&config_trust_root(p)) || config_file::is_ignored(p)))
+        .collect();
+
+    Ok(paths)
 }
 
-pub fn is_system_config(path: &Path) -> bool {
-    system_config_files().contains(path)
+pub fn is_global_config(path: &Path) -> bool {
+    global_config_files().contains(path) || system_config_files().contains(path)
 }
 
 static GLOBAL_CONFIG_FILES: Lazy<Mutex<Option<IndexSet<PathBuf>>>> = Lazy::new(Default::default);
@@ -1165,6 +1210,35 @@ async fn load_all_config_files(
     Ok(config_map)
 }
 
+/// Load config files from a list of paths (for monorepo task config contexts)
+pub async fn load_config_files_from_paths(config_paths: &[PathBuf]) -> Result<ConfigMap> {
+    backend::load_tools().await?;
+    let idiomatic_filenames = BTreeMap::new(); // TODO: support idiomatic files in config hierarchy loading
+    let mut config_map = ConfigMap::default();
+
+    for f in config_paths.iter().unique() {
+        if f.is_dir() {
+            continue;
+        }
+        let cf = match parse_config_file(f, &idiomatic_filenames).await {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                if err.to_string().contains("are not trusted.") {
+                    trace!("skipping untrusted config: {}", display_path(f));
+                    continue;
+                }
+                return Err(err.wrap_err(format!(
+                    "error parsing config file: {}",
+                    style::ebold(display_path(f))
+                )));
+            }
+        };
+
+        config_map.insert(f.clone(), cf);
+    }
+    Ok(config_map)
+}
+
 async fn parse_config_file(
     f: &PathBuf,
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
@@ -1350,11 +1424,18 @@ async fn load_local_tasks_with_context(
     let monorepo_root = find_monorepo_root(&config.config_files);
 
     // Load tasks from parent directories (current working directory up to root)
-    for d in file::all_dirs()? {
+
+    let local_config_files = config
+        .config_files
+        .iter()
+        .filter(|(_, cf)| !is_global_config(cf.get_path()))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect::<IndexMap<_, _>>();
+    for d in all_dirs()? {
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
             continue;
         }
-        let mut dir_tasks = load_tasks_in_dir(config, &d, &config.config_files).await?;
+        let mut dir_tasks = load_tasks_in_dir(config, &d, &local_config_files).await?;
 
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);
@@ -1553,14 +1634,11 @@ fn discover_monorepo_subdirs(
     Ok(subdirs)
 }
 
-async fn load_tasks_by_filter<F>(config: &Arc<Config>, filter: F) -> Result<Vec<Task>>
-where
-    F: Fn(&dyn ConfigFile) -> bool,
-{
+async fn load_global_tasks(config: &Arc<Config>) -> Result<Vec<Task>> {
     let config_files = config
         .config_files
         .values()
-        .filter(|cf| filter(cf.as_ref()))
+        .filter(|cf| is_global_config(cf.get_path()))
         .collect::<Vec<_>>();
     let mut tasks = vec![];
     for cf in config_files {
@@ -1573,9 +1651,9 @@ async fn load_config_and_file_tasks(
     config: &Arc<Config>,
     cf: Arc<dyn ConfigFile>,
 ) -> Result<Vec<Task>> {
-    let project_root = cf.project_root().unwrap_or(&*env::HOME);
-    let tasks = load_config_tasks(config, cf.clone(), project_root).await?;
-    let file_tasks = load_file_tasks(config, cf.clone(), project_root).await?;
+    let config_root = cf.config_root();
+    let tasks = load_config_tasks(config, cf.clone(), &config_root).await?;
+    let file_tasks = load_file_tasks(config, cf.clone(), &config_root).await?;
     Ok(tasks.into_iter().chain(file_tasks).collect())
 }
 

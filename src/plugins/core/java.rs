@@ -397,6 +397,9 @@ impl Backend for JavaPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        // Java installation has 3 operations: download, install (extract), verify
+        ctx.pr.start_operations(3);
+
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
         let (metadata, tarball_path) =

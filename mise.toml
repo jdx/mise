@@ -15,10 +15,9 @@ cargo-binstall = "latest"
 "cargo:git-cliff" = "latest"
 "cargo:toml-cli" = "latest"
 "cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
-cosign = "latest"
 gh = "2.62.0"
 hk = "latest"
-"jq" = "latest"
+jq = "latest"
 "npm:markdownlint-cli" = "latest"
 "npm:prettier" = "3"
 "npm:ajv-cli" = "latest"
@@ -28,10 +27,10 @@ pre-commit = "latest"
 "ripgrep" = "latest"
 "shellcheck" = "latest"
 "shfmt" = "latest"
-slsa-verifier = "latest"
 taplo = "latest"
 wait-for-gh-rate-limit = "latest"
 sops = "latest"
+node = "24"
 
 [task_config]
 includes = ["tasks.toml", "xtasks"]

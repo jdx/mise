@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# Test that monorepo tasks properly load MISE_ENV-specific config files
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[env]
+ROOT_VAR = "root_value"
+ENV_VAR = "root_default"
+
+[tasks.root-task]
+run = 'echo "ROOT: ENV_VAR=\$ENV_VAR DEV_VAR=\$DEV_VAR"'
+EOF
+
+# Create MISE_ENV-specific config at root
+cat <<EOF >mise.dev.toml
+[env]
+ENV_VAR = "root_dev"
+DEV_VAR = "root_dev_only"
+EOF
+
+# Create frontend project with its own config
+mkdir -p projects/frontend
+cat <<EOF >projects/frontend/mise.toml
+[env]
+FRONTEND_VAR = "frontend_value"
+ENV_VAR = "frontend_default"
+
+[tasks.build]
+run = '''
+echo "FRONTEND_VAR=\$FRONTEND_VAR"
+echo "ENV_VAR=\$ENV_VAR"
+echo "DEV_VAR=\$DEV_VAR"
+echo "PROD_VAR=\$PROD_VAR"
+echo "ROOT_VAR=\$ROOT_VAR"
+'''
+EOF
+
+# Create MISE_ENV-specific config for frontend
+cat <<EOF >projects/frontend/mise.dev.toml
+[env]
+ENV_VAR = "frontend_dev"
+DEV_VAR = "frontend_dev_only"
+EOF
+
+cat <<EOF >projects/frontend/mise.prod.toml
+[env]
+ENV_VAR = "frontend_prod"
+PROD_VAR = "frontend_prod_only"
+EOF
+
+# Create backend project
+mkdir -p projects/backend
+cat <<EOF >projects/backend/mise.toml
+[env]
+BACKEND_VAR = "backend_value"
+ENV_VAR = "backend_default"
+
+[tasks.build]
+run = '''
+echo "BACKEND_VAR=\$BACKEND_VAR"
+echo "ENV_VAR=\$ENV_VAR"
+echo "DEV_VAR=\$DEV_VAR"
+echo "ROOT_VAR=\$ROOT_VAR"
+'''
+EOF
+
+# Create MISE_ENV-specific config for backend
+cat <<EOF >projects/backend/mise.dev.toml
+[env]
+ENV_VAR = "backend_dev"
+DEV_VAR = "backend_dev_only"
+EOF
+
+# Test 1: Root task with default MISE_ENV should use default values
+echo "=== Test 1: Root task with default env ==="
+unset MISE_ENV
+output=$(mise run //:root-task)
+echo "$output"
+assert_contains "echo '$output'" "ENV_VAR=root_default"
+
+# Test 2: Root task with MISE_ENV=dev should load mise.dev.toml
+echo "=== Test 2: Root task with MISE_ENV=dev ==="
+output=$(MISE_ENV=dev mise run //:root-task)
+echo "$output"
+assert_contains "echo '$output'" "ENV_VAR=root_dev"
+assert_contains "echo '$output'" "DEV_VAR=root_dev_only"
+
+# Test 3: Frontend task with default MISE_ENV should use frontend default
+echo "=== Test 3: Frontend task with default env ==="
+unset MISE_ENV
+output=$(mise run '//projects/frontend:build')
+echo "$output"
+assert_contains "echo '$output'" "ENV_VAR=frontend_default"
+assert_contains "echo '$output'" "FRONTEND_VAR=frontend_value"
+assert_contains "echo '$output'" "ROOT_VAR=root_value"
+
+# Test 4: Frontend task with MISE_ENV=dev should load mise.dev.toml
+echo "=== Test 4: Frontend task with MISE_ENV=dev ==="
+output=$(MISE_ENV=dev mise run '//projects/frontend:build')
+echo "$output"
+# Should load frontend/mise.dev.toml which overrides ENV_VAR
+assert_contains "echo '$output'" "ENV_VAR=frontend_dev"
+# Should load DEV_VAR from frontend/mise.dev.toml
+assert_contains "echo '$output'" "DEV_VAR=frontend_dev_only"
+# Should still have ROOT_VAR from root config
+assert_contains "echo '$output'" "ROOT_VAR=root_value"
+# Should have FRONTEND_VAR from base frontend config
+assert_contains "echo '$output'" "FRONTEND_VAR=frontend_value"
+
+# Test 5: Frontend task with MISE_ENV=prod should load mise.prod.toml
+echo "=== Test 5: Frontend task with MISE_ENV=prod ==="
+output=$(MISE_ENV=prod mise run '//projects/frontend:build')
+echo "$output"
+# Should load frontend/mise.prod.toml which overrides ENV_VAR
+assert_contains "echo '$output'" "ENV_VAR=frontend_prod"
+# Should load PROD_VAR from frontend/mise.prod.toml
+assert_contains "echo '$output'" "PROD_VAR=frontend_prod_only"
+
+# Test 6: Backend task with MISE_ENV=dev should load backend's dev config
+echo "=== Test 6: Backend task with MISE_ENV=dev ==="
+output=$(MISE_ENV=dev mise run '//projects/backend:build')
+echo "$output"
+# Should load backend/mise.dev.toml
+assert_contains "echo '$output'" "ENV_VAR=backend_dev"
+assert_contains "echo '$output'" "DEV_VAR=backend_dev_only"
+assert_contains "echo '$output'" "BACKEND_VAR=backend_value"
+assert_contains "echo '$output'" "ROOT_VAR=root_value"
+
+# Test 7: Verify that parent MISE_ENV configs are also loaded
+# Frontend should inherit root's dev config for DEV_VAR if not overridden
+mkdir -p projects/minimal
+cat <<EOF >projects/minimal/mise.toml
+[env]
+MINIMAL_VAR = "minimal"
+
+[tasks.build]
+run = 'echo "MINIMAL_VAR=\$MINIMAL_VAR DEV_VAR=\$DEV_VAR ENV_VAR=\$ENV_VAR"'
+EOF
+
+echo "=== Test 7: Minimal project inherits root MISE_ENV config ==="
+output=$(MISE_ENV=dev mise run '//projects/minimal:build')
+echo "$output"
+# Should have its own var
+assert_contains "echo '$output'" "MINIMAL_VAR=minimal"
+# Should inherit DEV_VAR from root's mise.dev.toml
+assert_contains "echo '$output'" "DEV_VAR=root_dev_only"
+# Should inherit ENV_VAR from root's mise.dev.toml
+assert_contains "echo '$output'" "ENV_VAR=root_dev"
+
+echo "=== All tests passed! ==="
