@@ -1573,5 +1573,4 @@ echo "hello world"
         // Should have task_a, task_b, and common (deduplicated)
         assert_eq!(deps.len(), 3);
     }
-
 }
