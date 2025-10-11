@@ -105,37 +105,53 @@ assert_contains "mise run '//projects/...:test*'" "frontend test:unit"
 assert_contains "mise run '//projects/...:test*'" "frontend test:integration"
 assert_contains "mise run '//projects/...:test*'" "backend test"
 
-# Test for issue: wildcard in middle of path pattern
-# Pattern like //.../api:task should match paths ending with /api
-mkdir -p projects/services/api
-cat <<SUBEOF >projects/services/api/mise.toml
-[tasks.generate]
-run = 'echo "api generate"'
-
+# Test ellipsis wildcard in different positions
+# Create test structure with nested directories
+mkdir -p projects/services/api/v1
+cat <<SUBEOF >projects/services/api/v1/mise.toml
 [tasks.deploy]
-run = 'echo "api deploy"'
+run = 'echo "api v1 deploy"'
 SUBEOF
 
-# Also create a deeply nested structure to test more complex patterns
-mkdir -p libs/internal/utils
-cat <<SUBEOF >libs/internal/utils/mise.toml
+mkdir -p projects/tools/cli
+cat <<SUBEOF >projects/tools/cli/mise.toml
+[tasks.build]
+run = 'echo "cli build"'
+SUBEOF
+
+mkdir -p libs/shared/utils
+cat <<SUBEOF >libs/shared/utils/mise.toml
 [tasks.test]
 run = 'echo "utils test"'
 SUBEOF
 
-# Test pattern with ... in middle: //.../api:generate
-assert_contains "mise run '//.../api:generate'" "api generate"
+# Test 1: ... at the START of path (matches any depth before)
+# Pattern: //.../cli:build should match //projects/tools/cli:build
+assert_contains "mise run '//.../cli:build'" "cli build"
 
-# Test pattern with ... in middle: //.../services/api:deploy
-assert_contains "mise run '//.../services/api:deploy'" "api deploy"
+# Test 2: ... in the MIDDLE of path
+# Pattern: //projects/.../api:task should match //projects/services/api/v1:deploy
+assert_contains "mise run '//projects/.../v1:deploy'" "api v1 deploy"
 
-# Test pattern with ... matching deeply nested paths: //.../utils:test
-assert_contains "mise run '//.../utils:test'" "utils test"
+# Pattern: //libs/.../utils:test should match //libs/shared/utils:test
+assert_contains "mise run '//libs/.../utils:test'" "utils test"
 
-# Test that ... at the start matches everything
-assert_contains "mise run '//...:generate'" "api generate"
+# Test 3: ... at the END of path (matches all subdirectories)
+# Pattern: //projects/tools/...:build should match //projects/tools/cli:build
+assert_contains "mise run '//projects/tools/...:build'" "cli build"
 
-# Test that these patterns are also recognized in task listing
-assert_contains "mise tasks --all" "//projects/services/api:generate"
-assert_contains "mise tasks --all" "//projects/services/api:deploy"
-assert_contains "mise tasks --all" "//libs/internal/utils:test"
+# Pattern: //projects/...:deploy should match //projects/services/api/v1:deploy
+assert_contains "mise run '//projects/...:deploy'" "api v1 deploy"
+
+# Test 4: Multiple ... in one pattern
+# Pattern: //projects/.../api/...:deploy should match //projects/services/api/v1:deploy
+assert_contains "mise run '//projects/.../api/...:deploy'" "api v1 deploy"
+
+# Test 5: ... alone (matches everything)
+assert_contains "mise run '//...:build'" "cli build"
+assert_contains "mise run '//...:test'" "utils test"
+
+# Verify tasks are discovered
+assert_contains "mise tasks --all" "//projects/services/api/v1:deploy"
+assert_contains "mise tasks --all" "//projects/tools/cli:build"
+assert_contains "mise tasks --all" "//libs/shared/utils:test"

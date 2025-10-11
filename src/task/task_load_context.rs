@@ -159,21 +159,42 @@ mod tests {
         assert_eq!(TaskLoadContext::extract_path_hint("//...:task"), None);
         assert_eq!(TaskLoadContext::extract_path_hint("foo:task"), None);
         
-        // Test patterns with ... in the middle (wildcard patterns)
+        // Test patterns with ... in different positions (wildcard patterns)
+        
+        // ... at the START of path
         assert_eq!(
-            TaskLoadContext::extract_path_hint("//.../graph:task"),
+            TaskLoadContext::extract_path_hint("//.../api:task"),
             None,
             "Pattern with ... at start should load all subdirs"
         );
         assert_eq!(
-            TaskLoadContext::extract_path_hint("//foo/.../bar:task"),
+            TaskLoadContext::extract_path_hint("//.../services/api:task"),
             None,
-            "Pattern with ... in middle should load all subdirs"
+            "Pattern with ... at start and more path should load all subdirs"
         );
+        
+        // ... in the MIDDLE of path
         assert_eq!(
             TaskLoadContext::extract_path_hint("//projects/.../api:task"),
             None,
             "Pattern with ... in middle should load all subdirs"
+        );
+        assert_eq!(
+            TaskLoadContext::extract_path_hint("//libs/.../utils:task"),
+            None,
+            "Pattern with ... in middle should load all subdirs"
+        );
+        
+        // Multiple ... in path
+        assert_eq!(
+            TaskLoadContext::extract_path_hint("//projects/.../api/...:task"),
+            None,
+            "Pattern with multiple ... should load all subdirs"
+        );
+        assert_eq!(
+            TaskLoadContext::extract_path_hint("//.../foo/.../bar:task"),
+            None,
+            "Pattern with ... at start and middle should load all subdirs"
         );
     }
 
