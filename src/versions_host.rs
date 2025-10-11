@@ -59,19 +59,17 @@ pub async fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>>
     }
     let url = format!("https://mise-versions.jdx.dev/{}", &ba.short);
     let versions = match HTTP_FETCH.get_text(url).await {
-            Ok(res) => res,
-            Err(err) => {
-                match http::error_code(&err).unwrap_or(0) {
-                    404 => return Ok(None),
-                    429 => {
-                        RATE_LIMITED.store(true, Ordering::Relaxed);
-                        warn!("{ba}: mise-version rate limited");
-                        return Ok(None);
-                    }
-                    _ => return Err(err),
-                }
+        Ok(res) => res,
+        Err(err) => match http::error_code(&err).unwrap_or(0) {
+            404 => return Ok(None),
+            429 => {
+                RATE_LIMITED.store(true, Ordering::Relaxed);
+                warn!("{ba}: mise-version rate limited");
+                return Ok(None);
             }
-        };
+            _ => return Err(err),
+        },
+    };
     let versions = versions
         .lines()
         .map(|v| v.trim().to_string())
