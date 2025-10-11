@@ -13,7 +13,10 @@ test = ["op --version", "{{version}}"]
 [tools.aapt2]
 backends = ["asdf:mise-plugins/mise-aapt2"]
 description = "Android Asset Packaging Tool (aapt)"
-test = ["aapt2 version 2>&1", "Android Asset Packaging Tool (aapt)"] # version doesn't match
+test = [
+  "aapt2 version 2>&1",
+  "Android Asset Packaging Tool (aapt)",
+] # version doesn't match
 
 [tools.act]
 backends = ["aqua:nektos/act", "ubi:nektos/act", "asdf:gr1m0h/asdf-act"]
