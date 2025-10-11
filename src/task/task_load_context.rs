@@ -84,6 +84,13 @@ impl TaskLoadContext {
         let path_part = path_part.strip_suffix(ELLIPSIS).unwrap_or(path_part);
         let path_part = path_part.strip_suffix('/').unwrap_or(path_part);
 
+        // If the path still contains "..." anywhere, it's a wildcard pattern
+        // that could match many paths, so we can't use it as a specific hint
+        // e.g., ".../graph" or "foo/.../bar" should load all subdirectories
+        if path_part.contains(ELLIPSIS) {
+            return None;
+        }
+
         // If we have a non-empty path hint, return it
         if !path_part.is_empty() {
             Some(path_part.to_string())
@@ -151,6 +158,23 @@ mod tests {
         assert_eq!(TaskLoadContext::extract_path_hint("//:task"), None);
         assert_eq!(TaskLoadContext::extract_path_hint("//...:task"), None);
         assert_eq!(TaskLoadContext::extract_path_hint("foo:task"), None);
+        
+        // Test patterns with ... in the middle (wildcard patterns)
+        assert_eq!(
+            TaskLoadContext::extract_path_hint("//.../graph:task"),
+            None,
+            "Pattern with ... at start should load all subdirs"
+        );
+        assert_eq!(
+            TaskLoadContext::extract_path_hint("//foo/.../bar:task"),
+            None,
+            "Pattern with ... in middle should load all subdirs"
+        );
+        assert_eq!(
+            TaskLoadContext::extract_path_hint("//projects/.../api:task"),
+            None,
+            "Pattern with ... in middle should load all subdirs"
+        );
     }
 
     #[test]
