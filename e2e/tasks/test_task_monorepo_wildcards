@@ -106,18 +106,36 @@ assert_contains "mise run '//projects/...:test*'" "frontend test:integration"
 assert_contains "mise run '//projects/...:test*'" "backend test"
 
 # Test for issue: wildcard in middle of path pattern
-# Pattern like //.../graph:task should match paths ending with /graph
-mkdir -p go/api/cmd/graph
-cat <<SUBEOF >go/api/cmd/graph/mise.toml
+# Pattern like //.../api:task should match paths ending with /api
+mkdir -p projects/services/api
+cat <<SUBEOF >projects/services/api/mise.toml
 [tasks.generate]
-run = 'echo "Generate graph SVG"'
+run = 'echo "api generate"'
+
+[tasks.deploy]
+run = 'echo "api deploy"'
 SUBEOF
 
-# Test pattern with ... in middle: //.../graph:generate
-assert_contains "mise run '//.../graph:generate'" "Generate graph SVG"
+# Also create a deeply nested structure to test more complex patterns
+mkdir -p libs/internal/utils
+cat <<SUBEOF >libs/internal/utils/mise.toml
+[tasks.test]
+run = 'echo "utils test"'
+SUBEOF
 
-# Test pattern with ... in middle: //.../cmd/graph:generate
-assert_contains "mise run '//.../cmd/graph:generate'" "Generate graph SVG"
+# Test pattern with ... in middle: //.../api:generate
+assert_contains "mise run '//.../api:generate'" "api generate"
+
+# Test pattern with ... in middle: //.../services/api:deploy
+assert_contains "mise run '//.../services/api:deploy'" "api deploy"
+
+# Test pattern with ... matching deeply nested paths: //.../utils:test
+assert_contains "mise run '//.../utils:test'" "utils test"
+
+# Test that ... at the start matches everything
+assert_contains "mise run '//...:generate'" "api generate"
 
 # Test that these patterns are also recognized in task listing
-assert_contains "mise tasks --all" "//go/api/cmd/graph:generate"
+assert_contains "mise tasks --all" "//projects/services/api:generate"
+assert_contains "mise tasks --all" "//projects/services/api:deploy"
+assert_contains "mise tasks --all" "//libs/internal/utils:test"
