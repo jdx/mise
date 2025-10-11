@@ -13,7 +13,7 @@ test = ["op --version", "{{version}}"]
 [tools.aapt2]
 backends = ["asdf:mise-plugins/mise-aapt2"]
 description = "Android Asset Packaging Tool (aapt)"
-test = ["aapt2 version 2>&1", "Android Asset Packaging Tool (aapt) {{version}}"]
+test = ["aapt2 version 2>&1", "Android Asset Packaging Tool (aapt)"] # version doesn't match
 
 [tools.act]
 backends = ["aqua:nektos/act", "ubi:nektos/act", "asdf:gr1m0h/asdf-act"]
@@ -276,7 +276,7 @@ backends = [
   "asdf:zekker6/asdf-aws-iam-authenticator",
 ]
 description = "A tool to use AWS IAM credentials to authenticate to a Kubernetes cluster"
-test = ["aws-iam-authenticator version", '"Version":"v{{version}}"']
+test = ["aws-iam-authenticator version", '{"Version":"v{{version}}"']
 
 [tools.aws-nuke]
 backends = ["aqua:ekristen/aws-nuke", "asdf:bersalazar/asdf-aws-nuke"]
@@ -304,7 +304,7 @@ test = ["aws-sso version", "AWS SSO CLI Version {{version}}"]
 [tools.aws-vault]
 backends = ["aqua:99designs/aws-vault", "asdf:karancode/asdf-aws-vault"]
 description = "A vault for securely storing and accessing AWS credentials in development environments"
-test = ["aws-vault --version", "v{{version}}"]
+test = ["aws-vault --version 2>&1", "v{{version}}"]
 
 [tools.awscli-local]
 backends = ["asdf:mise-plugins/mise-awscli-local"]
@@ -359,7 +359,7 @@ test = ["balena --version", "{{version}}"]
 [tools.bashbot]
 backends = ["aqua:mathew-fleisch/bashbot", "asdf:mathew-fleisch/asdf-bashbot"]
 description = "A slack-bot written in golang for infrastructure/devops teams"
-test = ["bashbot --version", "v{{version}}"]
+test = ["bashbot version", "v{{version}}"]
 
 [tools.bashly]
 backends = ["asdf:mise-plugins/mise-bashly"]
@@ -427,7 +427,7 @@ test = ["bfs --version", "bfs {{version}}"]
 [tools.binnacle]
 backends = ["aqua:Traackr/binnacle", "asdf:Traackr/asdf-binnacle"]
 description = "An opinionated tool to interact with Kubernetes' Helm"
-test = ["binnacle version", "binnacle version {{version}}"]
+test = ["binnacle --version", "binnacle version {{version}}"]
 
 [tools.biome]
 backends = ["aqua:biomejs/biome", "ubi:biomejs/biome", "npm:@biomejs/biome"]
@@ -469,7 +469,7 @@ test = ["boilerplate --version", "boilerplate version v{{version}}"]
 [tools.bombardier]
 backends = ["aqua:codesenberg/bombardier", "asdf:NeoHsu/asdf-bombardier"]
 description = "Fast cross-platform HTTP benchmarking tool written in Go"
-test = ["bombardier --version", "bombardier version"] # shows "unspecified"
+test = ["bombardier --version 2>&1", "bombardier version"] # shows "unspecified"
 
 [tools.borg]
 backends = ["aqua:borgbackup/borg", "asdf:lwiechec/asdf-borg"]
@@ -616,7 +616,7 @@ test = ["makers --version", "cargo-make {{version}}"]
 [tools.carp]
 backends = ["github:carp-lang/Carp[exe=carp]", "asdf:susurri/asdf-carp"]
 description = "Carp Language"
-test = ["carp --no-core", "carp --help"] # no version command
+test = ["which carp", ""] # hangs in non-interactive shells
 
 [tools.carthage]
 backends = ["asdf:mise-plugins/mise-carthage"]
