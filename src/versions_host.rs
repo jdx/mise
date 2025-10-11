@@ -57,13 +57,8 @@ pub async fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>>
         warn!("{ba}: skipping versions host check due to rate limit");
         return Ok(None);
     }
-    let url = match Settings::get().paranoid {
-        true => format!("https://mise-versions.jdx.dev/{}", &ba.short),
-        false => format!("http://mise-versions.jdx.dev/{}", &ba.short),
-    };
-    let versions =
-        // using http is not a security concern and enabling tls makes mise significantly slower
-        match HTTP_FETCH.get_text(url).await {
+    let url = format!("https://mise-versions.jdx.dev/{}", &ba.short);
+    let versions = match HTTP_FETCH.get_text(url).await {
             Ok(res) => res,
             Err(err) => {
                 match http::error_code(&err).unwrap_or(0) {
