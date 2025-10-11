@@ -68,7 +68,6 @@ echo "local dir task"
 EOF
 chmod +x subdir/local-tasks/local-dir-task.sh
 
-
 # --- Assertions ---
 
 # Assertions from root
@@ -87,7 +86,6 @@ assert_contains "mise run root-file-task" "root file task"
 assert_contains "mise run root-dir-task" "root dir task"
 assert_contains "mise run root-default-dir-task" "root default dir task"
 
-
 # Assertions from subdir
 cd subdir
 
@@ -101,7 +99,6 @@ assert_contains "$output" "sub-dir-task"
 assert_contains "$output" "local-file-task"
 assert_contains "$output" "local-dir-task"
 assert_contains "$output" "sub-default-dir-task"
-
 
 # Verify running tasks
 assert_contains "mise run root-file-task" "root file task"
