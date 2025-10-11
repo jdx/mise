@@ -20,14 +20,18 @@ impl Shell for Bash {
         let mut out = String::new();
         out.push_str(&self.format_activate_prelude(&opts.prelude));
         out.push_str(&formatdoc! {r#"
+            : "${{MISE_BIN:={exe}}}"
             export MISE_SHELL=bash
             export __MISE_ORIG_PATH="$PATH"
 
+            if [ -n "${{MSYSTEM:-}}" ] && command -v cygpath >/dev/null 2>&1; then
+              MISE_BIN="$(cygpath -au "$MISE_BIN")"
+            fi
             mise() {{
               local command
               command="${{1:-}}"
               if [ "$#" = 0 ]; then
-                command {exe}
+                command "$MISE_BIN"
                 return
               fi
               shift
@@ -36,17 +40,17 @@ impl Shell for Bash {
               deactivate|shell|sh)
                 # if argv doesn't contains -h,--help
                 if [[ ! " $@ " =~ " --help " ]] && [[ ! " $@ " =~ " -h " ]]; then
-                  eval "$(command {exe} "$command" "$@")"
+                  eval "$(command "$MISE_BIN" "$command" "$@")"
                   return $?
                 fi
                 ;;
               esac
-              command {exe} "$command" "$@"
+              command "$MISE_BIN" "$command" "$@"
             }}
 
             _mise_hook() {{
               local previous_exit_status=$?;
-              eval "$(mise hook-env{flags} -s bash)";
+              eval "$("$MISE_BIN" hook-env{flags} -s bash)";
               return $previous_exit_status;
             }};
             "#});
@@ -74,7 +78,7 @@ impl Shell for Bash {
                 fi
 
                 command_not_found_handle() {{
-                    if [[ "$1" != "mise" && "$1" != "mise-"* ]] && {exe} hook-not-found -s bash -- "$1"; then
+                    if [[ "$1" != "mise" && "$1" != "mise-"* ]] && "$MISE_BIN" hook-not-found -s bash -- "$1"; then
                       _mise_hook
                       "$@"
                     elif [ -n "$(declare -f _command_not_found_handle)" ]; then
