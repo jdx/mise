@@ -872,6 +872,11 @@ description = "CodeQL CLI"
 backends = ["aqua:coder/coder", "asdf:mise-plugins/asdf-coder"]
 description = "Provision remote development environments via Terraform"
 
+[tools.codex]
+backends = ["aqua:openai/codex", "npm:@openai/codex"]
+description = "Lightweight coding agent that runs in your terminal"
+test = ["codex --version", "codex-cli {{version}}"]
+
 [tools.colima]
 backends = [
   "aqua:abiosoft/colima",
@@ -2795,6 +2800,11 @@ description = "simple terminal UI for git commands"
 backends = ["aqua:Lifailon/lazyjournal", "ubi:Lifailon/lazyjournal"]
 description = "TUI for journalctl, file system logs, as well Docker and Podman containers for quick viewing and filtering with fuzzy find, regex support (like fzf and grep) and coloring the output, written in Go with the gocui library"
 test = ["lazyjournal --version", "{{version}}"]
+
+[tools.lazyssh]
+backends = ["aqua:Adembc/lazyssh", "ubi:Adembc/lazyssh"]
+description = "A terminal-based SSH manager inspired by lazydocker and k9s - Written in go"
+test = ["lazyssh --help", "lazyssh [flags]"]
 
 [tools.lean]
 backends = ["asdf:mise-plugins/mise-lean"]

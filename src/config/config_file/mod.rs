@@ -54,7 +54,7 @@ pub trait ConfigFile: Debug + Send + Sync {
     /// if it's a global/system config, returns None
     /// files like ~/src/foo/.mise/config.toml will return ~/src/foo
     /// and ~/src/foo/.mise.config.toml will return None
-    fn project_root(&self) -> Option<&Path> {
+    fn project_root(&self) -> Option<PathBuf> {
         let p = self.get_path();
         if config::is_global_config(p) {
             return None;
@@ -64,7 +64,7 @@ pub trait ConfigFile: Debug + Send + Sync {
                 dir if dir.starts_with(*dirs::CONFIG) => None,
                 dir if dir.starts_with(*dirs::SYSTEM) => None,
                 dir if dir == *dirs::HOME => None,
-                dir => Some(dir),
+                _ => Some(config_root::config_root(p)),
             },
             None => None,
         }

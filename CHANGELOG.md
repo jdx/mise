@@ -1,5 +1,73 @@
 # Changelog
 
+## [2025.10.7](https://github.com/jdx/mise/compare/v2025.10.6..v2025.10.7) - 2025-10-10
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`kachick/selfup`](https://github.com/kachick/selfup)
+- [`madelynnblue/sqlfmt`](https://github.com/madelynnblue/sqlfmt)
+- [`yonaskolb/XcodeGen`](https://github.com/yonaskolb/XcodeGen)
+
+#### Updated Packages (6)
+
+- [`AGWA/git-crypt`](https://github.com/AGWA/git-crypt)
+- [`apache/maven-mvnd`](https://github.com/apache/maven-mvnd)
+- [`benbjohnson/litestream`](https://github.com/benbjohnson/litestream)
+- [`dex4er/tf`](https://github.com/dex4er/tf)
+- [`oxc-project/oxc/oxlint`](https://github.com/oxc-project/oxc/oxlint)
+- [`sigstore/cosign`](https://github.com/sigstore/cosign)
+### 📦 Registry
+
+- add lazyssh by @TyceHerrman in [#6610](https://github.com/jdx/mise/pull/6610)
+
+### 🚀 Features
+
+- **(config)** Add a ceiling to how mise searchs for config & tasks by @richardthe3rd in [#6041](https://github.com/jdx/mise/pull/6041)
+- **(release)** include aqua-registry updates in changelog and release notes by @jdx in [#6623](https://github.com/jdx/mise/pull/6623)
+
+### 🐛 Bug Fixes
+
+- **(task)** use config_root instead of project_root for task base path by @risu729 in [#6609](https://github.com/jdx/mise/pull/6609)
+- **(task)** resolve project tasks in run blocks using TaskLoadContext by @jdx in [#6614](https://github.com/jdx/mise/pull/6614)
+- **(task)** dont truncate task message when CI is set by @roele in [#6620](https://github.com/jdx/mise/pull/6620)
+- **(tasks)** restore MISE_ENV environment inheritance for tasks by @glasser in [#6621](https://github.com/jdx/mise/pull/6621)
+- **(ui)** prevent OSC 9;4 progress sequences from being written to non-terminals by @jdx in [#6615](https://github.com/jdx/mise/pull/6615)
+
+### Chore
+
+- remove cosign/slsa-verifier from mise.toml by @jdx in [#6616](https://github.com/jdx/mise/pull/6616)
+
+### New Contributors
+
+- @richardthe3rd made their first contribution in [#6041](https://github.com/jdx/mise/pull/6041)
+
+## [2025.10.6](https://github.com/jdx/mise/compare/v2025.10.5..v2025.10.6) - 2025-10-08
+
+### 📦 Registry
+
+- add vfox-mongod by @blaubaer in [#6586](https://github.com/jdx/mise/pull/6586)
+
+### 🚀 Features
+
+- add OSC 9;4 terminal progress indicators by @jdx in [#6584](https://github.com/jdx/mise/pull/6584)
+- make progress bar a footer by @jdx in [#6590](https://github.com/jdx/mise/pull/6590)
+
+### 🐛 Bug Fixes
+
+- **(task)** preserve ubi tool options during auto-install by @jdx in [#6600](https://github.com/jdx/mise/pull/6600)
+- unify project_root and config_root resolution by @risu729 in [#6588](https://github.com/jdx/mise/pull/6588)
+
+### 🚜 Refactor
+
+- **(exec)** remove redundant tty check for auto-install by @jdx in [#6589](https://github.com/jdx/mise/pull/6589)
+- remove duplicated task loads by @risu729 in [#6594](https://github.com/jdx/mise/pull/6594)
+
+### New Contributors
+
+- @blaubaer made their first contribution in [#6586](https://github.com/jdx/mise/pull/6586)
+
 ## [2025.10.5](https://github.com/jdx/mise/compare/v2025.10.4..v2025.10.5) - 2025-10-07
 
 ### 📦 Registry

@@ -1,10 +1,11 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
 packages:
   - type: github_release
-    repo_owner: maddyblue
+    repo_owner: madelynnblue
     repo_name: sqlfmt
     aliases:
       - name: mjibson/sqlfmt
+      - name: maddyblue/sqlfmt
     description: SQL formatter with width-aware output
     version_constraint: "false"
     version_overrides:
