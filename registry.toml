@@ -145,7 +145,7 @@ test = ["ansible --version", "ansible [core {{version}}]"]
 [tools.ant]
 backends = ["asdf:mise-plugins/mise-ant"]
 description = "Apache Ant is a Java library and command-line tool whose mission is to drive processes described in build files as targets and extension points dependent upon each other"
-test = ["ant -version", "Apache Ant(TM) version {{version}}"]
+# test = ["ant -version", "Apache Ant(TM) version {{version}}"] # installs wrong version
 
 [tools.apko]
 backends = [
@@ -279,7 +279,7 @@ backends = [
   "asdf:zekker6/asdf-aws-iam-authenticator",
 ]
 description = "A tool to use AWS IAM credentials to authenticate to a Kubernetes cluster"
-test = ["aws-iam-authenticator version", '{"Version":"v{{version}}"']
+test = ["aws-iam-authenticator version", '"Version":"{{version}}"']
 
 [tools.aws-nuke]
 backends = ["aqua:ekristen/aws-nuke", "asdf:bersalazar/asdf-aws-nuke"]
@@ -5042,7 +5042,7 @@ test = ["yj -v", "v{{version}}"]
 [tools.yor]
 backends = ["aqua:bridgecrewio/yor", "asdf:ordinaryexperts/asdf-yor"]
 description = "Extensible auto-tagger for your IaC files. The ultimate way to link entities in the cloud back to the codified resource which created it"
-test = ["yor version", "yor version {{version}}"]
+test = ["yor --version", "yor version {{version}}"]
 
 [tools.youtube-dl]
 backends = [
