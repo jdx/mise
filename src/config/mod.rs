@@ -1777,11 +1777,20 @@ pub async fn load_tasks_in_dir(
     for p in task_includes_for_dir(dir, config_files) {
         file_tasks.extend(load_tasks_includes(config, &p, dir).await?);
     }
-    Ok(file_tasks
+    let mut tasks = file_tasks
         .into_iter()
         .chain(config_tasks)
         .sorted_by_cached_key(|t| t.name.clone())
-        .collect())
+        .collect::<Vec<_>>();
+    let all_tasks = tasks
+        .clone()
+        .into_iter()
+        .map(|t| (t.name.clone(), t))
+        .collect::<BTreeMap<_, _>>();
+    for task in tasks.iter_mut() {
+        task.display_name = task.display_name(&all_tasks);
+    }
+    Ok(tasks)
 }
 
 async fn load_task_file(
