@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+
+# Test that task_config.includes is additive and hierarchical
+
+# --- Root Config ---
+cat <<EOF >mise.toml
+[task_config]
+includes = ["./tasks.toml", "./tasks/"]
+EOF
+
+cat <<EOF >tasks.toml
+[root-file-task]
+run = 'echo "root file task"'
+EOF
+
+mkdir -p tasks
+cat <<'EOF' >tasks/root-dir-task.sh
+#!/usr/bin/env bash
+echo "root dir task"
+EOF
+chmod +x tasks/root-dir-task.sh
+
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/root-default-dir-task.sh
+#!/usr/bin/env bash
+echo "root default dir task"
+EOF
+chmod +x mise-tasks/root-default-dir-task.sh
+
+# --- Subdir Config ---
+mkdir -p subdir/tasks subdir/local-tasks subdir/mise-tasks
+
+cat <<EOF >subdir/mise.toml
+[task_config]
+includes = ["./tasks.toml", "./tasks/"]
+EOF
+
+cat <<EOF >subdir/tasks.toml
+[sub-file-task]
+run = 'echo "sub file task"'
+EOF
+
+cat <<'EOF' >subdir/tasks/sub-dir-task.sh
+#!/usr/bin/env bash
+echo "sub dir task"
+EOF
+chmod +x subdir/tasks/sub-dir-task.sh
+
+cat <<'EOF' >subdir/mise-tasks/sub-default-dir-task.sh
+#!/usr/bin/env bash
+echo "sub default dir task"
+EOF
+chmod +x subdir/mise-tasks/sub-default-dir-task.sh
+
+cat <<EOF >subdir/mise.local.toml
+[task_config]
+includes = ["./tasks.local.toml", "./local-tasks/"]
+EOF
+
+cat <<EOF >subdir/tasks.local.toml
+[local-file-task]
+run = 'echo "local file task"'
+EOF
+
+cat <<'EOF' >subdir/local-tasks/local-dir-task.sh
+#!/usr/bin/env bash
+echo "local dir task"
+EOF
+chmod +x subdir/local-tasks/local-dir-task.sh
+
+
+# --- Assertions ---
+
+# Assertions from root
+output=$(mise tasks ls)
+echo "$output"
+assert_contains "$output" "root-file-task"
+assert_contains "$output" "root-dir-task"
+assert_contains "$output" "root-default-dir-task"
+assert_not_contains "$output" "sub-file-task"
+assert_not_contains "$output" "sub-dir-task"
+assert_not_contains "$output" "local-file-task"
+assert_not_contains "$output" "local-dir-task"
+assert_not_contains "$output" "sub-default-dir-task"
+
+assert_contains "mise run root-file-task" "root file task"
+assert_contains "mise run root-dir-task" "root dir task"
+assert_contains "mise run root-default-dir-task" "root default dir task"
+
+
+# Assertions from subdir
+cd subdir
+
+output=$(mise tasks ls)
+echo "$output"
+assert_contains "$output" "root-file-task"
+assert_contains "$output" "root-dir-task"
+assert_contains "$output" "root-default-dir-task"
+assert_contains "$output" "sub-file-task"
+assert_contains "$output" "sub-dir-task"
+assert_contains "$output" "local-file-task"
+assert_contains "$output" "local-dir-task"
+assert_contains "$output" "sub-default-dir-task"
+
+
+# Verify running tasks
+assert_contains "mise run root-file-task" "root file task"
+assert_contains "mise run root-dir-task" "root dir task"
+assert_contains "mise run root-default-dir-task" "root default dir task"
+assert_contains "mise run sub-file-task" "sub file task"
+assert_contains "mise run sub-dir-task" "sub dir task"
+assert_contains "mise run local-file-task" "local file task"
+assert_contains "mise run local-dir-task" "local dir task"
+assert_contains "mise run sub-default-dir-task" "sub default dir task"

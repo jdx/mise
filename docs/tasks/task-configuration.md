@@ -336,13 +336,16 @@ dir = "{{cwd}}"
 
 ### `task_config.includes`
 
-Add toml files containing toml tasks, or file tasks to include when looking for tasks.
+Add toml files containing tasks, or directories containing file tasks to include when looking for tasks.
+These are in addition to the default file task directories (e.g. `mise-tasks/`).
+
+This property is additive across config files. It does not override `includes` from other configuration (e.g. `mise.local.toml` adds to `mise.toml`).
 
 ```toml
 [task_config]
 includes = [
-    "tasks.toml", # a task toml file
-    "mytasks"     # a directory containing file tasks (in addition to the default file tasks directories)
+    "tasks.toml", # a toml file with tasks
+    "mytasks"     # a directory containing file tasks
 ]
 ```
 
