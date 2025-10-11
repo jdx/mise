@@ -5,7 +5,7 @@
 # or a backend may be disabled via MISE_DISABLE_BACKENDS=ubi
 
 [tools.codex]
-backends = ["npm:@openai/codex"]
+backends = ["aqua:openai/codex", "npm:@openai/codex"]
 description = "Lightweight coding agent that runs in your terminal"
 test = ["codex --version", "codex-cli {{version}}"]
 
