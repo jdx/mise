@@ -4,6 +4,11 @@
 # multiple are allowed for each tool because some backends may be disabled, like on windows we don't use asdf, for example
 # or a backend may be disabled via MISE_DISABLE_BACKENDS=ubi
 
+[tools.codex]
+backends = ["npm:@openai/codex"]
+description = "Lightweight coding agent that runs in your terminal"
+test = ["codex --version", "codex-cli {{version}}"]
+
 [tools.1password]
 aliases = ["1password-cli", "op"]
 backends = ["asdf:mise-plugins/mise-1password-cli", "aqua:1password/cli"]
