@@ -1,23 +1,21 @@
 # Changelog
 
+## [2025.10.8](https://github.com/jdx/mise/compare/v2025.10.7..v2025.10.8) - 2025-10-11
+
+### 📦 Registry
+
+- add codex (`npm:@openai/codex`) by @risu729 in [#6634](https://github.com/jdx/mise/pull/6634)
+
+### 🐛 Bug Fixes
+
+- **(config)** load MISE_ENV configs for monorepo tasks by @jdx in [#6624](https://github.com/jdx/mise/pull/6624)
+
+### 📦️ Dependency Updates
+
+- update rust crate ubi to 0.8 by @risu729 in [#6637](https://github.com/jdx/mise/pull/6637)
+
 ## [2025.10.7](https://github.com/jdx/mise/compare/v2025.10.6..v2025.10.7) - 2025-10-10
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (3)
-
-- [`kachick/selfup`](https://github.com/kachick/selfup)
-- [`madelynnblue/sqlfmt`](https://github.com/madelynnblue/sqlfmt)
-- [`yonaskolb/XcodeGen`](https://github.com/yonaskolb/XcodeGen)
-
-#### Updated Packages (6)
-
-- [`AGWA/git-crypt`](https://github.com/AGWA/git-crypt)
-- [`apache/maven-mvnd`](https://github.com/apache/maven-mvnd)
-- [`benbjohnson/litestream`](https://github.com/benbjohnson/litestream)
-- [`dex4er/tf`](https://github.com/dex4er/tf)
-- [`oxc-project/oxc/oxlint`](https://github.com/oxc-project/oxc/oxlint)
-- [`sigstore/cosign`](https://github.com/sigstore/cosign)
 ### 📦 Registry
 
 - add lazyssh by @TyceHerrman in [#6610](https://github.com/jdx/mise/pull/6610)
