@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# Test that monorepo task shorthand syntax (mise //path:task and mise :task) works
+# This tests the fix for the bug where these patterns only worked with 'mise run'
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.build]
+run = 'echo "root build task"'
+EOF
+
+mkdir -p project
+cat <<'EOF' >project/mise.toml
+[tasks.build]
+run = 'echo "project build task"'
+EOF
+
+mkdir -p app
+cat <<'EOF' >app/mise.toml
+[tasks.build]
+run = 'echo "app build task"'
+EOF
+
+# Test 1: mise //project:build (shorthand, without 'run')
+assert_contains "mise '//project:build'" "project build task"
+
+# Test 2: mise //app:build (shorthand, without 'run')
+assert_contains "mise '//app:build'" "app build task"
+
+# Test 3: mise :build from root (should run root task)
+assert_contains "mise ':build'" "root build task"
+
+# Test 4: mise :build from project directory (should run project task)
+(cd project && assert_contains "mise ':build'" "project build task")
+
+# Test 5: mise :build from app directory (should run app task)
+(cd app && assert_contains "mise ':build'" "app build task")
+
+# Test 6: Verify that the shorthand syntax is equivalent to 'mise run'
+OUTPUT_SHORTHAND=$(mise '//project:build')
+OUTPUT_RUN=$(mise run '//project:build')
+if [ "$OUTPUT_SHORTHAND" != "$OUTPUT_RUN" ]; then
+	echo "ERROR: Shorthand 'mise //project:build' output differs from 'mise run //project:build'"
+	echo "Shorthand output: $OUTPUT_SHORTHAND"
+	echo "Run output: $OUTPUT_RUN"
+	exit 1
+fi
+
+# Test 7: Test with nested subdirectories
+mkdir -p deep/nested/dir
+cat <<'EOF' >deep/nested/dir/mise.toml
+[tasks.test]
+run = 'echo "nested task"'
+EOF
+
+assert_contains "mise '//deep/nested/dir:test'" "nested task"
+
+(cd deep/nested/dir && assert_contains "mise ':test'" "nested task")
