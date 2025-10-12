@@ -316,13 +316,16 @@ impl Vfox {
             }
             Result::Ok(())
         };
-        if filename.ends_with(".tar.gz") {
+        if filename.ends_with(".tar.gz") || filename.ends_with(".tgz") {
             xx::archive::untar_gz(file, tmp.path())?;
             move_to_install()?;
-        } else if filename.ends_with(".tar.xz") {
+        } else if filename.ends_with(".tar.xz") || filename.ends_with(".txz") {
             xx::archive::untar_xz(file, tmp.path())?;
             move_to_install()?;
-        } else if filename.ends_with(".tar.bz2") {
+        } else if filename.ends_with(".tar.bz2")
+            || filename.ends_with(".tbz2")
+            || filename.ends_with(".tbz")
+        {
             xx::archive::untar_bz2(file, tmp.path())?;
             move_to_install()?;
         } else if filename.ends_with(".zip") {
