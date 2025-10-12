@@ -944,6 +944,24 @@ description = "Connect stdin/stdout/stderr to child processes."
 env = "MISE_RAW"
 type = "Bool"
 
+[terminal_progress]
+default = true
+description = "Enable terminal progress indicators (OSC 9;4) for compatible terminals."
+docs = """
+Enable terminal progress indicators using OSC 9;4 escape sequences. This provides
+native progress bars in the terminal window chrome for terminals that support it,
+including Ghostty, VS Code's integrated terminal, and iTerm2.
+
+When enabled, mise will send progress updates to the terminal during operations like
+tool installations. The progress bar appears in the terminal's window UI, separate
+from the text output.
+
+Set to false to disable this feature if your terminal doesn't support it or if you
+prefer not to see these indicators.
+"""
+env = "MISE_TERMINAL_PROGRESS"
+type = "Bool"
+
 [ruby.apply_patches]
 description = "A list of patch files or URLs to apply to ruby source."
 env = "MISE_RUBY_APPLY_PATCHES"

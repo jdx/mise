@@ -91,6 +91,7 @@ pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| {
 pub static MISE_TOOL_STUB: Lazy<bool> =
     Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("tool-stub"));
 pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
+pub static MISE_PROGRESS_TRACE: Lazy<bool> = Lazy::new(|| var_is_true("MISE_PROGRESS_TRACE"));
 /// true if RUST_BACKTRACE is set (enables detailed error tracebacks)
 pub static RUST_BACKTRACE: Lazy<bool> = Lazy::new(|| {
     match var("RUST_BACKTRACE") {
@@ -165,6 +166,17 @@ pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
             v.split(':')
                 .filter(|p| !p.is_empty())
                 .map(PathBuf::from)
+                .map(replace_path)
+                .collect()
+        })
+        .unwrap_or_default()
+});
+pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
+    var("MISE_CEILING_PATHS")
+        .ok()
+        .map(|v| {
+            split_paths(&v)
+                .filter(|p| !p.as_os_str().is_empty())
                 .map(replace_path)
                 .collect()
         })

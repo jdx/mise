@@ -71,15 +71,6 @@ backend = "cargo:toml-cli"
 version = "2.3.2"
 backend = "cargo:usage-cli"
 
-[[tools.cosign]]
-version = "2.6.1"
-backend = "aqua:sigstore/cosign"
-
-[tools.cosign.platforms.linux-x64]
-checksum = "sha256:064954c5d8c7e3b28188eee5b1727b31c411550bc5fefd41aa672d3c761d103a"
-size = 155339383
-url = "https://github.com/sigstore/cosign/releases/download/v2.6.1/cosign-linux-amd64"
-
 [[tools.gh]]
 version = "2.62.0"
 backend = "aqua:cli/cli"
@@ -95,13 +86,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [[tools.hk]]
-version = "1.18.2"
+version = "1.18.3"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:e61406636570d5ecdda7d5eee809585cbb7a6a1d1b8ac87fd6f2827c931fef1a"
-size = 7177308
-url = "https://github.com/jdx/hk/releases/download/v1.18.2/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "blake3:dcb3b961bcaf97961bd6fea889954b7e38ff7ee3a3c37001632d5e4e65402d36"
+size = 7169077
+url = "https://github.com/jdx/hk/releases/download/v1.18.3/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"
@@ -116,6 +107,20 @@ url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"
 checksum = "sha256:a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263603"
 size = 841408
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
+
+[[tools.node]]
+version = "24.9.0"
+backend = "core:node"
+
+[tools.node.platforms.linux-x64]
+checksum = "sha256:d57d6c28a35785f58f33899a0aa0bfc83f7a8ef4448b6cf3f7d0961efc7b9189"
+size = 58864014
+url = "https://nodejs.org/dist/v24.9.0/node-v24.9.0-linux-x64.tar.gz"
+
+[tools.node.platforms.macos-arm64]
+checksum = "sha256:961024296c2a8e60daed0784f8b61e0fab5c51d197502a92eff052c72b53209b"
+size = 51124089
+url = "https://nodejs.org/dist/v24.9.0/node-v24.9.0-darwin-arm64.tar.gz"
 
 [[tools."npm:ajv-cli"]]
 version = "5.0.0"
@@ -188,16 +193,6 @@ backend = "aqua:mvdan/sh"
 checksum = "sha256:d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a745ea"
 size = 2916536
 url = "https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_linux_amd64"
-
-[[tools.slsa-verifier]]
-version = "2.7.1"
-backend = "ubi:slsa-framework/slsa-verifier"
-
-[tools.slsa-verifier.platforms.linux-x64-slsa-verifier]
-checksum = "blake3:6b7c72ece3e3cbd9db12dd8e261e594bb24721db140692d4f5cbdf508df45156"
-
-[tools.slsa-verifier.platforms.macos-arm64-slsa-verifier]
-checksum = "blake3:af93f77462964b7eeb93b9f45ccedeefc641305f6618d9ffc2480d89b0cceed6"
 
 [[tools.sops]]
 version = "3.11.0"
