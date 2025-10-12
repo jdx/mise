@@ -6,7 +6,6 @@ use crate::{Result, backend};
 use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{logger, migrate, shims};
 use clap::{ArgAction, CommandFactory, Parser, Subcommand};
-use eyre::bail;
 use std::path::PathBuf;
 
 mod activate;
@@ -365,40 +364,11 @@ impl Cli {
         if let Some(cmd) = self.command {
             Ok(cmd)
         } else {
-            if let Some(mut task) = self.task {
+            if let Some(task) = self.task {
                 let config = Config::get().await?;
 
                 // Expand :task pattern to match tasks in current directory's config root
-                // This matches the behavior in run.rs
-                if task.starts_with(':') {
-                    // Get the monorepo root (the config file with experimental_monorepo_root = true)
-                    let monorepo_root = config
-                        .config_files
-                        .values()
-                        .find(|cf| cf.experimental_monorepo_root() == Some(true))
-                        .and_then(|cf| cf.project_root());
-
-                    // Determine the current directory relative to monorepo root
-                    if let (Some(monorepo_root), Some(cwd)) = (monorepo_root, &*crate::dirs::CWD) {
-                        if let Ok(rel_path) = cwd.strip_prefix(monorepo_root) {
-                            // Convert relative path to monorepo path format
-                            let path_str = rel_path
-                                .to_string_lossy()
-                                .replace(std::path::MAIN_SEPARATOR, "/");
-                            if path_str.is_empty() {
-                                // We're at the root - :task should match root-level tasks (//: prefix)
-                                task = format!("//{}", task);
-                            } else {
-                                // We're in a subdirectory - match //path:task
-                                task = format!("//{}{}", path_str, task);
-                            }
-                        } else {
-                            bail!("Cannot use :task syntax outside of monorepo root directory");
-                        }
-                    } else {
-                        bail!("Cannot use :task syntax without a monorepo root");
-                    }
-                }
+                let task = crate::task::expand_colon_task_syntax(&task, &config)?;
 
                 // For monorepo task patterns (starting with //), we need to load
                 // tasks from the entire monorepo, not just the current hierarchy

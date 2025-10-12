@@ -40,7 +40,7 @@ mod task_load_context;
 mod task_script_parser;
 pub mod task_sources;
 
-pub use task_load_context::TaskLoadContext;
+pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
 
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
