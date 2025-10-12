@@ -81,6 +81,15 @@ macro_rules! time {
 }
 
 #[macro_export]
+macro_rules! progress_trace {
+    ($($arg:tt)+) => {{
+        if *$crate::env::MISE_PROGRESS_TRACE {
+            eprintln!("[PROGRESS] {}", format!($($arg)+));
+        }
+    }};
+}
+
+#[macro_export]
 macro_rules! measure {
     ($fmt:expr, $block:block) => {{
         if *$crate::env::MISE_TIMINGS > 0 {

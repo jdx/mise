@@ -133,7 +133,7 @@ fn codegen_registry() {
                 .collect::<Vec<_>>()
                 .join(", "),
             test = test
-                .map(|(t, v)| format!("Some((r\"{t}\", r\"{v}\"))"))
+                .map(|(t, v)| format!("Some((r###\"{t}\"###, r###\"{v}\"###))"))
                 .unwrap_or("None".to_string()),
             os = os
                 .iter()

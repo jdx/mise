@@ -122,19 +122,9 @@ impl PythonPlugin {
             .get_or_try_init_async(async || {
                 let settings = Settings::get();
                 let url_path = python_precompiled_url_path(&settings);
-                let rsp = match settings.paranoid {
-                    true => {
-                        HTTP_FETCH
-                            .get_bytes(format!("https://mise-versions.jdx.dev/{url_path}"))
-                            .await
-                    }
-                    // using http is not a security concern and enabling tls makes mise significantly slower
-                    false => {
-                        HTTP_FETCH
-                            .get_bytes(format!("http://mise-versions.jdx.dev/{url_path}"))
-                            .await
-                    }
-                }?;
+                let rsp = HTTP_FETCH
+                    .get_bytes(format!("https://mise-versions.jdx.dev/{url_path}"))
+                    .await?;
                 let mut decoder = GzDecoder::new(rsp.as_ref());
                 let mut raw = String::new();
                 decoder.read_to_string(&mut raw)?;

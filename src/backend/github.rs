@@ -169,6 +169,35 @@ impl UnifiedGitBackend {
         let filename = asset.name.clone();
         let file_path = tv.download_path().join(&filename);
 
+        // Count operations dynamically:
+        // 1. Download (always)
+        // 2. Verify checksum (if checksum option present)
+        // 3. Extract/install (if file needs extraction)
+        let mut op_count = 1; // download
+
+        // Check if we'll verify checksum
+        let has_checksum = lookup_platform_key(opts, "checksum")
+            .or_else(|| opts.get("checksum").cloned())
+            .is_some();
+        if has_checksum {
+            op_count += 1;
+        }
+
+        // Check if we'll extract (archives need extraction)
+        let needs_extraction = filename.ends_with(".tar.gz")
+            || filename.ends_with(".tar.xz")
+            || filename.ends_with(".tar.bz2")
+            || filename.ends_with(".tar.zst")
+            || filename.ends_with(".tgz")
+            || filename.ends_with(".txz")
+            || filename.ends_with(".tbz2")
+            || filename.ends_with(".zip");
+        if needs_extraction {
+            op_count += 1;
+        }
+
+        ctx.pr.start_operations(op_count);
+
         // Store the asset URL in the tool version
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();

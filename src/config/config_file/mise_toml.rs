@@ -22,6 +22,7 @@ use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvDirectiveOptions, RequiredValue};
 use crate::config::settings::SettingsPartial;
 use crate::config::{Alias, AliasMap, Config};
+use crate::file;
 use crate::file::{create_dir_all, display_path};
 use crate::hooks::{Hook, Hooks};
 use crate::redactions::Redactions;
@@ -30,7 +31,6 @@ use crate::task::Task;
 use crate::tera::{BASE_CONTEXT, get_tera};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
 use crate::watch_files::WatchFile;
-use crate::{dirs, file};
 
 use super::{ConfigFileType, min_version::MinVersionSpec};
 
@@ -388,28 +388,6 @@ impl ConfigFile for MiseToml {
 
     fn min_version(&self) -> Option<&MinVersionSpec> {
         self.min_version.as_ref()
-    }
-
-    fn project_root(&self) -> Option<&Path> {
-        let filename = self.path.file_name().unwrap_or_default().to_string_lossy();
-        match self.path.parent() {
-            Some(dir) => match dir {
-                dir if dir.starts_with(*dirs::CONFIG) => None,
-                dir if dir.starts_with(*dirs::SYSTEM) => None,
-                dir if dir == *dirs::HOME => None,
-                dir if !filename.starts_with('.')
-                    && (dir.ends_with(".mise") || dir.ends_with(".config")) =>
-                {
-                    dir.parent()
-                }
-                dir if !filename.starts_with('.') && dir.ends_with(".config/mise") => {
-                    dir.parent().unwrap().parent()
-                }
-                dir if !filename.starts_with('.') && dir.ends_with("mise") => dir.parent(),
-                dir => Some(dir),
-            },
-            None => None,
-        }
     }
 
     fn plugins(&self) -> eyre::Result<HashMap<String, String>> {
@@ -1685,6 +1663,7 @@ mod tests {
     use insta::{assert_debug_snapshot, assert_snapshot};
     use test_log::test;
 
+    use crate::dirs;
     use crate::test::replace_path;
     use crate::toolset::ToolRequest;
     use crate::{config::Config, dirs::CWD};
