@@ -10,7 +10,10 @@ rustPlatform.buildRustPackage {
     lockFile = ./Cargo.lock;
   };
 
-  nativeBuildInputs = with pkgs; [ pkg-config ];
+  nativeBuildInputs = with pkgs; [
+    cmakeMinimal
+    pkg-config
+  ];
   buildInputs = with pkgs; [
     bash
     coreutils
