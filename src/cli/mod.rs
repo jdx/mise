@@ -366,7 +366,19 @@ impl Cli {
         } else {
             if let Some(task) = self.task {
                 let config = Config::get().await?;
-                if config.tasks().await?.iter().any(|(_, t)| t.is_match(&task)) {
+
+                // Expand :task pattern to match tasks in current directory's config root
+                let task = crate::task::expand_colon_task_syntax(&task, &config)?;
+
+                // For monorepo task patterns (starting with //), we need to load
+                // tasks from the entire monorepo, not just the current hierarchy
+                let tasks = if task.starts_with("//") {
+                    let ctx = crate::task::TaskLoadContext::from_pattern(&task);
+                    config.tasks_with_context(Some(&ctx)).await?
+                } else {
+                    config.tasks().await?
+                };
+                if tasks.iter().any(|(_, t)| t.is_match(&task)) {
                     return Ok(Commands::Run(Box::new(run::Run {
                         task,
                         args: self.task_args.unwrap_or_default(),
