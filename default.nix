@@ -12,12 +12,12 @@ rustPlatform.buildRustPackage {
 
   nativeBuildInputs = with pkgs; [ pkg-config ];
   buildInputs = with pkgs; [
-    coreutils
     bash
+    coreutils
     direnv
-    gnused
-    git
     gawk
+    git
+    gnused
     openssl
   ];
 
