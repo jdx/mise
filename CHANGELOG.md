@@ -1,23 +1,48 @@
 # Changelog
 
-## [2025.10.7](https://github.com/jdx/mise/compare/v2025.10.6..v2025.10.7) - 2025-10-10
+## [2025.10.8](https://github.com/jdx/mise/compare/v2025.10.7..v2025.10.8) - 2025-10-13
 
 ### 📦 Aqua Registry Updates
 
 #### New Packages (3)
 
-- [`kachick/selfup`](https://github.com/kachick/selfup)
-- [`madelynnblue/sqlfmt`](https://github.com/madelynnblue/sqlfmt)
-- [`yonaskolb/XcodeGen`](https://github.com/yonaskolb/XcodeGen)
+- [`defenseunicorns/uds-cli`](https://github.com/defenseunicorns/uds-cli)
+- [`google/addlicense`](https://github.com/google/addlicense)
+- [`zarf-dev/zarf`](https://github.com/zarf-dev/zarf)
 
-#### Updated Packages (6)
+#### Updated Packages (2)
 
-- [`AGWA/git-crypt`](https://github.com/AGWA/git-crypt)
-- [`apache/maven-mvnd`](https://github.com/apache/maven-mvnd)
-- [`benbjohnson/litestream`](https://github.com/benbjohnson/litestream)
-- [`dex4er/tf`](https://github.com/dex4er/tf)
-- [`oxc-project/oxc/oxlint`](https://github.com/oxc-project/oxc/oxlint)
-- [`sigstore/cosign`](https://github.com/sigstore/cosign)
+- [`golang/tools/godoc`](https://github.com/golang/tools/godoc)
+- [`release-plz/release-plz`](https://github.com/release-plz/release-plz)
+### 📦 Registry
+
+- add codex (`npm:@openai/codex`) by @risu729 in [#6634](https://github.com/jdx/mise/pull/6634)
+- add tests (1password-certstrap) by @risu729 in [#6592](https://github.com/jdx/mise/pull/6592)
+
+### 🚀 Features
+
+- **(plugins)** more archiver extensions by @blaubaer in [#6644](https://github.com/jdx/mise/pull/6644)
+
+### 🐛 Bug Fixes
+
+- **(cli)** make `mise //foo` equivalent to `mise run //foo` by @neongreen in [#6641](https://github.com/jdx/mise/pull/6641)
+- **(config)** load MISE_ENV configs for monorepo tasks by @jdx in [#6624](https://github.com/jdx/mise/pull/6624)
+- improve ... pattern matching for monorepo tasks by @neongreen in [#6635](https://github.com/jdx/mise/pull/6635)
+
+### 🛡️ Security
+
+- **(security)** use HTTPS instead of HTTP for version hosts by @jdx in [#6638](https://github.com/jdx/mise/pull/6638)
+
+### 📦️ Dependency Updates
+
+- update rust crate ubi to 0.8 by @risu729 in [#6637](https://github.com/jdx/mise/pull/6637)
+
+### New Contributors
+
+- @neongreen made their first contribution in [#6641](https://github.com/jdx/mise/pull/6641)
+
+## [2025.10.7](https://github.com/jdx/mise/compare/v2025.10.6..v2025.10.7) - 2025-10-10
+
 ### 📦 Registry
 
 - add lazyssh by @TyceHerrman in [#6610](https://github.com/jdx/mise/pull/6610)
