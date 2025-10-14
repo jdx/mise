@@ -1559,7 +1559,7 @@ description = "The main compiler for FlatBuffers is called flatc and is used to 
 test = ["flatc --version", "flatc version {{version}}"]
 
 [tools.flutter]
-backends = ["asdf:mise-plugins/mise-flutter", "vfox:mise-plugins/vfox-flutter"]
+backends = ["aqua:flutter/flutter", "asdf:mise-plugins/mise-flutter", "vfox:mise-plugins/vfox-flutter"]
 description = "Flutter is an open source framework for building beautiful, natively compiled, multi-platform applications from a single codebase"
 
 [tools.fluttergen]
