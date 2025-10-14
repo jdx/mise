@@ -1565,6 +1565,7 @@ backends = [
   "vfox:mise-plugins/vfox-flutter",
 ]
 description = "Flutter is an open source framework for building beautiful, natively compiled, multi-platform applications from a single codebase"
+test = ["flutter --version", "Flutter {{version}}"]
 
 [tools.fluttergen]
 backends = [
