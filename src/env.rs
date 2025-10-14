@@ -350,6 +350,11 @@ pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
 /// Disable color output - https://no-color.org/
 pub static NO_COLOR: Lazy<bool> = Lazy::new(|| var("NO_COLOR").is_ok_and(|v| !v.is_empty()));
 
+// Terminal detection
+pub static TERM_PROGRAM: Lazy<Option<String>> = Lazy::new(|| var("TERM_PROGRAM").ok());
+pub static WT_SESSION: Lazy<bool> = Lazy::new(|| var("WT_SESSION").is_ok());
+pub static VTE_VERSION: Lazy<bool> = Lazy::new(|| var("VTE_VERSION").is_ok());
+
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
