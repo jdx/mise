@@ -195,7 +195,8 @@ impl ProgressReport {
         ui::ctrlc::show_cursor_after_ctrl_c();
         // Footer shows text inside the progress bar with custom overlay rendering
         let pb = ProgressBar::new(length).with_style(FOOTER_TEMPLATE.clone());
-        pb.enable_steady_tick(TICK_INTERVAL);
+        // Don't enable steady tick for footer - it doesn't use a spinner template
+        // and the tick causes unnecessary redraws
 
         // Don't set initial message here - it will be set after adding to MultiProgress
         // to prevent ghost output before the bar is part of the managed display

@@ -128,6 +128,11 @@ impl MultiProgressReport {
             total_count * 1_000_000
         );
 
+        // Don't show footer when there's only 1 tool - individual progress bar is sufficient
+        if total_count == 1 {
+            return;
+        }
+
         // Initialize OSC progress if enabled
         if Settings::get().terminal_progress {
             osc::set_progress(ProgressState::Normal, 0);

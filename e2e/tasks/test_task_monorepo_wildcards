@@ -104,3 +104,54 @@ assert_contains "mise run '//projects/...:test*'" "frontend test"
 assert_contains "mise run '//projects/...:test*'" "frontend test:unit"
 assert_contains "mise run '//projects/...:test*'" "frontend test:integration"
 assert_contains "mise run '//projects/...:test*'" "backend test"
+
+# Test ellipsis wildcard in different positions
+# Create test structure with nested directories
+mkdir -p projects/services/api/v1
+cat <<SUBEOF >projects/services/api/v1/mise.toml
+[tasks.deploy]
+run = 'echo "api v1 deploy"'
+SUBEOF
+
+mkdir -p projects/tools/cli
+cat <<SUBEOF >projects/tools/cli/mise.toml
+[tasks.build]
+run = 'echo "cli build"'
+SUBEOF
+
+mkdir -p libs/shared/utils
+cat <<SUBEOF >libs/shared/utils/mise.toml
+[tasks.test]
+run = 'echo "utils test"'
+SUBEOF
+
+# Test 1: ... at the START of path (matches any depth before)
+# Pattern: //.../cli:build should match //projects/tools/cli:build
+assert_contains "mise run '//.../cli:build'" "cli build"
+
+# Test 2: ... in the MIDDLE of path
+# Pattern: //projects/.../api:task should match //projects/services/api/v1:deploy
+assert_contains "mise run '//projects/.../v1:deploy'" "api v1 deploy"
+
+# Pattern: //libs/.../utils:test should match //libs/shared/utils:test
+assert_contains "mise run '//libs/.../utils:test'" "utils test"
+
+# Test 3: ... at the END of path (matches all subdirectories)
+# Pattern: //projects/tools/...:build should match //projects/tools/cli:build
+assert_contains "mise run '//projects/tools/...:build'" "cli build"
+
+# Pattern: //projects/...:deploy should match //projects/services/api/v1:deploy
+assert_contains "mise run '//projects/...:deploy'" "api v1 deploy"
+
+# Test 4: Multiple ... in one pattern
+# Pattern: //projects/.../api/...:deploy should match //projects/services/api/v1:deploy
+assert_contains "mise run '//projects/.../api/...:deploy'" "api v1 deploy"
+
+# Test 5: ... alone (matches everything)
+assert_contains "mise run '//...:build'" "cli build"
+assert_contains "mise run '//...:test'" "utils test"
+
+# Verify tasks are discovered
+assert_contains "mise tasks --all" "//projects/services/api/v1:deploy"
+assert_contains "mise tasks --all" "//projects/tools/cli:build"
+assert_contains "mise tasks --all" "//libs/shared/utils:test"

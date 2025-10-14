@@ -2257,40 +2257,9 @@ pub async fn get_task_lists(
 
     let mut tasks = vec![];
     let arg_re = regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#);
-    for (mut t, args) in args {
+    for (t, args) in args {
         // Expand :task pattern to match tasks in current directory's config root
-        if t.starts_with(':') {
-            // Get the monorepo root (the config file with experimental_monorepo_root = true)
-            let monorepo_root = config
-                .config_files
-                .values()
-                .find(|cf| cf.experimental_monorepo_root() == Some(true))
-                .and_then(|cf| cf.project_root());
-
-            // Determine the current directory relative to monorepo root
-            if let (Some(monorepo_root), Some(cwd)) = (monorepo_root, &*dirs::CWD) {
-                if let Ok(rel_path) = cwd.strip_prefix(monorepo_root) {
-                    // Convert relative path to monorepo path format
-                    let path_str = rel_path
-                        .to_string_lossy()
-                        .replace(std::path::MAIN_SEPARATOR, "/");
-                    if path_str.is_empty() {
-                        // We're at the root - :task should match root-level tasks (//: prefix)
-                        // In monorepo mode, root tasks have // prefix
-                        t = format!("//{}", t);
-                    } else {
-                        // We're in a subdirectory - match //path:task
-                        t = format!("//{}{}", path_str, t);
-                    }
-                } else {
-                    // CWD is not within monorepo root
-                    bail!("Cannot use :task syntax outside of monorepo root directory");
-                }
-            } else {
-                // This should have been caught by validate_monorepo_setup
-                bail!("Cannot use :task syntax without a monorepo root");
-            }
-        }
+        let t = crate::task::expand_colon_task_syntax(&t, config)?;
 
         // can be any of the following:
         // - ./path/to/script

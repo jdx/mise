@@ -47,9 +47,22 @@ packages:
           windows: pc-windows-msvc
       - version_constraint: semver("<= 0.3.47")
         no_asset: true
+      - version_constraint: semver("<= 0.3.147")
+        asset: release-plz-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
       - version_constraint: "true"
         asset: release-plz-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
+        supported_envs:
+          - linux
+          - windows
+          - darwin/arm64
         replacements:
           amd64: x86_64
           arm64: aarch64

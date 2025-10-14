@@ -4371,9 +4371,9 @@ dependencies = [
 
 [[package]]
 name = "lzma-rust2"
-version = "0.6.1"
+version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26175dd096dfaab9f4fbf577a668842ebc48374d4d06b154bffb49918e242261"
+checksum = "e5999f9ccfee85f09b54a2205c5851f884c83e4e7ef056843ff68d7f2006cd82"
 
 [[package]]
 name = "lzma-sys"
@@ -4513,7 +4513,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2025.10.7"
+version = "2025.10.8"
 dependencies = [
  "age",
  "aqua-registry",
@@ -5911,9 +5911,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.11.3"
+version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b5288124840bee7b386bc413c487869b360b2b4ec421ea56425128692f2a82c"
+checksum = "4a52d8d02cacdb176ef4678de6c052efb4b3da14b78e4db683a4252762be5433"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -5923,9 +5923,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.11"
+version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "833eb9ce86d40ef33cb1306d8accf7bc8ec2bfea4355cbdebb3df68b40925cad"
+checksum = "722166aa0d7438abbaa4d5cc2c649dac844e8c56d82fb3d33e9c34b5cd268fc6"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -6738,11 +6738,10 @@ dependencies = [
 
 [[package]]
 name = "sevenz-rust2"
-version = "0.17.1"
+version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98644326f9145490e4c194dd775a9a2ed7e84f8254415eb709a7924f52fcd7a1"
+checksum = "7048af9cb3f23ee3315bccaeeef1da33c1b2cad63b8a26ac5b5498b6ef472902"
 dependencies = [
- "byteorder",
  "crc32fast",
  "js-sys",
  "lzma-rust2",
@@ -7780,9 +7779,9 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
 name = "ubi"
-version = "0.7.4"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cdc5e6b6f36ff6bf3c9c98794396fc4bd337ada397b88d2456b015f82c1f868"
+checksum = "40d1d600b90a144e553e0b3271f17cefb2389c9795f4392bc8d2d1b3232b42e2"
 dependencies = [
  "anyhow",
  "async-trait",
