@@ -1,8 +1,10 @@
 /// OSC (Operating System Command) escape sequences for terminal integration
 ///
 /// This module provides support for OSC escape sequences that allow terminal
-/// integration features like progress bars in Ghostty, VS Code, and iTerm2.
+/// integration features like progress bars in Ghostty, VS Code, Windows Terminal,
+/// and VTE-based terminals.
 use std::io::{self, Write};
+use std::sync::OnceLock;
 
 /// OSC 9;4 states for terminal progress indication
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +32,40 @@ impl ProgressState {
             ProgressState::Warning => 4,
         }
     }
+}
+
+/// Checks if the current terminal supports OSC 9;4 progress sequences
+fn terminal_supports_osc_9_4() -> bool {
+    static SUPPORTS_OSC_9_4: OnceLock<bool> = OnceLock::new();
+
+    *SUPPORTS_OSC_9_4.get_or_init(|| {
+        // Check TERM_PROGRAM environment variable for terminal detection
+        if let Some(term_program) = &*crate::env::TERM_PROGRAM {
+            match term_program.as_str() {
+                // Supported terminals
+                "ghostty" => return true,
+                "vscode" => return true,
+                // Unsupported terminals
+                "iTerm.app" => return false, // iTerm2 uses OSC 9 for notifications, not OSC 9;4
+                "WezTerm" => return false,
+                "Alacritty" => return false,
+                _ => {}
+            }
+        }
+
+        // Check for Windows Terminal
+        if *crate::env::WT_SESSION {
+            return true;
+        }
+
+        // Check for VTE-based terminals (GNOME Terminal, etc.)
+        if *crate::env::VTE_VERSION {
+            return true;
+        }
+
+        // Default to false for unknown terminals to avoid escape sequence pollution
+        false
+    })
 }
 
 /// Sends an OSC 9;4 sequence to set terminal progress
@@ -61,6 +97,12 @@ fn write_progress(state: ProgressState, progress: u8) -> io::Result<()> {
     if !console::user_attended_stderr() {
         return Ok(());
     }
+
+    // Only write OSC 9;4 sequences if the terminal supports them
+    if !terminal_supports_osc_9_4() {
+        return Ok(());
+    }
+
     let mut stderr = io::stderr();
     // OSC 9;4 format: ESC ] 9 ; 4 ; <state> ; <progress> BEL
     // Note: The color is controlled by the terminal theme
