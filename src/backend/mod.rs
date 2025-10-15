@@ -527,8 +527,16 @@ pub trait Backend: Debug + Send + Sync {
                 trace!("error touching config file: {:?} {:?}", path, err);
             }
         }
-        if let Err(err) = file::remove_file(self.incomplete_file_path(&tv)) {
+        let incomplete_path = self.incomplete_file_path(&tv);
+        if let Err(err) = file::remove_file(&incomplete_path) {
             debug!("error removing incomplete file: {:?}", err);
+        } else {
+            // Sync parent directory to ensure file removal is immediately visible
+            if let Some(parent) = incomplete_path.parent() {
+                if let Err(err) = file::sync_dir(parent) {
+                    debug!("error syncing incomplete file parent directory: {:?}", err);
+                }
+            }
         }
         if let Some(script) = tv.request.options().get("postinstall") {
             ctx.pr

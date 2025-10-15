@@ -274,6 +274,38 @@ pub fn touch_dir(dir: &Path) -> Result<()> {
         .wrap_err_with(|| format!("failed to touch dir: {}", display_path(dir)))
 }
 
+/// Synchronizes a directory to disk, ensuring that filesystem metadata changes
+/// (such as file creations or deletions) are persisted.
+///
+/// This is important after operations like removing files to ensure the changes
+/// are immediately visible to other processes, e.g. to avoid race conditions.
+///
+/// # Platform-specific behavior
+///
+/// - **Unix/Linux**: Performs an fsync on the directory file descriptor, which
+///   ensures directory metadata (like file listings) is written to disk.
+/// - **Windows**: Not implemented (no-op).
+///
+/// # Errors
+///
+/// On Unix systems, returns an error if the directory cannot be opened or synced.
+/// On Windows, always succeeds.
+#[cfg(unix)]
+pub fn sync_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    trace!("sync {}", display_path(path));
+    let dir = File::open(path)
+        .wrap_err_with(|| format!("failed to open dir for sync: {}", display_path(path)))?;
+    dir.sync_all()
+        .wrap_err_with(|| format!("failed to sync dir: {}", display_path(path)))
+}
+
+#[cfg(windows)]
+pub fn sync_dir<P: AsRef<Path>>(_path: P) -> Result<()> {
+    // Not implemented on Windows
+    Ok(())
+}
+
 pub fn modified_duration(path: &Path) -> Result<Duration> {
     let metadata = path.metadata()?;
     let modified = metadata.modified()?;
