@@ -2,18 +2,6 @@
 
 ## [2025.10.8](https://github.com/jdx/mise/compare/v2025.10.7..v2025.10.8) - 2025-10-13
 
-### 📦 Aqua Registry Updates
-
-#### New Packages (3)
-
-- [`defenseunicorns/uds-cli`](https://github.com/defenseunicorns/uds-cli)
-- [`google/addlicense`](https://github.com/google/addlicense)
-- [`zarf-dev/zarf`](https://github.com/zarf-dev/zarf)
-
-#### Updated Packages (2)
-
-- [`golang/tools/godoc`](https://github.com/golang/tools/godoc)
-- [`release-plz/release-plz`](https://github.com/release-plz/release-plz)
 ### 📦 Registry
 
 - add codex (`npm:@openai/codex`) by @risu729 in [#6634](https://github.com/jdx/mise/pull/6634)
@@ -40,6 +28,19 @@
 ### New Contributors
 
 - @neongreen made their first contribution in [#6641](https://github.com/jdx/mise/pull/6641)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`defenseunicorns/uds-cli`](https://github.com/defenseunicorns/uds-cli)
+- [`google/addlicense`](https://github.com/google/addlicense)
+- [`zarf-dev/zarf`](https://github.com/zarf-dev/zarf)
+
+#### Updated Packages (2)
+
+- [`golang/tools/godoc`](https://github.com/golang/tools/godoc)
+- [`release-plz/release-plz`](https://github.com/release-plz/release-plz)
 
 ## [2025.10.7](https://github.com/jdx/mise/compare/v2025.10.6..v2025.10.7) - 2025-10-10
 
@@ -68,6 +69,23 @@
 
 - @richardthe3rd made their first contribution in [#6041](https://github.com/jdx/mise/pull/6041)
 
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`kachick/selfup`](https://github.com/kachick/selfup)
+- [`madelynnblue/sqlfmt`](https://github.com/madelynnblue/sqlfmt)
+- [`yonaskolb/XcodeGen`](https://github.com/yonaskolb/XcodeGen)
+
+#### Updated Packages (6)
+
+- [`AGWA/git-crypt`](https://github.com/AGWA/git-crypt)
+- [`apache/maven-mvnd`](https://github.com/apache/maven-mvnd)
+- [`benbjohnson/litestream`](https://github.com/benbjohnson/litestream)
+- [`dex4er/tf`](https://github.com/dex4er/tf)
+- [`oxc-project/oxc/oxlint`](https://github.com/oxc-project/oxc/oxlint)
+- [`sigstore/cosign`](https://github.com/sigstore/cosign)
+
 ## [2025.10.6](https://github.com/jdx/mise/compare/v2025.10.5..v2025.10.6) - 2025-10-08
 
 ### 📦 Registry
@@ -93,6 +111,17 @@
 
 - @blaubaer made their first contribution in [#6586](https://github.com/jdx/mise/pull/6586)
 
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`walles/moor`](https://github.com/walles/moor)
+
+#### Updated Packages (2)
+
+- [`linkerd/linkerd2`](https://github.com/linkerd/linkerd2)
+- [`minio/mc`](https://github.com/minio/mc)
+
 ## [2025.10.5](https://github.com/jdx/mise/compare/v2025.10.4..v2025.10.5) - 2025-10-07
 
 ### 📦 Registry
@@ -112,6 +141,17 @@
 - **(tasks)** create dedicated monorepo tasks documentation by @jdx in [#6561](https://github.com/jdx/mise/pull/6561)
 - **(tasks)** enhance monorepo documentation with tool comparisons by @jdx in [#6563](https://github.com/jdx/mise/pull/6563)
 
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`flutter/flutter`](https://github.com/flutter/flutter)
+- [`grafana/grafanactl`](https://github.com/grafana/grafanactl)
+
+#### Updated Packages (1)
+
+- [`borgbackup/borg`](https://github.com/borgbackup/borg)
+
 ## [2025.10.4](https://github.com/jdx/mise/compare/v2025.10.3..v2025.10.4) - 2025-10-06
 
 ### 🐛 Bug Fixes
@@ -127,6 +167,13 @@
 ### New Contributors
 
 - @equirosa made their first contribution in [#6555](https://github.com/jdx/mise/pull/6555)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`jackchuka/confluence-md`](https://github.com/jackchuka/confluence-md)
+- [`NikitaCOEUR/dirvana`](https://github.com/NikitaCOEUR/dirvana)
 
 ## [2025.10.3](https://github.com/jdx/mise/compare/v2025.10.2..v2025.10.3) - 2025-10-06
 
