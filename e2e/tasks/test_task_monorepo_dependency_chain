@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Test that task dependencies work with chains of local deps that include monorepo deps
+# Reproduces issue from https://github.com/jdx/mise/discussions/6564#discussioncomment-14669227
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+TOML
+
+# Create ProjectB with a build task
+mkdir -p ProjectB
+cat <<'TOML' >ProjectB/mise.toml
+[tasks.build]
+run = 'echo "ProjectB build completed"'
+TOML
+
+# Create ProjectA with a chain of dependencies
+mkdir -p ProjectA
+cat <<'TOML' >ProjectA/mise.toml
+[tasks.B]
+depends = [":C"]
+run = 'echo "Task B executing"'
+
+[tasks.C]
+depends = [":A"]
+run = 'echo "Task C executing"'
+
+[tasks.A]
+depends = ["//ProjectB:build"]
+run = 'echo "Task A executing"'
+TOML
+
+# Test: Run task B which depends on :C -> :A -> //ProjectB:build
+echo "=== Test: Task dependency chain with local and monorepo deps ==="
+output=$(mise run '//ProjectA:B')
+echo "$output"
+
+# Verify all tasks ran in the correct order
+echo "$output" | grep -q "ProjectB build completed" || (echo "FAIL: ProjectB:build did not run" && exit 1)
+echo "$output" | grep -q "Task A executing" || (echo "FAIL: Task A did not run" && exit 1)
+echo "$output" | grep -q "Task C executing" || (echo "FAIL: Task C did not run" && exit 1)
+echo "$output" | grep -q "Task B executing" || (echo "FAIL: Task B did not run" && exit 1)
+
+echo "=== Dependency chain test passed! ==="
