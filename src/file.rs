@@ -1095,6 +1095,22 @@ pub fn should_strip_components(archive: &Path, format: TarFormat) -> Result<bool
     }
 }
 
+/// Create `CACHEDIR.TAG` file in specifed directory, if does not exist
+pub fn create_cache_dir_file<P: AsRef<Path>>(path: P) -> Result<()> {
+    let cachedir_tag = path.as_ref().join("CACHEDIR.TAG");
+    if cachedir_tag.exists() {
+        return Ok(());
+    }
+    let content = [
+        "Signature: 8a477f597d28d172789f06886806bc55",
+        "# This file is a cache directory tag created by mise.",
+        "# For information about cache directory tags see https://bford.info/cachedir/",
+        "",
+    ]
+    .join("\n");
+    append(cachedir_tag, content.as_bytes())
+}
+
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;

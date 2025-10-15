@@ -14,6 +14,7 @@ pub async fn run() {
         task(|| remove_deprecated_plugin("java", "rtx-java")),
         task(|| remove_deprecated_plugin("python", "rtx-python")),
         task(|| remove_deprecated_plugin("ruby", "rtx-ruby")),
+        task(|| file::create_cache_dir_file(*DATA)),
     );
 }
 
