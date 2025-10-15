@@ -2319,26 +2319,57 @@ pub async fn get_task_lists(
 }
 
 pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<Vec<Task>> {
-    use crate::task::{TaskLoadContext, extract_monorepo_path};
+    use crate::task::{TaskLoadContext, extract_monorepo_path, resolve_task_pattern};
+    use std::collections::HashSet;
 
-    // Build a context that includes all paths from the input tasks and their dependencies
-    // This ensures dependency resolution can find tasks in the same monorepo paths
-    let path_hints: Vec<String> = tasks
-        .iter()
-        .filter_map(|t| extract_monorepo_path(&t.name))
-        .chain(tasks.iter().flat_map(|t| {
-            t.depends
-                .iter()
-                .chain(t.wait_for.iter())
-                .chain(t.depends_post.iter())
-                .filter_map(|td| extract_monorepo_path(&td.task))
-        }))
-        .unique()
-        .collect();
+    // Iteratively discover all path hints by loading tasks and their dependencies
+    // This handles chains like: //A:B -> :C -> :D -> //E:F where we need to discover E
+    let mut all_path_hints = HashSet::new();
+    let mut tasks_to_process: Vec<Task> = tasks.clone();
+    let mut processed_tasks = HashSet::new();
 
-    let ctx = if !path_hints.is_empty() {
+    // Iteratively discover paths until no new paths are found
+    while !tasks_to_process.is_empty() {
+        // Extract path hints from current batch of tasks
+        let new_hints: Vec<String> = tasks_to_process
+            .iter()
+            .filter_map(|t| extract_monorepo_path(&t.name))
+            .chain(tasks_to_process.iter().flat_map(|t| {
+                t.depends
+                    .iter()
+                    .chain(t.wait_for.iter())
+                    .chain(t.depends_post.iter())
+                    .map(|td| resolve_task_pattern(&td.task, Some(t)))
+                    .filter_map(|resolved| extract_monorepo_path(&resolved))
+            }))
+            .collect();
+
+        // Check if we found any new paths
+        let had_new_hints = new_hints.iter().any(|h| all_path_hints.insert(h.clone()));
+        if !had_new_hints {
+            break;
+        }
+
+        // Load tasks with current path hints to discover dependencies
+        let ctx = Some(TaskLoadContext {
+            path_hints: all_path_hints.iter().cloned().collect(),
+            load_all: false,
+        });
+
+        let loaded_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+
+        // Find new tasks that haven't been processed yet
+        tasks_to_process = loaded_tasks
+            .values()
+            .filter(|t| processed_tasks.insert(t.name.clone()))
+            .cloned()
+            .collect();
+    }
+
+    // Now load all tasks with the complete set of path hints
+    let ctx = if !all_path_hints.is_empty() {
         Some(TaskLoadContext {
-            path_hints,
+            path_hints: all_path_hints.into_iter().collect(),
             load_all: false,
         })
     } else {
