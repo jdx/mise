@@ -1,5 +1,21 @@
 # Changelog
 
+## [2025.10.9](https://github.com/jdx/mise/compare/v2025.10.8..v2025.10.9) - 2025-10-15
+
+### 🐛 Bug Fixes
+
+- **(docs)** add missing config file path by @azais-corentin in [#6658](https://github.com/jdx/mise/pull/6658)
+- **(task)** resolve monorepo dependency chains with local task references by @jdx in [#6665](https://github.com/jdx/mise/pull/6665)
+- **(ui)** add terminal detection for OSC 9;4 progress sequences by @jdx in [#6657](https://github.com/jdx/mise/pull/6657)
+
+### 📚 Documentation
+
+- fix aqua package info in CHANGELOG.md by @jdx in [#6664](https://github.com/jdx/mise/pull/6664)
+
+### New Contributors
+
+- @azais-corentin made their first contribution in [#6658](https://github.com/jdx/mise/pull/6658)
+
 ## [2025.10.8](https://github.com/jdx/mise/compare/v2025.10.7..v2025.10.8) - 2025-10-13
 
 ### 📦 Registry
