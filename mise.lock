@@ -77,13 +77,13 @@ size = 12793347
 url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
 
 [[tools.hk]]
-version = "1.18.3"
+version = "1.19.0"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:dcb3b961bcaf97961bd6fea889954b7e38ff7ee3a3c37001632d5e4e65402d36"
-size = 7169077
-url = "https://github.com/jdx/hk/releases/download/v1.18.3/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "blake3:104e8780a56f2da03b561a0263983e45c7f73460d55103b7b51341feca7c4462"
+size = 7170418
+url = "https://github.com/jdx/hk/releases/download/v1.19.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"
@@ -149,18 +149,13 @@ size = 8268268
 url = "https://github.com/pre-commit/pre-commit/releases/download/v4.3.0/pre-commit-4.3.0.pyz"
 
 [[tools.ripgrep]]
-version = "14.1.1"
+version = "15.0.0"
 backend = "aqua:BurntSushi/ripgrep"
 
 [tools.ripgrep.platforms.linux-x64]
-checksum = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
-size = 2566310
-url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"
-
-[tools.ripgrep.platforms.macos-arm64]
-checksum = "sha256:24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be"
-size = 1787248
-url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:253ad0fd5fef0d64cba56c70dccdacc1916d4ed70ad057cc525fcdb0c3bbd2a7"
+size = 2262100
+url = "https://github.com/BurntSushi/ripgrep/releases/download/15.0.0/ripgrep-15.0.0-x86_64-unknown-linux-musl.tar.gz"
 
 [[tools.shellcheck]]
 version = "0.11.0"
