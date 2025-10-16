@@ -1533,6 +1533,12 @@ backends = ["aqua:firebase/firebase-tools", "asdf:jthegedus/asdf-firebase"]
 description = "The Firebase Command Line Tools"
 test = ["firebase --version", "{{version}}"]
 
+[tools.fish]
+aliases = ["fish-shell"]
+backends = ["aqua:fish-shell/fish-shell", "ubi:fish-shell/fish-shell"]
+description = "The user-friendly command line shell."
+test = ["fish --version", "fish, version {{version}}"]
+
 [tools.fission]
 backends = ["aqua:fission/fission", "asdf:virtualstaticvoid/asdf-fission"]
 description = "Fast and Simple Serverless Functions for Kubernetes"
