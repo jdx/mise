@@ -96,7 +96,11 @@ impl ZigPlugin {
                 used_url = format!("{mirror_url}/{filename}");
 
                 if HTTP
-                    .download_file(format!("{used_url}{REQUEST_SUFFIX}"), &tarball_path, Some(pr))
+                    .download_file(
+                        format!("{used_url}{REQUEST_SUFFIX}"),
+                        &tarball_path,
+                        Some(pr),
+                    )
                     .await
                     .is_ok()
                 {
@@ -115,7 +119,9 @@ impl ZigPlugin {
 
         pr.set_message(format!("minisign {filename}"));
         let tarball_data = file::read(&tarball_path)?;
-        let sig = HTTP.get_text(format!("{used_url}.minisig{REQUEST_SUFFIX}")).await?;
+        let sig = HTTP
+            .get_text(format!("{used_url}.minisig{REQUEST_SUFFIX}"))
+            .await?;
         minisign::verify(ZIG_MINISIGN_KEY, &tarball_data, &sig)?;
         // Since this passed the verify step, the format is guaranteed to be correct
         let trusted_comment = sig.split('\n').nth(2).unwrap().to_string();
