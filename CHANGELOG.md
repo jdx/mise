@@ -1,5 +1,18 @@
 # Changelog
 
+## [2025.10.10](https://github.com/jdx/mise/compare/v2025.10.9..v2025.10.10) - 2025-10-16
+
+### 🐛 Bug Fixes
+
+- **(backend)** sync parent directory after removing incomplete marker by @EronWright in [#6668](https://github.com/jdx/mise/pull/6668)
+- **(tasks)** improve error message for untrusted config files by @jdx in [#6672](https://github.com/jdx/mise/pull/6672)
+- fix(deps) Revert "fix(deps): update rust crate ubi to 0.8 " by @swgillespie in [#6652](https://github.com/jdx/mise/pull/6652)
+
+### New Contributors
+
+- @swgillespie made their first contribution in [#6652](https://github.com/jdx/mise/pull/6652)
+- @EronWright made their first contribution in [#6668](https://github.com/jdx/mise/pull/6668)
+
 ## [2025.10.9](https://github.com/jdx/mise/compare/v2025.10.8..v2025.10.9) - 2025-10-15
 
 ### 🐛 Bug Fixes
