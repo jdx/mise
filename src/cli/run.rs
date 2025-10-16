@@ -2104,6 +2104,32 @@ fn trunc(prefix: &str, msg: &str) -> String {
 
 async fn err_no_task(config: &Config, name: &str) -> Result<()> {
     if config.tasks().await.is_ok_and(|t| t.is_empty()) {
+        // Check if there are any untrusted config files in the current directory
+        // that might contain tasks
+        if let Some(cwd) = &*dirs::CWD {
+            use crate::config::config_file::{config_trust_root, is_trusted};
+            use crate::config::config_files_in_dir;
+
+            let config_files = config_files_in_dir(cwd);
+            let untrusted_configs: Vec<_> = config_files
+                .iter()
+                .filter(|p| !is_trusted(&config_trust_root(p)) && !is_trusted(p))
+                .collect();
+
+            if !untrusted_configs.is_empty() {
+                let paths = untrusted_configs
+                    .iter()
+                    .map(display_path)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                bail!(
+                    "Config file(s) in {} are not trusted: {}\nTrust them with `mise trust`. See https://mise.jdx.dev/cli/trust.html for more information.",
+                    display_path(cwd),
+                    paths
+                );
+            }
+        }
+
         bail!(
             "no tasks defined in {}. Are you in a project directory?",
             display_path(dirs::CWD.clone().unwrap_or_default())
