@@ -2107,8 +2107,8 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
         // Check if there are any untrusted config files in the current directory
         // that might contain tasks
         if let Some(cwd) = &*dirs::CWD {
+            use crate::config::config_file::{config_trust_root, is_trusted};
             use crate::config::config_files_in_dir;
-            use crate::config::config_file::{is_trusted, config_trust_root};
 
             let config_files = config_files_in_dir(cwd);
             let untrusted_configs: Vec<_> = config_files
@@ -2119,7 +2119,7 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
             if !untrusted_configs.is_empty() {
                 let paths = untrusted_configs
                     .iter()
-                    .map(|p| display_path(p))
+                    .map(display_path)
                     .collect::<Vec<_>>()
                     .join(", ");
                 bail!(

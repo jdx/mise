@@ -22,15 +22,15 @@ output=$(mise run make 2>&1 || true)
 
 # The error should mention "trust" or "untrusted", not just "no tasks defined"
 if echo "$output" | grep -q "no tasks defined.*Are you in a project directory"; then
-  echo "FAIL: Got misleading 'no tasks defined' error instead of trust error"
-  echo "Output: $output"
-  exit 1
+	echo "FAIL: Got misleading 'no tasks defined' error instead of trust error"
+	echo "Output: $output"
+	exit 1
 fi
 
 # Verify we get a trust-related error
 if echo "$output" | grep -qi "trust"; then
-  echo "PASS: Got trust-related error message"
+	echo "PASS: Got trust-related error message"
 else
-  echo "FAIL: Expected trust-related error, got: $output"
-  exit 1
+	echo "FAIL: Expected trust-related error, got: $output"
+	exit 1
 fi
