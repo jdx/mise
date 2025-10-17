@@ -92,7 +92,7 @@ and sets the version:
 mise use node@20
 ```
 
-If you have an existing `.tool-versions` file, or `.mise-toml`, you can install all plugins
+If you have an existing `.tool-versions` file, or `.mise.toml`, you can install all plugins
 and runtimes with a single command:
 
 ```sh
