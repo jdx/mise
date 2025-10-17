@@ -3827,6 +3827,11 @@ description = "Docker and OCI Registry Client in Go and tooling using those libr
 backends = ["aqua:regclient/regclient/regsync", "asdf:rsrchboy/asdf-regsync"]
 description = "regsync is a registry synchronization utility used to update mirrors of OCI compatible container registries"
 
+[tools.rulesync]
+backends = ["npm:rulesync"]
+description = "Unified AI rules management CLI tool that generates configuration files for various AI development tools"
+test = ["rulesync --version", "{{version}}"]
+
 [tools.restic]
 backends = ["aqua:restic/restic", "asdf:xataz/asdf-restic"]
 description = "Fast, secure, efficient backup program"
