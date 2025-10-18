@@ -1241,11 +1241,16 @@ impl Run {
                     }
                 }
                 RunEntry::SingleTask { task: spec } => {
-                    self.inject_and_wait(config, &[spec.to_string()], task_env, sched_tx.clone())
+                    let resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
+                    self.inject_and_wait(config, &[resolved_spec], task_env, sched_tx.clone())
                         .await?;
                 }
                 RunEntry::TaskGroup { tasks } => {
-                    self.inject_and_wait(config, tasks, task_env, sched_tx.clone())
+                    let resolved_tasks: Vec<String> = tasks
+                        .iter()
+                        .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
+                        .collect();
+                    self.inject_and_wait(config, &resolved_tasks, task_env, sched_tx.clone())
                         .await?;
                 }
             }
