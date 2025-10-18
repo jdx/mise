@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# Test MISE_SYSTEM_DIR configuration
+
+# Test 1: Create a custom system config directory
+custom_system_dir="$(pwd)/custom_system"
+export MISE_SYSTEM_DIR="$custom_system_dir"
+mkdir -p "$MISE_SYSTEM_DIR"
+echo '[settings]
+verbose = true' >"$MISE_SYSTEM_DIR/config.toml"
+
+# Test 2: Verify system config is loaded from custom dir
+assert "mise settings get verbose" "true"
+
+# Test 3: Verify MISE_SYSTEM_DIR can be changed
+another_system_dir="$(pwd)/another_system"
+export MISE_SYSTEM_DIR="$another_system_dir"
+mkdir -p "$MISE_SYSTEM_DIR"
+echo '[settings]
+verbose = false' >"$MISE_SYSTEM_DIR/config.toml"
+
+assert "mise settings get verbose" "false"
