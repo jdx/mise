@@ -1,4 +1,4 @@
-# HTTP Backend <Badge type="warning" text="experimental" />
+# HTTP Backend
 
 You may install tools directly from HTTP URLs using the `http` backend. This backend downloads files from any HTTP/HTTPS URL and is ideal for tools that distribute pre-built binaries or archives through direct download links.
 

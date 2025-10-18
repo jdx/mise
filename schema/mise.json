@@ -33,6 +33,19 @@
         "redact": {
           "type": "boolean",
           "description": "redact the value from logs"
+        },
+        "required": {
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "require this environment variable to be defined before mise runs or in a later config file"
+            },
+            {
+              "type": "string",
+              "description": "require this environment variable with user help text on how to set it"
+            }
+          ],
+          "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false. Can be a boolean or a help string."
         }
       },
       "oneOf": [
@@ -82,8 +95,45 @@
               "redact": {
                 "type": "boolean",
                 "description": "redact the value from logs"
+              },
+              "required": {
+                "type": "boolean",
+                "description": "require this environment variable to be defined before mise runs or in a later config file. Cannot be used with empty string values or value=false"
               }
             }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "age": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "description": "[experimental] age-encrypted value (simplified format)"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "string",
+                        "description": "[experimental] age-encrypted value"
+                      },
+                      "format": {
+                        "type": "string",
+                        "enum": ["raw", "zstd"],
+                        "description": "[experimental] compression format for the encrypted value"
+                      }
+                    },
+                    "required": ["value"],
+                    "additionalProperties": false,
+                    "description": "[experimental] age-encrypted value (complex format)"
+                  }
+                ]
+              }
+            },
+            "required": ["age"],
+            "additionalProperties": false,
+            "description": "[experimental] age-encrypted environment variable"
           },
           {
             "type": "string"
@@ -313,6 +363,7 @@
     },
     "settings": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "activate_aggressive": {
           "description": "Pushes tools' bin-paths to the front of PATH instead of allowing modifications of PATH after activation to take precedence.",
@@ -607,8 +658,12 @@
           "description": "Timeout in seconds for all HTTP requests in mise.",
           "type": "string"
         },
+        "http_retries": {
+          "default": 0,
+          "description": "Number of retries for HTTP requests in mise.",
+          "type": "number"
+        },
         "idiomatic_version_file": {
-          "default": true,
           "description": "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc.",
           "type": "boolean",
           "deprecated": true
@@ -623,6 +678,7 @@
           }
         },
         "idiomatic_version_file_enable_tools": {
+          "default": [],
           "description": "Specific tools to enable idiomatic version files for like .node-version, .ruby-version, etc.",
           "type": "array",
           "items": {
@@ -886,6 +942,11 @@
           "description": "Connect stdin/stdout/stderr to child processes.",
           "type": "boolean"
         },
+        "terminal_progress": {
+          "default": true,
+          "description": "Enable terminal progress indicators (OSC 9;4) for compatible terminals.",
+          "type": "boolean"
+        },
         "ruby": {
           "type": "object",
           "additionalProperties": false,
@@ -948,6 +1009,30 @@
         "silent": {
           "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
           "type": "boolean"
+        },
+        "age": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "identity_files": {
+              "description": "[experimental] List of age identity files to use for decryption.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "key_file": {
+              "description": "[experimental] Path to the age private key file to use for encryption/decryption.",
+              "type": "string"
+            },
+            "ssh_identity_files": {
+              "description": "[experimental] List of SSH identity files to use for age decryption.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         },
         "sops": {
           "type": "object",
@@ -1142,6 +1227,30 @@
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"
+        },
+        "task": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "monorepo_depth": {
+              "default": 5,
+              "description": "Maximum depth to search for task files in monorepo subdirectories.",
+              "type": "number"
+            },
+            "monorepo_exclude_dirs": {
+              "default": [],
+              "description": "Directory patterns to exclude when discovering monorepo subdirectories.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "monorepo_respect_gitignore": {
+              "default": true,
+              "description": "Whether to respect .gitignore files when discovering monorepo subdirectories.",
+              "type": "boolean"
+            }
+          }
         }
       }
     },
@@ -1524,6 +1633,10 @@
         }
       }
     },
+    "experimental_monorepo_root": {
+      "description": "Marks this config as a monorepo root, enabling target path syntax for tasks. Requires MISE_EXPERIMENTAL=1. When enabled, tasks can be referenced with paths like //projects/frontend:build",
+      "type": "boolean"
+    },
     "tool": {
       "oneOf": [
         {
@@ -1707,10 +1820,33 @@
         }
       ]
     },
+    "experimental_monorepo_root": {
+      "$ref": "#/$defs/experimental_monorepo_root"
+    },
     "min_version": {
       "description": "minimum version of mise required to use this config",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "type": "string"
+      "oneOf": [
+        {
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hard": {
+              "description": "error if current mise is lower than this version",
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            },
+            "soft": {
+              "description": "warn if current mise is lower than this version",
+              "type": "string",
+              "pattern": "^\\d+\\.\\d+\\.\\d+$"
+            }
+          }
+        }
+      ]
     },
     "redactions": {
       "description": "env or vars keys to redact from logs",
@@ -1729,7 +1865,6 @@
     },
     "settings": {
       "$ref": "#/$defs/settings",
-      "additionalProperties": false,
       "description": "mise settings",
       "type": "object"
     },

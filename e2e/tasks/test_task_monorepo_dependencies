@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Test that task dependencies work across different monorepo subdirectories
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.root-setup]
+run = 'echo "root-setup-done" > /tmp/root-setup.txt'
+TOML
+
+# Create frontend that depends on root task
+mkdir -p projects/frontend
+cat <<'TOML' >projects/frontend/mise.toml
+[env]
+FRONTEND_ENV = "production"
+
+[tasks.build]
+depends = ["//:root-setup"]
+run = '''
+echo "Building frontend"
+if [ ! -f /tmp/root-setup.txt ]; then
+  echo "FAIL: root setup not run"
+  exit 1
+fi
+echo "frontend built successfully"
+'''
+
+TOML
+
+# Create backend that depends on shared lib
+mkdir -p projects/backend
+cat <<'TOML' >projects/backend/mise.toml
+[env]
+BACKEND_ENV = "production"
+
+[tasks.build]
+depends = ["//projects/frontend:build"]
+run = '''
+echo "Building backend (depends on frontend)"
+echo "backend built successfully"
+'''
+
+[tasks.deploy]
+depends = ["//projects/backend:build", "//projects/frontend:build"]
+run = '''
+echo "Deploying backend"
+echo "Backend and frontend both built, deploying..."
+'''
+TOML
+
+# Clean up any previous test artifacts
+rm -f /tmp/shared-lib.txt /tmp/root-setup.txt
+
+# Test 1: Frontend build depends on root task
+echo "=== Test 1: Frontend depends on root task ==="
+output=$(mise run '//projects/frontend:build')
+echo "$output"
+# Root setup task ran (check by file existence - output may not show the echo)
+[ -f /tmp/root-setup.txt ] || (echo "FAIL: Root setup not run" && exit 1)
+echo "$output" | grep -q "frontend built successfully" || (echo "FAIL: Frontend build failed" && exit 1)
+
+# Clean up for next test
+rm -f /tmp/shared-lib.txt /tmp/root-setup.txt
+
+# Test 2: Backend deploy depends on multiple projects
+echo "=== Test 2: Backend deploy depends on frontend (cross-project dependency) ==="
+output=$(mise run '//projects/backend:deploy')
+echo "$output"
+echo "$output" | grep -q "Building backend" || (echo "FAIL: Backend not built" && exit 1)
+echo "$output" | grep -q "Building frontend" || (echo "FAIL: Frontend not built as dependency" && exit 1)
+echo "$output" | grep -q "Deploying backend" || (echo "FAIL: Backend deploy not run" && exit 1)
+
+# Clean up
+rm -f /tmp/shared-lib.txt /tmp/root-setup.txt
+
+echo "=== All dependency tests passed! ==="

@@ -31,6 +31,10 @@ pub static MISE_SHELL: Lazy<Option<ShellType>> = Lazy::new(|| {
         .parse()
         .ok()
 });
+#[cfg(unix)]
+pub static SHELL_COMMAND_FLAG: &str = "-c";
+#[cfg(windows)]
+pub static SHELL_COMMAND_FLAG: &str = "/c";
 
 // paths and directories
 #[cfg(test)]
@@ -87,6 +91,7 @@ pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| {
 pub static MISE_TOOL_STUB: Lazy<bool> =
     Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("tool-stub"));
 pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
+pub static MISE_PROGRESS_TRACE: Lazy<bool> = Lazy::new(|| var_is_true("MISE_PROGRESS_TRACE"));
 /// true if RUST_BACKTRACE is set (enables detailed error tracebacks)
 pub static RUST_BACKTRACE: Lazy<bool> = Lazy::new(|| {
     match var("RUST_BACKTRACE") {
@@ -166,12 +171,78 @@ pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         })
         .unwrap_or_default()
 });
+pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
+    var("MISE_CEILING_PATHS")
+        .ok()
+        .map(|v| {
+            split_paths(&v)
+                .filter(|p| !p.as_os_str().is_empty())
+                .map(replace_path)
+                .collect()
+        })
+        .unwrap_or_default()
+});
 pub static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| !var_is_false("MISE_USE_TOML"));
 pub static MISE_LIST_ALL_VERSIONS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LIST_ALL_VERSIONS"));
 pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
 pub static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
 pub static MISE_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_LOG_FILE"));
 pub static MISE_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
+fn find_in_tree(base: &Path, rels: &[&[&str]]) -> Option<PathBuf> {
+    for rel in rels {
+        let mut p = base.to_path_buf();
+        for part in *rel {
+            p = p.join(part);
+        }
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+fn mise_install_base() -> Option<PathBuf> {
+    std::fs::canonicalize(&*MISE_BIN)
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+}
+
+pub static MISE_SELF_UPDATE_INSTRUCTIONS: Lazy<Option<PathBuf>> = Lazy::new(|| {
+    if let Some(p) = var_path("MISE_SELF_UPDATE_INSTRUCTIONS") {
+        return Some(p);
+    }
+    let base = mise_install_base()?;
+    // search lib/, lib/mise/, lib64/mise/
+    find_in_tree(
+        &base,
+        &[
+            &["lib", "mise-self-update-instructions.toml"],
+            &["lib", "mise", "mise-self-update-instructions.toml"],
+            &["lib64", "mise", "mise-self-update-instructions.toml"],
+        ],
+    )
+});
+pub static MISE_SELF_UPDATE_AVAILABLE: Lazy<Option<bool>> = Lazy::new(|| {
+    if var_is_true("MISE_SELF_UPDATE_AVAILABLE") {
+        Some(true)
+    } else if var_is_false("MISE_SELF_UPDATE_AVAILABLE") {
+        Some(false)
+    } else {
+        None
+    }
+});
+pub static MISE_SELF_UPDATE_DISABLED_PATH: Lazy<Option<PathBuf>> = Lazy::new(|| {
+    let base = mise_install_base()?;
+    find_in_tree(
+        &base,
+        &[
+            &["lib", ".disable-self-update"],
+            &["lib", "mise", ".disable-self-update"],
+            &["lib64", "mise", ".disable-self-update"],
+        ],
+    )
+});
 pub static MISE_LOG_HTTP: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LOG_HTTP"));
 
 pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
@@ -227,6 +298,8 @@ pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
 pub static OFFLINE: Lazy<bool> = Lazy::new(|| offline(&ARGS.read().unwrap()));
+pub static WARN_ON_MISSING_REQUIRED_ENV: Lazy<bool> =
+    Lazy::new(|| warn_on_missing_required_env(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<EnvMap> =
     Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
@@ -276,6 +349,11 @@ pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
 
 /// Disable color output - https://no-color.org/
 pub static NO_COLOR: Lazy<bool> = Lazy::new(|| var("NO_COLOR").is_ok_and(|v| !v.is_empty()));
+
+// Terminal detection
+pub static TERM_PROGRAM: Lazy<Option<String>> = Lazy::new(|| var("TERM_PROGRAM").ok());
+pub static WT_SESSION: Lazy<bool> = Lazy::new(|| var("WT_SESSION").is_ok());
+pub static VTE_VERSION: Lazy<bool> = Lazy::new(|| var("VTE_VERSION").is_ok());
 
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =
@@ -482,6 +560,22 @@ fn prefer_offline(args: &[String]) -> bool {
                 "ls",
                 "where",
                 "x",
+            ]
+            .contains(&a.as_str())
+        })
+        .unwrap_or_default()
+}
+
+/// returns true if missing required env vars should produce warnings instead of errors
+fn warn_on_missing_required_env(args: &[String]) -> bool {
+    // Check if we're running in a command that should warn instead of error
+    args.iter()
+        .take_while(|a| *a != "--")
+        .filter(|a| !a.starts_with('-'))
+        .nth(1)
+        .map(|a| {
+            [
+                "hook-env", // Shell activation should not break the shell
             ]
             .contains(&a.as_str())
         })

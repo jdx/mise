@@ -72,12 +72,10 @@ else
 fi
 
 version="$(cargo pkgid mise | cut -d# -f2)"
-git cliff --tag "v$version" -o CHANGELOG.md
-changelog="$(git cliff --tag "v$version" --unreleased --strip all)"
-changelog="$(echo "$changelog" | tail -n +3)"
 sed -i.bak "s/^[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\? macos-arm64 (a1b2d3e [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\})$/$version macos-arm64 (a1b2d3e $(date +%Y-%m-%d))/" README.md
 sed -i.bak "s/^Version: [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/Version: $version/" packaging/rpm/mise.spec
 sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/version = \"$version\";/" default.nix
+sed -i.bak "s/version: \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\"$/version: \"$version\"/" snapcraft.yaml
 
 # Update GitHub star count using gh CLI
 stars_raw="$(gh api repos/jdx/mise --jq '.stargazers_count')"
@@ -108,11 +106,54 @@ fi
 
 mise run render ::: lint-fix
 
+# Capture current aqua-registry package list before updating
+OLD_AQUA_PKGS=""
+if [[ -d crates/aqua-registry/aqua-registry/pkgs ]]; then
+	OLD_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yaml -type f | sed 's|crates/aqua-registry/aqua-registry/pkgs/||;s|/registry.yaml||' | sort)"
+fi
+
 rm -rf crates/aqua-registry/aqua-registry
 git clone https://github.com/aquaproj/aqua-registry crates/aqua-registry/aqua-registry
 # Keep only pkgs/**/registry.yaml files, remove everything else
 find crates/aqua-registry/aqua-registry -type f ! -path "crates/aqua-registry/aqua-registry/pkgs/*/registry.yaml" ! -name LICENSE -delete
 find crates/aqua-registry/aqua-registry -type d -empty -delete
+
+# Capture new aqua-registry package list after updating
+NEW_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yaml -type f | sed 's|crates/aqua-registry/aqua-registry/pkgs/||;s|/registry.yaml||' | sort)"
+
+# Generate aqua-registry changelog section for both CHANGELOG.md and PR body
+AQUA_CHANGELOG_MD="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "###" || true)"
+AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "##" || true)"
+
+# Generate only the new release section (unreleased changes)
+# Use --prepend to preserve existing changelog content
+git cliff --tag "v$version" --unreleased --prepend CHANGELOG.md
+
+# Inject aqua-registry updates into CHANGELOG.md if there are any
+if [[ -n $AQUA_CHANGELOG_MD ]]; then
+	# Find the FIRST release section (the one we just added) and inject aqua section at the end, before the next release
+	awk -v aqua_section="$AQUA_CHANGELOG_MD" '
+		/^## \[/ {
+			if (release_count == 1 && !inserted) {
+				# We are at the second release, inject aqua section before it
+				print aqua_section
+				inserted = 1
+			}
+			release_count++
+		}
+		{print}
+		END {
+			# If we never hit a second release (only one release in file), append at end
+			if (release_count == 1 && !inserted) {
+				print aqua_section
+			}
+		}
+	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+fi
+
+# Generate changelog for PR body
+changelog="$(git cliff --tag "v$version" --unreleased --strip all)"
+changelog="$(echo "$changelog" | tail -n +3)"
 
 mise up
 git status
@@ -124,6 +165,7 @@ git add \
 	README.md \
 	crates/aqua-registry/aqua-registry \
 	default.nix \
+	snapcraft.yaml \
 	docs/.vitepress/stars.data.ts \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \
@@ -136,7 +178,17 @@ git commit -m "chore: release $version"
 git push origin release --force
 
 if [[ "$(gh pr list --label release)" == "" ]]; then
-	gh pr create --title "chore: release $version" --body "$changelog" --label "release" --head release
+	# Append aqua-registry updates to PR body if available
+	PR_BODY="$changelog"
+	if [[ -n $AQUA_CHANGELOG_PR ]]; then
+		PR_BODY="$changelog"$'\n\n'"$AQUA_CHANGELOG_PR"
+	fi
+	gh pr create --title "chore: release $version" --body "$PR_BODY" --label "release" --head release
 else
-	gh pr edit --title "chore: release $version" --body "$changelog"
+	# Append aqua-registry updates to PR body if available
+	PR_BODY="$changelog"
+	if [[ -n $AQUA_CHANGELOG_PR ]]; then
+		PR_BODY="$changelog"$'\n\n'"$AQUA_CHANGELOG_PR"
+	fi
+	gh pr edit --title "chore: release $version" --body "$PR_BODY"
 fi

@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Tests for required environment variables with help text
+
+set -euo pipefail
+
+assert_contains() {
+	local output
+	output="${1}"
+	shift
+	if ! echo "${output}" | grep -q "$@"; then
+		echo "Expected to find '$*' in:"
+		echo "${output}"
+		exit 1
+	fi
+}
+
+# Test 1: Required env var with boolean value
+cat >mise.toml <<'EOF'
+[env]
+REQUIRED_BOOL = { required = true }
+EOF
+
+unset REQUIRED_BOOL || true
+
+# This should fail with basic message
+if mise env 2>error.log; then
+	echo "ERROR: Expected mise env to fail but it succeeded"
+	exit 1
+fi
+
+assert_contains "$(cat error.log)" "Required environment variable 'REQUIRED_BOOL' is not defined"
+echo "Test 1 passed: Boolean required validation works"
+
+# Test 2: Required env var with help text
+cat >mise.toml <<'EOF'
+[env]
+API_KEY = { required = "Set API_KEY to your API key from https://example.com/api-keys" }
+EOF
+
+unset API_KEY || true
+
+# This should fail with help message
+if mise env 2>error.log; then
+	echo "ERROR: Expected mise env to fail but it succeeded"
+	exit 1
+fi
+
+assert_contains "$(cat error.log)" "Required environment variable 'API_KEY' is not defined"
+assert_contains "$(cat error.log)" "Help: Set API_KEY to your API key from https://example.com/api-keys"
+echo "Test 2 passed: Help text is shown in error message"
+
+# Test 3: Required env var with help text that's satisfied
+cat >mise.toml <<'EOF'
+[env]
+DATABASE_URL = { required = "Set DATABASE_URL to your PostgreSQL connection string" }
+EOF
+
+# This should succeed when env var is set
+export DATABASE_URL="postgres://localhost/mydb"
+mise env >/dev/null
+echo "Test 3 passed: Required env var with help text works when satisfied"
+
+# Test 4: hook-env should only warn
+cat >mise.toml <<'EOF'
+[env]
+HOOK_TEST = { required = "Set HOOK_TEST to enable feature X" }
+EOF
+
+unset HOOK_TEST || true
+
+# hook-env should warn but not fail
+mise hook-env --shell bash 2>error.log >/dev/null
+assert_contains "$(cat error.log)" "WARN"
+assert_contains "$(cat error.log)" "Help: Set HOOK_TEST to enable feature X"
+echo "Test 4 passed: hook-env warns about missing required env vars"
+
+echo "All tests passed!"

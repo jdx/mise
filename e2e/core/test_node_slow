@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+export MISE_NODE_COREPACK=1
+export MISE_NODE_DEFAULT_PACKAGES_FILE="$PWD/.default-npm-packages"
+export NPM_CONFIG_FUND=false
+
+latest=$(mise latest node)
+echo "v$latest" >.node-version
+echo "zx" >"$MISE_NODE_DEFAULT_PACKAGES_FILE"
+
+# Enable idiomatic version files for node
+mise settings set idiomatic_version_file_enable_tools node
+
+mise i node@lts/hydrogen
+mise i -f node
+assert_contains "mise x node@lts/hydrogen -- node --version" "v18."
+assert "mise x -- node --version" "v$latest"
+assert_contains "mise x -- which yarn" "yarn"
+assert_contains "mise x -- which zx" "zx"
+
+mise use nodejs@20.1.0
+mise ls
+assert "mise x -- node --version" "v20.1.0"
+assert_contains "mise ls-remote nodejs" "20.1.0"
+mise use --rm node

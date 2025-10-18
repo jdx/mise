@@ -8,7 +8,11 @@ packages:
     version_overrides:
       - version_constraint: semver("<= 1.7.0")
         type: github_content
+        format: raw
         path: tf.sh
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: "true"
         asset: tf-{{.OS}}-{{.Arch}}
         format: raw

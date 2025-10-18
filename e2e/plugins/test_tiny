@@ -17,6 +17,10 @@ MISE_TINY_LIST_ALL_FAIL=1 MISE_TINY_VERSION=latest mise env >/dev/null
 # check bin/list-legacy-files
 assert "mise current tiny" "3.1.0"
 mise local --remove tiny
+
+# Enable idiomatic version files for tiny
+mise settings set idiomatic_version_file_enable_tools tiny
+
 echo "2.0" >.tiny-version
 assert "mise current tiny" "2.0.1"
 rm .tiny-version

@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+
+# Test monorepo task extension stripping for file tasks
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config
+cat <<EOF >mise.toml
+experimental_monorepo_root = true
+
+[tasks.root-task]
+run = 'echo "root task"'
+EOF
+
+# Create project structure with file tasks
+mkdir -p projects/frontend/mise-tasks
+cat <<EOF >projects/frontend/mise.toml
+[tasks.build]
+run = 'echo "frontend build"'
+EOF
+
+# Create file tasks with extensions in frontend
+cat <<'EOF' >projects/frontend/mise-tasks/test-e2e.js
+#!/usr/bin/env node
+console.log("frontend e2e tests");
+EOF
+chmod +x projects/frontend/mise-tasks/test-e2e.js
+
+cat <<'EOF' >projects/frontend/mise-tasks/lint.sh
+#!/usr/bin/env bash
+echo "frontend linting"
+EOF
+chmod +x projects/frontend/mise-tasks/lint.sh
+
+mkdir -p projects/backend/mise-tasks
+cat <<EOF >projects/backend/mise.toml
+[tasks.build]
+run = 'echo "backend build"'
+EOF
+
+# Create file tasks with extensions in backend
+cat <<'EOF' >projects/backend/mise-tasks/test-api.py
+#!/usr/bin/env python3
+print("backend api tests")
+EOF
+chmod +x projects/backend/mise-tasks/test-api.py
+
+cat <<'EOF' >projects/backend/mise-tasks/migrate.rb
+#!/usr/bin/env ruby
+puts "backend migrations"
+EOF
+chmod +x projects/backend/mise-tasks/migrate.rb
+
+# Verify file tasks are discovered with --all
+# Note: Tasks are displayed WITHOUT extensions in listings (display_name strips them)
+assert_contains "mise tasks ls --all" "//projects/frontend:test-e2e"
+assert_contains "mise tasks ls --all" "//projects/frontend:lint"
+assert_contains "mise tasks ls --all" "//projects/backend:test-api"
+assert_contains "mise tasks ls --all" "//projects/backend:migrate"
+
+# Test running tasks WITHOUT extension (should work due to extension stripping)
+assert_contains "mise run '//projects/frontend:test-e2e'" "frontend e2e tests"
+assert_contains "mise run '//projects/frontend:lint'" "frontend linting"
+assert_contains "mise run '//projects/backend:test-api'" "backend api tests"
+assert_contains "mise run '//projects/backend:migrate'" "backend migrations"
+
+# Test running tasks WITH extension (should also work for exact match)
+assert_contains "mise run '//projects/frontend:test-e2e.js'" "frontend e2e tests"
+assert_contains "mise run '//projects/frontend:lint.sh'" "frontend linting"
+assert_contains "mise run '//projects/backend:test-api.py'" "backend api tests"
+assert_contains "mise run '//projects/backend:migrate.rb'" "backend migrations"
+
+# Test wildcard patterns with file tasks
+assert_contains "mise run '//projects/frontend:test*'" "frontend e2e tests"
+assert_contains "mise run '//projects/backend:*'" "backend api tests"
+assert_contains "mise run '//projects/backend:*'" "backend migrations"
+
+# Test ellipsis patterns with file tasks
+assert_contains "mise run '//projects/...:lint'" "frontend linting"
+assert_contains "mise run '//projects/...:test*'" "frontend e2e tests"
+assert_contains "mise run '//projects/...:test*'" "backend api tests"
+
+# From subdirectory, test without extension
+cd projects/frontend
+assert_contains "mise run '//projects/frontend:test-e2e'" "frontend e2e tests"
+assert_contains "mise run '//projects/frontend:lint'" "frontend linting"
+
+# Test task listing shows tasks without extensions (display_name behavior)
+# The internal name has the extension (test-e2e.js), but display strips it
+# Both with and without extension work for running tasks
+assert_contains "mise tasks ls --all" "test-e2e"
+assert_contains "mise tasks ls --all" "lint"

@@ -486,8 +486,16 @@ description = "Timeout in seconds for all HTTP requests in mise."
 env = "MISE_HTTP_TIMEOUT"
 type = "Duration"
 
+[http_retries]
+default = 0
+description = "Number of retries for HTTP requests in mise."
+docs = """
+Uses an exponential backoff strategy. The duration is calculated by taking the base (10ms) to the n-th power.
+"""
+env = "MISE_HTTP_RETRIES"
+type = "Integer"
+
 [idiomatic_version_file]
-default = true
 deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
 description = "Set to false to disable the idiomatic version files such as .node-version, .ruby-version, etc."
 docs = """
@@ -499,6 +507,8 @@ information.
 Set to "false" to disable idiomatic version file parsing.
 """
 env = "MISE_IDIOMATIC_VERSION_FILE"
+hide = true
+optional = true
 type = "Bool"
 
 [idiomatic_version_file_disable_tools]
@@ -506,15 +516,27 @@ default = []
 deprecated = "This has been replaced with the idiomatic_version_file_enable_tools setting."
 description = "Specific tools to disable idiomatic version files for."
 env = "MISE_IDIOMATIC_VERSION_FILE_DISABLE_TOOLS"
+hide = true
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
 [idiomatic_version_file_enable_tools]
+default = []
 description = "Specific tools to enable idiomatic version files for like .node-version, .ruby-version, etc."
+docs = """
+By default, idiomatic version files are disabled. You can enable them for specific tools with this setting.
+
+For example, to enable idiomatic version files for node and python:
+
+    mise settings add idiomatic_version_file_enable_tools node
+    mise settings add idiomatic_version_file_enable_tools python
+
+See [Idiomatic Version Files](/configuration.html#idiomatic-version-files) for more information.
+"""
 env = "MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS"
 parse_env = "set_by_comma"
-rust_type = "Option<BTreeSet<String>>"
+rust_type = "BTreeSet<String>"
 type = "SetString"
 
 [ignored_config_paths]
@@ -922,6 +944,28 @@ description = "Connect stdin/stdout/stderr to child processes."
 env = "MISE_RAW"
 type = "Bool"
 
+[terminal_progress]
+default = true
+description = "Enable terminal progress indicators (OSC 9;4) for compatible terminals."
+docs = """
+Enable terminal progress indicators using OSC 9;4 escape sequences. This provides
+native progress bars in the terminal window chrome for terminals that support it,
+including Ghostty, VS Code's integrated terminal, Windows Terminal, and VTE-based
+terminals (GNOME Terminal, Ptyxis, etc.).
+
+When enabled, mise will send progress updates to the terminal during operations like
+tool installations. The progress bar appears in the terminal's window UI, separate
+from the text output.
+
+mise automatically detects whether your terminal supports OSC 9;4 and will only send
+these sequences if supported. Terminals like Alacritty, iTerm2, WezTerm, and kitty
+do not support OSC 9;4 and will not receive these sequences.
+
+Set to false to disable this feature if you prefer not to see these indicators.
+"""
+env = "MISE_TERMINAL_PROGRESS"
+type = "Bool"
+
 [ruby.apply_patches]
 description = "A list of patch files or URLs to apply to ruby source."
 env = "MISE_RUBY_APPLY_PATCHES"
@@ -1008,6 +1052,28 @@ type = "Path"
 description = "Suppress all `mise run|watch` output except errors—including what tasks output."
 env = "MISE_SILENT"
 type = "Bool"
+
+[age.identity_files]
+description = "[experimental] List of age identity files to use for decryption."
+env = "MISE_AGE_IDENTITY_FILES"
+optional = true
+rust_type = "Vec<PathBuf>"
+type = "ListPath"
+
+[age.key_file]
+default_docs = "~/.config/mise/age.txt"
+description = "[experimental] Path to the age private key file to use for encryption/decryption."
+env = "MISE_AGE_KEY_FILE"
+optional = true
+type = "Path"
+
+[age.ssh_identity_files]
+description = "[experimental] List of SSH identity files to use for age decryption."
+env = "MISE_AGE_SSH_IDENTITY_FILES"
+optional = true
+rust_type = "Vec<PathBuf>"
+type = "ListPath"
+
 
 [sops.age_key]
 description = "The age private key to use for sops secret decryption."
@@ -1288,4 +1354,56 @@ type = "String"
 [yes]
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."
 env = "MISE_YES"
+type = "Bool"
+
+[task.monorepo_depth]
+default = 5
+description = "Maximum depth to search for task files in monorepo subdirectories."
+docs = """
+When using monorepo mode (experimental_monorepo_root = true), this controls how deep
+mise will search for task files in subdirectories.
+
+**Depth levels:**
+- 1 = immediate children only (monorepo_root/projects/)
+- 2 = grandchildren (monorepo_root/projects/frontend/)
+- 5 = default (5 levels deep)
+
+**Performance tip:** Reduce this value if you have a very large monorepo and notice
+slow task discovery. For example, if your projects are all at `projects/*`, set to 2.
+
+**Example:**
+```toml
+[settings]
+task.monorepo_depth = 3  # Only search 3 levels deep
+```
+
+Or via environment variable:
+```bash
+export MISE_TASK_MONOREPO_DEPTH=3
+```
+"""
+env = "MISE_TASK_MONOREPO_DEPTH"
+type = "Integer"
+
+[task.monorepo_exclude_dirs]
+default = []
+description = "Directory patterns to exclude when discovering monorepo subdirectories."
+docs = """
+If empty (default), uses default exclusions: node_modules, target, dist, build.
+If you specify any patterns, ONLY those patterns will be excluded (defaults are NOT included).
+For example, setting to [".temp", "vendor"] will exclude only those two directories.
+"""
+env = "MISE_TASK_MONOREPO_EXCLUDE_DIRS"
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
+[task.monorepo_respect_gitignore]
+default = true
+description = "Whether to respect .gitignore files when discovering monorepo subdirectories."
+docs = """
+When enabled, mise will skip directories that are ignored by .gitignore files
+when discovering tasks in a monorepo.
+"""
+env = "MISE_TASK_MONOREPO_RESPECT_GITIGNORE"
 type = "Bool"

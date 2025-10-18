@@ -167,15 +167,31 @@ pub fn template_string(template: &str, tv: &ToolVersion) -> String {
     template.replace("{version}", version)
 }
 
-pub fn get_filename_from_url(url: &str) -> String {
-    url.split('/').next_back().unwrap_or("download").to_string()
+pub fn get_filename_from_url(url_str: &str) -> String {
+    let filename = if let Ok(url) = url::Url::parse(url_str) {
+        // Use proper URL parsing to get the path and extract filename
+        url.path_segments()
+            .and_then(|mut segments| segments.next_back())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| url_str.to_string())
+    } else {
+        // Fallback to simple parsing for non-URL strings or malformed URLs
+        url_str
+            .split('/')
+            .next_back()
+            .unwrap_or(url_str)
+            .to_string()
+    };
+    urlencoding::decode(&filename)
+        .map(|s| s.to_string())
+        .unwrap_or(filename)
 }
 
 pub fn install_artifact(
     tv: &crate::toolset::ToolVersion,
     file_path: &Path,
     opts: &ToolVersionOptions,
-    pr: Option<&Box<dyn SingleReport>>,
+    pr: Option<&dyn SingleReport>,
 ) -> eyre::Result<()> {
     let install_path = tv.install_path();
     let mut strip_components = opts.get("strip_components").and_then(|s| s.parse().ok());
@@ -186,7 +202,41 @@ pub fn install_artifact(
     // Use TarFormat for format detection
     let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
     let format = file::TarFormat::from_ext(ext);
-    if format == file::TarFormat::Raw {
+
+    // Get file extension and detect format
+    let file_name = file_path.file_name().unwrap().to_string_lossy();
+
+    // Check if it's a compressed binary (not a tar archive)
+    let is_compressed_binary =
+        !file_name.contains(".tar") && matches!(ext, "gz" | "xz" | "bz2" | "zst");
+
+    if is_compressed_binary {
+        // Handle compressed single binary
+        let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
+        // Determine the destination path with support for bin_path
+        let dest = if let Some(bin_path_template) = opts.get("bin_path") {
+            let bin_path = template_string(bin_path_template, tv);
+            let bin_dir = install_path.join(bin_path);
+            file::create_dir_all(&bin_dir)?;
+            bin_dir.join(decompressed_name)
+        } else if let Some(bin_name) = opts.get("bin") {
+            install_path.join(bin_name)
+        } else {
+            // Auto-clean binary names by removing OS/arch suffixes
+            let cleaned_name = clean_binary_name(decompressed_name, Some(&tv.ba().tool_name));
+            install_path.join(cleaned_name)
+        };
+
+        match ext {
+            "gz" => file::un_gz(file_path, &dest)?,
+            "xz" => file::un_xz(file_path, &dest)?,
+            "bz2" => file::un_bz2(file_path, &dest)?,
+            "zst" => file::un_zst(file_path, &dest)?,
+            _ => unreachable!(),
+        }
+
+        file::make_executable(&dest)?;
+    } else if format == file::TarFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
         if let Some(bin_path_template) = opts.get("bin_path") {
             let bin_path = template_string(bin_path_template, tv);
@@ -209,9 +259,10 @@ pub fn install_artifact(
             file::make_executable(&dest)?;
         }
     } else {
+        // Handle archive formats
         // Auto-detect if we need strip_components=1 before extracting
-        // Only do this if strip_components was not explicitly set by the user
-        if strip_components.is_none() {
+        // Only do this if strip_components was not explicitly set by the user AND bin_path is not configured
+        if strip_components.is_none() && opts.get("bin_path").is_none() {
             if let Ok(should_strip) = file::should_strip_components(file_path, format) {
                 if should_strip {
                     debug!(
@@ -225,6 +276,7 @@ pub fn install_artifact(
             format,
             strip_components: strip_components.unwrap_or(0),
             pr,
+            ..Default::default()
         };
 
         // Extract with determined strip_components
@@ -237,7 +289,7 @@ pub fn verify_artifact(
     _tv: &crate::toolset::ToolVersion,
     file_path: &Path,
     opts: &crate::toolset::ToolVersionOptions,
-    pr: Option<&Box<dyn SingleReport>>,
+    pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
     // Check platform-specific checksum first, then fall back to generic
     let checksum = lookup_platform_key(opts, "checksum").or_else(|| opts.get("checksum").cloned());
@@ -267,7 +319,7 @@ pub fn verify_artifact(
 pub fn verify_checksum_str(
     file_path: &Path,
     checksum: &str,
-    pr: Option<&Box<dyn SingleReport>>,
+    pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
     if let Some((algo, hash_str)) = checksum.split_once(':') {
         hash::ensure_checksum(file_path, hash_str, pr, algo)?;

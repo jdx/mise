@@ -148,6 +148,46 @@ impl TestTool {
         cmd: &str,
         expected: &str,
     ) -> Result<()> {
+        // First, clean all backend data by removing directories
+        let pr = crate::ui::multi_progress_report::MultiProgressReport::get()
+            .add(&format!("cleaning {}", tool.short));
+
+        let mut cleaned_any = false;
+
+        // Remove entire installs directory for this tool
+        if tool.ba.installs_path.exists() {
+            info!(
+                "Removing installs directory: {}",
+                tool.ba.installs_path.display()
+            );
+            file::remove_all(&tool.ba.installs_path)?;
+            cleaned_any = true;
+        }
+
+        // Clear cache directory (contains metadata)
+        if tool.ba.cache_path.exists() {
+            info!("Removing cache directory: {}", tool.ba.cache_path.display());
+            file::remove_all(&tool.ba.cache_path)?;
+            cleaned_any = true;
+        }
+
+        // Clear downloads directory
+        if tool.ba.downloads_path.exists() {
+            info!(
+                "Removing downloads directory: {}",
+                tool.ba.downloads_path.display()
+            );
+            file::remove_all(&tool.ba.downloads_path)?;
+            cleaned_any = true;
+        }
+
+        pr.finish();
+
+        // Reset the config to clear in-memory backend metadata caches if we cleaned anything
+        if cleaned_any {
+            *config = Config::reset().await?;
+        }
+
         let mut args = vec![tool.clone()];
         args.extend(
             tool.ba

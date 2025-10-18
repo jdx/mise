@@ -23,6 +23,12 @@ pub struct UnifiedGitBackend {
     ba: Arc<BackendArg>,
 }
 
+struct ReleaseAsset {
+    name: String,
+    url: String,
+    url_api: String,
+}
+
 #[async_trait]
 impl Backend for UnifiedGitBackend {
     fn get_type(&self) -> BackendType {
@@ -45,6 +51,10 @@ impl Backend for UnifiedGitBackend {
             let releases = gitlab::list_releases_from_url(api_url.as_str(), &repo).await?;
             Ok(releases
                 .into_iter()
+                .filter(|r| {
+                    opts.get("version_prefix")
+                        .is_none_or(|p| r.tag_name.starts_with(p))
+                })
                 .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
                 .collect())
@@ -52,6 +62,10 @@ impl Backend for UnifiedGitBackend {
             let releases = github::list_releases_from_url(api_url.as_str(), &repo).await?;
             Ok(releases
                 .into_iter()
+                .filter(|r| {
+                    opts.get("version_prefix")
+                        .is_none_or(|p| r.tag_name.starts_with(p))
+                })
                 .map(|r| self.strip_version_prefix(&r.tag_name))
                 .rev()
                 .collect())
@@ -69,23 +83,26 @@ impl Backend for UnifiedGitBackend {
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
-        let asset_url = if let Some(existing_platform) = tv
-            .lock_platforms
-            .get(&platform_key)
-            .and_then(|asset| asset.url.clone())
-        {
+        let asset = if let Some(existing_platform) = tv.lock_platforms.get(&platform_key) {
             debug!(
                 "Using existing URL from lockfile for platform {}: {}",
-                platform_key, existing_platform
+                platform_key,
+                existing_platform.url.clone().unwrap_or_default()
             );
-            existing_platform
+            ReleaseAsset {
+                name: existing_platform.name.clone().unwrap_or_else(|| {
+                    get_filename_from_url(existing_platform.url.as_deref().unwrap_or(""))
+                }),
+                url: existing_platform.url.clone().unwrap_or_default(),
+                url_api: existing_platform.url_api.clone().unwrap_or_default(),
+            }
         } else {
             // Find the asset URL for this specific version
             self.resolve_asset_url(&tv, &opts, &repo, &api_url).await?
         };
 
         // Download and install
-        self.download_and_install(ctx, &mut tv, &asset_url, &opts)
+        self.download_and_install(ctx, &mut tv, &asset, &opts)
             .await?;
 
         Ok(tv)
@@ -146,29 +163,67 @@ impl UnifiedGitBackend {
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
-        asset_url: &str,
+        asset: &ReleaseAsset,
         opts: &ToolVersionOptions,
     ) -> Result<()> {
-        let filename = get_filename_from_url(asset_url);
+        let filename = asset.name.clone();
         let file_path = tv.download_path().join(&filename);
-        let headers = if self.is_gitlab() {
-            gitlab::get_headers(asset_url)
-        } else {
-            github::get_headers(asset_url)
-        };
+
+        // Count operations dynamically:
+        // 1. Download (always)
+        // 2. Verify checksum (if checksum option present)
+        // 3. Extract/install (if file needs extraction)
+        let mut op_count = 1; // download
+
+        // Check if we'll verify checksum
+        let has_checksum = lookup_platform_key(opts, "checksum")
+            .or_else(|| opts.get("checksum").cloned())
+            .is_some();
+        if has_checksum {
+            op_count += 1;
+        }
+
+        // Check if we'll extract (archives need extraction)
+        let needs_extraction = filename.ends_with(".tar.gz")
+            || filename.ends_with(".tar.xz")
+            || filename.ends_with(".tar.bz2")
+            || filename.ends_with(".tar.zst")
+            || filename.ends_with(".tgz")
+            || filename.ends_with(".txz")
+            || filename.ends_with(".tbz2")
+            || filename.ends_with(".zip");
+        if needs_extraction {
+            op_count += 1;
+        }
+
+        ctx.pr.start_operations(op_count);
 
         // Store the asset URL in the tool version
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        platform_info.url = Some(asset_url.to_string());
+        platform_info.name = Some(asset.name.clone());
+        platform_info.url = Some(asset.url.clone());
+        platform_info.url_api = Some(asset.url_api.clone());
+
+        // check if url is reachable, 404 might indicate a private repo or asset
+        let url = match HTTP.head(asset.url.clone()).await {
+            Ok(_) => asset.url.clone(),
+            Err(_) => asset.url_api.clone(),
+        };
+
+        let headers = if self.is_gitlab() {
+            gitlab::get_headers(&url)
+        } else {
+            github::get_headers(&url)
+        };
 
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file_with_headers(asset_url, &file_path, &headers, Some(&ctx.pr))
+        HTTP.download_file_with_headers(url, &file_path, &headers, Some(ctx.pr.as_ref()))
             .await?;
 
         // Verify and install
-        verify_artifact(tv, &file_path, opts, Some(&ctx.pr))?;
-        install_artifact(tv, &file_path, opts, Some(&ctx.pr))?;
+        verify_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
+        install_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
         self.verify_checksum(ctx, tv, &file_path)?;
 
         Ok(())
@@ -206,10 +261,14 @@ impl UnifiedGitBackend {
         opts: &ToolVersionOptions,
         repo: &str,
         api_url: &str,
-    ) -> Result<String> {
+    ) -> Result<ReleaseAsset> {
         // Check for direct platform-specific URLs first
         if let Some(direct_url) = lookup_platform_key(opts, "url") {
-            return Ok(direct_url);
+            return Ok(ReleaseAsset {
+                name: get_filename_from_url(&direct_url),
+                url: direct_url.clone(),
+                url_api: direct_url.clone(),
+            });
         }
 
         let version = &tv.version;
@@ -236,7 +295,7 @@ impl UnifiedGitBackend {
         repo: &str,
         api_url: &str,
         version: &str,
-    ) -> Result<String> {
+    ) -> Result<ReleaseAsset> {
         let release = github::get_release_for_url(api_url, repo, version).await?;
 
         let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
@@ -261,7 +320,11 @@ impl UnifiedGitBackend {
                     )
                 })?;
 
-            return Ok(asset.browser_download_url);
+            return Ok(ReleaseAsset {
+                name: asset.name,
+                url: asset.browser_download_url,
+                url_api: asset.url,
+            });
         }
 
         // Fall back to auto-detection
@@ -276,7 +339,11 @@ impl UnifiedGitBackend {
                 )
             })?;
 
-        Ok(asset.browser_download_url.clone())
+        Ok(ReleaseAsset {
+            name: asset.name.clone(),
+            url: asset.browser_download_url.clone(),
+            url_api: asset.url.clone(),
+        })
     }
 
     async fn resolve_gitlab_asset_url(
@@ -286,7 +353,7 @@ impl UnifiedGitBackend {
         repo: &str,
         api_url: &str,
         version: &str,
-    ) -> Result<String> {
+    ) -> Result<ReleaseAsset> {
         let release = gitlab::get_release_for_url(api_url, repo, version).await?;
 
         let available_assets: Vec<String> = release
@@ -317,7 +384,11 @@ impl UnifiedGitBackend {
                     )
                 })?;
 
-            return Ok(asset.direct_asset_url);
+            return Ok(ReleaseAsset {
+                name: asset.name,
+                url: asset.url,
+                url_api: asset.direct_asset_url,
+            });
         }
 
         // Fall back to auto-detection
@@ -332,7 +403,11 @@ impl UnifiedGitBackend {
                 )
             })?;
 
-        Ok(asset.direct_asset_url.clone())
+        Ok(ReleaseAsset {
+            name: asset.name.clone(),
+            url: asset.direct_asset_url.clone(),
+            url_api: asset.url.clone(),
+        })
     }
 
     fn auto_detect_asset(&self, available_assets: &[String]) -> Result<String> {

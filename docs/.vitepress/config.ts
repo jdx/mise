@@ -114,7 +114,15 @@ export default withMermaid(
           text: "Environments",
           items: [
             { text: "Environment Variables", link: "/environments/" },
-            { text: "Secrets", link: "/environments/secrets" },
+            {
+              text: "Secrets",
+              link: "/environments/secrets/",
+              collapsed: true,
+              items: [
+                { text: "sops", link: "/environments/secrets/sops" },
+                { text: "age", link: "/environments/secrets/age" },
+              ],
+            },
             { text: "Hooks", link: "/hooks" },
             { text: "direnv", link: "/direnv" },
           ],
@@ -128,6 +136,7 @@ export default withMermaid(
             { text: "TOML Tasks", link: "/tasks/toml-tasks" },
             { text: "File Tasks", link: "/tasks/file-tasks" },
             { text: "Task Configuration", link: "/tasks/task-configuration" },
+            { text: "Monorepo Tasks", link: "/tasks/monorepo" },
           ],
         },
         {
@@ -247,8 +256,34 @@ export default withMermaid(
     },
     head: [
       // Favicon
+      ["link", { rel: "icon", href: "/favicon.ico", sizes: "any" }],
+      [
+        "link",
+        {
+          rel: "icon",
+          href: "/favicon-16x16.png",
+          type: "image/png",
+          sizes: "16x16",
+        },
+      ],
+      [
+        "link",
+        {
+          rel: "icon",
+          href: "/favicon-32x32.png",
+          type: "image/png",
+          sizes: "32x32",
+        },
+      ],
       ["link", { rel: "icon", href: "/logo.svg", type: "image/svg+xml" }],
-      ["link", { rel: "apple-touch-icon", href: "/logo.svg" }],
+      [
+        "link",
+        {
+          rel: "apple-touch-icon",
+          href: "/apple-touch-icon.png",
+          sizes: "180x180",
+        },
+      ],
       // Google Fonts
       [
         "link",

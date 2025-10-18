@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+# Test that task names with colons are not incorrectly matched in non-monorepo context
+# Bug: `mise run build` was matching both `build` and `project:build` tasks
+
+# Create a regular mise.toml (NOT a monorepo)
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = 'echo "build"'
+
+[tasks."project:build"]
+run = 'echo "project:build"'
+
+[tasks."app:build"]
+run = 'echo "app:build"'
+
+[tasks.test]
+run = 'echo "test"'
+
+[tasks."unit:test"]
+run = 'echo "unit:test"'
+EOF
+
+# Running 'mise run build' should ONLY run the 'build' task
+# It should NOT run 'project:build' or 'app:build'
+OUTPUT=$(mise run build)
+
+# Should run the build task
+assert_contains "mise run build" "build"
+
+# Should NOT run tasks with colons
+if echo "$OUTPUT" | grep -E "project:build|app:build"; then
+	echo "ERROR: 'mise run build' incorrectly matched tasks with colons"
+	echo "Output:"
+	echo "$OUTPUT"
+	exit 1
+fi
+
+# Similarly, 'mise run test' should only run 'test', not 'unit:test'
+OUTPUT2=$(mise run test)
+
+assert_contains "mise run test" "test"
+
+if echo "$OUTPUT2" | grep "unit:test"; then
+	echo "ERROR: 'mise run test' incorrectly matched 'unit:test'"
+	echo "Output:"
+	echo "$OUTPUT2"
+	exit 1
+fi
+
+# Also test with file-based tasks
+mkdir -p .mise/tasks
+
+cat <<'EOF' >.mise/tasks/deploy
+#!/usr/bin/env bash
+echo "deploy"
+EOF
+
+cat <<'EOF' >.mise/tasks/prod:deploy
+#!/usr/bin/env bash
+echo "prod:deploy"
+EOF
+
+chmod +x .mise/tasks/*
+
+# Running 'mise run deploy' should only run 'deploy', not 'prod:deploy'
+OUTPUT3=$(mise run deploy)
+
+assert_contains "mise run deploy" "deploy"
+
+if echo "$OUTPUT3" | grep "prod:deploy"; then
+	echo "ERROR: 'mise run deploy' incorrectly matched 'prod:deploy'"
+	echo "Output:"
+	echo "$OUTPUT3"
+	exit 1
+fi

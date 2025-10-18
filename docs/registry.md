@@ -52,6 +52,18 @@ This will disable the [asdf](./dev-tools/backends/asdf.html) backend. See [Alias
 
 You can also specify the full name for a tool using `mise use aqua:1password/cli` if you want to use a specific backend.
 
+### Environment Variable Overrides
+
+You can override the backend for any tool using environment variables with the pattern `MISE_BACKENDS_<TOOL>`. This takes the highest priority and overrides any registry or alias configuration:
+
+```shell
+# Use vfox backend for php
+export MISE_BACKENDS_PHP='vfox:mise-plugins/vfox-php'
+mise install php@latest
+```
+
+The tool name in the environment variable should be in SHOUTY_SNAKE_CASE (uppercase with underscores). For example, `my-tool` becomes `MISE_BACKENDS_MY_TOOL`.
+
 Source: <https://github.com/jdx/mise/blob/main/registry.toml>
 
 ## Tools {#tools}

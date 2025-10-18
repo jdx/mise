@@ -364,6 +364,19 @@ run = "echo task4"
 
 If you want auto-completion/validation in included toml tasks files, you can use the following JSON schema: <https://mise.jdx.dev/schema/mise-task.json>
 
+## Monorepo Support <Badge type="warning" text="experimental" />
+
+mise supports monorepo-style task organization with target path syntax. Enable it by setting `experimental_monorepo_root = true` in your root `mise.toml`.
+
+For complete documentation on monorepo tasks including:
+
+- Task path syntax and wildcards
+- Tool inheritance from parent configs
+- Performance tuning
+- Best practices and troubleshooting
+
+See the dedicated [Monorepo Tasks](/tasks/monorepo) documentation.
+
 ## `redactions` <Badge type="warning" text="experimental" />
 
 - **Type**: `string[]`
@@ -402,4 +415,14 @@ Like `[env]`, vars can also be read in as a file:
 _.file = ".env"
 ```
 
-[Secrets](/environments/secrets) are also supported as vars.
+[Secrets](/environments/secrets/) are also supported as vars.
+
+## Task Configuration Settings
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+
+The following settings control task behavior. These can be set globally in `~/.config/mise/config.toml` or per-project in `mise.toml`:
+
+<Settings :level="3" prefix="task" />

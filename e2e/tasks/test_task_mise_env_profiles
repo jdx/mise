@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+
+# Test that tasks properly inherit environment from MISE_ENV-specific config files
+# Regression test for issue where monorepo task changes broke MISE_ENV env inheritance
+
+# Test 1 & 2: Basic MISE_ENV inheritance
+cat <<EOF >mise.toml
+[env]
+TEST_VAR = "base_value"
+
+[tasks.print-env]
+run = 'echo "TEST_VAR=\$TEST_VAR"'
+EOF
+
+cat <<EOF >.mise.override.toml
+[env]
+TEST_VAR = "override_value"
+OVERRIDE_ONLY_VAR = "from_override_config"
+EOF
+
+# Update task to print both variables
+cat <<EOF >mise.toml
+[env]
+TEST_VAR = "base_value"
+
+[tasks.print-env]
+run = 'echo "TEST_VAR=\$TEST_VAR OVERRIDE_ONLY_VAR=\$OVERRIDE_ONLY_VAR"'
+EOF
+
+# Test 1: Task should use base value without MISE_ENV
+assert "mise run print-env" "TEST_VAR=base_value OVERRIDE_ONLY_VAR="
+
+# Test 2: Task should use override value with MISE_ENV=override
+MISE_ENV=override assert "mise run print-env" "TEST_VAR=override_value OVERRIDE_ONLY_VAR=from_override_config"
+
+# Clean up for next test
+rm -f mise.toml .mise.override.toml
+
+# Test 3: Test with multiple environment profiles
+cat <<EOF >.mise.production.toml
+[env]
+TEST_VAR = "production_value"
+DATABASE_URL = "postgres://prod"
+EOF
+
+cat <<EOF >.mise.staging.toml
+[env]
+TEST_VAR = "staging_value"
+DATABASE_URL = "postgres://staging"
+EOF
+
+cat <<EOF >mise.toml
+[env]
+TEST_VAR = "base_value"
+DATABASE_URL = "postgres://local"
+
+[tasks.print-all-env]
+run = 'echo "TEST_VAR=\$TEST_VAR DATABASE_URL=\$DATABASE_URL"'
+EOF
+
+# Test with different MISE_ENV values
+assert "mise run print-all-env" "TEST_VAR=base_value DATABASE_URL=postgres://local"
+MISE_ENV=production assert "mise run print-all-env" "TEST_VAR=production_value DATABASE_URL=postgres://prod"
+MISE_ENV=staging assert "mise run print-all-env" "TEST_VAR=staging_value DATABASE_URL=postgres://staging"
+
+# Test 4: Multiple MISE_ENV profiles (later ones override earlier ones)
+MISE_ENV=staging,production assert "mise run print-all-env" "TEST_VAR=production_value DATABASE_URL=postgres://prod"
+
+# Clean up for next test
+rm -f mise.toml .mise.production.toml .mise.staging.toml
+
+# Test 5: Task-specific env should override both base config and MISE_ENV config
+cat <<EOF >mise.toml
+[env]
+TEST_VAR = "base_value"
+
+[tasks.task-with-env]
+run = 'echo "TEST_VAR=\$TEST_VAR"'
+[tasks.task-with-env.env]
+TEST_VAR = "task_override_value"
+EOF
+
+cat <<EOF >.mise.custom.toml
+[env]
+TEST_VAR = "custom_value"
+EOF
+
+# Task env should override base config
+assert "mise run task-with-env" "TEST_VAR=task_override_value"
+# Task env should also override MISE_ENV config
+MISE_ENV=custom assert "mise run task-with-env" "TEST_VAR=task_override_value"
+
+# Clean up
+rm -f .mise.override.toml .mise.production.toml .mise.staging.toml .mise.custom.toml

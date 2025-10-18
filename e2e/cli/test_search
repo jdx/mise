@@ -2,6 +2,7 @@
 
 assert "mise search jq" "jq    Command-line JSON processor. https://github.com/jqlang/jq
 jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
+jaq   A jq clone focussed on correctness, speed, and simplicity. https://github.com/01mf02/jaq
 jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
 gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq"
 

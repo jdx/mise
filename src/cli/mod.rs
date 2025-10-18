@@ -225,7 +225,7 @@ pub enum Commands {
     Prune(prune::Prune),
     Registry(registry::Registry),
     Reshim(reshim::Reshim),
-    Run(run::Run),
+    Run(Box<run::Run>),
     Search(search::Search),
     #[cfg(feature = "self_update")]
     SelfUpdate(self_update::SelfUpdate),
@@ -294,7 +294,7 @@ impl Commands {
             Self::Prune(cmd) => cmd.run().await,
             Self::Registry(cmd) => cmd.run().await,
             Self::Reshim(cmd) => cmd.run().await,
-            Self::Run(cmd) => cmd.run().await,
+            Self::Run(cmd) => (*cmd).run().await,
             Self::Search(cmd) => cmd.run().await,
             #[cfg(feature = "self_update")]
             Self::SelfUpdate(cmd) => cmd.run().await,
@@ -366,8 +366,20 @@ impl Cli {
         } else {
             if let Some(task) = self.task {
                 let config = Config::get().await?;
-                if config.tasks().await?.iter().any(|(_, t)| t.is_match(&task)) {
-                    return Ok(Commands::Run(run::Run {
+
+                // Expand :task pattern to match tasks in current directory's config root
+                let task = crate::task::expand_colon_task_syntax(&task, &config)?;
+
+                // For monorepo task patterns (starting with //), we need to load
+                // tasks from the entire monorepo, not just the current hierarchy
+                let tasks = if task.starts_with("//") {
+                    let ctx = crate::task::TaskLoadContext::from_pattern(&task);
+                    config.tasks_with_context(Some(&ctx)).await?
+                } else {
+                    config.tasks().await?
+                };
+                if tasks.iter().any(|(_, t)| t.is_match(&task)) {
+                    return Ok(Commands::Run(Box::new(run::Run {
                         task,
                         args: self.task_args.unwrap_or_default(),
                         args_last: self.task_args_last,
@@ -392,9 +404,12 @@ impl Cli {
                         keep_order_output: Default::default(),
                         task_prs: Default::default(),
                         timed_outputs: Default::default(),
+                        toolset_cache: Default::default(),
+                        tool_request_set_cache: Default::default(),
+                        env_resolution_cache: Default::default(),
                         no_cache: Default::default(),
                         timeout: None,
-                    }));
+                    })));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(
                         &task.into(),

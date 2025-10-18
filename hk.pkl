@@ -1,8 +1,8 @@
-amends "package://github.com/jdx/hk/releases/download/v1.15.1/hk@1.15.1#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v1.15.1/hk@1.15.1#/Builtins.pkl"
+amends "package://github.com/jdx/hk/releases/download/v1.18.1/hk@1.18.1#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.18.1/hk@1.18.1#/Builtins.pkl"
 
 local bash_glob = List("*.sh", "xtasks/**", "scripts/**", "e2e/**")
-local bash_exclude = List("*.ps1", "**/*.fish", "*.ts", "*.js", "*.json", "*.bat", "**/.*", "src/assets/bash_zsh_support/**", "e2e/shell/xonsh_script")
+local bash_exclude = List("*.ps1", "**/*.fish", "*.ts", "*.js", "*.json", "*.bat", "**/.*", "src/assets/bash_zsh_support/**", "e2e/shell/xonsh_script", "**/*.py")
 local linters = new Mapping<String, Step> {
     // uses builtin prettier linter config
     ["prettier"] = (Builtins.prettier) {

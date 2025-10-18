@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
@@ -114,7 +115,7 @@ impl Backend for AquaBackend {
             .and_then(|asset| asset.url.clone());
         let (url, v, filename) = if let Some(existing_platform) = existing_platform.clone() {
             let url = existing_platform;
-            let filename = url.split('/').next_back().unwrap_or("download").to_string();
+            let filename = get_filename_from_url(&url);
             // Determine which version variant was used based on the URL or filename
             let v = if url.contains(&format!("v{}", tv.version))
                 || filename.contains(&format!("v{}", tv.version))
@@ -154,7 +155,7 @@ impl Backend for AquaBackend {
             } else {
                 (self.get_url(&pkg, &v).await.map(|(url, _)| url)?, v)
             };
-            let filename = url.split('/').next_back().unwrap().to_string();
+            let filename = get_filename_from_url(&url);
 
             (url, v.to_string(), filename)
         };
@@ -365,7 +366,7 @@ impl AquaBackend {
             return Ok(());
         }
         ctx.pr.set_message(format!("download {filename}"));
-        HTTP.download_file(url, &tarball_path, Some(&ctx.pr))
+        HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))
             .await?;
         Ok(())
     }
@@ -397,7 +398,7 @@ impl AquaBackend {
                         AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
                     };
                     let checksum_path = download_path.join(format!("{filename}.checksum"));
-                    HTTP.download_file(&url, &checksum_path, Some(&ctx.pr))
+                    HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
                         .await?;
                     self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
                         .await?;
@@ -499,7 +500,8 @@ impl AquaBackend {
                         .map(|a| a.browser_download_url);
                     if let Some(url) = url {
                         let path = tv.download_path().join(asset);
-                        HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                            .await?;
                         path
                     } else {
                         warn!("no asset found for minisign of {tv}: {asset}");
@@ -509,7 +511,8 @@ impl AquaBackend {
                 AquaMinisignType::Http => {
                     let url = minisign.url(pkg, v, os(), arch())?;
                     let path = tv.download_path().join(filename).with_extension(".minisig");
-                    HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                    HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                        .await?;
                     path
                 }
             };
@@ -561,7 +564,8 @@ impl AquaBackend {
                         .map(|a| a.browser_download_url);
                     if let Some(url) = url {
                         let path = tv.download_path().join(asset);
-                        HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                            .await?;
                         path
                     } else {
                         warn!("no asset found for slsa verification of {tv}: {asset}");
@@ -570,10 +574,9 @@ impl AquaBackend {
                 }
                 "http" => {
                     let url = slsa.url(pkg, v, os(), arch())?;
-                    let provenance_filename =
-                        url.split('/').next_back().unwrap_or("provenance.json");
-                    let path = tv.download_path().join(provenance_filename);
-                    HTTP.download_file(&url, &path, Some(&ctx.pr)).await?;
+                    let path = tv.download_path().join(get_filename_from_url(&url));
+                    HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                        .await?;
                     path
                 }
                 t => {
@@ -640,57 +643,51 @@ impl AquaBackend {
             return Ok(());
         }
 
-        // Check if this package expects attestations
-        let expects_attestations = pkg.github_artifact_attestations.is_some();
+        if let Some(github_attestations) = &pkg.github_artifact_attestations {
+            if github_attestations.enabled == Some(false) {
+                debug!("GitHub attestations verification is disabled for {tv}");
+                return Ok(());
+            }
 
-        if expects_attestations {
             ctx.pr.set_message("verify GitHub attestations".to_string());
-        }
 
-        let artifact_path = tv.download_path().join(filename);
+            let artifact_path = tv.download_path().join(filename);
 
-        // Use our new attestation verification library
-        let token = env::GITHUB_TOKEN.as_ref().cloned();
+            // Get expected workflow from registry
+            let signer_workflow = pkg
+                .github_artifact_attestations
+                .as_ref()
+                .and_then(|att| att.signer_workflow.clone());
 
-        // Get expected workflow from registry
-        let signer_workflow = pkg
-            .github_artifact_attestations
-            .as_ref()
-            .and_then(|att| att.signer_workflow.clone());
-
-        match sigstore_verification::verify_github_attestation(
-            &artifact_path,
-            &pkg.repo_owner,
-            &pkg.repo_name,
-            token.as_deref(),
-            signer_workflow.as_deref(),
-        )
-        .await
-        {
-            Ok(true) => {
-                ctx.pr
-                    .set_message("✓ GitHub attestations verified".to_string());
-                debug!("GitHub attestations verified successfully for {tv}");
-            }
-            Ok(false) => {
-                return Err(eyre!(
-                    "GitHub attestations verification returned false for {tv}"
-                ));
-            }
-            Err(sigstore_verification::AttestationError::NoAttestations) => {
-                if expects_attestations {
-                    // Package is configured to have attestations but none were found
+            match sigstore_verification::verify_github_attestation(
+                &artifact_path,
+                &pkg.repo_owner,
+                &pkg.repo_name,
+                env::GITHUB_TOKEN.as_deref(),
+                signer_workflow.as_deref(),
+            )
+            .await
+            {
+                Ok(true) => {
+                    ctx.pr
+                        .set_message("✓ GitHub attestations verified".to_string());
+                    debug!("GitHub attestations verified successfully for {tv}");
+                }
+                Ok(false) => {
+                    return Err(eyre!(
+                        "GitHub attestations verification returned false for {tv}"
+                    ));
+                }
+                Err(sigstore_verification::AttestationError::NoAttestations) => {
                     return Err(eyre!(
                         "No GitHub attestations found for {tv}, but attestations are expected per aqua registry configuration"
                     ));
-                } else {
-                    debug!("No GitHub attestations found for {tv}");
                 }
-            }
-            Err(e) => {
-                return Err(eyre!(
-                    "GitHub attestations verification failed for {tv}: {e}"
-                ));
+                Err(e) => {
+                    return Err(eyre!(
+                        "GitHub attestations verification failed for {tv}: {e}"
+                    ));
+                }
             }
         }
 
@@ -725,9 +722,8 @@ impl AquaBackend {
                 if !key_arg.is_empty() {
                     // Download or locate the public key
                     let key_path = if key_arg.starts_with("http") {
-                        let key_filename = key_arg.split('/').next_back().unwrap_or("cosign.pub");
-                        let key_path = download_path.join(key_filename);
-                        HTTP.download_file(&key_arg, &key_path, Some(&ctx.pr))
+                        let key_path = download_path.join(get_filename_from_url(&key_arg));
+                        HTTP.download_file(&key_arg, &key_path, Some(ctx.pr.as_ref()))
                             .await?;
                         key_path
                     } else {
@@ -739,10 +735,8 @@ impl AquaBackend {
                         let sig_arg = signature.arg(pkg, v, os(), arch())?;
                         if !sig_arg.is_empty() {
                             if sig_arg.starts_with("http") {
-                                let sig_filename =
-                                    sig_arg.split('/').next_back().unwrap_or("checksum.sig");
-                                let sig_path = download_path.join(sig_filename);
-                                HTTP.download_file(&sig_arg, &sig_path, Some(&ctx.pr))
+                                let sig_path = download_path.join(get_filename_from_url(&sig_arg));
+                                HTTP.download_file(&sig_arg, &sig_path, Some(ctx.pr.as_ref()))
                                     .await?;
                                 sig_path
                             } else {
@@ -783,9 +777,8 @@ impl AquaBackend {
                 let bundle_arg = bundle.arg(pkg, v, os(), arch())?;
                 if !bundle_arg.is_empty() {
                     let bundle_path = if bundle_arg.starts_with("http") {
-                        let filename = bundle_arg.split('/').next_back().unwrap_or("bundle.json");
-                        let bundle_path = download_path.join(filename);
-                        HTTP.download_file(&bundle_arg, &bundle_path, Some(&ctx.pr))
+                        let bundle_path = download_path.join(get_filename_from_url(&bundle_arg));
+                        HTTP.download_file(&bundle_arg, &bundle_path, Some(ctx.pr.as_ref()))
                             .await?;
                         bundle_path
                     } else {
@@ -866,8 +859,9 @@ impl AquaBackend {
             .expect("at least one bin path should exist");
         let mut tar_opts = TarOptions {
             format: format.parse().unwrap_or_default(),
-            pr: Some(&ctx.pr),
+            pr: Some(ctx.pr.as_ref()),
             strip_components: 0,
+            ..Default::default()
         };
         let mut make_executable = false;
         if let AquaPackageType::GithubArchive = pkg.r#type {

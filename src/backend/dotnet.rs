@@ -85,7 +85,7 @@ impl Backend for DotnetBackend {
             cli = cli.arg("--version").arg(&tv.version);
         }
 
-        cli.with_pr(&ctx.pr)
+        cli.with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
             .execute()?;
 

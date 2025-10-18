@@ -46,12 +46,12 @@ impl ZigPlugin {
     fn test_zig(&self, ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
         ctx.pr.set_message("zig version".into());
         CmdLineRunner::new(self.zig_bin(tv))
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .arg("version")
             .execute()
     }
 
-    async fn download(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<PathBuf> {
+    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let settings = Settings::get();
         let indexes = HashMap::from([
             ("zig", "https://ziglang.org/download/index.json"),
@@ -99,7 +99,7 @@ impl ZigPlugin {
             &tv.install_path(),
             &TarOptions {
                 strip_components: 1,
-                pr: Some(&ctx.pr),
+                pr: Some(ctx.pr.as_ref()),
                 ..Default::default()
             },
         )?;
@@ -178,7 +178,7 @@ impl Backend for ZigPlugin {
         }
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".zig-version".into()])
     }
 
@@ -187,7 +187,7 @@ impl Backend for ZigPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, &ctx.pr).await?;
+        let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         self.install(ctx, &tv, &tarball_path)?;
         self.verify(ctx, &tv)?;

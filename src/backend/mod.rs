@@ -445,7 +445,7 @@ pub trait Backend: Debug + Send + Sync {
         }
         Ok(())
     }
-    fn purge(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
         rmdir(&self.ba().installs_path, pr)?;
         rmdir(&self.ba().cache_path, pr)?;
         rmdir(&self.ba().downloads_path, pr)?;
@@ -454,13 +454,13 @@ pub trait Backend: Debug + Send + Sync {
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
         Ok(BTreeMap::new())
     }
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(REGISTRY
             .get(self.id())
             .map(|rt| rt.idiomatic_files.iter().map(|s| s.to_string()).collect())
             .unwrap_or_default())
     }
-    fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
         let contents = file::read_to_string(path)?;
         Ok(contents.trim().to_string())
     }
@@ -492,7 +492,7 @@ pub trait Backend: Debug + Send + Sync {
 
         if self.is_version_installed(&ctx.config, &tv, true) {
             if ctx.force {
-                self.uninstall_version(&ctx.config, &tv, &ctx.pr, false)
+                self.uninstall_version(&ctx.config, &tv, ctx.pr.as_ref(), false)
                     .await?;
             } else {
                 return Ok(tv);
@@ -527,8 +527,16 @@ pub trait Backend: Debug + Send + Sync {
                 trace!("error touching config file: {:?} {:?}", path, err);
             }
         }
-        if let Err(err) = file::remove_file(self.incomplete_file_path(&tv)) {
+        let incomplete_path = self.incomplete_file_path(&tv);
+        if let Err(err) = file::remove_file(&incomplete_path) {
             debug!("error removing incomplete file: {:?}", err);
+        } else {
+            // Sync parent directory to ensure file removal is immediately visible
+            if let Some(parent) = incomplete_path.parent() {
+                if let Err(err) = file::sync_dir(parent) {
+                    debug!("error syncing incomplete file parent directory: {:?}", err);
+                }
+            }
         }
         if let Some(script) = tv.request.options().get("postinstall") {
             ctx.pr
@@ -546,13 +554,23 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         script: &str,
     ) -> eyre::Result<()> {
+        // Get pre-tools environment variables from config
+        let mut env_vars = self.exec_env(&ctx.config, &ctx.ts, tv).await?;
+
+        // Add pre-tools environment variables from config if available
+        if let Some(config_env) = ctx.config.env_maybe() {
+            for (k, v) in config_env {
+                env_vars.entry(k).or_insert(v);
+            }
+        }
+
         CmdLineRunner::new(&*env::SHELL)
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
             .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
-            .with_pr(&ctx.pr)
-            .arg("-c")
+            .with_pr(ctx.pr.as_ref())
+            .arg(env::SHELL_COMMAND_FLAG)
             .arg(script)
-            .envs(self.exec_env(&ctx.config, &ctx.ts, tv).await?)
+            .envs(env_vars)
             .execute()?;
         Ok(())
     }
@@ -561,7 +579,7 @@ pub trait Backend: Debug + Send + Sync {
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         dryrun: bool,
     ) -> eyre::Result<()> {
         pr.set_message("uninstall".into());
@@ -589,7 +607,7 @@ pub trait Backend: Debug + Send + Sync {
     async fn uninstall_version_impl(
         &self,
         _config: &Arc<Config>,
-        _pr: &Box<dyn SingleReport>,
+        _pr: &dyn SingleReport,
         _tv: &ToolVersion,
     ) -> Result<()> {
         Ok(())
@@ -827,13 +845,13 @@ pub trait Backend: Debug + Send + Sync {
         if let Some(checksum) = &platform_info.checksum {
             ctx.pr.set_message(format!("checksum {filename}"));
             if let Some((algo, check)) = checksum.split_once(':') {
-                hash::ensure_checksum(file, check, Some(&ctx.pr), algo)?;
+                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
             } else {
                 bail!("Invalid checksum: {checksum}");
             }
         } else if lockfile_enabled {
             ctx.pr.set_message(format!("generate checksum {filename}"));
-            let hash = hash::file_hash_blake3(file, Some(&ctx.pr))?;
+            let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
             platform_info.checksum = Some(format!("blake3:{hash}"));
         }
 
@@ -926,9 +944,11 @@ pub trait Backend: Debug + Send + Sync {
         // 2. Potentially download to get checksum
         // 3. Handle any URL-specific logic
         Ok(PlatformInfo {
-            url: Some(tarball_url.to_string()),
             checksum: None, // TODO: Implement checksum fetching
+            name: None,     // TODO: Implement name extraction from URL if needed
             size: None,     // TODO: Implement size fetching via HEAD request
+            url: Some(tarball_url.to_string()),
+            url_api: None,
         })
     }
 
@@ -952,9 +972,11 @@ pub trait Backend: Debug + Send + Sync {
         });
 
         Ok(PlatformInfo {
-            url: asset_url,
             checksum: None, // TODO: Implement checksum fetching from releases
+            name: None,     // TODO: Implement asset name fetching from releases
             size: None,     // TODO: Implement size fetching from GitHub API
+            url: asset_url,
+            url_api: None,
         })
     }
 
@@ -968,9 +990,11 @@ pub trait Backend: Debug + Send + Sync {
         // This is the fallback - no external metadata available
         // The tool would need to be installed to generate platform info
         Ok(PlatformInfo {
-            url: None,
             checksum: None,
             size: None,
+            name: None,
+            url: None,
+            url_api: None,
         })
     }
 }
@@ -982,7 +1006,7 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
     }
 }
 
-fn rmdir(dir: &Path, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
     if !dir.exists() {
         return Ok(());
     }

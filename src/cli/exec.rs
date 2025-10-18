@@ -71,7 +71,6 @@ impl Exec {
             // in that case the user probably just wants that one tool
             missing_args_only: !self.tool.is_empty()
                 || !Settings::get().exec_auto_install
-                || !console::user_attended_stderr()
                 || *env::__MISE_SHIM,
             resolve_options: Default::default(),
             ..Default::default()
@@ -214,13 +213,10 @@ fn parse_command(
             let (program, args) = command.split_first().unwrap();
             (program.clone(), args.into())
         }
-        _ => {
-            #[cfg(unix)]
-            let command_flag = "-c";
-            #[cfg(windows)]
-            let command_flag = "/c";
-            (shell.into(), vec![command_flag.into(), c.clone().unwrap()])
-        }
+        _ => (
+            shell.into(),
+            vec![env::SHELL_COMMAND_FLAG.into(), c.clone().unwrap()],
+        ),
     }
 }
 

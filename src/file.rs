@@ -1,5 +1,5 @@
 use crate::path::{Path, PathBuf, PathExt};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
@@ -274,6 +274,38 @@ pub fn touch_dir(dir: &Path) -> Result<()> {
         .wrap_err_with(|| format!("failed to touch dir: {}", display_path(dir)))
 }
 
+/// Synchronizes a directory to disk, ensuring that filesystem metadata changes
+/// (such as file creations or deletions) are persisted.
+///
+/// This is important after operations like removing files to ensure the changes
+/// are immediately visible to other processes, e.g. to avoid race conditions.
+///
+/// # Platform-specific behavior
+///
+/// - **Unix/Linux**: Performs an fsync on the directory file descriptor, which
+///   ensures directory metadata (like file listings) is written to disk.
+/// - **Windows**: Not implemented (no-op).
+///
+/// # Errors
+///
+/// On Unix systems, returns an error if the directory cannot be opened or synced.
+/// On Windows, always succeeds.
+#[cfg(unix)]
+pub fn sync_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    trace!("sync {}", display_path(path));
+    let dir = File::open(path)
+        .wrap_err_with(|| format!("failed to open dir for sync: {}", display_path(path)))?;
+    dir.sync_all()
+        .wrap_err_with(|| format!("failed to sync dir: {}", display_path(path)))
+}
+
+#[cfg(windows)]
+pub fn sync_dir<P: AsRef<Path>>(_path: P) -> Result<()> {
+    // Not implemented on Windows
+    Ok(())
+}
+
 pub fn modified_duration(path: &Path) -> Result<Duration> {
     let metadata = path.metadata()?;
     let modified = metadata.modified()?;
@@ -489,15 +521,34 @@ pub async fn make_executable_async<P: AsRef<Path>>(_path: P) -> Result<()> {
     Ok(())
 }
 
-pub fn all_dirs() -> Result<Vec<PathBuf>> {
-    let mut output = vec![];
-    let dir = env::current_dir().ok();
-    let mut cwd = dir.as_deref();
-    while let Some(dir) = cwd {
-        output.push(dir.to_path_buf());
-        cwd = dir.parent();
-    }
-    Ok(output)
+pub fn all_dirs<P: AsRef<Path>>(
+    start_dir: P,
+    ceiling_dirs: &HashSet<PathBuf>,
+) -> Result<Vec<PathBuf>> {
+    trace!(
+        "file::all_dirs Collecting all ancestors of {} until ceiling {:?}",
+        display_path(&start_dir),
+        ceiling_dirs
+    );
+    Ok(start_dir
+        .as_ref()
+        .ancestors()
+        .map_while(|p| {
+            if ceiling_dirs.contains(p) {
+                debug!(
+                    "file::all_dirs Reached ceiling directory: {}",
+                    display_path(p)
+                );
+                None
+            } else {
+                trace!(
+                    "file::all_dirs Adding ancestor directory: {}",
+                    display_path(p)
+                );
+                Some(p.to_path_buf())
+            }
+        })
+        .collect())
 }
 
 fn is_empty_dir(path: &Path) -> Result<bool> {
@@ -665,11 +716,23 @@ impl TarFormat {
     }
 }
 
-#[derive(Default)]
 pub struct TarOptions<'a> {
     pub format: TarFormat,
     pub strip_components: usize,
-    pub pr: Option<&'a Box<dyn SingleReport>>,
+    pub pr: Option<&'a dyn SingleReport>,
+    /// When false, files will be extracted with current timestamp instead of archive's mtime
+    pub preserve_mtime: bool,
+}
+
+impl<'a> Default for TarOptions<'a> {
+    fn default() -> Self {
+        Self {
+            format: TarFormat::default(),
+            strip_components: 0,
+            pr: None,
+            preserve_mtime: true, // Default to preserving mtime for backward compatibility
+        }
+    }
 }
 
 pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
@@ -732,6 +795,13 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     // }
     create_dir_all(dest).wrap_err_with(err)?;
 
+    // Set progress length once at the beginning with archive size
+    if let Some(pr) = &opts.pr {
+        if let Ok(metadata) = archive.metadata() {
+            pr.set_length(metadata.len());
+        }
+    }
+
     // Try to extract using the tar crate, detecting sparse files during extraction
     let mut needs_system_tar = false;
     for entry in Archive::new(tar).entries().wrap_err_with(err)? {
@@ -747,10 +817,14 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
             break;
         }
 
+        // Configure mtime preservation based on options
+        entry.set_preserve_mtime(opts.preserve_mtime);
+
         trace!("extracting {}", entry.path().wrap_err_with(err)?.display());
         entry.unpack_in(dest).wrap_err_with(err)?;
+        // Update position as we extract files
         if let Some(pr) = &opts.pr {
-            pr.set_length(entry.raw_file_position());
+            pr.set_position(entry.raw_file_position());
         }
     }
 
@@ -772,11 +846,22 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
         // The tar crate doesn't properly handle certain GNU sparse formats
         debug!("Using system tar for: {}", archive.display());
 
-        cmd!("tar", "-xf", archive, "-C", dest)
-            .run()
-            .wrap_err_with(|| {
-                format!("Failed to extract {} using system tar", archive.display())
-            })?;
+        // When preserve_mtime is false, use -m flag to not restore modification times
+        // This causes extracted files to have current time, which is important for
+        // cache invalidation and autopruning. Works on both BSD and GNU tar.
+        if !opts.preserve_mtime {
+            cmd!("tar", "-mxf", archive, "-C", dest)
+                .run()
+                .wrap_err_with(|| {
+                    format!("Failed to extract {} using system tar", archive.display())
+                })?;
+        } else {
+            cmd!("tar", "-xf", archive, "-C", dest)
+                .run()
+                .wrap_err_with(|| {
+                    format!("Failed to extract {} using system tar", archive.display())
+                })?;
+        }
     }
 
     // Always use our manual strip to ensure consistent behavior across backends
@@ -813,22 +898,29 @@ fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
     }
 
     let top_level_paths = ls(dir)?;
-    let entries: Vec<PathBuf> = top_level_paths
-        .iter()
-        .map(|p| ls(p))
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    for entry in entries {
-        let mut new_dir = dir.to_path_buf();
-        new_dir.push(entry.file_name().unwrap());
-        fs::rename(entry, new_dir)?;
-    }
+
     for path in top_level_paths {
-        if path.symlink_metadata()?.is_dir() {
-            remove_dir(path)?;
+        if !path.symlink_metadata()?.is_dir() {
+            continue;
         }
+
+        // rename the directory to a temp name to avoid conflicts when moving files
+        let temp_path = path.with_file_name(format!(
+            "{}_tmp_strip",
+            path.file_name().unwrap().to_string_lossy()
+        ));
+        fs::rename(&path, &temp_path)?;
+
+        for entry in ls(&temp_path)? {
+            if let Some(file_name) = entry.file_name() {
+                let dest_path = dir.join(file_name);
+                fs::rename(entry, dest_path)?;
+            } else {
+                continue;
+            }
+        }
+
+        remove_dir(temp_path)?;
     }
     Ok(())
 }
@@ -1138,5 +1230,70 @@ mod tests {
         // This simulates what would happen if inspect_tar_contents returned this
         let should_strip = result.len() == 1 && result[0].1;
         assert!(should_strip);
+    }
+
+    #[test]
+    fn test_all_dirs_no_ceiling() {
+        let start_dir = Path::new("/a/b/c");
+        let ceiling_dirs = HashSet::new();
+
+        let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
+
+        assert_eq!(result.len(), 4);
+        assert!(result.contains(&PathBuf::from("/a/b/c")));
+        assert!(result.contains(&PathBuf::from("/a/b")));
+        assert!(result.contains(&PathBuf::from("/a")));
+        assert!(result.contains(&PathBuf::from("/")));
+    }
+
+    #[test]
+    fn test_all_dirs_with_ceiling() {
+        let start_dir = Path::new("/a/b/c");
+        let mut ceiling_dirs = HashSet::new();
+        ceiling_dirs.insert(PathBuf::from("/a"));
+
+        let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&PathBuf::from("/a/b/c")));
+        assert!(result.contains(&PathBuf::from("/a/b")));
+        assert!(!result.contains(&PathBuf::from("/a")));
+        assert!(!result.contains(&PathBuf::from("/")));
+    }
+
+    #[test]
+    fn test_all_dirs_with_ceiling_at_start() {
+        let start_dir = Path::new("/a/b/c");
+        let mut ceiling_dirs = HashSet::new();
+        ceiling_dirs.insert(PathBuf::from("/a/b/c"));
+
+        let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
+
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_all_dirs_with_multiple_ceilings() {
+        let start_dir = Path::new("/a/b/c/d/e");
+        let mut ceiling_dirs = HashSet::new();
+        ceiling_dirs.insert(PathBuf::from("/a/b"));
+        ceiling_dirs.insert(PathBuf::from("/a/b/c/d"));
+
+        let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert!(result.contains(&PathBuf::from("/a/b/c/d/e")));
+    }
+
+    #[test]
+    fn test_all_dirs_with_relative_path() {
+        let start_dir = Path::new("a/b/c");
+        let ceiling_dirs = HashSet::new();
+
+        let result = all_dirs(start_dir, &ceiling_dirs).unwrap();
+
+        assert!(result.contains(&PathBuf::from("a/b/c")));
+        assert!(result.contains(&PathBuf::from("a/b")));
+        assert!(result.contains(&PathBuf::from("a")));
     }
 }

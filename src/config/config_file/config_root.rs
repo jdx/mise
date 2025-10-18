@@ -30,23 +30,22 @@ pub fn config_root(path: &Path) -> PathBuf {
         .components()
         .map(|c| c.as_os_str().to_string_lossy().to_string())
         .collect::<Vec<_>>();
-    const EMPTY: &str = "";
-    let filename = parts.last().map(|p| p.as_str()).unwrap_or(EMPTY);
+    let filename = parts.last().map(|p| p.as_str()).unwrap_or_default();
     let parent = parts
         .iter()
         .nth_back(1)
         .map(|p| p.as_str())
-        .unwrap_or(EMPTY);
+        .unwrap_or_default();
     let grandparent = parts
         .iter()
         .nth_back(2)
         .map(|p| p.as_str())
-        .unwrap_or(EMPTY);
+        .unwrap_or_default();
     let great_grandparent = parts
         .iter()
         .nth_back(3)
         .map(|p| p.as_str())
-        .unwrap_or(EMPTY);
+        .unwrap_or_default();
     let parent_path = || path.parent().unwrap().to_path_buf();
     let grandparent_path = || parent_path().parent().unwrap().to_path_buf();
     let great_grandparent_path = || grandparent_path().parent().unwrap().to_path_buf();
@@ -94,6 +93,7 @@ mod tests {
             "/foo/bar/.mise.local.toml",
             "/foo/bar/.mise.toml",
             "/foo/bar/.mise/conf.d/config.toml",
+            "/foo/bar/.mise/conf.d/foo.toml",
             "/foo/bar/.mise/config.local.toml",
             "/foo/bar/.mise/config.toml",
             "/foo/bar/.tool-versions",
@@ -109,6 +109,38 @@ mod tests {
         ] {
             println!("{p}");
             assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/bar"));
+        }
+    }
+
+    #[test]
+    fn test_config_root_mise_dir() {
+        for p in &[
+            "/foo/mise/.config/mise/conf.d/config.toml",
+            "/foo/mise/.config/mise/conf.d/foo.toml",
+            "/foo/mise/.config/mise/config.local.toml",
+            "/foo/mise/.config/mise/config.toml",
+            "/foo/mise/.config/mise.local.toml",
+            "/foo/mise/.config/mise.toml",
+            "/foo/mise/.mise.env.toml",
+            "/foo/mise/.mise.local.toml",
+            "/foo/mise/.mise.toml",
+            "/foo/mise/.mise/conf.d/config.toml",
+            "/foo/mise/.mise/conf.d/foo.toml",
+            "/foo/mise/.mise/config.local.toml",
+            "/foo/mise/.mise/config.toml",
+            "/foo/mise/.tool-versions",
+            "/foo/mise/mise.env.toml",
+            "/foo/mise/mise.local.toml",
+            "/foo/mise/mise.toml",
+            "/foo/mise/mise/config.local.toml",
+            "/foo/mise/mise/config.toml",
+            "/foo/mise/.config/mise/config.env.toml",
+            "/foo/mise/.config/mise.env.toml",
+            "/foo/mise/.mise/config.env.toml",
+            "/foo/mise/.mise.env.toml",
+        ] {
+            println!("{p}");
+            assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/mise"));
         }
     }
 }
