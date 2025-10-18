@@ -4,7 +4,7 @@
 - **Usage**: `mise generate tool-stub [FLAGS] <OUTPUT>`
 - **Source code**: [`src/cli/generate/tool_stub.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/tool_stub.rs)
 
-[experimental] Generate a tool stub for HTTP-based tools
+Generate a tool stub for HTTP-based tools
 
 This command generates tool stubs that can automatically download and execute
 tools from HTTP URLs. It can detect checksums, file sizes, and binary paths

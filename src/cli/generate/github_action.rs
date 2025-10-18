@@ -4,7 +4,7 @@ use crate::config::Settings;
 use crate::file::display_path;
 use crate::git::Git;
 
-/// [experimental] Generate a GitHub Action workflow file
+/// Generate a GitHub Action workflow file
 ///
 /// This command generates a GitHub Action workflow file that runs a mise task like `mise run ci`
 /// when you push changes to your repository.
@@ -24,8 +24,6 @@ pub struct GithubAction {
 
 impl GithubAction {
     pub async fn run(self) -> eyre::Result<()> {
-        let settings = Settings::get();
-        settings.ensure_experimental("generate github-action")?;
         let output = self.generate()?;
         if self.write {
             let path = Git::get_root()?

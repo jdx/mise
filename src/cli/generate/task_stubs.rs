@@ -6,7 +6,7 @@ use clap::ValueHint;
 use std::path::PathBuf;
 use xx::file::display_path;
 
-/// [experimental] Generates shims to run mise tasks
+/// Generates shims to run mise tasks
 ///
 /// By default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`
 /// so contributors to a project can execute mise tasks without installing mise into their system.
@@ -26,7 +26,6 @@ pub struct TaskStubs {
 
 impl TaskStubs {
     pub async fn run(self) -> eyre::Result<()> {
-        Settings::get().ensure_experimental("generate task-stubs")?;
         let config = Config::get().await?;
         for task in config.tasks().await?.values() {
             let bin = self.dir.join(task.name_to_path());

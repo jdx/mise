@@ -5,7 +5,7 @@
 - **Aliases**: `g`
 - **Source code**: [`src/cli/generate/config.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/config.rs)
 
-[experimental] Generate a mise.toml file
+Generate a mise.toml file
 
 ## Flags
 

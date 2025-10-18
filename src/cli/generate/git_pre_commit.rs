@@ -4,7 +4,7 @@ use crate::config::Settings;
 use crate::file;
 use crate::git::Git;
 
-/// [experimental] Generate a git pre-commit hook
+/// Generate a git pre-commit hook
 ///
 /// This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`
 /// when you commit changes to your repository.
@@ -28,8 +28,6 @@ pub struct GitPreCommit {
 
 impl GitPreCommit {
     pub async fn run(self) -> eyre::Result<()> {
-        let settings = Settings::get();
-        settings.ensure_experimental("generate git-pre-commit")?;
         let output = self.generate();
         if self.write {
             let path = Git::get_root()?.join(".git/hooks").join(&self.hook);

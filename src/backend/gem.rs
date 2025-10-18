@@ -45,8 +45,6 @@ impl Backend for GemBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        Settings::get().ensure_experimental("gem backend")?;
-
         // Check if gem is available
         self.warn_if_dependency_missing(
             &ctx.config,
