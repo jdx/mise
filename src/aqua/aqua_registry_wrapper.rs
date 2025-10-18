@@ -117,4 +117,6 @@ fn fetch_latest_repo(repo: &Git) -> Result<()> {
 }
 
 // Re-export types and static for compatibility
-pub use aqua_registry::{AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType};
+pub use aqua_registry::{
+    AquaChecksumType, AquaCosign, AquaMinisignType, AquaPackage, AquaPackageType,
+};
