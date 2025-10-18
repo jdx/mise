@@ -45,6 +45,7 @@ pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
+use crate::task::task_file_providers::get_local_path;
 use crate::toolset::Toolset;
 use crate::ui::style;
 pub use deps::Deps;
@@ -488,18 +489,11 @@ impl Task {
         &self,
         config: &Arc<Config>,
         cwd: Option<PathBuf>,
+        no_cache: bool,
         env: &EnvMap,
     ) -> Result<(usage::Spec, Vec<String>)> {
         let (mut spec, scripts) = if let Some(file) = &self.file {
-            let spec = usage::Spec::parse_script(file)
-                .inspect_err(|e| {
-                    warn!(
-                        "failed to parse task file {} with usage: {e:?}",
-                        file::display_path(file)
-                    )
-                })
-                .unwrap_or_default();
-            (spec, vec![])
+            (Self::parse_script(file, no_cache).await?, vec![])
         } else {
             let scripts_only = self.run_script_strings();
             let (scripts, spec) = TaskScriptParser::new(cwd)
@@ -515,14 +509,7 @@ impl Task {
     pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
         let dir = self.dir(config).await?;
         let mut spec = if let Some(file) = &self.file {
-            usage::Spec::parse_script(file)
-                .inspect_err(|e| {
-                    warn!(
-                        "failed to parse task file {} with usage: {e:?}",
-                        file::display_path(file)
-                    )
-                })
-                .unwrap_or_default()
+            Self::parse_script(file, false).await?
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(dir)
@@ -533,14 +520,31 @@ impl Task {
         Ok(spec)
     }
 
+    async fn parse_script(file: &PathBuf, no_cache: bool) -> Result<usage::Spec> {
+        let source = file.to_string_lossy().to_string();
+        let local_path = get_local_path(&source, no_cache).await?;
+
+        Ok(usage::Spec::parse_script(&local_path)
+            .inspect_err(|e| {
+                warn!(
+                    "failed to parse task file {} with usage: {e:?}",
+                    display_path(file)
+                )
+            })
+            .unwrap_or_default())
+    }
+
     pub async fn render_run_scripts_with_args(
         &self,
         config: &Arc<Config>,
         cwd: Option<PathBuf>,
+        no_cache: bool,
         args: &[String],
         env: &EnvMap,
     ) -> Result<Vec<(String, Vec<String>)>> {
-        let (spec, scripts) = self.parse_usage_spec(config, cwd.clone(), env).await?;
+        let (spec, scripts) = self
+            .parse_usage_spec(config, cwd.clone(), no_cache, env)
+            .await?;
         if has_any_args_defined(&spec) {
             let scripts_only = self.run_script_strings();
             let scripts = TaskScriptParser::new(cwd)
