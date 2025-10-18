@@ -2,7 +2,6 @@ use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::Settings;
 use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;

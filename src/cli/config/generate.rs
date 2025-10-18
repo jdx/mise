@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use clap::ValueHint;
 use eyre::Result;
 
-use crate::config::{Settings, config_file};
+use crate::config::config_file;
 use crate::file::display_path;
 use crate::{env, file};
 

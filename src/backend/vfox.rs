@@ -176,13 +176,6 @@ impl Backend for VfoxBackend {
 
 impl VfoxBackend {
     pub fn from_arg(ba: BackendArg, backend_plugin_name: Option<String>) -> Self {
-        // Custom backends (VfoxBackend) require experimental mode
-        if backend_plugin_name.is_some() {
-            if let Err(e) = Settings::get().ensure_experimental("custom backends") {
-                warn!("{}", e);
-            }
-        }
-
         let pathname = match &backend_plugin_name {
             Some(plugin_name) => plugin_name.clone(),
             None => ba.short.to_kebab_case(),

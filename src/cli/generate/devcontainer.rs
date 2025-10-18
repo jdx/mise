@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use crate::{
-    config::Settings,
     dirs,
     file::{self, display_path},
     git::Git,

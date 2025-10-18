@@ -183,10 +183,19 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::Ubi => Some(Arc::new(ubi::UbiBackend::from_arg(ba))),
         BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba, None))),
-        BackendType::VfoxBackend(plugin_name) => Some(Arc::new(vfox::VfoxBackend::from_arg(
-            ba,
-            Some(plugin_name.to_string()),
-        ))),
+        BackendType::VfoxBackend(plugin_name) => {
+            // Custom backends require experimental mode
+            if Settings::get()
+                .ensure_experimental("custom backends")
+                .is_err()
+            {
+                return None;
+            }
+            Some(Arc::new(vfox::VfoxBackend::from_arg(
+                ba,
+                Some(plugin_name.to_string()),
+            )))
+        }
         BackendType::Unknown => None,
     }
 }

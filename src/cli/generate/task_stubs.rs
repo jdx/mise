@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::file;
 use crate::task::Task;
 use clap::ValueHint;

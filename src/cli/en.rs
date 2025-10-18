@@ -1,5 +1,4 @@
 use crate::cli::exec::Exec;
-use crate::config::Settings;
 use std::path::PathBuf;
 
 use crate::env;

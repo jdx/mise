@@ -1,4 +1,3 @@
-use crate::config::Settings;
 use crate::http::HTTP;
 use crate::ui::info;
 use crate::{Result, file, minisign};

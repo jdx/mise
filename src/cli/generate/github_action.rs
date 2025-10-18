@@ -1,6 +1,5 @@
 use xx::file;
 
-use crate::config::Settings;
 use crate::file::display_path;
 use crate::git::Git;
 
