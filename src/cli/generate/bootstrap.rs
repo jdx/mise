@@ -1,4 +1,3 @@
-use crate::config::Settings;
 use crate::http::HTTP;
 use crate::ui::info;
 use crate::{Result, file, minisign};
@@ -7,7 +6,7 @@ use std::path::PathBuf;
 use xx::file::display_path;
 use xx::regex;
 
-/// [experimental] Generate a script to download+execute mise
+/// Generate a script to download+execute mise
 ///
 /// This is designed to be used in a project where contributors may not have mise installed.
 #[derive(Debug, clap::Args)]
@@ -31,7 +30,6 @@ pub struct Bootstrap {
 
 impl Bootstrap {
     pub async fn run(self) -> eyre::Result<()> {
-        Settings::get().ensure_experimental("generate bootstrap")?;
         let output = self.generate().await?;
         if let Some(bin) = &self.write {
             if let Some(parent) = bin.parent() {

@@ -169,7 +169,7 @@ cmd config help="Manage config files" {
     flag --no-header help="Do not print table header"
     flag --tracked-configs help="List all tracked config files"
     flag "-J --json" help="Output in JSON format"
-    cmd generate help="[experimental] Generate a mise.toml file" {
+    cmd generate help="Generate a mise.toml file" {
         alias g
         after_long_help "Examples:\n\n    $ mise cf generate > mise.toml\n    $ mise cf generate --output=mise.toml\n"
         flag "-t --tool-versions" help="Path to a .tool-versions file to import tools from" {
@@ -237,8 +237,8 @@ cmd doctor help="Check mise installation for possible problems" {
         flag "-f --full" help="Print all entries including those not provided by mise"
     }
 }
-cmd en help="[experimental] starts a new shell with the mise environment built from the current configuration" {
-    long_help "[experimental] starts a new shell with the mise environment built from the current configuration\n\nThis is an alternative to `mise activate` that allows you to explicitly start a mise session.\nIt will have the tools and environment variables in the configs loaded.\nNote that changing directories will not update the mise environment."
+cmd en help="Starts a new shell with the mise environment built from the current configuration" {
+    long_help "Starts a new shell with the mise environment built from the current configuration\n\nThis is an alternative to `mise activate` that allows you to explicitly start a mise session.\nIt will have the tools and environment variables in the configs loaded.\nNote that changing directories will not update the mise environment."
     after_long_help "Examples:\n\n    $ mise en .\n    $ node -v\n    v20.0.0\n\n    Skip loading bashrc:\n    $ mise en -s \"bash --norc\"\n\n    Skip loading zshrc:\n    $ mise en -s \"zsh -f\"\n"
     flag "-s --shell" help="Shell to start" {
         long_help "Shell to start\n\nDefaults to $SHELL"
@@ -283,11 +283,11 @@ cmd fmt help="Formats mise.toml" {
     flag "-c --check" help="Check if the configs are formatted, no formatting is done"
     flag "-s --stdin" help="Read config from stdin and write its formatted version into stdout"
 }
-cmd generate subcommand_required=#true help="[experimental] Generate files for various tools/services" {
+cmd generate subcommand_required=#true help="Generate files for various tools/services" {
     alias gen
     alias g hide=#true
-    cmd bootstrap help="[experimental] Generate a script to download+execute mise" {
-        long_help "[experimental] Generate a script to download+execute mise\n\nThis is designed to be used in a project where contributors may not have mise installed."
+    cmd bootstrap help="Generate a script to download+execute mise" {
+        long_help "Generate a script to download+execute mise\n\nThis is designed to be used in a project where contributors may not have mise installed."
         after_long_help "Examples:\n\n    $ mise generate bootstrap >./bin/mise\n    $ chmod +x ./bin/mise\n    $ ./bin/mise install – automatically downloads mise to .mise if not already installed\n"
         flag "-l --localize" help="Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project" {
             long_help "Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project\n\nThis is necessary if users may use a different version of mise outside the project."
@@ -312,7 +312,7 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
             arg <OUTPUT>
         }
     }
-    cmd devcontainer help="[experimental] Generate a devcontainer to execute mise" {
+    cmd devcontainer help="Generate a devcontainer to execute mise" {
         after_long_help "Examples:\n\n    $ mise generate devcontainer\n"
         flag "-n --name" help="The name of the devcontainer" {
             arg <NAME>
@@ -323,9 +323,9 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
         flag "-m --mount-mise-data" help="Bind the mise-data-volume to the devcontainer"
         flag "-w --write" help="write to .devcontainer/devcontainer.json"
     }
-    cmd git-pre-commit help="[experimental] Generate a git pre-commit hook" {
+    cmd git-pre-commit help="Generate a git pre-commit hook" {
         alias pre-commit
-        long_help "[experimental] Generate a git pre-commit hook\n\nThis command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`\nwhen you commit changes to your repository.\n\nStaged files are passed to the task as `STAGED`.\n\nFor more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/"
+        long_help "Generate a git pre-commit hook\n\nThis command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`\nwhen you commit changes to your repository.\n\nStaged files are passed to the task as `STAGED`.\n\nFor more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/"
         after_long_help "Examples:\n\n    $ mise generate git-pre-commit --write --task=pre-commit\n    $ git commit -m \"feat: add new feature\" # runs `mise run pre-commit`\n"
         flag --hook help="Which hook to generate (saves to .git/hooks/$hook)" {
             arg <HOOK>
@@ -335,8 +335,8 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
         }
         flag "-w --write" help="write to .git/hooks/pre-commit and make it executable"
     }
-    cmd github-action help="[experimental] Generate a GitHub Action workflow file" {
-        long_help "[experimental] Generate a GitHub Action workflow file\n\nThis command generates a GitHub Action workflow file that runs a mise task like `mise run ci`\nwhen you push changes to your repository."
+    cmd github-action help="Generate a GitHub Action workflow file" {
+        long_help "Generate a GitHub Action workflow file\n\nThis command generates a GitHub Action workflow file that runs a mise task like `mise run ci`\nwhen you push changes to your repository."
         after_long_help "Examples:\n\n    $ mise generate github-action --write --task=ci\n    $ git commit -m \"feat: add new feature\"\n    $ git push # runs `mise run ci` on GitHub\n"
         flag --name help="the name of the workflow to generate" {
             arg <NAME>
@@ -365,8 +365,8 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
             }
         }
     }
-    cmd task-stubs help="[experimental] Generates shims to run mise tasks" {
-        long_help "[experimental] Generates shims to run mise tasks\n\nBy default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`\nso contributors to a project can execute mise tasks without installing mise into their system."
+    cmd task-stubs help="Generates shims to run mise tasks" {
+        long_help "Generates shims to run mise tasks\n\nBy default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`\nso contributors to a project can execute mise tasks without installing mise into their system."
         after_long_help "Examples:\n\n    $ mise task add test -- echo 'running tests'\n    $ mise generate task-stubs\n    $ ./bin/test\n    running tests\n"
         flag "-m --mise-bin" help="Path to a mise bin to use when running the task stub." {
             long_help "Path to a mise bin to use when running the task stub.\n\nUse `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`"
@@ -376,8 +376,8 @@ cmd generate subcommand_required=#true help="[experimental] Generate files for v
             arg <DIR>
         }
     }
-    cmd tool-stub help="[experimental] Generate a tool stub for HTTP-based tools" {
-        long_help "[experimental] Generate a tool stub for HTTP-based tools\n\nThis command generates tool stubs that can automatically download and execute\ntools from HTTP URLs. It can detect checksums, file sizes, and binary paths\nautomatically by downloading and analyzing the tool.\n\nWhen generating stubs with platform-specific URLs, the command will append new\nplatforms to existing stub files rather than overwriting them. This allows you\nto incrementally build cross-platform tool stubs."
+    cmd tool-stub help="Generate a tool stub for HTTP-based tools" {
+        long_help "Generate a tool stub for HTTP-based tools\n\nThis command generates tool stubs that can automatically download and execute\ntools from HTTP URLs. It can detect checksums, file sizes, and binary paths\nautomatically by downloading and analyzing the tool.\n\nWhen generating stubs with platform-specific URLs, the command will append new\nplatforms to existing stub files rather than overwriting them. This allows you\nto incrementally build cross-platform tool stubs."
         after_long_help "Examples:\n\n    Generate a tool stub for a single URL:\n    $ mise generate tool-stub ./bin/gh --url \"https://github.com/cli/cli/releases/download/v2.336.0/gh_2.336.0_linux_amd64.tar.gz\"\n\n    Generate a tool stub with platform-specific URLs:\n    $ mise generate tool-stub ./bin/rg \\\n        --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \\\n        --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz\n\n    Append additional platforms to an existing stub:\n    $ mise generate tool-stub ./bin/rg \\\n        --platform-url linux-x64:https://example.com/rg-linux.tar.gz\n    $ mise generate tool-stub ./bin/rg \\\n        --platform-url darwin-arm64:https://example.com/rg-darwin.tar.gz\n    # The stub now contains both platforms\n\n    Use auto-detection for platform from URL:\n    $ mise generate tool-stub ./bin/node \\\n        --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz\n    # Platform 'macos-arm64' will be auto-detected from the URL\n\n    Generate with platform-specific binary paths:\n    $ mise generate tool-stub ./bin/tool \\\n        --platform-url linux-x64:https://example.com/tool-linux.tar.gz \\\n        --platform-url windows-x64:https://example.com/tool-windows.zip \\\n        --platform-bin windows-x64:tool.exe\n\n    Generate without downloading (faster):\n    $ mise generate tool-stub ./bin/tool --url \"https://example.com/tool.tar.gz\" --skip-download\n\n    Fetch checksums for an existing stub:\n    $ mise generate tool-stub ./bin/jq --fetch\n    # This will read the existing stub and download files to fill in any missing checksums/sizes\n"
         flag --version help="Version of the tool" {
             arg <VERSION>
