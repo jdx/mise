@@ -75,7 +75,7 @@ This will effectively make all dev tools available in your current shell session
 
 ## How to add mise shims to PATH
 
-The recommended way to add `shims` to `PATH` is to call [`mise activate --shims`](/cli/activate.html#shims) in one of your shell initialization file. For example, you can do the following:
+The recommended way to add `shims` to `PATH` is to call [`mise activate --shims`](/cli/activate.html#shims) in one of your shell initialization files. For example, you can do the following:
 
 ::: code-group
 
@@ -87,7 +87,9 @@ echo 'eval "$(mise activate bash)"' >> ~/.bashrc       # this sets up interactiv
 ```
 
 ```sh [zsh]
-echo 'eval "$(mise activate zsh --shims)"' >> ~/.zprofile # this sets up non-interactive sessions
+# use a conditional to avoid activating mise twice in interactive Zsh sessions
+# https://github.com/jdx/mise/discussions/4444
+echo 'if [[ $- != *i* ]]; then eval "$(mise activate zsh --shims)"; fi' >> ~/.zprofile # this sets up non-interactive sessions
 echo 'eval "$(mise activate zsh)"' >> ~/.zshrc    # this sets up interactive sessions
 ```
 
@@ -99,11 +101,6 @@ echo 'mise activate fish | source' >> ~/.config/fish/fish.config
 :::
 
 In this example, we use [`mise activate --shims`](/cli/activate.html#shims) in the non-interactive shell configuration file (like `.bash_profile` or `.zprofile`) and `mise activate` in the interactive shell configuration file (like `.bashrc` or `.zshrc`)
-
-::: info
-[`mise activate`](/cli/activate.html) will remove the shims directory from the `PATH` so it's fine
-to call [`mise activate --shims`](/cli/activate.html#shims) in your shell profile file then later call `mise activate` in an interactive session.
-:::
 
 - You can also decide to use only `shims` if you prefer, though this comes with some [limitations](/dev-tools/shims.html#shims-vs-path).
 - An alternative to [`mise activate --shims`](/cli/activate.html#shims) is to use `export PATH="$HOME/.local/share/mise/shims:$PATH"`. This can be helpful if `mise` is not yet available at that point in time.
@@ -274,7 +271,7 @@ node some_script.js
 ```
 
 ```sh [shims]
-eval "$(mise activate zsh --shims)" # should be first
+if [[ $- != *i* ]]; then eval "$(mise activate zsh --shims)"; fi # should be first
 eval "$(mise activate zsh)"
 node some_script.js
 ```

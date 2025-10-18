@@ -40,7 +40,9 @@ to first add it to `/etc/shells`. Once you know the right one, modify the approp
 
 ```zsh
 # ~/.zprofile
-eval "$(mise activate zsh --shims)"
+# use a conditional to avoid activating mise twice in interactive Zsh sessions
+# https://github.com/jdx/mise/discussions/4444
+if [[ $- != *i* ]]; then eval "$(mise activate zsh --shims)"; fi
 ```
 
 ```bash
