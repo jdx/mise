@@ -1261,7 +1261,7 @@ cmd watch help="Run task(s) and watch for changes to rerun it" {
     flag --manual help="Show the manual page" {
         long_help "Show the manual page\n\nThis shows the manual page for Watchexec, if the output is a terminal and the 'man' program is available. If not, the manual page is printed to stdout in ROFF format (suitable for writing to a watchexec.1 file)."
     }
-    arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`" required=#false
+    arg "[TASK]" help="Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: `mise watch task1 arg1 arg2 ::: task2 arg1 arg2`" required=#false
     arg "[ARGS]…" help="Task and arguments to run" required=#false double_dash=automatic var=#true
 }
 cmd where help="Display the installation path for a tool" {
