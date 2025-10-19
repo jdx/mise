@@ -1,4 +1,4 @@
-# Vfox Backend <Badge type="warning" text="experimental" />
+# Vfox Backend
 
 [Vfox](https://github.com/version-fox/vfox) plugins may be used in mise to install tools.
 

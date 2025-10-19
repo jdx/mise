@@ -403,6 +403,7 @@ impl Task {
         let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
 
         // Build context with path hints from self, tasks_to_run, and dependency patterns
+        // Resolve patterns before extracting paths to handle local deps (e.g., ":A")
         let path_hints: Vec<String> = once(&self.name)
             .chain(tasks_to_run.iter().map(|t| &t.name))
             .filter_map(|name| extract_monorepo_path(name))
@@ -411,7 +412,8 @@ impl Task {
                     .iter()
                     .chain(self.wait_for.iter())
                     .chain(self.depends_post.iter())
-                    .filter_map(|td| extract_monorepo_path(&td.task)),
+                    .map(|td| resolve_task_pattern(&td.task, Some(self)))
+                    .filter_map(|resolved| extract_monorepo_path(&resolved)),
             )
             .unique()
             .collect();
@@ -793,7 +795,7 @@ pub(crate) fn extract_monorepo_path(name: &str) -> Option<String> {
 /// Resolve a task dependency pattern, optionally relative to a parent task
 /// If pattern starts with ":" and parent_task is provided, resolve relative to parent's path
 /// For example: parent "//projects/frontend:test" with pattern ":build" -> "//projects/frontend:build"
-fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) -> String {
+pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) -> String {
     // If pattern starts with ":" and we have a parent task, resolve relatively
     if pattern.starts_with(':') && !pattern.starts_with("::") {
         if let Some(parent) = parent_task {

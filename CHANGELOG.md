@@ -1,19 +1,69 @@
 # Changelog
 
-## [2025.10.8](https://github.com/jdx/mise/compare/v2025.10.7..v2025.10.8) - 2025-10-13
+## [2025.10.11](https://github.com/jdx/mise/compare/v2025.10.10..v2025.10.11) - 2025-10-18
+
+### 🚀 Features
+
+- remove experimental labels from stable features by @jdx in [#6684](https://github.com/jdx/mise/pull/6684)
+
+### 🐛 Bug Fixes
+
+- **(tasks)** resolve :task patterns in run blocks for monorepo tasks by @LER0ever in [#6682](https://github.com/jdx/mise/pull/6682)
+
+### 📚 Documentation
+
+- Fix typo in comparison-to-asdf.md by @TobiX in [#6677](https://github.com/jdx/mise/pull/6677)
+
+### 📦️ Dependency Updates
+
+- update docker/dockerfile:1 docker digest to b6afd42 by @renovate[bot] in [#6675](https://github.com/jdx/mise/pull/6675)
+- update fedora:43 docker digest to 2ad3073 by @renovate[bot] in [#6676](https://github.com/jdx/mise/pull/6676)
+
+### New Contributors
+
+- @LER0ever made their first contribution in [#6682](https://github.com/jdx/mise/pull/6682)
 
 ### 📦 Aqua Registry Updates
 
-#### New Packages (3)
+#### New Packages (1)
 
-- [`defenseunicorns/uds-cli`](https://github.com/defenseunicorns/uds-cli)
-- [`google/addlicense`](https://github.com/google/addlicense)
-- [`zarf-dev/zarf`](https://github.com/zarf-dev/zarf)
+- [`mas-cli/mas`](https://github.com/mas-cli/mas)
 
 #### Updated Packages (2)
 
-- [`golang/tools/godoc`](https://github.com/golang/tools/godoc)
-- [`release-plz/release-plz`](https://github.com/release-plz/release-plz)
+- [`microsoft/edit`](https://github.com/microsoft/edit)
+- [`nodejs/node`](https://github.com/nodejs/node)
+## [2025.10.10](https://github.com/jdx/mise/compare/v2025.10.9..v2025.10.10) - 2025-10-16
+
+### 🐛 Bug Fixes
+
+- **(backend)** sync parent directory after removing incomplete marker by @EronWright in [#6668](https://github.com/jdx/mise/pull/6668)
+- **(tasks)** improve error message for untrusted config files by @jdx in [#6672](https://github.com/jdx/mise/pull/6672)
+- fix(deps) Revert "fix(deps): update rust crate ubi to 0.8 " by @swgillespie in [#6652](https://github.com/jdx/mise/pull/6652)
+
+### New Contributors
+
+- @swgillespie made their first contribution in [#6652](https://github.com/jdx/mise/pull/6652)
+- @EronWright made their first contribution in [#6668](https://github.com/jdx/mise/pull/6668)
+
+## [2025.10.9](https://github.com/jdx/mise/compare/v2025.10.8..v2025.10.9) - 2025-10-15
+
+### 🐛 Bug Fixes
+
+- **(docs)** add missing config file path by @azais-corentin in [#6658](https://github.com/jdx/mise/pull/6658)
+- **(task)** resolve monorepo dependency chains with local task references by @jdx in [#6665](https://github.com/jdx/mise/pull/6665)
+- **(ui)** add terminal detection for OSC 9;4 progress sequences by @jdx in [#6657](https://github.com/jdx/mise/pull/6657)
+
+### 📚 Documentation
+
+- fix aqua package info in CHANGELOG.md by @jdx in [#6664](https://github.com/jdx/mise/pull/6664)
+
+### New Contributors
+
+- @azais-corentin made their first contribution in [#6658](https://github.com/jdx/mise/pull/6658)
+
+## [2025.10.8](https://github.com/jdx/mise/compare/v2025.10.7..v2025.10.8) - 2025-10-13
+
 ### 📦 Registry
 
 - add codex (`npm:@openai/codex`) by @risu729 in [#6634](https://github.com/jdx/mise/pull/6634)
@@ -40,6 +90,19 @@
 ### New Contributors
 
 - @neongreen made their first contribution in [#6641](https://github.com/jdx/mise/pull/6641)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`defenseunicorns/uds-cli`](https://github.com/defenseunicorns/uds-cli)
+- [`google/addlicense`](https://github.com/google/addlicense)
+- [`zarf-dev/zarf`](https://github.com/zarf-dev/zarf)
+
+#### Updated Packages (2)
+
+- [`golang/tools/godoc`](https://github.com/golang/tools/godoc)
+- [`release-plz/release-plz`](https://github.com/release-plz/release-plz)
 
 ## [2025.10.7](https://github.com/jdx/mise/compare/v2025.10.6..v2025.10.7) - 2025-10-10
 
@@ -68,6 +131,23 @@
 
 - @richardthe3rd made their first contribution in [#6041](https://github.com/jdx/mise/pull/6041)
 
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`kachick/selfup`](https://github.com/kachick/selfup)
+- [`madelynnblue/sqlfmt`](https://github.com/madelynnblue/sqlfmt)
+- [`yonaskolb/XcodeGen`](https://github.com/yonaskolb/XcodeGen)
+
+#### Updated Packages (6)
+
+- [`AGWA/git-crypt`](https://github.com/AGWA/git-crypt)
+- [`apache/maven-mvnd`](https://github.com/apache/maven-mvnd)
+- [`benbjohnson/litestream`](https://github.com/benbjohnson/litestream)
+- [`dex4er/tf`](https://github.com/dex4er/tf)
+- [`oxc-project/oxc/oxlint`](https://github.com/oxc-project/oxc/oxlint)
+- [`sigstore/cosign`](https://github.com/sigstore/cosign)
+
 ## [2025.10.6](https://github.com/jdx/mise/compare/v2025.10.5..v2025.10.6) - 2025-10-08
 
 ### 📦 Registry
@@ -93,6 +173,17 @@
 
 - @blaubaer made their first contribution in [#6586](https://github.com/jdx/mise/pull/6586)
 
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`walles/moor`](https://github.com/walles/moor)
+
+#### Updated Packages (2)
+
+- [`linkerd/linkerd2`](https://github.com/linkerd/linkerd2)
+- [`minio/mc`](https://github.com/minio/mc)
+
 ## [2025.10.5](https://github.com/jdx/mise/compare/v2025.10.4..v2025.10.5) - 2025-10-07
 
 ### 📦 Registry
@@ -112,6 +203,17 @@
 - **(tasks)** create dedicated monorepo tasks documentation by @jdx in [#6561](https://github.com/jdx/mise/pull/6561)
 - **(tasks)** enhance monorepo documentation with tool comparisons by @jdx in [#6563](https://github.com/jdx/mise/pull/6563)
 
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`flutter/flutter`](https://github.com/flutter/flutter)
+- [`grafana/grafanactl`](https://github.com/grafana/grafanactl)
+
+#### Updated Packages (1)
+
+- [`borgbackup/borg`](https://github.com/borgbackup/borg)
+
 ## [2025.10.4](https://github.com/jdx/mise/compare/v2025.10.3..v2025.10.4) - 2025-10-06
 
 ### 🐛 Bug Fixes
@@ -127,6 +229,13 @@
 ### New Contributors
 
 - @equirosa made their first contribution in [#6555](https://github.com/jdx/mise/pull/6555)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`jackchuka/confluence-md`](https://github.com/jackchuka/confluence-md)
+- [`NikitaCOEUR/dirvana`](https://github.com/NikitaCOEUR/dirvana)
 
 ## [2025.10.3](https://github.com/jdx/mise/compare/v2025.10.2..v2025.10.3) - 2025-10-06
 

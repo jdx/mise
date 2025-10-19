@@ -97,8 +97,6 @@ impl Backend for GoBackend {
         ctx: &InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        Settings::get().ensure_experimental("go backend")?;
-
         // Check if go is available
         self.warn_if_dependency_missing(
             &ctx.config,

@@ -125,25 +125,29 @@ NEW_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yam
 AQUA_CHANGELOG_MD="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "###" || true)"
 AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "##" || true)"
 
-# Generate git-based changelog first
-git cliff --tag "v$version" -o CHANGELOG.md
+# Generate only the new release section (unreleased changes)
+# Use --prepend to preserve existing changelog content
+git cliff --tag "v$version" --unreleased --prepend CHANGELOG.md
 
 # Inject aqua-registry updates into CHANGELOG.md if there are any
 if [[ -n $AQUA_CHANGELOG_MD ]]; then
-	# Find the first release section and inject the aqua section after the version header
-	# The changelog format is: ## [version](...) - date\n\n### Section1\n...
-	# We want to add ### 📦 Aqua Registry Updates before the first ### section
+	# Find the FIRST release section (the one we just added) and inject aqua section at the end, before the next release
 	awk -v aqua_section="$AQUA_CHANGELOG_MD" '
-		/^## \[/ && in_release == 0 {
-			in_release = 1
-			print
-			next
-		}
-		/^### / && in_release == 1 && !inserted {
-			print aqua_section
-			inserted = 1
+		/^## \[/ {
+			if (release_count == 1 && !inserted) {
+				# We are at the second release, inject aqua section before it
+				print aqua_section
+				inserted = 1
+			}
+			release_count++
 		}
 		{print}
+		END {
+			# If we never hit a second release (only one release in file), append at end
+			if (release_count == 1 && !inserted) {
+				print aqua_section
+			}
+		}
 	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 fi
 
