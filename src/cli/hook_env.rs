@@ -146,8 +146,8 @@ impl HookEnv {
     /// modifies the PATH and optionally DIRENV_DIFF env var if it exists
     fn build_path_operations(
         &self,
-        installs: &Vec<PathBuf>,
-        to_remove: &Vec<PathBuf>,
+        installs: &[PathBuf],
+        to_remove: &[PathBuf],
     ) -> Result<Vec<EnvDiffOperation>> {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
         let (pre, post) = match &*env::__MISE_ORIG_PATH {
@@ -220,8 +220,8 @@ impl HookEnv {
     fn update_direnv_diff(
         &self,
         input: &str,
-        installs: &Vec<PathBuf>,
-        to_remove: &Vec<PathBuf>,
+        installs: &[PathBuf],
+        to_remove: &[PathBuf],
     ) -> Result<Option<EnvDiffOperation>> {
         let mut diff = DirenvDiff::parse(input)?;
         if diff.new_path().is_empty() {
