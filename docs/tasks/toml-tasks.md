@@ -193,6 +193,8 @@ outputs = ['target/debug/mycli']
 ```
 
 You can use `sources` alone if with [`mise watch`](/cli/watch.html) to run the task when the sources change.
+You can use the [`task_source_files()`](../templates.md#task-source-files) function to get the resolved paths of a task's `sources` from within
+its [template](../templates.md).
 
 ### Confirmation
 

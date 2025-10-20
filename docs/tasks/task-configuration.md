@@ -229,6 +229,9 @@ outputs = ["target/debug/mycli"]
 Running the above will only execute `cargo build` if `mise.toml`, `Cargo.toml`, or any ".rs" file in the `src` directory
 has changed since the last build.
 
+The [`task_source_files`](../templates.md#task-source-files) function can be used to iterate over a task's
+`sources` within its template context.
+
 ### `outputs`
 
 - **Type**: `string | string[] | { auto = true }`

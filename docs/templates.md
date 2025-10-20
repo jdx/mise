@@ -115,7 +115,7 @@ You can also uses [tests](https://keats.github.io/tera/docs/#tests) to examine v
 
 ## Mise Template Features
 
-Mise provides additional variables, functions, filters and tests on top of tera features.
+Mise provides additional variables, functions, filters, and tests on top of tera features.
 
 ### Variables
 
@@ -135,6 +135,8 @@ These variables offer key information about the current environment:
 - `xdg_state_home: PathBuf` - Points to the directory of XDG state home
 
 ### Functions
+
+#### Tera Built-In Functions
 
 Tera offers many [built-in functions](https://keats.github.io/tera/docs/#built-in-functions).
 `[]` indicates an optional function argument.
@@ -164,7 +166,15 @@ Some functions:
 
 Tera offers more functions. Read more on [tera documentation](https://keats.github.io/tera/docs/#functions).
 
-Mise offers additional functions:
+#### Additional Mise Functions
+
+Mise offers a slew of useful functions in addition to tera's built-ins.
+
+##### General Functions
+
+These functions are available in all tasks, and will always behave the same way regardless
+of the task definition they are used in. In other words, their return values are consistent
+across task definition(s).
 
 - `exec(command) -> String` – Runs a shell command and returns its output as a string.
 - `arch() -> String` – Retrieves the system architecture, such as `x86_64` or `arm64`.
@@ -177,9 +187,23 @@ Mise offers additional functions:
   64-character lowercase hex string.
 - `read_file(path) -> String` – Reads the contents of a file at the given path and returns
   it as a string.
-- `task_source_files() -> Vec<String>` – Returns the task's [`sources`](https://mise.jdx.dev/tasks/task-configuration.html#sources) as an array of resolved file paths. This function processes glob patterns and Tera template strings defined in the task's sources, expanding them into actual file paths. If a pattern doesn't match any files, it will be omitted from the result. Returns an empty array if no sources are configured or if no files match the patterns.
 
-Examples of functions:
+##### Task-Specific Functions
+
+These functions are task-specific and behave differently depending on the task they are used
+in. In other words, their return values **_may_** (but are not guaranteed to) be consistent
+across executions of any given *task*, and should be expected to be inconsisent across
+different task definition(s).
+
+For example, `task_source_files()` returns a different set of filepaths depending on the [`sources`](https://mise.jdx.dev/tasks/task-configuration.html#sources) of the task it's called from.
+
+- <span id="task-source-files">`task_source_files() -> Vec<String>`</span> – Returns the task's [`sources`](https://mise.jdx.dev/tasks/task-configuration.html#sources)
+   as an array of resolved file paths. This function processes glob patterns and Tera template strings
+   defined in the task's sources, expanding them into actual file paths. If a pattern doesn't match any
+   files, it will be omitted from the result. Returns an empty array if no sources are configured or if
+   no files match the patterns.
+
+#### Examples
 
 ```toml
 # Using exec to get command output
