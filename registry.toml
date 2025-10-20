@@ -5100,6 +5100,11 @@ test = ["zephyr --version", "{{version}}"]
 backends = ["core:zig"]
 description = "Zig is a general-purpose programming language and toolchain for maintaining robust, optimal and reusable software"
 
+[tools.fnox]
+backends = ["github:jdx/fnox"]
+description = "Fort Knox for your secrets"
+test = ["fnox --version", "fnox {{version}}"]
+
 [tools.zigmod]
 backends = ["github:nektro/zigmod", "asdf:mise-plugins/asdf-zigmod"]
 description = "A package manager for the Zig programming language"

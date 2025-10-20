@@ -161,9 +161,21 @@ impl HookEnv {
             None => (vec![], split_paths(&full).collect_vec()),
         };
 
-        let new_path = join_paths(pre.iter().chain(installs.iter()).chain(post.iter()))?
-            .to_string_lossy()
-            .into_owned();
+        // Filter out install paths that are already in the original PATH (post).
+        // This prevents mise from claiming ownership of paths that were in the user's
+        // original PATH before mise activation. When a tool is deactivated, these paths
+        // will remain accessible since they're preserved in the `post` section.
+        // This fixes the issue where system tools (e.g., rustup) become unavailable
+        // after leaving a mise project that uses the same tool.
+        let installs_filtered = installs.iter().filter(|p| !post.contains(p)).collect_vec();
+
+        let new_path = join_paths(
+            pre.iter()
+                .chain(installs_filtered.iter().copied())
+                .chain(post.iter()),
+        )?
+        .to_string_lossy()
+        .into_owned();
         let mut ops = vec![EnvDiffOperation::Add(PATH_KEY.to_string(), new_path)];
 
         if let Some(input) = env::DIRENV_DIFF.deref() {
