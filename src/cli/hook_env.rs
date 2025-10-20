@@ -167,11 +167,15 @@ impl HookEnv {
         // will remain accessible since they're preserved in the `post` section.
         // This fixes the issue where system tools (e.g., rustup) become unavailable
         // after leaving a mise project that uses the same tool.
-        let installs_filtered = installs.iter().filter(|p| !post.contains(p)).collect_vec();
+        let installs_filtered: Vec<PathBuf> = installs
+            .iter()
+            .filter(|p| !post.contains(p))
+            .cloned()
+            .collect();
 
         let new_path = join_paths(
             pre.iter()
-                .chain(installs_filtered.iter().copied())
+                .chain(installs_filtered.iter())
                 .chain(post.iter()),
         )?
         .to_string_lossy()
@@ -179,7 +183,7 @@ impl HookEnv {
         let mut ops = vec![EnvDiffOperation::Add(PATH_KEY.to_string(), new_path)];
 
         if let Some(input) = env::DIRENV_DIFF.deref() {
-            match self.update_direnv_diff(input, installs, to_remove) {
+            match self.update_direnv_diff(input, &installs_filtered, to_remove) {
                 Ok(Some(op)) => {
                     ops.push(op);
                 }
