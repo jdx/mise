@@ -1,5 +1,11 @@
 # Changelog
 
+## [2025.10.12](https://github.com/jdx/mise/compare/v2025.10.11..v2025.10.12) - 2025-10-20
+
+### 🐛 Bug Fixes
+
+- **(rust)** preserve original PATH entries when managing tool paths by @jdx in [#6689](https://github.com/jdx/mise/pull/6689)
+
 ## [2025.10.11](https://github.com/jdx/mise/compare/v2025.10.10..v2025.10.11) - 2025-10-18
 
 ### 🚀 Features
