@@ -12,7 +12,7 @@ use console::truncate_str;
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::{borrow::Cow, sync::Arc};
@@ -167,9 +167,28 @@ impl HookEnv {
         // will remain accessible since they're preserved in the `post` section.
         // This fixes the issue where system tools (e.g., rustup) become unavailable
         // after leaving a mise project that uses the same tool.
+        //
+        // Use canonicalized paths for comparison to handle symlinks, relative paths,
+        // and other path variants that refer to the same filesystem location.
+        let post_canonical: HashSet<PathBuf> =
+            post.iter().filter_map(|p| p.canonicalize().ok()).collect();
+
         let installs_filtered: Vec<PathBuf> = installs
             .iter()
-            .filter(|p| !post.contains(p))
+            .filter(|p| {
+                // Check both the original path and its canonical form
+                // This handles cases where the path doesn't exist yet (can't canonicalize)
+                // or where the canonical form differs from the string representation
+                if post.contains(p) {
+                    return false;
+                }
+                if let Ok(canonical) = p.canonicalize() {
+                    if post_canonical.contains(&canonical) {
+                        return false;
+                    }
+                }
+                true
+            })
             .cloned()
             .collect();
 
