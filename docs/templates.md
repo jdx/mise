@@ -177,6 +177,7 @@ Mise offers additional functions:
   64-character lowercase hex string.
 - `read_file(path) -> String` – Reads the contents of a file at the given path and returns
   it as a string.
+- `task_source_files() -> Vec<String>` – Returns the task's [`sources`](https://mise.jdx.dev/tasks/task-configuration.html#sources) as an array of resolved file paths. This function processes glob patterns and Tera template strings defined in the task's sources, expanding them into actual file paths. If a pattern doesn't match any files, it will be omitted from the result. Returns an empty array if no sources are configured or if no files match the patterns.
 
 Examples of functions:
 
@@ -188,6 +189,15 @@ current = "{{ exec(command='node --version') }}"
 # Using read_file to include content from a file
 [env]
 VERSION = "{{ read_file(path='VERSION') | trim }}"
+
+# Access resolved source files in task scripts
+[tasks.example]
+sources = ["src/**/*.ts", "package.json"]
+run = """
+{% for file in task_source_files() %}
+  echo "Processing: {{ file }}"
+{% endfor %}
+"""
 ```
 
 ### Exec Options
