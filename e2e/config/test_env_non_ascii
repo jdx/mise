@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Test that mise handles environment variables with non-ASCII/invalid UTF-8 gracefully
-# This reproduces the bug where VSCODE_NLS_CONFIG causes mise to panic
+# This reproduces the bug where invalid UTF-8 environment variables cause mise to panic
 
 # Test 1: Non-MISE environment variables with special characters should not cause panics
-export VSCODE_NLS_CONFIG='{"userLocale":"de","osLocale":"de","resolvedLanguage":"en","defaultMessagesFile":"/Applications/Cursor.app/Contents/Resources/app/out/nls.messages.json","locale":"de","availableLanguages":{}}'
 export SOME_VAR_WITH_UNICODE="Ü Ä Ö ß à é"
+export HOMEBREW_INSTALL_BADGE="✅"
 
 # Basic commands should work without panicking
 assert_contains "mise --version" "2025"
@@ -21,4 +21,4 @@ assert "mise env"
 mise ls-remote bun >/dev/null 2>&1 || true
 
 # Cleanup
-unset VSCODE_NLS_CONFIG SOME_VAR_WITH_UNICODE MISE_NODE_VERSION MISE_PYTHON_VERSION
+unset SOME_VAR_WITH_UNICODE HOMEBREW_INSTALL_BADGE MISE_NODE_VERSION MISE_PYTHON_VERSION

@@ -296,7 +296,7 @@ mod tests {
     fn test_load_runtime_env_ignores_non_mise_vars() {
         // Non-MISE variables should be ignored, even with special characters
         unsafe {
-            std::env::set_var("VSCODE_NLS_CONFIG", r#"{"locale":"de"}"#);
+            std::env::set_var("HOMEBREW_INSTALL_BADGE", "✅");
             std::env::set_var("SOME_OTHER_VAR", "value");
         }
 
@@ -307,7 +307,7 @@ mod tests {
         assert!(result.is_ok());
 
         unsafe {
-            std::env::remove_var("VSCODE_NLS_CONFIG");
+            std::env::remove_var("HOMEBREW_INSTALL_BADGE");
             std::env::remove_var("SOME_OTHER_VAR");
         }
     }
