@@ -361,6 +361,30 @@ fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
     (flags_with_values, boolean_flags)
 }
 
+fn get_global_output_flags(cmd: &clap::Command) -> Vec<String> {
+    let mut output_flags = Vec::new();
+
+    // Names of the global output flag fields from CliGlobalOutputFlags
+    let output_flag_names = ["debug", "log-level", "quiet", "silent", "trace", "verbose"];
+
+    for arg in cmd.get_arguments() {
+        if let Some(long) = arg.get_long() {
+            if output_flag_names.contains(&long) {
+                output_flags.push(format!("--{}", long));
+                if let Some(short) = arg.get_short() {
+                    output_flags.push(format!("-{}", short));
+                }
+            }
+        }
+    }
+
+    // Add multi-v forms for verbose
+    output_flags.push("-vv".to_string());
+    output_flags.push("-vvv".to_string());
+
+    output_flags
+}
+
 fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<String> {
     // Check if this might be a naked run (no subcommand)
     if args.len() < 2 {
@@ -520,19 +544,8 @@ impl Cli {
                                 after_task.to_vec()
                             } else {
                                 // Has positional args - skip global output flags before first one
-                                let global_output_flags = [
-                                    "-q",
-                                    "--quiet",
-                                    "-S",
-                                    "--silent",
-                                    "-v",
-                                    "-vv",
-                                    "-vvv",
-                                    "--verbose",
-                                    "--debug",
-                                    "--trace",
-                                    "--log-level",
-                                ];
+                                let cmd = Cli::command();
+                                let global_output_flags = get_global_output_flags(&cmd);
 
                                 let mut task_args = Vec::new();
                                 let mut seen_positional = false;
