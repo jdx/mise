@@ -333,23 +333,35 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
         return args.to_vec();
     }
 
-    // Global flags that take values
-    let flags_with_values = vec![
-        "-C",
-        "--cd",
-        "-E",
-        "--env",
-        "-j",
-        "--jobs",
-        "--output",
-        "-P",
-        "--profile",
-        "-s",
-        "--shell",
-        "-t",
-        "--tool",
-        "--log-level",
-    ];
+    // Extract all global flags that take values from the clap Command
+    let mut flags_with_values = Vec::new();
+    for arg in cmd.get_arguments() {
+        // Check if this argument takes a value (not a boolean flag)
+        let takes_value = match arg.get_action() {
+            clap::ArgAction::Set
+            | clap::ArgAction::Append
+            | clap::ArgAction::SetTrue
+            | clap::ArgAction::SetFalse => {
+                // Set/Append take values, SetTrue/SetFalse don't
+                matches!(
+                    arg.get_action(),
+                    clap::ArgAction::Set | clap::ArgAction::Append
+                )
+            }
+            _ => false,
+        };
+
+        if takes_value {
+            // Add long form (--flag)
+            if let Some(long) = arg.get_long() {
+                flags_with_values.push(format!("--{}", long));
+            }
+            // Add short form (-f)
+            if let Some(short) = arg.get_short() {
+                flags_with_values.push(format!("-{}", short));
+            }
+        }
+    }
 
     // Skip global flags to find the first non-flag argument (subcommand or task)
     let mut i = 1;
@@ -369,13 +381,13 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
                 continue;
             } else {
                 let flag_name = arg.split('=').next().unwrap();
-                flags_with_values.contains(&flag_name)
+                flags_with_values.iter().any(|f| f == flag_name)
             }
         } else {
             // Short form: check if it's in flags_with_values list
             if arg.len() >= 2 {
                 let flag_name = &arg[..2]; // Get -X part
-                flags_with_values.contains(&flag_name)
+                flags_with_values.iter().any(|f| f == flag_name)
             } else {
                 false
             }
