@@ -327,41 +327,47 @@ impl Commands {
     }
 }
 
+fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
+    let mut flags_with_values = Vec::new();
+    let mut boolean_flags = Vec::new();
+
+    for arg in cmd.get_arguments() {
+        let takes_value = matches!(arg.get_action(), clap::ArgAction::Set | clap::ArgAction::Append);
+        let is_bool = matches!(arg.get_action(), clap::ArgAction::SetTrue | clap::ArgAction::SetFalse);
+
+        if takes_value {
+            if let Some(long) = arg.get_long() {
+                flags_with_values.push(format!("--{}", long));
+            }
+            if let Some(short) = arg.get_short() {
+                flags_with_values.push(format!("-{}", short));
+            }
+        } else if is_bool {
+            if let Some(long) = arg.get_long() {
+                boolean_flags.push(format!("--{}", long));
+            }
+            if let Some(short) = arg.get_short() {
+                boolean_flags.push(format!("-{}", short));
+            }
+        }
+    }
+
+    (flags_with_values, boolean_flags)
+}
+
 fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<String> {
     // Check if this might be a naked run (no subcommand)
     if args.len() < 2 {
         return args.to_vec();
     }
 
-    // Extract all global flags that take values from the clap Command
-    let mut flags_with_values = Vec::new();
-    for arg in cmd.get_arguments() {
-        // Check if this argument takes a value (not a boolean flag)
-        let takes_value = match arg.get_action() {
-            clap::ArgAction::Set
-            | clap::ArgAction::Append
-            | clap::ArgAction::SetTrue
-            | clap::ArgAction::SetFalse => {
-                // Set/Append take values, SetTrue/SetFalse don't
-                matches!(
-                    arg.get_action(),
-                    clap::ArgAction::Set | clap::ArgAction::Append
-                )
-            }
-            _ => false,
-        };
-
-        if takes_value {
-            // Add long form (--flag)
-            if let Some(long) = arg.get_long() {
-                flags_with_values.push(format!("--{}", long));
-            }
-            // Add short form (-f)
-            if let Some(short) = arg.get_short() {
-                flags_with_values.push(format!("-{}", short));
-            }
-        }
+    // If there's a '--' separator, let clap handle everything normally
+    // The '--' tells clap where mise args end and task args begin
+    if args.contains(&"--".to_string()) {
+        return args.to_vec();
     }
+
+    let (flags_with_values, _) = get_global_flags(cmd);
 
     // Skip global flags to find the first non-flag argument (subcommand or task)
     let mut i = 1;
@@ -492,8 +498,65 @@ impl Cli {
                     let task_args = if let Some(task_idx) =
                         args.iter().position(|a| a == &original_task_name)
                     {
-                        // Get all args after the task name
-                        args[task_idx + 1..].to_vec()
+                        // Check if there's a '--' separator after the task name
+                        let after_task = &args[task_idx + 1..];
+                        if let Some(sep_idx) = after_task.iter().position(|a| a == "--") {
+                            // Task args start after the '--' separator
+                            after_task[sep_idx + 1..].to_vec()
+                        } else {
+                            // No separator - naked run. If there are positional args,
+                            // skip global output flags before them. If no positional args,
+                            // pass all flags to the task (they might be task flags).
+                            let has_positional = after_task.iter().any(|a| !a.starts_with('-'));
+
+                            if !has_positional {
+                                // No positional args - pass everything to task
+                                after_task.to_vec()
+                            } else {
+                                // Has positional args - skip global output flags before first one
+                                let global_output_flags = vec![
+                                    "-q", "--quiet",
+                                    "-S", "--silent",
+                                    "-v", "-vv", "-vvv", "--verbose",
+                                    "--debug", "--trace", "--log-level",
+                                ];
+
+                                let mut task_args = Vec::new();
+                                let mut seen_positional = false;
+                                let mut i = 0;
+
+                                while i < after_task.len() {
+                                    let arg = &after_task[i];
+
+                                    if !seen_positional && arg.starts_with('-') {
+                                        // Before first positional - check if global output flag
+                                        let is_global_output = global_output_flags.iter().any(|f| {
+                                            arg == f || arg.starts_with(&format!("{}=", f))
+                                        });
+
+                                        if is_global_output {
+                                            i += 1; // Skip flag
+                                            // Skip value for --log-level
+                                            if arg == "--log-level" && i < after_task.len() && !after_task[i].starts_with('-') {
+                                                i += 1;
+                                            }
+                                        } else {
+                                            // Not a global output flag - it's a task flag
+                                            task_args.push(arg.clone());
+                                            i += 1;
+                                        }
+                                    } else {
+                                        // Positional or after first positional - include everything
+                                        if !arg.starts_with('-') {
+                                            seen_positional = true;
+                                        }
+                                        task_args.push(arg.clone());
+                                        i += 1;
+                                    }
+                                }
+                                task_args
+                            }
+                        }
                     } else {
                         // Fallback to what clap parsed
                         self.task_args
