@@ -140,6 +140,10 @@ impl BackendArg {
 
         // Then check if this is a vfox plugin:tool format
         if let Some((plugin_name, _tool_name)) = self.short.split_once(':') {
+            // we cannot reliably determine backend type within install state so we check config first
+            if config::is_loaded() && Config::get_().get_repo_url(plugin_name).is_some() {
+                return BackendType::VfoxBackend(plugin_name.to_string());
+            }
             if let Some(plugin_type) = install_state::get_plugin_type(plugin_name) {
                 return match plugin_type {
                     PluginType::Vfox => BackendType::Vfox,
@@ -193,12 +197,9 @@ impl BackendArg {
                 return full;
             }
             if let Some(url) = Config::get_().repo_urls.get(short) {
-                deprecated!(
-                    "config_plugins",
-                    "[plugins] section of mise.toml is deprecated. Use [alias] instead. https://mise.jdx.dev/dev-tools/aliases.html"
-                );
                 return format!("asdf:{url}");
             }
+
             let config = Config::get_();
             if let Some(lt) =
                 lockfile::get_locked_version(&config, None, short, "").unwrap_or_default()
