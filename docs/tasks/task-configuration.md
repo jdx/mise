@@ -297,6 +297,130 @@ arg "file" description="The file to test" default="src/main.rs"
 run = 'cargo test {{arg(name="file")}}'
 ```
 
+#### Environment Variable Support for Args and Flags
+
+Both args and flags in usage specs can specify an environment variable as an alternative source for their value. This allows task arguments to be provided through environment variables when not specified on the command line.
+
+The precedence order is:
+
+1. CLI arguments/flags (highest priority)
+2. Environment variables (middle priority)
+3. Default values (lowest priority)
+
+**For positional arguments:**
+
+```toml
+[tasks.deploy]
+usage = '''
+arg "<environment>" env="DEPLOY_ENV" help="Target environment" default="staging"
+arg "<region>" env="AWS_REGION" help="AWS region" default="us-east-1"
+'''
+run = '''
+echo "Deploying to $usage_environment in $usage_region"
+'''
+```
+
+Usage examples:
+
+```bash
+# Using CLI args (highest priority)
+mise run deploy production us-west-2
+
+# Using environment variables
+export DEPLOY_ENV=production
+export AWS_REGION=us-west-2
+mise run deploy
+
+# Using defaults (lowest priority)
+mise run deploy  # deploys to staging in us-east-1
+
+# CLI overrides environment variable
+export DEPLOY_ENV=staging
+mise run deploy production  # deploys to production
+```
+
+**For flags:**
+
+```toml
+[tasks.build]
+usage = '''
+flag "-p --profile <profile>" env="BUILD_PROFILE" help="Build profile" default="dev"
+flag "-v --verbose" env="VERBOSE" help="Verbose output" default="false"
+'''
+run = '''
+echo "Building with profile: $usage_profile"
+echo "Verbose: $usage_verbose"
+'''
+```
+
+Usage examples:
+
+```bash
+# Using CLI flags
+mise run build --profile release --verbose
+
+# Using environment variables
+export BUILD_PROFILE=release
+export VERBOSE=true
+mise run build
+
+# Mixed usage - env var provides one, CLI provides another
+export BUILD_PROFILE=release
+mise run build --verbose
+```
+
+**File tasks** (tasks defined as executable files in `mise-tasks/` or `.mise/tasks/`) also support the `env` attribute:
+
+```bash
+#!/usr/bin/env bash
+#USAGE arg "<input>" env="INPUT_FILE" help="Input file to process"
+#USAGE flag "-o --output <file>" env="OUTPUT_FILE" help="Output file" default="out.txt"
+
+echo "Processing $usage_input -> $usage_output"
+```
+
+**With tera templates:**
+
+The `env` attribute works seamlessly with tera templates in task commands:
+
+```toml
+[tasks.test]
+usage = '''
+arg "<suite>" env="TEST_SUITE" help="Test suite to run" default="unit"
+flag "-c --coverage" env="COVERAGE" help="Enable coverage" default="false"
+'''
+run = [
+  'echo "Running {{arg(name="suite")}} tests"',
+  'echo "Coverage: {{flag(name="coverage", default="false")}}"',
+]
+```
+
+The values from environment variables will be available both as `$usage_*` environment variables and through tera template functions.
+
+**Required arguments:**
+
+Environment variables can satisfy required argument checks. If an argument is marked as required (using angle brackets `<arg>`), providing its value through the environment variable specified in the `env` attribute fulfills that requirement:
+
+```toml
+[tasks.deploy]
+usage = '''
+arg "<api-key>" env="API_KEY" help="API key for deployment"
+'''
+run = 'deploy --api-key $usage_api_key'
+```
+
+```bash
+# This will fail - no API_KEY provided
+mise run deploy
+
+# This succeeds - API_KEY provided via environment
+export API_KEY=secret123
+mise run deploy
+
+# This also succeeds - provided via CLI
+mise run deploy secret123
+```
+
 ## Vars
 
 Vars are variables that can be shared between tasks like environment variables but they are not
