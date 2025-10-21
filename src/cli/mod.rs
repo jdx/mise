@@ -332,8 +332,14 @@ fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
     let mut boolean_flags = Vec::new();
 
     for arg in cmd.get_arguments() {
-        let takes_value = matches!(arg.get_action(), clap::ArgAction::Set | clap::ArgAction::Append);
-        let is_bool = matches!(arg.get_action(), clap::ArgAction::SetTrue | clap::ArgAction::SetFalse);
+        let takes_value = matches!(
+            arg.get_action(),
+            clap::ArgAction::Set | clap::ArgAction::Append
+        );
+        let is_bool = matches!(
+            arg.get_action(),
+            clap::ArgAction::SetTrue | clap::ArgAction::SetFalse
+        );
 
         if takes_value {
             if let Some(long) = arg.get_long() {
@@ -514,12 +520,17 @@ impl Cli {
                                 after_task.to_vec()
                             } else {
                                 // Has positional args - skip global output flags before first one
-                                let global_output_flags = vec![
-                                    "-q", "--quiet",
-                                    "-S", "--silent",
-                                    "-v", "-vv", "-vvv", "--verbose",
-                                    "--debug", "--trace", "--log-level",
-                                ];
+                                let global_output_flags = ["-q",
+                                    "--quiet",
+                                    "-S",
+                                    "--silent",
+                                    "-v",
+                                    "-vv",
+                                    "-vvv",
+                                    "--verbose",
+                                    "--debug",
+                                    "--trace",
+                                    "--log-level"];
 
                                 let mut task_args = Vec::new();
                                 let mut seen_positional = false;
@@ -530,14 +541,18 @@ impl Cli {
 
                                     if !seen_positional && arg.starts_with('-') {
                                         // Before first positional - check if global output flag
-                                        let is_global_output = global_output_flags.iter().any(|f| {
-                                            arg == f || arg.starts_with(&format!("{}=", f))
-                                        });
+                                        let is_global_output =
+                                            global_output_flags.iter().any(|f| {
+                                                arg == f || arg.starts_with(&format!("{}=", f))
+                                            });
 
                                         if is_global_output {
                                             i += 1; // Skip flag
                                             // Skip value for --log-level
-                                            if arg == "--log-level" && i < after_task.len() && !after_task[i].starts_with('-') {
+                                            if arg == "--log-level"
+                                                && i < after_task.len()
+                                                && !after_task[i].starts_with('-')
+                                            {
                                                 i += 1;
                                             }
                                         } else {
