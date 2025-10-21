@@ -333,18 +333,6 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
         return args.to_vec();
     }
 
-    // Extract all known subcommand names and aliases from the clap Command
-    let mut known_subcommands = Vec::new();
-    for subcmd in cmd.get_subcommands() {
-        known_subcommands.push(subcmd.get_name());
-        known_subcommands.extend(subcmd.get_all_aliases());
-    }
-
-    // If first arg is a known subcommand, return as-is
-    if known_subcommands.contains(&args[1].as_str()) {
-        return args.to_vec();
-    }
-
     // Global flags that take values
     let flags_with_values = vec![
         "-C",
@@ -363,55 +351,65 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
         "--log-level",
     ];
 
-    // Potential naked run - find where task name ends and args begin
-    // Task name is the first non-flag argument, accounting for flags with values
-    let mut task_idx = None;
+    // Skip global flags to find the first non-flag argument (subcommand or task)
     let mut i = 1;
     while i < args.len() {
         let arg = &args[i];
 
-        if arg.starts_with('-') {
-            // Check if this flag takes a value
-            let flag_takes_value = if arg.starts_with("--") {
-                // Long form: check if it contains '=' or is in flags_with_values list
-                if arg.contains('=') {
-                    // --flag=value format, doesn't consume next arg
-                    i += 1;
-                    continue;
-                } else {
-                    let flag_name = arg.split('=').next().unwrap();
-                    flags_with_values.contains(&flag_name)
-                }
-            } else {
-                // Short form: check if it's in flags_with_values list
-                if arg.len() >= 2 {
-                    let flag_name = &arg[..2]; // Get -X part
-                    flags_with_values.contains(&flag_name)
-                } else {
-                    false
-                }
-            };
+        if !arg.starts_with('-') {
+            // Found first non-flag argument
+            break;
+        }
 
-            if flag_takes_value && i + 1 < args.len() {
-                // Skip both the flag and its value
-                i += 2;
-            } else {
-                // Skip just the flag
+        // Check if this flag takes a value
+        let flag_takes_value = if arg.starts_with("--") {
+            if arg.contains('=') {
+                // --flag=value format, doesn't consume next arg
                 i += 1;
+                continue;
+            } else {
+                let flag_name = arg.split('=').next().unwrap();
+                flags_with_values.contains(&flag_name)
             }
         } else {
-            // Found the task name
-            task_idx = Some(i);
-            break;
+            // Short form: check if it's in flags_with_values list
+            if arg.len() >= 2 {
+                let flag_name = &arg[..2]; // Get -X part
+                flags_with_values.contains(&flag_name)
+            } else {
+                false
+            }
+        };
+
+        if flag_takes_value && i + 1 < args.len() {
+            // Skip both the flag and its value
+            i += 2;
+        } else {
+            // Skip just the flag
+            i += 1;
         }
     }
 
-    if let Some(idx) = task_idx {
-        // Remove any args after task name to prevent clap from parsing them as global flags
-        args[..=idx].to_vec()
-    } else {
-        args.to_vec()
+    // No non-flag argument found
+    if i >= args.len() {
+        return args.to_vec();
     }
+
+    // Extract all known subcommand names and aliases from the clap Command
+    let mut known_subcommands = Vec::new();
+    for subcmd in cmd.get_subcommands() {
+        known_subcommands.push(subcmd.get_name());
+        known_subcommands.extend(subcmd.get_all_aliases());
+    }
+
+    // Check if the first non-flag argument is a known subcommand
+    if known_subcommands.contains(&args[i].as_str()) {
+        return args.to_vec();
+    }
+
+    // This is a naked run - the task name is at position i
+    // Truncate everything after the task name
+    args[..=i].to_vec()
 }
 
 impl Cli {
