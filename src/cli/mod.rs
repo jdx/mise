@@ -327,6 +327,148 @@ impl Commands {
     }
 }
 
+fn preprocess_args_for_naked_run(args: &[String]) -> Vec<String> {
+    // Check if this might be a naked run (no subcommand)
+    if args.len() < 2 {
+        return args.to_vec();
+    }
+
+    let known_subcommands = vec![
+        "activate",
+        "alias",
+        "asdf",
+        "backends",
+        "bin-paths",
+        "cache",
+        "completion",
+        "config",
+        "current",
+        "deactivate",
+        "direnv",
+        "doctor",
+        "en",
+        "env",
+        "exec",
+        "fmt",
+        "generate",
+        "global",
+        "hook-env",
+        "hook-not-found",
+        "implode",
+        "install",
+        "install-into",
+        "latest",
+        "link",
+        "local",
+        "lock",
+        "ls",
+        "ls-remote",
+        "mcp",
+        "outdated",
+        "plugins",
+        "prune",
+        "registry",
+        "render-help",
+        "render-mangen",
+        "reshim",
+        "run",
+        "r",
+        "search",
+        "self-update",
+        "set",
+        "settings",
+        "shell",
+        "sync",
+        "tasks",
+        "test-tool",
+        "tool",
+        "trust",
+        "uninstall",
+        "unset",
+        "unuse",
+        "upgrade",
+        "usage",
+        "use",
+        "version",
+        "watch",
+        "where",
+        "which",
+    ];
+
+    // If first arg is a known subcommand, return as-is
+    if known_subcommands.contains(&args[1].as_str()) {
+        return args.to_vec();
+    }
+
+    // Global flags that take values
+    let flags_with_values = vec![
+        "-C",
+        "--cd",
+        "-E",
+        "--env",
+        "-j",
+        "--jobs",
+        "--output",
+        "-P",
+        "--profile",
+        "-s",
+        "--shell",
+        "-t",
+        "--tool",
+        "--log-level",
+    ];
+
+    // Potential naked run - find where task name ends and args begin
+    // Task name is the first non-flag argument, accounting for flags with values
+    let mut task_idx = None;
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+
+        if arg.starts_with('-') {
+            // Check if this flag takes a value
+            let flag_takes_value = if arg.starts_with("--") {
+                // Long form: check if it contains '=' or is in flags_with_values list
+                if arg.contains('=') {
+                    // --flag=value format, doesn't consume next arg
+                    i += 1;
+                    continue;
+                } else {
+                    let flag_name = arg.split('=').next().unwrap();
+                    flags_with_values.contains(&flag_name)
+                }
+            } else {
+                // Short form: check if it's in flags_with_values list
+                if arg.len() >= 2 {
+                    let flag_name = &arg[..2]; // Get -X part
+                    flags_with_values.contains(&flag_name)
+                } else {
+                    false
+                }
+            };
+
+            if flag_takes_value && i + 1 < args.len() {
+                // Skip both the flag and its value
+                i += 2;
+            } else {
+                // Skip just the flag
+                i += 1;
+            }
+        } else {
+            // Found the task name
+            task_idx = Some(i);
+            break;
+        }
+    }
+
+    if let Some(idx) = task_idx {
+        // Remove any args after task name to prevent clap from parsing them as global flags
+        args[..=idx].to_vec()
+    } else {
+        args.to_vec()
+    }
+}
+
 impl Cli {
     pub async fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
@@ -339,8 +481,12 @@ impl Cli {
         ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
         let _ = measure!("backend::load_tools", { backend::load_tools().await });
+
+        // Pre-process args to handle naked runs before clap parsing
+        let processed_args = preprocess_args_for_naked_run(args);
+
         let cli = measure!("get_matches_from", {
-            Cli::parse_from(crate::env::ARGS.read().unwrap().iter())
+            Cli::parse_from(processed_args.iter())
         });
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
@@ -367,6 +513,9 @@ impl Cli {
             if let Some(task) = self.task {
                 let config = Config::get().await?;
 
+                // Store the original task name before expansion for arg extraction
+                let original_task_name = task.clone();
+
                 // Expand :task pattern to match tasks in current directory's config root
                 let task = crate::task::expand_colon_task_syntax(&task, &config)?;
 
@@ -379,10 +528,29 @@ impl Cli {
                     config.tasks().await?
                 };
                 if tasks.iter().any(|(_, t)| t.is_match(&task)) {
+                    // For naked runs (mise mytask instead of mise run mytask),
+                    // extract arguments from the original command line to avoid
+                    // global flags consuming task-specific flags.
+                    // Use the original (unexpanded) task name to find its position.
+                    let args = crate::env::ARGS.read().unwrap();
+                    let task_args = if let Some(task_idx) =
+                        args.iter().position(|a| a == &original_task_name)
+                    {
+                        // Get all args after the task name
+                        args[task_idx + 1..].to_vec()
+                    } else {
+                        // Fallback to what clap parsed
+                        self.task_args
+                            .unwrap_or_default()
+                            .into_iter()
+                            .chain(self.task_args_last)
+                            .collect()
+                    };
+
                     return Ok(Commands::Run(Box::new(run::Run {
                         task,
-                        args: self.task_args.unwrap_or_default(),
-                        args_last: self.task_args_last,
+                        args: task_args,
+                        args_last: vec![],
                         cd: self.cd,
                         continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,

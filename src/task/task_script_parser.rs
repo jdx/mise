@@ -358,6 +358,21 @@ impl TaskScriptParser {
 
                 let negate = Self::expect_opt_string(args.get("negate"), "negate")?;
 
+                let choices = match args.get("choices") {
+                    Some(c) => {
+                        let array = Self::expect_array(c, "choices")?;
+                        let mut choices_vec = Vec::new();
+                        for choice in array {
+                            let s = Self::expect_string(choice, "choice")?;
+                            choices_vec.push(s);
+                        }
+                        Some(usage::SpecChoices {
+                            choices: choices_vec,
+                        })
+                    }
+                    None => None,
+                };
+
                 let env = Self::expect_opt_string(args.get("env"), "env")?;
 
                 let help_first_line = match &help {
@@ -369,6 +384,20 @@ impl TaskScriptParser {
                         }
                     }
                     None => None,
+                };
+
+                // Create SpecArg when any arg-level properties are set (choices, env)
+                // This matches the behavior of option() which always creates SpecArg
+                let arg = if choices.is_some() || env.is_some() {
+                    Some(usage::SpecArg {
+                        name: name.clone(),
+                        var,
+                        choices,
+                        env: env.clone(),
+                        ..Default::default()
+                    })
+                } else {
+                    None
                 };
 
                 let mut flag = usage::SpecFlag {
@@ -389,7 +418,7 @@ impl TaskScriptParser {
                     required,
                     negate,
                     env,
-                    arg: None,
+                    arg,
                 };
                 flag.usage = flag.usage();
 
