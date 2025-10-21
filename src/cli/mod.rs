@@ -327,73 +327,18 @@ impl Commands {
     }
 }
 
-fn preprocess_args_for_naked_run(args: &[String]) -> Vec<String> {
+fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<String> {
     // Check if this might be a naked run (no subcommand)
     if args.len() < 2 {
         return args.to_vec();
     }
 
-    let known_subcommands = vec![
-        "activate",
-        "alias",
-        "asdf",
-        "backends",
-        "bin-paths",
-        "cache",
-        "completion",
-        "config",
-        "current",
-        "deactivate",
-        "direnv",
-        "doctor",
-        "en",
-        "env",
-        "exec",
-        "fmt",
-        "generate",
-        "global",
-        "hook-env",
-        "hook-not-found",
-        "implode",
-        "install",
-        "install-into",
-        "latest",
-        "link",
-        "local",
-        "lock",
-        "ls",
-        "ls-remote",
-        "mcp",
-        "outdated",
-        "plugins",
-        "prune",
-        "registry",
-        "render-help",
-        "render-mangen",
-        "reshim",
-        "run",
-        "r",
-        "search",
-        "self-update",
-        "set",
-        "settings",
-        "shell",
-        "sync",
-        "tasks",
-        "test-tool",
-        "tool",
-        "trust",
-        "uninstall",
-        "unset",
-        "unuse",
-        "upgrade",
-        "usage",
-        "use",
-        "version",
-        "watch",
-        "where",
-        "which",
-    ];
+    // Extract all known subcommand names and aliases from the clap Command
+    let mut known_subcommands = Vec::new();
+    for subcmd in cmd.get_subcommands() {
+        known_subcommands.push(subcmd.get_name());
+        known_subcommands.extend(subcmd.get_all_aliases());
+    }
 
     // If first arg is a known subcommand, return as-is
     if known_subcommands.contains(&args[1].as_str()) {
@@ -483,7 +428,8 @@ impl Cli {
         let _ = measure!("backend::load_tools", { backend::load_tools().await });
 
         // Pre-process args to handle naked runs before clap parsing
-        let processed_args = preprocess_args_for_naked_run(args);
+        let cmd = Cli::command();
+        let processed_args = preprocess_args_for_naked_run(&cmd, args);
 
         let cli = measure!("get_matches_from", {
             Cli::parse_from(processed_args.iter())
