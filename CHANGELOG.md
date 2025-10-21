@@ -1,5 +1,23 @@
 # Changelog
 
+## [2025.10.14](https://github.com/jdx/mise/compare/v2025.10.13..v2025.10.14) - 2025-10-21
+
+### 🚀 Features
+
+- **(tasks)** add env var support for args/flags in usage specs by @jdx in [#6704](https://github.com/jdx/mise/pull/6704)
+
+### 🐛 Bug Fixes
+
+- **(release)** prevent S3 rate limiting errors during CDN upload by @jdx in [#6705](https://github.com/jdx/mise/pull/6705)
+
+### 📚 Documentation
+
+- add comprehensive documentation for environment plugins by @jdx in [#6702](https://github.com/jdx/mise/pull/6702)
+
+### 📦️ Dependency Updates
+
+- bump mlua from 0.11.0-beta.3 to 0.11 by @jdx in [#6701](https://github.com/jdx/mise/pull/6701)
+
 ## [2025.10.13](https://github.com/jdx/mise/compare/v2025.10.12..v2025.10.13) - 2025-10-21
 
 ### 🐛 Bug Fixes
