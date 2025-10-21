@@ -520,7 +520,8 @@ impl Cli {
                                 after_task.to_vec()
                             } else {
                                 // Has positional args - skip global output flags before first one
-                                let global_output_flags = ["-q",
+                                let global_output_flags = [
+                                    "-q",
                                     "--quiet",
                                     "-S",
                                     "--silent",
@@ -530,7 +531,8 @@ impl Cli {
                                     "--verbose",
                                     "--debug",
                                     "--trace",
-                                    "--log-level"];
+                                    "--log-level",
+                                ];
 
                                 let mut task_args = Vec::new();
                                 let mut seen_positional = false;
