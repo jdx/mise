@@ -1,5 +1,19 @@
 # Changelog
 
+## [2025.10.13](https://github.com/jdx/mise/compare/v2025.10.12..v2025.10.13) - 2025-10-21
+
+### 🐛 Bug Fixes
+
+- **(revert)** fix(deps): update rust crate ubi to 0.8.2 by @nekrich in [#6700](https://github.com/jdx/mise/pull/6700)
+
+### 📚 Documentation
+
+- Add fnox as recommended secret management option by @jdx in [#6698](https://github.com/jdx/mise/pull/6698)
+
+### New Contributors
+
+- @nekrich made their first contribution in [#6700](https://github.com/jdx/mise/pull/6700)
+
 ## [2025.10.12](https://github.com/jdx/mise/compare/v2025.10.11..v2025.10.12) - 2025-10-20
 
 ### 🐛 Bug Fixes
