@@ -1,5 +1,37 @@
 # Changelog
 
+## [2025.10.14](https://github.com/jdx/mise/compare/v2025.10.13..v2025.10.14) - 2025-10-21
+
+### 🚀 Features
+
+- **(tasks)** add env var support for args/flags in usage specs by @jdx in [#6704](https://github.com/jdx/mise/pull/6704)
+
+### 🐛 Bug Fixes
+
+- **(release)** prevent S3 rate limiting errors during CDN upload by @jdx in [#6705](https://github.com/jdx/mise/pull/6705)
+
+### 📚 Documentation
+
+- add comprehensive documentation for environment plugins by @jdx in [#6702](https://github.com/jdx/mise/pull/6702)
+
+### 📦️ Dependency Updates
+
+- bump mlua from 0.11.0-beta.3 to 0.11 by @jdx in [#6701](https://github.com/jdx/mise/pull/6701)
+
+## [2025.10.13](https://github.com/jdx/mise/compare/v2025.10.12..v2025.10.13) - 2025-10-21
+
+### 🐛 Bug Fixes
+
+- **(revert)** fix(deps): update rust crate ubi to 0.8.2 by @nekrich in [#6700](https://github.com/jdx/mise/pull/6700)
+
+### 📚 Documentation
+
+- Add fnox as recommended secret management option by @jdx in [#6698](https://github.com/jdx/mise/pull/6698)
+
+### New Contributors
+
+- @nekrich made their first contribution in [#6700](https://github.com/jdx/mise/pull/6700)
+
 ## [2025.10.12](https://github.com/jdx/mise/compare/v2025.10.11..v2025.10.12) - 2025-10-20
 
 ### 🐛 Bug Fixes

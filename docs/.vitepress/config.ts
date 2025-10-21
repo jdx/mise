@@ -152,6 +152,10 @@ export default withMermaid(
               text: "Tool Plugin Development",
               link: "/tool-plugin-development",
             },
+            {
+              text: "Environment Plugin Development",
+              link: "/env-plugin-development",
+            },
             { text: "Plugin Lua Modules", link: "/plugin-lua-modules" },
             { text: "Plugin Publishing", link: "/plugin-publishing" },
             { text: "asdf (Legacy) Plugins", link: "/asdf-legacy-plugins" },
