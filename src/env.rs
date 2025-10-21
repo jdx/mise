@@ -425,7 +425,7 @@ pub const PATH_ENV_SEP: char = ':';
 pub const PATH_ENV_SEP: char = ';';
 
 fn get_env_diff() -> EnvDiff {
-    let env = vars().collect::<HashMap<_, _>>();
+    let env = vars_safe().collect::<HashMap<_, _>>();
     match env.get("__MISE_DIFF") {
         Some(raw) => EnvDiff::deserialize(raw).unwrap_or_else(|err| {
             warn!("Failed to deserialize __MISE_DIFF: {:#}", err);
