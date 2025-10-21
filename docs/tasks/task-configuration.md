@@ -302,6 +302,7 @@ run = 'cargo test {{arg(name="file")}}'
 Both args and flags in usage specs can specify an environment variable as an alternative source for their value. This allows task arguments to be provided through environment variables when not specified on the command line.
 
 The precedence order is:
+
 1. CLI arguments/flags (highest priority)
 2. Environment variables (middle priority)
 3. Default values (lowest priority)
@@ -320,6 +321,7 @@ echo "Deploying to $usage_environment in $usage_region"
 ```
 
 Usage examples:
+
 ```bash
 # Using CLI args (highest priority)
 mise run deploy production us-west-2
@@ -352,6 +354,7 @@ echo "Verbose: $usage_verbose"
 ```
 
 Usage examples:
+
 ```bash
 # Using CLI flags
 mise run build --profile release --verbose
