@@ -436,12 +436,17 @@ Plugins can provide their own `env._` directives that dynamically set environmen
 
 ### Basic Usage
 
+Simple plugin activation:
+
 ```toml
 [env]
-# Simple plugin activation
 _.my-plugin = {}
+```
 
-# Plugin with configuration options
+Plugin with configuration options:
+
+```toml
+[env]
 _.my-plugin = { option1 = "value1", option2 = "value2" }
 ```
 
@@ -481,7 +486,7 @@ The plugin could detect the current git branch and set `ENVIRONMENT=production` 
 
 ### Creating Environment Plugins
 
-See [Environment-Only Plugins](/plugins#environment-only-plugins) in the Plugins documentation for a complete guide to creating your own environment plugins.
+See [Environment Plugins](/plugins#environment-plugins) in the Plugins documentation for a complete guide to creating your own environment plugins.
 
 For a working example, see the [mise-env-sample](https://github.com/jdx/mise-env-sample) repository.
 

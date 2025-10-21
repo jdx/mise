@@ -2,16 +2,6 @@
 
 Environment plugins are a special type of mise plugin that provide environment variables and PATH modifications without managing tool versions. They're ideal for integrating external services, managing secrets, and standardizing environment configuration across teams.
 
-## When to Use Environment Plugins
-
-Environment plugins are the right choice when you need to:
-
-- **Integrate with secret managers**: Fetch credentials from HashiCorp Vault, AWS Secrets Manager, 1Password, etc.
-- **Provide dynamic environments**: Set variables based on git branch, system state, or external APIs
-- **Standardize team configuration**: Ensure consistent environment setup across developers
-- **Manage PATH entries**: Add directories to PATH without installing tools via mise
-- **Set global variables**: Provide environment variables that apply across all projects
-
 Unlike [tool plugins](tool-plugin-development.md) and [backend plugins](backend-plugin-development.md), environment plugins:
 
 - ✅ Don't implement version management (`Available`, `PreInstall`, `PostInstall` hooks)
@@ -131,8 +121,6 @@ end
 Both hooks receive a `ctx` parameter with:
 
 - **`ctx.options`**: TOML table of user configuration from `mise.toml`
-- **`ctx.path`**: (Not typically used for env plugins)
-- **`ctx.version`**: (Not typically used for env plugins)
 
 For environment plugins, `ctx.options` is the primary way to accept user configuration.
 
@@ -140,17 +128,18 @@ For environment plugins, `ctx.options` is the primary way to accept user configu
 
 Users configure environment plugins using the `env._` directive:
 
+Simple activation with no options:
+
 ```toml
 [env]
-# Simple activation with no options
 _.my-env-plugin = {}
+```
 
-# With configuration options
-_.my-env-plugin = {
-    api_url = "https://prod.api.example.com",
-    debug = false,
-    custom_bin_path = "/custom/path/bin"
-}
+With configuration options:
+
+```toml
+[env]
+_.my-env-plugin = { api_url = "https://prod.api.example.com", debug = false, custom_bin_path = "/custom/path/bin" }
 ```
 
 All fields in the TOML table are passed to your hooks as `ctx.options`.
@@ -212,10 +201,7 @@ end
 
 ```toml
 [env]
-_.vault-secrets = {
-    vault_url = "https://vault.example.com",
-    secrets_path = "secret/data/myapp/production"
-}
+_.vault-secrets = { vault_url = "https://vault.example.com", secrets_path = "secret/data/myapp/production" }
 ```
 
 ## Available Lua Modules
@@ -370,17 +356,14 @@ Once your environment plugin is ready:
 1. **Create a GitHub repository** for your plugin
 2. **Add a README** with usage instructions
 3. **Tag releases** following semantic versioning
-4. **Submit to mise registry** (optional):
-   - Fork [mise](https://github.com/jdx/mise)
-   - Add your plugin to `registry.toml`
-   - Create a pull request
+4. (Optional) share the repository URL so others can install it directly with `mise plugin install`.
 
 See [Plugin Publishing](/plugin-publishing.html) for detailed instructions.
 
 ## Examples
 
 - [mise-env-sample](https://github.com/jdx/mise-env-sample) - Simple example showing basic usage
-- Look for environment plugins in the [mise-plugins](https://github.com/mise-plugins) organization
+- The [mise-plugins](https://github.com/mise-plugins) organization currently hosts tool plugins only—add your environment plugin there (or share it with the community) so others can learn from more examples
 
 ## Migration from Tool Plugins
 
