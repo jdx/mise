@@ -302,9 +302,9 @@ pub static WARN_ON_MISSING_REQUIRED_ENV: Lazy<bool> =
     Lazy::new(|| warn_on_missing_required_env(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<EnvMap> =
-    Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
+    Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars_safe().collect()));
 pub static PATH_KEY: Lazy<String> = Lazy::new(|| {
-    vars()
+    vars_safe()
         .map(|(k, _)| k)
         .find_or_first(|k| k.to_uppercase() == "PATH")
         .map(|k| k.to_string())
@@ -657,6 +657,17 @@ pub fn remove_var<K: AsRef<OsStr>>(key: K) {
     unsafe {
         std::env::remove_var(key);
     }
+}
+
+/// Safe wrapper around std::env::vars() that handles invalid UTF-8 gracefully.
+/// This function uses vars_os() and converts OsString to String, skipping any
+/// environment variables that contain invalid UTF-8 sequences.
+pub fn vars_safe() -> impl Iterator<Item = (String, String)> {
+    vars_os().filter_map(|(k, v)| {
+        let k_str = k.to_str()?;
+        let v_str = v.to_str()?;
+        Some((k_str.to_string(), v_str.to_string()))
+    })
 }
 
 pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {

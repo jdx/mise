@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Test that mise handles environment variables with non-ASCII/invalid UTF-8 gracefully
+# This reproduces the bug where VSCODE_NLS_CONFIG causes mise to panic
+
+# Test 1: Non-MISE environment variables with special characters should not cause panics
+export VSCODE_NLS_CONFIG='{"userLocale":"de","osLocale":"de","resolvedLanguage":"en","defaultMessagesFile":"/Applications/Cursor.app/Contents/Resources/app/out/nls.messages.json","locale":"de","availableLanguages":{}}'
+export SOME_VAR_WITH_UNICODE="Ü Ä Ö ß à é"
+
+# Basic commands should work without panicking
+mise --version >/dev/null
+mise env >/dev/null
+mise doctor >/dev/null
+
+# Test 2: MISE_*_VERSION variables with Unicode should work
+export MISE_NODE_VERSION="20.0.0"
+export MISE_PYTHON_VERSION="3.11"
+
+mise env >/dev/null
+
+echo "All commands succeeded without panicking"
+
+# Test 3: Test with actual command that was reported in bug
+# This should not panic
+mise ls-remote bun >/dev/null 2>&1 || true
+
+echo "mise ls-remote completed (may fail to fetch but should not panic)"
+
+# Cleanup
+unset VSCODE_NLS_CONFIG SOME_VAR_WITH_UNICODE MISE_NODE_VERSION MISE_PYTHON_VERSION

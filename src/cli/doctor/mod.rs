@@ -454,7 +454,7 @@ fn mise_env_vars() -> Vec<(String, String)> {
         "MISE_GITHUB_ENTERPRISE_TOKEN",
         "MISE_GITLAB_ENTERPRISE_TOKEN",
     ];
-    env::vars()
+    env::vars_safe()
         .filter(|(k, _)| k.starts_with("MISE_"))
         .map(|(k, v)| {
             let v = if REDACT_KEYS.contains(&k.as_str()) {
