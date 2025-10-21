@@ -170,6 +170,8 @@ impl TaskScriptParser {
                     })
                     .transpose()?;
 
+                let env = Self::expect_opt_string(args.get("env"), "env")?;
+
                 let help_first_line = match &help {
                     Some(h) => {
                         if h.is_empty() {
@@ -195,6 +197,7 @@ impl TaskScriptParser {
                     hide,
                     default,
                     choices,
+                    env,
                     ..Default::default()
                 };
                 arg.usage = arg.usage();
@@ -264,6 +267,8 @@ impl TaskScriptParser {
                     None => None,
                 };
 
+                let env = Self::expect_opt_string(args.get("env"), "env")?;
+
                 let help_first_line = match &help {
                     Some(h) => {
                         if h.is_empty() {
@@ -292,6 +297,7 @@ impl TaskScriptParser {
                     help_md,
                     required,
                     negate,
+                    env,
                     arg: Some(usage::SpecArg {
                         name: name.clone(),
                         var,
@@ -351,6 +357,8 @@ impl TaskScriptParser {
 
                 let negate = Self::expect_opt_string(args.get("negate"), "negate")?;
 
+                let env = Self::expect_opt_string(args.get("env"), "env")?;
+
                 let help_first_line = match &help {
                     Some(h) => {
                         if h.is_empty() {
@@ -379,6 +387,7 @@ impl TaskScriptParser {
                     help_md,
                     required,
                     negate,
+                    env,
                     arg: None,
                 };
                 flag.usage = flag.usage();
