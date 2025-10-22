@@ -614,9 +614,11 @@ impl Toolset {
         config: &Arc<Config>,
         bump: bool,
     ) -> Vec<OutdatedInfo> {
-        let versions = self.list_current_versions();
-        let versions = versions
+        let versions = self
+            .list_current_versions()
             .into_iter()
+            // Respect per-tool os constraints set via options.os
+            .filter(|(_, tv)| tv.request.is_os_supported())
             .map(|(t, tv)| (config.clone(), t, tv, bump))
             .collect::<Vec<_>>();
         let outdated = parallel::parallel(versions, |(config, t, tv, bump)| async move {
