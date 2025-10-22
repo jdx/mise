@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+
+# Test that flags work with both `mise run` and naked runs
+
+cat <<'EOF' >mise.toml
+[tasks.mytask]
+run = 'echo "flag=$usage_flag"'
+usage = '''
+flag "--flag"
+'''
+EOF
+
+# Test that -- works to pass flags to task
+assert "mise run mytask -- --flag" "flag=true"
+assert "mise run mytask" "flag="
+
+# Test naked runs (without `run` subcommand)
+assert "mise mytask --flag" "flag=true"
+assert "mise mytask" "flag="
+
+# Test with a flag that takes a value
+cat <<'EOF' >mise.toml
+[tasks.mytask]
+run = 'echo "level=$usage_level"'
+usage = '''
+flag "--level <level>" default="info"
+'''
+EOF
+
+assert "mise run mytask -- --level debug" "level=debug"
+assert "mise run mytask" "level=info"
+
+# Test naked runs with flag values
+assert "mise mytask --level debug" "level=debug"
+assert "mise mytask" "level=info"
+
+# Test with multiple flags
+cat <<'EOF' >mise.toml
+[tasks.mytask]
+run = 'echo "flag=$usage_flag output=$usage_output"'
+usage = '''
+flag "--flag"
+flag "--output <output>" default="default.txt"
+'''
+EOF
+
+assert "mise run mytask -- --flag --output result.txt" "flag=true output=result.txt"
+assert "mise run mytask -- --output result.txt" "flag= output=result.txt"
+
+# Test naked runs with multiple flags
+assert "mise mytask --flag --output result.txt" "flag=true output=result.txt"
+assert "mise mytask --output result.txt" "flag= output=result.txt"
+
+# Test that global flags that match task flags are passed to the task in naked runs
+cat <<'EOF' >mise.toml
+[tasks.mytask]
+run = 'echo "verbose=$usage_verbose"'
+usage = '''
+flag "--verbose"
+'''
+EOF
+
+assert "mise mytask --verbose" "verbose=true"
+assert "mise mytask" "verbose="
