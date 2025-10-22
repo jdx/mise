@@ -361,38 +361,13 @@ fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
     (flags_with_values, boolean_flags)
 }
 
-fn get_global_output_flags(cmd: &clap::Command) -> Vec<String> {
-    let mut output_flags = Vec::new();
-
-    // Names of the global output flag fields from CliGlobalOutputFlags
-    let output_flag_names = ["debug", "log-level", "quiet", "silent", "trace", "verbose"];
-
-    for arg in cmd.get_arguments() {
-        if let Some(long) = arg.get_long() {
-            if output_flag_names.contains(&long) {
-                output_flags.push(format!("--{}", long));
-                if let Some(short) = arg.get_short() {
-                    output_flags.push(format!("-{}", short));
-                }
-            }
-        }
-    }
-
-    // Add multi-v forms for verbose
-    output_flags.push("-vv".to_string());
-    output_flags.push("-vvv".to_string());
-
-    output_flags
-}
-
 fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<String> {
     // Check if this might be a naked run (no subcommand)
     if args.len() < 2 {
         return args.to_vec();
     }
 
-    // If there's a '--' separator, let clap handle everything normally
-    // The '--' tells clap where mise args end and task args begin
+    // If there's already a '--' separator, let clap handle everything normally
     if args.contains(&"--".to_string()) {
         return args.to_vec();
     }
@@ -444,20 +419,26 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
     }
 
     // Extract all known subcommand names and aliases from the clap Command
-    let mut known_subcommands = Vec::new();
-    for subcmd in cmd.get_subcommands() {
-        known_subcommands.push(subcmd.get_name());
-        known_subcommands.extend(subcmd.get_all_aliases());
-    }
+    let known_subcommands: Vec<_> = cmd
+        .get_subcommands()
+        .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
+        .collect();
 
     // Check if the first non-flag argument is a known subcommand
     if known_subcommands.contains(&args[i].as_str()) {
         return args.to_vec();
     }
 
-    // This is a naked run - the task name is at position i
-    // Truncate everything after the task name
-    args[..=i].to_vec()
+    // This is a naked run - inject "--" separator if there are args after the task name
+    // This tells clap that everything after "--" should go to task_args_last
+    if i + 1 < args.len() {
+        let mut result = args[..=i].to_vec();
+        result.push("--".to_string());
+        result.extend_from_slice(&args[i + 1..]);
+        return result;
+    }
+
+    args.to_vec()
 }
 
 impl Cli {
@@ -505,9 +486,6 @@ impl Cli {
             if let Some(task) = self.task {
                 let config = Config::get().await?;
 
-                // Store the original task name before expansion for arg extraction
-                let original_task_name = task.clone();
-
                 // Expand :task pattern to match tasks in current directory's config root
                 let task = crate::task::expand_colon_task_syntax(&task, &config)?;
 
@@ -520,86 +498,10 @@ impl Cli {
                     config.tasks().await?
                 };
                 if tasks.iter().any(|(_, t)| t.is_match(&task)) {
-                    // For naked runs (mise mytask instead of mise run mytask),
-                    // extract arguments from the original command line to avoid
-                    // global flags consuming task-specific flags.
-                    // Use the original (unexpanded) task name to find its position.
-                    let args = crate::env::ARGS.read().unwrap();
-                    let task_args = if let Some(task_idx) =
-                        args.iter().position(|a| a == &original_task_name)
-                    {
-                        // Check if there's a '--' separator after the task name
-                        let after_task = &args[task_idx + 1..];
-                        if let Some(sep_idx) = after_task.iter().position(|a| a == "--") {
-                            // Task args start after the '--' separator
-                            after_task[sep_idx + 1..].to_vec()
-                        } else {
-                            // No separator - naked run. If there are positional args,
-                            // skip global output flags before them. If no positional args,
-                            // pass all flags to the task (they might be task flags).
-                            let has_positional = after_task.iter().any(|a| !a.starts_with('-'));
-
-                            if !has_positional {
-                                // No positional args - pass everything to task
-                                after_task.to_vec()
-                            } else {
-                                // Has positional args - skip global output flags before first one
-                                let cmd = Cli::command();
-                                let global_output_flags = get_global_output_flags(&cmd);
-
-                                let mut task_args = Vec::new();
-                                let mut seen_positional = false;
-                                let mut i = 0;
-
-                                while i < after_task.len() {
-                                    let arg = &after_task[i];
-
-                                    if !seen_positional && arg.starts_with('-') {
-                                        // Before first positional - check if global output flag
-                                        let is_global_output =
-                                            global_output_flags.iter().any(|f| {
-                                                arg == f || arg.starts_with(&format!("{}=", f))
-                                            });
-
-                                        if is_global_output {
-                                            i += 1; // Skip flag
-                                            // Skip value for --log-level
-                                            if arg == "--log-level"
-                                                && i < after_task.len()
-                                                && !after_task[i].starts_with('-')
-                                            {
-                                                i += 1;
-                                            }
-                                        } else {
-                                            // Not a global output flag - it's a task flag
-                                            task_args.push(arg.clone());
-                                            i += 1;
-                                        }
-                                    } else {
-                                        // Positional or after first positional - include everything
-                                        if !arg.starts_with('-') {
-                                            seen_positional = true;
-                                        }
-                                        task_args.push(arg.clone());
-                                        i += 1;
-                                    }
-                                }
-                                task_args
-                            }
-                        }
-                    } else {
-                        // Fallback to what clap parsed
-                        self.task_args
-                            .unwrap_or_default()
-                            .into_iter()
-                            .chain(self.task_args_last)
-                            .collect()
-                    };
-
                     return Ok(Commands::Run(Box::new(run::Run {
                         task,
-                        args: task_args,
-                        args_last: vec![],
+                        args: self.task_args.unwrap_or_default(),
+                        args_last: self.task_args_last,
                         cd: self.cd,
                         continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,
