@@ -3359,10 +3359,7 @@ test = ["opam --version", "{{version}}"]
 backends = ["aqua:siderolabs/omni", "ubi:siderolabs/omni[exe=omnictl]"]
 description = "CLI for Omni - SideroLabs' Kubernetes management platform for bare metal deployments"
 os = ["linux", "macos", "windows"]
-test = [
-  "omnictl version",
-  "omnictl v{{version}}",
-]
+test = ["omnictl version", "omnictl v{{version}}"]
 
 [tools.openbao]
 backends = ["github:openbao/openbao[exe=bao]"]
