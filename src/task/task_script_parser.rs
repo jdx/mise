@@ -111,7 +111,7 @@ impl TaskScriptParser {
         tera::Error::msg(format!("failed to lock: {}", e))
     }
 
-    fn setup_tera_for_spec_parsing(&self) -> TeraSpecParsingResult {
+    fn setup_tera_for_spec_parsing(&self, task: &Task) -> TeraSpecParsingResult {
         let mut tera = self.get_tera();
         let arg_order = Arc::new(Mutex::new(HashMap::new()));
         let input_args = Arc::new(Mutex::new(vec![]));
@@ -432,6 +432,81 @@ impl TaskScriptParser {
             }
         });
 
+        tera.register_function("task_source_files", {
+            let sources = Arc::new(task.sources.clone());
+
+            move |_: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
+               if sources.is_empty() {
+                   trace!("tera::render::resolve_task_sources `task_source_files` called in task with empty sources array");
+                   return Ok(tera::Value::Array(Default::default()));
+               };
+
+                let mut resolved = Vec::with_capacity(sources.len());
+
+                for pattern in sources.iter() {
+                    // pattern is considered a tera template string if it contains opening tags:
+                    // - "{#" for comments
+                    // - "{{" for expressions
+                    // - "{%" for statements
+                    if pattern.contains("{#") || pattern.contains("{{") || pattern.contains("{%") {
+                        trace!(
+                            "tera::render::resolve_task_sources including tera template string in resolved task sources: {pattern}"
+                        );
+                        resolved.push(tera::Value::String(pattern.clone()));
+                        continue;
+                    }
+
+                    match glob::glob_with(
+                        pattern,
+                        glob::MatchOptions {
+                            case_sensitive: false,
+                            require_literal_separator: false,
+                            require_literal_leading_dot: false,
+                        },
+                    ) {
+                        Err(error) => {
+                            warn!(
+                                "tera::render::resolve_task_sources including '{pattern}' in resolved task sources, ignoring glob parsing error: {error:#?}"
+                            );
+                            resolved.push(tera::Value::String(pattern.clone()));
+                        }
+                        Ok(expanded) => {
+                            let mut source_found = false;
+
+                            for path in expanded {
+                                source_found = true;
+
+                                match path {
+                                    Ok(path) => {
+                                        let source = path.display();
+                                        trace!(
+                                            "tera::render::resolve_task_sources resolved source from pattern '{pattern}': {source}"
+                                        );
+                                        resolved.push(tera::Value::String(source.to_string()));
+                                    }
+                                    Err(error) => {
+                                        let source = error.path().display();
+                                        warn!(
+                                            "tera::render::resolve_task_sources omitting '{source}' from resolved task sources due to: {:#?}",
+                                            error.error()
+                                        );
+                                    }
+                                }
+                            }
+
+                            if !source_found {
+                                warn!(
+                                    "tera::render::resolve_task_sources no source file(s) resolved for pattern: '{pattern}'"
+                                );
+                            }
+                        }
+                    }
+                }
+
+                Ok(tera::Value::Array(resolved))
+            }
+        });
+
         (tera, arg_order, input_args, input_flags)
     }
 
@@ -441,7 +516,7 @@ impl TaskScriptParser {
         task: &Task,
         scripts: &[String],
     ) -> Result<usage::Spec> {
-        let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing();
+        let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
         let tera_ctx = task.tera_ctx(config).await?;
         // Don't insert env for spec-only parsing to avoid expensive environment rendering
         // Render scripts to trigger spec collection via Tera template functions (arg/option/flag), but discard the results
@@ -479,7 +554,7 @@ impl TaskScriptParser {
         scripts: &[String],
         env: &EnvMap,
     ) -> Result<(Vec<String>, usage::Spec)> {
-        let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing();
+        let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
         let mut tera_ctx = task.tera_ctx(config).await?;
         tera_ctx.insert("env", &env);
         let scripts = scripts
@@ -629,6 +704,7 @@ fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[tokio::test]
     async fn test_task_parse_arg() {
@@ -889,5 +965,80 @@ mod tests {
         // Verify the nested SpecArg also has the env field set
         let arg = option.arg.as_ref().unwrap();
         assert_eq!(arg.env, Some("BUILD_PROFILE".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_task_parse_task_source_files() {
+        let cases: &[(&[&str], &str, &str)] = &[
+            (&[], "echo {{ task_source_files() }}", "echo []"),
+            (
+                &["**/filetask"],
+                "echo {{ task_source_files() | first }}",
+                "echo .mise/tasks/filetask", // created by constructor in `src/test.rs`, guaranteed to exist
+            ),
+            (
+                &["nonexistent/*.xyz"],
+                "echo {{ task_source_files() }}",
+                "echo []",
+            ),
+            (
+                &["../../Cargo.toml"],
+                "echo {{ task_source_files() | first }}",
+                "echo ../../Cargo.toml",
+            ),
+            (
+                &[concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")],
+                "echo {{ task_source_files() | first }}",
+                concat!("echo ", env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
+            ),
+            #[cfg(not(windows))] // TODO: this cases panics on windows currently
+            (
+                &["{{ env.HOME }}/file.txt", "src/*.rs"],
+                "echo {{ task_source_files() | first }}",
+                "echo {{ env.HOME }}/file.txt",
+            ),
+            (
+                &["[invalid"],
+                "echo {{ task_source_files() | first }}",
+                "echo [invalid",
+            ),
+            (
+                &[
+                    concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"),
+                    concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"),
+                ],
+                "{% for file in task_source_files() %}echo {{ file }}; {% endfor %}",
+                concat!(
+                    "echo ",
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/Cargo.toml; echo ",
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/README.md; ",
+                ),
+            ),
+        ];
+
+        for (sources, template, expected) in cases {
+            let (sources, template, expected) = (*sources, *template, *expected);
+
+            let (mut task, scripts, parser, config) = (
+                Task::default(),
+                vec![template.into()],
+                TaskScriptParser::new(None),
+                Config::get().await.unwrap(),
+            );
+
+            task.sources = sources.iter().map(ToString::to_string).collect();
+
+            let (parsed, _) = parser
+                .parse_run_scripts(&config, &task, &scripts, &Default::default())
+                .await
+                .unwrap();
+
+            #[cfg(windows)]
+            let expected = expected.replace("/", r"\"); // 🙄
+
+            assert_eq!(parsed, vec![expected]);
+        }
     }
 }
