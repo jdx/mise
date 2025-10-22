@@ -80,7 +80,7 @@ run = """
 EOF
 assert_fail_matches "mise run wtf:throw" ".*ERROR $.*"
 assert_fail_matches "mise run wtf:throw --val=hello" ".*ERROR hello$.*"
-# 
+#
 # wtf:default (default filter applied prior to throw)
 cat <<'EOF' >mise.toml
 [tasks."wtf:default"]
