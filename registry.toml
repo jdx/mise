@@ -3356,7 +3356,7 @@ description = "(ocaml) opam is a source-based package manager. It supports multi
 test = ["opam --version", "{{version}}"]
 
 [tools.omnictl]
-backends = ["aqua:siderolabs/omni", "ubi:siderolabs/omni[exe=omnictl]"]
+backends = ["aqua:siderolabs/omni/omnictl", "ubi:siderolabs/omni[exe=omnictl]"]
 description = "CLI for Omni - SideroLabs' Kubernetes management platform for bare metal deployments"
 os = ["linux", "macos", "windows"]
 test = ["omnictl version", "omnictl v{{version}}"]
