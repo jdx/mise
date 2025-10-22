@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+
+# Repro tests for inconsistent tera behaviour with {{ option() }} from
+# discussion https://github.com/jdx/mise/discussions/6646
+
+# wtf:echo
+cat <<'EOF' >mise.toml
+[tasks."wtf:echo"]
+run = """
+  {% set val = option(name='val') %}
+  echo val={{ val }}
+"""
+EOF
+assert "mise run wtf:echo" "val="
+assert "mise run wtf:echo --val=hello" "val=hello"
+
+# wtf:eq-shell
+cat <<'EOF' >mise.toml
+[tasks."wtf:eq-shell"]
+run = """
+  {% set val = option(name='val') %}
+  if [ "{{ val }}" = "hello" ]; then echo 'was hello'; else echo 'not hello'; fi
+"""
+EOF
+assert "mise run wtf:eq-shell" "not hello"
+assert "mise run wtf:eq-shell --val=hello" "was hello"
+
+# wtf:eq-tera
+cat <<'EOF' >mise.toml
+[tasks."wtf:eq-tera"]
+run = """
+  {% set val = option(name='val') %}
+  {% if val == "hello" %}
+    echo 'was eq hello'
+  {% else %}
+    echo 'not eq hello'
+  {% endif %}
+"""
+EOF
+assert "mise run wtf:eq-tera" "not eq hello"
+assert "mise run wtf:eq-tera --val=hello" "was eq hello"
+
+# wtf:defined
+cat <<'EOF' >mise.toml
+[tasks."wtf:defined"]
+run = """
+  {% set val = option(name='val') %}
+  {% if val is defined %}
+    echo 'was defined'
+  {% else %}
+    echo 'not defined'
+  {% endif %}
+"""
+EOF
+assert "mise run wtf:defined" "was defined"
+assert "mise run wtf:defined --val=hello" "was defined"
+
+# wtf:truthy
+cat <<'EOF' >mise.toml
+[tasks."wtf:truthy"]
+run = """
+  {% set val = option(name='val') %}
+  {% if val %}
+    echo 'was truthy'
+  {% else %}
+    echo 'not truthy'
+  {% endif %}
+"""
+EOF
+assert "mise run wtf:truthy" "not truthy"
+assert "mise run wtf:truthy --val=hello" "was truthy"
+
+# wtf:throw (should fail currently due to throw(message=null) during arg parsing pass)
+cat <<'EOF' >mise.toml
+[tasks."wtf:throw"]
+run = """
+  {% set val = option(name='val') %}
+  {{ throw(message=val) }}
+"""
+EOF
+assert_fail_matches "mise run wtf:throw" ".*ERROR $.*"
+assert_fail_matches "mise run wtf:throw --val=hello" ".*ERROR hello$.*"
+# 
+# wtf:default (default filter applied prior to throw)
+cat <<'EOF' >mise.toml
+[tasks."wtf:default"]
+run = """
+  {% set val = option(name='val') %}
+  {% set val = val | default(value='???') %}
+  {{ throw(message=val) }}
+"""
+EOF
+assert_fail_matches "mise run wtf:default" ".*ERROR $.*"
+assert_fail_matches "mise run wtf:default --val=hello" ".*ERROR hello$.*"
+
+# wtf:as_str (filter produces empty string by default)
+cat <<'EOF' >mise.toml
+[tasks."wtf:as_str"]
+run = """
+  {% set val = option(name='val') %}
+  {{ throw(message=val | as_str) }}
+"""
+EOF
+assert_fail_matches "mise run wtf:as_str" ".*ERROR $.*"
+assert_fail_matches "mise run wtf:as_str --val=hello" ".*ERROR hello$.*"
+
+# wtf:option-default (option default used in throw path)
+cat <<'EOF' >mise.toml
+[tasks."wtf:option-default"]
+run = """
+  {% set val = option(name='val', default='???') %}
+  {{ throw(message=val) }}
+"""
+EOF
+assert_fail_matches "mise run wtf:option-default" ".*ERROR '\?\?\?'$.*"
