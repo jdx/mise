@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+# Test env attribute for args in file tasks
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/file-task-arg-env
+#!/usr/bin/env bash
+#USAGE arg "<input>" env="MY_INPUT" help="Input file"
+#USAGE arg "<output>" env="MY_OUTPUT" help="Output file" default="out.txt"
+
+echo "input=$usage_input"
+echo "output=$usage_output"
+EOF
+chmod +x mise-tasks/file-task-arg-env
+
+# Test with CLI args (highest priority)
+assert "mise run file-task-arg-env foo bar" "input=foo
+output=bar"
+
+# Test with env vars (middle priority)
+assert "MY_INPUT=env-input MY_OUTPUT=env-output mise run file-task-arg-env" "input=env-input
+output=env-output"
+
+# Test with default (lowest priority)
+assert "MY_INPUT=env-input mise run file-task-arg-env" "input=env-input
+output=out.txt"
+
+# Test CLI overrides env var
+assert "MY_INPUT=env-input mise run file-task-arg-env cli-input" "input=cli-input
+output=out.txt"
+
+# Test CLI overrides both env var and default
+assert "MY_INPUT=env-input MY_OUTPUT=env-output mise run file-task-arg-env cli-input cli-output" "input=cli-input
+output=cli-output"
+
+# Test env attribute for flags in file tasks
+cat <<'EOF' >mise-tasks/file-task-flag-env
+#!/usr/bin/env bash
+#USAGE flag "-u --user <user>" env="MY_USER" help="User to run as"
+#USAGE flag "-p --port <port>" env="MY_PORT" help="Port to run on" default="8080"
+
+echo "user=$usage_user"
+echo "port=$usage_port"
+EOF
+chmod +x mise-tasks/file-task-flag-env
+
+# Test with CLI flags (highest priority)
+assert "mise run file-task-flag-env --user=cli-user --port=3000" "user=cli-user
+port=3000"
+
+# Test with env vars (middle priority)
+assert "MY_USER=env-user MY_PORT=9000 mise run file-task-flag-env" "user=env-user
+port=9000"
+
+# Test with default (lowest priority)
+assert "MY_USER=env-user mise run file-task-flag-env" "user=env-user
+port=8080"
+
+# Test CLI overrides env var
+assert "MY_USER=env-user mise run file-task-flag-env --user=cli-user" "user=cli-user
+port=8080"
+
+# Test CLI overrides both env var and default
+assert "MY_USER=env-user MY_PORT=9000 mise run file-task-flag-env --user=cli-user --port=3000" "user=cli-user
+port=3000"
+
+# Test short flags
+assert "MY_USER=env-user mise run file-task-flag-env -u cli-user" "user=cli-user
+port=8080"
+
+# Test env attribute shows in help
+assert_contains "mise run file-task-flag-env --help 2>&1 || true" "[env: MY_USER]"
+assert_contains "mise run file-task-flag-env --help 2>&1 || true" "[env: MY_PORT]"
