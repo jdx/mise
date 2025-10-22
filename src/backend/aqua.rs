@@ -113,52 +113,52 @@ impl Backend for AquaBackend {
             .lock_platforms
             .get(&platform_key)
             .and_then(|asset| asset.url.clone());
-        let (url, v, filename, api_digest) = if let Some(existing_platform) = existing_platform.clone() {
-            let url = existing_platform;
-            let filename = get_filename_from_url(&url);
-            // Determine which version variant was used based on the URL or filename
-            let v = if url.contains(&format!("v{}", tv.version))
-                || filename.contains(&format!("v{}", tv.version))
-            {
-                format!("v{}", tv.version)
+        let (url, v, filename, api_digest) =
+            if let Some(existing_platform) = existing_platform.clone() {
+                let url = existing_platform;
+                let filename = get_filename_from_url(&url);
+                // Determine which version variant was used based on the URL or filename
+                let v = if url.contains(&format!("v{}", tv.version))
+                    || filename.contains(&format!("v{}", tv.version))
+                {
+                    format!("v{}", tv.version)
+                } else {
+                    tv.version.clone()
+                };
+                (url, v, filename, None)
             } else {
-                tv.version.clone()
-            };
-            (url, v, filename, None)
-        } else {
-            let (url, v, digest) = if let Some(v_prefixed) = v_prefixed {
-                // Try v-prefixed version first because most aqua packages use v-prefixed versions
-                match self.get_url(&pkg, v_prefixed.as_ref()).await {
-                    // If the url is already checked, use it
-                    Ok((url, true, digest)) => (url, v_prefixed, digest),
-                    Ok((url_prefixed, false, digest_prefixed)) => {
-                        let (url, _, digest) = self.get_url(&pkg, &v).await?;
-                        // If the v-prefixed URL is the same as the non-prefixed URL, use it
-                        if url == url_prefixed {
-                            (url_prefixed, v_prefixed, digest_prefixed)
-                        } else {
-                            // If they are different, check existence
-                            match HTTP.head(&url_prefixed).await {
-                                Ok(_) => (url_prefixed, v_prefixed, digest_prefixed),
-                                Err(_) => (url, v, digest),
+                let (url, v, digest) = if let Some(v_prefixed) = v_prefixed {
+                    // Try v-prefixed version first because most aqua packages use v-prefixed versions
+                    match self.get_url(&pkg, v_prefixed.as_ref()).await {
+                        // If the url is already checked, use it
+                        Ok((url, true, digest)) => (url, v_prefixed, digest),
+                        Ok((url_prefixed, false, digest_prefixed)) => {
+                            let (url, _, digest) = self.get_url(&pkg, &v).await?;
+                            // If the v-prefixed URL is the same as the non-prefixed URL, use it
+                            if url == url_prefixed {
+                                (url_prefixed, v_prefixed, digest_prefixed)
+                            } else {
+                                // If they are different, check existence
+                                match HTTP.head(&url_prefixed).await {
+                                    Ok(_) => (url_prefixed, v_prefixed, digest_prefixed),
+                                    Err(_) => (url, v, digest),
+                                }
                             }
                         }
+                        Err(err) => {
+                            let (url, _, digest) =
+                                self.get_url(&pkg, &v).await.map_err(|e| err.wrap_err(e))?;
+                            (url, v, digest)
+                        }
                     }
-                    Err(err) => {
-                        let (url, _, digest) = self.get_url(&pkg, &v)
-                            .await
-                            .map_err(|e| err.wrap_err(e))?;
-                        (url, v, digest)
-                    }
-                }
-            } else {
-                let (url, _, digest) = self.get_url(&pkg, &v).await?;
-                (url, v, digest)
-            };
-            let filename = get_filename_from_url(&url);
+                } else {
+                    let (url, _, digest) = self.get_url(&pkg, &v).await?;
+                    (url, v, digest)
+                };
+                let filename = get_filename_from_url(&url);
 
-            (url, v.to_string(), filename, digest)
-        };
+                (url, v.to_string(), filename, digest)
+            };
 
         self.download(ctx, &tv, &url, &filename).await?;
 
@@ -310,9 +310,10 @@ impl AquaBackend {
 
     async fn get_url(&self, pkg: &AquaPackage, v: &str) -> Result<(String, bool, Option<String>)> {
         match pkg.r#type {
-            AquaPackageType::GithubRelease => {
-                self.github_release_url(pkg, v).await.map(|(url, digest)| (url, true, digest))
-            }
+            AquaPackageType::GithubRelease => self
+                .github_release_url(pkg, v)
+                .await
+                .map(|(url, digest)| (url, true, digest)),
             AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
                 Ok((self.github_archive_url(pkg, v), false, None))
             }
@@ -321,7 +322,11 @@ impl AquaBackend {
         }
     }
 
-    async fn github_release_url(&self, pkg: &AquaPackage, v: &str) -> Result<(String, Option<String>)> {
+    async fn github_release_url(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+    ) -> Result<(String, Option<String>)> {
         let asset_strs = pkg.asset_strs(v, os(), arch())?;
         self.github_release_asset(pkg, v, asset_strs).await
     }
