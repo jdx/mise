@@ -113,7 +113,7 @@ impl Backend for AquaBackend {
             .lock_platforms
             .get(&platform_key)
             .and_then(|asset| asset.url.clone());
-        let (url, v, filename) = if let Some(existing_platform) = existing_platform.clone() {
+        let (url, v, filename, api_digest) = if let Some(existing_platform) = existing_platform.clone() {
             let url = existing_platform;
             let filename = get_filename_from_url(&url);
             // Determine which version variant was used based on the URL or filename
@@ -124,47 +124,52 @@ impl Backend for AquaBackend {
             } else {
                 tv.version.clone()
             };
-            (url, v, filename)
+            (url, v, filename, None)
         } else {
-            let (url, v) = if let Some(v_prefixed) = v_prefixed {
+            let (url, v, digest) = if let Some(v_prefixed) = v_prefixed {
                 // Try v-prefixed version first because most aqua packages use v-prefixed versions
                 match self.get_url(&pkg, v_prefixed.as_ref()).await {
                     // If the url is already checked, use it
-                    Ok((url, true)) => (url, v_prefixed),
-                    Ok((url_prefixed, false)) => {
-                        let (url, _) = self.get_url(&pkg, &v).await?;
+                    Ok((url, true, digest)) => (url, v_prefixed, digest),
+                    Ok((url_prefixed, false, digest_prefixed)) => {
+                        let (url, _, digest) = self.get_url(&pkg, &v).await?;
                         // If the v-prefixed URL is the same as the non-prefixed URL, use it
                         if url == url_prefixed {
-                            (url_prefixed, v_prefixed)
+                            (url_prefixed, v_prefixed, digest_prefixed)
                         } else {
                             // If they are different, check existence
                             match HTTP.head(&url_prefixed).await {
-                                Ok(_) => (url_prefixed, v_prefixed),
-                                Err(_) => (url, v),
+                                Ok(_) => (url_prefixed, v_prefixed, digest_prefixed),
+                                Err(_) => (url, v, digest),
                             }
                         }
                     }
-                    Err(err) => (
-                        self.get_url(&pkg, &v)
+                    Err(err) => {
+                        let (url, _, digest) = self.get_url(&pkg, &v)
                             .await
-                            .map(|(url, _)| url)
-                            .map_err(|e| err.wrap_err(e))?,
-                        v,
-                    ),
+                            .map_err(|e| err.wrap_err(e))?;
+                        (url, v, digest)
+                    }
                 }
             } else {
-                (self.get_url(&pkg, &v).await.map(|(url, _)| url)?, v)
+                let (url, _, digest) = self.get_url(&pkg, &v).await?;
+                (url, v, digest)
             };
             let filename = get_filename_from_url(&url);
 
-            (url, v.to_string(), filename)
+            (url, v.to_string(), filename, digest)
         };
 
         self.download(ctx, &tv, &url, &filename).await?;
 
         if existing_platform.is_none() {
-            // Store the asset URL in the tool version
-            tv.lock_platforms.entry(platform_key).or_default().url = Some(url.clone());
+            // Store the asset URL and digest (if available) in the tool version
+            let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+            platform_info.url = Some(url.clone());
+            if let Some(digest) = api_digest {
+                debug!("using GitHub API digest for checksum verification");
+                platform_info.checksum = Some(digest);
+            }
         }
 
         self.verify(ctx, &mut tv, &pkg, &v, &filename).await?;
@@ -303,20 +308,20 @@ impl AquaBackend {
             .await
     }
 
-    async fn get_url(&self, pkg: &AquaPackage, v: &str) -> Result<(String, bool)> {
+    async fn get_url(&self, pkg: &AquaPackage, v: &str) -> Result<(String, bool, Option<String>)> {
         match pkg.r#type {
             AquaPackageType::GithubRelease => {
-                self.github_release_url(pkg, v).await.map(|url| (url, true))
+                self.github_release_url(pkg, v).await.map(|(url, digest)| (url, true, digest))
             }
             AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
-                Ok((self.github_archive_url(pkg, v), false))
+                Ok((self.github_archive_url(pkg, v), false, None))
             }
-            AquaPackageType::Http => pkg.url(v, os(), arch()).map(|url| (url, false)),
+            AquaPackageType::Http => pkg.url(v, os(), arch()).map(|url| (url, false, None)),
             ref t => bail!("unsupported aqua package type: {t}"),
         }
     }
 
-    async fn github_release_url(&self, pkg: &AquaPackage, v: &str) -> Result<String> {
+    async fn github_release_url(&self, pkg: &AquaPackage, v: &str) -> Result<(String, Option<String>)> {
         let asset_strs = pkg.asset_strs(v, os(), arch())?;
         self.github_release_asset(pkg, v, asset_strs).await
     }
@@ -326,7 +331,7 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
         asset_strs: IndexSet<String>,
-    ) -> Result<String> {
+    ) -> Result<(String, Option<String>)> {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let gh_release = github::get_release(&gh_id, v).await?;
 
@@ -346,7 +351,7 @@ impl AquaBackend {
                 )
             })?;
 
-        Ok(asset.browser_download_url.to_string())
+        Ok((asset.browser_download_url.to_string(), asset.digest.clone()))
     }
 
     fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> String {
@@ -393,7 +398,7 @@ impl AquaBackend {
                     let url = match checksum._type() {
                         AquaChecksumType::GithubRelease => {
                             let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
-                            self.github_release_asset(pkg, v, asset_strs).await?
+                            self.github_release_asset(pkg, v, asset_strs).await?.0
                         }
                         AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
                     };
