@@ -45,6 +45,7 @@ You can provide additional configuration for file tasks by adding `#MISE` commen
 #MISE outputs=["target/debug/mycli"]
 #MISE env={RUST_BACKTRACE = "1"}
 #MISE depends=["lint", "test"]
+#MISE tools={rust="1.50.0"}
 ```
 
 Assuming that file was located in `mise-tasks/build`, it can then be run with `mise run build` (or with its alias: `mise run b`).
