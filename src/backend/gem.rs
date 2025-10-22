@@ -2,7 +2,6 @@ use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::Settings;
 use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
@@ -45,8 +44,6 @@ impl Backend for GemBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        Settings::get().ensure_experimental("gem backend")?;
-
         // Check if gem is available
         self.warn_if_dependency_missing(
             &ctx.config,

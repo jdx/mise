@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Test that project tasks can call other local tasks using :task syntax
+export MISE_EXPERIMENTAL=1
+
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+TOML
+
+mkdir -p projects/backend
+cat <<'TOML' >projects/backend/mise.toml
+[tasks.hello]
+run = "echo 'hello from backend'"
+
+[tasks.runs-hello]
+run = { task = ":hello" }
+
+[tasks.depends-hello]
+depends = [ ":hello" ]
+TOML
+
+echo "=== Test 1: Call backend hello ==="
+output=$(mise run //projects/backend:hello 2>&1)
+echo "$output"
+
+echo "=== Test 2: Call backend task that runs hello ==="
+output=$(mise run //projects/backend:runs-hello)
+echo "$output"
+echo "$output" | grep -q "hello from backend" || (echo "FAIL: :task pattern in run block not resolved" && exit 1)
+
+echo "=== Test 3: Call backend task that depends on hello ==="
+output=$(mise run //projects/backend:depends-hello)
+echo "$output"
+echo "$output" | grep -q "hello from backend" || (echo "FAIL: :task pattern in depends not resolved" && exit 1)
+
+echo "=== All tests passed! ==="

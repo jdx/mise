@@ -170,6 +170,8 @@ impl TaskScriptParser {
                     })
                     .transpose()?;
 
+                let env = Self::expect_opt_string(args.get("env"), "env")?;
+
                 let help_first_line = match &help {
                     Some(h) => {
                         if h.is_empty() {
@@ -195,6 +197,7 @@ impl TaskScriptParser {
                     hide,
                     default,
                     choices,
+                    env,
                     ..Default::default()
                 };
                 arg.usage = arg.usage();
@@ -264,6 +267,8 @@ impl TaskScriptParser {
                     None => None,
                 };
 
+                let env = Self::expect_opt_string(args.get("env"), "env")?;
+
                 let help_first_line = match &help {
                     Some(h) => {
                         if h.is_empty() {
@@ -292,10 +297,12 @@ impl TaskScriptParser {
                     help_md,
                     required,
                     negate,
+                    env: env.clone(),
                     arg: Some(usage::SpecArg {
                         name: name.clone(),
                         var,
                         choices,
+                        env,
                         ..Default::default()
                     }),
                 };
@@ -351,6 +358,23 @@ impl TaskScriptParser {
 
                 let negate = Self::expect_opt_string(args.get("negate"), "negate")?;
 
+                let choices = match args.get("choices") {
+                    Some(c) => {
+                        let array = Self::expect_array(c, "choices")?;
+                        let mut choices_vec = Vec::new();
+                        for choice in array {
+                            let s = Self::expect_string(choice, "choice")?;
+                            choices_vec.push(s);
+                        }
+                        Some(usage::SpecChoices {
+                            choices: choices_vec,
+                        })
+                    }
+                    None => None,
+                };
+
+                let env = Self::expect_opt_string(args.get("env"), "env")?;
+
                 let help_first_line = match &help {
                     Some(h) => {
                         if h.is_empty() {
@@ -360,6 +384,20 @@ impl TaskScriptParser {
                         }
                     }
                     None => None,
+                };
+
+                // Create SpecArg when any arg-level properties are set (choices, env)
+                // This matches the behavior of option() which always creates SpecArg
+                let arg = if choices.is_some() || env.is_some() {
+                    Some(usage::SpecArg {
+                        name: name.clone(),
+                        var,
+                        choices,
+                        env: env.clone(),
+                        ..Default::default()
+                    })
+                } else {
+                    None
                 };
 
                 let mut flag = usage::SpecFlag {
@@ -379,7 +417,8 @@ impl TaskScriptParser {
                     help_md,
                     required,
                     negate,
-                    arg: None,
+                    env,
+                    arg,
                 };
                 flag.usage = flag.usage();
 
@@ -822,5 +861,29 @@ mod tests {
         assert_eq!(&flag.name, "baz");
         assert_eq!(flag.help, Some("".to_string()));
         assert_eq!(flag.help_first_line, None);
+    }
+
+    #[tokio::test]
+    async fn test_task_parse_option_env() {
+        let config = Config::get().await.unwrap();
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+        let scripts = vec!["echo {{ option(name='profile', env='BUILD_PROFILE') }}".to_string()];
+        let (parsed_scripts, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo "]);
+        let option = spec
+            .cmd
+            .flags
+            .iter()
+            .find(|f| &f.name == "profile")
+            .unwrap();
+        assert_eq!(&option.name, "profile");
+        assert_eq!(option.env, Some("BUILD_PROFILE".to_string()));
+        // Verify the nested SpecArg also has the env field set
+        let arg = option.arg.as_ref().unwrap();
+        assert_eq!(arg.env, Some("BUILD_PROFILE".to_string()));
     }
 }

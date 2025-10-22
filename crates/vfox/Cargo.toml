@@ -22,7 +22,7 @@ homedir = "0.3"
 indexmap = "2"
 itertools = "0.14"
 log = "0.4"
-mlua = { version = "0.11.0-beta.3", features = [
+mlua = { version = "0.11", features = [
   "async",
   "lua51",
   "macros",

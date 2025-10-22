@@ -4,7 +4,7 @@
 - **Usage**: `mise generate bootstrap [FLAGS]`
 - **Source code**: [`src/cli/generate/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/bootstrap.rs)
 
-[experimental] Generate a script to download+execute mise
+Generate a script to download+execute mise
 
 This is designed to be used in a project where contributors may not have mise installed.
 

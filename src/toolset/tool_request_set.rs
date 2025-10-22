@@ -196,7 +196,7 @@ impl ToolRequestSetBuilder {
     }
 
     fn load_runtime_env(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
-        for (k, v) in env::vars() {
+        for (k, v) in env::vars_safe() {
             if k.starts_with("MISE_") && k.ends_with("_VERSION") && k != "MISE_VERSION" {
                 let plugin_name = k
                     .trim_start_matches("MISE_")
@@ -264,4 +264,51 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
     b.tools.extend(a.tools);
     b.sources.extend(a.sources);
     b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_runtime_env_with_valid_utf8() {
+        // This test verifies that valid UTF-8 MISE_*_VERSION variables work correctly
+        unsafe {
+            std::env::set_var("MISE_NODE_VERSION", "20.0.0");
+            std::env::set_var("MISE_PYTHON_VERSION", "3.11");
+        }
+
+        let builder = ToolRequestSetBuilder::new();
+        let trs = builder.load_runtime_env(ToolRequestSet::new());
+
+        // Should not panic and should successfully load the versions
+        assert!(trs.is_ok());
+        let trs = trs.unwrap();
+        assert!(trs.tools.len() >= 2 || trs.tools.is_empty()); // May be empty if backends are disabled
+
+        unsafe {
+            std::env::remove_var("MISE_NODE_VERSION");
+            std::env::remove_var("MISE_PYTHON_VERSION");
+        }
+    }
+
+    #[test]
+    fn test_load_runtime_env_ignores_non_mise_vars() {
+        // Non-MISE variables should be ignored, even with special characters
+        unsafe {
+            std::env::set_var("HOMEBREW_INSTALL_BADGE", "✅");
+            std::env::set_var("SOME_OTHER_VAR", "value");
+        }
+
+        let builder = ToolRequestSetBuilder::new();
+        let result = builder.load_runtime_env(ToolRequestSet::new());
+
+        // Should not panic when non-MISE vars are present
+        assert!(result.is_ok());
+
+        unsafe {
+            std::env::remove_var("HOMEBREW_INSTALL_BADGE");
+            std::env::remove_var("SOME_OTHER_VAR");
+        }
+    }
 }

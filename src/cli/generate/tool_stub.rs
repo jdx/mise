@@ -1,7 +1,6 @@
 use crate::Result;
 use crate::backend::asset_detector::detect_platform_from_url;
 use crate::backend::static_helpers::get_filename_from_url;
-use crate::config::Settings;
 use crate::file::{self, TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -14,7 +13,7 @@ use std::path::PathBuf;
 use toml_edit::DocumentMut;
 use xx::file::display_path;
 
-/// [experimental] Generate a tool stub for HTTP-based tools
+/// Generate a tool stub for HTTP-based tools
 ///
 /// This command generates tool stubs that can automatically download and execute
 /// tools from HTTP URLs. It can detect checksums, file sizes, and binary paths
@@ -84,8 +83,6 @@ pub struct ToolStub {
 
 impl ToolStub {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("generate tool-stub")?;
-
         let stub_content = if self.fetch {
             self.fetch_checksums().await?
         } else {

@@ -41,7 +41,6 @@ pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> &'static Option<Venv
 }
 
 async fn get_or_create_venv(ts: &Toolset, venv_path: PathBuf, uv_path: PathBuf) -> Result<Venv> {
-    Settings::get().ensure_experimental("uv venv auto")?;
     #[cfg(windows)]
     let venv_bin_dir = "Scripts";
     #[cfg(not(windows))]

@@ -334,7 +334,7 @@ esac`),
       subcommands: [
         {
           name: ["generate", "g"],
-          description: "[experimental] Generate a mise.toml file",
+          description: "Generate a mise.toml file",
           options: [
             {
               name: ["-t", "--tool-versions"],
@@ -486,7 +486,7 @@ esac`),
     {
       name: "en",
       description:
-        "[experimental] starts a new shell with the mise environment built from the current configuration",
+        "Starts a new shell with the mise environment built from the current configuration",
       options: [
         {
           name: ["-s", "--shell"],
@@ -664,12 +664,11 @@ esac`),
     },
     {
       name: ["generate", "gen"],
-      description: "[experimental] Generate files for various tools/services",
+      description: "Generate files for various tools/services",
       subcommands: [
         {
           name: "bootstrap",
-          description:
-            "[experimental] Generate a script to download+execute mise",
+          description: "Generate a script to download+execute mise",
           options: [
             {
               name: ["-l", "--localize"],
@@ -729,7 +728,7 @@ esac`),
         },
         {
           name: "devcontainer",
-          description: "[experimental] Generate a devcontainer to execute mise",
+          description: "Generate a devcontainer to execute mise",
           options: [
             {
               name: ["-n", "--name"],
@@ -761,7 +760,7 @@ esac`),
         },
         {
           name: ["git-pre-commit", "pre-commit"],
-          description: "[experimental] Generate a git pre-commit hook",
+          description: "Generate a git pre-commit hook",
           options: [
             {
               name: "--hook",
@@ -793,7 +792,7 @@ esac`),
         },
         {
           name: "github-action",
-          description: "[experimental] Generate a GitHub Action workflow file",
+          description: "Generate a GitHub Action workflow file",
           options: [
             {
               name: "--name",
@@ -870,7 +869,7 @@ esac`),
         },
         {
           name: "task-stubs",
-          description: "[experimental] Generates shims to run mise tasks",
+          description: "Generates shims to run mise tasks",
           options: [
             {
               name: ["-m", "--mise-bin"],
@@ -894,8 +893,7 @@ esac`),
         },
         {
           name: "tool-stub",
-          description:
-            "[experimental] Generate a tool stub for HTTP-based tools",
+          description: "Generate a tool stub for HTTP-based tools",
           options: [
             {
               name: "--version",

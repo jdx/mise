@@ -997,10 +997,17 @@ impl Run {
         // Determine if this is a monorepo task (task config differs from current project root)
         let is_monorepo_task = task_cf.project_root() != config.project_root;
 
+        // Check if task runs in the current working directory
+        let task_runs_in_cwd = task
+            .dir(config)
+            .await?
+            .and_then(|dir| config.project_root.as_ref().map(|pr| dir == *pr))
+            .unwrap_or(false);
+
         // Get env entries - load the FULL config hierarchy for monorepo tasks
         let all_config_env_entries: Vec<(crate::config::env_directive::EnvDirective, PathBuf)> =
-            if is_monorepo_task {
-                // For monorepo tasks: Load the FULL config hierarchy from the task's directory
+            if is_monorepo_task && !task_runs_in_cwd {
+                // For monorepo tasks that DON'T run in cwd: Load config hierarchy from the task's directory
                 // This includes parent configs AND MISE_ENV-specific configs
                 let task_dir = task_cf.get_path().parent().unwrap_or(task_cf.get_path());
 
@@ -1029,8 +1036,9 @@ impl Run {
                     .flatten()
                     .collect()
             } else {
-                // For regular tasks: use ALL config files (including MISE_ENV-specific ones)
-                // This fixes the MISE_ENV inheritance issue for regular tasks
+                // For regular tasks OR monorepo tasks that run in cwd:
+                // Use ALL config files from the current project (including MISE_ENV-specific ones)
+                // This fixes env inheritance for tasks with dir="{{cwd}}"
                 config
                     .config_files
                     .iter()
@@ -1241,11 +1249,16 @@ impl Run {
                     }
                 }
                 RunEntry::SingleTask { task: spec } => {
-                    self.inject_and_wait(config, &[spec.to_string()], task_env, sched_tx.clone())
+                    let resolved_spec = crate::task::resolve_task_pattern(spec, Some(task));
+                    self.inject_and_wait(config, &[resolved_spec], task_env, sched_tx.clone())
                         .await?;
                 }
                 RunEntry::TaskGroup { tasks } => {
-                    self.inject_and_wait(config, tasks, task_env, sched_tx.clone())
+                    let resolved_tasks: Vec<String> = tasks
+                        .iter()
+                        .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
+                        .collect();
+                    self.inject_and_wait(config, &resolved_tasks, task_env, sched_tx.clone())
                         .await?;
                 }
             }

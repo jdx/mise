@@ -1184,10 +1184,6 @@ async fn load_all_config_files(
         let cf = match parse_config_file(f, idiomatic_filenames).await {
             Ok(cfg) => cfg,
             Err(err) => {
-                if err.to_string().contains("are not trusted.") {
-                    warn!("{err}");
-                    continue;
-                }
                 return Err(err.wrap_err(format!(
                     "error parsing config file: {}",
                     style::ebold(display_path(f))
@@ -1223,10 +1219,6 @@ pub async fn load_config_files_from_paths(config_paths: &[PathBuf]) -> Result<Co
         let cf = match parse_config_file(f, &idiomatic_filenames).await {
             Ok(cfg) => cfg,
             Err(err) => {
-                if err.to_string().contains("are not trusted.") {
-                    trace!("skipping untrusted config: {}", display_path(f));
-                    continue;
-                }
                 return Err(err.wrap_err(format!(
                     "error parsing config file: {}",
                     style::ebold(display_path(f))

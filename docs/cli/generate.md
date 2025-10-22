@@ -5,7 +5,7 @@
 - **Aliases**: `gen`
 - **Source code**: [`src/cli/generate/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/mod.rs)
 
-[experimental] Generate files for various tools/services
+Generate files for various tools/services
 
 ## Subcommands
 

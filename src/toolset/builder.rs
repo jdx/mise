@@ -45,7 +45,7 @@ impl ToolsetBuilder {
             self.load_config_files(config, &mut toolset)?;
         });
         measure!("toolset_builder::build::load_runtime_env", {
-            self.load_runtime_env(&mut toolset, env::vars().collect())?;
+            self.load_runtime_env(&mut toolset, env::vars_safe().collect())?;
         });
         measure!("toolset_builder::build::load_runtime_args", {
             self.load_runtime_args(&mut toolset)?;

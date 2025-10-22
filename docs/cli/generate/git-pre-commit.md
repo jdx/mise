@@ -5,7 +5,7 @@
 - **Aliases**: `pre-commit`
 - **Source code**: [`src/cli/generate/git_pre_commit.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/git_pre_commit.rs)
 
-[experimental] Generate a git pre-commit hook
+Generate a git pre-commit hook
 
 This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`
 when you commit changes to your repository.

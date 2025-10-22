@@ -1,4 +1,4 @@
-# Go Backend <Badge type="warning" text="experimental" />
+# Go Backend
 
 You may install packages directly via [go install](https://go.dev/doc/install) even if there
 isn't an asdf plugin for it.

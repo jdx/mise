@@ -55,6 +55,7 @@ impl Backend for VfoxBackend {
 
                 // Use backend methods if the plugin supports them
                 if matches!(&this.plugin_enum, PluginEnum::VfoxBackend(_)) {
+                    Settings::get().ensure_experimental("custom backends")?;
                     debug!("Using backend method for plugin: {}", this.pathname);
                     let tool_name = this.tool_name.as_ref().ok_or_else(|| {
                         eyre::eyre!("VfoxBackend requires a tool name (plugin:tool format)")
@@ -99,6 +100,7 @@ impl Backend for VfoxBackend {
 
         // Use backend methods if the plugin supports them
         if matches!(&self.plugin_enum, PluginEnum::VfoxBackend(_)) {
+            Settings::get().ensure_experimental("custom backends")?;
             let tool_name = self.tool_name.as_ref().ok_or_else(|| {
                 eyre::eyre!("VfoxBackend requires a tool name (plugin:tool format)")
             })?;

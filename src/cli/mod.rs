@@ -327,6 +327,120 @@ impl Commands {
     }
 }
 
+fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
+    let mut flags_with_values = Vec::new();
+    let mut boolean_flags = Vec::new();
+
+    for arg in cmd.get_arguments() {
+        let takes_value = matches!(
+            arg.get_action(),
+            clap::ArgAction::Set | clap::ArgAction::Append
+        );
+        let is_bool = matches!(
+            arg.get_action(),
+            clap::ArgAction::SetTrue | clap::ArgAction::SetFalse
+        );
+
+        if takes_value {
+            if let Some(long) = arg.get_long() {
+                flags_with_values.push(format!("--{}", long));
+            }
+            if let Some(short) = arg.get_short() {
+                flags_with_values.push(format!("-{}", short));
+            }
+        } else if is_bool {
+            if let Some(long) = arg.get_long() {
+                boolean_flags.push(format!("--{}", long));
+            }
+            if let Some(short) = arg.get_short() {
+                boolean_flags.push(format!("-{}", short));
+            }
+        }
+    }
+
+    (flags_with_values, boolean_flags)
+}
+
+fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<String> {
+    // Check if this might be a naked run (no subcommand)
+    if args.len() < 2 {
+        return args.to_vec();
+    }
+
+    // If there's already a '--' separator, let clap handle everything normally
+    if args.contains(&"--".to_string()) {
+        return args.to_vec();
+    }
+
+    let (flags_with_values, _) = get_global_flags(cmd);
+
+    // Skip global flags to find the first non-flag argument (subcommand or task)
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+
+        if !arg.starts_with('-') {
+            // Found first non-flag argument
+            break;
+        }
+
+        // Check if this flag takes a value
+        let flag_takes_value = if arg.starts_with("--") {
+            if arg.contains('=') {
+                // --flag=value format, doesn't consume next arg
+                i += 1;
+                continue;
+            } else {
+                let flag_name = arg.split('=').next().unwrap();
+                flags_with_values.iter().any(|f| f == flag_name)
+            }
+        } else {
+            // Short form: check if it's in flags_with_values list
+            if arg.len() >= 2 {
+                let flag_name = &arg[..2]; // Get -X part
+                flags_with_values.iter().any(|f| f == flag_name)
+            } else {
+                false
+            }
+        };
+
+        if flag_takes_value && i + 1 < args.len() {
+            // Skip both the flag and its value
+            i += 2;
+        } else {
+            // Skip just the flag
+            i += 1;
+        }
+    }
+
+    // No non-flag argument found
+    if i >= args.len() {
+        return args.to_vec();
+    }
+
+    // Extract all known subcommand names and aliases from the clap Command
+    let known_subcommands: Vec<_> = cmd
+        .get_subcommands()
+        .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
+        .collect();
+
+    // Check if the first non-flag argument is a known subcommand
+    if known_subcommands.contains(&args[i].as_str()) {
+        return args.to_vec();
+    }
+
+    // This is a naked run - inject "--" separator if there are args after the task name
+    // This tells clap that everything after "--" should go to task_args_last
+    if i + 1 < args.len() {
+        let mut result = args[..=i].to_vec();
+        result.push("--".to_string());
+        result.extend_from_slice(&args[i + 1..]);
+        return result;
+    }
+
+    args.to_vec()
+}
+
 impl Cli {
     pub async fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
@@ -339,8 +453,13 @@ impl Cli {
         ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
         let _ = measure!("backend::load_tools", { backend::load_tools().await });
+
+        // Pre-process args to handle naked runs before clap parsing
+        let cmd = Cli::command();
+        let processed_args = preprocess_args_for_naked_run(&cmd, args);
+
         let cli = measure!("get_matches_from", {
-            Cli::parse_from(crate::env::ARGS.read().unwrap().iter())
+            Cli::parse_from(processed_args.iter())
         });
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });

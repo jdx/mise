@@ -39,8 +39,6 @@ pub fn file_hash_sha256(path: &Path, pr: Option<&dyn SingleReport>) -> Result<St
 fn file_hash_prog<D>(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String>
 where
     D: Digest + Write,
-    D::OutputSize: std::ops::Add,
-    <D::OutputSize as std::ops::Add>::Output: digest::generic_array::ArrayLength<u8>,
 {
     let mut file = file::open(path)?;
     if let Some(pr) = pr {
@@ -60,7 +58,7 @@ where
     }
     std::io::copy(&mut file, &mut hasher)?;
     let hash = hasher.finalize();
-    Ok(format!("{hash:x}"))
+    Ok(hash.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 pub fn hash_blake3_to_str(s: &str) -> String {

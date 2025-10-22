@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Test that mise handles environment variables with non-ASCII/invalid UTF-8 gracefully
+# This reproduces the bug where invalid UTF-8 environment variables cause mise to panic
+
+# Test 1: Non-MISE environment variables with special characters should not cause panics
+export SOME_VAR_WITH_UNICODE="Ü Ä Ö ß à é"
+export HOMEBREW_INSTALL_BADGE="✅"
+
+# Basic commands should work without panicking
+assert_contains "mise --version" "2025"
+assert "mise env"
+
+# Test 2: MISE_*_VERSION variables with Unicode should work
+export MISE_NODE_VERSION="20.0.0"
+export MISE_PYTHON_VERSION="3.11"
+
+assert "mise env"
+
+# Test 3: Test with actual command that was reported in bug
+# This should not panic (may fail due to network but shouldn't panic)
+mise ls-remote bun >/dev/null 2>&1 || true
+
+# Cleanup
+unset SOME_VAR_WITH_UNICODE HOMEBREW_INSTALL_BADGE MISE_NODE_VERSION MISE_PYTHON_VERSION

@@ -164,7 +164,7 @@ impl Install {
         let trs = measure!("get_tool_request_set", {
             config.get_tool_request_set().await?
         });
-        let versions = measure!("fetching missing runtims", {
+        let versions = measure!("fetching missing runtimes", {
             trs.missing_tools(&config)
                 .await
                 .into_iter()

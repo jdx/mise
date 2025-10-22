@@ -12,7 +12,7 @@ use console::truncate_str;
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::{borrow::Cow, sync::Arc};
@@ -146,8 +146,8 @@ impl HookEnv {
     /// modifies the PATH and optionally DIRENV_DIFF env var if it exists
     fn build_path_operations(
         &self,
-        installs: &Vec<PathBuf>,
-        to_remove: &Vec<PathBuf>,
+        installs: &[PathBuf],
+        to_remove: &[PathBuf],
     ) -> Result<Vec<EnvDiffOperation>> {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
         let (pre, post) = match &*env::__MISE_ORIG_PATH {
@@ -161,13 +161,48 @@ impl HookEnv {
             None => (vec![], split_paths(&full).collect_vec()),
         };
 
-        let new_path = join_paths(pre.iter().chain(installs.iter()).chain(post.iter()))?
-            .to_string_lossy()
-            .into_owned();
+        // Filter out install paths that are already in the original PATH (post).
+        // This prevents mise from claiming ownership of paths that were in the user's
+        // original PATH before mise activation. When a tool is deactivated, these paths
+        // will remain accessible since they're preserved in the `post` section.
+        // This fixes the issue where system tools (e.g., rustup) become unavailable
+        // after leaving a mise project that uses the same tool.
+        //
+        // Use canonicalized paths for comparison to handle symlinks, relative paths,
+        // and other path variants that refer to the same filesystem location.
+        let post_canonical: HashSet<PathBuf> =
+            post.iter().filter_map(|p| p.canonicalize().ok()).collect();
+
+        let installs_filtered: Vec<PathBuf> = installs
+            .iter()
+            .filter(|p| {
+                // Check both the original path and its canonical form
+                // This handles cases where the path doesn't exist yet (can't canonicalize)
+                // or where the canonical form differs from the string representation
+                if post.contains(p) {
+                    return false;
+                }
+                if let Ok(canonical) = p.canonicalize() {
+                    if post_canonical.contains(&canonical) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .cloned()
+            .collect();
+
+        let new_path = join_paths(
+            pre.iter()
+                .chain(installs_filtered.iter())
+                .chain(post.iter()),
+        )?
+        .to_string_lossy()
+        .into_owned();
         let mut ops = vec![EnvDiffOperation::Add(PATH_KEY.to_string(), new_path)];
 
         if let Some(input) = env::DIRENV_DIFF.deref() {
-            match self.update_direnv_diff(input, installs, to_remove) {
+            match self.update_direnv_diff(input, &installs_filtered, to_remove) {
                 Ok(Some(op)) => {
                     ops.push(op);
                 }
@@ -185,8 +220,8 @@ impl HookEnv {
     fn update_direnv_diff(
         &self,
         input: &str,
-        installs: &Vec<PathBuf>,
-        to_remove: &Vec<PathBuf>,
+        installs: &[PathBuf],
+        to_remove: &[PathBuf],
     ) -> Result<Option<EnvDiffOperation>> {
         let mut diff = DirenvDiff::parse(input)?;
         if diff.new_path().is_empty() {

@@ -1,5 +1,100 @@
 # Changelog
 
+## [2025.10.15](https://github.com/jdx/mise/compare/v2025.10.14..v2025.10.15) - 2025-10-22
+
+### 🚀 Features
+
+- **(aqua)** use GitHub API digests for release asset checksums by @jdx in [#6720](https://github.com/jdx/mise/pull/6720)
+- **(github)** use GitHub API digests for release asset checksums by @jdx in [#6721](https://github.com/jdx/mise/pull/6721)
+- **(plugins)** automatically install backend plugins by @roele in [#6696](https://github.com/jdx/mise/pull/6696)
+- **(tasks)** add choices to flag() and enable naked runs with task flags by @jdx in [#6707](https://github.com/jdx/mise/pull/6707)
+
+### 🐛 Bug Fixes
+
+- **(config)** show trust error instead of silently skipping untrusted configs by @jdx in [#6715](https://github.com/jdx/mise/pull/6715)
+- **(env)** handle non-ASCII environment variables gracefully by @arnodirlam in [#6708](https://github.com/jdx/mise/pull/6708)
+- **(nix)** add cmakeMinimal to nativeBuildInputs by @okuuva in [#6691](https://github.com/jdx/mise/pull/6691)
+- **(tasks)** load project env vars for global tasks with dir="{{cwd}}" by @jdx in [#6717](https://github.com/jdx/mise/pull/6717)
+
+### 📦️ Dependency Updates
+
+- update gh to latest (2.82.1) by @jdx in [#6718](https://github.com/jdx/mise/pull/6718)
+
+### New Contributors
+
+- @arnodirlam made their first contribution in [#6708](https://github.com/jdx/mise/pull/6708)
+
+## [2025.10.14](https://github.com/jdx/mise/compare/v2025.10.13..v2025.10.14) - 2025-10-21
+
+### 🚀 Features
+
+- **(tasks)** add env var support for args/flags in usage specs by @jdx in [#6704](https://github.com/jdx/mise/pull/6704)
+
+### 🐛 Bug Fixes
+
+- **(release)** prevent S3 rate limiting errors during CDN upload by @jdx in [#6705](https://github.com/jdx/mise/pull/6705)
+
+### 📚 Documentation
+
+- add comprehensive documentation for environment plugins by @jdx in [#6702](https://github.com/jdx/mise/pull/6702)
+
+### 📦️ Dependency Updates
+
+- bump mlua from 0.11.0-beta.3 to 0.11 by @jdx in [#6701](https://github.com/jdx/mise/pull/6701)
+
+## [2025.10.13](https://github.com/jdx/mise/compare/v2025.10.12..v2025.10.13) - 2025-10-21
+
+### 🐛 Bug Fixes
+
+- **(revert)** fix(deps): update rust crate ubi to 0.8.2 by @nekrich in [#6700](https://github.com/jdx/mise/pull/6700)
+
+### 📚 Documentation
+
+- Add fnox as recommended secret management option by @jdx in [#6698](https://github.com/jdx/mise/pull/6698)
+
+### New Contributors
+
+- @nekrich made their first contribution in [#6700](https://github.com/jdx/mise/pull/6700)
+
+## [2025.10.12](https://github.com/jdx/mise/compare/v2025.10.11..v2025.10.12) - 2025-10-20
+
+### 🐛 Bug Fixes
+
+- **(rust)** preserve original PATH entries when managing tool paths by @jdx in [#6689](https://github.com/jdx/mise/pull/6689)
+
+## [2025.10.11](https://github.com/jdx/mise/compare/v2025.10.10..v2025.10.11) - 2025-10-18
+
+### 🚀 Features
+
+- remove experimental labels from stable features by @jdx in [#6684](https://github.com/jdx/mise/pull/6684)
+
+### 🐛 Bug Fixes
+
+- **(tasks)** resolve :task patterns in run blocks for monorepo tasks by @LER0ever in [#6682](https://github.com/jdx/mise/pull/6682)
+
+### 📚 Documentation
+
+- Fix typo in comparison-to-asdf.md by @TobiX in [#6677](https://github.com/jdx/mise/pull/6677)
+
+### 📦️ Dependency Updates
+
+- update docker/dockerfile:1 docker digest to b6afd42 by @renovate[bot] in [#6675](https://github.com/jdx/mise/pull/6675)
+- update fedora:43 docker digest to 2ad3073 by @renovate[bot] in [#6676](https://github.com/jdx/mise/pull/6676)
+
+### New Contributors
+
+- @LER0ever made their first contribution in [#6682](https://github.com/jdx/mise/pull/6682)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`mas-cli/mas`](https://github.com/mas-cli/mas)
+
+#### Updated Packages (2)
+
+- [`microsoft/edit`](https://github.com/microsoft/edit)
+- [`nodejs/node`](https://github.com/nodejs/node)
 ## [2025.10.10](https://github.com/jdx/mise/compare/v2025.10.9..v2025.10.10) - 2025-10-16
 
 ### 🐛 Bug Fixes

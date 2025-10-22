@@ -21,6 +21,8 @@ docs/plugin-usage.md
 docs/plugin-publishing.md
 docs/contributing.md
 CLAUDE.md
+AGENTS.md
+CRUSH.md
 e2e
 src/assets/bash_zsh_support/
 tasks.md

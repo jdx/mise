@@ -70,6 +70,31 @@ mise use my-tool@latest
 
 See [Tool Plugin Development](tool-plugin-development.md) for creating tool plugins. The [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) provides a ready-to-use starting point.
 
+## Environment Plugins
+
+Environment plugins provide environment variables and PATH modifications without managing tool versions. They're ideal for integrating with secret managers, setting dynamic configurations, and standardizing team environments.
+
+Example usage:
+
+```bash
+# Install an environment plugin
+mise plugin install my-env-plugin https://github.com/username/my-env-plugin
+```
+
+```toml
+# Configure in mise.toml
+[env]
+_.my-env-plugin = { api_url = "https://api.example.com", debug = true }
+```
+
+Unlike tool plugins, environment plugins:
+
+- Only implement environment hooks (`MiseEnv`, `MisePath`)
+- Are activated via `env._.<plugin-name>` syntax
+- Don't manage tool versions or installations
+
+See [Environment Plugin Development](env-plugin-development.md) for creating environment plugins. The [mise-env-sample](https://github.com/jdx/mise-env-sample) repository provides a working example.
+
 ## General Plugin Usage
 
 For end-user documentation on installing and using both backend and tool plugins, see [Using Plugins](plugin-usage.md).

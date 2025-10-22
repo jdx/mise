@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<EOF
+[tools]
+"vfox-npm:prettier" = "3.6.2"
+
+[plugins]
+vfox-npm = "https://github.com/jdx/vfox-npm"
+EOF
+
+mise install
+assert_contains "mise plugin ls" "vfox-npm"
+assert "mise current vfox-npm:prettier" "3.6.2"
