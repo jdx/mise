@@ -27,6 +27,7 @@ struct ReleaseAsset {
     name: String,
     url: String,
     url_api: String,
+    digest: Option<String>,
 }
 
 #[async_trait]
@@ -95,6 +96,7 @@ impl Backend for UnifiedGitBackend {
                 }),
                 url: existing_platform.url.clone().unwrap_or_default(),
                 url_api: existing_platform.url_api.clone().unwrap_or_default(),
+                digest: None, // Don't use old digest from lockfile, will be fetched fresh if needed
             }
         } else {
             // Find the asset URL for this specific version
@@ -198,12 +200,16 @@ impl UnifiedGitBackend {
 
         ctx.pr.start_operations(op_count);
 
-        // Store the asset URL in the tool version
+        // Store the asset URL and digest (if available) in the tool version
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
         platform_info.name = Some(asset.name.clone());
         platform_info.url = Some(asset.url.clone());
         platform_info.url_api = Some(asset.url_api.clone());
+        if let Some(digest) = &asset.digest {
+            debug!("using GitHub API digest for checksum verification");
+            platform_info.checksum = Some(digest.clone());
+        }
 
         // check if url is reachable, 404 might indicate a private repo or asset
         let url = match HTTP.head(asset.url.clone()).await {
@@ -268,6 +274,7 @@ impl UnifiedGitBackend {
                 name: get_filename_from_url(&direct_url),
                 url: direct_url.clone(),
                 url_api: direct_url.clone(),
+                digest: None, // Direct URLs don't have API digest
             });
         }
 
@@ -324,6 +331,7 @@ impl UnifiedGitBackend {
                 name: asset.name,
                 url: asset.browser_download_url,
                 url_api: asset.url,
+                digest: asset.digest,
             });
         }
 
@@ -343,6 +351,7 @@ impl UnifiedGitBackend {
             name: asset.name.clone(),
             url: asset.browser_download_url.clone(),
             url_api: asset.url.clone(),
+            digest: asset.digest.clone(),
         })
     }
 
@@ -388,6 +397,7 @@ impl UnifiedGitBackend {
                 name: asset.name,
                 url: asset.url,
                 url_api: asset.direct_asset_url,
+                digest: None, // GitLab doesn't provide digests yet
             });
         }
 
@@ -407,6 +417,7 @@ impl UnifiedGitBackend {
             name: asset.name.clone(),
             url: asset.direct_asset_url.clone(),
             url_api: asset.url.clone(),
+            digest: None, // GitLab doesn't provide digests yet
         })
     }
 

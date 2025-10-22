@@ -2,7 +2,7 @@
 
 rustPlatform.buildRustPackage {
   pname = "mise";
-  version = "2025.10.13";
+  version = "2025.10.15";
 
   src = lib.cleanSource ./.;
 
@@ -10,14 +10,17 @@ rustPlatform.buildRustPackage {
     lockFile = ./Cargo.lock;
   };
 
-  nativeBuildInputs = with pkgs; [ pkg-config ];
+  nativeBuildInputs = with pkgs; [
+    cmakeMinimal
+    pkg-config
+  ];
   buildInputs = with pkgs; [
-    coreutils
     bash
+    coreutils
     direnv
-    gnused
-    git
     gawk
+    git
+    gnused
     openssl
   ];
 
