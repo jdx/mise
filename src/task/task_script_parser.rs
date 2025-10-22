@@ -116,7 +116,12 @@ impl TaskScriptParser {
         let arg_order = Arc::new(Mutex::new(HashMap::new()));
         let input_args = Arc::new(Mutex::new(vec![]));
         let input_flags = Arc::new(Mutex::new(vec![]));
-
+        // override throw function to do nothing
+        tera.register_function("throw", {
+            move |_args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
+                Ok(tera::Value::Null)
+            }
+        });
         // render args, options, and flags as null
         // these functions are only used to collect the spec
         tera.register_function("arg", {
@@ -140,7 +145,7 @@ impl TaskScriptParser {
 
                 if arg_order.contains_key(&name) {
                     trace!("already seen {name}");
-                    return Ok(tera::Value::Null);
+                    return Ok(tera::Value::String("".to_string()));
                 }
                 arg_order.insert(name.clone(), i);
 
@@ -203,8 +208,7 @@ impl TaskScriptParser {
                 arg.usage = arg.usage();
 
                 input_args.lock().map_err(Self::lock_error)?.push(arg);
-
-                Ok(tera::Value::Null)
+                Ok(tera::Value::String("".to_string()))
             }
         });
 
@@ -310,7 +314,7 @@ impl TaskScriptParser {
 
                 input_flags.lock().map_err(Self::lock_error)?.push(flag);
 
-                Ok(tera::Value::Null)
+                Ok(tera::Value::String("".to_string()))
             }
         });
 
@@ -424,7 +428,7 @@ impl TaskScriptParser {
 
                 input_flags.lock().map_err(Self::lock_error)?.push(flag);
 
-                Ok(tera::Value::Null)
+                Ok(tera::Value::String("".to_string()))
             }
         });
 
