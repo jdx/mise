@@ -23,4 +23,5 @@ assert_contains "mise run atask -q -- --help 2>&1 || true" "Usage: atask <myarg>
 assert_contains "mise run atask -q -- foo --help 2>&1 || true" "Usage: atask <myarg>"
 assert_contains "mise run atask -q foo --help 2>&1 || true" "Usage: atask <myarg>"
 assert_contains "mise atask -q -- foo --help 2>&1 || true" "Usage: atask <myarg>"
-assert_contains "mise atask -q foo --help 2>&1 || true" "Usage: atask <myarg>"
+# Global flags after task name are NOT supported in naked runs - must use explicit separator
+assert_fail "mise atask -q foo --help 2>&1"
