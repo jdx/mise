@@ -3368,6 +3368,11 @@ test = ["opencode --version", "{{version}}"]
 backends = ["aqua:openfaas/faas-cli", "asdf:zekker6/asdf-faas-cli"]
 description = "Official CLI for OpenFaaS"
 
+[tools.opengrep]
+backends = ["aqua:opengrep/opengrep", "ubi:opengrep/opengrep"]
+description = "Static code analysis engine to find security issues in code"
+test = ["opengrep --version", "{{version}}"]
+
 [tools.openresty]
 backends = ["asdf:mise-plugins/mise-openresty"]
 description = "OpenResty® is a dynamic web platform based on NGINX and LuaJIT"
