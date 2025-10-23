@@ -278,7 +278,7 @@ always_keep_install = false         # deleted on failure by default
 
 # configure how frequently (in minutes) to fetch updated plugin repository changes
 # this is updated whenever a new runtime is installed
-# (note: this isn't currently implemented but there are plans to add it: https://github.com/jdx/mise/issues/128)
+# (note: this isn't currently implemented but there are plans to add it: https://github.com/jdx/mise/discussions/6735)
 plugin_autoupdate_last_check_duration = '1 week' # set to 0 to disable updates
 
 # config files with these prefixes will be trusted by default
