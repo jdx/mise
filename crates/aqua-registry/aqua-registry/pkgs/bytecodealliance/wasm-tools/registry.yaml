@@ -36,6 +36,21 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: semver("<= 1.239.0")
+        asset: wasm-tools-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: wasm-tools
+            src: "{{.AssetWithoutExt}}/wasm-tools"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            replacements: {}
       - version_constraint: "true"
         asset: wasm-tools-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
@@ -51,3 +66,5 @@ packages:
           - goos: windows
             format: zip
             replacements: {}
+        github_artifact_attestations:
+          signer_workflow: bytecodealliance/wasm-tools/.github/workflows/publish.yml

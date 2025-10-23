@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: eth-p
+    repo_name: bat-extras
+    description: Bash scripts that integrate bat with various command line tools
+    version_constraint: "false"
+    supported_envs:
+      - linux
+      - darwin
+    files:
+      - name: batdiff
+        src: bin/batdiff
+      - name: batgrep
+        src: bin/batgrep
+      - name: batman
+        src: bin/batman
+      - name: batpipe
+        src: bin/batpipe
+      - name: batwatch
+        src: bin/batwatch
+      - name: prettybat
+        src: bin/prettybat
+      - name: bat-modules
+        src: bin/bat-modules
+    version_overrides:
+      - version_constraint: semver("<= 2023.03.21")
+        asset: bat-extras-{{ trimV .Version | replace "." "" }}.zip
+      - version_constraint: semver("<= 2024.02.12")
+        asset: bat-extras-{{ index (splitList "." (trimV .Version)) 0 }}{{ index (splitList "." (trimV .Version)) 1 }}.{{ index (splitList "." (trimV .Version)) 2 }}.zip
+      - version_constraint: "true"
+        asset: bat-extras-{{ trimV .Version }}.zip
