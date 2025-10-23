@@ -1,5 +1,46 @@
 # Changelog
 
+## [2025.10.16](https://github.com/jdx/mise/compare/v2025.10.15..v2025.10.16) - 2025-10-23
+
+### 🚀 Features
+
+- **(tasks)** modify usage spec parsing to return dummy strings by @iamkroot in [#6723](https://github.com/jdx/mise/pull/6723)
+- include resolved sources in task templating context by @the-wondersmith in [#6180](https://github.com/jdx/mise/pull/6180)
+- Add Tera function `absolute` by @iamkroot in [#6729](https://github.com/jdx/mise/pull/6729)
+
+### 🐛 Bug Fixes
+
+- **(cli)** respect os filter during upgrade by @iamkroot in [#6724](https://github.com/jdx/mise/pull/6724)
+
+### 📚 Documentation
+
+- fix RUNTIME.osType values in example snippet by @ofalvai in [#6732](https://github.com/jdx/mise/pull/6732)
+- migrate issue links to GitHub discussions by @jdx in [#6740](https://github.com/jdx/mise/pull/6740)
+- document Lua version by @ofalvai in [#6741](https://github.com/jdx/mise/pull/6741)
+
+### New Contributors
+
+- @ofalvai made their first contribution in [#6741](https://github.com/jdx/mise/pull/6741)
+- @iamkroot made their first contribution in [#6729](https://github.com/jdx/mise/pull/6729)
+- @the-wondersmith made their first contribution in [#6180](https://github.com/jdx/mise/pull/6180)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (8)
+
+- [`SUPERCILEX/fuc/cpz`](https://github.com/SUPERCILEX/fuc/cpz)
+- [`SUPERCILEX/fuc/rmz`](https://github.com/SUPERCILEX/fuc/rmz)
+- [`dinoDanic/diny`](https://github.com/dinoDanic/diny)
+- [`eth-p/bat-extras`](https://github.com/eth-p/bat-extras)
+- [`k1LoW/tailor-log`](https://github.com/k1LoW/tailor-log)
+- [`mashiike/acrun`](https://github.com/mashiike/acrun)
+- [`opengrep/opengrep`](https://github.com/opengrep/opengrep)
+- [`praetorian-inc/noseyparker`](https://github.com/praetorian-inc/noseyparker)
+
+#### Updated Packages (2)
+
+- [`bufbuild/buf`](https://github.com/bufbuild/buf)
+- [`bytecodealliance/wasm-tools`](https://github.com/bytecodealliance/wasm-tools)
 ## [2025.10.15](https://github.com/jdx/mise/compare/v2025.10.14..v2025.10.15) - 2025-10-22
 
 ### 🚀 Features
