@@ -374,11 +374,11 @@ vfox automatically injects runtime information into your plugin:
 ```lua
 function PLUGIN:BackendInstall(ctx)
     -- Platform-specific installation using injected RUNTIME object
-    if RUNTIME.osType == "Darwin" then
+    if RUNTIME.osType == "darwin" then
         -- macOS installation logic
-    elseif RUNTIME.osType == "Linux" then
+    elseif RUNTIME.osType == "linux" then
         -- Linux installation logic
-    elseif RUNTIME.osType == "Windows" then
+    elseif RUNTIME.osType == "windows" then
         -- Windows installation logic
     end
 
