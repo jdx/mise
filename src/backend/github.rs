@@ -30,6 +30,8 @@ struct ReleaseAsset {
     digest: Option<String>,
 }
 
+const DEFAULT_GH_API_BASE_URL: &str = "https://api.github.com";
+
 #[async_trait]
 impl Backend for UnifiedGitBackend {
     fn get_type(&self) -> BackendType {
@@ -155,7 +157,7 @@ impl UnifiedGitBackend {
             .unwrap_or(if self.is_gitlab() {
                 "https://gitlab.com/api/v4"
             } else {
-                "https://api.github.com"
+                DEFAULT_GH_API_BASE_URL
             })
             .to_string()
     }
@@ -211,18 +213,18 @@ impl UnifiedGitBackend {
             platform_info.checksum = Some(digest.clone());
         }
 
-        let url = match opts
-            .get("force_api_usage")
-            .map(|f| f.as_str())
-            .map(|f| f == "true")
-            .unwrap_or(false)
-        {
-            true => asset.url_api.clone(),
-            // check if url is reachable, 404 might indicate a private repo or asset
-            false => match HTTP.head(asset.url.clone()).await {
+        let url = match asset.url_api.starts_with(DEFAULT_GH_API_BASE_URL) {
+            true => match HTTP.head(asset.url.clone()).await {
                 Ok(_) => asset.url.clone(),
                 Err(_) => asset.url_api.clone(),
             },
+            false => {
+                debug!(
+                    "Since the tool resides on a custom GitHub API ({:?}), the asset download will be performed using the given API instead of browser URL download",
+                    asset.url_api
+                );
+                asset.url_api.clone()
+            }
         };
 
         let headers = if self.is_gitlab() {
