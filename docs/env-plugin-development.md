@@ -25,7 +25,7 @@ cd my-env-plugin
 
 ## Plugin Structure
 
-A minimal environment plugin has this structure:
+Environment plugins are implemented in Lua (version 5.1 at the moment). A minimal environment plugin has this structure:
 
 ```
 my-env-plugin/
