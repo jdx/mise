@@ -291,6 +291,8 @@ Tera offers more filters. Read more on [tera documentation](https://keats.github
 
 #### Path Manipulation
 
+- `path | absolute -> String` – Converts the input path into
+  an absolute path. Does not require the path to exist.
 - `path | canonicalize -> String` – Converts the input path into
   absolute input path version. Throws if path doesn't exist.
 - `path | basename -> String` – Extracts the file name from a path,

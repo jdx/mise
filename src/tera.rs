@@ -6,6 +6,7 @@ use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
 };
+use path_absolutize::Absolutize;
 use rand::prelude::*;
 use std::sync::LazyLock as Lazy;
 use tera::{Context, Tera, Value};
@@ -117,8 +118,16 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
             _ => Err("hash input must be a string".into()),
         },
     );
-    // TODO: add `absolute` feature.
-    // wait until #![feature(absolute_path)] hits Rust stable release channel
+    tera.register_filter(
+        "absolute",
+        move |input: &Value, _args: &HashMap<String, Value>| match input {
+            Value::String(s) => {
+                let p = Path::new(s).absolutize()?;
+                Ok(Value::String(p.to_string_lossy().to_string()))
+            }
+            _ => Err("absolute input must be a string".into()),
+        },
+    );
     tera.register_filter(
         "canonicalize",
         move |input: &Value, _args: &HashMap<String, Value>| match input {
@@ -589,6 +598,17 @@ mod tests {
         let _config = Config::get().await.unwrap();
         let s = render("{{ \"../fixtures/shorthands.toml\" | hash_file(len=64) }}");
         insta::assert_snapshot!(s, @"ce17f44735ea2083038e61c4b291ed31593e6cf4d93f5dc147e97e62962ac4e6");
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_absolute() {
+        let _config = Config::get().await.unwrap();
+        let s = render("{{ \"/a/b/../c\" | absolute }}");
+        assert_eq!(s, "/a/c");
+        // relative path
+        let s = render("{{ \"a/b/../c\" | absolute }}");
+        assert!(s.ends_with("/a/c"));
     }
 
     #[tokio::test]
