@@ -30,7 +30,8 @@ struct ReleaseAsset {
     digest: Option<String>,
 }
 
-const DEFAULT_GH_API_BASE_URL: &str = "https://api.github.com";
+const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
+const DEFAULT_GITLAB_API_BASE_URL: &str = "https://gitlab.com/api/v4";
 
 #[async_trait]
 impl Backend for UnifiedGitBackend {
@@ -155,9 +156,9 @@ impl UnifiedGitBackend {
         opts.get("api_url")
             .map(|s| s.as_str())
             .unwrap_or(if self.is_gitlab() {
-                "https://gitlab.com/api/v4"
+                DEFAULT_GITLAB_API_BASE_URL
             } else {
-                DEFAULT_GH_API_BASE_URL
+                DEFAULT_GITHUB_API_BASE_URL
             })
             .to_string()
     }
@@ -213,14 +214,16 @@ impl UnifiedGitBackend {
             platform_info.checksum = Some(digest.clone());
         }
 
-        let url = match asset.url_api.starts_with(DEFAULT_GH_API_BASE_URL) {
+        let url = match asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
+            || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
+        {
             true => match HTTP.head(asset.url.clone()).await {
                 Ok(_) => asset.url.clone(),
                 Err(_) => asset.url_api.clone(),
             },
             false => {
                 debug!(
-                    "Since the tool resides on a custom GitHub API ({:?}), the asset download will be performed using the given API instead of browser URL download",
+                    "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
                     asset.url_api
                 );
                 asset.url_api.clone()
