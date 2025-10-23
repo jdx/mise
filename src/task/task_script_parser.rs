@@ -151,10 +151,14 @@ impl TaskScriptParser {
                     Self::expect_opt_string(args.get("name"), "name")?.unwrap_or(i.to_string());
 
                 let mut arg_order = arg_order.lock().map_err(Self::lock_error)?;
-
+                let dummy = if var {
+                    tera::Value::Array(vec![])
+                } else {
+                    tera::Value::String("".to_string())
+                };
                 if arg_order.contains_key(&name) {
                     trace!("already seen {name}");
-                    return Ok(tera::Value::String("".to_string()));
+                    return Ok(dummy);
                 }
                 arg_order.insert(name.clone(), i);
 
@@ -217,7 +221,7 @@ impl TaskScriptParser {
                 arg.usage = arg.usage();
 
                 input_args.lock().map_err(Self::lock_error)?.push(arg);
-                Ok(tera::Value::String("".to_string()))
+                Ok(dummy)
             }
         });
 
@@ -626,19 +630,20 @@ impl TaskScriptParser {
                 .unwrap_or(Settings::get().default_inline_shell()?)[0]
                 .parse()
                 .ok();
-            let escape = {
-                move |v: &usage::parse::ParseValue| match v {
-                    usage::parse::ParseValue::MultiString(_) => {
-                        // these are already escaped
-                        v.to_string()
+            let escape = move |v: &usage::parse::ParseValue| match v {
+                usage::parse::ParseValue::MultiString(values) => tera::Value::Array(
+                    // these are already escaped
+                    values
+                        .iter()
+                        .map(|v| tera::Value::String(v.to_string()))
+                        .collect(),
+                ),
+                _ => tera::Value::String(match shell_type {
+                    Some(ShellType::Zsh | ShellType::Bash | ShellType::Fish) => {
+                        shell_words::quote(&v.to_string()).to_string()
                     }
-                    _ => match shell_type {
-                        Some(ShellType::Zsh | ShellType::Bash | ShellType::Fish) => {
-                            shell_words::quote(&v.to_string()).to_string()
-                        }
-                        _ => v.to_string(),
-                    },
-                }
+                    _ => v.to_string(),
+                }),
             };
             let mut tera = self.get_tera();
             tera.register_function("arg", {
@@ -657,13 +662,11 @@ impl TaskScriptParser {
                                 .map(|n| n.as_str().unwrap().to_string())
                                 .unwrap_or(i.to_string());
                             seen_args.insert(name.clone());
-                            Ok(tera::Value::String(
-                                usage_args
-                                    .iter()
-                                    .find(|(arg, _)| arg.name == name)
-                                    .map(|(_, value)| escape(value))
-                                    .unwrap_or("".to_string()),
-                            ))
+                            Ok(usage_args
+                                .iter()
+                                .find(|(arg, _)| arg.name == name)
+                                .map(|(_, value)| escape(value))
+                                .unwrap_or(tera::Value::String("".to_string())))
                         }
                     }
                 }
@@ -676,13 +679,11 @@ impl TaskScriptParser {
                             .get("name")
                             .map(|n| n.as_str().unwrap().to_string())
                             .unwrap();
-                        Ok(tera::Value::String(
-                            usage_flags
-                                .iter()
-                                .find(|(flag, _)| flag.name == name)
-                                .map(|(_, value)| escape(value))
-                                .unwrap_or(default_value.clone()),
-                        ))
+                        Ok(usage_flags
+                            .iter()
+                            .find(|(flag, _)| flag.name == name)
+                            .map(|(_, value)| escape(value))
+                            .unwrap_or(tera::Value::String(default_value.clone())))
                     }
                 }
             };
@@ -784,7 +785,7 @@ mod tests {
         let config = Config::get().await.unwrap();
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
-        let scripts = vec!["echo {{ arg(var=true) }}".to_string()];
+        let scripts = vec!["echo {{ arg(var=true) | join(sep='::') }}".to_string()];
         let (parsed_scripts, spec) = parser
             .parse_run_scripts(&config, &task, &scripts, &Default::default())
             .await
@@ -804,7 +805,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(parsed_scripts, vec!["echo abc def"]);
+        assert_eq!(parsed_scripts, vec!["echo abc::def"]);
     }
 
     #[tokio::test]
