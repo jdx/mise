@@ -15,6 +15,7 @@ cargo-binstall = "latest"
 "cargo:git-cliff" = "latest"
 "cargo:toml-cli" = "latest"
 "cargo:usage-cli" = { version = "latest", os = ["linux", "macos"] }
+cmake = "4.1.2"
 gh = "latest"
 hk = "latest"
 jq = "latest"

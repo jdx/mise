@@ -62,6 +62,10 @@ backend = "cargo:toml-cli"
 version = "2.4.0"
 backend = "cargo:usage-cli"
 
+[[tools.cmake]]
+version = "4.1.2"
+backend = "asdf:cmake"
+
 [[tools.gh]]
 version = "2.82.1"
 backend = "aqua:cli/cli"
