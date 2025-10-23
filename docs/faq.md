@@ -70,7 +70,7 @@ and `mise deactivate` to work without wrapping them in `eval "$(mise shell)"`.
 
 ::: warning
 While mise runs great in WSL, native Windows is also supported, though via the use of shims until
-someone adds [powershell](https://github.com/jdx/mise/issues/3451) support.
+someone adds [powershell](https://github.com/jdx/mise/discussions/6733) support.
 
 As you'll need to use shims, this means you won't have environment variables from mise.toml unless you run mise via
 [`mise x`](/cli/exec) or [`mise run`](/cli/run)—though that's actually how I use mise on my mac so

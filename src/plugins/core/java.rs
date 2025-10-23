@@ -297,7 +297,7 @@ impl Backend for JavaPlugin {
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         // TODO: find out how to get this to work for different os/arch
-        // See https://github.com/jdx/mise/issues/1196
+        // See https://github.com/jdx/mise/discussions/6738
         // match self.core.fetch_remote_versions_from_mise() {
         //     Ok(Some(versions)) => return Ok(versions),
         //     Ok(None) => {}
