@@ -1468,18 +1468,21 @@ impl Run {
         let shell = task.shell().unwrap_or(self.clone_default_inline_shell()?);
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
-        let mut script = script.to_string();
-        if !args.is_empty() {
-            #[cfg(windows)]
-            {
-                script = format!("{script} {}", args.join(" "));
-            }
-            #[cfg(unix)]
-            {
+
+        #[cfg(windows)]
+        {
+            full_args.push(script.to_string());
+            full_args.extend(args.iter().cloned());
+        }
+
+        #[cfg(unix)]
+        {
+            let mut script = script.to_string();
+            if !args.is_empty() {
                 script = format!("{script} {}", shell_words::join(args));
             }
+            full_args.push(script);
         }
-        full_args.push(script);
         Ok((full_args[0].clone(), full_args[1..].to_vec()))
     }
 
