@@ -187,6 +187,16 @@ If you are using a self-hosted GitHub instance, set the `api_url` tool option an
 export MISE_GITHUB_ENTERPRISE_TOKEN="your-token"
 ```
 
+By default, mise uses the provided `api_url` to only fetch release information. The actual asset download is performed
+via the "public" browser url, e.g `https://github.mycompany.com/myorg/mytool/releases/download/v1.0.0/asset-name.tar.gz`.
+This approach might not work for all GitHub Enterprise setups, especially if a company SSO is used to protect public 
+access to the instance. In such cases, you can enforce API-based asset download by setting the `force_api_usage` flag to `true`:
+```toml
+[tools]
+"github:myorg/mytool" = { version = "latest", api_url = "https://github.mycompany.com/api/v3", force_api_usage = "true" }
+```
+
+
 ## Supported GitHub Syntax
 
 - **GitHub shorthand for latest release version:** `github:cli/cli`

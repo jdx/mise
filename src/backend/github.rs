@@ -211,10 +211,18 @@ impl UnifiedGitBackend {
             platform_info.checksum = Some(digest.clone());
         }
 
-        // check if url is reachable, 404 might indicate a private repo or asset
-        let url = match HTTP.head(asset.url.clone()).await {
-            Ok(_) => asset.url.clone(),
-            Err(_) => asset.url_api.clone(),
+        let url = match opts
+            .get("force_api_usage")
+            .map(|f| f.as_str())
+            .map(|f| f == "true")
+            .unwrap_or(false)
+        {
+            true => asset.url_api.clone(),
+            // check if url is reachable, 404 might indicate a private repo or asset
+            false => match HTTP.head(asset.url.clone()).await {
+                Ok(_) => asset.url.clone(),
+                Err(_) => asset.url_api.clone(),
+            },
         };
 
         let headers = if self.is_gitlab() {
