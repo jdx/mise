@@ -4290,6 +4290,11 @@ backends = ["aqua:yorukot/superfile"]
 description = "Pretty fancy and modern terminal file manager"
 test = ["spf --version", "superfile version v{{version}}"]
 
+[tools.superhtml]
+backends = ["ubi:kristoff-it/superhtml"]
+description = "HTML Validator, Formatter, LSP, and Templating Language Library"
+test = ["superhtml version 2>&1", "{{version}}"]
+
 [tools.sver]
 backends = ["aqua:mitoma/sver", "asdf:robzr/asdf-sver"]
 description = "Version generator based on source code"
