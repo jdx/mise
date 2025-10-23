@@ -14,7 +14,7 @@ Tool plugins use traditional hook functions to manage a single tool. They provid
 
 ## Plugin Architecture
 
-Tool plugins use a hook-based architecture with specific functions for different lifecycle events:
+Tool plugins are implemented in Lua (version 5.1 at the moment). They use a hook-based architecture with specific functions for different lifecycle events:
 
 ```mermaid
 graph TD
