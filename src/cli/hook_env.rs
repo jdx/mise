@@ -150,7 +150,7 @@ impl HookEnv {
         to_remove: &[PathBuf],
     ) -> Result<Vec<EnvDiffOperation>> {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
-        let (pre, post) = match &*env::__MISE_ORIG_PATH {
+        let (mut pre, post) = match &*env::__MISE_ORIG_PATH {
             Some(orig_path) => match full.split_once(&format!("{PATH_ENV_SEP}{orig_path}")) {
                 Some((pre, post)) if !Settings::get().activate_aggressive => (
                     split_paths(pre).collect_vec(),
@@ -160,6 +160,26 @@ impl HookEnv {
             },
             None => (vec![], split_paths(&full).collect_vec()),
         };
+
+        // Filter paths from `pre` that are actually from the original PATH.
+        // This handles cases where path_helper or /etc/paths prepends system paths after mise activation.
+        // We want to preserve truly user-added paths in `pre`, but not system paths that got moved around.
+        if !pre.is_empty() {
+            let pre_len_before = pre.len();
+            pre.retain(|p| !post.contains(p));
+            trace!(
+                "build_path_operations: filtered pre from {} to {} entries",
+                pre_len_before,
+                pre.len()
+            );
+        }
+
+        trace!(
+            "build_path_operations: pre={}, installs={}, post={}",
+            pre.len(),
+            installs.len(),
+            post.len()
+        );
 
         // Filter out install paths that are already in the original PATH (post).
         // This prevents mise from claiming ownership of paths that were in the user's
@@ -192,9 +212,11 @@ impl HookEnv {
             .cloned()
             .collect();
 
+        // Always put mise's paths first, then user-added paths (pre), then original PATH (post)
+        // This ensures _.path and tool paths are prioritized even when external tools modify PATH
         let new_path = join_paths(
-            pre.iter()
-                .chain(installs_filtered.iter())
+            installs_filtered.iter()
+                .chain(pre.iter())
                 .chain(post.iter()),
         )?
         .to_string_lossy()

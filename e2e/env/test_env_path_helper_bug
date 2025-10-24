@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+require_cmd zsh
+exec zsh "$TEST_DIR/env_path_helper_bug_script"

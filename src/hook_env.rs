@@ -136,6 +136,74 @@ fn have_mise_env_vars_been_modified() -> bool {
     if get_mise_env_vars_hashed() != PREV_SESSION.env_var_hash {
         return true;
     }
+    if has_path_been_modified() {
+        return true;
+    }
+    false
+}
+
+fn has_path_been_modified() -> bool {
+    // Check if PATH has been externally modified in a way that breaks mise's expectations
+    // This handles cases like path_helper or /etc/paths prepending system paths after mise activation
+
+    if PREV_SESSION.config_paths.is_empty() {
+        trace!("has_path_been_modified: no config_paths to check");
+        return false;
+    }
+
+    let current_path = env::PATH.clone();
+    if current_path.is_empty() {
+        trace!("has_path_been_modified: current PATH is empty");
+        return false;
+    }
+
+    trace!(
+        "has_path_been_modified: checking {} config_paths against {} PATH entries",
+        PREV_SESSION.config_paths.len(),
+        current_path.len()
+    );
+
+    if log::log_enabled!(log::Level::Trace) {
+        trace!("Expected config paths:");
+        for (i, p) in PREV_SESSION.config_paths.iter().enumerate() {
+            trace!("  [{}] {}", i, p.display());
+        }
+        trace!("Current PATH (first 5):");
+        for (i, p) in current_path.iter().take(5).enumerate() {
+            trace!("  [{}] {}", i, p.display());
+        }
+    }
+
+    // Check if any of mise's expected paths are not at the front of PATH where they should be
+    // This detects when external tools (like path_helper) have prepended paths
+    let mut path_index = 0;
+    for expected_path in &PREV_SESSION.config_paths {
+        if path_index >= current_path.len() {
+            // Expected path is missing entirely
+            trace!("path modified: expected path missing: {}", expected_path.display());
+            return true;
+        }
+
+        // Find where this expected path appears in current PATH
+        if let Some(pos) = current_path[path_index..].iter().position(|p| p == expected_path) {
+            if pos > 0 {
+                // There are paths before this expected path that shouldn't be there
+                trace!(
+                    "path modified: {} paths inserted before expected path {}",
+                    pos,
+                    expected_path.display()
+                );
+                return true;
+            }
+            path_index += 1;
+        } else {
+            // Expected path not found in remaining PATH
+            trace!("path modified: expected path not found: {}", expected_path.display());
+            return true;
+        }
+    }
+
+    trace!("has_path_been_modified: PATH appears unchanged");
     false
 }
 
