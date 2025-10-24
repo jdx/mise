@@ -107,7 +107,14 @@ run_test() {
 	local status=0
 
 	START="$(date +%s)"
-	within_isolated_env bash --noprofile --norc -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+	# Check shebang to determine which shell to use
+	local shebang
+	shebang="$(head -n 1 "$TEST_SCRIPT")"
+	if [[ $shebang == "#!/usr/bin/env zsh"* ]]; then
+		within_isolated_env zsh -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+	else
+		within_isolated_env bash --noprofile --norc -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+	fi
 	END="$(date +%s)"
 	DURATION=$((END - START))s
 

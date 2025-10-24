@@ -169,7 +169,7 @@ impl HookEnv {
         to_remove: &[PathBuf],
     ) -> Result<Vec<EnvDiffOperation>> {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
-        let (mut pre, mut post) = match &*env::__MISE_ORIG_PATH {
+        let (pre, post) = match &*env::__MISE_ORIG_PATH {
             Some(orig_path) => match full.split_once(&format!("{PATH_ENV_SEP}{orig_path}")) {
                 Some((pre, post)) if !Settings::get().activate_aggressive => (
                     split_paths(pre).collect_vec(),
@@ -179,20 +179,6 @@ impl HookEnv {
             },
             None => (vec![], split_paths(&full).collect_vec()),
         };
-
-        // On first precmd after activation, treat pre paths as part of the original PATH
-        // This handles path_helper prepending system paths after activation but before first prompt
-        if self.reason == Some(HookReason::Precmd) && !*env::__MISE_ZSH_PRECMD_RUN {
-            trace!("First precmd: merging {} pre paths into post", pre.len());
-            post.splice(0..0, pre.drain(..));
-        }
-
-        trace!(
-            "build_path_operations: pre={}, installs={}, post={}",
-            pre.len(),
-            installs.len(),
-            post.len()
-        );
 
         // Filter out install paths that are already in the original PATH (post).
         // This prevents mise from claiming ownership of paths that were in the user's
