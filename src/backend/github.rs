@@ -30,6 +30,9 @@ struct ReleaseAsset {
     digest: Option<String>,
 }
 
+const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
+const DEFAULT_GITLAB_API_BASE_URL: &str = "https://gitlab.com/api/v4";
+
 #[async_trait]
 impl Backend for UnifiedGitBackend {
     fn get_type(&self) -> BackendType {
@@ -153,9 +156,9 @@ impl UnifiedGitBackend {
         opts.get("api_url")
             .map(|s| s.as_str())
             .unwrap_or(if self.is_gitlab() {
-                "https://gitlab.com/api/v4"
+                DEFAULT_GITLAB_API_BASE_URL
             } else {
-                "https://api.github.com"
+                DEFAULT_GITHUB_API_BASE_URL
             })
             .to_string()
     }
@@ -211,10 +214,27 @@ impl UnifiedGitBackend {
             platform_info.checksum = Some(digest.clone());
         }
 
-        // check if url is reachable, 404 might indicate a private repo or asset
-        let url = match HTTP.head(asset.url.clone()).await {
-            Ok(_) => asset.url.clone(),
-            Err(_) => asset.url_api.clone(),
+        let url = match asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
+            || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
+        {
+            // check if url is reachable, 404 might indicate a private repo or asset.
+            // This is needed, because private repos and assets cannot be downloaded
+            // via browser url, therefore a fallback to api_url is needed in such cases.
+            true => match HTTP.head(asset.url.clone()).await {
+                Ok(_) => asset.url.clone(),
+                Err(_) => asset.url_api.clone(),
+            },
+
+            // Custom API URLs usually imply that a custom GitHub/GitLab instance is used.
+            // Often times such instances do not allow browser URL downloads, e.g. due to
+            // upstream company SSOs. Therefore, using the api_url for downloading is the safer approach.
+            false => {
+                debug!(
+                    "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
+                    asset.url_api
+                );
+                asset.url_api.clone()
+            }
         };
 
         let headers = if self.is_gitlab() {
