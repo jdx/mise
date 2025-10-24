@@ -50,8 +50,8 @@ if [ -z "${_mise_cmd_not_found:-}" ]; then
     _mise_cmd_not_found=1
     [ -n "$(declare -f command_not_found_handler)" ] && eval "${$(declare -f command_not_found_handler)/command_not_found_handler/_command_not_found_handler}"
 
-    command_not_found_handler() {
-        if /some/dir/mise hook-not-found -s zsh -- "$1"; then
+    function command_not_found_handler() {
+        if [[ "$1" != "mise" && "$1" != "mise-"* ]] && /some/dir/mise hook-not-found -s zsh -- "$1"; then
           _mise_hook
           "$@"
         elif [ -n "$(declare -f _command_not_found_handler)" ]; then
