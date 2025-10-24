@@ -23,21 +23,19 @@ cat > .mise.toml <<'EOF'
 _.path = ["homebrew/bin"]
 EOF
 
-# Activate mise
+# Activate mise (sets __MISE_ZSH_PRECMD_RUN=0)
 eval "$(mise activate zsh --status)"
-_mise_hook
-
-# Verify initial state works
-test "$(tool)" = "homebrew-tool" || exit 1
 
 # Simulate path_helper prepending system paths (like /etc/zprofile does)
+# This happens before the first precmd/prompt
 export PATH="$PWD/system/bin:/usr/bin:/bin:$PATH"
 
 # After path_helper runs, system tool is found first (the bug)
 test "$(tool)" = "system-tool" || exit 1
 
-# Call _mise_hook again - should re-prioritize _.path (the fix)
-_mise_hook
+# First precmd triggers _mise_hook with reason=precmd and __MISE_ZSH_PRECMD_RUN=0
+# This should re-prioritize _.path (the fix)
+_mise_hook precmd
 
 # Verify fix: homebrew tool should now be found first again
 test "$(tool)" = "homebrew-tool" || exit 1

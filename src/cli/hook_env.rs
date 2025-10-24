@@ -36,6 +36,10 @@ pub struct HookEnv {
     /// Hide warnings such as when a tool is not installed
     #[clap(long, short)]
     quiet: bool,
+
+    /// Reason for calling hook-env (e.g., "precmd", "chpwd")
+    #[clap(long, hide = true)]
+    reason: Option<String>,
 }
 
 impl HookEnv {
@@ -43,7 +47,7 @@ impl HookEnv {
         let config = Config::get().await?;
         let watch_files = config.watch_files().await?;
         time!("hook-env");
-        if !self.force && hook_env::should_exit_early(watch_files.clone()) {
+        if !self.force && hook_env::should_exit_early(watch_files.clone(), self.reason.as_deref()) {
             trace!("should_exit_early true");
             return Ok(());
         }
@@ -66,6 +70,11 @@ impl HookEnv {
             self.build_session_operation(&config, ts, mise_env, watch_files)
                 .await?,
         );
+
+        // Clear the precmd run flag after running once
+        if !*env::__MISE_ZSH_PRECMD_RUN {
+            patches.push(EnvDiffOperation::Add("__MISE_ZSH_PRECMD_RUN".into(), "1".into()));
+        }
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
@@ -150,7 +159,7 @@ impl HookEnv {
         to_remove: &[PathBuf],
     ) -> Result<Vec<EnvDiffOperation>> {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
-        let (mut pre, post) = match &*env::__MISE_ORIG_PATH {
+        let (pre, post) = match &*env::__MISE_ORIG_PATH {
             Some(orig_path) => match full.split_once(&format!("{PATH_ENV_SEP}{orig_path}")) {
                 Some((pre, post)) if !Settings::get().activate_aggressive => (
                     split_paths(pre).collect_vec(),
@@ -160,19 +169,6 @@ impl HookEnv {
             },
             None => (vec![], split_paths(&full).collect_vec()),
         };
-
-        // Filter paths from `pre` that are actually from the original PATH.
-        // This handles cases where path_helper or /etc/paths prepends system paths after mise activation.
-        // We want to preserve truly user-added paths in `pre`, but not system paths that got moved around.
-        if !pre.is_empty() {
-            let pre_len_before = pre.len();
-            pre.retain(|p| !post.contains(p));
-            trace!(
-                "build_path_operations: filtered pre from {} to {} entries",
-                pre_len_before,
-                pre.len()
-            );
-        }
 
         trace!(
             "build_path_operations: pre={}, installs={}, post={}",
@@ -212,11 +208,9 @@ impl HookEnv {
             .cloned()
             .collect();
 
-        // Always put mise's paths first, then user-added paths (pre), then original PATH (post)
-        // This ensures _.path and tool paths are prioritized even when external tools modify PATH
         let new_path = join_paths(
-            installs_filtered.iter()
-                .chain(pre.iter())
+            pre.iter()
+                .chain(installs_filtered.iter())
                 .chain(post.iter()),
         )?
         .to_string_lossy()
