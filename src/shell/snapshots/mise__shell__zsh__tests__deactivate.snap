@@ -1,12 +1,15 @@
 ---
 source: src/shell/zsh.rs
 expression: replace_path(&deactivate)
-snapshot_kind: text
 ---
-precmd_functions=( ${precmd_functions:#_mise_hook} )
-chpwd_functions=( ${chpwd_functions:#_mise_hook} )
+precmd_functions=( ${precmd_functions:#_mise_hook_precmd} )
+chpwd_functions=( ${chpwd_functions:#_mise_hook_chpwd} )
+unset -f _mise_hook_precmd
+unset -f _mise_hook_chpwd
 unset -f _mise_hook
 unset -f mise
 unset MISE_SHELL
 unset __MISE_DIFF
 unset __MISE_SESSION
+unset __MISE_ORIG_PATH
+unset __MISE_ZSH_PRECMD_RUN
