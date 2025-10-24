@@ -6,19 +6,19 @@ set -eu
 
 mkdir -p homebrew/bin system/bin
 
-cat > homebrew/bin/tool <<'EOF'
+cat >homebrew/bin/tool <<'EOF'
 #!/usr/bin/env bash
 echo "homebrew-tool"
 EOF
 chmod +x homebrew/bin/tool
 
-cat > system/bin/tool <<'EOF'
+cat >system/bin/tool <<'EOF'
 #!/usr/bin/env bash
 echo "system-tool"
 EOF
 chmod +x system/bin/tool
 
-cat > .mise.toml <<'EOF'
+cat >.mise.toml <<'EOF'
 [env]
 _.path = ["homebrew/bin"]
 EOF

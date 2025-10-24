@@ -73,7 +73,10 @@ impl HookEnv {
 
         // Clear the precmd run flag after running once
         if !*env::__MISE_ZSH_PRECMD_RUN {
-            patches.push(EnvDiffOperation::Add("__MISE_ZSH_PRECMD_RUN".into(), "1".into()));
+            patches.push(EnvDiffOperation::Add(
+                "__MISE_ZSH_PRECMD_RUN".into(),
+                "1".into(),
+            ));
         }
 
         let output = hook_env::build_env_commands(&*shell, &patches);

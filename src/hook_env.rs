@@ -60,7 +60,10 @@ impl From<PathBuf> for WatchFilePattern {
 
 /// this function will early-exit the application if hook-env is being
 /// called and it does not need to be
-pub fn should_exit_early(watch_files: impl IntoIterator<Item = WatchFilePattern>, reason: Option<&str>) -> bool {
+pub fn should_exit_early(
+    watch_files: impl IntoIterator<Item = WatchFilePattern>,
+    reason: Option<&str>,
+) -> bool {
     let args = env::ARGS.read().unwrap();
     if args.len() < 2 || args[1] != "hook-env" {
         return false;
