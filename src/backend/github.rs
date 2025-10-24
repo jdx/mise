@@ -217,6 +217,9 @@ impl UnifiedGitBackend {
         let url = match asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
             || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
         {
+            // check if url is reachable, 404 might indicate a private repo or asset.
+            // This is needed, because private repos and assets cannot be downloaded
+            // via browser url, therefore a fallback to api_url is needed in such cases.
             true => match HTTP.head(asset.url.clone()).await {
                 Ok(_) => asset.url.clone(),
                 Err(_) => asset.url_api.clone(),
