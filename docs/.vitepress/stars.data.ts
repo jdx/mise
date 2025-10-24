@@ -3,7 +3,7 @@
 export default {
   load() {
     return {
-      stars: "20.6k",
+      stars: "20.7k",
     };
   },
 };

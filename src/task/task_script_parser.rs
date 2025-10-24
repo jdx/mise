@@ -40,6 +40,15 @@ impl TaskScriptParser {
             .with_context(|| format!("Failed to render task script: {}", script))
     }
 
+    fn render_usage_with_context(
+        tera: &mut tera::Tera,
+        usage: &str,
+        ctx: &tera::Context,
+    ) -> Result<String> {
+        tera.render_str(usage.trim(), ctx)
+            .with_context(|| format!("Failed to render task usage: {}", usage))
+    }
+
     // Helper functions for tera error handling
     fn expect_string(value: &tera::Value, param_name: &str) -> tera::Result<String> {
         value.as_str().map(|s| s.to_string()).ok_or_else(|| {
@@ -542,7 +551,8 @@ impl TaskScriptParser {
             cmd,
             ..Default::default()
         };
-        spec.merge(task.usage.parse()?);
+        let rendered_usage = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?;
+        spec.merge(rendered_usage.parse()?);
 
         Ok(spec)
     }
@@ -580,7 +590,8 @@ impl TaskScriptParser {
             cmd,
             ..Default::default()
         };
-        spec.merge(task.usage.parse()?);
+        let rendered_usage = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)?;
+        spec.merge(rendered_usage.parse()?);
 
         Ok((scripts, spec))
     }

@@ -370,6 +370,17 @@ local file = require("file")
 file.symlink("/path/to/source", "/path/to/new-symlink")
 ```
 
+### Check if file exists
+
+```lua
+local file = require("file")
+if file.exists("important_file.txt") then
+    print("File exists")
+else
+    print("File does not exist")
+end
+```
+
 ## Environment Module
 
 The env module provides environment variable operations.

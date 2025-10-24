@@ -12,7 +12,9 @@ Backend plugins extend the standard vfox plugin system with enhanced backend met
 
 ## Plugin Architecture
 
-Backend plugins are generally a git repository but can also be a directory (via `mise link`). They use three main backend methods implemented as individual files:
+Backend plugins are generally a git repository but can also be a directory (via `mise link`).
+
+Backend plugins are implemented in Lua (version 5.1 at the moment). They use three main backend methods implemented as individual files:
 
 - `hooks/backend_list_versions.lua` - Lists available versions for a tool
 - `hooks/backend_install.lua` - Installs a specific version of a tool
@@ -374,11 +376,11 @@ vfox automatically injects runtime information into your plugin:
 ```lua
 function PLUGIN:BackendInstall(ctx)
     -- Platform-specific installation using injected RUNTIME object
-    if RUNTIME.osType == "Darwin" then
+    if RUNTIME.osType == "darwin" then
         -- macOS installation logic
-    elseif RUNTIME.osType == "Linux" then
+    elseif RUNTIME.osType == "linux" then
         -- Linux installation logic
-    elseif RUNTIME.osType == "Windows" then
+    elseif RUNTIME.osType == "windows" then
         -- Windows installation logic
     end
 

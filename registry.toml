@@ -3368,6 +3368,11 @@ test = ["opencode --version", "{{version}}"]
 backends = ["aqua:openfaas/faas-cli", "asdf:zekker6/asdf-faas-cli"]
 description = "Official CLI for OpenFaaS"
 
+[tools.opengrep]
+backends = ["aqua:opengrep/opengrep", "ubi:opengrep/opengrep"]
+description = "Static code analysis engine to find security issues in code"
+test = ["opengrep --version", "{{version}}"]
+
 [tools.openresty]
 backends = ["asdf:mise-plugins/mise-openresty"]
 description = "OpenResty® is a dynamic web platform based on NGINX and LuaJIT"
@@ -4289,6 +4294,11 @@ description = "ui, a next-generation smart contract platform with high throughpu
 backends = ["aqua:yorukot/superfile"]
 description = "Pretty fancy and modern terminal file manager"
 test = ["spf --version", "superfile version v{{version}}"]
+
+[tools.superhtml]
+backends = ["ubi:kristoff-it/superhtml"]
+description = "HTML Validator, Formatter, LSP, and Templating Language Library"
+test = ["superhtml version 2>&1", "{{version}}"]
 
 [tools.sver]
 backends = ["aqua:mitoma/sver", "asdf:robzr/asdf-sver"]

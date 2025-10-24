@@ -391,7 +391,7 @@ This **must** be a script that runs in bash as if it were executed like this:
 source ./script.sh
 ```
 
-The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/issues/1448)
+The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/discussions/6734)
 for a potential alternative that would work with binaries or other script languages.
 :::
 

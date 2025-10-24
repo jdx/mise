@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Test that project tasks can be called from root task run blocks
-# Regression test for: https://github.com/jdx/mise/issues/6615
+# Regression test for: https://github.com/jdx/mise/discussions/6739
 export MISE_EXPERIMENTAL=1
 
 # Create monorepo root config with a task that calls a project task via run block

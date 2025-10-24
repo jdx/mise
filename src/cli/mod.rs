@@ -30,6 +30,8 @@ mod generate;
 mod global;
 mod hook_env;
 mod hook_not_found;
+
+pub use hook_env::HookReason;
 mod implode;
 mod install;
 mod install_into;

@@ -107,7 +107,7 @@ packages:
         supported_envs:
           - linux
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("< 1.36.0")
         asset: buf-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         files:
@@ -137,3 +137,32 @@ packages:
           - goos: windows
             format: raw
             asset: buf-{{.OS}}-{{.Arch}}
+      - version_constraint: "true"
+        asset: buf-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: buf
+            src: buf/bin/buf
+          - name: protoc-gen-buf-breaking
+            src: buf/bin/protoc-gen-buf-breaking
+          - name: protoc-gen-buf-lint
+            src: buf/bin/protoc-gen-buf-lint
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: sha256.txt
+          algorithm: sha256
+          minisign:
+            type: github_release
+            asset: sha256.txt.minisig
+            public_key: RWQ/i9xseZwBVE7pEniCNjlNOeeyp4BQgdZDLQcAohxEAH5Uj5DEKjv6
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip

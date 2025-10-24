@@ -144,13 +144,13 @@ size = 8268268
 url = "https://github.com/pre-commit/pre-commit/releases/download/v4.3.0/pre-commit-4.3.0.pyz"
 
 [[tools.ripgrep]]
-version = "15.0.0"
+version = "15.1.0"
 backend = "aqua:BurntSushi/ripgrep"
 
 [tools.ripgrep.platforms.linux-x64]
-checksum = "sha256:253ad0fd5fef0d64cba56c70dccdacc1916d4ed70ad057cc525fcdb0c3bbd2a7"
-size = 2262100
-url = "https://github.com/BurntSushi/ripgrep/releases/download/15.0.0/ripgrep-15.0.0-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599"
+size = 2263077
+url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz"
 
 [[tools.shellcheck]]
 version = "0.11.0"

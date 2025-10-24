@@ -39,6 +39,12 @@ pub fn mod_file(lua: &Lua) -> Result<()> {
                 })?,
             ),
             ("join_path", lua.create_function(join_path)?),
+            (
+                "exists",
+                lua.create_async_function(|_lua: mlua::Lua, input| async move {
+                    exists(&_lua, input).await
+                })?,
+            ),
         ])?,
     )?)
 }
@@ -70,6 +76,15 @@ async fn symlink(_lua: &Lua, input: MultiValue) -> mlua::Result<()> {
     #[cfg(unix)]
     _symlink(src, dst).into_lua_err()?;
     Ok(())
+}
+
+async fn exists(_lua: &Lua, input: MultiValue) -> mlua::Result<bool> {
+    let args: Vec<String> = input
+        .into_iter()
+        .map(|v| v.to_string())
+        .collect::<mlua::Result<_>>()?;
+    let path = Path::new(&args[0]);
+    std::fs::exists(path).into_lua_err()
 }
 
 #[cfg(test)]
@@ -119,5 +134,36 @@ mod tests {
         .unwrap();
         assert_eq!(fs::read_link(&dst_path).unwrap(), src_path);
         // TempDir automatically cleans up when dropped
+    }
+
+    #[test]
+    fn test_exists() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let existing_file = temp_dir.path().join("exists.txt");
+        let existing_file_str = existing_file.to_string_lossy().to_string();
+        let nonexistent_file_str = temp_dir
+            .path()
+            .join("nonexistent.txt")
+            .to_string_lossy()
+            .to_string();
+
+        fs::write(&existing_file, "test content").unwrap();
+        let lua = Lua::new();
+        mod_file(&lua).unwrap();
+
+        lua.load(mlua::chunk! {
+            local file = require("file")
+            local existing_exists = file.exists($existing_file_str)
+            local nonexistent_exists = file.exists($nonexistent_file_str)
+
+            if not existing_exists then
+                error("Expected existing file to exist")
+            end
+            if nonexistent_exists then
+                error("Expected nonexistent file to not exist")
+            end
+        })
+        .exec()
+        .unwrap();
     }
 }
