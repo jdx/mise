@@ -1,0 +1,42 @@
+#!/usr/bin/env zsh
+# shellcheck disable=SC1071
+set -eu
+
+# Verifies that user PATH modifications after mise activation are respected
+
+mkdir -p homebrew/bin system/bin
+
+cat >homebrew/bin/tool <<'EOF'
+#!/usr/bin/env bash
+echo "homebrew-tool"
+EOF
+chmod +x homebrew/bin/tool
+
+cat >system/bin/tool <<'EOF'
+#!/usr/bin/env bash
+echo "system-tool"
+EOF
+chmod +x system/bin/tool
+
+cat >.mise.toml <<'EOF'
+[env]
+_.path = ["homebrew/bin"]
+EOF
+
+# Activate mise (homebrew/bin comes first)
+eval "$(mise activate zsh --status)"
+
+# User explicitly prepends their own path after mise activation
+# This should be respected and remain first
+export PATH="$PWD/system/bin:$PATH"
+
+# System tool should be found (user's explicit choice)
+test "$(tool)" = "system-tool" || exit 1
+
+# After precmd runs, user's explicit PATH modification should still be respected
+_mise_hook_precmd
+
+# User's path should still have priority over mise paths
+test "$(tool)" = "system-tool" || exit 1
+
+rm -rf homebrew system .mise.toml

@@ -24,6 +24,7 @@ impl Shell for Zsh {
         out.push_str(&formatdoc! {r#"
             export MISE_SHELL=zsh
             export __MISE_ORIG_PATH="$PATH"
+            export __MISE_ZSH_PRECMD_RUN=0
 
             mise() {{
               local command
@@ -53,13 +54,19 @@ impl Shell for Zsh {
             _mise_hook() {{
               eval "$({exe} hook-env{flags} -s zsh)";
             }}
+            _mise_hook_precmd() {{
+              eval "$({exe} hook-env{flags} -s zsh --reason precmd)";
+            }}
+            _mise_hook_chpwd() {{
+              eval "$({exe} hook-env{flags} -s zsh --reason chpwd)";
+            }}
             typeset -ag precmd_functions;
-            if [[ -z "${{precmd_functions[(r)_mise_hook]+1}}" ]]; then
-              precmd_functions=( _mise_hook ${{precmd_functions[@]}} )
+            if [[ -z "${{precmd_functions[(r)_mise_hook_precmd]+1}}" ]]; then
+              precmd_functions=( _mise_hook_precmd ${{precmd_functions[@]}} )
             fi
             typeset -ag chpwd_functions;
-            if [[ -z "${{chpwd_functions[(r)_mise_hook]+1}}" ]]; then
-              chpwd_functions=( _mise_hook ${{chpwd_functions[@]}} )
+            if [[ -z "${{chpwd_functions[(r)_mise_hook_chpwd]+1}}" ]]; then
+              chpwd_functions=( _mise_hook_chpwd ${{chpwd_functions[@]}} )
             fi
 
             _mise_hook
@@ -121,13 +128,17 @@ impl Shell for Zsh {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-        precmd_functions=( ${{precmd_functions:#_mise_hook}} )
-        chpwd_functions=( ${{chpwd_functions:#_mise_hook}} )
+        precmd_functions=( ${{precmd_functions:#_mise_hook_precmd}} )
+        chpwd_functions=( ${{chpwd_functions:#_mise_hook_chpwd}} )
+        unset -f _mise_hook_precmd
+        unset -f _mise_hook_chpwd
         unset -f _mise_hook
         unset -f mise
         unset MISE_SHELL
         unset __MISE_DIFF
         unset __MISE_SESSION
+        unset __MISE_ORIG_PATH
+        unset __MISE_ZSH_PRECMD_RUN
         "#}
     }
 

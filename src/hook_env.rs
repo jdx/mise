@@ -13,6 +13,7 @@ use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 
+use crate::cli::HookReason;
 use crate::config::Config;
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
@@ -60,9 +61,18 @@ impl From<PathBuf> for WatchFilePattern {
 
 /// this function will early-exit the application if hook-env is being
 /// called and it does not need to be
-pub fn should_exit_early(watch_files: impl IntoIterator<Item = WatchFilePattern>) -> bool {
+pub fn should_exit_early(
+    watch_files: impl IntoIterator<Item = WatchFilePattern>,
+    reason: Option<HookReason>,
+) -> bool {
     let args = env::ARGS.read().unwrap();
     if args.len() < 2 || args[1] != "hook-env" {
+        return false;
+    }
+    // Force hook-env to run at least once from precmd after activation
+    // This catches PATH modifications from shell initialization (e.g., path_helper in zsh)
+    if reason == Some(HookReason::Precmd) && !*env::__MISE_ZSH_PRECMD_RUN {
+        trace!("__MISE_ZSH_PRECMD_RUN=0 and reason=precmd, forcing hook-env to run");
         return false;
     }
     if dir_change().is_some() {
@@ -133,10 +143,7 @@ fn have_files_been_modified(watch_files: BTreeSet<PathBuf>) -> bool {
 }
 
 fn have_mise_env_vars_been_modified() -> bool {
-    if get_mise_env_vars_hashed() != PREV_SESSION.env_var_hash {
-        return true;
-    }
-    false
+    get_mise_env_vars_hashed() != PREV_SESSION.env_var_hash
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

@@ -428,6 +428,11 @@ cmd hook-env hide=#true help="[internal] called by activate hook to update env v
     flag "-f --force" help="Skip early exit check"
     flag --status help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=#true
     flag "-q --quiet" help="Hide warnings such as when a tool is not installed"
+    flag --reason help="Reason for calling hook-env (e.g., \"precmd\", \"chpwd\")" hide=#true {
+        arg <REASON> {
+            choices precmd chpwd
+        }
+    }
 }
 cmd hook-not-found hide=#true help="[internal] called by shell when a command is not found" {
     flag "-s --shell" help="Shell type to generate script for" {

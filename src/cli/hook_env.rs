@@ -17,6 +17,13 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::{borrow::Cow, sync::Arc};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[clap(rename_all = "lowercase")]
+pub enum HookReason {
+    Precmd,
+    Chpwd,
+}
+
 /// [internal] called by activate hook to update env vars directory change
 #[derive(Debug, clap::Args)]
 #[clap(hide = true)]
@@ -36,6 +43,10 @@ pub struct HookEnv {
     /// Hide warnings such as when a tool is not installed
     #[clap(long, short)]
     quiet: bool,
+
+    /// Reason for calling hook-env (e.g., "precmd", "chpwd")
+    #[clap(long, hide = true)]
+    reason: Option<HookReason>,
 }
 
 impl HookEnv {
@@ -43,7 +54,7 @@ impl HookEnv {
         let config = Config::get().await?;
         let watch_files = config.watch_files().await?;
         time!("hook-env");
-        if !self.force && hook_env::should_exit_early(watch_files.clone()) {
+        if !self.force && hook_env::should_exit_early(watch_files.clone(), self.reason) {
             trace!("should_exit_early true");
             return Ok(());
         }
@@ -66,6 +77,14 @@ impl HookEnv {
             self.build_session_operation(&config, ts, mise_env, watch_files)
                 .await?,
         );
+
+        // Clear the precmd run flag after running once from precmd
+        if self.reason == Some(HookReason::Precmd) && !*env::__MISE_ZSH_PRECMD_RUN {
+            patches.push(EnvDiffOperation::Add(
+                "__MISE_ZSH_PRECMD_RUN".into(),
+                "1".into(),
+            ));
+        }
 
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
