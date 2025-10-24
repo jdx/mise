@@ -13,6 +13,7 @@ use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 
+use crate::cli::HookReason;
 use crate::config::Config;
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
@@ -62,7 +63,7 @@ impl From<PathBuf> for WatchFilePattern {
 /// called and it does not need to be
 pub fn should_exit_early(
     watch_files: impl IntoIterator<Item = WatchFilePattern>,
-    reason: Option<&str>,
+    reason: Option<HookReason>,
 ) -> bool {
     let args = env::ARGS.read().unwrap();
     if args.len() < 2 || args[1] != "hook-env" {
@@ -70,7 +71,7 @@ pub fn should_exit_early(
     }
     // Force hook-env to run at least once from precmd after activation
     // This catches PATH modifications from shell initialization (e.g., path_helper in zsh)
-    if reason == Some("precmd") && !*env::__MISE_ZSH_PRECMD_RUN {
+    if reason == Some(HookReason::Precmd) && !*env::__MISE_ZSH_PRECMD_RUN {
         trace!("__MISE_ZSH_PRECMD_RUN=0 and reason=precmd, forcing hook-env to run");
         return false;
     }
