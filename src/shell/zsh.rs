@@ -52,17 +52,13 @@ impl Shell for Zsh {
             out.push_str(&formatdoc! {r#"
 
             _mise_hook() {{
-              if [[ -n "${{1:-}}" ]]; then
-                eval "$({exe} hook-env{flags} -s zsh --reason "$1")";
-              else
-                eval "$({exe} hook-env{flags} -s zsh)";
-              fi
+              eval "$({exe} hook-env{flags} -s zsh)";
             }}
             _mise_hook_precmd() {{
-              _mise_hook precmd
+              eval "$({exe} hook-env{flags} -s zsh --reason precmd)";
             }}
             _mise_hook_chpwd() {{
-              _mise_hook chpwd
+              eval "$({exe} hook-env{flags} -s zsh --reason chpwd)";
             }}
             typeset -ag precmd_functions;
             if [[ -z "${{precmd_functions[(r)_mise_hook_precmd]+1}}" ]]; then
