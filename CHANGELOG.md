@@ -1,5 +1,47 @@
 # Changelog
 
+## [2025.10.17](https://github.com/jdx/mise/compare/v2025.10.16..v2025.10.17) - 2025-10-24
+
+### 📦 Registry
+
+- add superhtml by @Maarrk in [#6742](https://github.com/jdx/mise/pull/6742)
+- add opengrep by @vmeurisse in [#6745](https://github.com/jdx/mise/pull/6745)
+
+### 🚀 Features
+
+- **(plugins)** Implement missing `file.exists()` Lua function by @ofalvai in [#6754](https://github.com/jdx/mise/pull/6754)
+- **(tasks)** Make tera templates available in usage by @iamkroot in [#6747](https://github.com/jdx/mise/pull/6747)
+- use custom api_url for asset downloading in GHES setups by @talbx in [#6730](https://github.com/jdx/mise/pull/6730)
+
+### 🐛 Bug Fixes
+
+- **(env)** prioritize _.path after external PATH modifications by @jdx in [#6755](https://github.com/jdx/mise/pull/6755)
+- incorrect task arguments with spaces on Windows by @nickbabcock in [#6744](https://github.com/jdx/mise/pull/6744)
+
+### 📚 Documentation
+
+- Add example of configuring tools in a file tasks by @richardthe3rd in [#6719](https://github.com/jdx/mise/pull/6719)
+- Add NixOS tip about source compilation to install docs by @richardgill in [#6757](https://github.com/jdx/mise/pull/6757)
+
+### ◀️ Revert
+
+- fix(shell): prevent infinite loop in zsh command-not-found handler by @jdx in [#6758](https://github.com/jdx/mise/pull/6758)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:copr docker digest to 7f6aee5 by @renovate[bot] in [#6750](https://github.com/jdx/mise/pull/6750)
+- update ghcr.io/jdx/mise:alpine docker digest to f749e46 by @renovate[bot] in [#6749](https://github.com/jdx/mise/pull/6749)
+- update ghcr.io/jdx/mise:rpm docker digest to 308b042 by @renovate[bot] in [#6752](https://github.com/jdx/mise/pull/6752)
+- update ghcr.io/jdx/mise:deb docker digest to e28b4fd by @renovate[bot] in [#6751](https://github.com/jdx/mise/pull/6751)
+
+### New Contributors
+
+- @richardgill made their first contribution in [#6757](https://github.com/jdx/mise/pull/6757)
+- @nickbabcock made their first contribution in [#6744](https://github.com/jdx/mise/pull/6744)
+- @vmeurisse made their first contribution in [#6745](https://github.com/jdx/mise/pull/6745)
+- @talbx made their first contribution in [#6730](https://github.com/jdx/mise/pull/6730)
+- @Maarrk made their first contribution in [#6742](https://github.com/jdx/mise/pull/6742)
+
 ## [2025.10.16](https://github.com/jdx/mise/compare/v2025.10.15..v2025.10.16) - 2025-10-23
 
 ### 🚀 Features
