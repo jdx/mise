@@ -226,6 +226,10 @@ You can also import the package directly using
 `mise-flake.packages.${system}.mise`. It supports all default Nix
 systems.
 
+::: tip NixOS compiles from source by default
+For precompiled binaries, enable [nix-ld](https://github.com/Mic92/nix-ld) and disable [`all_compile`](/configuration/settings.html#all_compile).
+:::
+
 ### yum (RHEL 8, CentOS Stream 8, Amazon Linux 2)
 
 ```sh
