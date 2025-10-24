@@ -43,7 +43,7 @@ pub fn mod_file(lua: &Lua) -> Result<()> {
                 "exists",
                 lua.create_async_function(|_lua: mlua::Lua, input| async move {
                     exists(&_lua, input).await
-                })?
+                })?,
             ),
         ])?,
     )?)
@@ -141,7 +141,11 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let existing_file = temp_dir.path().join("exists.txt");
         let existing_file_str = existing_file.to_string_lossy().to_string();
-        let nonexistent_file_str = temp_dir.path().join("nonexistent.txt").to_string_lossy().to_string();
+        let nonexistent_file_str = temp_dir
+            .path()
+            .join("nonexistent.txt")
+            .to_string_lossy()
+            .to_string();
 
         fs::write(&existing_file, "test content").unwrap();
         let lua = Lua::new();
