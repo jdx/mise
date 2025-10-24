@@ -224,6 +224,10 @@ impl UnifiedGitBackend {
                 Ok(_) => asset.url.clone(),
                 Err(_) => asset.url_api.clone(),
             },
+
+            // Custom API URLs usually imply that a custom GitHub/GitLab instance is used.
+            // Often times such instances do not allow browser URL downloads, e.g. due to
+            // upstream company SSOs. Therefore, using the api_url for downloading is the safer approach.
             false => {
                 debug!(
                     "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
