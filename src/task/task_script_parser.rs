@@ -1,3 +1,4 @@
+use crate::cli::version::V;
 use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
 use crate::exit::exit;
@@ -10,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use versions::Versioning;
 
 type TeraSpecParsingResult = (
     tera::Tera,
@@ -47,6 +49,39 @@ impl TaskScriptParser {
     ) -> Result<String> {
         tera.render_str(usage.trim(), ctx)
             .with_context(|| format!("Failed to render task usage: {}", usage))
+    }
+
+    fn check_tera_args_deprecation(
+        task_name: &str,
+        args: &[usage::SpecArg],
+        flags: &[usage::SpecFlag],
+    ) {
+        // Check if any args or flags were defined via Tera templates
+        if args.is_empty() && flags.is_empty() {
+            return;
+        }
+
+        // Debug assertion to ensure we remove this functionality after 2026.11.0
+        let removal_version = Versioning::new("2026.11.0").unwrap();
+        debug_assert!(
+            *V < removal_version,
+            "Tera template task arguments (arg/option/flag functions) should have been removed in version 2026.11.0. \
+             Please remove this deprecated functionality from task_script_parser.rs"
+        );
+
+        // Show deprecation warning for versions >= 2026.5.0
+        let deprecation_version = Versioning::new("2026.5.0").unwrap();
+        if *V >= deprecation_version {
+            deprecated!(
+                "tera_template_task_args",
+                "Task '{}' uses deprecated Tera template functions (arg(), option(), flag()) in run scripts. \
+                 This will be removed in mise 2026.11.0. The template functions require two-pass parsing which \
+                 causes unexpected behavior - they return empty strings during spec collection and have complex \
+                 escaping rules. The 'usage' field is cleaner, works consistently between TOML/file tasks, and \
+                 provides all the same functionality. See migration guide: https://mise.jdx.dev/tasks/task-arguments/#tera-templates",
+                task_name
+            );
+        }
     }
 
     // Helper functions for tera error handling
@@ -547,6 +582,10 @@ impl TaskScriptParser {
             })
             .collect();
         cmd.flags = input_flags.lock().unwrap().clone();
+
+        // Check for deprecated Tera template args usage
+        Self::check_tera_args_deprecation(&task.name, &cmd.args, &cmd.flags);
+
         let mut spec = usage::Spec {
             cmd,
             ..Default::default()
@@ -586,6 +625,10 @@ impl TaskScriptParser {
             })
             .collect();
         cmd.flags = input_flags.lock().unwrap().clone();
+
+        // Check for deprecated Tera template args usage
+        Self::check_tera_args_deprecation(&task.name, &cmd.args, &cmd.flags);
+
         let mut spec = usage::Spec {
             cmd,
             ..Default::default()
