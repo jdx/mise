@@ -129,7 +129,7 @@ fi
 	assert_contains "mise run compile" "compile task executed"
 )
 
-# Test 8: Root level tasks - bare names in dependencies work
+# Test 8: Root level tasks - bare names work at root too
 cat <<'EOF' >>mise.toml
 [tasks.clean]
 run = 'echo "root clean task executed"'
@@ -143,5 +143,6 @@ EOF
 assert_contains "mise run //:init" "root clean task executed"
 assert_contains "mise run //:init" "root init task executed"
 
-# Note: Running from root directory with bare "init" does NOT auto-expand to //:init
-# This is intentional - bare names at root follow normal task resolution
+# Running from root directory with bare name should work the same
+assert_contains "mise run init" "root clean task executed"
+assert_contains "mise run init" "root init task executed"

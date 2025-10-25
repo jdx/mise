@@ -118,8 +118,6 @@ run = "webpack build"
 ```
 
 The bare name syntax (without `:`) is supported primarily to ease migration from non-monorepo to monorepo configurations. When migrating, you won't need to update all your task dependencies immediately - they'll continue to work. However, using the `:` prefix makes it clear you're referencing a task in the current config_root.
-
-**Note:** At the monorepo root, bare names use normal (non-monorepo) task resolution to avoid ambiguity. For example, if you have both `//:build` and `//projects/frontend:build`, running `mise build` from the root won't automatically pick one - you must be explicit with `mise //:build` or `mise :build`. This prevents accidentally running the wrong task when multiple projects have tasks with the same name.
 :::
 
 ### Wildcard Patterns
