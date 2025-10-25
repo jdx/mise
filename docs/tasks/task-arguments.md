@@ -392,8 +392,8 @@ Use `#MISE` (uppercase, recommended) or `#USAGE` for defining arguments in file 
 
 ### Tera Template Functions <Badge type="danger" text="deprecated" /> {#tera-templates}
 
-::: danger Deprecated - Removal in 2025.11.0
-The Tera template method for defining task arguments is **deprecated** and will be **removed in mise 2025.11.0**.
+::: danger Deprecated - Removal in 2026.11.0
+The Tera template method for defining task arguments is **deprecated** and will be **removed in mise 2026.11.0**.
 
 **Why it's being removed:**
 
@@ -402,7 +402,7 @@ The Tera template method for defining task arguments is **deprecated** and will 
 - **Inconsistent behavior**: Doesn't work the same way between TOML and file tasks
 - **Poor user experience**: Mixes argument definitions with script logic
 
-**Migration required:** Please migrate to the [usage field](#usage-field) method before 2025.11.0.
+**Migration required:** Please migrate to the [usage field](#usage-field) method before 2026.11.0.
 :::
 
 <details>

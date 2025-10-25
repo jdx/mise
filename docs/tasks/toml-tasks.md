@@ -458,8 +458,8 @@ See the [Task Arguments](/tasks/task-arguments#usage-field) page for complete do
 
 ### Tera Template Functions <Badge type="danger" text="deprecated" />
 
-::: danger Deprecated - Removal in 2025.11.0
-Using Tera template functions (`arg()`, `option()`, `flag()`) in run scripts is **deprecated** and will be **removed in mise 2025.11.0**. Versions >= 2025.5.0 will show a deprecation warning.
+::: danger Deprecated - Removal in 2026.11.0
+Using Tera template functions (`arg()`, `option()`, `flag()`) in run scripts is **deprecated** and will be **removed in mise 2026.11.0**. Versions >= 2026.5.0 will show a deprecation warning.
 
 **Why it's being removed:**
 
