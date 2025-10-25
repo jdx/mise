@@ -199,8 +199,8 @@ pub fn expand_colon_task_syntax(
                     // :task -> //:task
                     Ok(format!("//{}", task))
                 } else {
-                    // bare name at root -> //:task
-                    Ok(format!("//:{}", task))
+                    // bare name at root -> don't expand (let normal task matching happen)
+                    Ok(task.to_string())
                 }
             } else {
                 // We're in a subdirectory

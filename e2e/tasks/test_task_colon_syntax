@@ -69,6 +69,7 @@ if echo "$OUTPUT2" | grep -q "project build task"; then
 fi
 
 # Test 3: Verify that 'mise run build' does NOT match monorepo tasks
+cd ../..
 unset MISE_EXPERIMENTAL
 
 cat <<'EOF' >mise.toml
