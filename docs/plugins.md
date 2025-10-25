@@ -138,5 +138,5 @@ Plugin custom repository values can be templates, see [Templates](/templates) fo
 
 ```toml
 [plugins]
-my-plugin = "https://{{ get_env(name='GIT_USR', default='empty') }}:{{ get_env(name='GIT_PWD', default='empty') }}@github.com/foo/my-plugin.git"
+"vfox-backend:my-plugin" = "https://{{ get_env(name='GIT_USR', default='empty') }}:{{ get_env(name='GIT_PWD', default='empty') }}@github.com/foo/my-plugin.git"
 ```

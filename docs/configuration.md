@@ -184,10 +184,14 @@ _new_ plugin installations. Existing plugins can use any URL.
 [plugins]
 elixir = "https://github.com/my-org/mise-elixir.git"
 node = "https://github.com/my-org/mise-node.git#DEADBEEF" # supports specific gitref
+"vfox-backend:myplugin" = "https://github.com/jdx/vfox-npm"
 ```
 
+The plugin type prefix (e.g., `asdf:`, `vfox:` or `vfox-backend:`) is optional. If omitted, mise will fall back to
+either using `asdf` or `vfox` if the URL contains `vfox-` in the repo name.
+
 If you simply want to install a plugin from a specific URL once, it's better to use
-`mise plugin install plugin <GIT_URL>`. Add this section to `mise.toml` if you want
+`mise plugin install <NAME> <GIT_URL>`. Add this section to `mise.toml` if you want
 to share the plugin location/revision with other developers in your project.
 
 This is similar
