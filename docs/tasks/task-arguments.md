@@ -385,7 +385,7 @@ fi
 ```
 
 ::: tip Syntax Options
-Use `#MISE` (uppercase, recommended) or `#USAGE` for defining arguments in file tasks. The older `# mise` (lowercase) syntax is deprecated.
+Use `#MISE` (uppercase, recommended) or `#USAGE` for defining arguments in file tasks. `# [MISE]` or `# [USAGE]` are also accepted as workarounds for formatters.
 :::
 
 ## Deprecated Method
