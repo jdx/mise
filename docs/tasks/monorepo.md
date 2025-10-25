@@ -93,14 +93,14 @@ mise :build  # Runs the build task from frontend's config_root
 ```
 
 ::: tip Optional Colon Syntax
-The leading `:` is optional when running tasks from subdirectories or defining task dependencies. These are equivalent:
+The leading `:` is optional when running tasks from subdirectories or defining task dependencies. While both syntaxes work, **we encourage using the `:` prefix to be explicit** about monorepo task references.
 
 **Running from subdirectory:**
 
 ```bash
 cd projects/frontend
-mise :build      # Explicit colon syntax
-mise build       # Bare name (automatically resolved to //projects/frontend:build)
+mise :build      # Recommended: Explicit monorepo task reference
+mise build       # Also works (for migration compatibility)
 ```
 
 **Task dependencies:**
@@ -111,13 +111,13 @@ mise build       # Bare name (automatically resolved to //projects/frontend:buil
 run = "eslint ."
 
 [tasks.build]
-depends = [":lint"]  # Explicit colon syntax
+depends = [":lint"]  # Recommended: Explicit and clear
 # OR
-depends = ["lint"]   # Bare name (same behavior)
+depends = ["lint"]   # Also works (for migration compatibility)
 run = "webpack build"
 ```
 
-Both syntaxes work identically - use whichever feels more natural. The bare name syntax provides cleaner, more familiar task definitions.
+The bare name syntax (without `:`) is supported primarily to ease migration from non-monorepo to monorepo configurations. When migrating, you won't need to update all your task dependencies immediately - they'll continue to work. However, using the `:` prefix makes it clear you're referencing a task in the current config_root.
 
 **Note:** At the monorepo root, bare names follow normal task resolution and do NOT auto-expand to root-level tasks (e.g., `mise build` at root won't run `//:build` unless `build` is in the normal task hierarchy).
 :::
