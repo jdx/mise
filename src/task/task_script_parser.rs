@@ -64,7 +64,7 @@ impl TaskScriptParser {
         // Debug assertion to ensure we remove this functionality after 2026.11.0
         let removal_version = Versioning::new("2026.11.0").unwrap();
         debug_assert!(
-            *V <= removal_version,
+            *V < removal_version,
             "Tera template task arguments (arg/option/flag functions) should have been removed in version 2026.11.0. \
              Please remove this deprecated functionality from task_script_parser.rs"
         );
