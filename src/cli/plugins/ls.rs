@@ -65,6 +65,7 @@ impl PluginsLs {
 
         let plugins = plugins
             .into_iter()
+            .filter(|(short, (pt, _))| pt.plugin(short.clone()).is_installed())
             .map(|(short, (pt, url))| {
                 let plugin = pt.plugin(short.clone());
                 if let Some(url) = url {
