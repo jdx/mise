@@ -195,8 +195,13 @@ pub fn expand_colon_task_syntax(
 
             if path_str.is_empty() {
                 // We're at the root
-                // Both :task and bare task should expand to //:task
-                Ok(format!("//:{}", task))
+                if is_colon_pattern {
+                    // :task -> //:task (task already has colon)
+                    Ok(format!("//{}", task))
+                } else {
+                    // bare task -> //:task (add colon)
+                    Ok(format!("//:{}", task))
+                }
             } else {
                 // We're in a subdirectory
                 if is_colon_pattern {
