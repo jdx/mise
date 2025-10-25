@@ -38,11 +38,6 @@ checksum = "sha256:f482d21dca5e84751e0fd0c27cad7a64ea201ade1105621c917bb7c7cf883
 size = 6784879
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.8/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
-[tools.cargo-binstall.platforms.macos-arm64]
-checksum = "blake3:2fefa92937127160f6de06d62059934378f9424b763b7e109df9e464f2c40951"
-size = 6015134
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.8/cargo-binstall-aarch64-apple-darwin.zip"
-
 [[tools."cargo:cargo-edit"]]
 version = "0.13.7"
 backend = "cargo:cargo-edit"
@@ -156,11 +151,6 @@ backend = "aqua:BurntSushi/ripgrep"
 checksum = "sha256:1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599"
 size = 2263077
 url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz"
-
-[tools.ripgrep.platforms.macos-arm64]
-checksum = "sha256:378e973289176ca0c6054054ee7f631a065874a352bf43f0fa60ef079b6ba715"
-size = 1777930
-url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-aarch64-apple-darwin.tar.gz"
 
 [[tools.shellcheck]]
 version = "0.11.0"
