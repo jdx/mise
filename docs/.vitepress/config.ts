@@ -135,6 +135,7 @@ export default withMermaid(
             { text: "Running Tasks", link: "/tasks/running-tasks" },
             { text: "TOML Tasks", link: "/tasks/toml-tasks" },
             { text: "File Tasks", link: "/tasks/file-tasks" },
+            { text: "Task Arguments", link: "/tasks/task-arguments" },
             { text: "Task Configuration", link: "/tasks/task-configuration" },
             { text: "Monorepo Tasks", link: "/tasks/monorepo" },
           ],

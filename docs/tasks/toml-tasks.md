@@ -424,6 +424,10 @@ You can use the `MISE_TASK_REMOTE_NO_CACHE` environment variable to disable cach
 
 ## Arguments
 
+::: tip
+For comprehensive information about task arguments, see the dedicated [Task Arguments](/tasks/task-arguments) page.
+:::
+
 By default, arguments are passed to the last script in the `run` array. So if a task was defined as:
 
 ```toml
@@ -434,7 +438,42 @@ run = ['cargo test', './scripts/test-e2e.sh']
 Then running `mise run test foo bar` will pass `foo bar` to `./scripts/test-e2e.sh` but not to
 `cargo test`.
 
-You can also define arguments using templates:
+### Recommended: Using the Usage Field
+
+The recommended way to define arguments is using the `usage` field:
+
+```toml
+[tasks.test]
+usage = '''
+arg "<file>" help="Test file to run" default="all"
+option "--format <format>" help="Output format" default="text"
+flag "-v --verbose" help="Enable verbose output"
+'''
+run = 'cargo test $usage_file --format $usage_format'
+```
+
+Arguments defined in the usage field are available as environment variables prefixed with `usage_`.
+
+See the [Task Arguments](/tasks/task-arguments#usage-field) page for complete documentation.
+
+### Tera Template Functions <Badge type="danger" text="deprecated" />
+
+::: danger Deprecated - Removal in 2025.11.0
+Using Tera template functions (`arg()`, `option()`, `flag()`) in run scripts is **deprecated** and will be **removed in mise 2025.11.0**. Versions >= 2025.5.0 will show a deprecation warning.
+
+**Why it's being removed:**
+
+- Template functions return empty strings during spec collection (two-pass parsing issue)
+- Complex and unpredictable shell escaping rules
+- Doesn't work consistently between TOML/file tasks
+
+**Please migrate to using the `usage` field instead.** See the [migration guide](/tasks/task-arguments#tera-templates).
+:::
+
+<details>
+<summary>Click to see deprecated Tera template syntax (not recommended)</summary>
+
+You can define arguments using Tera template functions (deprecated):
 
 ```toml
 [tasks.test]
@@ -446,14 +485,8 @@ run = [
 
 Then running `mise run test foo bar` will pass `foo bar` to `cargo test`.
 `mise run test --e2e-args baz` will pass `baz` to `./scripts/test-e2e.sh`.
-If any arguments are defined with templates then mise will not pass the arguments to the last script
-in the `run` array.
 
-:::tip
-Using templates to define arguments will make them work with completion and help messages.
-:::
-
-### Positional Arguments
+#### Positional Arguments
 
 These are defined in scripts with <span v-pre>`{{arg()}}`</span>. They are used for positional
 arguments where the order matters.
@@ -473,7 +506,7 @@ run = 'cargo test {{arg(name="file")}}'
 - `var`: If `true`, multiple arguments can be passed.
 - `default`: The default value if the argument is not provided.
 
-### Options
+#### Options
 
 These are defined in scripts with <span v-pre>`{{option()}}`</span>. They are used for named
 arguments where the order doesn't matter.
@@ -491,7 +524,7 @@ run = 'cargo test {{option(name="file")}}'
 - `var`: If `true`, multiple values can be passed.
 - `default`: The default value if the option is not provided.
 
-### Flags
+#### Flags
 
 Flags are like options except they don't take values. They are defined in scripts with <span v-pre>
 `{{flag()}}`</span>.
@@ -520,7 +553,9 @@ fi
 
 The value will be `true` if the flag is passed, and `false` otherwise.
 
-### Usage spec
+</details>
+
+### Advanced Usage Specs
 
 More advanced usage specs can be added to the task's `usage` field:
 
