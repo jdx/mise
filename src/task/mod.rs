@@ -793,18 +793,29 @@ pub(crate) fn extract_monorepo_path(name: &str) -> Option<String> {
 /// If pattern starts with ":" and parent_task is provided, resolve relative to parent's path
 /// For example: parent "//projects/frontend:test" with pattern ":build" -> "//projects/frontend:build"
 pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) -> String {
-    // If pattern starts with ":" and we have a parent task, resolve relatively
-    if pattern.starts_with(':') && !pattern.starts_with("::") {
+    // Check if this is a bare task name that should be treated as relative
+    let is_bare_name =
+        !pattern.starts_with("//") && !pattern.starts_with("::") && !pattern.starts_with(':');
+
+    // If pattern starts with ":" or is a bare name in monorepo context, resolve relatively
+    let should_resolve_relatively = pattern.starts_with(':') && !pattern.starts_with("::")
+        || (is_bare_name && parent_task.is_some_and(|p| p.name.starts_with("//")));
+
+    if should_resolve_relatively {
         if let Some(parent) = parent_task {
             // Extract the path portion from the parent task name
             // For monorepo tasks like "//projects/frontend:test:nested", we need to extract "//projects/frontend"
             // by finding the FIRST colon after the "//" prefix, not the last one
-            if parent.name.starts_with("//") {
+            if let Some(stripped) = parent.name.strip_prefix("//") {
                 // Find the first colon after "//" prefix
-                if let Some(colon_idx) = parent.name[2..].find(':') {
-                    // colon_idx is relative to parent.name[2..], so add 2 to get absolute index
-                    let path = &parent.name[..colon_idx + 2];
-                    return format!("{}{}", path, pattern);
+                if let Some(colon_idx) = stripped.find(':') {
+                    let path = format!("//{}", &stripped[..colon_idx]);
+                    // If pattern is a bare name, add the colon prefix
+                    return if is_bare_name {
+                        format!("{}:{}", path, pattern)
+                    } else {
+                        format!("{}{}", path, pattern)
+                    };
                 }
             } else if let Some((path, _)) = parent.name.rsplit_once(':') {
                 // For non-monorepo tasks, use the old logic
