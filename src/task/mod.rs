@@ -783,12 +783,10 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
 /// e.g., "//projects/frontend:test:nested" -> Some("projects/frontend")
 /// Returns None if the task name doesn't have monorepo syntax
 pub(crate) fn extract_monorepo_path(name: &str) -> Option<String> {
-    if name.starts_with("//") {
+    name.strip_prefix("//").and_then(|stripped| {
         // Find the FIRST colon after "//" prefix to handle task names with colons like "do:item-1"
-        name[2..].find(':').map(|idx| name[2..idx + 2].to_string())
-    } else {
-        None
-    }
+        stripped.find(':').map(|idx| stripped[..idx].to_string())
+    })
 }
 
 /// Resolve a task dependency pattern, optionally relative to a parent task
