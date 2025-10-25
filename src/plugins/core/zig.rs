@@ -213,7 +213,6 @@ impl ZigPlugin {
             .unwrap_or_else(|_| {
                 // We can still use an older mirror list
                 warn!("Could not download {MIRRORS_FILENAME}");
-                
             });
         }
 
