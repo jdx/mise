@@ -11,3 +11,7 @@ assert_contains "mise config --cd $PWD/test ls" "test/mise.toml"
 assert_contains "mise run --cd $PWD/test hello" "Hello, World!"
 assert_contains "mise run --cd ./test hello" "Hello, World!"
 assert_contains "mise run --cd test hello" "Hello, World!"
+
+# Test completions with --cd flag
+assert_contains "usage complete-word --shell bash -f <(mise usage) --cword=4 -- mise --cd test run" "hello"
+assert_contains "usage complete-word --shell bash -f <(mise usage) --cword=3 -- mise -C test run" "hello"
