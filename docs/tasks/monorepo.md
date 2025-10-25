@@ -92,6 +92,36 @@ cd projects/frontend
 mise :build  # Runs the build task from frontend's config_root
 ```
 
+::: tip Optional Colon Syntax
+The leading `:` is optional when running tasks from subdirectories or defining task dependencies. These are equivalent:
+
+**Running from subdirectory:**
+
+```bash
+cd projects/frontend
+mise :build      # Explicit colon syntax
+mise build       # Bare name (automatically resolved to //projects/frontend:build)
+```
+
+**Task dependencies:**
+
+```toml
+# projects/frontend/mise.toml
+[tasks.lint]
+run = "eslint ."
+
+[tasks.build]
+depends = [":lint"]  # Explicit colon syntax
+# OR
+depends = ["lint"]   # Bare name (same behavior)
+run = "webpack build"
+```
+
+Both syntaxes work identically - use whichever feels more natural. The bare name syntax provides cleaner, more familiar task definitions.
+
+**Note:** At the monorepo root, bare names follow normal task resolution and do NOT auto-expand to root-level tasks (e.g., `mise build` at root won't run `//:build` unless `build` is in the normal task hierarchy).
+:::
+
 ### Wildcard Patterns
 
 mise supports two types of wildcards for flexible task execution:
