@@ -1,5 +1,29 @@
 # Changelog
 
+## [2025.10.18](https://github.com/jdx/mise/compare/v2025.10.17..v2025.10.18) - 2025-10-25
+
+### 🚀 Features
+
+- **(task)** make leading colon optional for monorepo task references by @jdx in [#6763](https://github.com/jdx/mise/pull/6763)
+
+### 🐛 Bug Fixes
+
+- **(task)** resolve monorepo task dependencies with colons in task names by @jdx in [#6761](https://github.com/jdx/mise/pull/6761)
+- Add clang and libs to nix nativeBuildInputs by @laozc in [#6760](https://github.com/jdx/mise/pull/6760)
+
+### 📚 Documentation
+
+- **(task)** deprecate Tera template functions for task arguments by @jdx in [#6764](https://github.com/jdx/mise/pull/6764)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`gittower/git-flow-next`](https://github.com/gittower/git-flow-next)
+
+#### Updated Packages (1)
+
+- [`suzuki-shunsuke/ci-info`](https://github.com/suzuki-shunsuke/ci-info)
 ## [2025.10.17](https://github.com/jdx/mise/compare/v2025.10.16..v2025.10.17) - 2025-10-24
 
 ### 📦 Registry
