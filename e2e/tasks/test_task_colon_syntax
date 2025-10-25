@@ -47,29 +47,32 @@ if echo "$OUTPUT_ROOT" | grep -E "project build task|app build task"; then
 fi
 
 # Running ':build' from project dir should only match //project:build
-cd project
-assert_contains "mise run ':build'" "project build task"
+(
+	cd project
+	assert_contains "mise run ':build'" "project build task"
 
-# Should NOT run app:build when we're in project directory
-OUTPUT=$(mise run ':build')
-if echo "$OUTPUT" | grep -q "app build task"; then
-	echo "ERROR: 'mise run :build' from project dir incorrectly matched //app:build"
-	exit 1
-fi
+	# Should NOT run app:build when we're in project directory
+	OUTPUT=$(mise run ':build')
+	if echo "$OUTPUT" | grep -q "app build task"; then
+		echo "ERROR: 'mise run :build' from project dir incorrectly matched //app:build"
+		exit 1
+	fi
+)
 
 # Running ':build' from app dir should only match //app:build
-cd ../app
-assert_contains "mise run ':build'" "app build task"
+(
+	cd app
+	assert_contains "mise run ':build'" "app build task"
 
-# Should NOT run project:build when we're in app directory
-OUTPUT2=$(mise run ':build')
-if echo "$OUTPUT2" | grep -q "project build task"; then
-	echo "ERROR: 'mise run :build' from app dir incorrectly matched //project:build"
-	exit 1
-fi
+	# Should NOT run project:build when we're in app directory
+	OUTPUT2=$(mise run ':build')
+	if echo "$OUTPUT2" | grep -q "project build task"; then
+		echo "ERROR: 'mise run :build' from app dir incorrectly matched //project:build"
+		exit 1
+	fi
+)
 
 # Test 3: Verify that 'mise run build' does NOT match monorepo tasks
-cd ../..
 unset MISE_EXPERIMENTAL
 
 cat <<'EOF' >mise.toml
