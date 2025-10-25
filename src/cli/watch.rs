@@ -23,7 +23,7 @@ use std::path::PathBuf;
 pub struct Watch {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
-    /// e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
+    /// e.g.: `mise watch task1 arg1 arg2 ::: task2 arg1 arg2`
     #[clap(allow_hyphen_values = true, verbatim_doc_comment)]
     task: Option<String>,
 
