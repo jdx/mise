@@ -206,10 +206,24 @@ impl Config {
 
         measure!("config::load install_state", {
             for (plugin, url) in &config.repo_urls {
-                let plugin_type = match url.contains("vfox-") {
-                    true => PluginType::Vfox,
-                    false => PluginType::Asdf,
+                // check plugin type, fallback to asdf
+                let (mut plugin_type, has_explicit_prefix) = match plugin {
+                    p if p.starts_with("vfox:") => (PluginType::Vfox, true),
+                    p if p.starts_with("vfox-backend:") => (PluginType::VfoxBackend, true),
+                    p if p.starts_with("asdf:") => (PluginType::Asdf, true),
+                    _ => (PluginType::Asdf, false),
                 };
+                // keep backward compatibility for vfox plugins, but only if no explicit prefix
+                if !has_explicit_prefix && url.contains("vfox-") {
+                    plugin_type = PluginType::Vfox;
+                }
+
+                let plugin = plugin
+                    .strip_prefix("vfox:")
+                    .or_else(|| plugin.strip_prefix("vfox-backend:"))
+                    .or_else(|| plugin.strip_prefix("asdf:"))
+                    .unwrap_or(plugin);
+
                 install_state::add_plugin(plugin, plugin_type).await?;
             }
         });
@@ -316,6 +330,16 @@ impl Config {
             .unwrap_or(plugin_name.to_string());
         let plugin_name = plugin_name.strip_prefix("asdf:").unwrap_or(&plugin_name);
         let plugin_name = plugin_name.strip_prefix("vfox:").unwrap_or(plugin_name);
+
+        if let Some(url) = self
+            .repo_urls
+            .keys()
+            .find(|k| k.ends_with(&format!(":{plugin_name}")))
+            .and_then(|k| self.repo_urls.get(k))
+        {
+            return Some(url.clone());
+        }
+
         self.shorthands
             .get(plugin_name)
             .map(|full| registry::full_to_url(&full[0]))
