@@ -12,6 +12,8 @@ rustPlatform.buildRustPackage {
 
   nativeBuildInputs = with pkgs; [
     cmakeMinimal
+    clang
+    llvmPackages.libclang
     pkg-config
   ];
   buildInputs = with pkgs; [
@@ -23,6 +25,8 @@ rustPlatform.buildRustPackage {
     gnused
     openssl
   ];
+
+  LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
 
   prePatch = ''
     substituteInPlace ./src/test.rs ./test/data/plugins/**/bin/* \
