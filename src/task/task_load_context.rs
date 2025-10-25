@@ -164,6 +164,15 @@ pub fn expand_colon_task_syntax(
     // Check if this is a colon pattern or a bare name
     let is_colon_pattern = task.starts_with(':');
 
+    // Reject patterns that look like monorepo paths with wrong syntax (have / and : but don't start with // or :)
+    if !is_colon_pattern && task.contains('/') && task.contains(':') {
+        bail!(
+            "relative path syntax '{}' is not supported, use '//{}' or ':task' for current directory",
+            task,
+            task
+        );
+    }
+
     // Get the monorepo root (the config file with experimental_monorepo_root = true)
     let monorepo_root = config
         .config_files
