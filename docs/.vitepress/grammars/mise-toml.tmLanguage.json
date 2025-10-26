@@ -32,9 +32,6 @@
       "name": "meta.embedded.block.kdl.mise-toml",
       "begin": "\\b(usage)\\s*=\\s*(\"\"\")",
       "beginCaptures": {
-        "1": {
-          "name": "keyword.key.toml"
-        },
         "2": {
           "name": "punctuation.definition.string.begin.toml"
         }
@@ -56,9 +53,6 @@
       "name": "meta.embedded.block.kdl.mise-toml",
       "begin": "\\b(usage)\\s*=\\s*(''')",
       "beginCaptures": {
-        "1": {
-          "name": "keyword.key.toml"
-        },
         "2": {
           "name": "punctuation.definition.string.begin.toml"
         }
@@ -80,9 +74,6 @@
       "name": "meta.embedded.block.shell.mise-toml",
       "begin": "\\b(run|run_windows|run_macos|run_linux)\\s*=\\s*(\"\"\")",
       "beginCaptures": {
-        "1": {
-          "name": "keyword.key.toml"
-        },
         "2": {
           "name": "punctuation.definition.string.begin.toml"
         }
@@ -104,9 +95,6 @@
       "name": "meta.embedded.block.shell.mise-toml",
       "begin": "\\b(run|run_windows|run_macos|run_linux)\\s*=\\s*(''')",
       "beginCaptures": {
-        "1": {
-          "name": "keyword.key.toml"
-        },
         "2": {
           "name": "punctuation.definition.string.begin.toml"
         }
