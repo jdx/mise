@@ -322,6 +322,7 @@ usage = '''
 arg "<environment>" env="DEPLOY_ENV" help="Target environment" default="staging"
 arg "<region>" env="AWS_REGION" help="AWS region" default="us-east-1"
 '''
+
 run = '''
 echo "Deploying to ${usage_environment?} in ${usage_region?}"
 '''
@@ -354,6 +355,7 @@ usage = '''
 flag "-p --profile <profile>" env="BUILD_PROFILE" help="Build profile" default="dev"
 flag "-v --verbose" env="VERBOSE" help="Verbose output"
 '''
+
 run = '''
 echo "Building with profile: ${usage_profile?}"
 echo "Verbose: ${usage_verbose:-false}"

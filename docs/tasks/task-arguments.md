@@ -18,6 +18,7 @@ arg "<environment>" help="Target environment" choices=["dev", "staging", "prod"]
 flag "-v --verbose" help="Enable verbose output"
 option "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
 '''
+
 run = '''
 echo "Deploying to ${usage_environment?} in ${usage_region?}"
 [[ "${usage_verbose?}" == "true" ]] && set -x
@@ -323,6 +324,7 @@ flag "--force" {
 # Custom completions
 complete "services" run="mycli list-services"
 '''
+
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
