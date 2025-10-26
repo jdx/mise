@@ -82,11 +82,11 @@ arg "[output]" default="out.txt"              # Optional with default
 #### Variadic Arguments
 
 ```kdl
-arg "[files]" var=true                        # 0 or more files
-arg "<files>" var=true                        # 1 or more files (required)
-arg "<files>" var=true var_min=2              # At least 2 files required
-arg "<files>" var=true var_max=5              # Maximum 5 files allowed
-arg "<files>" var=true var_min=1 var_max=3    # Between 1 and 3 files
+arg "[files]" var=#true                        # 0 or more files
+arg "<files>" var=#true                        # 1 or more files (required)
+arg "<files>" var=#true var_min=2              # At least 2 files required
+arg "<files>" var=#true var_max=5              # Maximum 5 files allowed
+arg "<files>" var=#true var_min=1 var_max=3    # Between 1 and 3 files
 ```
 
 #### Environment Variable Backing
@@ -114,7 +114,7 @@ arg "<shell>" {
 
 ```kdl
 arg "<file>" long_help="Extended help text shown with --help"
-arg "<file>" hide=true                        # Hidden from help output
+arg "<file>" hide=#true                        # Hidden from help output
 arg "<input>" parse="mycli parse-input {}"    # Parse value with external command
 ```
 
@@ -160,14 +160,14 @@ flag "-u --user <user>" help="User to run as"
 #### Count Flags
 
 ```kdl
-flag "-v --verbose" count=true                # Can be repeated: -vvv
+flag "-v --verbose" count=#true                # Can be repeated: -vvv
                                              # $usage_verbose = number of times used (e.g., 3)
 ```
 
 #### Negation
 
 ```kdl
-flag "--color" negate="--no-color" default=true
+flag "--color" negate="--no-color" default=#true
 # Default: $usage_color = "true"
 # With --no-color: $usage_color = "false"
 ```
@@ -175,7 +175,7 @@ flag "--color" negate="--no-color" default=true
 #### Global Flags
 
 ```kdl
-flag "-v --verbose" global=true               # Available on all subcommands (if using cmd structure)
+flag "-v --verbose" global=#true               # Available on all subcommands (if using cmd structure)
 ```
 
 #### Environment Variable and Config Backing
@@ -200,7 +200,7 @@ flag "--file <file>" overrides="--stdin"           # If --file is set, --stdin i
 
 ```kdl
 flag "--verbose" long_help="Extended help text"
-flag "--debug" hide=true                      # Hidden from help
+flag "--debug" hide=#true                      # Hidden from help
 flag "-q --quiet" {
   help "Suppress output"
   alias "--silent"                            # Alternative name
@@ -231,7 +231,7 @@ complete "plugin" run="mise plugins ls"       # Complete with command output
 #### With Descriptions
 
 ```kdl
-complete "plugin" run="mycli plugins list" descriptions=true
+complete "plugin" run="mycli plugins list" descriptions=#true
 ```
 
 Output format (split on `:` for value and description):
@@ -283,8 +283,8 @@ run = 'process-data "${usage_input?}" --format "${usage_format?}"'
 Hide arguments from help output (useful for deprecated or internal options):
 
 ```kdl
-arg "<legacy_arg>" hide=true
-flag "--internal-debug" hide=true
+arg "<legacy_arg>" hide=#true
+flag "--internal-debug" hide=#true
 ```
 
 ### Combining Features Example
@@ -301,14 +301,14 @@ arg "<environment>" {
 
 arg "[services]" {
   help "Services to deploy (default: all)"
-  var true
+  var #true
   var_min 0
 }
 
 # Flags
 flag "-v --verbose" {
   help "Enable verbose logging"
-  count true
+  count #true
   default 0
 }
 
@@ -651,7 +651,7 @@ run = 'eslint {{arg(name="files", var=true)}}'
 
 ```mise-toml
 [tasks.lint]
-usage = 'arg "<files>" var=true'
+usage = 'arg "<files>" var=#true'
 run = 'eslint ${usage_files?}'
 ```
 
