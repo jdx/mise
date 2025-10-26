@@ -10,7 +10,7 @@ The **usage field** is the recommended approach for defining task arguments. It 
 
 #### Quick Example
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 [tasks.deploy]
 description = "Deploy application"
 usage = '''
@@ -238,7 +238,7 @@ ruby:Ruby language
 
 For detailed help text, use multi-line format:
 
-```toml
+```mise-toml
 [tasks.complex]
 usage = '''
 arg "<input>" {
@@ -281,7 +281,7 @@ flag "--internal-debug" hide=true
 
 ### Combining Features Example
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 [tasks.deploy]
 description = "Deploy application to cloud"
 usage = '''
@@ -467,13 +467,13 @@ The Tera template method for defining task arguments is **deprecated** and will 
 
 Previously, you could define arguments inline in run scripts using Tera template functions:
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 # ❌ DEPRECATED - Do not use
 [tasks.test]
 run = 'cargo test {{arg(name="file", default="all")}}'
 ```
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 # ❌ DEPRECATED - Do not use
 [tasks.build]
 run = [
@@ -515,7 +515,7 @@ Here's how to migrate from Tera templates to the usage field:
 
 **Old (Deprecated):**
 
-```toml
+```mise-toml
 [tasks.test]
 run = '''
 cargo test {{arg(
@@ -532,7 +532,7 @@ cargo test {{arg(
 
 **New (Preferred):**
 
-```toml
+```mise-toml
 [tasks.test]
 usage = 'arg "<file>" help="Test file" default="all"'
 run = 'cargo test ${usage_file?}'
@@ -550,7 +550,7 @@ run = 'cargo test ${usage_file?}'
 
 **Old (Deprecated):**
 
-```toml
+```mise-toml
 [tasks.build]
 run = [
   'cargo build {{arg(name="target", default="debug")}}',
@@ -564,7 +564,7 @@ run = [
 
 **New (Preferred):**
 
-```toml
+```mise-toml
 [tasks.build]
 usage = '''
 arg "<target>" default="debug"
@@ -588,7 +588,7 @@ run = [
 
 **Old (Deprecated):**
 
-```toml
+```mise-toml
 [tasks.deploy]
 run = '''
 deploy {{option(
@@ -604,7 +604,7 @@ deploy {{option(
 
 **New (Preferred):**
 
-```toml
+```mise-toml
 [tasks.deploy]
 usage = '''
 option "--env <env>" choices=["dev", "prod"]
@@ -625,7 +625,7 @@ run = 'deploy --env ${usage_env?} ${usage_force?}'
 
 **Old (Deprecated):**
 
-```toml
+```mise-toml
 [tasks.lint]
 run = 'eslint {{arg(name="files", var=true)}}'
 ```
@@ -636,7 +636,7 @@ run = 'eslint {{arg(name="files", var=true)}}'
 
 **New (Preferred):**
 
-```toml
+```mise-toml
 [tasks.lint]
 usage = 'arg "<files>" var=true'
 run = 'eslint ${usage_files?}'

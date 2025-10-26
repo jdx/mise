@@ -26,7 +26,7 @@ node -v
 
 And you'll also note that you now have a `mise.toml` file with the following content:
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 [tools]
 node = "22"
 ```
@@ -130,7 +130,7 @@ Tasks are defined in a project to execute commands.
 
 You can define tasks in a `mise.toml`:
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 [tasks]
 build = "npm run build"
 test = "npm test"
