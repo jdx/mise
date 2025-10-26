@@ -7,6 +7,7 @@ import {
 import { tabsMarkdownPlugin } from "vitepress-plugin-tabs";
 import { withMermaid } from "vitepress-plugin-mermaid";
 import kdlGrammar from "./grammars/kdl.tmLanguage.json";
+import miseTomlGrammar from "./grammars/mise-toml.tmLanguage.json";
 
 // https://vitepress.dev/reference/site-config
 export default withMermaid(
@@ -243,10 +244,22 @@ export default withMermaid(
     },
     markdown: {
       languages: [
+        // Load shell and bash for embedded language support
+        "shell",
+        "bash",
+        // TODO: Once Shiki bundles KDL (tracked in shikijs/textmate-grammars-themes),
+        // we can import it from 'shiki/langs/kdl' instead of storing locally
         {
           ...kdlGrammar,
           name: "kdl",
           scopeName: "source.kdl",
+        } as any,
+        // Custom mise.toml grammar with embedded KDL (usage fields) and bash (run fields)
+        {
+          ...miseTomlGrammar,
+          name: "mise-toml",
+          aliases: ["mise.toml"],
+          scopeName: "source.mise-toml",
         } as any,
       ],
       config(md) {
