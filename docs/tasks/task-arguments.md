@@ -14,7 +14,9 @@ The **usage field** is the recommended approach for defining task arguments. It 
 [tasks.deploy]
 description = "Deploy application"
 usage = '''
-arg "<environment>" help="Target environment" choices=["dev", "staging", "prod"]
+arg "<environment>" help="Target environment" {
+  choices "dev" "staging" "prod"
+}
 flag "-v --verbose" help="Enable verbose output"
 option "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
 '''
@@ -99,7 +101,9 @@ Priority order: CLI argument > Environment variable > Default value
 #### Choices (Enum Values)
 
 ```kdl
-arg "<level>" choices=["debug", "info", "warn", "error"]
+arg "<level>" {
+  choices "debug" "info" "warn" "error"
+}
 arg "<shell>" {
   choices "bash" "zsh" "fish"
   help "Shell type"
@@ -146,7 +150,10 @@ flag "--force"                                # Long flag only
 Flags can also accept values (making them similar to options):
 
 ```kdl
-flag "--color <when>" choices=["auto", "always", "never"] default="auto"
+flag "--color <when>" {
+  choices "auto" "always" "never"
+  default "auto"
+}
 flag "-u --user <user>" help="User to run as"
 ```
 
@@ -371,7 +378,9 @@ For file tasks, you can define arguments directly in the file using special `#MI
 ```bash [.mise/tasks/deploy]
 #!/usr/bin/env bash
 #MISE description "Deploy application"
-#USAGE arg "<environment>" help="Deployment environment" choices=["dev", "staging", "prod"]
+#USAGE arg "<environment>" help="Deployment environment" {
+#USAGE   choices "dev" "staging" "prod"
+#USAGE }
 #USAGE flag "--dry-run" help="Preview changes without deploying"
 #USAGE flag "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
 
@@ -609,7 +618,9 @@ deploy {{option(
 ```mise-toml
 [tasks.deploy]
 usage = '''
-option "--env <env>" choices=["dev", "prod"]
+option "--env <env>" {
+  choices "dev" "prod"
+}
 flag "--force"
 '''
 run = 'deploy --env ${usage_env?} ${usage_force?}'
