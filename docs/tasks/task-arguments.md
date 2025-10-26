@@ -114,8 +114,12 @@ arg "<shell>" {
 
 ```kdl
 arg "<file>" long_help="Extended help text shown with --help"
-arg "<file>" hide=#true                        # Hidden from help output
-arg "<input>" parse="mycli parse-input {}"    # Parse value with external command
+
+# Hidden from help output
+arg "<file>" hide=#true
+
+# Parse value with external command
+arg "<input>" parse="mycli parse-input {}"
 ```
 
 #### Double-Dash Behavior
