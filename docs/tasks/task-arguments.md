@@ -125,9 +125,14 @@ arg "<input>" parse="mycli parse-input {}"
 #### Double-Dash Behavior
 
 ```kdl
-arg "<file>" double_dash="required"           # Must use: mycli -- file.txt
-arg "<file>" double_dash="optional"           # Both work: mycli file.txt or mycli -- file.txt
-arg "<files>" double_dash="automatic"         # After first arg, behaves as if -- was used
+# Must use: mycli -- file.txt
+arg "<file>" double_dash="required"
+
+# Both work: mycli file.txt or mycli -- file.txt
+arg "<file>" double_dash="optional"
+
+# After first arg, behaves as if -- was used
+arg "<files>" double_dash="automatic"
 ```
 
 ### Flags (`flag`)
@@ -164,8 +169,9 @@ flag "-u --user <user>" help="User to run as"
 #### Count Flags
 
 ```kdl
-flag "-v --verbose" count=#true                # Can be repeated: -vvv
-                                             # $usage_verbose = number of times used (e.g., 3)
+# Can be repeated: -vvv
+# $usage_verbose = number of times used (e.g., 3)
+flag "-v --verbose" count=#true
 ```
 
 #### Negation
@@ -179,7 +185,8 @@ flag "--color" negate="--no-color" default=#true
 #### Global Flags
 
 ```kdl
-flag "-v --verbose" global=#true               # Available on all subcommands (if using cmd structure)
+# Available on all subcommands (if using cmd structure)
+flag "-v --verbose" global=#true
 ```
 
 #### Environment Variable and Config Backing
@@ -195,9 +202,14 @@ Priority order: CLI flag > Environment variable > Config file > Default value
 #### Conditional Requirements
 
 ```kdl
-flag "--file <file>" required_if="--output"        # If --output is set, --file must be too
-flag "--file <file>" required_unless="--stdin"     # Either --file or --stdin must be set
-flag "--file <file>" overrides="--stdin"           # If --file is set, --stdin is ignored
+# If --output is set, --file must be too
+flag "--file <file>" required_if="--output"
+
+# Either --file or --stdin must be set
+flag "--file <file>" required_unless="--stdin"
+
+# If --file is set, --stdin is ignored
+flag "--file <file>" overrides="--stdin"
 ```
 
 #### Flag Advanced Features
