@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+# Test that :task dependency syntax works correctly in monorepo tasks
+# This tests the fix for: https://github.com/jdxcode/mise/issues/XXXX
+# When a task in a submodule has a dependency like `:before`, it should
+# resolve to the task in the same submodule, not fail with "task not found"
+
+export MISE_EXPERIMENTAL=1
+
+# Set up monorepo structure
+cat <<'EOF' >mise.toml
+min_version = "2025.10.6"
+experimental_monorepo_root = true
+
+[settings]
+experimental = true
+EOF
+
+mkdir -p submodule
+cat <<'EOF' >submodule/mise.toml
+[tasks.before]
+run = 'echo "before task executed"'
+
+[tasks."do:item-1"]
+depends = [":before"]
+run = 'echo "do:item-1 task executed"'
+
+[tasks."test:nested"]
+depends = [":before"]
+run = 'echo "test:nested task executed"'
+EOF
+
+# Test 1: Task with colon in name should resolve dependencies correctly
+# The task //submodule:do:item-1 depends on :before, which should resolve to //submodule:before
+assert_contains "mise run //submodule:do:item-1" "before task executed"
+assert_contains "mise run //submodule:do:item-1" "do:item-1 task executed"
+
+# Test 2: Another task with colon should also work
+assert_contains "mise run //submodule:test:nested" "before task executed"
+assert_contains "mise run //submodule:test:nested" "test:nested task executed"
+
+# Test 3: Test with depends_post
+mkdir -p project
+cat <<'EOF' >project/mise.toml
+[tasks.cleanup]
+run = 'echo "cleanup task executed"'
+
+[tasks."build:prod"]
+depends_post = [":cleanup"]
+run = 'echo "build:prod task executed"'
+EOF
+
+assert_contains "mise run //project:build:prod" "build:prod task executed"
+assert_contains "mise run //project:build:prod" "cleanup task executed"
+
+# Test 4: Verify that dependencies are correctly scoped to their module
+# :before in other module should resolve to //other:before, not //submodule:before
+mkdir -p other
+cat <<'EOF' >other/mise.toml
+[tasks.before]
+run = 'echo "other before task executed"'
+
+[tasks."main:task"]
+depends = [":before"]
+run = 'echo "other main task executed"'
+EOF
+
+# Should run the "other before" task, not the "submodule before" task
+OUTPUT=$(mise run //other:main:task)
+assert_contains "mise run //other:main:task" "other before task executed"
+assert_contains "mise run //other:main:task" "other main task executed"
+
+# Verify it's NOT running the submodule's "before" task
+if echo "$OUTPUT" | grep -q "before task executed" && ! echo "$OUTPUT" | grep -q "other before"; then
+	echo "ERROR: Task dependency incorrectly resolved to different module's task"
+	exit 1
+fi

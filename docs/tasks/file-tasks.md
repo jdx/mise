@@ -129,6 +129,10 @@ test:units                    ./mise-tasks/test/units
 
 ## Arguments
 
+::: tip
+For comprehensive information about task arguments, see the dedicated [Task Arguments](/tasks/task-arguments) page.
+:::
+
 [usage](https://usage.jdx.dev) spec can be used within these files to provide argument parsing, autocompletion,
 documentation when running mise and can be exported to markdown. Essentially this turns tasks into
 fully-fledged CLIs.

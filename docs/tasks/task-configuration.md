@@ -290,14 +290,18 @@ Suppress all output from the task. If set to `"stdout"` or `"stderr"`, only that
 
 - **Type**: `string`
 
+::: tip
+For comprehensive information about task arguments and the usage field, see the dedicated [Task Arguments](/tasks/task-arguments) page.
+:::
+
 More advanced usage specs can be added to the task's `usage` field. This only applies to toml-tasks.
 
 ```toml
 [tasks.test]
 usage = '''
-arg "file" description="The file to test" default="src/main.rs"
+arg "<file>" help="The file to test" default="src/main.rs"
 '''
-run = 'cargo test {{arg(name="file")}}'
+run = 'cargo test $usage_file'
 ```
 
 #### Environment Variable Support for Args and Flags

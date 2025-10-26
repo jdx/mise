@@ -156,9 +156,21 @@ pub fn expand_colon_task_syntax(
     task: &str,
     config: &crate::config::Config,
 ) -> eyre::Result<String> {
-    if !task.starts_with(':') {
-        // Not a colon pattern, return as-is
+    // Skip expansion for absolute monorepo paths or explicit global tasks
+    if task.starts_with("//") || task.starts_with("::") {
         return Ok(task.to_string());
+    }
+
+    // Check if this is a colon pattern or a bare name
+    let is_colon_pattern = task.starts_with(':');
+
+    // Reject patterns that look like monorepo paths with wrong syntax (have / and : but don't start with // or :)
+    if !is_colon_pattern && task.contains('/') && task.contains(':') {
+        bail!(
+            "relative path syntax '{}' is not supported, use '//{}' or ':task' for current directory",
+            task,
+            task
+        );
     }
 
     // Get the monorepo root (the config file with experimental_monorepo_root = true)
@@ -168,25 +180,59 @@ pub fn expand_colon_task_syntax(
         .find(|cf| cf.experimental_monorepo_root() == Some(true))
         .and_then(|cf| cf.project_root());
 
+    // If not in monorepo context, only expand if it's a colon pattern (error), otherwise return as-is
+    if monorepo_root.is_none() {
+        if is_colon_pattern {
+            bail!("Cannot use :task syntax without a monorepo root");
+        }
+        return Ok(task.to_string());
+    }
+
+    // We're in a monorepo context
+    let monorepo_root = monorepo_root.unwrap();
+
     // Determine the current directory relative to monorepo root
-    if let (Some(monorepo_root), Some(cwd)) = (monorepo_root, &*crate::dirs::CWD) {
+    if let Some(cwd) = &*crate::dirs::CWD {
         if let Ok(rel_path) = cwd.strip_prefix(monorepo_root) {
+            // For bare task names, only expand if we're actually in the monorepo
+            // For colon patterns, always expand (and error if outside monorepo)
+
             // Convert relative path to monorepo path format
             let path_str = rel_path
                 .to_string_lossy()
                 .replace(std::path::MAIN_SEPARATOR, "/");
+
             if path_str.is_empty() {
-                // We're at the root - :task should match root-level tasks (//: prefix)
-                Ok(format!("//{}", task))
+                // We're at the root
+                if is_colon_pattern {
+                    // :task -> //:task (task already has colon)
+                    Ok(format!("//{}", task))
+                } else {
+                    // bare task -> //:task (add colon)
+                    Ok(format!("//:{}", task))
+                }
             } else {
-                // We're in a subdirectory - match //path:task
-                Ok(format!("//{}{}", path_str, task))
+                // We're in a subdirectory
+                if is_colon_pattern {
+                    // :task -> //path:task
+                    Ok(format!("//{}{}", path_str, task))
+                } else {
+                    // bare name -> //path:task
+                    Ok(format!("//{}:{}", path_str, task))
+                }
             }
         } else {
-            bail!("Cannot use :task syntax outside of monorepo root directory");
+            if is_colon_pattern {
+                bail!("Cannot use :task syntax outside of monorepo root directory");
+            }
+            // Bare name outside monorepo - return as-is for global matching
+            Ok(task.to_string())
         }
     } else {
-        bail!("Cannot use :task syntax without a monorepo root");
+        if is_colon_pattern {
+            bail!("Cannot use :task syntax without a current working directory");
+        }
+        Ok(task.to_string())
     }
 }
 

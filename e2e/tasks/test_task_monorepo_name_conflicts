@@ -31,9 +31,9 @@ else
 	exit 1
 fi
 
-# Test 1b: Non-prefixed task name should fail
-echo "=== Test 1b: Non-prefixed 'build' should not find task ==="
-assert_fail "mise run build" "no task build found"
+# Test 1b: Bare name at root should work the same as :build
+echo "=== Test 1b: Bare name 'build' should run root task ==="
+assert_contains "mise run build" "root build"
 
 # Test 2: Monorepo path runs specific task
 echo "=== Test 2: Prefixed path runs specific task ==="
