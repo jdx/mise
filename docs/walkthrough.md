@@ -176,7 +176,7 @@ set -e
 echo "all available options are in the env with the prefix 'usage_'"
 env | grep usage_
 
-echo "$usage_greeting, $usage_user! Your message is: $usage_message"
+echo "${usage_greeting?}, ${usage_user?}! Your message is: ${usage_message?}"
 ```
 
 This task can be run like so:

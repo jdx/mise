@@ -19,9 +19,9 @@ flag "-v --verbose" help="Enable verbose output"
 option "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
 '''
 run = '''
-echo "Deploying to $usage_environment in $usage_region"
-[[ "$usage_verbose" == "true" ]] && set -x
-./deploy.sh "$usage_environment" "$usage_region"
+echo "Deploying to ${usage_environment?} in ${usage_region?}"
+[[ "${usage_verbose?}" == "true" ]] && set -x
+./deploy.sh "${usage_environment?}" "${usage_region?}"
 '''
 ```
 
@@ -267,7 +267,7 @@ flag "--format <fmt>" {
   default "json"
 }
 '''
-run = 'process-data "$usage_input" --format "$usage_format"'
+run = 'process-data "${usage_input?}" --format "${usage_format?}"'
 ```
 
 ### Hide Arguments
@@ -301,9 +301,13 @@ arg "[services]" {
 flag "-v --verbose" {
   help "Enable verbose logging"
   count true
+  default 0
 }
 
-flag "--dry-run" help="Show what would be deployed without doing it"
+flag "--dry-run" {
+  help "Show what would be deployed without doing it"
+  default false
+}
 
 flag "--region <region>" {
   help "Cloud region"
@@ -312,11 +316,15 @@ flag "--region <region>" {
   choices "us-east-1" "us-west-2" "eu-west-1"
 }
 
-flag "--skip-tests" help="Skip running tests before deploy"
+flag "--skip-tests" {
+  help "Skip running tests before deploy"
+  default false
+}
 
 flag "--force" {
   help "Force deployment even with warnings"
   required_if "--skip-tests"
+  default false
 }
 
 # Custom completions
@@ -327,18 +335,18 @@ run = '''
 set -euo pipefail
 
 # Handle verbosity
-if [[ "${usage_verbose:-0}" -ge 2 ]]; then
+if [[ "${usage_verbose?}" -ge 2 ]]; then
   set -x
-elif [[ "${usage_verbose:-0}" -ge 1 ]]; then
+elif [[ "${usage_verbose?}" -ge 1 ]]; then
   export VERBOSE=1
 fi
 
 # Validate environment
-ENVIRONMENT="$usage_environment"
-REGION="$usage_region"
-DRY_RUN="${usage_dry_run:-false}"
-SKIP_TESTS="${usage_skip_tests:-false}"
-FORCE="${usage_force:-false}"
+ENVIRONMENT="${usage_environment?}"
+REGION="${usage_region?}"
+DRY_RUN="${usage_dry_run?}"
+SKIP_TESTS="${usage_skip_tests?}"
+FORCE="${usage_force?}"
 
 echo "Deploying to $ENVIRONMENT in $REGION"
 
@@ -349,9 +357,9 @@ if [[ "$SKIP_TESTS" != "true" ]]; then
 fi
 
 # Deploy services
-if [[ -n "$usage_services" ]]; then
-  echo "Deploying services: $usage_services"
-  for service in $usage_services; do
+if [[ -n "${usage_services?}" ]]; then
+  echo "Deploying services: ${usage_services?}"
+  for service in ${usage_services?}; do
     deploy_service "$service" "$ENVIRONMENT" "$REGION" "$DRY_RUN"
   done
 else
@@ -369,12 +377,12 @@ For file tasks, you can define arguments directly in the file using special `#MI
 #!/usr/bin/env bash
 #MISE description "Deploy application"
 #USAGE arg "<environment>" help="Deployment environment" choices=["dev", "staging", "prod"]
-#USAGE flag "--dry-run" help="Preview changes without deploying"
+#USAGE flag "--dry-run" help="Preview changes without deploying" default=false
 #USAGE flag "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
 
-ENVIRONMENT="$usage_environment"
-REGION="$usage_region"
-DRY_RUN="${usage_dry_run:-false}"
+ENVIRONMENT="${usage_environment?}"
+REGION="${usage_region?}"
+DRY_RUN="${usage_dry_run?}"
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "DRY RUN: Would deploy to $ENVIRONMENT in $REGION"
@@ -478,7 +486,7 @@ cargo test {{arg(
 ```toml
 [tasks.test]
 usage = 'arg "<file>" help="Test file" default="all"'
-run = 'cargo test $usage_file'
+run = 'cargo test ${usage_file?}'
 ```
 
 </div>
@@ -514,8 +522,8 @@ arg "<target>" default="debug"
 flag "-v --verbose"
 '''
 run = [
-  'cargo build $usage_target',
-  './package.sh $usage_verbose'
+  'cargo build ${usage_target?}',
+  './package.sh ${usage_verbose?}'
 ]
 ```
 
@@ -553,7 +561,7 @@ usage = '''
 option "--env <env>" choices=["dev", "prod"]
 flag "--force"
 '''
-run = 'deploy --env $usage_env $usage_force'
+run = 'deploy --env ${usage_env?} ${usage_force?}'
 ```
 
 </div>
@@ -582,7 +590,7 @@ run = 'eslint {{arg(name="files", var=true)}}'
 ```toml
 [tasks.lint]
 usage = 'arg "<files>" var=true'
-run = 'eslint $usage_files'
+run = 'eslint ${usage_files?}'
 ```
 
 </div>

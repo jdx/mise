@@ -449,7 +449,7 @@ arg "<file>" help="Test file to run" default="all"
 option "--format <format>" help="Output format" default="text"
 flag "-v --verbose" help="Enable verbose output"
 '''
-run = 'cargo test $usage_file --format $usage_format'
+run = 'cargo test ${usage_file?} --format ${usage_format?}'
 ```
 
 Arguments defined in the usage field are available as environment variables prefixed with `usage_`.
@@ -582,7 +582,7 @@ Arguments and flags defined in the usage spec are also set in the environment be
 usage = '''
 arg "myarg" "myarg description" default="foo"
 '''
-run = 'echo myarg=$usage_myarg'
+run = 'echo myarg=${usage_myarg?}'
 
 # execute: mise run usage-env-example
 # outputs: myarg=foo
@@ -597,8 +597,8 @@ usage = '''
 flag "-m --myflag <myflag>" default="false"
 '''
 run = [
-'echo "Command 1: $usage_myflag"',
-'echo "Command 2: {{flag(name="myflag", default="false")}} $usage_myflag"',
+'echo "Command 1: ${usage_myflag?}"',
+'echo "Command 2: {{flag(name="myflag", default="false")}} ${usage_myflag?}"',
 ]
 
 # execute: mise run usage-env-example

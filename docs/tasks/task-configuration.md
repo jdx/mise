@@ -301,7 +301,7 @@ More advanced usage specs can be added to the task's `usage` field. This only ap
 usage = '''
 arg "<file>" help="The file to test" default="src/main.rs"
 '''
-run = 'cargo test $usage_file'
+run = 'cargo test ${usage_file?}'
 ```
 
 #### Environment Variable Support for Args and Flags
@@ -323,7 +323,7 @@ arg "<environment>" env="DEPLOY_ENV" help="Target environment" default="staging"
 arg "<region>" env="AWS_REGION" help="AWS region" default="us-east-1"
 '''
 run = '''
-echo "Deploying to $usage_environment in $usage_region"
+echo "Deploying to ${usage_environment?} in ${usage_region?}"
 '''
 ```
 
@@ -355,8 +355,8 @@ flag "-p --profile <profile>" env="BUILD_PROFILE" help="Build profile" default="
 flag "-v --verbose" env="VERBOSE" help="Verbose output" default="false"
 '''
 run = '''
-echo "Building with profile: $usage_profile"
-echo "Verbose: $usage_verbose"
+echo "Building with profile: ${usage_profile?}"
+echo "Verbose: ${usage_verbose?}"
 '''
 ```
 
@@ -383,7 +383,7 @@ mise run build --verbose
 #USAGE arg "<input>" env="INPUT_FILE" help="Input file to process"
 #USAGE flag "-o --output <file>" env="OUTPUT_FILE" help="Output file" default="out.txt"
 
-echo "Processing $usage_input -> $usage_output"
+echo "Processing ${usage_input?} -> ${usage_output?}"
 ```
 
 **With tera templates:**
@@ -413,7 +413,7 @@ Environment variables can satisfy required argument checks. If an argument is ma
 usage = '''
 arg "<api-key>" env="API_KEY" help="API key for deployment"
 '''
-run = 'deploy --api-key $usage_api_key'
+run = 'deploy --api-key ${usage_api_key?}'
 ```
 
 ```bash
