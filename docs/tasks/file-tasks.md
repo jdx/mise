@@ -150,7 +150,7 @@ Here is an example of a file task that builds a Rust CLI using some of the featu
 #!/usr/bin/env bash
 set -e
 
-#USAGE flag "-c --clean" help="Clean the build directory before building" default=false
+#USAGE flag "-c --clean" help="Clean the build directory before building"
 #USAGE flag "-p --profile <profile>" help="Build with the specified profile" default="debug" {
 #USAGE   choices "debug" "release"
 #USAGE }
@@ -158,7 +158,7 @@ set -e
 #USAGE complete "user" run="mycli users"
 #USAGE arg "<target>" help="The target to build"
 
-if [ "${usage_clean?}" = "true" ]; then
+if [ "${usage_clean:-false}" = "true" ]; then
   cargo clean
 fi
 
@@ -188,7 +188,7 @@ Here is how you can use [usage](https://usage.jdx.dev/cli/scripts#usage-scripts)
 ```js [mise-tasks/greet]
 #!/usr/bin/env -S node
 //MISE description="Write a greeting to a file"
-//USAGE flag "-f --force" help="Overwrite existing <file>" default=false
+//USAGE flag "-f --force" help="Overwrite existing <file>"
 //USAGE flag "-u --user <user>" help="User to run as"
 //USAGE arg "<output_file>" help="The file to write" default="file.txt" {
 //USAGE   choices "greeting.txt" "file.txt"
