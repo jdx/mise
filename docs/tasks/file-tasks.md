@@ -165,7 +165,9 @@ fi
 cargo build --profile "${usage_profile?}" --target "${usage_target?}"
 ```
 
-Note: The `?` syntax (e.g., `${usage_profile?}`) helps shellcheck understand these variables will be set by usage, avoiding warnings about unset variables. Since `--profile` has `default="debug"` set in the usage spec, it will always have a value. The `:?` variant (check for non-empty) can also be used, but `?` (check for existence) is sufficient when defaults are defined in the usage spec.
+::: tip
+For details on bash parameter expansion patterns like `${var?}`, `${var:-default}`, and `${var:+value}`, see [Bash Variable Expansion for Usage Variables](/tasks/task-arguments#bash-variable-expansion).
+:::
 
 If you have installed `usage`, completions will be enabled for your task. In this example,
 

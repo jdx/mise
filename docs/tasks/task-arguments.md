@@ -389,6 +389,62 @@ fi
 Use `#MISE` (uppercase, recommended) or `#USAGE` for defining arguments in file tasks. `# [MISE]` or `# [USAGE]` are also accepted as workarounds for formatters.
 :::
 
+## Bash Variable Expansion for Usage Variables {#bash-variable-expansion}
+
+When accessing usage-defined variables in bash scripts, use parameter expansion syntax to help [shellcheck](https://www.shellcheck.net/) understand these variables and provide default values for boolean flags.
+
+### Common Patterns
+
+| Syntax | Behavior | Use Case | Example |
+|--------|----------|----------|---------|
+| `${var?}` | Error if unset | Required args or flags with defaults in usage spec | `${usage_profile?}` |
+| `${var:?}` | Error if unset or empty | When you need to ensure non-empty values | `${usage_target:?}` |
+| `${var:-default}` | Use default if unset | Boolean flags without `default=` in usage spec | `${usage_clean:-false}` |
+| `${var:=default}` | Set and use default if unset | When you want to set the variable for later use | `${usage_dir:=.}` |
+| `${var:+value}` | Use value if set | Conditional flag passing | `${usage_verbose:+--verbose}` |
+
+### Guidelines for Usage Variables
+
+#### Args and Flags with Defaults
+
+Use `${usage_var?}` since usage guarantees they'll be set:
+
+```bash
+# --profile has default="debug" in usage spec
+cargo build --profile "${usage_profile?}"
+```
+
+#### Boolean Flags without Defaults
+
+Use `${usage_var:-false}` to provide a default value:
+
+```bash
+# --clean flag has no default in usage spec
+if [ "${usage_clean:-false}" = "true" ]; then
+  cargo clean
+fi
+```
+
+#### Required Arguments
+
+Use `${usage_var:?}` to ensure non-empty values:
+
+```bash
+# <target> is a required positional argument
+cargo build --target "${usage_target:?}"
+```
+
+#### Conditional Flags
+
+Use `${usage_var:+value}` to pass flags only when set:
+
+```bash
+# Only add --verbose if the flag was provided
+mycli deploy ${usage_verbose:+--verbose}
+```
+
+These expansions help [shellcheck](https://www.shellcheck.net/) understand your script and prevent warnings about potentially unset variables while maintaining proper error handling.
+
 ## Deprecated Method
 
 ### Tera Template Functions <Badge type="danger" text="deprecated" /> {#tera-templates}

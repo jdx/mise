@@ -6,6 +6,7 @@ import {
 } from "vitepress-plugin-group-icons";
 import { tabsMarkdownPlugin } from "vitepress-plugin-tabs";
 import { withMermaid } from "vitepress-plugin-mermaid";
+import kdlGrammar from "./grammars/kdl.tmLanguage.json";
 
 // https://vitepress.dev/reference/site-config
 export default withMermaid(
@@ -241,6 +242,13 @@ export default withMermaid(
       },
     },
     markdown: {
+      languages: [
+        {
+          ...kdlGrammar,
+          name: "kdl",
+          scopeName: "source.kdl",
+        } as any,
+      ],
       config(md) {
         md.use(groupIconMdPlugin);
         md.use(tabsMarkdownPlugin);
