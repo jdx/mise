@@ -244,7 +244,8 @@ export default withMermaid(
     },
     markdown: {
       languages: [
-        // Load shell and bash for embedded language support
+        // Load base languages needed for embedded support
+        "toml",
         "shell",
         "bash",
         // TODO: Once Shiki bundles KDL (tracked in shikijs/textmate-grammars-themes),
