@@ -118,7 +118,7 @@ mise-tasks
 
 Running `mise tasks` will give the below output:
 
-```text
+```shellsession
 $ mise tasks
 Name              Description Source
 build                         ./mise-tasks/build
@@ -158,14 +158,16 @@ set -e
 #USAGE complete "user" run="mycli users"
 #USAGE arg "<target>" help="The target to build"
 
-if [ "$usage_clean" = "true" ]; then
+if [ "${usage_clean:-false}" = "true" ]; then
   cargo clean
 fi
 
-cargo build --profile "${usage_profile:?}" --target "${usage_target:?}"
+cargo build --profile "${usage_profile?}" --target "${usage_target?}"
 ```
 
-Note: The `:?` syntax (e.g., `${usage_profile:?}`) helps shellcheck understand these variables will be set by usage, avoiding warnings about unset variables. The `--profile` flag has `default="debug"` set in the usage spec to provide a fallback value.
+::: tip
+For details on bash parameter expansion patterns like `${var?}`, `${var:-default}`, and `${var:+value}`, see [Bash Variable Expansion for Usage Variables](/tasks/task-arguments#bash-variable-expansion).
+:::
 
 If you have installed `usage`, completions will be enabled for your task. In this example,
 

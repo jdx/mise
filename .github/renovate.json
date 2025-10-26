@@ -2,10 +2,6 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["github>jdx/renovate-config", "helpers:pinGitHubActionDigests"],
   "automerge": false,
-  "lockFileMaintenance": {
-    "enabled": false
-  },
-  "excludeCommitPaths": ["registry/**"],
   "asdf": {
     "enabled": false
   },

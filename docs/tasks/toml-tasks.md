@@ -4,7 +4,7 @@ Tasks can be defined in `mise.toml` files in different ways. Trivial tasks can b
 
 ## Trivial task examples
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 build = "cargo build"
 test = "cargo test"
 lint = "cargo clippy"
@@ -12,7 +12,7 @@ lint = "cargo clippy"
 
 ## Detailed task examples
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 [tasks.cleancache]
 run = "rm -rf .cache"
 hide = true # hide this task from the list
@@ -56,7 +56,7 @@ file = 'scripts/release.sh' # execute an external script
 
 You can use [environment variables](/environments/) or [`vars`](/tasks/task-configuration.html#vars-options) to define common arguments:
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 [env]
 VERBOSE_ARGS = '--verbose'
 
@@ -93,14 +93,14 @@ For an exhaustive list, see [task configuration](/tasks/task-configuration).
 
 Provide the script to run. Can be a single command or an array of commands:
 
-```toml
+```mise-toml
 [tasks.test]
 run = 'cargo test'
 ```
 
 Commands are run in series. If a command fails, the task will stop and the remaining commands will not run.
 
-```toml
+```mise-toml
 [tasks.test]
 run = [
     'cargo test',
@@ -110,7 +110,7 @@ run = [
 
 You can specify an alternate command to run on Windows by using the `run_windows` key:
 
-```toml
+```mise-toml
 [tasks.test]
 run = 'cargo test'
 run_windows = 'cargo test --features windows'
@@ -121,7 +121,7 @@ run_windows = 'cargo test --features windows'
 The [`dir`](/tasks/task-configuration.html#dir) property determines the `cwd` in which the task is executed. You can use the directory
 from where the task was run with <span v-pre>`dir = "{{cwd}}"`</span>:
 
-```toml
+```mise-toml
 [tasks.test]
 run = 'cargo test'
 dir = "{{cwd}}"
@@ -133,7 +133,7 @@ Also, `MISE_ORIGINAL_CWD` is set to the original working directory and will be p
 
 You can add a description to a task and alias for a task.
 
-```toml
+```mise-toml
 [tasks.build]
 description = 'Build the CLI'
 run = "cargo build"
@@ -155,7 +155,7 @@ Tasks
 
 You can specify dependencies for a task. Dependencies are run before the task itself. If a dependency fails, the task will not run.
 
-```toml
+```mise-toml
 [tasks.build]
 run = 'cargo build'
 
@@ -169,7 +169,7 @@ There are other ways to specify dependencies, see [wait_for](/tasks/task-configu
 
 You can specify environment variables for a task:
 
-```toml
+```mise-toml
 [tasks.lint]
 description = 'Lint with clippy'
 env = { RUST_BACKTRACE = '1' } # env vars for the script
@@ -184,7 +184,7 @@ cargo clippy
 
 If you want to skip executing a task if certain files haven't changed (up-to-date), you should specify `sources` and `outputs`:
 
-```toml
+```mise-toml
 [tasks.build]
 description = 'Build the CLI'
 run = "cargo build"
@@ -200,7 +200,7 @@ its [template](../templates.md).
 
 A message to show before running the task. The user will be prompted to confirm before the task is run.
 
-```toml
+```mise-toml
 [tasks.release]
 confirm = 'Are you sure you want to cut a new release?'
 description = 'Cut a new release'
@@ -212,7 +212,7 @@ file = 'scripts/release.sh'
 Tasks are executed with `set -e` (`set -o erropt`) if the shell is `sh`, `bash`, or `zsh`. This means that the script
 will exit if any command fails. You can disable this by running `set +e` in the script.
 
-```toml
+```mise-toml
 [tasks.echo]
 run = '''
 set +e
@@ -223,7 +223,7 @@ echo "This will not fail the task"
 
 You can specify a `shell` command to run the script with (default is [`sh -c`](/configuration/settings.html#unix_default_inline_shell_args) or [`cmd /c`](/configuration/settings.html#windows_default_inline_shell_args)):
 
-```toml
+```mise-toml
 [tasks.lint]
 shell = 'bash -c'
 run = "cargo clippy"
@@ -231,7 +231,7 @@ run = "cargo clippy"
 
 or use a shebang:
 
-```toml
+```mise-toml
 [tasks.lint]
 run = """
 #!/usr/bin/env bash
@@ -243,7 +243,7 @@ By using a `shebang` (or `shell`), you can run tasks in different languages (e.g
 
 ::: code-group
 
-```toml [python]
+```mise-toml [python]
 [tools]
 python = 'latest'
 
@@ -255,7 +255,7 @@ for i in range(10):
 '''
 ```
 
-```toml [python + uv]
+```mise-toml [python + uv]
 [tools]
 uv = 'latest'
 
@@ -275,7 +275,7 @@ pprint([(k, v["title"]) for k, v in data.items()][:10])
 """
 ```
 
-```toml [node]
+```mise-toml [node]
 [tools]
 node = 'lts'
 
@@ -287,7 +287,7 @@ run = [
 ]
 ```
 
-```toml [bun]
+```mise-toml [bun]
 [tools]
 bun = 'latest'
 
@@ -302,7 +302,7 @@ await $`cat < ${response} | wc -c`; // 1256
 """
 ```
 
-```toml [deno]
+```mise-toml [deno]
 [tools]
 deno = 'latest'
 
@@ -333,7 +333,7 @@ await download();
 # downloading: ...
 ```
 
-```toml [ruby]
+```mise-toml [ruby]
 [tools]
 ruby = 'latest'
 
@@ -365,7 +365,7 @@ Example: `#!/usr/bin/env -S python -u` will run Python with unbuffered output.
 
 You can specify a file to run as a task:
 
-```toml
+```mise-toml
 [tasks.release]
 description = 'Cut a new release'
 file = 'scripts/release.sh' # execute an external script
@@ -377,7 +377,7 @@ Task files can be fetched remotely with multiple protocols:
 
 #### HTTP
 
-```toml
+```mise-toml
 [tasks.build]
 file = "https://example.com/build.sh"
 ```
@@ -388,12 +388,12 @@ Please note that the file will be downloaded and executed. Make sure you trust t
 
 ::: code-group
 
-```toml [ssh]
+```mise-toml [ssh]
 [tasks.build]
 file = "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0"
 ```
 
-```toml [https]
+```mise-toml [https]
 [tasks.build]
 file = "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0"
 ```
@@ -430,7 +430,7 @@ For comprehensive information about task arguments, see the dedicated [Task Argu
 
 By default, arguments are passed to the last script in the `run` array. So if a task was defined as:
 
-```toml
+```mise-toml
 [tasks.test]
 run = ['cargo test', './scripts/test-e2e.sh']
 ```
@@ -442,14 +442,14 @@ Then running `mise run test foo bar` will pass `foo bar` to `./scripts/test-e2e.
 
 The recommended way to define arguments is using the `usage` field:
 
-```toml
+```mise-toml
 [tasks.test]
 usage = '''
 arg "<file>" help="Test file to run" default="all"
 option "--format <format>" help="Output format" default="text"
 flag "-v --verbose" help="Enable verbose output"
 '''
-run = 'cargo test $usage_file --format $usage_format'
+run = 'cargo test ${usage_file?} --format ${usage_format?}'
 ```
 
 Arguments defined in the usage field are available as environment variables prefixed with `usage_`.
@@ -475,7 +475,7 @@ Using Tera template functions (`arg()`, `option()`, `flag()`) in run scripts is 
 
 You can define arguments using Tera template functions (deprecated):
 
-```toml
+```mise-toml
 [tasks.test]
 run = [
     'cargo test {{arg(name="cargo_test_args", var=true)}}',
@@ -493,7 +493,7 @@ arguments where the order matters.
 
 Example:
 
-```toml
+```mise-toml
 [tasks.test]
 run = 'cargo test {{arg(name="file")}}'
 # execute: mise run test my-test-file
@@ -513,7 +513,7 @@ arguments where the order doesn't matter.
 
 Example:
 
-```toml
+```mise-toml
 [tasks.test]
 run = 'cargo test {{option(name="file")}}'
 # execute: mise run test --file my-test-file
@@ -531,14 +531,14 @@ Flags are like options except they don't take values. They are defined in script
 
 Examples:
 
-```toml
+```mise-toml
 [tasks.echo]
 run = 'echo {{flag(name="myflag")}}'
 # execute: mise run echo --myflag
 # runs: echo true
 ```
 
-```toml
+```mise-toml
 [tasks.maybeClean]
 run = """
 if [ '{{flag(name='clean')}}' = 'true' ]; then
@@ -559,7 +559,7 @@ The value will be `true` if the flag is passed, and `false` otherwise.
 
 More advanced usage specs can be added to the task's `usage` field:
 
-```toml
+```mise-toml
 [tasks.add-user]
 description = "Add a user"
 usage = '''
@@ -577,12 +577,12 @@ run = 'echo "alice\nbob\ncharlie"'
 
 Arguments and flags defined in the usage spec are also set in the environment before running each script defined in the `run` field. The name of each variable is prepended with `usage_` keyword.
 
-```toml
+```mise-toml
 [tasks.usage-env-example]
 usage = '''
 arg "myarg" "myarg description" default="foo"
 '''
-run = 'echo myarg=$usage_myarg'
+run = 'echo myarg=${usage_myarg?}'
 
 # execute: mise run usage-env-example
 # outputs: myarg=foo
@@ -591,14 +591,14 @@ run = 'echo myarg=$usage_myarg'
 # outputs: myarg=bar
 ```
 
-```toml
+```mise-toml
 [tasks.usage-env-example]
 usage = '''
 flag "-m --myflag <myflag>" default="false"
 '''
 run = [
-'echo "Command 1: $usage_myflag"',
-'echo "Command 2: {{flag(name="myflag", default="false")}} $usage_myflag"',
+'echo "Command 1: ${usage_myflag?}"',
+'echo "Command 2: {{flag(name="myflag", default="false")}} ${usage_myflag?}"',
 ]
 
 # execute: mise run usage-env-example

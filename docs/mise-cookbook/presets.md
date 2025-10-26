@@ -22,7 +22,7 @@ mise tasks add lint -- pre-commit run -a
 #MISE depends=["preset:python"]
 #USAGE arg "<version>"
 
-mise use python@$usage_version
+mise use python@${usage_version?}
 mise use pdm@latest
 mise config set hooks.postinstall "pdm sync"
 ```
