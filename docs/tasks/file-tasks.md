@@ -118,7 +118,7 @@ mise-tasks
 
 Running `mise tasks` will give the below output:
 
-```text
+```shellsession
 $ mise tasks
 Name              Description Source
 build                         ./mise-tasks/build

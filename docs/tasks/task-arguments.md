@@ -30,7 +30,7 @@ echo "Deploying to ${usage_environment?} in ${usage_region?}"
 
 Arguments defined in the usage field are automatically available as environment variables prefixed with `usage_`:
 
-```bash
+```shell
 # Execute with arguments
 $ mise run deploy staging --verbose --region us-west-2
 
@@ -42,7 +42,7 @@ $ mise run deploy staging --verbose --region us-west-2
 
 **Help output example:**
 
-```bash
+```shellsession
 $ mise run deploy --help
 Deploy application
 
