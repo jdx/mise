@@ -388,24 +388,6 @@ mise run build --verbose
 echo "Processing ${usage_input?} -> ${usage_output?}"
 ```
 
-**With tera templates:**
-
-The `env` attribute works seamlessly with tera templates in task commands:
-
-```mise-toml
-[tasks.test]
-usage = '''
-arg "<suite>" env="TEST_SUITE" help="Test suite to run" default="unit"
-flag "-c --coverage" env="COVERAGE" help="Enable coverage" default="false"
-'''
-run = [
-  'echo "Running {{arg(name="suite")}} tests"',
-  'echo "Coverage: {{flag(name="coverage", default="false")}}"',
-]
-```
-
-The values from environment variables will be available both as `$usage_*` environment variables and through tera template functions.
-
 **Required arguments:**
 
 Environment variables can satisfy required argument checks. If an argument is marked as required (using angle brackets `<arg>`), providing its value through the environment variable specified in the `env` attribute fulfills that requirement:
