@@ -117,6 +117,7 @@ reqwest = { version = "0.12", default-features = false, features = [
   "zstd",
   "charset",
   "http2",
+  "socks",
   "macos-system-configuration",
 ] }
 rmcp = { version = "0.3", features = ["server", "transport-io", "schemars"] }
