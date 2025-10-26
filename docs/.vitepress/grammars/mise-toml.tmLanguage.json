@@ -1,0 +1,128 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "mise.toml",
+  "scopeName": "source.mise-toml",
+  "comment": "Custom TOML grammar for mise.toml with embedded KDL (in usage fields) and bash (in run fields)",
+  "patterns": [
+    {
+      "include": "#mise-task-section"
+    },
+    {
+      "include": "source.toml"
+    }
+  ],
+  "repository": {
+    "mise-task-section": {
+      "patterns": [
+        {
+          "include": "#usage-field-triple-double"
+        },
+        {
+          "include": "#usage-field-triple-single"
+        },
+        {
+          "include": "#run-field-triple-double"
+        },
+        {
+          "include": "#run-field-triple-single"
+        }
+      ]
+    },
+    "usage-field-triple-double": {
+      "name": "meta.embedded.block.kdl.mise-toml",
+      "begin": "\\b(usage)\\s*=\\s*(\"\"\")",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.key.toml"
+        },
+        "2": {
+          "name": "punctuation.definition.string.begin.toml"
+        }
+      },
+      "end": "\"\"\"",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.toml"
+        }
+      },
+      "contentName": "source.kdl.embedded.toml",
+      "patterns": [
+        {
+          "include": "source.kdl"
+        }
+      ]
+    },
+    "usage-field-triple-single": {
+      "name": "meta.embedded.block.kdl.mise-toml",
+      "begin": "\\b(usage)\\s*=\\s*(''')",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.key.toml"
+        },
+        "2": {
+          "name": "punctuation.definition.string.begin.toml"
+        }
+      },
+      "end": "'''",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.toml"
+        }
+      },
+      "contentName": "source.kdl.embedded.toml",
+      "patterns": [
+        {
+          "include": "source.kdl"
+        }
+      ]
+    },
+    "run-field-triple-double": {
+      "name": "meta.embedded.block.shell.mise-toml",
+      "begin": "\\b(run|run_windows|run_macos|run_linux)\\s*=\\s*(\"\"\")",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.key.toml"
+        },
+        "2": {
+          "name": "punctuation.definition.string.begin.toml"
+        }
+      },
+      "end": "\"\"\"",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.toml"
+        }
+      },
+      "contentName": "source.shell.embedded.toml",
+      "patterns": [
+        {
+          "include": "source.shell"
+        }
+      ]
+    },
+    "run-field-triple-single": {
+      "name": "meta.embedded.block.shell.mise-toml",
+      "begin": "\\b(run|run_windows|run_macos|run_linux)\\s*=\\s*(''')",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.key.toml"
+        },
+        "2": {
+          "name": "punctuation.definition.string.begin.toml"
+        }
+      },
+      "end": "'''",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.toml"
+        }
+      },
+      "contentName": "source.shell.embedded.toml",
+      "patterns": [
+        {
+          "include": "source.shell"
+        }
+      ]
+    }
+  }
+}
