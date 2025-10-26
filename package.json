@@ -10,18 +10,31 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "lint-fig": "eslint 'xtasks/fig/**/*.ts' && npx prettier --check 'xtasks/fig/**/*.ts' --parser typescript",
-    "lint-fig:fix": "eslint 'xtasks/fig/**/*.ts' --fix && npx prettier --write 'xtasks/fig/**/*.ts' --parser typescript"
+    "lint-fig:fix": "eslint 'xtasks/fig/**/*.ts' --fix && npx prettier --write 'xtasks/fig/**/*.ts' --parser typescript",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "author": "@jdx",
+  "resolutions": {
+    "esbuild": "0.21.5"
+  },
   "devDependencies": {
     "@fig/eslint-config-autocomplete": "^2.0.0",
     "@tsconfig/node18": "^18.2.4",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.18.12",
     "@withfig/autocomplete-tools": "^2.11.0",
     "@withfig/autocomplete-types": "^1.31.0",
     "eslint": "^8.57.1",
+    "js-toml": "^1.0.2",
+    "markdown-it": "^14.1.0",
     "toml": "^3.0.0",
     "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitepress": "1.6.4",
+    "vitepress-plugin-group-icons": "^1.6.5",
+    "vitepress-plugin-mermaid": "2.0.17",
+    "vitepress-plugin-tabs": "^0.7.3"
   }
 }

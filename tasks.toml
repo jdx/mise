@@ -31,24 +31,20 @@ description = "Build the project"
 [docs]
 description = 'Start the documentation development server'
 depends = ['docs:setup']
-dir = "docs"
 run = "bun run docs:dev"
 
 ["docs:setup"]
 description = 'Install documentation dependencies'
-dir = "docs"
-run = ["cd .. && bun i", "bun i"]
+run = "bun i"
 
 ["docs:build"]
 description = 'Build the documentation site'
 depends = ["docs:setup"]
-dir = "docs"
 run = "bun run docs:build"
 
 ["docs:preview"]
 description = 'Preview the documentation site'
 depends = ["docs:build"]
-dir = "docs"
 run = "bun run docs:preview"
 
 ["docs:demos"]
