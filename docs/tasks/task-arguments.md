@@ -66,33 +66,33 @@ Positional arguments are defined with `arg` and must be provided in order.
 #### Basic Syntax
 
 ```kdl
-arg "<name>" help="Description"               # Required positional arg
-arg "[name]" help="Description"               # Optional positional arg
-arg "<file>"                                  # Completed as filename
-arg "<dir>"                                   # Completed as directory
+arg "<name>" help="Description"               // Required positional arg
+arg "[name]" help="Description"               // Optional positional arg
+arg "<file>"                                  // Completed as filename
+arg "<dir>"                                   // Completed as directory
 ```
 
 #### With Defaults
 
 ```kdl
-arg "<file>" default="config.toml"            # Default value if not provided
-arg "[output]" default="out.txt"              # Optional with default
+arg "<file>" default="config.toml"            // Default value if not provided
+arg "[output]" default="out.txt"              // Optional with default
 ```
 
 #### Variadic Arguments
 
 ```kdl
-arg "[files]" var=#true                        # 0 or more files
-arg "<files>" var=#true                        # 1 or more files (required)
-arg "<files>" var=#true var_min=2              # At least 2 files required
-arg "<files>" var=#true var_max=5              # Maximum 5 files allowed
-arg "<files>" var=#true var_min=1 var_max=3    # Between 1 and 3 files
+arg "[files]" var=#true                        // 0 or more files
+arg "<files>" var=#true                        // 1 or more files (required)
+arg "<files>" var=#true var_min=2              // At least 2 files required
+arg "<files>" var=#true var_max=5              // Maximum 5 files allowed
+arg "<files>" var=#true var_min=1 var_max=3    // Between 1 and 3 files
 ```
 
 #### Environment Variable Backing
 
 ```kdl
-arg "<token>" env="API_TOKEN"                 # Can be set via $API_TOKEN
+arg "<token>" env="API_TOKEN"                 // Can be set via $API_TOKEN
 arg "<host>" env="API_HOST" default="localhost"
 ```
 
@@ -142,7 +142,7 @@ Flags are boolean options that can be enabled/disabled.
 #### Flag Syntax
 
 ```kdl
-flag "-f --force"                             # Boolean flag
+flag "-f --force"                             // Boolean flag
 flag "-v --verbose" help="Enable verbose mode"
 flag "--dry-run" help="Preview without executing"
 ```
@@ -150,8 +150,8 @@ flag "--dry-run" help="Preview without executing"
 #### Short-Only or Long-Only
 
 ```kdl
-flag "-f"                                     # Short flag only
-flag "--force"                                # Long flag only
+flag "-f"                                     // Short flag only
+flag "--force"                                // Long flag only
 ```
 
 #### With Values
@@ -192,8 +192,8 @@ flag "-v --verbose" global=#true
 #### Environment Variable and Config Backing
 
 ```kdl
-flag "--color" env="MYCLI_COLOR"              # Can be set via $MYCLI_COLOR
-flag "--format <fmt>" config="ui.format"      # Backed by config file value
+flag "--color" env="MYCLI_COLOR"              // Can be set via $MYCLI_COLOR
+flag "--format <fmt>" config="ui.format"      // Backed by config file value
 flag "--debug" env="DEBUG"
 ```
 
@@ -216,10 +216,10 @@ flag "--file <file>" overrides="--stdin"
 
 ```kdl
 flag "--verbose" long_help="Extended help text"
-flag "--debug" hide=#true                      # Hidden from help
+flag "--debug" hide=#true                      // Hidden from help
 flag "-q --quiet" {
   help "Suppress output"
-  alias "--silent"                            # Alternative name
+  alias "--silent"                            // Alternative name
 }
 ```
 
@@ -241,7 +241,7 @@ Custom completion can be defined for any argument or flag by name:
 
 ```kdl
 arg "<plugin>"
-complete "plugin" run="mise plugins ls"       # Complete with command output
+complete "plugin" run="mise plugins ls"       // Complete with command output
 ```
 
 #### With Descriptions
