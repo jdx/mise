@@ -37,7 +37,7 @@ run = "bun run docs:dev"
 ["docs:setup"]
 description = 'Install documentation dependencies'
 dir = "docs"
-run = ["cd .. && bun i", "bun i"]
+run = ["cd .. && bun i", "rm -rf node_modules", "bun i"]
 
 ["docs:build"]
 description = 'Build the documentation site'
