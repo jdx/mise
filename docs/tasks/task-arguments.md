@@ -115,23 +115,23 @@ arg "<shell>" {
 ```kdl
 arg "<file>" long_help="Extended help text shown with --help"
 
-# Hidden from help output
+// Hidden from help output
 arg "<file>" hide=#true
 
-# Parse value with external command
+// Parse value with external command
 arg "<input>" parse="mycli parse-input {}"
 ```
 
 #### Double-Dash Behavior
 
 ```kdl
-# Must use: mycli -- file.txt
+// Must use: mycli -- file.txt
 arg "<file>" double_dash="required"
 
-# Both work: mycli file.txt or mycli -- file.txt
+// Both work: mycli file.txt or mycli -- file.txt
 arg "<file>" double_dash="optional"
 
-# After first arg, behaves as if -- was used
+// After first arg, behaves as if -- was used
 arg "<files>" double_dash="automatic"
 ```
 
@@ -169,8 +169,8 @@ flag "-u --user <user>" help="User to run as"
 #### Count Flags
 
 ```kdl
-# Can be repeated: -vvv
-# $usage_verbose = number of times used (e.g., 3)
+// Can be repeated: -vvv
+// $usage_verbose = number of times used (e.g., 3)
 flag "-v --verbose" count=#true
 ```
 
@@ -178,14 +178,14 @@ flag "-v --verbose" count=#true
 
 ```kdl
 flag "--color" negate="--no-color" default=#true
-# Default: $usage_color = "true"
-# With --no-color: $usage_color = "false"
+// Default: $usage_color = "true"
+// With --no-color: $usage_color = "false"
 ```
 
 #### Global Flags
 
 ```kdl
-# Available on all subcommands (if using cmd structure)
+// Available on all subcommands (if using cmd structure)
 flag "-v --verbose" global=#true
 ```
 
@@ -202,13 +202,13 @@ Priority order: CLI flag > Environment variable > Config file > Default value
 #### Conditional Requirements
 
 ```kdl
-# If --output is set, --file must be too
+// If --output is set, --file must be too
 flag "--file <file>" required_if="--output"
 
-# Either --file or --stdin must be set
+// Either --file or --stdin must be set
 flag "--file <file>" required_unless="--stdin"
 
-# If --file is set, --stdin is ignored
+// If --file is set, --stdin is ignored
 flag "--file <file>" overrides="--stdin"
 ```
 
@@ -309,7 +309,7 @@ flag "--internal-debug" hide=#true
 [tasks.deploy]
 description = "Deploy application to cloud"
 usage = '''
-# Positional arguments
+// Positional arguments
 arg "<environment>" {
   help "Deployment environment"
   choices "dev" "staging" "prod"
@@ -321,7 +321,7 @@ arg "[services]" {
   var_min 0
 }
 
-# Flags
+// Flags
 flag "-v --verbose" {
   help "Enable verbose logging"
   count #true
@@ -344,7 +344,7 @@ flag "--force" {
   required_if "--skip-tests"
 }
 
-# Custom completions
+// Custom completions
 complete "services" run="mycli list-services"
 '''
 
