@@ -380,7 +380,7 @@ description = "A cat(1) clone with wings"
 test = ["bat --version", "bat {{version}}"]
 
 [tools.bat-extras]
-backends = ["asdf:mise-plugins/mise-bat-extras"]
+backends = ["aqua:eth-p/bat-extras", "asdf:mise-plugins/mise-bat-extras"]
 description = "Bash scripts that integrate bat with various command line tools"
 test = ["batman --version", "batman {{version}}"]
 
