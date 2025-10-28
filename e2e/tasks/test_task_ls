@@ -41,7 +41,6 @@ cat <<'EOF' >.config/mise/conf.d/confdtask-config.toml
 run = 'echo "confdtask"'
 EOF
 
-
 assert "mise task ls" "confdtask
 filetask2
 filetask3

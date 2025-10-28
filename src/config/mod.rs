@@ -730,7 +730,10 @@ fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<d
                     .collect::<Vec<_>>()
             } else {
                 // Handle regular filenames
-                config_files.get(&dir.join(f)).into_iter().collect::<Vec<_>>()
+                config_files
+                    .get(&dir.join(f))
+                    .into_iter()
+                    .collect::<Vec<_>>()
             }
         })
         .collect();
