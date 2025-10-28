@@ -18,7 +18,7 @@ arg "<environment>" help="Target environment" {
   choices "dev" "staging" "prod"
 }
 flag "-v --verbose" help="Enable verbose output"
-option "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
+flag "--region <region>" help="AWS region" default="us-east-1" env="AWS_REGION"
 '''
 
 run = '''
@@ -137,12 +137,12 @@ arg "<files>" double_dash="automatic"
 
 ### Flags (`flag`)
 
-Flags are boolean options that can be enabled/disabled.
+Flags can be defined as booleans or as accepting values.
 
-#### Flag Syntax
+#### Boolean Flags
 
 ```kdl
-flag "-f --force"                             // Boolean flag
+flag "-f --force"
 flag "-v --verbose" help="Enable verbose mode"
 flag "--dry-run" help="Preview without executing"
 ```
@@ -154,16 +154,26 @@ flag "-f"                                     // Short flag only
 flag "--force"                                // Long flag only
 ```
 
-#### With Values
-
-Flags can also accept values (making them similar to options):
+#### Flag With Values
 
 ```kdl
+flag "-o --output <file>" help="Output file"
+flag "--port <port>" help="Server port"
+flag "--color <when>" {
+  choices "auto" "always" "never"
+}
+```
+
+#### Flag With Defaults
+
+```kdl
+flag "--force" default=#true
+flag "--format <format>" help="Output format" default="json"
+flag "--port <port>" help="Server port" default="8080"
 flag "--color <when>" {
   choices "auto" "always" "never"
   default "auto"
 }
-flag "-u --user <user>" help="User to run as"
 ```
 
 #### Count Flags
@@ -194,6 +204,7 @@ flag "-v --verbose" global=#true
 ```kdl
 flag "--color" env="MYCLI_COLOR"              // Can be set via $MYCLI_COLOR
 flag "--format <fmt>" config="ui.format"      // Backed by config file value
+flag "--port <port>" env="PORT"
 flag "--debug" env="DEBUG"
 ```
 
@@ -222,18 +233,6 @@ flag "-q --quiet" {
   alias "--silent"                            // Alternative name
 }
 ```
-
-### Options (Flags with Values)
-
-Options are flags that require a value. In mise's usage syntax, these are defined as flags with `<value>` placeholders.
-
-```kdl
-option "-o --output <file>" help="Output file"
-option "--format <format>" help="Output format" default="json"
-option "--port <port>" help="Server port" default="8080" env="PORT"
-```
-
-Options support all the same features as flags (environment variables, config backing, choices, etc.).
 
 ### Completion (`complete`)
 
