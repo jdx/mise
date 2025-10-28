@@ -15,7 +15,7 @@ packages:
         asset: gofumpt_{{.Version}}_{{.OS}}_{{.Arch}}
         format: raw
         windows_arm_emulation: true
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.9.1")
         asset: gofumpt_{{.Version}}_{{.OS}}_{{.Arch}}
         format: raw
         windows_arm_emulation: true
@@ -23,3 +23,7 @@ packages:
           type: github_release
           asset: sha256sums.txt
           algorithm: sha256
+      - version_constraint: "true"
+        asset: gofumpt_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
