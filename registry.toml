@@ -985,6 +985,14 @@ backends = ["pipx:copier", "asdf:looztra/asdf-copier"]
 description = "A library and CLI app for rendering project templates"
 test = ["copier --version", "copier {{version}}"]
 
+[tools.cpz]
+backends = [
+  "aqua:SUPERCILEX/fuc/cpz",
+  "ubi:SUPERCILEX/fuc[matching=cpz,rename_exe=cpz]",
+]
+description = "A zippy alternative to cp, a tool to copy files and directories"
+test = ["cpz --version", "cpz {{version}}"]
+
 [tools.copper]
 backends = [
   "aqua:cloud66-oss/copper",
@@ -3894,6 +3902,14 @@ description = "Rancher Kubernetes Engine (RKE), an extremely simple, lightning f
 [tools.rlwrap]
 backends = ["asdf:mise-plugins/mise-rlwrap"]
 description = "rlwrap is a 'readline wrapper', a small utility that uses the GNU Readline library to allow the editing of keyboard input for any command"
+
+[tools.rmz]
+backends = [
+  "aqua:SUPERCILEX/fuc/rmz",
+  "ubi:SUPERCILEX/fuc[matching=rmz,rename_exe=rmz]",
+]
+description = "A zippy alternative to rm, a tool to remove files and directories"
+test = ["rmz --version", "rmz {{version}}"]
 
 [tools.rocq]
 aliases = ["coq"]
