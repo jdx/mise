@@ -60,7 +60,7 @@ use the `rename_exe` option to specify the target executable name:
 ### `matching`
 
 Set a string to match against the release filename when there are multiple files for your
-OS/arch, i.e. "gnu" or "musl". Note that this is only used when there is more than one
+OS/arch, i.e. "gnu", "musl", or "msvc". Note that this is only used when there is more than one
 matching release filename for your OS/arch. If only one release asset matches your OS/arch,
 then this will be ignored.
 

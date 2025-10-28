@@ -30,6 +30,7 @@ pub enum AssetArch {
 pub enum AssetLibc {
     Gnu,
     Musl,
+    Msvc,
 }
 
 impl AssetOs {
@@ -58,6 +59,7 @@ impl AssetLibc {
         match self {
             AssetLibc::Gnu => target == "gnu",
             AssetLibc::Musl => target == "musl",
+            AssetLibc::Msvc => target == "msvc",
         }
     }
 }
@@ -132,6 +134,10 @@ static ARCH_PATTERNS: LazyLock<Vec<(AssetArch, Regex)>> = LazyLock::new(|| {
 static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
     vec![
         (
+            AssetLibc::Msvc,
+            Regex::new(r"(?i)(?:\b|_)(?:msvc)(?:\b|_)").unwrap(),
+        ),
+        (
             AssetLibc::Gnu,
             Regex::new(r"(?i)(?:\b|_)(?:gnu|glibc)(?:\b|_)").unwrap(),
         ),
@@ -163,8 +169,11 @@ pub struct AssetPicker {
 
 impl AssetPicker {
     pub fn new(target_os: String, target_arch: String) -> Self {
-        // Determine the libc variant based on how mise was built
-        let target_libc = if cfg!(target_env = "musl") {
+        // Determine the libc variant based on target OS and how mise was built
+        let target_libc = if target_os == "windows" {
+            // On Windows, prefer MSVC over GNU
+            "msvc".to_string()
+        } else if cfg!(target_env = "musl") {
             "musl".to_string()
         } else {
             "gnu".to_string()
@@ -230,8 +239,8 @@ impl AssetPicker {
         // Architecture scoring
         score += self.score_arch_match(asset);
 
-        // Libc variant scoring (only for Linux)
-        if self.target_os == "linux" {
+        // Libc variant scoring (for Linux and Windows)
+        if self.target_os == "linux" || self.target_os == "windows" {
             score += self.score_libc_match(asset);
         }
 
@@ -328,8 +337,8 @@ pub fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
         }
     }
 
-    // Try to detect libc (only relevant for Linux)
-    if detected_os == Some(AssetOs::Linux) {
+    // Try to detect libc (for Linux and Windows)
+    if detected_os == Some(AssetOs::Linux) || detected_os == Some(AssetOs::Windows) {
         for (libc, pattern) in PLATFORM_PATTERNS.libc_patterns.iter() {
             if pattern.is_match(&filename) {
                 detected_libc = Some(*libc);
@@ -486,6 +495,22 @@ mod tests {
         assert_eq!(platform.arch, AssetArch::X64);
         assert_eq!(platform.to_platform_string(), "windows-x64");
 
+        // Test Windows MSVC URL
+        let url = "https://github.com/dathere/qsv/releases/download/8.1.1/qsv-8.1.1-x86_64-pc-windows-msvc.zip";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Windows);
+        assert_eq!(platform.arch, AssetArch::X64);
+        assert_eq!(platform.libc, Some(AssetLibc::Msvc));
+        assert_eq!(platform.to_platform_string(), "windows-x64");
+
+        // Test Windows GNU URL
+        let url = "https://github.com/dathere/qsv/releases/download/8.1.1/qsv-8.1.1-x86_64-pc-windows-gnu.zip";
+        let platform = detect_platform_from_url(url).unwrap();
+        assert_eq!(platform.os, AssetOs::Windows);
+        assert_eq!(platform.arch, AssetArch::X64);
+        assert_eq!(platform.libc, Some(AssetLibc::Gnu));
+        assert_eq!(platform.to_platform_string(), "windows-x64");
+
         // Test URL with query parameters
         let url = "https://releases.example.com/tool-linux-x64.tar.gz?token=abc123&version=1.0";
         let platform = detect_platform_from_url(url).unwrap();
@@ -576,6 +601,11 @@ mod tests {
         let picker = AssetPicker::new("macos".to_string(), "aarch64".to_string());
         let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
         assert_eq!(picked, "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz");
+
+        // Test Windows x86_64 - should prefer MSVC over GNU
+        let picker = AssetPicker::new("windows".to_string(), "x86_64".to_string());
+        let picked = picker.pick_best_asset(&ripgrep_assets).unwrap();
+        assert_eq!(picked, "ripgrep-14.1.1-x86_64-pc-windows-msvc.zip");
     }
 
     #[test]
@@ -624,5 +654,50 @@ mod tests {
                 "URL: {url}"
             );
         }
+    }
+
+    #[test]
+    fn test_windows_msvc_preference() {
+        // Test qsv assets
+        let qsv_assets = vec![
+            "qsv-8.1.1-x86_64-pc-windows-gnu.zip".to_string(),
+            "qsv-8.1.1-x86_64-pc-windows-msvc.zip".to_string(),
+        ];
+
+        // Windows should prefer MSVC over GNU
+        let picker = AssetPicker::new("windows".to_string(), "x86_64".to_string());
+        let picked = picker.pick_best_asset(&qsv_assets).unwrap();
+        assert_eq!(picked, "qsv-8.1.1-x86_64-pc-windows-msvc.zip");
+
+        // Verify MSVC scores higher than GNU on Windows
+        let msvc_score = picker.score_asset("qsv-8.1.1-x86_64-pc-windows-msvc.zip");
+        let gnu_score = picker.score_asset("qsv-8.1.1-x86_64-pc-windows-gnu.zip");
+        assert!(
+            msvc_score > gnu_score,
+            "MSVC variant should score higher than GNU on Windows"
+        );
+    }
+
+    #[test]
+    fn test_windows_libc_scoring() {
+        let picker = AssetPicker::new("windows".to_string(), "x86_64".to_string());
+
+        // Test that MSVC scores positively and GNU scores negatively on Windows
+        let msvc_score = picker.score_asset("tool-1.0.0-x86_64-pc-windows-msvc.zip");
+        let gnu_score = picker.score_asset("tool-1.0.0-x86_64-pc-windows-gnu.zip");
+        let no_libc_score = picker.score_asset("tool-1.0.0-windows-x86_64.zip");
+
+        assert!(
+            msvc_score > gnu_score,
+            "MSVC should score higher than GNU on Windows"
+        );
+        assert!(
+            msvc_score > no_libc_score,
+            "MSVC should score higher than assets without libc info"
+        );
+        assert!(
+            gnu_score < no_libc_score,
+            "GNU should score lower than assets without libc info on Windows"
+        );
     }
 }

@@ -33,7 +33,7 @@ When no `asset_pattern` is specified, mise automatically selects the best asset 
 
 - **OS compatibility** (linux, macos, windows)
 - **Architecture compatibility** (x64, arm64, x86, arm)
-- **Libc variant** (gnu or musl, for Linux)
+- **Libc variant** (gnu or musl for Linux, msvc for Windows)
 - **Archive format preference** (tar.gz, zip, etc.)
 - **Build type** (avoids debug/test builds)
 
