@@ -35,13 +35,21 @@ cat <<'EOF' >mytasks/filetask3.sh
 EOF
 chmod +x mytasks/filetask3.sh
 
-assert "mise task ls" "filetask2
+mkdir -p .config/mise/conf.d
+cat <<'EOF' >.config/mise/conf.d/confdtask-config.toml
+[tasks.confdtask]
+run = 'echo "confdtask"'
+EOF
+
+assert "mise task ls" "confdtask
+filetask2
 filetask3
 lint
 test
 test-with-args"
 
-assert "mise task -x ls" "filetask2          ./mytasks/filetask2
+assert "mise task -x ls" "confdtask          ./.config/mise/conf.d/confdtask-config.toml
+filetask2          ./mytasks/filetask2
 filetask3          ./mytasks/filetask3.sh
 lint               ./mise.toml
 test               ./tasks.toml
@@ -50,7 +58,30 @@ test-with-args     ./tasks.toml"
 assert_json "mise task ls --json" "$(
 	cat <<EOF
 [
-  {
+ {
+   "name": "confdtask",
+   "aliases": [],
+   "description": "",
+   "source": "$(pwd)/.config/mise/conf.d/confdtask-config.toml",
+   "depends": [],
+   "depends_post": [],
+   "wait_for": [],
+   "env": [],
+   "dir": null,
+   "hide": false,
+   "raw": false,
+   "sources": [],
+   "outputs": [],
+   "shell": null,
+   "quiet": false,
+   "silent": false,
+   "tools": {},
+   "run": [
+     "echo \"confdtask\""
+   ],
+   "file": null
+ },
+ {
    "name": "filetask2",
    "aliases": [],
    "description": "",

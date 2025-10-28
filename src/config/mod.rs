@@ -717,12 +717,30 @@ impl Config {
 }
 
 fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<dyn ConfigFile>> {
-    DEFAULT_CONFIG_FILENAMES
+    let mut configs: Vec<&'a Arc<dyn ConfigFile>> = DEFAULT_CONFIG_FILENAMES
         .iter()
         .rev()
-        .map(|f| dir.join(f))
-        .filter_map(|f| config_files.get(&f))
-        .collect()
+        .flat_map(|f| {
+            if f.contains('*') {
+                // Handle glob patterns by matching against actual config file paths
+                glob(dir, f)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|path| config_files.get(&path))
+                    .collect::<Vec<_>>()
+            } else {
+                // Handle regular filenames
+                config_files
+                    .get(&dir.join(f))
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            }
+        })
+        .collect();
+    // Remove duplicates while preserving order
+    let mut seen = std::collections::HashSet::new();
+    configs.retain(|cf| seen.insert(cf.get_path().to_path_buf()));
+    configs
 }
 
 fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
