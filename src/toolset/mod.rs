@@ -59,6 +59,8 @@ pub struct InstallOptions {
     pub raw: bool,
     /// only install missing tools if passed as arguments
     pub missing_args_only: bool,
+    /// completely disable auto-installation when auto_install setting is false
+    pub skip_auto_install: bool,
     pub auto_install_disable_tools: Option<Vec<String>>,
     pub resolve_options: ResolveOptions,
     pub dry_run: bool,
@@ -72,6 +74,7 @@ impl Default for InstallOptions {
             reason: "install".to_string(),
             force: false,
             missing_args_only: true,
+            skip_auto_install: false,
             auto_install_disable_tools: Settings::get().auto_install_disable_tools.clone(),
             resolve_options: Default::default(),
             dry_run: false,
@@ -145,6 +148,11 @@ impl Toolset {
         config: &mut Arc<Config>,
         opts: &InstallOptions,
     ) -> Result<Vec<ToolVersion>> {
+        // If auto-install is explicitly disabled, skip all automatic installation
+        if opts.skip_auto_install {
+            return Ok(vec![]);
+        }
+
         let mut versions = self
             .list_missing_versions(config)
             .await
