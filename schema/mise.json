@@ -1228,6 +1228,17 @@
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"
         },
+        "zig": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "use_community_mirrors": {
+              "default": true,
+              "description": "Download Zig from community-maintained mirrors",
+              "type": "boolean"
+            }
+          }
+        },
         "task": {
           "type": "object",
           "additionalProperties": false,

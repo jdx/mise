@@ -1356,6 +1356,25 @@ description = "This will automatically answer yes or no to prompts. This is usef
 env = "MISE_YES"
 type = "Bool"
 
+[zig.use_community_mirrors]
+default = true
+description = "Download Zig from community-maintained mirrors"
+docs = """
+This setting allows mise to fetch Zig from one of many community-maintained mirrors.
+
+The ziglang.org website does not offer any uptime or speed guarantees, and it
+recommends to use the mirrors. The mirror list is cached and allows the installs
+to succeed even if the main server is unavailable.
+
+The downloaded tarballs are always verified against Zig Software Foundation's public
+key, so there is no risk of third-party modifications. Read more on [ziglang.org](https://ziglang.org/download/community-mirrors/).
+
+If you don't have the mirror list cached locally, you can place the newline-separated
+server list inside `mise cache path`, folder `zig` as `community-mirrors.txt`.
+"""
+env = "MISE_ZIG_USE_COMMUNITY_MIRRORS"
+type = "Bool"
+
 [task.monorepo_depth]
 default = 5
 description = "Maximum depth to search for task files in monorepo subdirectories."
