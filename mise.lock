@@ -34,13 +34,13 @@ checksum = "blake3:1643fe56ae2f8adc8229a82672484113c01c82b5fe15b3e498610fc050831
 size = 22437956
 
 [[tools.cargo-binstall]]
-version = "1.15.8"
+version = "1.15.9"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "sha256:f482d21dca5e84751e0fd0c27cad7a64ea201ade1105621c917bb7c7cf8831a8"
-size = 6784879
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.8/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+checksum = "sha256:4aa0d88fdf39abd7444d3475f3bf4100bc5d498a3113339990a65dd2f9e40255"
+size = 6786640
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.9/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.7"
@@ -63,7 +63,7 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [[tools."cargo:usage-cli"]]
-version = "2.5.0"
+version = "2.5.1"
 backend = "cargo:usage-cli"
 
 [[tools.gh]]
