@@ -217,11 +217,11 @@ VERSION = "{{ read_file(path='VERSION') | trim }}"
 # Access resolved source files in task scripts
 [tasks.example]
 sources = ["src/**/*.ts", "package.json"]
-run = """
+run = '''
 {% for file in task_source_files() %}
   echo "Processing: {{ file }}"
 {% endfor %}
-"""
+'''
 ```
 
 ### Exec Options

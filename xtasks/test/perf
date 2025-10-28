@@ -59,7 +59,17 @@ benchmark() {
 }
 
 mise install
+# Warmup call to prime caches before measuring
+mise install >/dev/null 2>&1 || true
+if [ -n "${MISE_ALT:-}" ]; then
+	"$MISE_ALT" install >/dev/null 2>&1 || true
+fi
 benchmark install install
+# Warmup call to prime caches before measuring
+mise ls >/dev/null 2>&1 || true
+if [ -n "${MISE_ALT:-}" ]; then
+	"$MISE_ALT" ls >/dev/null 2>&1 || true
+fi
 benchmark ls ls
 benchmark bin-paths bin-paths
 benchmark task-ls task ls

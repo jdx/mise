@@ -1,5 +1,42 @@
 # Changelog
 
+## [2025.10.19](https://github.com/jdx/mise/compare/v2025.10.18..v2025.10.19) - 2025-10-28
+
+### 📦 Registry
+
+- update bat-extras backends by @TyceHerrman in [#6784](https://github.com/jdx/mise/pull/6784)
+
+### 🚀 Features
+
+- **(zig)** Download zig tarballs from vetted community mirrors when available. by @Maarrk in [#6670](https://github.com/jdx/mise/pull/6670)
+
+### 🐛 Bug Fixes
+
+- **(config)** respect auto_install=false for all installation contexts by @jdx in [#6788](https://github.com/jdx/mise/pull/6788)
+- **(plugins)** incorrect tool versions installed for custom plugins by @roele in [#6765](https://github.com/jdx/mise/pull/6765)
+- **(reqwest)** enable socks for self-update by @tony-sol in [#6775](https://github.com/jdx/mise/pull/6775)
+
+### 📚 Documentation
+
+- **(task)** Fix task flag definitions and examples by @syhol in [#6790](https://github.com/jdx/mise/pull/6790)
+- **(task-arguments)** adds `# [USAGE]` syntax by @risu729 in [#6768](https://github.com/jdx/mise/pull/6768)
+- enhance task documentation with syntax highlighting and corrections by @jdx in [#6777](https://github.com/jdx/mise/pull/6777)
+- use triple single quotes for multiline run commands by @jdx in [#6791](https://github.com/jdx/mise/pull/6791)
+
+### 🧪 Testing
+
+- **(perf)** add warmup calls for benchmarks to fix incorrect numbers by @jdx in [#6789](https://github.com/jdx/mise/pull/6789)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#6780](https://github.com/jdx/mise/pull/6780)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (2)
+
+- [`alvinunreal/tmuxai`](https://github.com/alvinunreal/tmuxai)
+- [`mvdan/gofumpt`](https://github.com/mvdan/gofumpt)
 ## [2025.10.18](https://github.com/jdx/mise/compare/v2025.10.17..v2025.10.18) - 2025-10-25
 
 ### 🚀 Features

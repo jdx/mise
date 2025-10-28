@@ -39,10 +39,10 @@ dir = "{{cwd}}" # run in user's cwd, default is the project's base directory
 description = 'Lint with clippy'
 env = { RUST_BACKTRACE = '1' } # env vars for the script
 # you can specify a multiline script instead of individual commands
-run = """
+run = '''
 #!/usr/bin/env bash
 cargo clippy
-"""
+'''
 
 [tasks.ci] # only dependencies to be run
 description = 'Run CI tasks'
@@ -174,10 +174,10 @@ You can specify environment variables for a task:
 description = 'Lint with clippy'
 env = { RUST_BACKTRACE = '1' } # env vars for the script
 # you can specify a multiline script instead of individual commands
-run = """
+run = '''
 #!/usr/bin/env bash
 cargo clippy
-"""
+'''
 ```
 
 ### Sources / Outputs
@@ -233,10 +233,10 @@ or use a shebang:
 
 ```mise-toml
 [tasks.lint]
-run = """
+run = '''
 #!/usr/bin/env bash
 cargo clippy
-"""
+'''
 ```
 
 By using a `shebang` (or `shell`), you can run tasks in different languages (e.g., Python, Node.js, Ruby, etc.):
@@ -260,7 +260,7 @@ for i in range(10):
 uv = 'latest'
 
 [tasks.python_uv_task]
-run = """
+run = '''
 #!/usr/bin/env -S uv run --script
 # /// script
 # dependencies = ["requests<3", "rich"]
@@ -272,7 +272,7 @@ from rich.pretty import pprint
 resp = requests.get("https://peps.python.org/api/peps.json")
 data = resp.json()
 pprint([(k, v["title"]) for k, v in data.items()][:10])
-"""
+'''
 ```
 
 ```mise-toml [node]
@@ -293,13 +293,13 @@ bun = 'latest'
 
 [tasks.bun_shell]
 description = "https://bun.sh/docs/runtime/shell"
-run = """
+run = '''
 #!/usr/bin/env bun
 
 import { $ } from "bun";
 const response = await fetch("https://example.com");
 await $`cat < ${response} | wc -c`; // 1256
-"""
+'''
 ```
 
 ```mise-toml [deno]
@@ -338,10 +338,10 @@ await download();
 ruby = 'latest'
 
 [tasks.ruby_task]
-run = """
+run = '''
 #!/usr/bin/env ruby
 puts 'Hello, ruby!'
-"""
+'''
 ```
 
 :::
@@ -540,11 +540,11 @@ run = 'echo {{flag(name="myflag")}}'
 
 ```mise-toml
 [tasks.maybeClean]
-run = """
+run = '''
 if [ '{{flag(name='clean')}}' = 'true' ]; then
   echo 'cleaning'
 fi
-"""
+'''
 # execute: mise run maybeClean --clean
 # runs: echo cleaning
 ```
