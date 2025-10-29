@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+require_cmd fish
+cat >"$TEST_DIR/fish_script.fish" <<'EOF'
+#!/usr/bin/env fish
+# shellcheck disable=SC1072,SC1065,SC1064,SC1073,SC2103
+
+# Verifies that paths already in PATH are not removed when leaving a directory
+# Bug: fish_add_path --move MOVES the path instead of duplicating it,
+# so when mise removes it from the front when leaving the directory,
+# it's also gone from its original position.
+
+# Create test directories with executables
+mkdir -p homebrew/bin subdir
+
+echo '#!/usr/bin/env bash
+echo "homebrew-tool"' >homebrew/bin/tool
+chmod +x homebrew/bin/tool
+
+# Simulate user's existing PATH setup (before mise activation)
+# This is like having /opt/homebrew/bin in your PATH from your shell config
+fish_add_path --global --path "$PWD/homebrew/bin"
+
+# Verify tool is found from homebrew before mise
+test (tool) = "homebrew-tool"
+or begin
+    echo "FAILED: tool not found in initial PATH"
+    exit 1
+end
+
+# Activate mise
+mise activate fish | source
+
+# Create a subdirectory with mise config that references the same homebrew/bin path
+echo '[env]
+_.path = ["../homebrew/bin"]' >subdir/.mise.toml
+
+# cd into the directory with mise config
+cd subdir
+__mise_env_eval
+
+# Tool should still be found (mise prioritized it to front)
+test (tool) = "homebrew-tool"
+or begin
+    echo "FAILED: tool not found after entering directory with _.path"
+    exit 1
+end
+
+# cd out of the directory - this is where the bug manifests
+cd ..
+__mise_env_eval
+
+# BUG: Tool should still be found because homebrew/bin was in PATH originally
+# But with --move, it was removed from its original position and only added to front
+# When we leave the directory, mise removes it from front, and it's gone entirely
+test (tool) = "homebrew-tool"
+or begin
+    echo "FAILED: homebrew/bin was removed from PATH when leaving directory"
+    echo "This is the bug: fish_add_path --move removed the path from its original position"
+    echo "Current PATH: $PATH"
+    exit 1
+end
+
+echo "SUCCESS: homebrew/bin remained in PATH after leaving directory"
+
+# Cleanup
+cd ..
+rm -rf homebrew subdir
+EOF
+
+exec fish "$TEST_DIR/fish_script.fish"
