@@ -252,13 +252,11 @@ pub fn clear_old_env(shell: &dyn Shell) -> String {
             | EnvDiffOperation::Change(k, _)
             | EnvDiffOperation::Remove(k) => k != &*PATH_KEY,
         });
-    } else {
-        if let Some(path) = env::PRISTINE_ENV.deref().get(&*PATH_KEY) {
-            patches.push(EnvDiffOperation::Change(
-                PATH_KEY.to_string(),
-                path.to_string(),
-            ));
-        }
+    } else if let Some(path) = env::PRISTINE_ENV.deref().get(&*PATH_KEY) {
+        patches.push(EnvDiffOperation::Change(
+            PATH_KEY.to_string(),
+            path.to_string(),
+        ));
     }
     build_env_commands(shell, &patches)
 }
