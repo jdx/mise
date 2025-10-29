@@ -104,13 +104,13 @@ size = 841408
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
 
 [[tools.node]]
-version = "24.10.0"
+version = "24.11.0"
 backend = "core:node"
 
 [tools.node.platforms.linux-x64]
-checksum = "sha256:2b03c5417ce0b1076780df00e01da373bead3b4b80d1c78c1ad10ee7b918d90c"
-size = 58957192
-url = "https://nodejs.org/dist/v24.10.0/node-v24.10.0-linux-x64.tar.gz"
+checksum = "sha256:b3c071cdf47aab867c3b2aa287257df12ec5d7c962bf922b32fd33226c4295fd"
+size = 58899117
+url = "https://nodejs.org/dist/v24.11.0/node-v24.11.0-linux-x64.tar.gz"
 
 [[tools."npm:ajv-cli"]]
 version = "5.0.0"
