@@ -1,7 +1,7 @@
 use crate::config::{Config, Settings};
 use crate::direnv::DirenvDiff;
 use crate::env::{__MISE_DIFF, PATH_KEY, TERM_WIDTH};
-use crate::env::{PATH_ENV_SEP, join_paths, split_paths};
+use crate::env::{join_paths, split_paths};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
 use crate::file::display_rel_path;
 use crate::hook_env::{PREV_SESSION, WatchFilePattern};
@@ -67,6 +67,16 @@ impl HookEnv {
         self.display_status(&config, ts, &mise_env).await?;
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, mise_env.clone());
         let mut patches = diff.to_patches();
+
+        // For fish shell, filter out PATH operations from diff patches because
+        // fish's PATH handling conflicts with setting PATH multiple times
+        if shell.to_string() == "fish" {
+            patches.retain(|p| match p {
+                EnvDiffOperation::Add(k, _)
+                | EnvDiffOperation::Change(k, _)
+                | EnvDiffOperation::Remove(k) => k != &*PATH_KEY,
+            });
+        }
 
         let paths = ts.list_final_paths(&config, env_results).await?;
         diff.path.clone_from(&paths); // update __MISE_DIFF with the new paths for the next run
@@ -169,15 +179,30 @@ impl HookEnv {
         to_remove: &[PathBuf],
     ) -> Result<Vec<EnvDiffOperation>> {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
+        let current_paths: Vec<PathBuf> = split_paths(&full).collect();
+
         let (pre, post) = match &*env::__MISE_ORIG_PATH {
-            Some(orig_path) => match full.split_once(&format!("{PATH_ENV_SEP}{orig_path}")) {
-                Some((pre, post)) if !Settings::get().activate_aggressive => (
-                    split_paths(pre).collect_vec(),
-                    split_paths(&format!("{orig_path}{post}")).collect_vec(),
-                ),
-                _ => (vec![], split_paths(&full).collect_vec()),
-            },
-            None => (vec![], split_paths(&full).collect_vec()),
+            Some(orig_path) if !Settings::get().activate_aggressive => {
+                let orig_paths: Vec<PathBuf> = split_paths(orig_path).collect();
+                let orig_set: HashSet<_> = orig_paths.iter().collect();
+
+                // Find paths in current that are not in original - these are "pre" paths
+                // (user additions after mise activation). Stop at the first path that
+                // exists in the original PATH.
+                let mut pre = Vec::new();
+                for path in &current_paths {
+                    if !orig_set.contains(path) {
+                        pre.push(path.clone());
+                    } else {
+                        // Once we hit a path that's in original, stop collecting "pre"
+                        break;
+                    }
+                }
+
+                // Use the original PATH directly as "post" to ensure it's preserved exactly
+                (pre, orig_paths)
+            }
+            _ => (vec![], current_paths),
         };
 
         // Filter out install paths that are already in the original PATH (post).
