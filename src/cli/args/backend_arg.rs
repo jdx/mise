@@ -460,4 +460,48 @@ mod tests {
         // The logic has been improved to check plugin existence first and provide
         // more specific error messages based on the plugin type.
     }
+
+    #[tokio::test]
+    async fn test_full_with_opts_appends_and_filters() {
+        let _config = Config::get().await.unwrap();
+
+        // start with a normal full like "npm:prettier" and attach opts via set_opts
+        let mut fa: BackendArg = "npm:prettier".into();
+        fa.set_opts(Some(parse_tool_options("a=1,install_env=ignored,b=2")));
+        // install_env should be filtered out, remaining order preserved
+        assert_str_eq!("npm:prettier[a=1,b=2]", fa.full_with_opts());
+
+        fa = "http:hello-lock".into();
+        fa.set_opts(Some(parse_tool_options("url=https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin")));
+        // install_env should be filtered out, remaining order preserved
+        assert_str_eq!(
+            "http:hello-lock[url=https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
+            fa.full_with_opts()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_full_with_opts_preserves_existing_brackets() {
+        let _config = Config::get().await.unwrap();
+
+        // when the full already contains options brackets, full_with_opts should return it unchanged
+        let mut fa = BackendArg::new_raw(
+            "node".to_string(),
+            Some("node[foo=bar]".to_string()),
+            "node".to_string(),
+            None,
+        );
+        assert_str_eq!("node[foo=bar]", fa.full_with_opts());
+
+        fa = BackendArg::new_raw(
+            "gitlab:jdxcode/mise-test-fixtures".to_string(),
+            Some("gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]".to_string()),
+            "gitlab:jdxcode/mise-test-fixtures".to_string(),
+            None,
+        );
+        assert_str_eq!(
+            "gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]",
+            fa.full_with_opts()
+        );
+    }
 }
