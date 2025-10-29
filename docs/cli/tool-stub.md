@@ -8,18 +8,11 @@ Execute a tool stub
 
 Tool stubs are executable files containing TOML configuration that specify which tool to run and how to run it. They provide a convenient way to create portable, self-contained executables that automatically manage tool installation and execution.
 
-A tool stub consists of: 
+A tool stub consists of: - A shebang line: #!/usr/bin/env -S mise tool-stub - TOML configuration specifying the tool, version, and options - Optional comments describing the tool's purpose
 
-- A shebang line: `#!/usr/bin/env -S mise tool-stub`
-- TOML configuration specifying the tool, version, and options
-- Optional comments describing the tool's purpose
-
-Example stub file: 
-```
-#!/usr/bin/env -S mise tool-stub # Node.js v20 development environment
+Example stub file: #!/usr/bin/env -S mise tool-stub # Node.js v20 development environment
 
 tool = "node" version = "20.0.0" bin = "node"
-```
 
 The stub will automatically install the specified tool version if missing and execute it with any arguments passed to the stub.
 
