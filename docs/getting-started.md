@@ -274,11 +274,11 @@ For example, to install [claude-code](https://www.npmjs.com/package/@anthropic-a
 
 ```sh
 # run claude-code via mise x|exec
-mise exec npm:@anthropic-ai/claude-code -- claude-code --version
+mise exec npm:@anthropic-ai/claude-code -- claude --version
 
 # or if mise is activated in your shell
 mise use --global npm:@anthropic-ai/claude-code
-claude-code --version
+claude --version
 ```
 
 Install [black](https://github.com/psf/black) with the pipx backend:
