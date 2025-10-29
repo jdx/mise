@@ -1003,7 +1003,7 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
         myself.insert("amd64");
     }
     if !envs.is_empty() && envs.is_disjoint(&myself) {
-        bail!("unsupported env: {os_arch}");
+        bail!("unsupported env: {os_arch} (supported: {envs:?})");
     }
     match pkg.r#type {
         AquaPackageType::Cargo => {
