@@ -1,70 +1,93 @@
 #!/usr/bin/env bash
 require_cmd fish
-cat >"$TEST_DIR/fish_script.fish" <<'EOF'
+
+# This test verifies that hook-env outputs PATH in the correct format for fish shell.
+# The bug: hook-env was outputting `set -gx PATH '/path1:/path2:/path3'` (colon-separated string)
+# But fish expects: `set -gx PATH /path1 /path2 /path3` (space-separated list)
+# When fish receives a colon-separated string, it treats it as ONE path entry, which breaks
+# the filtering logic added in PR #6689 that prevents removing paths from original PATH.
+
+# Set up test environment
+mkdir -p project
+
+# Create test script
+cat >"$TEST_DIR/test.fish" <<'EOF'
 #!/usr/bin/env fish
-# shellcheck disable=SC1072,SC1065,SC1064,SC1073,SC2103
 
-# Verifies that paths already in PATH are not removed when leaving a directory
-# Bug: fish_add_path --move MOVES the path instead of duplicating it,
-# so when mise removes it from the front when leaving the directory,
-# it's also gone from its original position.
-
-# Create test directories with executables
-mkdir -p homebrew/bin subdir
-
-echo '#!/usr/bin/env bash
-echo "homebrew-tool"' >homebrew/bin/tool
-chmod +x homebrew/bin/tool
-
-# Simulate user's existing PATH setup (before mise activation)
-# This is like having /opt/homebrew/bin in your PATH from your shell config
-fish_add_path --global --path "$PWD/homebrew/bin"
-
-# Verify tool is found from homebrew before mise
-test (tool) = "homebrew-tool"
-or begin
-    echo "FAILED: tool not found in initial PATH"
+# Ensure we use the debug mise binary, not homebrew mise
+# The e2e framework sets PATH with the debug binary first, but we override it below
+# So we need to preserve the debug binary path
+set -l debug_mise_path (string match -r ".*/target/debug" $PATH | head -1)
+if test -z "$debug_mise_path"
+    echo "ERROR: Could not find debug mise in PATH"
+    echo "PATH: $PATH"
     exit 1
 end
+
+echo "DEBUG: using mise from:" $debug_mise_path
+echo "DEBUG: mise version:" (mise --version)
+
+# Set initial PATH with homebrew/bin, but keep debug mise first
+set -gx PATH $debug_mise_path /opt/homebrew/bin /usr/bin /bin
 
 # Activate mise
 mise activate fish | source
 
-# Create a subdirectory with mise config that references the same homebrew/bin path
-echo '[env]
-_.path = ["../homebrew/bin"]' >subdir/.mise.toml
+# Create project with _.path that includes a path already in original PATH
+echo "[env]
+_.path = ['/opt/homebrew/bin']" > project/.mise.toml
 
-# cd into the directory with mise config
-cd subdir
-__mise_env_eval
+cd project
 
-# Tool should still be found (mise prioritized it to front)
-test (tool) = "homebrew-tool"
-or begin
-    echo "FAILED: tool not found after entering directory with _.path"
+# Verify /opt/homebrew/bin is in PATH before entering project
+if not contains /opt/homebrew/bin $PATH
+    echo "FAIL: /opt/homebrew/bin not in PATH before test"
+    echo "PATH: $PATH"
     exit 1
 end
 
-# cd out of the directory - this is where the bug manifests
-cd ..
-__mise_env_eval
+echo "Before entering project, PATH entries:" (count $PATH)
 
-# BUG: Tool should still be found because homebrew/bin was in PATH originally
-# But with --move, it was removed from its original position and only added to front
-# When we leave the directory, mise removes it from front, and it's gone entirely
-test (tool) = "homebrew-tool"
-or begin
-    echo "FAILED: homebrew/bin was removed from PATH when leaving directory"
-    echo "This is the bug: fish_add_path --move removed the path from its original position"
-    echo "Current PATH: $PATH"
+# Apply hook-env changes (enter project directory)
+echo "=== ENTERING PROJECT ==="
+# Call the debug mise binary directly by absolute path to ensure we're testing the right binary
+$debug_mise_path/mise hook-env -s fish --force >/tmp/enter_stdout.txt 2>/tmp/enter_stderr.txt
+source /tmp/enter_stdout.txt
+
+echo "In project, PATH entries:" (count $PATH)
+
+# Verify /opt/homebrew/bin is still in PATH
+if not contains /opt/homebrew/bin $PATH
+    echo "FAIL: /opt/homebrew/bin was removed when entering project"
+    echo "PATH: $PATH"
+    cat /tmp/enter_stderr.txt
     exit 1
 end
 
-echo "SUCCESS: homebrew/bin remained in PATH after leaving directory"
-
-# Cleanup
+# Now leave the directory - this is where the bug manifests
+echo "=== LEAVING PROJECT ==="
 cd ..
-rm -rf homebrew subdir
+$debug_mise_path/mise hook-env -s fish --force >/tmp/leave_stdout.txt 2>/tmp/leave_stderr.txt
+source /tmp/leave_stdout.txt
+
+echo "After leaving project, PATH entries:" (count $PATH)
+
+# BUG: /opt/homebrew/bin should still be in PATH because it was in original PATH
+# Without the fix, it gets removed because fish treats colon-separated string as one entry
+if not contains /opt/homebrew/bin $PATH
+    echo "FAIL: /opt/homebrew/bin was removed from PATH after leaving directory"
+    echo "This is the bug - paths in both original PATH and _.path get removed"
+    echo "PATH: $PATH"
+    echo ""
+    echo "=== ENTER DEBUG OUTPUT ==="
+    cat /tmp/enter_stderr.txt
+    echo ""
+    echo "=== LEAVE DEBUG OUTPUT ==="
+    cat /tmp/leave_stderr.txt
+    exit 1
+end
+
+echo "SUCCESS: /opt/homebrew/bin remained in PATH after leaving directory"
 EOF
 
-exec fish "$TEST_DIR/fish_script.fish"
+exec fish "$TEST_DIR/test.fish"

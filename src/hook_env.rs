@@ -243,11 +243,22 @@ fn get_mise_env_vars_hashed() -> String {
 
 pub fn clear_old_env(shell: &dyn Shell) -> String {
     let mut patches = env::__MISE_DIFF.reverse().to_patches();
-    if let Some(path) = env::PRISTINE_ENV.deref().get(&*PATH_KEY) {
-        patches.push(EnvDiffOperation::Change(
-            PATH_KEY.to_string(),
-            path.to_string(),
-        ));
+    // For fish shell, filter out PATH operations from the reversed diff because
+    // fish has its own PATH management that conflicts with ours. We'll set PATH
+    // correctly in the build_path_operations call later.
+    if shell.to_string() == "fish" {
+        patches.retain(|p| match p {
+            EnvDiffOperation::Add(k, _)
+            | EnvDiffOperation::Change(k, _)
+            | EnvDiffOperation::Remove(k) => k != &*PATH_KEY,
+        });
+    } else {
+        if let Some(path) = env::PRISTINE_ENV.deref().get(&*PATH_KEY) {
+            patches.push(EnvDiffOperation::Change(
+                PATH_KEY.to_string(),
+                path.to_string(),
+            ));
+        }
     }
     build_env_commands(shell, &patches)
 }

@@ -6,6 +6,7 @@ use crate::config::Settings;
 use crate::env::{self};
 use crate::shell::{ActivateOptions, Shell};
 use indoc::formatdoc;
+use itertools::Itertools;
 use shell_escape::unix::escape;
 
 #[derive(Default)]
@@ -123,8 +124,14 @@ impl Shell for Fish {
 
     fn set_env(&self, key: &str, v: &str) -> String {
         let k = escape(key.into());
-        let v = escape(v.into());
-        format!("set -gx {k} {v}\n")
+        // Fish uses space-separated list for PATH, not colon-separated string
+        if key == "PATH" {
+            let paths = v.split(':').map(|p| escape(p.into())).join(" ");
+            format!("set -gx PATH {paths}\n")
+        } else {
+            let v = escape(v.into());
+            format!("set -gx {k} {v}\n")
+        }
     }
 
     fn prepend_env(&self, key: &str, value: &str) -> String {
