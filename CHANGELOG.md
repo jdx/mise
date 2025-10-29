@@ -1,5 +1,37 @@
 # Changelog
 
+## [2025.10.20](https://github.com/jdx/mise/compare/v2025.10.19..v2025.10.20) - 2025-10-29
+
+### 📦 Registry
+
+- add cpz and rmz by @sassdavid in [#6793](https://github.com/jdx/mise/pull/6793)
+
+### 🚀 Features
+
+- Add MSVC asset matching on Windows by @trolleyman in [#6798](https://github.com/jdx/mise/pull/6798)
+
+### 🐛 Bug Fixes
+
+- **(cache)** exclude http backend tarballs from autoprune by @jdx in [#6806](https://github.com/jdx/mise/pull/6806)
+- **(ci)** prevent release job from running when dependencies fail by @jdx in [#6804](https://github.com/jdx/mise/pull/6804)
+- **(fish)** remove --move flag from fish_add_path to prevent PATH corruption by @jdx in [#6800](https://github.com/jdx/mise/pull/6800)
+- **(tasks)** support local .config/mise/conf.d/*.toml tasks by @syhol in [#6792](https://github.com/jdx/mise/pull/6792)
+
+### 📚 Documentation
+
+- change 'claude-code' to 'claude' in examples by @bradleybuda in [#6801](https://github.com/jdx/mise/pull/6801)
+
+### New Contributors
+
+- @trolleyman made their first contribution in [#6798](https://github.com/jdx/mise/pull/6798)
+- @bradleybuda made their first contribution in [#6801](https://github.com/jdx/mise/pull/6801)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`jreisinger/checkip`](https://github.com/jreisinger/checkip)
+- [`suzuki-shunsuke/ghaperf`](https://github.com/suzuki-shunsuke/ghaperf)
 ## [2025.10.19](https://github.com/jdx/mise/compare/v2025.10.18..v2025.10.19) - 2025-10-28
 
 ### 📦 Registry
