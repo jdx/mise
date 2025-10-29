@@ -138,7 +138,7 @@ impl Shell for Fish {
                         None
                     } else {
                         Some(format!(
-                            "fish_add_path --global --move --path {}\n",
+                            "fish_add_path --global --path {}\n",
                             escape(path_str.into())
                         ))
                     }
