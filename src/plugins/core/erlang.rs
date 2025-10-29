@@ -25,7 +25,7 @@ pub struct ErlangPlugin {
     ba: Arc<BackendArg>,
 }
 
-const KERL_VERSION: &str = "4.1.1";
+const KERL_VERSION: &str = "4.4.0";
 
 impl ErlangPlugin {
     pub fn new() -> Self {
