@@ -1,11 +1,12 @@
 use crate::cli::run::TaskOutput;
 use crate::config::{Config, Settings};
 use crate::exit::exit;
-use crate::ui::ctrlc;
+use crate::ui::{self, ctrlc};
 use crate::{Result, backend};
 use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{logger, migrate, shims};
 use clap::{ArgAction, CommandFactory, Parser, Subcommand};
+use eyre::bail;
 use std::path::PathBuf;
 
 mod activate;
@@ -463,6 +464,8 @@ impl Cli {
         let cli = measure!("get_matches_from", {
             Cli::parse_from(processed_args.iter())
         });
+        // Validate --cd path BEFORE Settings processes it and changes the directory
+        validate_cd_path(&cli.cd)?;
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
@@ -599,4 +602,25 @@ fn check_working_directory() {
             dir_path
         );
     }
+}
+
+/// Validate the --cd path if provided and return an error if it doesn't exist
+fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
+    if let Some(path) = cd {
+        if !path.exists() {
+            bail!(
+                "Directory specified with --cd does not exist: {}\n\
+                 Please check the path and try again.",
+                ui::style::epath(path)
+            );
+        }
+        if !path.is_dir() {
+            bail!(
+                "Path specified with --cd is not a directory: {}\n\
+                 Please provide a valid directory path.",
+                ui::style::epath(path)
+            );
+        }
+    }
+    Ok(())
 }
