@@ -187,15 +187,13 @@ impl HookEnv {
                 let orig_set: HashSet<_> = orig_paths.iter().collect();
 
                 // Find paths in current that are not in original - these are "pre" paths
-                // (user additions after mise activation). Stop at the first path that
-                // exists in the original PATH.
+                // (user additions after mise activation). Collect ALL non-original paths,
+                // not just those before the first original path, to handle cases where
+                // paths are interleaved (e.g., /new1:/orig1:/new2:/orig2).
                 let mut pre = Vec::new();
                 for path in &current_paths {
                     if !orig_set.contains(path) {
                         pre.push(path.clone());
-                    } else {
-                        // Once we hit a path that's in original, stop collecting "pre"
-                        break;
                     }
                 }
 
@@ -205,10 +203,12 @@ impl HookEnv {
             _ => (vec![], current_paths),
         };
 
-        // Filter out install paths that are already in the original PATH (post).
-        // This prevents mise from claiming ownership of paths that were in the user's
-        // original PATH before mise activation. When a tool is deactivated, these paths
-        // will remain accessible since they're preserved in the `post` section.
+        // Filter out install paths that are already in the original PATH (post) or
+        // in the pre paths (user additions). This prevents mise from claiming ownership
+        // of paths that were in the user's original PATH before mise activation, and also
+        // prevents duplicates when paths from previous mise activations are in the current
+        // PATH. When a tool is deactivated, these paths will remain accessible since they're
+        // preserved in the `post` section or `pre` section.
         // This fixes the issue where system tools (e.g., rustup) become unavailable
         // after leaving a mise project that uses the same tool.
         //
@@ -216,6 +216,9 @@ impl HookEnv {
         // and other path variants that refer to the same filesystem location.
         let post_canonical: HashSet<PathBuf> =
             post.iter().filter_map(|p| p.canonicalize().ok()).collect();
+        let pre_set: HashSet<_> = pre.iter().collect();
+        let pre_canonical: HashSet<PathBuf> =
+            pre.iter().filter_map(|p| p.canonicalize().ok()).collect();
 
         let installs_filtered: Vec<PathBuf> = installs
             .iter()
@@ -223,6 +226,8 @@ impl HookEnv {
                 // Check both the original path and its canonical form
                 // This handles cases where the path doesn't exist yet (can't canonicalize)
                 // or where the canonical form differs from the string representation
+
+                // Filter against post (original PATH)
                 if post.contains(p) {
                     return false;
                 }
@@ -231,6 +236,17 @@ impl HookEnv {
                         return false;
                     }
                 }
+
+                // Also filter against pre (user additions) to avoid duplicates
+                if pre_set.contains(p) {
+                    return false;
+                }
+                if let Ok(canonical) = p.canonicalize() {
+                    if pre_canonical.contains(&canonical) {
+                        return false;
+                    }
+                }
+
                 true
             })
             .cloned()
