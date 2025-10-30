@@ -1,5 +1,27 @@
 # Changelog
 
+## [2025.10.21](https://github.com/jdx/mise/compare/v2025.10.20..v2025.10.21) - 2025-10-30
+
+### 🐛 Bug Fixes
+
+- **(cli)** show friendly error when --cd path does not exist by @jdx in [#6818](https://github.com/jdx/mise/pull/6818)
+- **(node)** update lts version by @risu729 in [#6816](https://github.com/jdx/mise/pull/6816)
+- **(schema,settings)** update type and descriptions for shell argument settings by @astrochemx in [#6805](https://github.com/jdx/mise/pull/6805)
+
+### Chore
+
+- update kerl to 4.4.0 by @rbino in [#6809](https://github.com/jdx/mise/pull/6809)
+
+### New Contributors
+
+- @astrochemx made their first contribution in [#6805](https://github.com/jdx/mise/pull/6805)
+- @rbino made their first contribution in [#6809](https://github.com/jdx/mise/pull/6809)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`goharbor/harbor-cli`](https://github.com/goharbor/harbor-cli)
 ## [2025.10.20](https://github.com/jdx/mise/compare/v2025.10.19..v2025.10.20) - 2025-10-29
 
 ### 📦 Registry
