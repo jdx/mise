@@ -451,7 +451,8 @@ impl Backend for NodePlugin {
             ("lts-hydrogen", "18"),
             ("lts-iron", "20"),
             ("lts-jod", "22"),
-            ("lts", "22"),
+            ("lts-krypton", "24"),
+            ("lts", "24"),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
