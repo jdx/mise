@@ -1254,13 +1254,13 @@ type = "ListPath"
 
 [unix_default_file_shell_args]
 default = "sh"
-description = "List of default shell arguments for unix to be used with `file`. For example `sh`."
+description = "Default shell arguments for Unix to be used for file commands. For example, `sh` for sh."
 env = "MISE_UNIX_DEFAULT_FILE_SHELL_ARGS"
 type = "String"
 
 [unix_default_inline_shell_args]
 default = "sh -c -o errexit"
-description = "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh."
+description = "Default shell arguments for Unix to be used for inline commands. For example, `sh -c` for sh."
 env = "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS"
 type = "String"
 
@@ -1320,14 +1320,13 @@ type = "Bool"
 
 [windows_default_file_shell_args]
 default = "cmd /c"
-description = "List of default shell arguments for Windows to be used for file commands. For example, `cmd`, `/c` for cmd.exe."
+description = "Default shell arguments for Windows to be used for file commands. For example, `cmd /c` for cmd.exe."
 env = "MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS"
-rust_type = "String"
-type = "ListString"
+type = "String"
 
 [windows_default_inline_shell_args]
 default = "cmd /c"
-description = "List of default shell arguments for Windows to be used for inline commands. For example, `cmd`, `/c` for cmd.exe."
+description = "Default shell arguments for Windows to be used for inline commands. For example, `cmd /c` for cmd.exe."
 env = "MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS"
 type = "String"
 
