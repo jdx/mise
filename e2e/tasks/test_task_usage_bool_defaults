@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+
+# Test task usage with boolean flag defaults using #true and #false literals
+
+# Test with #true as default
+cat <<'EOF' >mise.toml
+[tasks.bla]
+usage = '''
+flag "--color" default=#true
+'''
+run = '''
+echo "${usage_color:-false}"
+'''
+EOF
+
+# Test default behavior (should use #true)
+assert "mise run bla" "true"
+
+# Test with explicit flag (boolean flag without value should set to true)
+assert "mise run bla -- --color" "true"
+
+# Test naked run with default
+assert "mise bla" "true"
+
+# Test with #false as default
+cat <<'EOF' >mise.toml
+[tasks.bla]
+usage = '''
+flag "--color" default=#false
+'''
+run = '''
+echo "${usage_color:-notset}"
+'''
+EOF
+
+# Test default behavior (should use #false)
+assert "mise run bla" "false"
+
+# Test with explicit flag
+assert "mise run bla -- --color" "true"
+
+# Test naked run with default
+assert "mise bla" "false"
+
+# Test with string "true" as default
+cat <<'EOF' >mise.toml
+[tasks.bla]
+usage = '''
+flag "--color" default="true"
+'''
+run = '''
+echo "${usage_color:-notset}"
+'''
+EOF
+
+# Test default behavior (should use string "true")
+assert "mise run bla" "true"
+
+# Test with explicit flag
+assert "mise run bla -- --color" "true"
+
+# Test with string "false" as default
+cat <<'EOF' >mise.toml
+[tasks.bla]
+usage = '''
+flag "--color" default="false"
+'''
+run = '''
+echo "${usage_color:-notset}"
+'''
+EOF
+
+# Test default behavior (should use string "false")
+assert "mise run bla" "false"
+
+# Test with explicit flag
+assert "mise run bla -- --color" "true"
+
+# Test with flag that takes a value and has #true default
+cat <<'EOF' >mise.toml
+[tasks.bla]
+usage = '''
+flag "--color <enabled>" default=#true
+'''
+run = '''
+echo "${usage_color:-notset}"
+'''
+EOF
+
+# Test default behavior
+assert "mise run bla" "true"
+
+# Test with explicit value
+assert "mise run bla -- --color false" "false"
+assert "mise run bla -- --color true" "true"
+assert "mise run bla -- --color yes" "yes"
+
+# Test naked runs
+assert "mise bla" "true"
+assert "mise bla --color false" "false"
+assert "mise bla --color true" "true"
+
+# Test multiple flags with mixed boolean defaults
+cat <<'EOF' >mise.toml
+[tasks.multi]
+usage = '''
+flag "--verbose" default=#false
+flag "--debug" default=#true
+flag "--output <file>" default="output.txt"
+'''
+run = '''
+echo "verbose=${usage_verbose:-notset} debug=${usage_debug:-notset} output=${usage_output:-notset}"
+'''
+EOF
+
+# Test all defaults
+assert "mise run multi" "verbose=false debug=true output=output.txt"
+
+# Test overriding some flags
+assert "mise run multi -- --verbose" "verbose=true debug=true output=output.txt"
+assert "mise run multi -- --verbose --output result.txt" "verbose=true debug=true output=result.txt"
+
+# Test naked runs
+assert "mise multi" "verbose=false debug=true output=output.txt"
+assert "mise multi --verbose --output result.txt" "verbose=true debug=true output=result.txt"
