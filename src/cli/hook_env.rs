@@ -47,22 +47,10 @@ pub struct HookEnv {
     /// Reason for calling hook-env (e.g., "precmd", "chpwd")
     #[clap(long, hide = true)]
     reason: Option<HookReason>,
-
-    /// Deactivate mise by restoring the original environment
-    #[clap(long, hide = true)]
-    deactivate: bool,
 }
 
 impl HookEnv {
     pub async fn run(self) -> Result<()> {
-        let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
-
-        // Handle deactivation - restore original environment
-        if self.deactivate {
-            miseprint!("{}", hook_env::clear_old_env(&*shell))?;
-            return Ok(());
-        }
-
         let config = Config::get().await?;
         let watch_files = config.watch_files().await?;
         time!("hook-env");
@@ -72,6 +60,7 @@ impl HookEnv {
         }
         time!("should_exit_early false");
         let ts = config.get_toolset().await?;
+        let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         miseprint!("{}", hook_env::clear_old_env(&*shell))?;
         let (mut mise_env, env_results) = ts.final_env(&config).await?;
         mise_env.remove(&*PATH_KEY);
