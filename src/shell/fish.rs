@@ -25,20 +25,6 @@ impl Shell for Fish {
 
         out.push_str(&shell::build_deactivation_script(self));
 
-        // On second+ activation, restore PATH with user additions preserved
-        if std::env::var("__MISE_ORIG_PATH").is_ok() {
-            let restored_path = crate::hook_env::compute_pristine_path_with_user_additions();
-            // Fish uses space-separated PATH, so convert colons to spaces
-            let fish_path = env::split_paths(&restored_path)
-                .map(|p| p.to_string_lossy().to_string())
-                .collect::<Vec<_>>()
-                .join(" ");
-            out.push_str(&formatdoc! {r#"
-                set -gx PATH {fish_path}
-                set -e __MISE_ORIG_PATH
-                "#});
-        }
-
         out.push_str(&self.format_activate_prelude(&opts.prelude));
 
         // much of this is from direnv

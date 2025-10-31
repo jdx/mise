@@ -241,62 +241,6 @@ fn get_mise_env_vars_hashed() -> String {
     hash_to_str(&env_vars)
 }
 
-/// Compute a cleaned PATH that preserves user-added paths while removing mise-managed paths
-///
-/// This function:
-/// 1. Identifies mise-managed paths (install dirs and config_paths from __MISE_SESSION)
-/// 2. Identifies user-added paths (not in original PATH and not mise-managed)
-/// 3. Returns: user_added_paths prepended to original_path
-///
-/// This allows mise to re-activate cleanly by putting mise paths first, then user paths, then original paths.
-pub fn compute_pristine_path_with_user_additions() -> String {
-    let current_path = env::var(&*PATH_KEY).unwrap_or_default();
-    let original_path = env::__MISE_ORIG_PATH
-        .as_ref()
-        .map(|s| s.as_str())
-        .unwrap_or(&current_path);
-
-    // If no original path was saved, or current == original, just return current
-    if original_path.is_empty() || current_path == original_path {
-        return current_path;
-    }
-
-    let current_paths: Vec<_> = env::split_paths(&current_path).collect();
-    let orig_paths: Vec<_> = env::split_paths(original_path).collect();
-    let orig_set: std::collections::HashSet<_> = orig_paths.iter().collect();
-
-    // Get all mise-managed paths from the previous session
-    // __MISE_DIFF.path contains ALL paths that mise added (tool installs, config paths, etc.)
-    let mise_paths_set: std::collections::HashSet<_> = env::__MISE_DIFF.path.iter().collect();
-
-    // Identify user-added paths: not in original, not mise-managed
-    let user_additions: Vec<_> = current_paths
-        .iter()
-        .filter(|p| {
-            // Skip if in original PATH
-            if orig_set.contains(p) {
-                return false;
-            }
-
-            // Skip if it's a mise-managed path from previous session
-            if mise_paths_set.contains(p) {
-                return false;
-            }
-
-            true
-        })
-        .cloned()
-        .collect();
-
-    // Combine: user additions + original paths
-    let new_paths: Vec<_> = user_additions.into_iter().chain(orig_paths).collect();
-
-    env::join_paths(&new_paths)
-        .unwrap()
-        .to_string_lossy()
-        .to_string()
-}
-
 pub fn clear_old_env(shell: &dyn Shell) -> String {
     let mut patches = env::__MISE_DIFF.reverse().to_patches();
 

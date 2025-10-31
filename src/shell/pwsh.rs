@@ -23,15 +23,6 @@ impl Shell for Pwsh {
 
         out.push_str(&shell::build_deactivation_script(self));
 
-        // On second+ activation, restore PATH with user additions preserved
-        if std::env::var("__MISE_ORIG_PATH").is_ok() {
-            let restored_path = crate::hook_env::compute_pristine_path_with_user_additions();
-            out.push_str(&formatdoc! {r#"
-                $env:PATH = "{restored_path}"
-                Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_ORIG_PATH
-                "#});
-        }
-
         out.push_str(&self.format_activate_prelude(&opts.prelude));
         out.push_str(&formatdoc! {r#"
             $env:MISE_SHELL = 'pwsh'
