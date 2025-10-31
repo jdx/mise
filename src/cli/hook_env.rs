@@ -78,10 +78,16 @@ impl HookEnv {
             });
         }
 
-        let paths = ts.list_final_paths(&config, env_results).await?;
-        diff.path.clone_from(&paths); // update __MISE_DIFF with the new paths for the next run
+        let (user_paths, tool_paths) = ts.list_final_paths_split(&config, env_results).await?;
+        // Combine paths for __MISE_DIFF tracking (order matters: user paths first, then tool paths)
+        let all_paths: Vec<PathBuf> = user_paths
+            .iter()
+            .chain(tool_paths.iter())
+            .cloned()
+            .collect();
+        diff.path.clone_from(&all_paths); // update __MISE_DIFF with the new paths for the next run
 
-        patches.extend(self.build_path_operations(&paths, &__MISE_DIFF.path)?);
+        patches.extend(self.build_path_operations(&user_paths, &tool_paths, &__MISE_DIFF.path)?);
         patches.push(self.build_diff_operation(&diff)?);
         patches.push(
             self.build_session_operation(&config, ts, mise_env, watch_files)
@@ -173,9 +179,12 @@ impl HookEnv {
     }
 
     /// modifies the PATH and optionally DIRENV_DIFF env var if it exists
+    /// user_paths are paths from env._.path config that should always be prepended
+    /// tool_paths are paths from tool installations that should be filtered if already in original PATH
     fn build_path_operations(
         &self,
-        installs: &[PathBuf],
+        user_paths: &[PathBuf],
+        tool_paths: &[PathBuf],
         to_remove: &[PathBuf],
     ) -> Result<Vec<EnvDiffOperation>> {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
@@ -214,7 +223,7 @@ impl HookEnv {
             _ => (vec![], current_paths),
         };
 
-        // Filter out install paths that are already in the original PATH (post) or
+        // Filter out tool paths that are already in the original PATH (post) or
         // in the pre paths (user additions). This prevents mise from claiming ownership
         // of paths that were in the user's original PATH before mise activation, and also
         // prevents duplicates when paths from previous mise activations are in the current
@@ -222,6 +231,10 @@ impl HookEnv {
         // preserved in the `post` section or `pre` section.
         // This fixes the issue where system tools (e.g., rustup) become unavailable
         // after leaving a mise project that uses the same tool.
+        //
+        // IMPORTANT: Only filter tool_paths, NOT user_paths from env._.path config.
+        // User-configured paths should always be prepended, even if they're already
+        // in the original PATH, to ensure correct ordering as specified by the user.
         //
         // Use canonicalized paths for comparison to handle symlinks, relative paths,
         // and other path variants that refer to the same filesystem location.
@@ -231,7 +244,7 @@ impl HookEnv {
         let pre_canonical: HashSet<PathBuf> =
             pre.iter().filter_map(|p| p.canonicalize().ok()).collect();
 
-        let installs_filtered: Vec<PathBuf> = installs
+        let tool_paths_filtered: Vec<PathBuf> = tool_paths
             .iter()
             .filter(|p| {
                 // Check both the original path and its canonical form
@@ -263,17 +276,26 @@ impl HookEnv {
             .cloned()
             .collect();
 
+        // Combine paths in the correct order:
+        // pre (user shell additions) -> user_paths (from config) -> tool_paths (filtered) -> post (original PATH)
         let new_path = join_paths(
             pre.iter()
-                .chain(installs_filtered.iter())
+                .chain(user_paths.iter())
+                .chain(tool_paths_filtered.iter())
                 .chain(post.iter()),
         )?
         .to_string_lossy()
         .into_owned();
         let mut ops = vec![EnvDiffOperation::Add(PATH_KEY.to_string(), new_path)];
 
+        // For DIRENV_DIFF, we need to include both user_paths and filtered tool_paths
+        let all_installs: Vec<PathBuf> = user_paths
+            .iter()
+            .chain(tool_paths_filtered.iter())
+            .cloned()
+            .collect();
         if let Some(input) = env::DIRENV_DIFF.deref() {
-            match self.update_direnv_diff(input, &installs_filtered, to_remove) {
+            match self.update_direnv_diff(input, &all_installs, to_remove) {
                 Ok(Some(op)) => {
                     ops.push(op);
                 }
