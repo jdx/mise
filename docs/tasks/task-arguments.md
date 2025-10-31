@@ -633,7 +633,7 @@ deploy {{option(
 ```mise-toml
 [tasks.deploy]
 usage = '''
-option "--env <env>" {
+flag "--env <env>" {
   choices "dev" "prod"
 }
 flag "--force"

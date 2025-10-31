@@ -446,7 +446,7 @@ The recommended way to define arguments is using the `usage` field:
 [tasks.test]
 usage = '''
 arg "<file>" help="Test file to run" default="all"
-option "--format <format>" help="Output format" default="text"
+flag "--format <format>" help="Output format" default="text"
 flag "-v --verbose" help="Enable verbose output"
 '''
 run = 'cargo test ${usage_file?} --format ${usage_format?}'
