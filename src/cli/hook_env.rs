@@ -276,24 +276,23 @@ impl HookEnv {
             .cloned()
             .collect();
 
-        // Filter user_paths against current PATH (pre + post) to avoid duplicates
-        // This handles both initial activation (where post = __MISE_ORIG_PATH) and
-        // reactivation (where user additions may be in post)
-        let current_set: HashSet<_> = pre.iter().chain(post.iter()).collect();
-        let current_canonical: HashSet<PathBuf> = pre
-            .iter()
-            .chain(post.iter())
-            .filter_map(|p| p.canonicalize().ok())
-            .collect();
+        // Filter user_paths against pre (user manual additions) to avoid duplicates
+        // when users manually add paths after mise activation.
+        // IMPORTANT: Do NOT filter against post (__MISE_ORIG_PATH) - this would break
+        // the intended behavior where user-configured paths should take precedence
+        // even if they already exist in the original PATH.
+        let pre_set: HashSet<_> = pre.iter().collect();
+        let pre_canonical: HashSet<PathBuf> =
+            pre.iter().filter_map(|p| p.canonicalize().ok()).collect();
         let user_paths_filtered: Vec<PathBuf> = user_paths
             .iter()
             .filter(|p| {
-                // Filter against full current PATH
-                if current_set.contains(p) {
+                // Filter against pre only (user manual additions after mise activation)
+                if pre_set.contains(p) {
                     return false;
                 }
                 if let Ok(canonical) = p.canonicalize() {
-                    if current_canonical.contains(&canonical) {
+                    if pre_canonical.contains(&canonical) {
                         return false;
                     }
                 }
