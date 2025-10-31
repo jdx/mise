@@ -188,7 +188,6 @@ impl Shell for Pwsh {
         Remove-Item -ErrorAction SilentlyContinue -Path Env:/MISE_SHELL
         Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_WATCH
         Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_SESSION
-        Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_ORIG_PATH
         "#}
     }
 

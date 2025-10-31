@@ -123,7 +123,6 @@ impl Shell for Zsh {
         unset __MISE_DIFF
         unset __MISE_SESSION
         unset __MISE_ZSH_PRECMD_RUN
-        unset __MISE_ORIG_PATH
         "#}
     }
 

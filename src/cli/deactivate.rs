@@ -20,7 +20,8 @@ impl Deactivate {
 
         let shell = get_shell(None).expect("no shell detected");
 
-        let output = build_deactivation_script(&*shell);
+        let mut output = build_deactivation_script(&*shell);
+        output.push_str(&shell.unset_env("__MISE_ORIG_PATH"));
         miseprint!("{output}")?;
 
         Ok(())
