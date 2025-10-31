@@ -833,6 +833,39 @@ impl Toolset {
         let paths = env_results.env_paths.into_iter().chain(paths).collect();
         Ok(paths)
     }
+
+    /// Returns paths separated by their source: (user_configured_paths, tool_paths)
+    /// User-configured paths should never be filtered, while tool paths should be filtered
+    /// if they duplicate entries in the original PATH.
+    pub async fn list_final_paths_split(
+        &self,
+        config: &Arc<Config>,
+        env_results: EnvResults,
+    ) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+        // User-configured paths from env._.path directives
+        // IMPORTANT: There are TWO sources of env paths:
+        // 1. config.path_dirs() - from config.env_results() (cached, no tera context)
+        // 2. env_results.env_paths - from ts.final_env() (fresh, with tera context applied)
+        // env_results.env_paths must come FIRST for highest precedence
+        let mut user_paths = env_results.env_paths;
+        user_paths.extend(config.path_dirs().await?.clone());
+
+        // Tool paths start empty
+        let mut tool_paths = Vec::new();
+
+        // UV venv path (if any) - these are tool-managed paths
+        if let Some(venv) = uv::uv_venv(config, self).await {
+            tool_paths.push(venv.venv_path.clone());
+        }
+
+        // tool_add_paths (MISE_ADD_PATH/RTX_ADD_PATH from tools)
+        tool_paths.extend(env_results.tool_add_paths);
+
+        // Tool installation paths
+        tool_paths.extend(self.list_paths(config).await);
+
+        Ok((user_paths, tool_paths))
+    }
     pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<&tera::Context> {
         self.tera_ctx
             .get_or_try_init(async || {
