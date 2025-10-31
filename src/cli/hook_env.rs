@@ -79,7 +79,7 @@ impl HookEnv {
         }
 
         let (user_paths, tool_paths) = ts.list_final_paths_split(&config, env_results).await?;
-        // Combine paths for __MISE_DIFF tracking (order matters: user paths first, then tool paths)
+        // Combine paths for __MISE_DIFF tracking (all mise-managed paths)
         let all_paths: Vec<PathBuf> = user_paths
             .iter()
             .chain(tool_paths.iter())
@@ -179,7 +179,7 @@ impl HookEnv {
     }
 
     /// modifies the PATH and optionally DIRENV_DIFF env var if it exists
-    /// user_paths are paths from env._.path config that should always be prepended
+    /// user_paths are paths from env._.path config that are prepended (filtered only against user manual additions)
     /// tool_paths are paths from tool installations that should be filtered if already in original PATH
     fn build_path_operations(
         &self,
@@ -232,9 +232,9 @@ impl HookEnv {
         // This fixes the issue where system tools (e.g., rustup) become unavailable
         // after leaving a mise project that uses the same tool.
         //
-        // IMPORTANT: Only filter tool_paths, NOT user_paths from env._.path config.
-        // User-configured paths should always be prepended, even if they're already
-        // in the original PATH, to ensure correct ordering as specified by the user.
+        // IMPORTANT: Only filter tool_paths against __MISE_ORIG_PATH (post).
+        // User-configured paths are filtered separately (only against user manual additions)
+        // to preserve user's intended ordering while avoiding duplicates.
         //
         // Use canonicalized paths for comparison to handle symlinks, relative paths,
         // and other path variants that refer to the same filesystem location.
