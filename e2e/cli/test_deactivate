@@ -4,13 +4,14 @@
 # while preserving user-added paths and variables
 
 # Create a mise config with tools, env._.path, and env vars
-mkdir -p custom_bin user_bin
+mkdir -p custom_bin shared_entry user_bin
+SHARED_PATH="$PWD/shared_entry"
 cat >.mise.toml <<EOF
 [tools]
 tiny = "latest"
 
 [env]
-_.path = ["./custom_bin"]
+_.path = ["./custom_bin", "./shared_entry"]
 FOO = "mise_foo"
 BAR = "mise_bar"
 EOF
@@ -29,10 +30,14 @@ assert "echo $FOO" "mise_foo"
 assert "echo $BAR" "mise_bar"
 assert_contains "echo $PATH" "custom_bin"
 assert_contains "echo $PATH" "/mise/installs/tiny"
+assert_contains "echo $PATH" "$SHARED_PATH"
 
 # User manually adds paths after activation
+export PATH="$SHARED_PATH:$PATH"
 export PATH="/user_path_1:$PATH"
 export PATH="/user_path_2:$PATH"
+# Add SHARED_PATH again after mise so PATH now has it before, within, and after
+export PATH="$PATH:$SHARED_PATH"
 
 # User sets their own environment variables
 export USER_VAR="user_value"
@@ -45,6 +50,11 @@ assert_contains "echo $PATH" "/user_path_1"
 assert_contains "echo $PATH" "/user_path_2"
 assert_contains "echo $PATH" "custom_bin"
 assert_contains "echo $PATH" "/mise/installs/tiny"
+assert_contains "echo $PATH" "$SHARED_PATH"
+
+# SHARED_PATH should appear three times (before, inside, and after mise entries)
+SHARED_COUNT=$(echo "$PATH" | tr ':' '\n' | grep -Fxc "$SHARED_PATH")
+assert "echo $SHARED_COUNT" "3"
 
 # Deactivate mise
 # Note: Use 'command' to bypass the shell function and call the binary directly
@@ -64,6 +74,10 @@ assert "echo $USER_PATH" "/usr/local/myapp"
 assert_not_contains "echo $PATH" "/mise/installs/tiny"
 assert_not_contains "echo $PATH" "custom_bin"
 
+# Shared path should now appear exactly twice (before and after mise)
+SHARED_COUNT=$(echo "$PATH" | tr ':' '\n' | grep -Fxc "$SHARED_PATH")
+assert "echo $SHARED_COUNT" "2"
+
 # 4. User-added paths should be preserved
 assert_contains "echo $PATH" "/user_path_1"
 assert_contains "echo $PATH" "/user_path_2"
@@ -71,8 +85,8 @@ assert_contains "echo $PATH" "/user_path_2"
 # 5. Original PATH components should still be present
 assert_contains "echo $PATH" "${ORIGINAL_PATH%%:*}"
 
-# 6. No duplicate paths
-PATH_COUNT=$(echo "$PATH" | tr ':' '\n' | sort | uniq -d | wc -l)
+# 6. No duplicate paths other than SHARED_PATH
+PATH_COUNT=$(echo "$PATH" | tr ':' '\n' | grep -Fvx "$SHARED_PATH" | sort | uniq -d | wc -l)
 assert "echo $PATH_COUNT" "0"
 
 # 7. Mise shell integration should be removed
@@ -97,6 +111,11 @@ assert "echo $BAR" "mise_bar"
 # User additions should still be preserved
 assert_contains "echo $PATH" "/user_path_1"
 assert_contains "echo $PATH" "/user_path_2"
+assert_contains "echo $PATH" "$SHARED_PATH"
+
+# Mise avoids re-adding a managed copy when user paths already cover it
+SHARED_COUNT=$(echo "$PATH" | tr ':' '\n' | grep -Fxc "$SHARED_PATH")
+assert "echo $SHARED_COUNT" "2"
 
 # And user vars should still be there
 assert "echo $USER_VAR" "user_value"

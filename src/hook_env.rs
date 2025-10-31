@@ -362,31 +362,46 @@ fn compute_deactivated_path() -> String {
         *pristine_counts.entry(path.clone()).or_insert(0) += 1;
     }
 
-    // Build user_additions: paths that appear in current more than (mise + pristine) times
-    // These are truly user-added paths beyond what mise and pristine provide
-    let mut user_additions = Vec::new();
-    for path in &current_paths {
-        let current_count = *current_counts.get(path).unwrap_or(&0);
-        let mise_count = *mise_counts.get(path).unwrap_or(&0);
+    // Determine how many copies of each path we should keep: user additions plus pristine entries
+    use std::collections::HashMap;
+
+    let mut target_counts: HashMap<PathBuf, usize> = HashMap::new();
+    for (path, current_count) in current_counts.iter() {
+        let removal_count = *mise_counts.get(path).unwrap_or(&0);
         let pristine_count = *pristine_counts.get(path).unwrap_or(&0);
+        let user_and_pristine = current_count
+            .saturating_sub(removal_count)
+            .max(pristine_count);
+        target_counts.insert(path.clone(), user_and_pristine);
+    }
 
-        // Check if we've already accounted for this path
-        let already_added = user_additions.iter().filter(|p| *p == path).count();
+    for (path, pristine_count) in pristine_counts.iter() {
+        target_counts
+            .entry(path.clone())
+            .and_modify(|count| *count = (*count).max(*pristine_count))
+            .or_insert(*pristine_count);
+    }
 
-        // True user additions = current - max(mise, pristine)
-        // If a path is in both mise and pristine, we only need one copy from either source
-        let accounted_for = std::cmp::max(mise_count, pristine_count);
-        let extras_needed = current_count.saturating_sub(accounted_for);
+    let mut kept_counts: HashMap<PathBuf, usize> = HashMap::new();
+    let mut final_paths: Vec<PathBuf> = Vec::new();
 
-        if already_added < extras_needed {
-            user_additions.push(path.clone());
+    for path in &current_paths {
+        if let Some(target) = target_counts.get(path) {
+            let kept = kept_counts.entry(path.clone()).or_insert(0);
+            if *kept < *target {
+                final_paths.push(path.clone());
+                *kept += 1;
+            }
         }
     }
 
-    // Result: user_additions + pristine (no deduplication, as user_additions are truly extra)
-    let mut final_paths = user_additions;
     for path in pristine_paths {
-        final_paths.push(path);
+        let target = target_counts.get(&path).copied().unwrap_or(0);
+        let kept = kept_counts.entry(path.clone()).or_insert(0);
+        while *kept < target {
+            final_paths.push(path.clone());
+            *kept += 1;
+        }
     }
 
     env::join_paths(final_paths.iter())
