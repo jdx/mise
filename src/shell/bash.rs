@@ -147,6 +147,11 @@ mod tests {
 
     #[test]
     fn test_activate() {
+        unsafe {
+            std::env::remove_var("__MISE_ORIG_PATH");
+            std::env::remove_var("__MISE_DIFF");
+        }
+
         let bash = Bash::default();
         let exe = Path::new("/some/dir/mise");
         let opts = ActivateOptions {

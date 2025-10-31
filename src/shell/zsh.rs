@@ -38,7 +38,9 @@ impl Shell for Zsh {
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_zsh.go#L10-L22
         out.push_str(&formatdoc! {r#"
             export MISE_SHELL=zsh
-            export __MISE_ORIG_PATH="$PATH"
+            if [ -z "${{__MISE_ORIG_PATH:-}}" ]; then
+              export __MISE_ORIG_PATH="$PATH"
+            fi
             export __MISE_ZSH_PRECMD_RUN=0
 
             mise() {{
@@ -160,6 +162,7 @@ mod tests {
         // Unset __MISE_ORIG_PATH to avoid PATH restoration logic in output
         unsafe {
             std::env::remove_var("__MISE_ORIG_PATH");
+            std::env::remove_var("__MISE_DIFF");
         }
 
         let zsh = Zsh::default();

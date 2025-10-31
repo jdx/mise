@@ -35,7 +35,9 @@ impl Shell for Pwsh {
         out.push_str(&self.format_activate_prelude(&opts.prelude));
         out.push_str(&formatdoc! {r#"
             $env:MISE_SHELL = 'pwsh'
-            $env:__MISE_ORIG_PATH = $env:PATH
+            if (-not (Test-Path -Path Env:/__MISE_ORIG_PATH)) {{
+                $env:__MISE_ORIG_PATH = $env:PATH
+            }}
 
             function mise {{
                 [CmdletBinding()]
@@ -267,6 +269,7 @@ mod tests {
         // Unset __MISE_ORIG_PATH to avoid PATH restoration logic in output
         unsafe {
             std::env::remove_var("__MISE_ORIG_PATH");
+            std::env::remove_var("__MISE_DIFF");
         }
 
         let pwsh = Pwsh::default();
