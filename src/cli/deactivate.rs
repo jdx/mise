@@ -1,9 +1,9 @@
 use eyre::{Result, eyre};
 use indoc::formatdoc;
 
-use crate::shell::get_shell;
+use crate::shell::{build_deactivation_script, get_shell};
 use crate::ui::style;
-use crate::{env, hook_env};
+use crate::env;
 
 /// Disable mise for current shell session
 ///
@@ -20,8 +20,7 @@ impl Deactivate {
 
         let shell = get_shell(None).expect("no shell detected");
 
-        miseprint!("{}", hook_env::clear_old_env(&*shell))?;
-        let output = shell.deactivate();
+        let output = build_deactivation_script(&*shell);
         miseprint!("{output}")?;
 
         Ok(())

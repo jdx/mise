@@ -1,4 +1,5 @@
 use crate::env;
+use crate::hook_env;
 use itertools::Itertools;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
@@ -98,6 +99,16 @@ pub struct ActivateOptions {
     pub flags: String,
     pub no_hook_env: bool,
     pub prelude: Vec<ActivatePrelude>,
+}
+
+pub fn build_deactivation_script(shell: &dyn Shell) -> String {
+    if !env::is_activated() {
+        return String::new();
+    }
+
+    let mut out = hook_env::clear_old_env(shell);
+    out.push_str(&shell.deactivate());
+    out
 }
 
 pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {

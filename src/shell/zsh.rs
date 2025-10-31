@@ -6,17 +6,32 @@ use indoc::formatdoc;
 
 use crate::config::Settings;
 use crate::shell::bash::Bash;
-use crate::shell::{ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
 pub struct Zsh {}
+
+impl Zsh {}
 
 impl Shell for Zsh {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
+
         let exe = exe.to_string_lossy();
         let mut out = String::new();
+
+        out.push_str(&shell::build_deactivation_script(self));
+
+        // On second+ activation, restore PATH with user additions preserved
+        if std::env::var("__MISE_ORIG_PATH").is_ok() {
+            let restored_path = crate::hook_env::compute_pristine_path_with_user_additions();
+            out.push_str(&formatdoc! {r#"
+                export PATH="{restored_path}"
+                unset __MISE_ORIG_PATH
+                "#});
+        }
+
         out.push_str(&self.format_activate_prelude(&opts.prelude));
 
         // much of this is from direnv
@@ -107,8 +122,8 @@ impl Shell for Zsh {
         unset MISE_SHELL
         unset __MISE_DIFF
         unset __MISE_SESSION
-        unset __MISE_ORIG_PATH
         unset __MISE_ZSH_PRECMD_RUN
+        unset __MISE_ORIG_PATH
         "#}
     }
 
@@ -143,6 +158,11 @@ mod tests {
 
     #[test]
     fn test_activate() {
+        // Unset __MISE_ORIG_PATH to avoid PATH restoration logic in output
+        unsafe {
+            std::env::remove_var("__MISE_ORIG_PATH");
+        }
+
         let zsh = Zsh::default();
         let exe = Path::new("/some/dir/mise");
         let opts = ActivateOptions {

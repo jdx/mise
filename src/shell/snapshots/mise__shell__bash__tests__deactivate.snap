@@ -1,7 +1,6 @@
 ---
 source: src/shell/bash.rs
 expression: replace_path(&deactivate)
-snapshot_kind: text
 ---
 PROMPT_COMMAND="${PROMPT_COMMAND//_mise_hook;/}"
 PROMPT_COMMAND="${PROMPT_COMMAND//_mise_hook/}"
@@ -10,3 +9,4 @@ unset mise
 unset MISE_SHELL
 unset __MISE_DIFF
 unset __MISE_SESSION
+unset __MISE_ORIG_PATH

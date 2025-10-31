@@ -433,6 +433,7 @@ cmd hook-env hide=#true help="[internal] called by activate hook to update env v
             choices precmd chpwd
         }
     }
+    flag --deactivate help="Deactivate mise by restoring the original environment" hide=#true
 }
 cmd hook-not-found hide=#true help="[internal] called by shell when a command is not found" {
     flag "-s --shell" help="Shell type to generate script for" {

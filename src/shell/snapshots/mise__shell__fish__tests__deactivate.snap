@@ -1,7 +1,6 @@
 ---
 source: src/shell/fish.rs
 expression: replace_path(&deactivate)
-snapshot_kind: text
 ---
 functions --erase __mise_env_eval
 functions --erase __mise_env_eval_2
@@ -10,3 +9,4 @@ functions --erase mise
 set -e MISE_SHELL
 set -e __MISE_DIFF
 set -e __MISE_SESSION
+set -e __MISE_ORIG_PATH

@@ -5,7 +5,7 @@ use std::fmt::Display;
 
 use indoc::formatdoc;
 
-use crate::shell::{ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
 pub struct Xonsh {}
@@ -45,6 +45,7 @@ impl Shell for Xonsh {
         let exe = exe.display();
 
         let mut out = String::new();
+        out.push_str(&shell::build_deactivation_script(self));
         out.push_str(&self.format_activate_prelude(&opts.prelude));
 
         // use xonsh API instead of $.xsh to allow use inside of .py configs, which start faster due to being compiled to .pyc

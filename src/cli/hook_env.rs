@@ -47,10 +47,22 @@ pub struct HookEnv {
     /// Reason for calling hook-env (e.g., "precmd", "chpwd")
     #[clap(long, hide = true)]
     reason: Option<HookReason>,
+
+    /// Deactivate mise by restoring the original environment
+    #[clap(long, hide = true)]
+    deactivate: bool,
 }
 
 impl HookEnv {
     pub async fn run(self) -> Result<()> {
+        let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
+
+        // Handle deactivation - restore original environment
+        if self.deactivate {
+            miseprint!("{}", hook_env::clear_old_env(&*shell))?;
+            return Ok(());
+        }
+
         let config = Config::get().await?;
         let watch_files = config.watch_files().await?;
         time!("hook-env");
@@ -60,7 +72,6 @@ impl HookEnv {
         }
         time!("should_exit_early false");
         let ts = config.get_toolset().await?;
-        let shell = get_shell(self.shell).expect("no shell provided, use `--shell=zsh`");
         miseprint!("{}", hook_env::clear_old_env(&*shell))?;
         let (mut mise_env, env_results) = ts.final_env(&config).await?;
         mise_env.remove(&*PATH_KEY);
@@ -186,15 +197,26 @@ impl HookEnv {
                 let orig_paths: Vec<PathBuf> = split_paths(orig_path).collect();
                 let orig_set: HashSet<_> = orig_paths.iter().collect();
 
-                // Find paths in current that are not in original - these are "pre" paths
-                // (user additions after mise activation). Collect ALL non-original paths,
-                // not just those before the first original path, to handle cases where
-                // paths are interleaved (e.g., /new1:/orig1:/new2:/orig2).
+                // Get all mise-managed paths from the previous session
+                // to_remove contains ALL paths that mise added (tool installs, config paths, etc.)
+                let mise_paths_set: HashSet<_> = to_remove.iter().collect();
+
+                // Find paths in current that are not in original and not mise-managed
+                // These are genuine user additions after mise activation.
                 let mut pre = Vec::new();
                 for path in &current_paths {
-                    if !orig_set.contains(path) {
-                        pre.push(path.clone());
+                    // Skip if in original PATH
+                    if orig_set.contains(path) {
+                        continue;
                     }
+
+                    // Skip if it's a mise-managed path from previous session
+                    if mise_paths_set.contains(path) {
+                        continue;
+                    }
+
+                    // This is a genuine user addition
+                    pre.push(path.clone());
                 }
 
                 // Use the original PATH directly as "post" to ensure it's preserved exactly

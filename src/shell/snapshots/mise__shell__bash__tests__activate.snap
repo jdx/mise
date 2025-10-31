@@ -1,10 +1,14 @@
 ---
 source: src/shell/bash.rs
-expression: "bash.activate(exe, \" --status\".into())"
-snapshot_kind: text
+expression: bash.activate(opts)
 ---
 export MISE_SHELL=bash
-export __MISE_ORIG_PATH="$PATH"
+
+# On first activation, save the original PATH
+# On re-activation, we keep the saved original
+if [ -z "${__MISE_ORIG_PATH:-}" ]; then
+  export __MISE_ORIG_PATH="$PATH"
+fi
 
 mise() {
   local command

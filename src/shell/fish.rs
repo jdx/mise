@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 
 use crate::config::Settings;
 use crate::env::{self};
-use crate::shell::{ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, Shell};
 use indoc::formatdoc;
 use itertools::Itertools;
 use shell_escape::unix::escape;
@@ -12,13 +12,33 @@ use shell_escape::unix::escape;
 #[derive(Default)]
 pub struct Fish {}
 
+impl Fish {}
+
 impl Shell for Fish {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
+
         let exe = exe.to_string_lossy();
         let description = "'Update mise environment when changing directories'";
         let mut out = String::new();
+
+        out.push_str(&shell::build_deactivation_script(self));
+
+        // On second+ activation, restore PATH with user additions preserved
+        if std::env::var("__MISE_ORIG_PATH").is_ok() {
+            let restored_path = crate::hook_env::compute_pristine_path_with_user_additions();
+            // Fish uses space-separated PATH, so convert colons to spaces
+            let fish_path = env::split_paths(&restored_path)
+                .map(|p| p.to_string_lossy().to_string())
+                .collect::<Vec<_>>()
+                .join(" ");
+            out.push_str(&formatdoc! {r#"
+                set -gx PATH {fish_path}
+                set -e __MISE_ORIG_PATH
+                "#});
+        }
+
         out.push_str(&self.format_activate_prelude(&opts.prelude));
 
         // much of this is from direnv
@@ -119,6 +139,7 @@ impl Shell for Fish {
           set -e MISE_SHELL
           set -e __MISE_DIFF
           set -e __MISE_SESSION
+          set -e __MISE_ORIG_PATH
         "#}
     }
 
@@ -181,6 +202,11 @@ mod tests {
 
     #[test]
     fn test_activate() {
+        // Unset __MISE_ORIG_PATH to avoid PATH restoration logic in output
+        unsafe {
+            std::env::remove_var("__MISE_ORIG_PATH");
+        }
+
         let fish = Fish::default();
         let exe = Path::new("/some/dir/mise");
         let opts = ActivateOptions {
