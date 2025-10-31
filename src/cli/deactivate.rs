@@ -1,9 +1,9 @@
 use eyre::{Result, eyre};
 use indoc::formatdoc;
 
+use crate::env;
 use crate::shell::{build_deactivation_script, get_shell};
 use crate::ui::style;
-use crate::env;
 
 /// Disable mise for current shell session
 ///
