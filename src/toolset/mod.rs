@@ -843,11 +843,11 @@ impl Toolset {
         env_results: EnvResults,
     ) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
         // User-configured paths from env._.path directives
-        // IMPORTANT: env_results.env_paths (tool-stage _.path) must come FIRST for highest precedence
-        // Then config.path_dirs() (config-level path dirs)
+        // IMPORTANT: There are TWO sources of env paths:
+        // 1. config.path_dirs() - from config.env_results() (cached, no tera context)
+        // 2. env_results.env_paths - from ts.final_env() (fresh, with tera context applied)
+        // env_results.env_paths must come FIRST for highest precedence
         let mut user_paths = env_results.env_paths;
-
-        // Extend with config.path_dirs() - these have lower precedence
         user_paths.extend(config.path_dirs().await?.clone());
 
         // Tool paths start empty

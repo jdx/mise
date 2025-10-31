@@ -276,11 +276,37 @@ impl HookEnv {
             .cloned()
             .collect();
 
+        // Filter user_paths against current PATH (pre + post) to avoid duplicates
+        // This handles both initial activation (where post = __MISE_ORIG_PATH) and
+        // reactivation (where user additions may be in post)
+        let current_set: HashSet<_> = pre.iter().chain(post.iter()).collect();
+        let current_canonical: HashSet<PathBuf> = pre
+            .iter()
+            .chain(post.iter())
+            .filter_map(|p| p.canonicalize().ok())
+            .collect();
+        let user_paths_filtered: Vec<PathBuf> = user_paths
+            .iter()
+            .filter(|p| {
+                // Filter against full current PATH
+                if current_set.contains(p) {
+                    return false;
+                }
+                if let Ok(canonical) = p.canonicalize() {
+                    if current_canonical.contains(&canonical) {
+                        return false;
+                    }
+                }
+                true
+            })
+            .cloned()
+            .collect();
+
         // Combine paths in the correct order:
-        // pre (user shell additions) -> user_paths (from config) -> tool_paths (filtered) -> post (original PATH)
+        // pre (user shell additions) -> user_paths (from config, filtered against pre) -> tool_paths (filtered) -> post (original PATH)
         let new_path = join_paths(
             pre.iter()
-                .chain(user_paths.iter())
+                .chain(user_paths_filtered.iter())
                 .chain(tool_paths_filtered.iter())
                 .chain(post.iter()),
         )?
@@ -288,8 +314,8 @@ impl HookEnv {
         .into_owned();
         let mut ops = vec![EnvDiffOperation::Add(PATH_KEY.to_string(), new_path)];
 
-        // For DIRENV_DIFF, we need to include both user_paths and filtered tool_paths
-        let all_installs: Vec<PathBuf> = user_paths
+        // For DIRENV_DIFF, we need to include both filtered user_paths and filtered tool_paths
+        let all_installs: Vec<PathBuf> = user_paths_filtered
             .iter()
             .chain(tool_paths_filtered.iter())
             .cloned()
