@@ -3,7 +3,9 @@ source: src/shell/zsh.rs
 expression: zsh.activate(opts)
 ---
 export MISE_SHELL=zsh
-export __MISE_ORIG_PATH="$PATH"
+if [ -z "${__MISE_ORIG_PATH:-}" ]; then
+  export __MISE_ORIG_PATH="$PATH"
+fi
 export __MISE_ZSH_PRECMD_RUN=0
 
 mise() {

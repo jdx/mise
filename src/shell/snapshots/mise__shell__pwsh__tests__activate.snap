@@ -3,7 +3,9 @@ source: src/shell/pwsh.rs
 expression: pwsh.activate(opts)
 ---
 $env:MISE_SHELL = 'pwsh'
-$env:__MISE_ORIG_PATH = $env:PATH
+if (-not (Test-Path -Path Env:/__MISE_ORIG_PATH)) {
+    $env:__MISE_ORIG_PATH = $env:PATH
+}
 
 function mise {
     [CmdletBinding()]
