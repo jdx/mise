@@ -843,11 +843,12 @@ impl Toolset {
         env_results: EnvResults,
     ) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
         // User-configured paths from env._.path directives
-        // These come from config.path_dirs() which includes paths from env._.path
-        let mut user_paths = config.path_dirs().await?.clone();
+        // IMPORTANT: env_results.env_paths (tool-stage _.path) must come FIRST for highest precedence
+        // Then config.path_dirs() (config-level path dirs)
+        let mut user_paths = env_results.env_paths;
 
-        // Also include env_results.env_paths if present
-        user_paths.extend(env_results.env_paths);
+        // Extend with config.path_dirs() - these have lower precedence
+        user_paths.extend(config.path_dirs().await?.clone());
 
         // Tool paths start empty
         let mut tool_paths = Vec::new();
