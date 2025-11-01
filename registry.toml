@@ -2884,6 +2884,7 @@ backends = [
   "asdf:jonasb/asdf-libsql-server",
 ]
 description = "server mode of libSQL, which is a fork of SQLite that is both Open Source, and Open Contributions"
+os = ["linux", "macos"]
 test = ["sqld --version", "sqld sqld {{version}}"]
 
 [tools.license-plist]
