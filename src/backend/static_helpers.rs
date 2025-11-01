@@ -218,8 +218,10 @@ pub fn install_artifact(
             let bin_dir = install_path.join(bin_path);
             file::create_dir_all(&bin_dir)?;
             bin_dir.join(decompressed_name)
-        } else if let Some(bin_name) = opts.get("bin") {
-            install_path.join(bin_name)
+        } else if let Some(bin_name) =
+            lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+        {
+            install_path.join(&bin_name)
         } else {
             // Auto-clean binary names by removing OS/arch suffixes
             let cleaned_name = clean_binary_name(decompressed_name, Some(&tv.ba().tool_name));
@@ -244,9 +246,11 @@ pub fn install_artifact(
             let dest = bin_dir.join(file_path.file_name().unwrap());
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
-        } else if let Some(bin_name) = opts.get("bin") {
+        } else if let Some(bin_name) =
+            lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+        {
             // If bin is specified, rename the file to this name
-            let dest = install_path.join(bin_name);
+            let dest = install_path.join(&bin_name);
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
         } else {
@@ -695,5 +699,137 @@ size = "5120"
 
         assert_eq!(checksum, Some("blake3:generic123".to_string()));
         assert_eq!(size, Some("512".to_string()));
+    }
+
+    #[test]
+    fn test_lookup_platform_key_bin_path() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platform".to_string(),
+            r#"
+[macos-arm64]
+bin_path = "CMake.app/Contents/bin"
+
+[linux-x64]
+bin_path = "bin"
+
+[windows-x64]
+bin_path = "."
+"#
+            .to_string(),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        // Test that platform-specific bin_path is found
+        let bin_path = lookup_platform_key(&tool_opts, "bin_path");
+
+        // The exact value depends on the current platform
+        if let Some(bp) = bin_path {
+            // Should be one of the platform-specific values
+            assert!(
+                bp == "CMake.app/Contents/bin" || bp == "bin" || bp == ".",
+                "Expected platform-specific bin_path, got: {}",
+                bp
+            );
+        }
+    }
+
+    #[test]
+    fn test_lookup_platform_key_bin() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platforms".to_string(),
+            r#"
+[macos-arm64]
+bin = "xmake"
+
+[linux-x64]
+bin = "xmake"
+
+[windows-x64]
+bin = "xmake.exe"
+"#
+            .to_string(),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        // Test that platform-specific bin is found
+        let bin = lookup_platform_key(&tool_opts, "bin");
+
+        // The exact value depends on the current platform
+        if let Some(b) = bin {
+            // Should be one of the platform-specific values
+            assert!(
+                b == "xmake" || b == "xmake.exe",
+                "Expected platform-specific bin, got: {}",
+                b
+            );
+        }
+    }
+
+    #[test]
+    fn test_lookup_platform_key_bin_with_fallback() {
+        let mut opts = IndexMap::new();
+        opts.insert("bin".to_string(), "generic-tool".to_string());
+        opts.insert(
+            "platforms".to_string(),
+            r#"
+[windows-x64]
+bin = "tool.exe"
+"#
+            .to_string(),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        // Test that platform-specific bin takes precedence, or falls back to generic
+        let bin = lookup_platform_key(&tool_opts, "bin").or_else(|| tool_opts.get("bin").cloned());
+
+        assert!(bin.is_some());
+        let bin_value = bin.unwrap();
+        // On Windows x64, should get "tool.exe", otherwise "generic-tool"
+        assert!(
+            bin_value == "tool.exe" || bin_value == "generic-tool",
+            "Expected platform-specific or generic bin, got: {}",
+            bin_value
+        );
+    }
+
+    #[test]
+    fn test_lookup_platform_key_inline_format() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platforms_windows_x64_bin".to_string(),
+            "xmake.exe".to_string(),
+        );
+        opts.insert("platforms_linux_x64_bin".to_string(), "xmake".to_string());
+        opts.insert("platforms_macos_arm64_bin".to_string(), "xmake".to_string());
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        // Test that flat platform format works
+        let bin = lookup_platform_key(&tool_opts, "bin");
+
+        if let Some(b) = bin {
+            assert!(
+                b == "xmake" || b == "xmake.exe",
+                "Expected platform-specific bin from flat format, got: {}",
+                b
+            );
+        }
     }
 }

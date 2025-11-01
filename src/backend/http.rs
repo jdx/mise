@@ -176,7 +176,9 @@ impl HttpBackend {
                 let bin_path = template_string(bin_path_template, tv);
                 let bin_dir = cache_path.join(&bin_path);
                 (bin_dir, std::ffi::OsString::from(decompressed_name))
-            } else if let Some(bin_name) = opts.get("bin") {
+            } else if let Some(bin_name) =
+                lookup_platform_key(&opts, "bin").or_else(|| opts.get("bin").cloned())
+            {
                 // If bin is specified, rename the file to this name
                 (cache_path.to_path_buf(), std::ffi::OsString::from(bin_name))
             } else {
@@ -210,7 +212,9 @@ impl HttpBackend {
                 let bin_path = template_string(bin_path_template, tv);
                 let bin_dir = cache_path.join(&bin_path);
                 (bin_dir, file_path.file_name().unwrap().to_os_string())
-            } else if let Some(bin_name) = opts.get("bin") {
+            } else if let Some(bin_name) =
+                lookup_platform_key(&opts, "bin").or_else(|| opts.get("bin").cloned())
+            {
                 // If bin is specified, rename the file to this name
                 (cache_path.to_path_buf(), std::ffi::OsString::from(bin_name))
             } else {
@@ -461,8 +465,10 @@ impl Backend for HttpBackend {
         tv: &ToolVersion,
     ) -> Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
-        if let Some(bin_path_template) = opts.get("bin_path") {
-            let bin_path = template_string(bin_path_template, tv);
+        if let Some(bin_path_template) =
+            lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+        {
+            let bin_path = template_string(&bin_path_template, tv);
             Ok(vec![tv.install_path().join(bin_path)])
         } else {
             // Look for bin directory in the install path
