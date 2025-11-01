@@ -1,6 +1,6 @@
 use crate::Result;
+use crate::cli::Cli;
 use crate::cli::args::BackendArg;
-use crate::cli::{Cli, run};
 use crate::cmd;
 use crate::config::Config;
 use crate::env;
@@ -75,7 +75,7 @@ impl Watch {
         if args.is_empty() {
             bail!("No tasks specified");
         }
-        let tasks = run::get_task_lists(&config, &args, false).await?;
+        let tasks = crate::task::task_list::get_task_lists(&config, &args, false).await?;
         let mut args = vec![];
         if let Some(delay_run) = self.watchexec.delay_run {
             args.push("--delay-run".to_string());

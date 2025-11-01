@@ -36,11 +36,15 @@ static FUZZY_MATCHER: Lazy<SkimMatcherV2> =
 mod deps;
 mod task_dep;
 pub mod task_file_providers;
+pub mod task_list;
 mod task_load_context;
+pub mod task_output;
 mod task_script_parser;
+pub mod task_source_checker;
 pub mod task_sources;
 
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
+pub use task_output::TaskOutput;
 
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;

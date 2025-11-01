@@ -1,6 +1,6 @@
-use crate::cli::run::TaskOutput;
 use crate::config::{Config, Settings};
 use crate::exit::exit;
+use crate::task::TaskOutput;
 use crate::ui::{self, ctrlc};
 use crate::{Result, backend};
 use crate::{cli::args::ToolArg, path::PathExt};
