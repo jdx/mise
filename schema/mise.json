@@ -1031,6 +1031,11 @@
               "items": {
                 "type": "string"
               }
+            },
+            "strict": {
+              "default": true,
+              "description": "If true, fail when age decryption fails (including when age is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases.",
+              "type": "boolean"
             }
           }
         },
