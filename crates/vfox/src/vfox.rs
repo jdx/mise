@@ -298,21 +298,20 @@ impl Vfox {
         }
         if let Some(attestation) = &pre_install.attestation {
             self.log_emit(format!("Verify {file:?} attestation"));
-            // TODO: merge into one conditional when Rust 2024 edition is used in the vfox crate
-            if let Some(owner) = &attestation.github_owner {
-                if let Some(repo) = &attestation.github_repo {
-                    let token = std::env::var("MISE_GITHUB_TOKEN")
+            if let Some(owner) = &attestation.github_owner
+                && let Some(repo) = &attestation.github_repo
+            {
+                let token = std::env::var("MISE_GITHUB_TOKEN")
                     .or_else(|_| std::env::var("GITHUB_TOKEN"))
                     .or(Err("GitHub attestation verification requires either the MISE_GITHUB_TOKEN or GITHUB_TOKEN environment variable set"))?;
-                    sigstore_verification::verify_github_attestation(
-                        file,
-                        owner.as_str(),
-                        repo.as_str(),
-                        Some(token.as_str()),
-                        attestation.github_signer_workflow.as_deref(),
-                    )
-                    .await?;
-                }
+                sigstore_verification::verify_github_attestation(
+                    file,
+                    owner.as_str(),
+                    repo.as_str(),
+                    Some(token.as_str()),
+                    attestation.github_signer_workflow.as_deref(),
+                )
+                .await?;
             }
 
             if let Some(sig_or_bundle_path) = &attestation.cosign_sig_or_bundle_path {
@@ -459,31 +458,34 @@ mod tests {
         let install_dir = vfox.install_dir.join("cmake").join("3.21.0");
         vfox.install("cmake", "3.21.0", &install_dir).await.unwrap();
         if cfg!(target_os = "linux") {
-            assert!(vfox
-                .install_dir
-                .join("cmake")
-                .join("3.21.0")
-                .join("bin")
-                .join("cmake")
-                .exists());
+            assert!(
+                vfox.install_dir
+                    .join("cmake")
+                    .join("3.21.0")
+                    .join("bin")
+                    .join("cmake")
+                    .exists()
+            );
         } else if cfg!(target_os = "macos") {
-            assert!(vfox
-                .install_dir
-                .join("cmake")
-                .join("3.21.0")
-                .join("CMake.app")
-                .join("Contents")
-                .join("bin")
-                .join("cmake")
-                .exists());
+            assert!(
+                vfox.install_dir
+                    .join("cmake")
+                    .join("3.21.0")
+                    .join("CMake.app")
+                    .join("Contents")
+                    .join("bin")
+                    .join("cmake")
+                    .exists()
+            );
         } else if cfg!(target_os = "windows") {
-            assert!(vfox
-                .install_dir
-                .join("cmake")
-                .join("3.21.0")
-                .join("bin")
-                .join("cmake.exe")
-                .exists());
+            assert!(
+                vfox.install_dir
+                    .join("cmake")
+                    .join("3.21.0")
+                    .join("bin")
+                    .join("cmake.exe")
+                    .exists()
+            );
         }
         vfox.uninstall_plugin("cmake").unwrap();
         assert!(!vfox.plugin_dir.join("cmake").exists());

@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use mlua::prelude::LuaError;
 use mlua::{FromLua, Lua, Table, Value};
 
-use crate::error::Result;
 use crate::Plugin;
+use crate::error::Result;
 
 impl Plugin {
     pub async fn pre_install(&self, version: &str) -> Result<PreInstall> {
@@ -180,9 +180,9 @@ impl FromLua for PreInstall {
 
 #[cfg(test)]
 mod tests {
+    use crate::Plugin;
     use crate::hooks::pre_install::PreInstall;
     use crate::runtime::Runtime;
-    use crate::Plugin;
     use std::string::ToString;
     use tokio::test;
 

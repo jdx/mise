@@ -3,9 +3,9 @@ use mlua::{FromLua, IntoLua, Lua, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use crate::Plugin;
 use crate::error::Result;
 use crate::sdk_info::SdkInfo;
-use crate::Plugin;
 
 #[derive(Debug)]
 pub struct EnvKey {
