@@ -45,6 +45,7 @@ pub struct AquaPackage {
     version_filter_expr: Option<Program>,
     pub version_source: Option<String>,
     pub checksum: Option<AquaChecksum>,
+    pub cosign: Option<AquaCosign>,
     pub slsa_provenance: Option<AquaSlsaProvenance>,
     pub minisign: Option<AquaMinisign>,
     pub github_artifact_attestations: Option<AquaGithubArtifactAttestations>,
@@ -201,6 +202,7 @@ impl Default for AquaPackage {
             version_filter_expr: None,
             version_source: None,
             checksum: None,
+            cosign: None,
             slsa_provenance: None,
             minisign: None,
             github_artifact_attestations: None,
@@ -573,6 +575,17 @@ fn apply_override(mut orig: AquaPackage, avo: &AquaPackage) -> AquaPackage {
         }
     }
 
+    if let Some(avo_cosign) = avo.cosign.clone() {
+        match &mut orig.cosign {
+            Some(orig_cosign) => {
+                orig_cosign.merge(avo_cosign);
+            }
+            None => {
+                orig.cosign = Some(avo_cosign);
+            }
+        }
+    }
+
     if let Some(avo_slsa_provenance) = avo.slsa_provenance.clone() {
         match &mut orig.slsa_provenance {
             Some(slsa_provenance) => {
@@ -684,10 +697,14 @@ impl AquaChecksum {
             self.file_format = Some(file_format);
         }
         if let Some(cosign) = other.cosign {
-            if self.cosign.is_none() {
-                self.cosign = Some(cosign.clone());
+            match &mut self.cosign {
+                Some(orig_cosign) => {
+                    orig_cosign.merge(cosign);
+                }
+                None => {
+                    self.cosign = Some(cosign);
+                }
             }
-            self.cosign.as_mut().unwrap().merge(cosign);
         }
     }
 }
@@ -735,24 +752,34 @@ impl AquaCosign {
 }
 
 impl AquaCosignSignature {
-    pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+    fn _url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
         pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
 
-    pub fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
-        pkg.parse_aqua_str(
-            self.asset.as_ref().unwrap(),
-            v,
-            &Default::default(),
-            os,
-            arch,
-        )
+    fn asset(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        os: &str,
+        arch: &str,
+        filename: &str,
+    ) -> Result<String> {
+        let mut ctx = HashMap::new();
+        ctx.insert("Asset".to_string(), filename.to_string());
+        pkg.parse_aqua_str(self.asset.as_ref().unwrap(), v, &ctx, os, arch)
     }
 
-    pub fn arg(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
+    pub fn url(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        os: &str,
+        arch: &str,
+        filename: &str,
+    ) -> Result<Option<String>> {
         match self.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
-                let asset = self.asset(pkg, v, os, arch)?;
+                let asset = self.asset(pkg, v, os, arch, filename)?;
                 let repo_owner = self
                     .repo_owner
                     .clone()
@@ -761,19 +788,18 @@ impl AquaCosignSignature {
                     .repo_name
                     .clone()
                     .unwrap_or_else(|| pkg.repo_name.clone());
-                let repo = format!("{repo_owner}/{repo_name}");
-                Ok(format!(
-                    "https://github.com/{repo}/releases/download/{v}/{asset}"
-                ))
+                Ok(Some(format!(
+                    "https://github.com/{repo_owner}/{repo_name}/releases/download/{v}/{asset}"
+                )))
             }
-            "http" => self.url(pkg, v, os, arch),
+            "http" => self._url(pkg, v, os, arch).map(Some),
             t => {
                 log::warn!(
                     "unsupported cosign signature type for {}/{}: {t}",
                     pkg.repo_owner,
                     pkg.repo_name
                 );
-                Ok(String::new())
+                Ok(None)
             }
         }
     }
