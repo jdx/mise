@@ -16,6 +16,7 @@ use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
+use crate::task::task_helpers::{canonicalize_path, task_needs_permit};
 use crate::task::task_list::{get_task_lists, resolve_depends, split_task_spec};
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
@@ -345,7 +346,7 @@ impl Run {
 
             // Collect tools from monorepo task config files
             if let Some(task_cf) = t.cf(&config) {
-                let config_path = Self::canonicalize_path(task_cf.get_path());
+                let config_path = canonicalize_path(task_cf.get_path());
 
                 // Check cache first
                 let cache = this
@@ -648,7 +649,7 @@ impl Run {
             deps_for_remove.lock().await.remove(&task);
             return Ok(());
         }
-        let needs_permit = Self::task_needs_permit(&task);
+        let needs_permit = task_needs_permit(&task);
         let permit_opt = if needs_permit {
             let wait_start = std::time::Instant::now();
             let p = Some(ctx.semaphore.clone().acquire_owned().await?);
@@ -710,12 +711,6 @@ impl Run {
         });
 
         Ok(())
-    }
-
-    fn task_needs_permit(task: &Task) -> bool {
-        // Only shell/script tasks execute external commands and need a concurrency slot.
-        // Orchestrator-only tasks (pure groups of sub-tasks) do not.
-        task.file.is_some() || !task.run_script_strings().is_empty()
     }
 
     fn maybe_print_failure_summary(&self) {
@@ -904,7 +899,7 @@ impl Run {
         // Only use task-specific config file context for monorepo tasks
         // (tasks with self.cf set, not just those with a config_source)
         if let (Some(task_cf), Some(_)) = (task_cf, &task.cf) {
-            let config_path = Self::canonicalize_path(task_cf.get_path());
+            let config_path = canonicalize_path(task_cf.get_path());
 
             trace!(
                 "task {} using monorepo config file context from {}",
@@ -1059,7 +1054,7 @@ impl Run {
             return task.render_env(config, ts).await;
         }
 
-        let config_path = Self::canonicalize_path(task_cf.get_path());
+        let config_path = canonicalize_path(task_cf.get_path());
 
         // Check cache first if task has no task-specific env directives
         if task.env.0.is_empty() {
@@ -1112,12 +1107,6 @@ impl Run {
         }
 
         Ok((env, task_env))
-    }
-
-    /// Canonicalize a path for use as cache key
-    /// Falls back to original path if canonicalization fails
-    fn canonicalize_path(path: &Path) -> PathBuf {
-        path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
     }
 
     /// Check if standard env resolution should be used instead of special context

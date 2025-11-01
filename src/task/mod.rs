@@ -36,6 +36,7 @@ static FUZZY_MATCHER: Lazy<SkimMatcherV2> =
 mod deps;
 mod task_dep;
 pub mod task_file_providers;
+pub mod task_helpers;
 pub mod task_list;
 mod task_load_context;
 pub mod task_output;
