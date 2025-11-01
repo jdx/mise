@@ -259,6 +259,7 @@ impl Set {
                 _ => None,
             }) {
                 Some((value, directive)) => {
+                    // this does not obey strict=false, since we want to fail if the decryption fails
                     let decrypted =
                         Self::decrypt_value_if_needed(&eva.key, &value, directive).await?;
                     miseprintln!("{decrypted}");
