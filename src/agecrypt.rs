@@ -436,6 +436,7 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
     async fn test_age_x25519_round_trip_large() -> Result<()> {
         let key = age::x25519::Identity::generate();
         let recipient = key.to_public();
