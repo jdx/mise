@@ -1,5 +1,24 @@
 # Changelog
 
+## [2025.11.0](https://github.com/jdx/mise/compare/v2025.10.21..v2025.11.0) - 2025-11-01
+
+### 🐛 Bug Fixes
+
+- **(activate)** reset PATH when activate is called multiple times by @jdx in [#6829](https://github.com/jdx/mise/pull/6829)
+- **(env)** preserve user-configured PATH entries from env._.path by @jdx in [#6835](https://github.com/jdx/mise/pull/6835)
+- store tool options for all backends in metadata by @roele in [#6807](https://github.com/jdx/mise/pull/6807)
+
+### 📚 Documentation
+
+- fix usage spec syntax from 'option' to 'flag' by @jdx in [#6834](https://github.com/jdx/mise/pull/6834)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 7351bbe by @renovate[bot] in [#6826](https://github.com/jdx/mise/pull/6826)
+- update ghcr.io/jdx/mise:deb docker digest to 3a847f2 by @renovate[bot] in [#6828](https://github.com/jdx/mise/pull/6828)
+- update ghcr.io/jdx/mise:copr docker digest to 546dffb by @renovate[bot] in [#6827](https://github.com/jdx/mise/pull/6827)
+- pin jdx/mise-action action to e3d7b8d by @renovate[bot] in [#6825](https://github.com/jdx/mise/pull/6825)
+
 ## [2025.10.21](https://github.com/jdx/mise/compare/v2025.10.20..v2025.10.21) - 2025-10-30
 
 ### 🐛 Bug Fixes
