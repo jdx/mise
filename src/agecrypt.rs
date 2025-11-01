@@ -56,8 +56,26 @@ pub async fn create_age_directive(
 }
 
 pub async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
-    Settings::get().ensure_experimental("age encryption")?;
+    let settings = Settings::get();
+    settings.ensure_experimental("age encryption")?;
+    let strict = settings.age.strict;
+    match decrypt_age_directive_inner(directive).await {
+        Ok(value) => Ok(value),
+        Err(e) => {
+            if strict {
+                Err(e)
+            } else {
+                debug!(
+                    "[experimental] Age decryption failed but continuing in non-strict mode: {}",
+                    e
+                );
+                Ok(String::new())
+            }
+        }
+    }
+}
 
+async fn decrypt_age_directive_inner(directive: &EnvDirective) -> Result<String> {
     match directive {
         EnvDirective::Age { value, format, .. } => {
             let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
