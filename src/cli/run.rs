@@ -22,8 +22,6 @@ use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
 use crate::task::{Deps, GetMatchingExt, Task, TaskLoadContext};
 use crate::toolset::{InstallOptions, ToolSource, Toolset, ToolsetBuilder};
-use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::ui::progress_report::SingleReport;
 use crate::ui::{ctrlc, style, time};
 use crate::{dirs, duration, env, exit, file, ui};
 use clap::{CommandFactory, ValueHint};
@@ -200,13 +198,7 @@ pub struct Run {
     pub tmpdir: PathBuf,
 
     #[clap(skip)]
-    pub keep_order_output: std::sync::Mutex<IndexMap<Task, KeepOrderOutputs>>,
-
-    #[clap(skip)]
-    pub task_prs: IndexMap<Task, Arc<Box<dyn SingleReport>>>,
-
-    #[clap(skip)]
-    pub timed_outputs: Arc<std::sync::Mutex<IndexMap<String, (SystemTime, String)>>>,
+    pub output_handler: Option<OutputHandler>,
 
     #[clap(skip)]
     pub toolset_cache: std::sync::RwLock<IndexMap<PathBuf, Arc<Toolset>>>,
@@ -220,7 +212,6 @@ pub struct Run {
 }
 
 type EnvResolutionResult = (BTreeMap<String, String>, Vec<(String, String)>);
-type KeepOrderOutputs = (Vec<(String, String)>, Vec<(String, String)>);
 
 struct SpawnCtx {
     semaphore: Arc<Semaphore>,
@@ -281,10 +272,22 @@ impl Run {
     async fn parallelize_tasks(mut self, mut config: Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         time!("parallelize_tasks start");
 
+        // Initialize OutputHandler with CLI args
+        self.output_handler = Some(OutputHandler::new(
+            self.prefix,
+            self.interleave,
+            self.output,
+            self.silent,
+            self.quiet,
+            self.raw,
+            self.is_linear,
+            self.jobs,
+        ));
+
         ctrlc::exit_on_ctrl_c(false);
 
         if self.output(None) == TaskOutput::Timed {
-            let timed_outputs = self.timed_outputs.clone();
+            let timed_outputs = self.output_handler.as_ref().unwrap().timed_outputs.clone();
             tokio::spawn(async move {
                 let mut interval = tokio::time::interval(Duration::from_millis(100));
                 loop {
@@ -313,19 +316,7 @@ impl Run {
         let tasks = Deps::new(&config, tasks).await?;
         for task in tasks.all() {
             self.validate_task(task)?;
-            match self.output(Some(task)) {
-                TaskOutput::KeepOrder => {
-                    self.keep_order_output
-                        .lock()
-                        .unwrap()
-                        .insert(task.clone(), Default::default());
-                }
-                TaskOutput::Replacing => {
-                    let pr = MultiProgressReport::get().add(&task.estyled_prefix());
-                    self.task_prs.insert(task.clone(), Arc::new(pr));
-                }
-                _ => {}
-            }
+            self.output_handler.as_mut().unwrap().init_task(task);
         }
 
         let num_tasks = tasks.all().count();
@@ -593,7 +584,13 @@ impl Run {
 
         if this.output(None) == TaskOutput::KeepOrder {
             // TODO: display these as tasks complete in order somehow rather than waiting until everything is done
-            let output = this.keep_order_output.lock().unwrap();
+            let output = this
+                .output_handler
+                .as_ref()
+                .unwrap()
+                .keep_order_output
+                .lock()
+                .unwrap();
             for (out, err) in output.values() {
                 for (prefix, line) in out {
                     if console::colors_enabled() {
@@ -730,15 +727,10 @@ impl Run {
     }
 
     fn eprint(&self, task: &Task, prefix: &str, line: &str) {
-        match self.output(Some(task)) {
-            TaskOutput::Replacing => {
-                let pr = self.task_prs.get(task).unwrap().clone();
-                pr.set_message(format!("{prefix} {line}"));
-            }
-            _ => {
-                prefix_eprintln!(prefix, "{line}");
-            }
-        }
+        self.output_handler
+            .as_ref()
+            .unwrap()
+            .eprint(task, prefix, line);
     }
 
     async fn run_task_sched(
@@ -1584,7 +1576,13 @@ impl Run {
             TaskOutput::KeepOrder => {
                 if !task.silent.suppresses_stdout() {
                     cmd = cmd.with_on_stdout(|line| {
-                        let mut map = self.keep_order_output.lock().unwrap();
+                        let mut map = self
+                            .output_handler
+                            .as_ref()
+                            .unwrap()
+                            .keep_order_output
+                            .lock()
+                            .unwrap();
                         if !map.contains_key(task) {
                             map.insert(task.clone(), Default::default());
                         }
@@ -1597,7 +1595,13 @@ impl Run {
                 }
                 if !task.silent.suppresses_stderr() {
                     cmd = cmd.with_on_stderr(|line| {
-                        let mut map = self.keep_order_output.lock().unwrap();
+                        let mut map = self
+                            .output_handler
+                            .as_ref()
+                            .unwrap()
+                            .keep_order_output
+                            .lock()
+                            .unwrap();
                         if !map.contains_key(task) {
                             map.insert(task.clone(), Default::default());
                         }
@@ -1619,13 +1623,20 @@ impl Run {
                 }
                 // Show progress indicator except when both streams are fully suppressed
                 if !task.silent.suppresses_both() {
-                    let pr = self.task_prs.get(task).unwrap().clone();
+                    let pr = self
+                        .output_handler
+                        .as_ref()
+                        .unwrap()
+                        .task_prs
+                        .get(task)
+                        .unwrap()
+                        .clone();
                     cmd = cmd.with_pr_arc(pr);
                 }
             }
             TaskOutput::Timed => {
                 if !task.silent.suppresses_stdout() {
-                    let timed_outputs = self.timed_outputs.clone();
+                    let timed_outputs = self.output_handler.as_ref().unwrap().timed_outputs.clone();
                     cmd = cmd.with_on_stdout(move |line| {
                         timed_outputs
                             .lock()
@@ -1688,69 +1699,23 @@ impl Run {
     }
 
     fn output(&self, task: Option<&Task>) -> TaskOutput {
-        // Check for full silent mode (both streams)
-        if let Some(task_ref) = task
-            && matches!(task_ref.silent, crate::task::Silent::Bool(true))
-        {
-            return TaskOutput::Silent;
-        }
-
-        // Check global output settings
-        if let Some(o) = self.output {
-            return o;
-        } else if let Some(task_ref) = task {
-            // Fall through to other checks if silent is Off
-            if self.silent_bool() {
-                return TaskOutput::Silent;
-            }
-            if self.quiet(Some(task_ref)) {
-                return TaskOutput::Quiet;
-            }
-        } else if self.silent_bool() {
-            return TaskOutput::Silent;
-        } else if self.quiet(task) {
-            return TaskOutput::Quiet;
-        }
-
-        if self.prefix {
-            TaskOutput::Prefix
-        } else if self.interleave {
-            TaskOutput::Interleave
-        } else if let Some(output) = Settings::get().task_output {
-            output
-        } else if self.raw(task) || self.jobs() == 1 || self.is_linear {
-            TaskOutput::Interleave
-        } else {
-            TaskOutput::Prefix
-        }
-    }
-
-    fn silent_bool(&self) -> bool {
-        self.silent || Settings::get().silent || self.output.is_some_and(|o| o.is_silent())
+        self.output_handler.as_ref().unwrap().output(task)
     }
 
     fn silent(&self, task: Option<&Task>) -> bool {
-        self.silent_bool() || task.is_some_and(|t| t.silent.is_silent())
+        self.output_handler.as_ref().unwrap().silent(task)
     }
 
     fn quiet(&self, task: Option<&Task>) -> bool {
-        self.quiet
-            || Settings::get().quiet
-            || self.output.is_some_and(|o| o.is_quiet())
-            || task.is_some_and(|t| t.quiet)
-            || self.silent(task)
+        self.output_handler.as_ref().unwrap().quiet(task)
     }
 
     fn raw(&self, task: Option<&Task>) -> bool {
-        self.raw || Settings::get().raw || task.is_some_and(|t| t.raw)
+        self.output_handler.as_ref().unwrap().raw(task)
     }
 
     fn jobs(&self) -> usize {
-        if self.raw {
-            1
-        } else {
-            self.jobs.unwrap_or(Settings::get().jobs)
-        }
+        self.output_handler.as_ref().unwrap().jobs()
     }
 
     fn validate_task(&self, task: &Task) -> Result<()> {
