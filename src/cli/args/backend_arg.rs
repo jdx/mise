@@ -132,11 +132,10 @@ impl BackendArg {
 
     pub fn backend_type(&self) -> BackendType {
         // Check if this is a valid backend:tool format first
-        if let Some((backend_prefix, _tool_name)) = self.short.split_once(':') {
-            if let Ok(backend_type) = backend_prefix.parse::<BackendType>() {
+        if let Some((backend_prefix, _tool_name)) = self.short.split_once(':')
+            && let Ok(backend_type) = backend_prefix.parse::<BackendType>() {
                 return backend_type;
             }
-        }
 
         // Then check if this is a vfox plugin:tool format
         if let Some((plugin_name, _tool_name)) = self.short.split_once(':') {
@@ -154,19 +153,18 @@ impl BackendArg {
         }
 
         // Only check install state for non-plugin:tool format entries
-        if !self.short.contains(':') {
-            if let Ok(Some(backend_type)) = install_state::backend_type(&self.short) {
+        if !self.short.contains(':')
+            && let Ok(Some(backend_type)) = install_state::backend_type(&self.short) {
                 return backend_type;
             }
-        }
 
         let full = self.full();
         let backend = full.split(':').next().unwrap();
         if let Ok(backend_type) = backend.parse() {
             return backend_type;
         }
-        if config::is_loaded() {
-            if let Some(repo_url) = Config::get_().get_repo_url(&self.short) {
+        if config::is_loaded()
+            && let Some(repo_url) = Config::get_().get_repo_url(&self.short) {
                 return if repo_url.contains("vfox-") {
                     BackendType::Vfox
                 } else {
@@ -174,7 +172,6 @@ impl BackendArg {
                     BackendType::Asdf
                 };
             }
-        }
         BackendType::Unknown
     }
 
@@ -203,11 +200,9 @@ impl BackendArg {
             let config = Config::get_();
             if let Some(lt) =
                 lockfile::get_locked_version(&config, None, short, "").unwrap_or_default()
-            {
-                if let Some(backend) = lt.backend {
+                && let Some(backend) = lt.backend {
                     return backend;
                 }
-            }
         }
         if let Some(full) = &self.full {
             full.clone()

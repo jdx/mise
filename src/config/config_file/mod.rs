@@ -246,11 +246,10 @@ pub async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
 }
 
 pub async fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
-    if let Ok(settings) = Settings::try_get() {
-        if settings.paranoid {
+    if let Ok(settings) = Settings::try_get()
+        && settings.paranoid {
             trust_check(path)?;
         }
-    }
     match detect_config_file_type(path).await {
         Some(ConfigFileType::MiseToml) => Ok(Arc::new(MiseToml::from_file(path)?)),
         Some(ConfigFileType::ToolVersions) => Ok(Arc::new(ToolVersions::from_file(path)?)),
@@ -328,8 +327,8 @@ pub fn is_trusted(path: &Path) -> bool {
 
     // Check if this path is within a trusted monorepo root
     // Monorepo roots are marked with a special marker file when trusted
-    if settings.experimental {
-        if let Some(parent) = canonicalized_path.parent() {
+    if settings.experimental
+        && let Some(parent) = canonicalized_path.parent() {
             let mut current = parent;
             while let Some(dir) = current.parent() {
                 let monorepo_marker = trust_path(dir).with_extension("monorepo");
@@ -340,7 +339,6 @@ pub fn is_trusted(path: &Path) -> bool {
                 current = dir;
             }
         }
-    }
     if settings.paranoid {
         let trusted = trust_file_hash(path).unwrap_or_else(|e| {
             warn!("trust_file_hash: {e}");

@@ -87,8 +87,8 @@ impl OutdatedInfo {
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or_default();
             let new = oi.latest.strip_prefix(&prefix).unwrap_or_default();
-            if let Some(bumped_version) = check_semver_bump(old, new) {
-                if bumped_version != oi.tool_version.request.version() {
+            if let Some(bumped_version) = check_semver_bump(old, new)
+                && bumped_version != oi.tool_version.request.version() {
                     oi.bump = match oi.tool_request.clone() {
                         ToolRequest::Version {
                             version: _version,
@@ -124,7 +124,6 @@ impl OutdatedInfo {
                         }
                     }
                 }
-            }
         }
         Ok(Some(oi))
     }

@@ -159,11 +159,10 @@ impl ToolStub {
             .unwrap_or("");
 
         // Update bin if provided and different from stub filename
-        if let Some(bin) = &self.bin {
-            if bin != stub_filename {
+        if let Some(bin) = &self.bin
+            && bin != stub_filename {
                 doc["bin"] = toml_edit::value(bin);
             }
-        }
 
         // We use toml_edit directly to preserve existing content
 
@@ -185,14 +184,13 @@ impl ToolStub {
                 }
                 doc["size"] = size_item;
 
-                if self.bin.is_none() {
-                    if let Some(detected_bin) = bin_path.as_ref() {
+                if self.bin.is_none()
+                    && let Some(detected_bin) = bin_path.as_ref() {
                         // Only set bin if it's different from the stub filename
                         if detected_bin != stub_filename {
                             doc["bin"] = toml_edit::value(detected_bin);
                         }
                     }
-                }
             }
         }
 
@@ -230,11 +228,10 @@ impl ToolStub {
                 platform_table["url"] = toml_edit::value(&url);
 
                 // Set platform-specific bin path if explicitly provided and different from stub filename
-                if let Some(explicit_bin) = explicit_platform_bins.get(&platform) {
-                    if explicit_bin != stub_filename {
+                if let Some(explicit_bin) = explicit_platform_bins.get(&platform)
+                    && explicit_bin != stub_filename {
                         platform_table["bin"] = toml_edit::value(explicit_bin);
                     }
-                }
 
                 // Auto-detect checksum, size, and bin path if not skipped
                 if !self.skip_download {
@@ -255,13 +252,11 @@ impl ToolStub {
                     }
 
                     // Set bin path if not explicitly provided and we detected one different from stub filename
-                    if !explicit_platform_bins.contains_key(&platform) && self.bin.is_none() {
-                        if let Some(detected_bin) = bin_path.as_ref() {
-                            if detected_bin != stub_filename {
+                    if !explicit_platform_bins.contains_key(&platform) && self.bin.is_none()
+                        && let Some(detected_bin) = bin_path.as_ref()
+                            && detected_bin != stub_filename {
                                 platform_table["bin"] = toml_edit::value(detected_bin);
                             }
-                        }
-                    }
                 }
             }
 
@@ -278,13 +273,11 @@ impl ToolStub {
                 // Remove platform-specific bin entries since we'll have a global one
                 for platform_spec in &self.platform_url {
                     let (platform, _) = self.parse_platform_spec(platform_spec)?;
-                    if let Some(platform_table) = platforms.get_mut(&platform) {
-                        if let Some(table) = platform_table.as_table_mut() {
-                            if !explicit_platform_bins.contains_key(&platform) {
+                    if let Some(platform_table) = platforms.get_mut(&platform)
+                        && let Some(table) = platform_table.as_table_mut()
+                            && !explicit_platform_bins.contains_key(&platform) {
                                 table.remove("bin");
                             }
-                        }
-                    }
                 }
                 // Now set the global bin if different from stub filename
                 if global_bin != stub_filename {
@@ -475,11 +468,10 @@ impl ToolStub {
             let entry = entry?;
             if entry.file_type().is_file() {
                 let path = entry.path();
-                if file::is_executable(path) {
-                    if let Ok(relative_path) = path.strip_prefix(dir) {
+                if file::is_executable(path)
+                    && let Ok(relative_path) = path.strip_prefix(dir) {
                         executables.push(relative_path.to_string_lossy().to_string());
                     }
-                }
             }
         }
 
@@ -500,11 +492,10 @@ impl ToolStub {
                     return Ok(exe.clone());
                 }
                 // Check filename without extension
-                if let Some(stem) = path.file_stem().and_then(|f| f.to_str()) {
-                    if stem == tool_name {
+                if let Some(stem) = path.file_stem().and_then(|f| f.to_str())
+                    && stem == tool_name {
                         return Ok(exe.clone());
                     }
-                }
             }
         }
 
@@ -606,8 +597,8 @@ impl ToolStub {
         // Process platform-specific URLs
         if let Some(platforms) = doc.get_mut("platforms").and_then(|p| p.as_table_mut()) {
             for (platform_name, platform_value) in platforms.iter_mut() {
-                if let Some(platform_table) = platform_value.as_table_mut() {
-                    if let Some(url) = platform_table.get("url").and_then(|v| v.as_str()) {
+                if let Some(platform_table) = platform_value.as_table_mut()
+                    && let Some(url) = platform_table.get("url").and_then(|v| v.as_str()) {
                         // Only fetch if checksum is missing for this platform
                         if platform_table.get("checksum").is_none() {
                             match self.analyze_url(url, &mpr).await {
@@ -631,7 +622,6 @@ impl ToolStub {
                             }
                         }
                     }
-                }
             }
         }
 

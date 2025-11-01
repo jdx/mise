@@ -99,12 +99,11 @@ impl Backend for AquaBackend {
         let pkg = AQUA_REGISTRY
             .package_with_version(&self.id, &versions)
             .await?;
-        if let Some(prefix) = &pkg.version_prefix {
-            if !v.starts_with(prefix) {
+        if let Some(prefix) = &pkg.version_prefix
+            && !v.starts_with(prefix) {
                 v = format!("{prefix}{v}");
                 v_prefixed = v_prefixed.map(|v| format!("{prefix}{v}"));
             }
-        }
         validate(&pkg)?;
 
         // Check if URL already exists in lockfile platforms first
@@ -397,9 +396,9 @@ impl AquaBackend {
         let download_path = tv.download_path();
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        if platform_info.checksum.is_none() {
-            if let Some(checksum) = &pkg.checksum {
-                if checksum.enabled() {
+        if platform_info.checksum.is_none()
+            && let Some(checksum) = &pkg.checksum
+                && checksum.enabled() {
                     let url = match checksum._type() {
                         AquaChecksumType::GithubRelease => {
                             let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
@@ -466,8 +465,6 @@ impl AquaBackend {
                     let platform_info = tv.lock_platforms.get_mut(&platform_key).unwrap();
                     platform_info.checksum = Some(checksum_val);
                 }
-            }
-        }
         let tarball_path = tv.download_path().join(filename);
         self.verify_checksum(ctx, tv, &tarball_path)?;
         Ok(())

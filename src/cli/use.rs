@@ -161,8 +161,8 @@ impl Use {
                 .into_iter()
                 .map(|tv| {
                     let mut request = tv.request.clone();
-                    if pin {
-                        if let ToolRequest::Version {
+                    if pin
+                        && let ToolRequest::Version {
                             version: _version,
                             source,
                             options,
@@ -176,7 +176,6 @@ impl Use {
                                 backend,
                             };
                         }
-                    }
                     request
                 })
                 .collect();
@@ -244,13 +243,11 @@ impl Use {
             warn!("{plugin} is defined in {p} which overrides the global config ({global})");
         };
         for targ in &self.tool {
-            if let Some(tv) = ts.versions.get(targ.ba.as_ref()) {
-                if let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source {
-                    if !file::same_file(p, global) {
+            if let Some(tv) = ts.versions.get(targ.ba.as_ref())
+                && let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source
+                    && !file::same_file(p, global) {
                         warn(targ, p);
                     }
-                }
-            }
         }
     }
 

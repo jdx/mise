@@ -769,11 +769,10 @@ impl Run {
             }
             return Ok(());
         }
-        if let Some(message) = &task.confirm {
-            if !Settings::get().yes && !ui::confirm(message).unwrap_or(false) {
+        if let Some(message) = &task.confirm
+            && !Settings::get().yes && !ui::confirm(message).unwrap_or(false) {
                 return Err(eyre!("aborted by user"));
             }
-        }
 
         let mut tools = self.tool.clone();
         for (k, v) in &task.tools {
@@ -1132,15 +1131,13 @@ impl Run {
     ) -> bool {
         if let (Some(task_config_root), Some(current_config_root)) =
             (task_cf.project_root(), config.project_root.as_ref())
-        {
-            if task_config_root == *current_config_root && config_env_entries.is_empty() {
+            && task_config_root == *current_config_root && config_env_entries.is_empty() {
                 trace!(
                     "task {} config root matches current and no config env, using standard env resolution",
                     task.name
                 );
                 return true;
             }
-        }
         false
     }
 
@@ -1707,8 +1704,8 @@ impl Run {
     }
 
     fn validate_task(&self, task: &Task) -> Result<()> {
-        if let Some(path) = &task.file {
-            if path.exists() && !file::is_executable(path) {
+        if let Some(path) = &task.file
+            && path.exists() && !file::is_executable(path) {
                 let dp = display_path(path);
                 let msg = format!("Script `{dp}` is not executable. Make it executable?");
                 if ui::confirm(msg)? {
@@ -1717,7 +1714,6 @@ impl Run {
                     bail!("`{dp}` is not executable")
                 }
             }
-        }
         Ok(())
     }
 
@@ -2159,8 +2155,8 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
             .iter()
             .map(|d| d.join(name))
             .find(|d| d.is_file() && !file::is_executable(d));
-        if let Some(path) = path {
-            if !cfg!(windows) {
+        if let Some(path) = path
+            && !cfg!(windows) {
                 warn!(
                     "no task {} found, but a non-executable file exists at {}",
                     style::ered(name),
@@ -2174,7 +2170,6 @@ async fn err_no_task(config: &Config, name: &str) -> Result<()> {
                     info!("marked as executable, try running this task again");
                 }
             }
-        }
     }
 
     // Suggest similar tasks using fuzzy matching for monorepo tasks

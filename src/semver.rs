@@ -41,8 +41,8 @@ pub fn chunkify_version(v: &str) -> Vec<String> {
 
     let mut chunks = vec![];
     // don't parse "latest", otherwise bump from latest to any version would have one chunk only
-    if v != "latest" {
-        if let Some(v) = Versioning::new(v) {
+    if v != "latest"
+        && let Some(v) = Versioning::new(v) {
             let m = match v {
                 Versioning::Ideal(sem_ver) => sem_ver.to_mess(),
                 Versioning::General(version) => version.to_mess(),
@@ -50,7 +50,6 @@ pub fn chunkify_version(v: &str) -> Vec<String> {
             };
             chunkify(&m, "", &mut chunks);
         }
-    }
     chunks
 }
 

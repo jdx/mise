@@ -801,8 +801,8 @@ pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) ->
     let should_resolve_relatively = pattern.starts_with(':') && !pattern.starts_with("::")
         || (is_bare_name && parent_task.is_some_and(|p| p.name.starts_with("//")));
 
-    if should_resolve_relatively {
-        if let Some(parent) = parent_task {
+    if should_resolve_relatively
+        && let Some(parent) = parent_task {
             // Extract the path portion from the parent task name
             // For monorepo tasks like "//projects/frontend:test:nested", we need to extract "//projects/frontend"
             // by finding the FIRST colon after the "//" prefix, not the last one
@@ -822,7 +822,6 @@ pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) ->
                 return format!("{}{}", path, pattern);
             }
         }
-    }
     pattern.to_string()
 }
 

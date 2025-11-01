@@ -188,13 +188,11 @@ pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
         .get(short)
         .and_then(|ist| ist.full.as_ref())
         .map(|full| BackendType::guess(full));
-    if let Some(BackendType::Unknown) = backend_type {
-        if let Some((plugin_name, _)) = short.split_once(':') {
-            if let Some(PluginType::VfoxBackend) = get_plugin_type(plugin_name) {
+    if let Some(BackendType::Unknown) = backend_type
+        && let Some((plugin_name, _)) = short.split_once(':')
+            && let Some(PluginType::VfoxBackend) = get_plugin_type(plugin_name) {
                 return Ok(Some(BackendType::VfoxBackend(plugin_name.to_string())));
             }
-        }
-    }
     Ok(backend_type)
 }
 

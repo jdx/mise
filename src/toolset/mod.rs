@@ -366,8 +366,8 @@ impl Toolset {
 
         // Ensure plugins are installed
         for (backend, trs) in &queue {
-            if let Some(plugin) = backend.plugin() {
-                if !plugin.is_installed() {
+            if let Some(plugin) = backend.plugin()
+                && !plugin.is_installed() {
                     let mpr = MultiProgressReport::get();
                     if let Err(e) = plugin
                         .ensure_installed(config, &mpr, false, opts.dry_run)
@@ -391,7 +391,6 @@ impl Toolset {
                         }
                     }
                 }
-            }
         }
 
         let raw = opts.raw || Settings::get().raw;

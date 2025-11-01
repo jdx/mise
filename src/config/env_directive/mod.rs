@@ -310,12 +310,11 @@ impl EnvResults {
                     return acc;
                 }
 
-                if let Some(d) = &last_python_venv {
-                    if matches!(directive, EnvDirective::PythonVenv { .. }) && **d != *directive {
+                if let Some(d) = &last_python_venv
+                    && matches!(directive, EnvDirective::PythonVenv { .. }) && **d != *directive {
                         // skip venv directives if it's not the last one
                         return acc;
                     }
-                }
                 acc.push((directive.clone(), source.clone()));
                 acc
             });

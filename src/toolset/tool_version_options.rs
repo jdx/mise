@@ -80,11 +80,10 @@ impl ToolVersionOptions {
                 return Self::value_exists_at_path(&toml_value, nested_path);
             } else if value.trim().starts_with('{') && value.trim().ends_with('}') {
                 // Try to parse as inline TOML table
-                if let Ok(toml_value) = format!("value = {value}").parse::<toml::Value>() {
-                    if let Some(table_value) = toml_value.get("value") {
+                if let Ok(toml_value) = format!("value = {value}").parse::<toml::Value>()
+                    && let Some(table_value) = toml_value.get("value") {
                         return Self::value_exists_at_path(table_value, nested_path);
                     }
-                }
             }
         }
 
@@ -125,11 +124,10 @@ impl ToolVersionOptions {
                 return Self::get_string_at_path(&toml_value, nested_path);
             } else if value.trim().starts_with('{') && value.trim().ends_with('}') {
                 // Try to parse as inline TOML table
-                if let Ok(toml_value) = format!("value = {value}").parse::<toml::Value>() {
-                    if let Some(table_value) = toml_value.get("value") {
+                if let Ok(toml_value) = format!("value = {value}").parse::<toml::Value>()
+                    && let Some(table_value) = toml_value.get("value") {
                         return Self::get_string_at_path(table_value, nested_path);
                     }
-                }
             }
         }
 

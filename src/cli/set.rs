@@ -120,8 +120,8 @@ impl Set {
             }
         }
 
-        if let Some(env_vars) = &self.env_vars {
-            if env_vars.len() == 1 && env_vars[0].value.is_none() && !self.prompt {
+        if let Some(env_vars) = &self.env_vars
+            && env_vars.len() == 1 && env_vars[0].value.is_none() && !self.prompt {
                 let key = &env_vars[0].key;
                 // Use Config's centralized env loading which handles decryption
                 let full_config = Config::get().await?;
@@ -134,7 +134,6 @@ impl Set {
                 }
                 return Ok(());
             }
-        }
 
         if let Some(mut env_vars) = self.env_vars.take() {
             // Prompt for values if requested

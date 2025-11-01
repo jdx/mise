@@ -230,8 +230,8 @@ impl ProgressReport {
 
     fn update_terminal_progress(&self) {
         // Map progress bar position to allocated range to prevent backwards progress
-        if let Some(report_id) = self.report_id {
-            if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
+        if let Some(report_id) = self.report_id
+            && let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
                 // Check if we're spinning (no length set yet)
                 if self.pb.length().is_none() {
                     // During spinning, report minimal progress to show activity
@@ -274,7 +274,6 @@ impl ProgressReport {
                 // Always report against fixed 1,000,000 scale
                 mpr.update_report_progress(report_id, mapped_position, 1_000_000);
             }
-        }
     }
 }
 
@@ -334,11 +333,10 @@ impl SingleReport for ProgressReport {
             );
 
             // Report completion of previous operation
-            if let Some(report_id) = self.report_id {
-                if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
+            if let Some(report_id) = self.report_id
+                && let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
                     mpr.update_report_progress(report_id, completed_position, 1_000_000);
                 }
-            }
 
             // New operation starts where previous ended
             *base_guard = completed_position;
@@ -392,12 +390,11 @@ impl SingleReport for ProgressReport {
             self.pb.finish_and_clear();
         }
         // Mark this report as complete (100%) using fixed 0-1,000,000 range
-        if let Some(report_id) = self.report_id {
-            if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
+        if let Some(report_id) = self.report_id
+            && let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
                 progress_trace!("finish_with_icon[{}]: marking as 100% complete", report_id);
                 mpr.update_report_progress(report_id, 1_000_000, 1_000_000);
             }
-        }
     }
 
     fn start_operations(&self, count: usize) {
