@@ -2297,6 +2297,11 @@ description = "ImageMagick is a free, open-source software suite for creating, e
 backends = ["aqua:carvel-dev/imgpkg", "asdf:vmware-tanzu/asdf-carvel"]
 description = "Store application configuration files in Docker/OCI registries"
 
+[tools.infisical]
+backends = ["aqua:Infisical/infisical", "ubi:Infisical/infisical"]
+description = "The open source secret management platform: Sync secrets across your team/infrastructure and prevent secret leaks"
+test = ["infisical --version", "infisical version {{version}}"]
+
 [tools.infracost]
 backends = ["aqua:infracost/infracost", "asdf:dex4er/asdf-infracost"]
 description = "Cloud cost estimates for Terraform in pull requests. Love your cloud bill"
