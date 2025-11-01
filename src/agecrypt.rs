@@ -56,26 +56,7 @@ pub async fn create_age_directive(
 }
 
 pub async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
-    let settings = Settings::get();
-    settings.ensure_experimental("age encryption")?;
-    let strict = settings.age.strict;
-    match decrypt_age_directive_inner(directive).await {
-        Ok(value) => Ok(value),
-        Err(e) => {
-            if strict {
-                Err(e)
-            } else {
-                debug!(
-                    "Age decryption failed but continuing in non-strict mode: {}",
-                    e
-                );
-                Ok(String::new())
-            }
-        }
-    }
-}
-
-async fn decrypt_age_directive_inner(directive: &EnvDirective) -> Result<String> {
+    Settings::get().ensure_experimental("age encryption")?;
     match directive {
         EnvDirective::Age { value, format, .. } => {
             let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
@@ -455,119 +436,6 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_age_decrypt_non_strict_returns_empty_on_missing_key() -> Result<()> {
-        // Create ciphertext for a random recipient, but don't provide its private key
-        let encrypt_identity = age::x25519::Identity::generate();
-        let recipient = encrypt_identity.to_public();
-        let plaintext = "secret value";
-        let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(recipient)];
-        let directive =
-            create_age_directive("TEST_VAR".to_string(), plaintext, &recipients).await?;
-
-        // Configure non-strict mode and ensure no usable identities are provided
-        env::remove_var("MISE_AGE_KEY");
-        env::set_var("MISE_AGE_STRICT", "false");
-        crate::config::Settings::reset(None);
-
-        if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
-            let result = decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
-                key: "TEST_VAR".to_string(),
-                value,
-                format,
-                options: Default::default(),
-            })
-            .await?;
-
-            // In non-strict mode, failure yields empty string
-            assert_eq!(result, "");
-        } else {
-            panic!("Expected Age directive");
-        }
-
-        // Cleanup
-        env::remove_var("MISE_AGE_STRICT");
-        crate::config::Settings::reset(None);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_age_decrypt_strict_errors_on_missing_key() -> Result<()> {
-        // Create ciphertext for a random recipient, but don't provide its private key
-        let encrypt_identity = age::x25519::Identity::generate();
-        let recipient = encrypt_identity.to_public();
-        let plaintext = "secret value";
-        let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(recipient)];
-        let directive =
-            create_age_directive("TEST_VAR".to_string(), plaintext, &recipients).await?;
-
-        // Strict mode (default) with no usable identities should error
-        env::remove_var("MISE_AGE_KEY");
-        env::set_var("MISE_AGE_STRICT", "true");
-        crate::config::Settings::reset(None);
-
-        if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
-            let result = decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
-                key: "TEST_VAR".to_string(),
-                value,
-                format,
-                options: Default::default(),
-            })
-            .await;
-
-            assert!(result.is_err());
-        } else {
-            panic!("Expected Age directive");
-        }
-
-        // Cleanup
-        env::remove_var("MISE_AGE_STRICT");
-        crate::config::Settings::reset(None);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_age_decrypt_non_strict_returns_empty_on_invalid_key() -> Result<()> {
-        // Encrypt to K1, but provide K2 as the identity
-        let k1 = age::x25519::Identity::generate();
-        let k2 = age::x25519::Identity::generate();
-        let recipient = k1.to_public();
-        let plaintext = "secret value";
-        let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(recipient)];
-        let directive =
-            create_age_directive("TEST_VAR".to_string(), plaintext, &recipients).await?;
-
-        use age::secrecy::ExposeSecret;
-        env::set_var("MISE_AGE_KEY", k2.to_string().expose_secret());
-        env::set_var("MISE_AGE_STRICT", "false");
-        crate::config::Settings::reset(None);
-
-        if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
-            let result = decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
-                key: "TEST_VAR".to_string(),
-                value,
-                format,
-                options: Default::default(),
-            })
-            .await?;
-
-            // In non-strict mode, a decryption failure yields empty string
-            assert_eq!(result, "");
-        } else {
-            panic!("Expected Age directive");
-        }
-
-        // Cleanup
-        env::remove_var("MISE_AGE_KEY");
-        env::remove_var("MISE_AGE_STRICT");
-        crate::config::Settings::reset(None);
-
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn test_age_x25519_round_trip_large() -> Result<()> {
         let key = age::x25519::Identity::generate();
         let recipient = key.to_public();

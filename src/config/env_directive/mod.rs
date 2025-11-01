@@ -13,7 +13,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::{cmp::PartialEq, sync::Arc};
 
-use super::Config;
+use super::{Config, Settings};
 
 mod file;
 mod module;
@@ -392,12 +392,25 @@ impl EnvResults {
                     ..
                 } => {
                     // Decrypt age-encrypted value
-                    let mut decrypted_v = crate::agecrypt::decrypt_age_directive(&directive)
-                        .await
-                        .map_err(|e| eyre!("[experimental] Failed to decrypt {}: {}", k, e))?;
-
-                    // Parse as template after decryption
-                    decrypted_v = r.parse_template(&ctx, &mut tera, &source, &decrypted_v)?;
+                    let res = crate::agecrypt::decrypt_age_directive(&directive).await;
+                    let decrypted_v = match res {
+                        Ok(decrypted_v) => {
+                            // Parse as template after decryption
+                            r.parse_template(&ctx, &mut tera, &source, &decrypted_v)?
+                        }
+                        Err(e) if Settings::get().age.strict => {
+                            return Err(e)
+                                .wrap_err(eyre!("[experimental] Failed to decrypt {}", k));
+                        }
+                        Err(e) => {
+                            debug!(
+                                "[experimental] Age decryption failed for {} but continuing in non-strict mode: {}",
+                                k, e
+                            );
+                            // continue to the next directive
+                            continue;
+                        }
+                    };
 
                     if resolve_opts.vars {
                         r.vars.insert(k.clone(), (decrypted_v, source.clone()));
