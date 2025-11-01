@@ -62,7 +62,7 @@ pub enum RunEntry {
     TaskGroup { tasks: Vec<String> },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Silent {
     #[default]
     Off,
@@ -82,6 +82,20 @@ impl Silent {
 
     pub fn suppresses_stderr(&self) -> bool {
         matches!(self, Silent::Bool(true) | Silent::Stderr)
+    }
+}
+
+impl Serialize for Silent {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Silent::Off | Silent::Bool(false) => serializer.serialize_bool(false),
+            Silent::Bool(true) => serializer.serialize_bool(true),
+            Silent::Stdout => serializer.serialize_str("stdout"),
+            Silent::Stderr => serializer.serialize_str("stderr"),
+        }
     }
 }
 
