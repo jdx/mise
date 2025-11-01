@@ -103,7 +103,7 @@ function PLUGIN:PreInstall(ctx)
             cosign_sig_or_bundle_path = "/path/to/sig/or/bundle/file"
             -- SLSA
             slsa_provenance_path = "/path/to/provenance/file"
-        }
+        },
         -- Additional files can be specified
         addition = {
             {
