@@ -17,7 +17,7 @@ use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
-use crate::task::task_file_providers::TaskFileProvidersBuilder;
+use crate::task::task_file_providers::get_local_path;
 use crate::task::{Deps, GetMatchingExt, Task, TaskLoadContext};
 use crate::toolset::{InstallOptions, ToolSource, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -850,7 +850,13 @@ impl Run {
             );
         } else {
             let rendered_run_scripts = task
-                .render_run_scripts_with_args(config, self.cd.clone(), &task.args, &env)
+                .render_run_scripts_with_args(
+                    config,
+                    self.cd.clone(),
+                    self.no_cache,
+                    &task.args,
+                    &env,
+                )
                 .await?;
 
             let get_args = || {
@@ -1790,7 +1796,9 @@ impl Run {
         env: &mut EnvMap,
         get_args: impl Fn() -> Vec<String>,
     ) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(config, self.cd.clone(), env).await?;
+        let (spec, _) = task
+            .parse_usage_spec(config, self.cd.clone(), self.no_cache, env)
+            .await?;
         if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
             let args: Vec<String> = get_args();
             trace!("Parsing usage spec for {:?}", args);
@@ -1986,22 +1994,10 @@ impl Run {
     }
 
     async fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
-        let no_cache = self.no_cache || Settings::get().task_remote_no_cache.unwrap_or(false);
-        let task_file_providers = TaskFileProvidersBuilder::new()
-            .with_cache(!no_cache)
-            .build();
-
         for t in tasks {
             if let Some(file) = &t.file {
                 let source = file.to_string_lossy().to_string();
-
-                let provider = task_file_providers.get_provider(&source);
-
-                if provider.is_none() {
-                    bail!("No provider found for file: {}", source);
-                }
-
-                let local_path = provider.unwrap().get_local_path(&source).await?;
+                let local_path = get_local_path(&source, self.no_cache).await?;
 
                 // Store the original remote source before replacing with local path
                 // This is used to determine if the task should use monorepo config file context
