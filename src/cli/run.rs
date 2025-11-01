@@ -2037,6 +2037,3 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise tasks cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
 "#
 );
-
-// TaskOutput enum, trunc(), err_no_task(), prompt_for_task(),
-// get_task_lists(), and resolve_depends() have been moved to src/task/
