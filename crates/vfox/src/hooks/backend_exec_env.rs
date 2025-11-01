@@ -1,7 +1,7 @@
-use mlua::{prelude::LuaError, FromLua, IntoLua, Lua, Value};
+use mlua::{FromLua, IntoLua, Lua, Value, prelude::LuaError};
 use std::path::PathBuf;
 
-use crate::{error::Result, hooks::env_keys::EnvKey, Plugin};
+use crate::{Plugin, error::Result, hooks::env_keys::EnvKey};
 
 #[derive(Debug, Clone)]
 pub struct BackendExecEnvContext {

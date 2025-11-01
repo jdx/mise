@@ -44,19 +44,19 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<Self> {
         trace!("resolving {} {}", &request, opts);
-        if opts.use_locked_version {
-            if let Some(lt) = request.lockfile_resolve(config)? {
-                let mut tv = Self::new(request.clone(), lt.version);
-                tv.lock_platforms = lt.platforms;
-                return Ok(tv);
-            }
+        if opts.use_locked_version
+            && let Some(lt) = request.lockfile_resolve(config)?
+        {
+            let mut tv = Self::new(request.clone(), lt.version);
+            tv.lock_platforms = lt.platforms;
+            return Ok(tv);
         }
         let backend = request.ba().backend()?;
-        if let Some(plugin) = backend.plugin() {
-            if !plugin.is_installed() {
-                let tv = Self::new(request.clone(), request.version());
-                return Ok(tv);
-            }
+        if let Some(plugin) = backend.plugin()
+            && !plugin.is_installed()
+        {
+            let tv = Self::new(request.clone(), request.version());
+            return Ok(tv);
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
@@ -203,17 +203,17 @@ impl ToolVersion {
 
         let build = |v| Ok(Self::new(request.clone(), v));
 
-        if let Some(plugin) = backend.plugin() {
-            if !plugin.is_installed() {
-                return build(v);
-            }
+        if let Some(plugin) = backend.plugin()
+            && !plugin.is_installed()
+        {
+            return build(v);
         }
 
         if v == "latest" {
-            if !opts.latest_versions {
-                if let Some(v) = backend.latest_installed_version(None)? {
-                    return build(v);
-                }
+            if !opts.latest_versions
+                && let Some(v) = backend.latest_installed_version(None)?
+            {
+                return build(v);
             }
             if let Some(v) = backend.latest_version(config, None).await? {
                 return build(v);
@@ -259,10 +259,10 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<Self> {
         let backend = request.backend()?;
-        if !opts.latest_versions {
-            if let Some(v) = backend.list_installed_versions_matching(prefix).last() {
-                return Ok(Self::new(request, v.to_string()));
-            }
+        if !opts.latest_versions
+            && let Some(v) = backend.list_installed_versions_matching(prefix).last()
+        {
+            return Ok(Self::new(request, v.to_string()));
         }
         let matches = backend.list_versions_matching(config, prefix).await?;
         let v = match matches.last() {

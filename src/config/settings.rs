@@ -79,10 +79,10 @@ static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     let mut s = SettingsPartial::empty();
     s.python.default_packages_file = Some(env::HOME.join(".default-python-packages"));
-    if let Some("alpine" | "nixos") = env::LINUX_DISTRO.as_ref().map(|s| s.as_str()) {
-        if !cfg!(test) {
-            s.all_compile = Some(true);
-        }
+    if let Some("alpine" | "nixos") = env::LINUX_DISTRO.as_ref().map(|s| s.as_str())
+        && !cfg!(test)
+    {
+        s.all_compile = Some(true);
     }
     s
 });
@@ -375,12 +375,12 @@ impl Settings {
 
     pub fn env_files(&self) -> Vec<PathBuf> {
         let mut files = vec![];
-        if let Some(cwd) = &*dirs::CWD {
-            if let Some(env_file) = &self.env_file {
-                let env_file = env_file.to_string_lossy().to_string();
-                for p in FindUp::new(cwd, &[env_file]) {
-                    files.push(p);
-                }
+        if let Some(cwd) = &*dirs::CWD
+            && let Some(env_file) = &self.env_file
+        {
+            let env_file = env_file.to_string_lossy().to_string();
+            for p in FindUp::new(cwd, &[env_file]) {
+                files.push(p);
             }
         }
         files.into_iter().rev().collect()

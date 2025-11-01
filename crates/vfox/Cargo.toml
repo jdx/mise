@@ -1,7 +1,7 @@
 [package]
 name = "vfox"
 version = "2025.9.11"
-edition = "2021"
+edition = "2024"
 license = "MIT"
 description = "Interface to vfox plugins"
 documentation = "https://docs.rs/vfox"
@@ -44,6 +44,7 @@ xx = { version = "2", default-features = false, features = ["archive", "hash"] }
 env_logger = { version = "0.11", optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 tempfile = "3"
+sigstore-verification = "0.1.7"
 
 [dev-dependencies]
 insta = "1"

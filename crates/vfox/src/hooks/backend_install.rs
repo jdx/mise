@@ -1,7 +1,7 @@
-use mlua::{prelude::LuaError, FromLua, IntoLua, Lua, Value};
+use mlua::{FromLua, IntoLua, Lua, Value, prelude::LuaError};
 use std::path::PathBuf;
 
-use crate::{error::Result, Plugin};
+use crate::{Plugin, error::Result};
 
 #[derive(Debug)]
 pub struct BackendInstallContext {

@@ -25,10 +25,10 @@ impl Current {
         let ts = ToolsetBuilder::new().build(&config).await?;
         match &self.plugin {
             Some(ba) => {
-                if let Some(plugin) = ba.backend()?.plugin() {
-                    if !plugin.is_installed() {
-                        bail!("Plugin {ba} is not installed");
-                    }
+                if let Some(plugin) = ba.backend()?.plugin()
+                    && !plugin.is_installed()
+                {
+                    bail!("Plugin {ba} is not installed");
                 }
                 self.one(ts, ba.backend()?.as_ref()).await
             }
@@ -37,11 +37,11 @@ impl Current {
     }
 
     async fn one(&self, ts: Toolset, tool: &dyn Backend) -> Result<()> {
-        if let Some(plugin) = tool.plugin() {
-            if !plugin.is_installed() {
-                warn!("Plugin {} is not installed", tool.id());
-                return Ok(());
-            }
+        if let Some(plugin) = tool.plugin()
+            && !plugin.is_installed()
+        {
+            warn!("Plugin {} is not installed", tool.id());
+            return Ok(());
         }
         match ts
             .list_versions_by_plugin()

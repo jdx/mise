@@ -100,29 +100,29 @@ impl EnvList {
 
 impl MiseToml {
     fn enforce_min_version_fallback(body: &str) -> eyre::Result<()> {
-        if let Ok(val) = toml::from_str::<toml::Value>(body) {
-            if let Some(min_val) = val.get("min_version") {
-                let mut hard_req: Option<versions::Versioning> = None;
-                let mut soft_req: Option<versions::Versioning> = None;
-                match min_val {
-                    toml::Value::String(s) => {
+        if let Ok(val) = toml::from_str::<toml::Value>(body)
+            && let Some(min_val) = val.get("min_version")
+        {
+            let mut hard_req: Option<versions::Versioning> = None;
+            let mut soft_req: Option<versions::Versioning> = None;
+            match min_val {
+                toml::Value::String(s) => {
+                    hard_req = versions::Versioning::new(s);
+                }
+                toml::Value::Table(t) => {
+                    if let Some(toml::Value::String(s)) = t.get("hard") {
                         hard_req = versions::Versioning::new(s);
                     }
-                    toml::Value::Table(t) => {
-                        if let Some(toml::Value::String(s)) = t.get("hard") {
-                            hard_req = versions::Versioning::new(s);
-                        }
-                        if let Some(toml::Value::String(s)) = t.get("soft") {
-                            soft_req = versions::Versioning::new(s);
-                        }
+                    if let Some(toml::Value::String(s)) = t.get("soft") {
+                        soft_req = versions::Versioning::new(s);
                     }
-                    _ => {}
                 }
-                if let Some(spec) =
-                    crate::config::config_file::min_version::MinVersionSpec::new(hard_req, soft_req)
-                {
-                    crate::config::Config::enforce_min_version_spec(&spec)?;
-                }
+                _ => {}
+            }
+            if let Some(spec) =
+                crate::config::config_file::min_version::MinVersionSpec::new(hard_req, soft_req)
+            {
+                crate::config::Config::enforce_min_version_spec(&spec)?;
             }
         }
         Ok(())
@@ -434,12 +434,12 @@ impl ConfigFile for MiseToml {
         tools.shift_remove(fa);
         let mut doc = self.doc_mut()?;
         let doc = doc.get_mut().unwrap();
-        if let Some(tools) = doc.get_mut("tools") {
-            if let Some(tools) = tools.as_table_like_mut() {
-                tools.remove(&fa.to_string());
-                if tools.is_empty() {
-                    doc.as_table_mut().remove("tools");
-                }
+        if let Some(tools) = doc.get_mut("tools")
+            && let Some(tools) = tools.as_table_like_mut()
+        {
+            tools.remove(&fa.to_string());
+            if tools.is_empty() {
+                doc.as_table_mut().remove("tools");
             }
         }
         Ok(())
@@ -454,11 +454,11 @@ impl ConfigFile for MiseToml {
             if opts.os.is_some() || !opts.install_env.is_empty() {
                 return false;
             }
-            if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba()) {
-                if reg_ba.opts.as_ref().is_some_and(|o| o == opts) {
-                    // in this case the options specified are the same as in the registry so output no options and rely on the defaults
-                    return true;
-                }
+            if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba())
+                && reg_ba.opts.as_ref().is_some_and(|o| o == opts)
+            {
+                // in this case the options specified are the same as in the registry so output no options and rely on the defaults
+                return true;
             }
             opts.is_empty()
         };
@@ -559,18 +559,18 @@ impl ConfigFile for MiseToml {
         let mut trs = ToolRequestSet::new();
         let tools = self.tools.lock().unwrap();
         let mut context = self.context.clone();
-        if context.get("vars").is_none() {
-            if let Some(config) = Config::maybe_get() {
-                if let Some(vars_results) = config.vars_results_cached() {
-                    let vars = vars_results
-                        .vars
-                        .iter()
-                        .map(|(k, (v, _))| (k.clone(), v.clone()))
-                        .collect::<IndexMap<_, _>>();
-                    context.insert("vars", &vars);
-                } else if !config.vars.is_empty() {
-                    context.insert("vars", &config.vars);
-                }
+        if context.get("vars").is_none()
+            && let Some(config) = Config::maybe_get()
+        {
+            if let Some(vars_results) = config.vars_results_cached() {
+                let vars = vars_results
+                    .vars
+                    .iter()
+                    .map(|(k, (v, _))| (k.clone(), v.clone()))
+                    .collect::<IndexMap<_, _>>();
+                context.insert("vars", &vars);
+            } else if !config.vars.is_empty() {
+                context.insert("vars", &config.vars);
             }
         }
         for (ba, tvp) in tools.iter() {
@@ -694,10 +694,10 @@ impl Debug for MiseToml {
         if !self.env_file.is_empty() {
             d.field("env_file", &self.env_file);
         }
-        if let Ok(env) = self.env_entries() {
-            if !env.is_empty() {
-                d.field("env", &env);
-            }
+        if let Ok(env) = self.env_entries()
+            && !env.is_empty()
+        {
+            d.field("env", &env);
         }
         if !self.alias.is_empty() {
             d.field("alias", &self.alias);
@@ -1644,10 +1644,10 @@ impl<'de> de::Deserialize<'de> for Alias {
 fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
     let mut last = None;
     for k in tools.keys() {
-        if let Some(last) = last {
-            if k < last {
-                return false;
-            }
+        if let Some(last) = last
+            && k < last
+        {
+            return false;
         }
         last = Some(k);
     }

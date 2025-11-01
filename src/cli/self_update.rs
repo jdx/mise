@@ -33,10 +33,10 @@ fn read_instructions_file(path: &PathBuf) -> Option<String> {
 }
 
 pub fn upgrade_instructions_text() -> Option<String> {
-    if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS {
-        if let Some(msg) = read_instructions_file(path) {
-            return Some(msg);
-        }
+    if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS
+        && let Some(msg) = read_instructions_file(path)
+    {
+        return Some(msg);
     }
     None
 }

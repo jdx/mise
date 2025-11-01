@@ -37,21 +37,21 @@ where
                     return None;
                 }
             });
-            if let Some(age_key) = &Settings::get().sops.age_key {
-                if !age_key.is_empty() {
-                    return Some(age_key.clone());
-                }
+            if let Some(age_key) = &Settings::get().sops.age_key
+                && !age_key.is_empty()
+            {
+                return Some(age_key.clone());
             }
-            if p.exists() {
-                if let Ok(raw) = file::read_to_string(p) {
-                    let key = raw
-                        .trim()
-                        .lines()
-                        .filter(|l| !l.starts_with('#'))
-                        .collect::<String>();
-                    if !key.trim().is_empty() {
-                        return Some(key);
-                    }
+            if p.exists()
+                && let Ok(raw) = file::read_to_string(p)
+            {
+                let key = raw
+                    .trim()
+                    .lines()
+                    .filter(|l| !l.starts_with('#'))
+                    .collect::<String>();
+                if !key.trim().is_empty() {
+                    return Some(key);
                 }
             }
             None

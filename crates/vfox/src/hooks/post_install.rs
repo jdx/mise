@@ -1,6 +1,6 @@
+use crate::Plugin;
 use crate::error::Result;
 use crate::sdk_info::SdkInfo;
-use crate::Plugin;
 use mlua::{IntoLua, Lua, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;

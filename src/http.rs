@@ -204,12 +204,12 @@ impl Client {
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
         let mut resp = self.get_async_with_headers(url.clone(), headers).await?;
-        if let Some(length) = resp.content_length() {
-            if let Some(pr) = pr {
-                // Reset progress on each attempt
-                pr.set_length(length);
-                pr.set_position(0);
-            }
+        if let Some(length) = resp.content_length()
+            && let Some(pr) = pr
+        {
+            // Reset progress on each attempt
+            pr.set_length(length);
+            pr.set_position(0);
         }
 
         let parent = path.parent().unwrap();
@@ -324,17 +324,17 @@ pub fn error_code(e: &Report) -> Option<u16> {
 
 fn github_headers(url: &Url) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    if url.host_str() == Some("api.github.com") {
-        if let Some(token) = &*env::GITHUB_TOKEN {
-            headers.insert(
-                "authorization",
-                HeaderValue::from_str(format!("token {token}").as_str()).unwrap(),
-            );
-            headers.insert(
-                "x-github-api-version",
-                HeaderValue::from_static("2022-11-28"),
-            );
-        }
+    if url.host_str() == Some("api.github.com")
+        && let Some(token) = &*env::GITHUB_TOKEN
+    {
+        headers.insert(
+            "authorization",
+            HeaderValue::from_str(format!("token {token}").as_str()).unwrap(),
+        );
+        headers.insert(
+            "x-github-api-version",
+            HeaderValue::from_static("2022-11-28"),
+        );
     }
     headers
 }
@@ -352,17 +352,17 @@ pub fn apply_url_replacements(url: &mut Url) {
                 if let Ok(regex) = Regex::new(pattern_without_prefix) {
                     let new_url_string = regex.replace(&url_string, replacement.as_str());
                     // Only proceed if the URL actually changed
-                    if new_url_string != url_string {
-                        if let Ok(new_url) = new_url_string.parse() {
-                            *url = new_url;
-                            trace!(
-                                "Replaced URL using regex '{}': {} -> {}",
-                                pattern_without_prefix,
-                                url_string,
-                                url.as_str()
-                            );
-                            return; // Apply only the first matching replacement
-                        }
+                    if new_url_string != url_string
+                        && let Ok(new_url) = new_url_string.parse()
+                    {
+                        *url = new_url;
+                        trace!(
+                            "Replaced URL using regex '{}': {} -> {}",
+                            pattern_without_prefix,
+                            url_string,
+                            url.as_str()
+                        );
+                        return; // Apply only the first matching replacement
                     }
                 } else {
                     warn!(
@@ -375,17 +375,17 @@ pub fn apply_url_replacements(url: &mut Url) {
                 if url_string.contains(pattern) {
                     let new_url_string = url_string.replace(pattern, replacement);
                     // Only proceed if the URL actually changed
-                    if new_url_string != url_string {
-                        if let Ok(new_url) = new_url_string.parse() {
-                            *url = new_url;
-                            trace!(
-                                "Replaced URL using string replacement '{}': {} -> {}",
-                                pattern,
-                                url_string,
-                                url.as_str()
-                            );
-                            return; // Apply only the first matching replacement
-                        }
+                    if new_url_string != url_string
+                        && let Ok(new_url) = new_url_string.parse()
+                    {
+                        *url = new_url;
+                        trace!(
+                            "Replaced URL using string replacement '{}': {} -> {}",
+                            pattern,
+                            url_string,
+                            url.as_str()
+                        );
+                        return; // Apply only the first matching replacement
                     }
                 }
             }

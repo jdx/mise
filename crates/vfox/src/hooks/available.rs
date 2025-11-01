@@ -1,8 +1,8 @@
 use mlua::prelude::LuaError;
 use mlua::{FromLua, Lua, Value};
 
-use crate::error::Result;
 use crate::Plugin;
+use crate::error::Result;
 
 impl Plugin {
     #[allow(clippy::needless_return)] // seems to be a clippy bug

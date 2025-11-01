@@ -1,5 +1,5 @@
-use crate::{error::Result, Plugin};
-use mlua::{prelude::LuaError, FromLua, IntoLua, Lua, Value};
+use crate::{Plugin, error::Result};
+use mlua::{FromLua, IntoLua, Lua, Value, prelude::LuaError};
 
 #[derive(Debug, Clone)]
 pub struct BackendListVersionsContext {

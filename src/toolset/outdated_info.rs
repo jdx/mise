@@ -87,41 +87,41 @@ impl OutdatedInfo {
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or_default();
             let new = oi.latest.strip_prefix(&prefix).unwrap_or_default();
-            if let Some(bumped_version) = check_semver_bump(old, new) {
-                if bumped_version != oi.tool_version.request.version() {
-                    oi.bump = match oi.tool_request.clone() {
-                        ToolRequest::Version {
-                            version: _version,
+            if let Some(bumped_version) = check_semver_bump(old, new)
+                && bumped_version != oi.tool_version.request.version()
+            {
+                oi.bump = match oi.tool_request.clone() {
+                    ToolRequest::Version {
+                        version: _version,
+                        backend,
+                        options,
+                        source,
+                    } => {
+                        oi.tool_request = ToolRequest::Version {
                             backend,
                             options,
                             source,
-                        } => {
-                            oi.tool_request = ToolRequest::Version {
-                                backend,
-                                options,
-                                source,
-                                version: format!("{prefix}{bumped_version}"),
-                            };
-                            Some(oi.tool_request.version())
-                        }
-                        ToolRequest::Prefix {
-                            prefix: _prefix,
+                            version: format!("{prefix}{bumped_version}"),
+                        };
+                        Some(oi.tool_request.version())
+                    }
+                    ToolRequest::Prefix {
+                        prefix: _prefix,
+                        backend,
+                        options,
+                        source,
+                    } => {
+                        oi.tool_request = ToolRequest::Prefix {
                             backend,
                             options,
                             source,
-                        } => {
-                            oi.tool_request = ToolRequest::Prefix {
-                                backend,
-                                options,
-                                source,
-                                prefix: format!("{prefix}{bumped_version}"),
-                            };
-                            Some(oi.tool_request.version())
-                        }
-                        _ => {
-                            warn!("upgrading non-version tool requests");
-                            None
-                        }
+                            prefix: format!("{prefix}{bumped_version}"),
+                        };
+                        Some(oi.tool_request.version())
+                    }
+                    _ => {
+                        warn!("upgrading non-version tool requests");
+                        None
                     }
                 }
             }

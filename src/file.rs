@@ -796,10 +796,10 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     create_dir_all(dest).wrap_err_with(err)?;
 
     // Set progress length once at the beginning with archive size
-    if let Some(pr) = &opts.pr {
-        if let Ok(metadata) = archive.metadata() {
-            pr.set_length(metadata.len());
-        }
+    if let Some(pr) = &opts.pr
+        && let Ok(metadata) = archive.metadata()
+    {
+        pr.set_length(metadata.len());
     }
 
     // Try to extract using the tar crate, detecting sparse files during extraction
@@ -1010,12 +1010,12 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
 }
 
 pub fn desymlink_path(p: &Path) -> PathBuf {
-    if p.is_symlink() {
-        if let Ok(target) = fs::read_link(p) {
-            return target
-                .canonicalize()
-                .unwrap_or_else(|_| target.to_path_buf());
-        }
+    if p.is_symlink()
+        && let Ok(target) = fs::read_link(p)
+    {
+        return target
+            .canonicalize()
+            .unwrap_or_else(|_| target.to_path_buf());
     }
     p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
 }
@@ -1068,16 +1068,16 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
 
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
-        if let Some(path) = file.enclosed_name() {
-            if let Some(first_component) = path.components().next() {
-                let name = first_component.as_os_str().to_string_lossy().to_string();
+        if let Some(path) = file.enclosed_name()
+            && let Some(first_component) = path.components().next()
+        {
+            let name = first_component.as_os_str().to_string_lossy().to_string();
 
-                // Check if this entry indicates the component is a directory
-                let is_directory = file.is_dir() || path.components().count() > 1; // If there are nested components, it's a directory
+            // Check if this entry indicates the component is a directory
+            let is_directory = file.is_dir() || path.components().count() > 1; // If there are nested components, it's a directory
 
-                let existing = top_level_components.entry(name.clone()).or_insert(false);
-                *existing = *existing || is_directory;
-            }
+            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            *existing = *existing || is_directory;
         }
     }
 

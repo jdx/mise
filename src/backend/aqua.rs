@@ -99,11 +99,11 @@ impl Backend for AquaBackend {
         let pkg = AQUA_REGISTRY
             .package_with_version(&self.id, &versions)
             .await?;
-        if let Some(prefix) = &pkg.version_prefix {
-            if !v.starts_with(prefix) {
-                v = format!("{prefix}{v}");
-                v_prefixed = v_prefixed.map(|v| format!("{prefix}{v}"));
-            }
+        if let Some(prefix) = &pkg.version_prefix
+            && !v.starts_with(prefix)
+        {
+            v = format!("{prefix}{v}");
+            v_prefixed = v_prefixed.map(|v| format!("{prefix}{v}"));
         }
         validate(&pkg)?;
 
@@ -397,76 +397,76 @@ impl AquaBackend {
         let download_path = tv.download_path();
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        if platform_info.checksum.is_none() {
-            if let Some(checksum) = &pkg.checksum {
-                if checksum.enabled() {
-                    let url = match checksum._type() {
-                        AquaChecksumType::GithubRelease => {
-                            let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
-                            self.github_release_asset(pkg, v, asset_strs).await?.0
-                        }
-                        AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
-                    };
-                    let checksum_path = download_path.join(format!("{filename}.checksum"));
-                    HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
-                        .await?;
-                    self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
-                        .await?;
-                    let mut checksum_file = file::read_to_string(&checksum_path)?;
-                    if checksum.file_format() == "regexp" {
-                        let pattern = checksum.pattern();
-                        if let Some(file) = &pattern.file {
-                            let re = regex::Regex::new(file.as_str())?;
-                            if let Some(line) = checksum_file.lines().find(|l| {
-                                re.captures(l).is_some_and(|c| c[1].to_string() == filename)
-                            }) {
-                                checksum_file = line.to_string();
-                            } else {
-                                debug!(
-                                    "no line found matching {} in {} for {}",
-                                    file, checksum_file, filename
-                                );
-                            }
-                        }
-                        let re = regex::Regex::new(pattern.checksum.as_str())?;
-                        if let Some(caps) = re.captures(checksum_file.as_str()) {
-                            checksum_file = caps[1].to_string();
-                        } else {
-                            debug!(
-                                "no checksum found matching {} in {}",
-                                pattern.checksum, checksum_file
-                            );
-                        }
-                    }
-                    let checksum_str = checksum_file
+        if platform_info.checksum.is_none()
+            && let Some(checksum) = &pkg.checksum
+            && checksum.enabled()
+        {
+            let url = match checksum._type() {
+                AquaChecksumType::GithubRelease => {
+                    let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
+                    self.github_release_asset(pkg, v, asset_strs).await?.0
+                }
+                AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
+            };
+            let checksum_path = download_path.join(format!("{filename}.checksum"));
+            HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
+                .await?;
+            self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
+                .await?;
+            let mut checksum_file = file::read_to_string(&checksum_path)?;
+            if checksum.file_format() == "regexp" {
+                let pattern = checksum.pattern();
+                if let Some(file) = &pattern.file {
+                    let re = regex::Regex::new(file.as_str())?;
+                    if let Some(line) = checksum_file
                         .lines()
-                        .filter_map(|l| {
-                            let split = l.split_whitespace().collect_vec();
-                            if split.len() == 2 {
-                                Some((
-                                    split[0].to_string(),
-                                    split[1]
-                                        .rsplit_once('/')
-                                        .map(|(_, f)| f)
-                                        .unwrap_or(split[1])
-                                        .trim_matches('*')
-                                        .to_string(),
-                                ))
-                            } else {
-                                None
-                            }
-                        })
-                        .find(|(_, f)| f == filename)
-                        .map(|(c, _)| c)
-                        .unwrap_or(checksum_file);
-                    let checksum_str = checksum_str.split_whitespace().next().unwrap();
-                    let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
-                    // Now set the checksum after all borrows are done
-                    let platform_key = self.get_platform_key();
-                    let platform_info = tv.lock_platforms.get_mut(&platform_key).unwrap();
-                    platform_info.checksum = Some(checksum_val);
+                        .find(|l| re.captures(l).is_some_and(|c| c[1].to_string() == filename))
+                    {
+                        checksum_file = line.to_string();
+                    } else {
+                        debug!(
+                            "no line found matching {} in {} for {}",
+                            file, checksum_file, filename
+                        );
+                    }
+                }
+                let re = regex::Regex::new(pattern.checksum.as_str())?;
+                if let Some(caps) = re.captures(checksum_file.as_str()) {
+                    checksum_file = caps[1].to_string();
+                } else {
+                    debug!(
+                        "no checksum found matching {} in {}",
+                        pattern.checksum, checksum_file
+                    );
                 }
             }
+            let checksum_str = checksum_file
+                .lines()
+                .filter_map(|l| {
+                    let split = l.split_whitespace().collect_vec();
+                    if split.len() == 2 {
+                        Some((
+                            split[0].to_string(),
+                            split[1]
+                                .rsplit_once('/')
+                                .map(|(_, f)| f)
+                                .unwrap_or(split[1])
+                                .trim_matches('*')
+                                .to_string(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .find(|(_, f)| f == filename)
+                .map(|(c, _)| c)
+                .unwrap_or(checksum_file);
+            let checksum_str = checksum_str.split_whitespace().next().unwrap();
+            let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
+            // Now set the checksum after all borrows are done
+            let platform_key = self.get_platform_key();
+            let platform_info = tv.lock_platforms.get_mut(&platform_key).unwrap();
+            platform_info.checksum = Some(checksum_val);
         }
         let tarball_path = tv.download_path().join(filename);
         self.verify_checksum(ctx, tv, &tarball_path)?;
