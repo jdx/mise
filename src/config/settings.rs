@@ -284,6 +284,9 @@ impl Settings {
         if cli.global_output_flags.quiet {
             s.quiet = Some(true);
         }
+        if cli.global_output_flags.silent {
+            s.silent = Some(true);
+        }
         if cli.global_output_flags.trace {
             s.log_level = Some("trace".to_string());
         }
