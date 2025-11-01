@@ -252,7 +252,16 @@ impl Run {
     async fn parallelize_tasks(mut self, mut config: Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         time!("parallelize_tasks start");
 
-        // Initialize OutputHandler with CLI args
+        ctrlc::exit_on_ctrl_c(false);
+
+        let mut tasks = resolve_depends(&config, tasks).await?;
+        self.fetch_tasks(&mut tasks).await?;
+
+        let tasks = Deps::new(&config, tasks).await?;
+        let num_tasks = tasks.all().count();
+        self.is_linear = tasks.is_linear();
+
+        // Initialize OutputHandler with CLI args AFTER is_linear is determined
         self.output_handler = Some(OutputHandler::new(
             self.prefix,
             self.interleave,
@@ -263,8 +272,6 @@ impl Run {
             self.is_linear,
             self.jobs,
         ));
-
-        ctrlc::exit_on_ctrl_c(false);
 
         if self.output(None) == TaskOutput::Timed {
             let timed_outputs = self.output_handler.as_ref().unwrap().timed_outputs.clone();
@@ -290,17 +297,11 @@ impl Run {
             });
         }
 
-        let mut tasks = resolve_depends(&config, tasks).await?;
-        self.fetch_tasks(&mut tasks).await?;
-
-        let tasks = Deps::new(&config, tasks).await?;
         for task in tasks.all() {
             self.validate_task(task)?;
             self.output_handler.as_mut().unwrap().init_task(task);
         }
 
-        let num_tasks = tasks.all().count();
-        self.is_linear = tasks.is_linear();
         self.output = Some(self.output(None));
         let this = Arc::new(self);
 
