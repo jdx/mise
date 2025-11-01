@@ -83,6 +83,10 @@ impl Silent {
     pub fn suppresses_stderr(&self) -> bool {
         matches!(self, Silent::Bool(true) | Silent::Stderr)
     }
+
+    pub fn suppresses_both(&self) -> bool {
+        matches!(self, Silent::Bool(true))
+    }
 }
 
 impl Serialize for Silent {

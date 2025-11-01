@@ -1624,14 +1624,15 @@ impl Run {
                 }
             }
             TaskOutput::Replacing => {
-                // Replacing mode shows a progress indicator, just suppress the streams
+                // Replacing mode shows a progress indicator unless both streams are suppressed
                 if task.silent.suppresses_stdout() {
                     cmd = cmd.stdout(Stdio::null());
                 }
                 if task.silent.suppresses_stderr() {
                     cmd = cmd.stderr(Stdio::null());
                 }
-                if !task.silent.is_silent() {
+                // Show progress indicator except when both streams are fully suppressed
+                if !task.silent.suppresses_both() {
                     let pr = self.task_prs.get(task).unwrap().clone();
                     cmd = cmd.with_pr_arc(pr);
                 }
@@ -1703,9 +1704,10 @@ impl Run {
     fn output(&self, task: Option<&Task>) -> TaskOutput {
         // Check for full silent mode (both streams)
         if let Some(task_ref) = task
-            && matches!(task_ref.silent, crate::task::Silent::Bool(true)) {
-                return TaskOutput::Silent;
-            }
+            && matches!(task_ref.silent, crate::task::Silent::Bool(true))
+        {
+            return TaskOutput::Silent;
+        }
 
         // Check global output settings
         if let Some(o) = self.output {
