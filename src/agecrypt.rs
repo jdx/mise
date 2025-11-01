@@ -472,14 +472,13 @@ mod tests {
         crate::config::Settings::reset(None);
 
         if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
-            let result =
-                decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
-                    key: "TEST_VAR".to_string(),
-                    value,
-                    format,
-                    options: Default::default(),
-                })
-                .await?;
+            let result = decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
+                key: "TEST_VAR".to_string(),
+                value,
+                format,
+                options: Default::default(),
+            })
+            .await?;
 
             // In non-strict mode, failure yields empty string
             assert_eq!(result, "");
@@ -510,14 +509,13 @@ mod tests {
         crate::config::Settings::reset(None);
 
         if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
-            let result =
-                decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
-                    key: "TEST_VAR".to_string(),
-                    value,
-                    format,
-                    options: Default::default(),
-                })
-                .await;
+            let result = decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
+                key: "TEST_VAR".to_string(),
+                value,
+                format,
+                options: Default::default(),
+            })
+            .await;
 
             assert!(result.is_err());
         } else {
@@ -548,14 +546,13 @@ mod tests {
         crate::config::Settings::reset(None);
 
         if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
-            let result =
-                decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
-                    key: "TEST_VAR".to_string(),
-                    value,
-                    format,
-                    options: Default::default(),
-                })
-                .await?;
+            let result = decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
+                key: "TEST_VAR".to_string(),
+                value,
+                format,
+                options: Default::default(),
+            })
+            .await?;
 
             // In non-strict mode, a decryption failure yields empty string
             assert_eq!(result, "");
