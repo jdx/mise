@@ -66,7 +66,7 @@ pub async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
                 Err(e)
             } else {
                 debug!(
-                    "[experimental] Age decryption failed but continuing in non-strict mode: {}",
+                    "Age decryption failed but continuing in non-strict mode: {}",
                     e
                 );
                 Ok(String::new())
