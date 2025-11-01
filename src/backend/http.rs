@@ -177,7 +177,7 @@ impl HttpBackend {
                 let bin_dir = cache_path.join(&bin_path);
                 (bin_dir, std::ffi::OsString::from(decompressed_name))
             } else if let Some(bin_name) =
-                lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+                lookup_platform_key(&opts, "bin").or_else(|| opts.get("bin").cloned())
             {
                 // If bin is specified, rename the file to this name
                 (
@@ -216,7 +216,7 @@ impl HttpBackend {
                 let bin_dir = cache_path.join(&bin_path);
                 (bin_dir, file_path.file_name().unwrap().to_os_string())
             } else if let Some(bin_name) =
-                lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+                lookup_platform_key(&opts, "bin").or_else(|| opts.get("bin").cloned())
             {
                 // If bin is specified, rename the file to this name
                 (
