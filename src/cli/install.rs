@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::backend::backend_type::BackendType;
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::hooks::Hooks;
@@ -161,6 +162,18 @@ impl Install {
     }
 
     async fn install_missing_runtimes(&self, mut config: Arc<Config>) -> eyre::Result<()> {
+        // Check for unknown/non-existent tools in config before attempting install
+        for cf in config.config_files.values() {
+            let tool_request_set = cf.to_tool_request_set()?;
+            for ba in tool_request_set.list_tools() {
+                let backend_type = ba.backend_type();
+                if backend_type == BackendType::Unknown {
+                    // Try to get the backend, which will return a proper error message
+                    ba.backend()?;
+                }
+            }
+        }
+
         let trs = measure!("get_tool_request_set", {
             config.get_tool_request_set().await?
         });
