@@ -19,7 +19,6 @@ use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::task_helpers::{canonicalize_path, task_needs_permit};
 use crate::task::task_list::{get_task_lists, resolve_depends, split_task_spec};
 use crate::task::task_output::{TaskOutput, trunc};
-use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
 use crate::task::{Deps, GetMatchingExt, Task, TaskLoadContext};
 use crate::toolset::{InstallOptions, ToolSource, Toolset, ToolsetBuilder};
