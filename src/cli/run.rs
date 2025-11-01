@@ -1572,182 +1572,110 @@ impl Run {
         cmd.with_pass_signals();
         match output {
             TaskOutput::Prefix => {
-                cmd = cmd.with_on_stdout(|line| {
-                    if console::colors_enabled() {
-                        prefix_println!(prefix, "{line}\x1b[0m");
-                    } else {
-                        prefix_println!(prefix, "{line}");
-                    }
-                });
-                cmd = cmd.with_on_stderr(|line| {
-                    if console::colors_enabled() {
-                        self.eprint(task, prefix, &format!("{line}\x1b[0m"));
-                    } else {
-                        self.eprint(task, prefix, &line);
-                    }
-                });
+                if !task.silent.suppresses_stdout() {
+                    cmd = cmd.with_on_stdout(|line| {
+                        if console::colors_enabled() {
+                            prefix_println!(prefix, "{line}\x1b[0m");
+                        } else {
+                            prefix_println!(prefix, "{line}");
+                        }
+                    });
+                } else {
+                    cmd = cmd.stdout(Stdio::null());
+                }
+                if !task.silent.suppresses_stderr() {
+                    cmd = cmd.with_on_stderr(|line| {
+                        if console::colors_enabled() {
+                            self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                        } else {
+                            self.eprint(task, prefix, &line);
+                        }
+                    });
+                } else {
+                    cmd = cmd.stderr(Stdio::null());
+                }
             }
             TaskOutput::KeepOrder => {
-                cmd = cmd.with_on_stdout(|line| {
-                    let mut map = self.keep_order_output.lock().unwrap();
-                    if !map.contains_key(task) {
-                        map.insert(task.clone(), Default::default());
-                    }
-                    if let Some(entry) = map.get_mut(task) {
-                        entry.0.push((prefix.to_string(), line));
-                    }
-                });
-                cmd = cmd.with_on_stderr(|line| {
-                    let mut map = self.keep_order_output.lock().unwrap();
-                    if !map.contains_key(task) {
-                        map.insert(task.clone(), Default::default());
-                    }
-                    if let Some(entry) = map.get_mut(task) {
-                        entry.1.push((prefix.to_string(), line));
-                    }
-                });
+                if !task.silent.suppresses_stdout() {
+                    cmd = cmd.with_on_stdout(|line| {
+                        let mut map = self.keep_order_output.lock().unwrap();
+                        if !map.contains_key(task) {
+                            map.insert(task.clone(), Default::default());
+                        }
+                        if let Some(entry) = map.get_mut(task) {
+                            entry.0.push((prefix.to_string(), line));
+                        }
+                    });
+                } else {
+                    cmd = cmd.stdout(Stdio::null());
+                }
+                if !task.silent.suppresses_stderr() {
+                    cmd = cmd.with_on_stderr(|line| {
+                        let mut map = self.keep_order_output.lock().unwrap();
+                        if !map.contains_key(task) {
+                            map.insert(task.clone(), Default::default());
+                        }
+                        if let Some(entry) = map.get_mut(task) {
+                            entry.1.push((prefix.to_string(), line));
+                        }
+                    });
+                } else {
+                    cmd = cmd.stderr(Stdio::null());
+                }
             }
             TaskOutput::Replacing => {
-                let pr = self.task_prs.get(task).unwrap().clone();
-                cmd = cmd.with_pr_arc(pr);
+                // Replacing mode shows a progress indicator, just suppress the streams
+                if task.silent.suppresses_stdout() {
+                    cmd = cmd.stdout(Stdio::null());
+                }
+                if task.silent.suppresses_stderr() {
+                    cmd = cmd.stderr(Stdio::null());
+                }
+                if !task.silent.is_silent() {
+                    let pr = self.task_prs.get(task).unwrap().clone();
+                    cmd = cmd.with_pr_arc(pr);
+                }
             }
             TaskOutput::Timed => {
-                let timed_outputs = self.timed_outputs.clone();
-                cmd = cmd.with_on_stdout(move |line| {
-                    timed_outputs
-                        .lock()
-                        .unwrap()
-                        .insert(prefix.to_string(), (SystemTime::now(), line));
-                });
-                cmd = cmd.with_on_stderr(|line| {
-                    if console::colors_enabled() {
-                        self.eprint(task, prefix, &format!("{line}\x1b[0m"));
-                    } else {
-                        self.eprint(task, prefix, &line);
-                    }
-                });
+                if !task.silent.suppresses_stdout() {
+                    let timed_outputs = self.timed_outputs.clone();
+                    cmd = cmd.with_on_stdout(move |line| {
+                        timed_outputs
+                            .lock()
+                            .unwrap()
+                            .insert(prefix.to_string(), (SystemTime::now(), line));
+                    });
+                } else {
+                    cmd = cmd.stdout(Stdio::null());
+                }
+                if !task.silent.suppresses_stderr() {
+                    cmd = cmd.with_on_stderr(|line| {
+                        if console::colors_enabled() {
+                            self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                        } else {
+                            self.eprint(task, prefix, &line);
+                        }
+                    });
+                } else {
+                    cmd = cmd.stderr(Stdio::null());
+                }
             }
             TaskOutput::Silent => {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
-            TaskOutput::SilentStdout => {
-                // Suppress stdout but route stderr through the appropriate output mode
-                cmd = cmd.stdout(Stdio::null());
-
-                // Determine what the base output mode would be (without task-specific silent)
-                let base_output = if self.prefix {
-                    TaskOutput::Prefix
-                } else if self.interleave {
-                    TaskOutput::Interleave
-                } else if let Some(output) = Settings::get().task_output {
-                    output
-                } else if self.raw(Some(task)) || self.jobs() == 1 || self.is_linear {
-                    TaskOutput::Interleave
-                } else {
-                    TaskOutput::Prefix
-                };
-
-                // Apply stderr handlers based on the base output mode
-                match base_output {
-                    TaskOutput::Prefix => {
-                        cmd = cmd.with_on_stderr(|line| {
-                            if console::colors_enabled() {
-                                self.eprint(task, prefix, &format!("{line}\x1b[0m"));
-                            } else {
-                                self.eprint(task, prefix, &line);
-                            }
-                        });
-                    }
-                    TaskOutput::KeepOrder => {
-                        cmd = cmd.with_on_stderr(|line| {
-                            let mut map = self.keep_order_output.lock().unwrap();
-                            if !map.contains_key(task) {
-                                map.insert(task.clone(), Default::default());
-                            }
-                            if let Some(entry) = map.get_mut(task) {
-                                entry.1.push((prefix.to_string(), line));
-                            }
-                        });
-                    }
-                    TaskOutput::Timed => {
-                        cmd = cmd.with_on_stderr(|line| {
-                            if console::colors_enabled() {
-                                self.eprint(task, prefix, &format!("{line}\x1b[0m"));
-                            } else {
-                                self.eprint(task, prefix, &line);
-                            }
-                        });
-                    }
-                    TaskOutput::Quiet | TaskOutput::Interleave => {
-                        if raw || redactions.is_empty() {
-                            cmd = cmd.stdin(Stdio::inherit()).stderr(Stdio::inherit());
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            TaskOutput::SilentStderr => {
-                // Suppress stderr but route stdout through the appropriate output mode
-                cmd = cmd.stderr(Stdio::null());
-
-                // Determine what the base output mode would be (without task-specific silent)
-                let base_output = if self.prefix {
-                    TaskOutput::Prefix
-                } else if self.interleave {
-                    TaskOutput::Interleave
-                } else if let Some(output) = Settings::get().task_output {
-                    output
-                } else if self.raw(Some(task)) || self.jobs() == 1 || self.is_linear {
-                    TaskOutput::Interleave
-                } else {
-                    TaskOutput::Prefix
-                };
-
-                // Apply stdout handlers based on the base output mode
-                match base_output {
-                    TaskOutput::Prefix => {
-                        cmd = cmd.with_on_stdout(|line| {
-                            if console::colors_enabled() {
-                                prefix_println!(prefix, "{line}\x1b[0m");
-                            } else {
-                                prefix_println!(prefix, "{line}");
-                            }
-                        });
-                    }
-                    TaskOutput::KeepOrder => {
-                        cmd = cmd.with_on_stdout(|line| {
-                            let mut map = self.keep_order_output.lock().unwrap();
-                            if !map.contains_key(task) {
-                                map.insert(task.clone(), Default::default());
-                            }
-                            if let Some(entry) = map.get_mut(task) {
-                                entry.0.push((prefix.to_string(), line));
-                            }
-                        });
-                    }
-                    TaskOutput::Timed => {
-                        let timed_outputs = self.timed_outputs.clone();
-                        cmd = cmd.with_on_stdout(move |line| {
-                            timed_outputs
-                                .lock()
-                                .unwrap()
-                                .insert(prefix.to_string(), (SystemTime::now(), line));
-                        });
-                    }
-                    TaskOutput::Quiet | TaskOutput::Interleave => {
-                        if raw || redactions.is_empty() {
-                            cmd = cmd.stdin(Stdio::inherit()).stdout(Stdio::inherit());
-                        }
-                    }
-                    _ => {}
-                }
-            }
             TaskOutput::Quiet | TaskOutput::Interleave => {
                 if raw || redactions.is_empty() {
-                    cmd = cmd
-                        .stdin(Stdio::inherit())
-                        .stdout(Stdio::inherit())
-                        .stderr(Stdio::inherit())
+                    cmd = cmd.stdin(Stdio::inherit());
+                    if !task.silent.suppresses_stdout() {
+                        cmd = cmd.stdout(Stdio::inherit());
+                    } else {
+                        cmd = cmd.stdout(Stdio::null());
+                    }
+                    if !task.silent.suppresses_stderr() {
+                        cmd = cmd.stderr(Stdio::inherit());
+                    } else {
+                        cmd = cmd.stderr(Stdio::null());
+                    }
                 }
             }
         }
@@ -1773,18 +1701,15 @@ impl Run {
     }
 
     fn output(&self, task: Option<&Task>) -> TaskOutput {
-        // Check task-specific silent modes first (before self.output)
+        // Check for full silent mode (both streams)
         if let Some(task_ref) = task {
             use crate::task::Silent;
-            match &task_ref.silent {
-                Silent::Stdout => return TaskOutput::SilentStdout,
-                Silent::Stderr => return TaskOutput::SilentStderr,
-                Silent::Bool(true) => return TaskOutput::Silent,
-                Silent::Off | Silent::Bool(false) => {}
+            if matches!(task_ref.silent, Silent::Bool(true)) {
+                return TaskOutput::Silent;
             }
         }
 
-        // Now check global output settings
+        // Check global output settings
         if let Some(o) = self.output {
             return o;
         } else if let Some(task_ref) = task {
@@ -2243,8 +2168,6 @@ pub enum TaskOutput {
     Timed,
     Quiet,
     Silent,
-    SilentStdout,
-    SilentStderr,
 }
 
 fn trunc(prefix: &str, msg: &str) -> String {
