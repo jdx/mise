@@ -335,9 +335,10 @@ pub trait Backend: Debug + Send + Sync {
             ToolRequest::System { .. } => true,
             _ => {
                 if let Some(install_path) = tv.request.install_path(config)
-                    && check_path(&install_path, true) {
-                        return true;
-                    }
+                    && check_path(&install_path, true)
+                {
+                    return true;
+                }
                 check_path(&tv.install_path(), check_symlink)
             }
         }
@@ -532,9 +533,10 @@ pub trait Backend: Debug + Send + Sync {
         } else {
             // Sync parent directory to ensure file removal is immediately visible
             if let Some(parent) = incomplete_path.parent()
-                && let Err(err) = file::sync_dir(parent) {
-                    debug!("error syncing incomplete file parent directory: {:?}", err);
-                }
+                && let Err(err) = file::sync_dir(parent)
+            {
+                debug!("error syncing incomplete file parent directory: {:?}", err);
+            }
         }
         if let Some(script) = tv.request.options().get("postinstall") {
             ctx.pr

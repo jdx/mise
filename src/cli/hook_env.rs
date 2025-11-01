@@ -256,18 +256,20 @@ impl HookEnv {
                     return false;
                 }
                 if let Ok(canonical) = p.canonicalize()
-                    && post_canonical.contains(&canonical) {
-                        return false;
-                    }
+                    && post_canonical.contains(&canonical)
+                {
+                    return false;
+                }
 
                 // Also filter against pre (user additions) to avoid duplicates
                 if pre_set.contains(p) {
                     return false;
                 }
                 if let Ok(canonical) = p.canonicalize()
-                    && pre_canonical.contains(&canonical) {
-                        return false;
-                    }
+                    && pre_canonical.contains(&canonical)
+                {
+                    return false;
+                }
 
                 true
             })
@@ -290,9 +292,10 @@ impl HookEnv {
                     return false;
                 }
                 if let Ok(canonical) = p.canonicalize()
-                    && pre_canonical.contains(&canonical) {
-                        return false;
-                    }
+                    && pre_canonical.contains(&canonical)
+                {
+                    return false;
+                }
                 true
             })
             .cloned()

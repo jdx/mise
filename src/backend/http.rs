@@ -234,14 +234,16 @@ impl HttpBackend {
         } else {
             // Auto-detect if we need strip_components=1 before extracting
             // Only auto-strip if strip_components is not set AND bin_path is not explicitly configured
-            if strip_components.is_none() && opts.get("bin_path").is_none()
+            if strip_components.is_none()
+                && opts.get("bin_path").is_none()
                 && let Ok(should_strip) = file::should_strip_components(file_path, format)
-                    && should_strip {
-                        debug!(
-                            "Auto-detected single directory archive, extracting with strip_components=1"
-                        );
-                        strip_components = Some(1);
-                    }
+                && should_strip
+            {
+                debug!(
+                    "Auto-detected single directory archive, extracting with strip_components=1"
+                );
+                strip_components = Some(1);
+            }
 
             let tar_opts = file::TarOptions {
                 format,

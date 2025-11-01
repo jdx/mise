@@ -168,14 +168,14 @@ impl Use {
                             options,
                             backend,
                         } = request
-                        {
-                            request = ToolRequest::Version {
-                                version: tv.version.clone(),
-                                source,
-                                options,
-                                backend,
-                            };
-                        }
+                    {
+                        request = ToolRequest::Version {
+                            version: tv.version.clone(),
+                            source,
+                            options,
+                            backend,
+                        };
+                    }
                     request
                 })
                 .collect();
@@ -245,9 +245,10 @@ impl Use {
         for targ in &self.tool {
             if let Some(tv) = ts.versions.get(targ.ba.as_ref())
                 && let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source
-                    && !file::same_file(p, global) {
-                        warn(targ, p);
-                    }
+                && !file::same_file(p, global)
+            {
+                warn(targ, p);
+            }
         }
     }
 

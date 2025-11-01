@@ -118,9 +118,10 @@ impl Backend for CargoBackend {
             cmd = cmd.arg(format!("--features={features}"));
         }
         if let Some(default_features) = opts.get("default-features")
-            && default_features.to_lowercase() == "false" {
-                cmd = cmd.arg("--no-default-features");
-            }
+            && default_features.to_lowercase() == "false"
+        {
+            cmd = cmd.arg("--no-default-features");
+        }
         if let Some(c) = opts.get("crate") {
             cmd = cmd.arg(c);
         }

@@ -26,9 +26,10 @@ impl Current {
         match &self.plugin {
             Some(ba) => {
                 if let Some(plugin) = ba.backend()?.plugin()
-                    && !plugin.is_installed() {
-                        bail!("Plugin {ba} is not installed");
-                    }
+                    && !plugin.is_installed()
+                {
+                    bail!("Plugin {ba} is not installed");
+                }
                 self.one(ts, ba.backend()?.as_ref()).await
             }
             None => self.all(ts).await,
@@ -37,10 +38,11 @@ impl Current {
 
     async fn one(&self, ts: Toolset, tool: &dyn Backend) -> Result<()> {
         if let Some(plugin) = tool.plugin()
-            && !plugin.is_installed() {
-                warn!("Plugin {} is not installed", tool.id());
-                return Ok(());
-            }
+            && !plugin.is_installed()
+        {
+            warn!("Plugin {} is not installed", tool.id());
+            return Ok(());
+        }
         match ts
             .list_versions_by_plugin()
             .into_iter()

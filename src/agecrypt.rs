@@ -124,25 +124,28 @@ pub async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipient + S
 
     // Try to load from age key file
     if let Some(key_file) = get_default_key_file().await
-        && key_file.exists() {
-            let content = file::read_to_string(&key_file)?;
-            // For age keys, we need to parse them as x25519 identities to get public keys
-            for line in content.lines() {
-                let line = line.trim();
-                if line.starts_with("AGE-SECRET-KEY-")
-                    && let Ok(identity) = line.parse::<age::x25519::Identity>() {
-                        recipients.insert(identity.to_public().to_string());
-                    }
+        && key_file.exists()
+    {
+        let content = file::read_to_string(&key_file)?;
+        // For age keys, we need to parse them as x25519 identities to get public keys
+        for line in content.lines() {
+            let line = line.trim();
+            if line.starts_with("AGE-SECRET-KEY-")
+                && let Ok(identity) = line.parse::<age::x25519::Identity>()
+            {
+                recipients.insert(identity.to_public().to_string());
             }
         }
+    }
 
     // Try to load from SSH private keys
     let ssh_key_paths = get_default_ssh_key_paths();
     for path in ssh_key_paths {
         if path.exists()
-            && let Ok(recipient) = load_ssh_recipient_from_private_key(&path).await {
-                recipients.insert(recipient);
-            }
+            && let Ok(recipient) = load_ssh_recipient_from_private_key(&path).await
+        {
+            recipients.insert(recipient);
+        }
     }
 
     let mut parsed_recipients: Vec<Box<dyn Recipient + Send>> = Vec::new();
@@ -177,10 +180,11 @@ pub async fn load_recipients_from_key_file(path: &Path) -> Result<Vec<Box<dyn Re
     for line in content.lines() {
         let line = line.trim();
         if line.starts_with("AGE-SECRET-KEY-")
-            && let Ok(identity) = line.parse::<age::x25519::Identity>() {
-                let public_key = identity.to_public();
-                recipients.push(Box::new(public_key));
-            }
+            && let Ok(identity) = line.parse::<age::x25519::Identity>()
+        {
+            let public_key = identity.to_public();
+            recipients.push(Box::new(public_key));
+        }
     }
 
     if recipients.is_empty() {
@@ -275,23 +279,26 @@ async fn load_all_identities() -> Result<Vec<Box<dyn Identity>>> {
 
     // Check MISE_AGE_KEY environment variable
     if let Ok(age_key) = env::var("MISE_AGE_KEY")
-        && !age_key.is_empty() {
-            // First try to parse as a raw age secret key
-            for line in age_key.lines() {
-                let line = line.trim();
-                if line.starts_with("AGE-SECRET-KEY-")
-                    && let Ok(identity) = line.parse::<age::x25519::Identity>() {
-                        identities.push(Box::new(identity));
-                    }
+        && !age_key.is_empty()
+    {
+        // First try to parse as a raw age secret key
+        for line in age_key.lines() {
+            let line = line.trim();
+            if line.starts_with("AGE-SECRET-KEY-")
+                && let Ok(identity) = line.parse::<age::x25519::Identity>()
+            {
+                identities.push(Box::new(identity));
             }
-
-            // If no keys were found, try parsing as an identity file
-            if identities.is_empty()
-                && let Ok(identity_file) = IdentityFile::from_buffer(age_key.as_bytes())
-                    && let Ok(mut file_identities) = identity_file.into_identities() {
-                        identities.append(&mut file_identities);
-                    }
         }
+
+        // If no keys were found, try parsing as an identity file
+        if identities.is_empty()
+            && let Ok(identity_file) = IdentityFile::from_buffer(age_key.as_bytes())
+            && let Ok(mut file_identities) = identity_file.into_identities()
+        {
+            identities.append(&mut file_identities);
+        }
+    }
 
     // Load from identity files
     for path in identity_files {
@@ -299,9 +306,10 @@ async fn load_all_identities() -> Result<Vec<Box<dyn Identity>>> {
             match file::read_to_string(&path) {
                 Ok(content) => {
                     if let Ok(identity_file) = IdentityFile::from_buffer(content.as_bytes())
-                        && let Ok(mut file_identities) = identity_file.into_identities() {
-                            identities.append(&mut file_identities);
-                        }
+                        && let Ok(mut file_identities) = identity_file.into_identities()
+                    {
+                        identities.append(&mut file_identities);
+                    }
                 }
                 Err(e) => {
                     debug!(

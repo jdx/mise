@@ -139,9 +139,10 @@ async fn main_() -> eyre::Result<()> {
 
 fn handle_err(err: Report) -> eyre::Result<()> {
     if let Some(err) = err.downcast_ref::<std::io::Error>()
-        && err.kind() == std::io::ErrorKind::BrokenPipe {
-            return Ok(());
-        }
+        && err.kind() == std::io::ErrorKind::BrokenPipe
+    {
+        return Ok(());
+    }
     show_github_rate_limit_err(&err);
     if *env::MISE_FRIENDLY_ERROR {
         display_friendly_err(&err);

@@ -32,20 +32,21 @@ pub async fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>>
     }
     // ensure that we're using a default shorthand plugin
     if let Some(plugin) = ba.backend()?.plugin()
-        && let Ok(Some(remote_url)) = plugin.get_remote_url() {
-            let normalized_remote = normalize_remote(&remote_url).unwrap_or("INVALID_URL".into());
-            let shorthand_remote = REGISTRY
-                .get(plugin.name())
-                .and_then(|rt| rt.backends().first().map(|b| registry::full_to_url(b)))
-                .unwrap_or_default();
-            if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
-                trace!(
-                    "Skipping versions host check for {} because it has a non-default remote",
-                    ba.short
-                );
-                return Ok(None);
-            }
+        && let Ok(Some(remote_url)) = plugin.get_remote_url()
+    {
+        let normalized_remote = normalize_remote(&remote_url).unwrap_or("INVALID_URL".into());
+        let shorthand_remote = REGISTRY
+            .get(plugin.name())
+            .and_then(|rt| rt.backends().first().map(|b| registry::full_to_url(b)))
+            .unwrap_or_default();
+        if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
+            trace!(
+                "Skipping versions host check for {} because it has a non-default remote",
+                ba.short
+            );
+            return Ok(None);
         }
+    }
     static CACHE: LazyLock<Mutex<HashMap<String, Vec<String>>>> =
         LazyLock::new(|| Mutex::new(HashMap::new()));
     static RATE_LIMITED: AtomicBool = AtomicBool::new(false);

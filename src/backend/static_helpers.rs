@@ -133,16 +133,17 @@ pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &s
         if let Some(rest) = k
             .strip_prefix("platforms_")
             .or_else(|| k.strip_prefix("platform_"))
-            && let Some(platform_part) = rest.strip_suffix(&format!("_{}", key_type)) {
-                // Only convert the OS/arch separator underscore to a dash, preserving
-                // underscores inside architecture names like x86_64
-                let platform_key = if let Some((os_part, rest)) = platform_part.split_once('_') {
-                    format!("{os_part}-{rest}")
-                } else {
-                    platform_part.to_string()
-                };
-                set.insert(platform_key);
-            }
+            && let Some(platform_part) = rest.strip_suffix(&format!("_{}", key_type))
+        {
+            // Only convert the OS/arch separator underscore to a dash, preserving
+            // underscores inside architecture names like x86_64
+            let platform_key = if let Some((os_part, rest)) = platform_part.split_once('_') {
+                format!("{os_part}-{rest}")
+            } else {
+                platform_part.to_string()
+            };
+            set.insert(platform_key);
+        }
     }
 
     // Probe nested keys using shared patterns
@@ -260,14 +261,14 @@ pub fn install_artifact(
         // Handle archive formats
         // Auto-detect if we need strip_components=1 before extracting
         // Only do this if strip_components was not explicitly set by the user AND bin_path is not configured
-        if strip_components.is_none() && opts.get("bin_path").is_none()
+        if strip_components.is_none()
+            && opts.get("bin_path").is_none()
             && let Ok(should_strip) = file::should_strip_components(file_path, format)
-                && should_strip {
-                    debug!(
-                        "Auto-detected single directory archive, extracting with strip_components=1"
-                    );
-                    strip_components = Some(1);
-                }
+            && should_strip
+        {
+            debug!("Auto-detected single directory archive, extracting with strip_components=1");
+            strip_components = Some(1);
+        }
         let tar_opts = file::TarOptions {
             format,
             strip_components: strip_components.unwrap_or(0),

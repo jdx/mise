@@ -113,10 +113,11 @@ impl Upgrade {
             .filter(|(o, cf)| {
                 if let Ok(trs) = cf.to_tool_request_set()
                     && let Some(versions) = trs.tools.get(o.tool_request.ba())
-                        && versions.len() != 1 {
-                            warn!("upgrading multiple versions with --bump is not yet supported");
-                            return false;
-                        }
+                    && versions.len() != 1
+                {
+                    warn!("upgrading multiple versions with --bump is not yet supported");
+                    return false;
+                }
                 true
             })
             .collect::<Vec<_>>();

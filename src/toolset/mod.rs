@@ -367,30 +367,30 @@ impl Toolset {
         // Ensure plugins are installed
         for (backend, trs) in &queue {
             if let Some(plugin) = backend.plugin()
-                && !plugin.is_installed() {
-                    let mpr = MultiProgressReport::get();
-                    if let Err(e) = plugin
-                        .ensure_installed(config, &mpr, false, opts.dry_run)
-                        .await
-                        .or_else(|err| {
-                            if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>()
-                            {
-                                Ok(())
-                            } else {
-                                Err(err)
-                            }
-                        })
-                    {
-                        // Collect plugin installation errors instead of returning early
-                        let plugin_name = backend.ba().short.clone();
-                        for tr in trs {
-                            plugin_errors.push((
-                                tr.clone(),
-                                eyre::eyre!("Plugin '{}' installation failed: {}", plugin_name, e),
-                            ));
+                && !plugin.is_installed()
+            {
+                let mpr = MultiProgressReport::get();
+                if let Err(e) = plugin
+                    .ensure_installed(config, &mpr, false, opts.dry_run)
+                    .await
+                    .or_else(|err| {
+                        if let Some(&Error::PluginNotInstalled(_)) = err.downcast_ref::<Error>() {
+                            Ok(())
+                        } else {
+                            Err(err)
                         }
+                    })
+                {
+                    // Collect plugin installation errors instead of returning early
+                    let plugin_name = backend.ba().short.clone();
+                    for tr in trs {
+                        plugin_errors.push((
+                            tr.clone(),
+                            eyre::eyre!("Plugin '{}' installation failed: {}", plugin_name, e),
+                        ));
                     }
                 }
+            }
         }
 
         let raw = opts.raw || Settings::get().raw;

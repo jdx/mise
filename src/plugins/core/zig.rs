@@ -105,29 +105,30 @@ impl ZigPlugin {
         };
 
         if settings.zig.use_community_mirrors
-            && let Some(mirrors) = community_mirrors {
-                for i in 0..mirrors.len() {
-                    let disp_i = i + 1;
-                    let disp_len = mirrors.len();
-                    pr.set_message(format!("mirror {disp_i}/{disp_len} {filename}"));
+            && let Some(mirrors) = community_mirrors
+        {
+            for i in 0..mirrors.len() {
+                let disp_i = i + 1;
+                let disp_len = mirrors.len();
+                pr.set_message(format!("mirror {disp_i}/{disp_len} {filename}"));
 
-                    let mirror_url = &mirrors[i];
-                    used_url = format!("{mirror_url}/{filename}");
+                let mirror_url = &mirrors[i];
+                used_url = format!("{mirror_url}/{filename}");
 
-                    if HTTP
-                        .download_file(
-                            format!("{used_url}{REQUEST_SUFFIX}"),
-                            &tarball_path,
-                            Some(pr),
-                        )
-                        .await
-                        .is_ok()
-                    {
-                        downloaded = true;
-                        break;
-                    }
+                if HTTP
+                    .download_file(
+                        format!("{used_url}{REQUEST_SUFFIX}"),
+                        &tarball_path,
+                        Some(pr),
+                    )
+                    .await
+                    .is_ok()
+                {
+                    downloaded = true;
+                    break;
                 }
             }
+        }
 
         if !downloaded {
             // Try the usual ziglang.org or machengine.org download

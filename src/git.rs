@@ -234,10 +234,11 @@ impl Git {
         }
         if let Ok(repo) = self.repo()
             && let Ok(remote) = repo.find_remote("origin")
-                && let Some(url) = remote.url(gix::remote::Direction::Fetch) {
-                    trace!("remote url for {dir:?}: {url}");
-                    return Some(url.to_string());
-                }
+            && let Some(url) = remote.url(gix::remote::Direction::Fetch)
+        {
+            trace!("remote url for {dir:?}: {url}");
+            return Some(url.to_string());
+        }
         let res = git_cmd_read!(&self.dir, "config", "--get", "remote.origin.url");
         match res {
             Ok(url) => {

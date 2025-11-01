@@ -197,9 +197,10 @@ where
         }
         if let Some(fresh_duration) = self.freshest_duration()
             && let Ok(metadata) = self.cache_file_path.metadata()
-                && let Ok(modified) = metadata.modified() {
-                    return modified.elapsed().unwrap_or_default() < fresh_duration;
-                }
+            && let Ok(modified) = metadata.modified()
+        {
+            return modified.elapsed().unwrap_or_default() < fresh_duration;
+        }
         true
     }
 
@@ -240,9 +241,10 @@ pub(crate) fn auto_prune() -> Result<()> {
     };
     let auto_prune_file = dirs::CACHE.join(".auto_prune");
     if let Ok(Ok(modified)) = auto_prune_file.metadata().map(|m| m.modified())
-        && modified.elapsed().unwrap_or_default() < age {
-            return Ok(());
-        }
+        && modified.elapsed().unwrap_or_default() < age
+    {
+        return Ok(());
+    }
     let empty = file::ls(*dirs::CACHE).unwrap_or_default().is_empty();
     xx::file::touch_dir(&auto_prune_file)?;
     if empty {

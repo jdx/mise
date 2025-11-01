@@ -341,10 +341,12 @@ async fn install(
     builder = set_token(builder, &forge);
 
     if let Some(api_url) = opts.get("api_url")
-        && !api_url.contains("github.com") && !api_url.contains("gitlab.com") {
-            builder = builder.api_base_url(api_url.strip_suffix("/").unwrap_or(api_url));
-            builder = set_enterprise_token(builder, &forge);
-        }
+        && !api_url.contains("github.com")
+        && !api_url.contains("gitlab.com")
+    {
+        builder = builder.api_base_url(api_url.strip_suffix("/").unwrap_or(api_url));
+        builder = set_enterprise_token(builder, &forge);
+    }
 
     let mut ubi = builder.build().map_err(|e| eyre::eyre!(e))?;
 

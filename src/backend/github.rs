@@ -496,9 +496,10 @@ impl UnifiedGitBackend {
 
         // If a custom version_prefix is configured, strip it first
         if let Some(prefix) = opts.get("version_prefix")
-            && let Some(stripped) = tag_name.strip_prefix(prefix) {
-                return stripped.to_string();
-            }
+            && let Some(stripped) = tag_name.strip_prefix(prefix)
+        {
+            return stripped.to_string();
+        }
 
         // Fall back to stripping 'v' prefix
         if tag_name.starts_with('v') {
