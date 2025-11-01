@@ -526,9 +526,7 @@ impl Cli {
                         tmpdir: Default::default(),
                         tool: Default::default(),
                         output_handler: None,
-                        toolset_cache: Default::default(),
-                        tool_request_set_cache: Default::default(),
-                        env_resolution_cache: Default::default(),
+                        context_builder: Default::default(),
                         no_cache: Default::default(),
                         timeout: None,
                     })));

@@ -34,6 +34,7 @@ static FUZZY_MATCHER: Lazy<SkimMatcherV2> =
     Lazy::new(|| SkimMatcherV2::default().use_cache(true).smart_case());
 
 mod deps;
+pub mod task_context_builder;
 mod task_dep;
 pub mod task_file_providers;
 pub mod task_helpers;
