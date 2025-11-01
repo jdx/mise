@@ -1630,6 +1630,18 @@ impl Run {
             TaskOutput::Silent => {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
+            TaskOutput::SilentStdout => {
+                cmd = cmd.stdout(Stdio::null());
+                if raw || redactions.is_empty() {
+                    cmd = cmd.stdin(Stdio::inherit()).stderr(Stdio::inherit());
+                }
+            }
+            TaskOutput::SilentStderr => {
+                cmd = cmd.stderr(Stdio::null());
+                if raw || redactions.is_empty() {
+                    cmd = cmd.stdin(Stdio::inherit()).stdout(Stdio::inherit());
+                }
+            }
             TaskOutput::Quiet | TaskOutput::Interleave => {
                 if raw || redactions.is_empty() {
                     cmd = cmd
@@ -1661,13 +1673,35 @@ impl Run {
     }
 
     fn output(&self, task: Option<&Task>) -> TaskOutput {
+        // Check task-specific silent modes first (before self.output)
+        if let Some(task_ref) = task {
+            use crate::task::Silent;
+            match &task_ref.silent {
+                Silent::Stdout => return TaskOutput::SilentStdout,
+                Silent::Stderr => return TaskOutput::SilentStderr,
+                Silent::Bool(true) => return TaskOutput::Silent,
+                Silent::Off | Silent::Bool(false) => {}
+            }
+        }
+
+        // Now check global output settings
         if let Some(o) = self.output {
-            o
-        } else if self.silent(task) {
-            TaskOutput::Silent
+            return o;
+        } else if let Some(task_ref) = task {
+            // Fall through to other checks if silent is Off
+            if self.silent_bool() {
+                return TaskOutput::Silent;
+            }
+            if self.quiet(Some(task_ref)) {
+                return TaskOutput::Quiet;
+            }
+        } else if self.silent_bool() {
+            return TaskOutput::Silent;
         } else if self.quiet(task) {
-            TaskOutput::Quiet
-        } else if self.prefix {
+            return TaskOutput::Quiet;
+        }
+
+        if self.prefix {
             TaskOutput::Prefix
         } else if self.interleave {
             TaskOutput::Interleave
@@ -1680,11 +1714,12 @@ impl Run {
         }
     }
 
+    fn silent_bool(&self) -> bool {
+        self.silent || Settings::get().silent || self.output.is_some_and(|o| o.is_silent())
+    }
+
     fn silent(&self, task: Option<&Task>) -> bool {
-        self.silent
-            || Settings::get().silent
-            || self.output.is_some_and(|o| o.is_silent())
-            || task.is_some_and(|t| t.silent)
+        self.silent_bool() || task.is_some_and(|t| t.silent.is_silent())
     }
 
     fn quiet(&self, task: Option<&Task>) -> bool {
@@ -2108,6 +2143,8 @@ pub enum TaskOutput {
     Timed,
     Quiet,
     Silent,
+    SilentStdout,
+    SilentStderr,
 }
 
 fn trunc(prefix: &str, msg: &str) -> String {

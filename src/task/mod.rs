@@ -16,7 +16,7 @@ use globset::GlobBuilder;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use petgraph::prelude::*;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -60,6 +60,91 @@ pub enum RunEntry {
     SingleTask { task: String },
     /// Run multiple tasks in parallel
     TaskGroup { tasks: Vec<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Hash, Default)]
+pub enum Silent {
+    #[default]
+    Off,
+    Bool(bool),
+    Stdout,
+    Stderr,
+}
+
+impl Silent {
+    pub fn is_silent(&self) -> bool {
+        matches!(self, Silent::Bool(true) | Silent::Stdout | Silent::Stderr)
+    }
+
+    pub fn suppresses_stdout(&self) -> bool {
+        matches!(self, Silent::Bool(true) | Silent::Stdout)
+    }
+
+    pub fn suppresses_stderr(&self) -> bool {
+        matches!(self, Silent::Bool(true) | Silent::Stderr)
+    }
+}
+
+impl From<bool> for Silent {
+    fn from(b: bool) -> Self {
+        if b { Silent::Bool(true) } else { Silent::Off }
+    }
+}
+
+impl std::str::FromStr for Silent {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "true" => Ok(Silent::Bool(true)),
+            "false" => Ok(Silent::Off),
+            "stdout" => Ok(Silent::Stdout),
+            "stderr" => Ok(Silent::Stderr),
+            _ => Err(format!(
+                "invalid silent value: {}, expected true, false, 'stdout', or 'stderr'",
+                s
+            )),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Silent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct SilentVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for SilentVisitor {
+            type Value = Silent;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a boolean or a string ('stdout' or 'stderr')")
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<Silent, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Silent::from(value))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Silent, E>
+            where
+                E: serde::de::Error,
+            {
+                match value {
+                    "stdout" => Ok(Silent::Stdout),
+                    "stderr" => Ok(Silent::Stderr),
+                    _ => Err(E::custom(format!(
+                        "invalid silent value: '{}', expected 'stdout' or 'stderr'",
+                        value
+                    ))),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(SilentVisitor)
+    }
 }
 
 impl std::str::FromStr for RunEntry {
@@ -123,7 +208,7 @@ pub struct Task {
     #[serde(default)]
     pub quiet: bool,
     #[serde(default)]
-    pub silent: bool,
+    pub silent: Silent,
     #[serde(default)]
     pub tools: IndexMap<String, String>,
     #[serde(default)]
@@ -233,7 +318,13 @@ impl Task {
         task.file = Some(path.to_path_buf());
         task.shell = p.parse_str("shell");
         task.quiet = p.parse_bool("quiet").unwrap_or_default();
-        task.silent = p.parse_bool("silent").unwrap_or_default();
+        task.silent = info
+            .get("silent")
+            .and_then(|v| {
+                // Try to deserialize as Silent enum (handles bool, "stdout", "stderr")
+                Silent::deserialize(v.clone()).ok()
+            })
+            .unwrap_or_default();
         task.tools = p
             .parse_table("tools")
             .map(|t| {
@@ -893,7 +984,7 @@ impl Default for Task {
             sources: vec![],
             outputs: Default::default(),
             shell: None,
-            silent: false,
+            silent: Silent::Off,
             run: vec![],
             run_windows: vec![],
             args: vec![],
