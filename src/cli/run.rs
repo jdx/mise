@@ -251,164 +251,24 @@ impl Run {
 
     async fn parallelize_tasks(mut self, mut config: Arc<Config>, tasks: Vec<Task>) -> Result<()> {
         time!("parallelize_tasks start");
-
         ctrlc::exit_on_ctrl_c(false);
 
-        let mut tasks = resolve_depends(&config, tasks).await?;
-        self.fetch_tasks(&mut tasks).await?;
-
-        let tasks = Deps::new(&config, tasks).await?;
+        // Step 1: Prepare tasks (resolve dependencies, fetch, validate)
+        let tasks = self.prepare_tasks(&config, tasks).await?;
         let num_tasks = tasks.all().count();
-        self.is_linear = tasks.is_linear();
 
-        // Initialize OutputHandler with CLI args AFTER is_linear is determined
-        self.output_handler = Some(OutputHandler::new(
-            self.prefix,
-            self.interleave,
-            self.output,
-            self.silent,
-            self.quiet,
-            self.raw,
-            self.is_linear,
-            self.jobs,
-        ));
-
-        if self.output(None) == TaskOutput::Timed {
-            let timed_outputs = self.output_handler.as_ref().unwrap().timed_outputs.clone();
-            tokio::spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_millis(100));
-                loop {
-                    {
-                        let mut outputs = timed_outputs.lock().unwrap();
-                        for (prefix, out) in outputs.clone() {
-                            let (time, line) = out;
-                            if time.elapsed().unwrap().as_secs() >= 1 {
-                                if console::colors_enabled() {
-                                    prefix_println!(prefix, "{line}\x1b[0m");
-                                } else {
-                                    prefix_println!(prefix, "{line}");
-                                }
-                                outputs.shift_remove(&prefix);
-                            }
-                        }
-                    }
-                    interval.tick().await;
-                }
-            });
-        }
-
-        for task in tasks.all() {
-            self.validate_task(task)?;
-            self.output_handler.as_mut().unwrap().init_task(task);
-        }
-
+        // Step 2: Setup output handler and validate tasks
+        self.setup_output_and_validate(&tasks)?;
         self.output = Some(self.output(None));
-        let this = Arc::new(self);
 
-        let mut all_tools = this.tool.clone();
-        let mut all_tool_requests = vec![];
-        let all_tasks: Vec<_> = tasks.all().collect();
-        trace!("Collecting tools from {} tasks", all_tasks.len());
-
-        for t in &all_tasks {
-            // Collect tools from task.tools (task-level tool overrides)
-            for (k, v) in &t.tools {
-                all_tools.push(format!("{k}@{v}").parse()?);
-            }
-
-            // Collect tools from monorepo task config files
-            if let Some(task_cf) = t.cf(&config) {
-                let config_path = canonicalize_path(task_cf.get_path());
-
-                // Check cache first
-                let cache = this
-                    .context_builder
-                    .tool_request_set_cache()
-                    .read()
-                    .expect("tool_request_set_cache RwLock poisoned");
-                let tool_request_set = if let Some(cached) = cache.get(&config_path) {
-                    trace!(
-                        "Using cached tool request set from {}",
-                        config_path.display()
-                    );
-                    Arc::clone(cached)
-                } else {
-                    drop(cache); // Release read lock before write
-                    // Not in cache, parse it
-                    match task_cf.to_tool_request_set() {
-                        Ok(trs) => {
-                            let trs = Arc::new(trs);
-                            let mut cache = this
-                                .context_builder
-                                .tool_request_set_cache()
-                                .write()
-                                .expect("tool_request_set_cache RwLock poisoned");
-                            // Double-check: another thread may have populated while we were parsing
-                            cache.entry(config_path.clone()).or_insert_with(|| {
-                                trace!("Cached tool request set to {}", config_path.display());
-                                Arc::clone(&trs)
-                            });
-                            trs
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to parse tools from {} for task {}: {}",
-                                task_cf.get_path().display(),
-                                t.name,
-                                e
-                            );
-                            continue;
-                        }
-                    }
-                };
-
-                trace!(
-                    "Found {} tools in config file for task {}",
-                    tool_request_set.tools.len(),
-                    t.name
-                );
-
-                // Add the tools directly from the ToolRequestSet to preserve backend options
-                for (_, reqs) in tool_request_set.tools.iter() {
-                    all_tool_requests.extend(reqs.iter().cloned());
-                }
-            }
-        }
-
-        // Build toolset from both parsed tool args and direct ToolRequests
-        let source = ToolSource::Argument;
-        let mut ts = Toolset::new(source.clone());
-
-        // Add tools from CLI args and task.tools (these are parsed from strings)
-        for tool_arg in all_tools {
-            if let Some(tvr) = tool_arg.tvr {
-                ts.add_version(tvr);
-            }
-        }
-
-        // Add tools from config files (these already have proper backend options)
-        for tr in all_tool_requests {
-            trace!("Adding tool from config: {}", tr);
-            ts.add_version(tr);
-        }
-
-        ts.resolve(&config).await?;
-
-        ts.install_missing_versions(
-            &mut config,
-            &InstallOptions {
-                missing_args_only: !Settings::get().task_run_auto_install,
-                skip_auto_install: !Settings::get().task_run_auto_install
-                    || !Settings::get().auto_install,
-                ..Default::default()
-            },
-        )
-        .await?;
+        // Step 3: Install tools needed by tasks
+        self.install_task_tools(&mut config, &tasks).await?;
 
         let timer = std::time::Instant::now();
+        let this = Arc::new(self);
         let config = config.clone();
 
-        // Initialize scheduler
+        // Step 4: Initialize scheduler and run tasks
         let mut scheduler = crate::task::task_scheduler::Scheduler::new(this.jobs());
         let sched_tx = scheduler.sender();
         let (main_done_tx, main_done_rx) = tokio::sync::watch::channel(false);
@@ -537,49 +397,9 @@ impl Run {
         }
 
         scheduler.join_all(this.continue_on_error).await?;
-        // scheduler loop done
 
-        if this.output(None) == TaskOutput::KeepOrder {
-            // TODO: display these as tasks complete in order somehow rather than waiting until everything is done
-            let output = this
-                .output_handler
-                .as_ref()
-                .unwrap()
-                .keep_order_output
-                .lock()
-                .unwrap();
-            for (out, err) in output.values() {
-                for (prefix, line) in out {
-                    if console::colors_enabled() {
-                        prefix_println!(prefix, "{line}\x1b[0m");
-                    } else {
-                        prefix_println!(prefix, "{line}");
-                    }
-                }
-                for (prefix, line) in err {
-                    if console::colors_enabled_stderr() {
-                        prefix_eprintln!(prefix, "{line}\x1b[0m");
-                    } else {
-                        prefix_eprintln!(prefix, "{line}");
-                    }
-                }
-            }
-        }
-        if this.timings() && num_tasks > 1 {
-            let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
-            eprintln!("{}", style::edim(msg));
-        };
-        // If there were failures and --continue-on-error was used, print a brief summary
-        this.maybe_print_failure_summary();
-        if let Some((task, status)) = this.failed_tasks.lock().unwrap().first() {
-            let prefix = task.estyled_prefix();
-            this.eprint(
-                task,
-                &prefix,
-                &format!("{} task failed", style::ered("ERROR")),
-            );
-            exit(*status);
-        }
+        // Step 5: Display results and handle failures
+        Self::display_results(&this, num_tasks, timer);
         time!("parallelize_tasks done");
 
         Ok(())
@@ -666,6 +486,219 @@ impl Run {
 
         Ok(())
     }
+
+    // ============================================================================
+    // High-level workflow methods
+    // ============================================================================
+
+    /// Prepare tasks: resolve dependencies, fetch remote tasks, create dependency graph
+    async fn prepare_tasks(&mut self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<Deps> {
+        let mut tasks = resolve_depends(config, tasks).await?;
+        self.fetch_tasks(&mut tasks).await?;
+        let tasks = Deps::new(config, tasks).await?;
+        self.is_linear = tasks.is_linear();
+        Ok(tasks)
+    }
+
+    /// Initialize output handler and validate tasks
+    fn setup_output_and_validate(&mut self, tasks: &Deps) -> Result<()> {
+        // Initialize OutputHandler AFTER is_linear is determined
+        self.output_handler = Some(OutputHandler::new(
+            self.prefix,
+            self.interleave,
+            self.output,
+            self.silent,
+            self.quiet,
+            self.raw,
+            self.is_linear,
+            self.jobs,
+        ));
+
+        // Spawn timed output task if needed
+        if self.output(None) == TaskOutput::Timed {
+            let timed_outputs = self.output_handler.as_ref().unwrap().timed_outputs.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_millis(100));
+                loop {
+                    {
+                        let mut outputs = timed_outputs.lock().unwrap();
+                        for (prefix, out) in outputs.clone() {
+                            let (time, line) = out;
+                            if time.elapsed().unwrap().as_secs() >= 1 {
+                                if console::colors_enabled() {
+                                    prefix_println!(prefix, "{line}\x1b[0m");
+                                } else {
+                                    prefix_println!(prefix, "{line}");
+                                }
+                                outputs.shift_remove(&prefix);
+                            }
+                        }
+                    }
+                    interval.tick().await;
+                }
+            });
+        }
+
+        // Validate and initialize task output
+        for task in tasks.all() {
+            self.validate_task(task)?;
+            self.output_handler.as_mut().unwrap().init_task(task);
+        }
+
+        Ok(())
+    }
+
+    /// Collect and install all tools needed by tasks
+    async fn install_task_tools(&self, config: &mut Arc<Config>, tasks: &Deps) -> Result<()> {
+        let mut all_tools = self.tool.clone();
+        let mut all_tool_requests = vec![];
+        let all_tasks: Vec<_> = tasks.all().collect();
+
+        trace!("Collecting tools from {} tasks", all_tasks.len());
+
+        for t in &all_tasks {
+            // Collect tools from task.tools (task-level tool overrides)
+            for (k, v) in &t.tools {
+                all_tools.push(format!("{k}@{v}").parse()?);
+            }
+
+            // Collect tools from monorepo task config files
+            if let Some(task_cf) = t.cf(config) {
+                let config_path = canonicalize_path(task_cf.get_path());
+
+                // Check cache first
+                let cache = self
+                    .context_builder
+                    .tool_request_set_cache()
+                    .read()
+                    .expect("tool_request_set_cache RwLock poisoned");
+                let tool_request_set = if let Some(cached) = cache.get(&config_path) {
+                    trace!(
+                        "Using cached tool request set from {}",
+                        config_path.display()
+                    );
+                    Arc::clone(cached)
+                } else {
+                    drop(cache); // Release read lock before write
+                    match task_cf.to_tool_request_set() {
+                        Ok(trs) => {
+                            let trs = Arc::new(trs);
+                            let mut cache = self
+                                .context_builder
+                                .tool_request_set_cache()
+                                .write()
+                                .expect("tool_request_set_cache RwLock poisoned");
+                            cache.entry(config_path.clone()).or_insert_with(|| {
+                                trace!("Cached tool request set to {}", config_path.display());
+                                Arc::clone(&trs)
+                            });
+                            trs
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to parse tools from {} for task {}: {}",
+                                task_cf.get_path().display(),
+                                t.name,
+                                e
+                            );
+                            continue;
+                        }
+                    }
+                };
+
+                trace!(
+                    "Found {} tools in config file for task {}",
+                    tool_request_set.tools.len(),
+                    t.name
+                );
+
+                for (_, reqs) in tool_request_set.tools.iter() {
+                    all_tool_requests.extend(reqs.iter().cloned());
+                }
+            }
+        }
+
+        // Build and install toolset
+        let source = ToolSource::Argument;
+        let mut ts = Toolset::new(source.clone());
+
+        // Add tools from CLI args and task.tools
+        for tool_arg in all_tools {
+            if let Some(tvr) = tool_arg.tvr {
+                ts.add_version(tvr);
+            }
+        }
+
+        // Add tools from config files
+        for tr in all_tool_requests {
+            trace!("Adding tool from config: {}", tr);
+            ts.add_version(tr);
+        }
+
+        ts.resolve(config).await?;
+
+        ts.install_missing_versions(
+            config,
+            &InstallOptions {
+                missing_args_only: !Settings::get().task_run_auto_install,
+                skip_auto_install: !Settings::get().task_run_auto_install
+                    || !Settings::get().auto_install,
+                ..Default::default()
+            },
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    /// Display final results and handle failures
+    fn display_results(this: &Arc<Self>, num_tasks: usize, timer: std::time::Instant) {
+        if this.output(None) == TaskOutput::KeepOrder {
+            let output = this
+                .output_handler
+                .as_ref()
+                .unwrap()
+                .keep_order_output
+                .lock()
+                .unwrap();
+            for (out, err) in output.values() {
+                for (prefix, line) in out {
+                    if console::colors_enabled() {
+                        prefix_println!(prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_println!(prefix, "{line}");
+                    }
+                }
+                for (prefix, line) in err {
+                    if console::colors_enabled_stderr() {
+                        prefix_eprintln!(prefix, "{line}\x1b[0m");
+                    } else {
+                        prefix_eprintln!(prefix, "{line}");
+                    }
+                }
+            }
+        }
+
+        if this.timings() && num_tasks > 1 {
+            let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
+            eprintln!("{}", style::edim(msg));
+        }
+
+        this.maybe_print_failure_summary();
+        if let Some((task, status)) = this.failed_tasks.lock().unwrap().first() {
+            let prefix = task.estyled_prefix();
+            this.eprint(
+                task,
+                &prefix,
+                &format!("{} task failed", style::ered("ERROR")),
+            );
+            exit(*status);
+        }
+    }
+
+    // ============================================================================
+    // Helper methods
+    // ============================================================================
 
     fn maybe_print_failure_summary(&self) {
         if !self.continue_on_error {
