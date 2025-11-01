@@ -1,9 +1,7 @@
-use eyre::{Result, eyre};
-use indoc::formatdoc;
+use eyre::Result;
 
 use crate::env;
 use crate::shell::{build_deactivation_script, get_shell};
-use crate::ui::style;
 
 /// Disable mise for current shell session
 ///
@@ -15,7 +13,11 @@ pub struct Deactivate {}
 impl Deactivate {
     pub fn run(self) -> Result<()> {
         if !env::is_activated() {
-            err_inactive()?;
+            // Deactivating when not activated is safe - just show a warning
+            warn!(
+                "mise is not activated in this shell session. Already deactivated or never activated."
+            );
+            return Ok(());
         }
 
         let shell = get_shell(None).expect("no shell detected");
@@ -26,16 +28,6 @@ impl Deactivate {
 
         Ok(())
     }
-}
-
-fn err_inactive() -> Result<()> {
-    Err(eyre!(formatdoc!(
-        r#"
-                mise is not activated in this shell session.
-                Please run `{}` first in your shell rc file.
-                "#,
-        style::eyellow("mise activate")
-    )))
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(

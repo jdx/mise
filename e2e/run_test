@@ -112,6 +112,8 @@ run_test() {
 	shebang="$(head -n 1 "$TEST_SCRIPT")"
 	if [[ $shebang == "#!/usr/bin/env zsh"* ]]; then
 		within_isolated_env zsh -f -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+	elif [[ $shebang == "#!/usr/bin/env fish"* ]]; then
+		within_isolated_env fish --no-config "$TEST_SCRIPT" || status=$?
 	else
 		within_isolated_env bash --noprofile --norc -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
 	fi

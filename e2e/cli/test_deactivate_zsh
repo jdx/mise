@@ -1,0 +1,230 @@
+#!/usr/bin/env zsh
+# shellcheck disable=SC1071
+set -euo pipefail
+
+# Test that mise deactivate properly removes mise-managed environment
+# while preserving user-added paths and variables
+
+# Create a mise config with tools, env._.path, and env vars
+mkdir -p custom_bin shared_entry user_bin
+SHARED_PATH="$PWD/shared_entry"
+cat >.mise.toml <<EOF
+[tools]
+tiny = "latest"
+
+[env]
+_.path = ["./custom_bin", "./shared_entry"]
+FOO = "mise_foo"
+BAR = "mise_bar"
+EOF
+
+mise install
+
+# Save the original PATH and environment
+ORIGINAL_PATH="$PATH"
+
+# Activate mise and run hook-env
+eval "$(mise activate zsh --status)" && _mise_hook
+
+# Verify mise environment is set up
+[[ $FOO == "mise_foo" ]] || {
+	echo "FOO should be mise_foo, got: $FOO"
+	exit 1
+}
+[[ $BAR == "mise_bar" ]] || {
+	echo "BAR should be mise_bar, got: $BAR"
+	exit 1
+}
+[[ $PATH =~ "custom_bin" ]] || {
+	echo "custom_bin not in PATH"
+	exit 1
+}
+[[ $PATH =~ "/mise/installs/tiny" ]] || {
+	echo "Tool path not in PATH"
+	exit 1
+}
+[[ $PATH =~ $SHARED_PATH ]] || {
+	echo "SHARED_PATH not in PATH"
+	exit 1
+}
+
+# User manually adds paths after activation
+export PATH="$SHARED_PATH:$PATH"
+export PATH="/user_path_1:$PATH"
+export PATH="/user_path_2:$PATH"
+# Add SHARED_PATH again after mise so PATH now has it before, within, and after
+export PATH="$PATH:$SHARED_PATH"
+
+# User sets their own environment variables
+export USER_VAR="user_value"
+export USER_PATH="/usr/local/myapp"
+
+# Verify everything is in place before deactivation
+[[ $FOO == "mise_foo" ]] || {
+	echo "FOO should be mise_foo, got: $FOO"
+	exit 1
+}
+[[ $USER_VAR == "user_value" ]] || {
+	echo "USER_VAR should be user_value, got: $USER_VAR"
+	exit 1
+}
+[[ $PATH =~ "/user_path_1" ]] || {
+	echo "/user_path_1 not in PATH"
+	exit 1
+}
+[[ $PATH =~ "/user_path_2" ]] || {
+	echo "/user_path_2 not in PATH"
+	exit 1
+}
+[[ $PATH =~ "custom_bin" ]] || {
+	echo "custom_bin not in PATH"
+	exit 1
+}
+[[ $PATH =~ "/mise/installs/tiny" ]] || {
+	echo "Tool path not in PATH"
+	exit 1
+}
+[[ $PATH =~ $SHARED_PATH ]] || {
+	echo "SHARED_PATH not in PATH"
+	exit 1
+}
+
+# SHARED_PATH should appear three times (before, inside, and after mise entries)
+SHARED_COUNT=$(echo "$PATH" | tr ':' '\n' | grep -Fxc "$SHARED_PATH")
+[[ $SHARED_COUNT == "3" ]] || {
+	echo "SHARED_PATH should appear 3 times, got: $SHARED_COUNT"
+	exit 1
+}
+
+# Deactivate mise
+eval "$(command mise deactivate)"
+
+# After deactivation:
+
+# 1. Mise-managed environment variables should be removed
+[[ ${FOO:-unset} == "unset" ]] || {
+	echo "FOO should be unset, got: $FOO"
+	exit 1
+}
+[[ ${BAR:-unset} == "unset" ]] || {
+	echo "BAR should be unset, got: $BAR"
+	exit 1
+}
+
+# 2. User's own environment variables should be preserved
+[[ $USER_VAR == "user_value" ]] || {
+	echo "USER_VAR should be user_value, got: $USER_VAR"
+	exit 1
+}
+[[ $USER_PATH == "/usr/local/myapp" ]] || {
+	echo "USER_PATH should be /usr/local/myapp, got: $USER_PATH"
+	exit 1
+}
+
+# 3. Mise-managed paths should be removed from PATH
+[[ ! $PATH =~ "/mise/installs/tiny" ]] || {
+	echo "Tool path should not be in PATH after deactivation"
+	exit 1
+}
+[[ ! $PATH =~ "custom_bin" ]] || {
+	echo "custom_bin should not be in PATH after deactivation"
+	exit 1
+}
+
+# Shared path should now appear exactly twice (before and after mise)
+SHARED_COUNT=$(echo "$PATH" | tr ':' '\n' | grep -Fxc "$SHARED_PATH")
+[[ $SHARED_COUNT == "2" ]] || {
+	echo "SHARED_PATH should appear 2 times after deactivation, got: $SHARED_COUNT"
+	exit 1
+}
+
+# 4. User-added paths should be preserved
+[[ $PATH =~ "/user_path_1" ]] || {
+	echo "/user_path_1 should be preserved"
+	exit 1
+}
+[[ $PATH =~ "/user_path_2" ]] || {
+	echo "/user_path_2 should be preserved"
+	exit 1
+}
+
+# 5. Original PATH components should still be present
+[[ $PATH =~ ${ORIGINAL_PATH%%:*} ]] || {
+	echo "Original PATH components should be preserved"
+	exit 1
+}
+
+# 6. No duplicate paths other than SHARED_PATH
+PATH_COUNT=$(echo "$PATH" | tr ':' '\n' | grep -Fvx "$SHARED_PATH" | sort | uniq -d | wc -l | tr -d ' ')
+[[ $PATH_COUNT == "0" ]] || {
+	echo "No duplicate paths expected other than SHARED_PATH, got: $PATH_COUNT"
+	exit 1
+}
+
+# 7. Mise shell integration should be removed
+# The mise function should no longer exist
+if type mise 2>/dev/null | grep -q "function"; then
+	echo "ERROR: mise function still exists after deactivate"
+	exit 1
+fi
+
+# 8. Test edge case: deactivating when not activated should be safe
+eval "$(command mise deactivate)"
+echo "deactivate_twice works"
+
+# 9. Test reactivation after deactivation
+eval "$(mise activate zsh --status)" && _mise_hook
+
+# After reactivation, mise env vars should be back
+[[ $FOO == "mise_foo" ]] || {
+	echo "FOO should be mise_foo after reactivation, got: $FOO"
+	exit 1
+}
+[[ $BAR == "mise_bar" ]] || {
+	echo "BAR should be mise_bar after reactivation, got: $BAR"
+	exit 1
+}
+
+# User additions should still be preserved
+[[ $PATH =~ "/user_path_1" ]] || {
+	echo "/user_path_1 should be preserved"
+	exit 1
+}
+[[ $PATH =~ "/user_path_2" ]] || {
+	echo "/user_path_2 should be preserved"
+	exit 1
+}
+[[ $PATH =~ $SHARED_PATH ]] || {
+	echo "SHARED_PATH should be preserved"
+	exit 1
+}
+
+# After reactivation, shared_entry appears 3 times:
+# - Once from env._.path config (mise adds it to maintain user's intended ordering)
+# - Twice from user manual additions (preserved in PATH)
+# This is correct behavior: user-configured paths are always added even if they
+# exist elsewhere in PATH, to ensure the user's intended precedence is maintained.
+SHARED_COUNT=$(echo "$PATH" | tr ':' '\n' | grep -Fxc "$SHARED_PATH")
+[[ $SHARED_COUNT == "3" ]] || {
+	echo "SHARED_PATH should appear 3 times after reactivation, got: $SHARED_COUNT"
+	exit 1
+}
+
+# And user vars should still be there
+[[ $USER_VAR == "user_value" ]] || {
+	echo "USER_VAR should be user_value, got: $USER_VAR"
+	exit 1
+}
+
+# 10. Test deactivation with modified env vars
+# If user modifies a mise-managed variable, deactivation should still remove it
+export FOO="user_modified_foo"
+eval "$(command mise deactivate)"
+
+# FOO should be removed entirely by deactivation (mise doesn't track user modifications)
+[[ ${FOO:-unset} == "unset" ]] || {
+	echo "FOO should be unset after deactivation, got: $FOO"
+	exit 1
+}
+
+echo "All tests passed!"

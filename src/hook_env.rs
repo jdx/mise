@@ -245,14 +245,16 @@ pub fn clear_old_env(shell: &dyn Shell) -> String {
     let mut patches = env::__MISE_DIFF.reverse().to_patches();
 
     // For fish shell, filter out PATH operations from the reversed diff because
-    // fish has its own PATH management that conflicts with ours. We'll set PATH
-    // correctly in the build_path_operations call later.
+    // fish has its own PATH management that conflicts with ours.
     if shell.to_string() == "fish" {
         patches.retain(|p| match p {
             EnvDiffOperation::Add(k, _)
             | EnvDiffOperation::Change(k, _)
             | EnvDiffOperation::Remove(k) => k != &*PATH_KEY,
         });
+        // Fish also needs PATH restored during deactivation
+        let new_path = compute_deactivated_path();
+        patches.push(EnvDiffOperation::Change(PATH_KEY.to_string(), new_path));
     } else {
         // For non-fish shells, we need to preserve user-added paths while removing mise paths
         let new_path = compute_deactivated_path();
