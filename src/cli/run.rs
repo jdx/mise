@@ -1,7 +1,5 @@
-use crate::{errors::Error, hash};
+use crate::errors::Error;
 use std::collections::BTreeMap;
-use std::fs;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 use std::iter::once;
 use std::ops::Deref;
@@ -20,9 +18,7 @@ use crate::file::display_path;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::task_list::{get_task_lists, resolve_depends, split_task_spec};
 use crate::task::task_output::{TaskOutput, trunc};
-use crate::task::task_source_checker::{
-    is_glob_pattern, last_modified_glob_match, last_modified_path,
-};
+use crate::task::task_source_checker::{save_checksum, sources_are_fresh, task_cwd};
 use crate::task::{Deps, GetMatchingExt, Task, TaskLoadContext};
 use crate::toolset::{InstallOptions, ToolSource, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -32,7 +28,6 @@ use crate::{dirs, duration, env, exit, file, ui};
 use clap::{CommandFactory, ValueHint};
 use duct::IntoExecutablePath;
 use eyre::{Result, bail, ensure, eyre};
-use glob::glob;
 use indexmap::IndexMap;
 use itertools::Itertools;
 #[cfg(unix)]
@@ -765,7 +760,7 @@ impl Run {
             }
             return Ok(());
         }
-        if !self.force && self.sources_are_fresh(task, config).await? {
+        if !self.force && sources_are_fresh(task, config).await? {
             if !self.quiet(Some(task)) {
                 self.eprint(task, &prefix, "sources up-to-date, skipping");
             }
@@ -893,7 +888,7 @@ impl Run {
             );
         }
 
-        self.save_checksum(task)?;
+        save_checksum(task)?;
 
         Ok(())
     }
@@ -1682,7 +1677,7 @@ impl Run {
                 }
             }
         }
-        let dir = self.cwd(task, &config).await?;
+        let dir = task_cwd(task, &config).await?;
         if !dir.exists() {
             self.eprint(
                 task,
@@ -1808,65 +1803,6 @@ impl Run {
         Ok(())
     }
 
-    async fn sources_are_fresh(&self, task: &Task, config: &Arc<Config>) -> Result<bool> {
-        if task.sources.is_empty() {
-            return Ok(false);
-        }
-        // TODO: We should benchmark this and find out if it might be possible to do some caching around this or something
-        // perhaps using some manifest in a state directory or something, maybe leveraging atime?
-        let run = async || -> Result<bool> {
-            let root = self.cwd(task, config).await?;
-            let mut sources = task.sources.clone();
-            sources.push(task.config_source.to_string_lossy().to_string());
-            let source_metadatas = self.get_file_metadatas(&root, &sources)?;
-            let source_metadata_hash = self.file_metadatas_to_hash(&source_metadatas);
-            let source_metadata_hash_path = self.sources_hash_path(task);
-            if let Some(dir) = source_metadata_hash_path.parent() {
-                file::create_dir_all(dir)?;
-            }
-            if self
-                .source_metadata_existing_hash(task)
-                .is_some_and(|h| h != source_metadata_hash)
-            {
-                debug!(
-                    "source metadata hash mismatch in {}",
-                    source_metadata_hash_path.display()
-                );
-                file::write(&source_metadata_hash_path, &source_metadata_hash)?;
-                return Ok(false);
-            }
-            let sources = self.get_last_modified_from_metadatas(&source_metadatas);
-            let outputs = self.get_last_modified(&root, &task.outputs.paths(task))?;
-            file::write(&source_metadata_hash_path, &source_metadata_hash)?;
-            trace!("sources: {sources:?}, outputs: {outputs:?}");
-            match (sources, outputs) {
-                (Some(sources), Some(outputs)) => Ok(sources < outputs),
-                _ => Ok(false),
-            }
-        };
-        Ok(run().await.unwrap_or_else(|err| {
-            warn!("sources_are_fresh: {err:?}");
-            false
-        }))
-    }
-
-    fn sources_hash_path(&self, task: &Task) -> PathBuf {
-        let mut hasher = DefaultHasher::new();
-        task.hash(&mut hasher);
-        task.config_source.hash(&mut hasher);
-        let hash = format!("{:x}", hasher.finish());
-        dirs::STATE.join("task-sources").join(&hash)
-    }
-
-    fn source_metadata_existing_hash(&self, task: &Task) -> Option<String> {
-        let path = self.sources_hash_path(task);
-        if path.exists() {
-            Some(file::read_to_string(&path).unwrap_or_default())
-        } else {
-            None
-        }
-    }
-
     fn add_failed_task(&self, task: Task, status: Option<i32>) {
         self.failed_tasks
             .lock()
@@ -1876,102 +1812,6 @@ impl Run {
 
     fn is_stopping(&self) -> bool {
         !self.failed_tasks.lock().unwrap().is_empty()
-    }
-
-    fn get_file_metadatas(
-        &self,
-        root: &Path,
-        patterns_or_paths: &[String],
-    ) -> Result<Vec<(PathBuf, fs::Metadata)>> {
-        if patterns_or_paths.is_empty() {
-            return Ok(vec![]);
-        }
-        let (patterns, paths): (Vec<&String>, Vec<&String>) =
-            patterns_or_paths.iter().partition(|p| is_glob_pattern(p));
-
-        let mut metadatas = BTreeMap::new();
-        for pattern in patterns {
-            let files = glob(root.join(pattern).to_str().unwrap())?;
-            for file in files.flatten() {
-                if let Ok(metadata) = file.metadata() {
-                    metadatas.insert(file, metadata);
-                }
-            }
-        }
-
-        for path in paths {
-            let file = root.join(path);
-            if let Ok(metadata) = file.metadata() {
-                metadatas.insert(file, metadata);
-            }
-        }
-
-        let metadatas = metadatas
-            .into_iter()
-            .filter(|(_, m)| m.is_file())
-            .collect_vec();
-
-        Ok(metadatas)
-    }
-
-    fn file_metadatas_to_hash(&self, metadatas: &[(PathBuf, fs::Metadata)]) -> String {
-        let paths: Vec<_> = metadatas.iter().map(|(p, _)| p).collect();
-        hash::hash_to_str(&paths)
-    }
-
-    fn get_last_modified_from_metadatas(
-        &self,
-        metadatas: &[(PathBuf, fs::Metadata)],
-    ) -> Option<SystemTime> {
-        metadatas.iter().flat_map(|(_, m)| m.modified()).max()
-    }
-
-    fn get_last_modified(
-        &self,
-        root: &Path,
-        patterns_or_paths: &[String],
-    ) -> Result<Option<SystemTime>> {
-        if patterns_or_paths.is_empty() {
-            return Ok(None);
-        }
-        let (patterns, paths): (Vec<&String>, Vec<&String>) =
-            patterns_or_paths.iter().partition(|p| is_glob_pattern(p));
-
-        let last_mod = std::cmp::max(
-            last_modified_glob_match(root, &patterns)?,
-            last_modified_path(root, &paths)?,
-        );
-
-        trace!(
-            "last_modified of {}: {last_mod:?}",
-            patterns_or_paths.iter().join(" ")
-        );
-        Ok(last_mod)
-    }
-
-    async fn cwd(&self, task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
-        if let Some(d) = task.dir(config).await? {
-            Ok(d)
-        } else {
-            Ok(config
-                .project_root
-                .clone()
-                .or_else(|| dirs::CWD.clone())
-                .unwrap_or_default())
-        }
-    }
-
-    fn save_checksum(&self, task: &Task) -> Result<()> {
-        if task.sources.is_empty() {
-            return Ok(());
-        }
-        if task.outputs.is_auto() {
-            for p in task.outputs.paths(task) {
-                debug!("touching auto output file: {p}");
-                file::touch_file(&PathBuf::from(&p))?;
-            }
-        }
-        Ok(())
     }
 
     fn timings(&self) -> bool {
