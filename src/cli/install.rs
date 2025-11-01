@@ -164,6 +164,13 @@ impl Install {
         let trs = measure!("get_tool_request_set", {
             config.get_tool_request_set().await?
         });
+
+        // Check for tools that don't exist in the registry
+        // These were tracked during build() before being filtered out
+        for ba in &trs.unknown_tools {
+            // This will error with a proper message like "tool not found in mise tool registry"
+            ba.backend()?;
+        }
         let versions = measure!("fetching missing runtimes", {
             trs.missing_tools(&config)
                 .await
