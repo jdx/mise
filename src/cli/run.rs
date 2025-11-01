@@ -1702,11 +1702,10 @@ impl Run {
 
     fn output(&self, task: Option<&Task>) -> TaskOutput {
         // Check for full silent mode (both streams)
-        if let Some(task_ref) = task {
-            if matches!(task_ref.silent, crate::task::Silent::Bool(true)) {
+        if let Some(task_ref) = task
+            && matches!(task_ref.silent, crate::task::Silent::Bool(true)) {
                 return TaskOutput::Silent;
             }
-        }
 
         // Check global output settings
         if let Some(o) = self.output {
