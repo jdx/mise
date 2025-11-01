@@ -28,12 +28,7 @@ use clap::{CommandFactory, ValueHint};
 use duct::IntoExecutablePath;
 use eyre::{Result, bail, ensure, eyre};
 use itertools::Itertools;
-#[cfg(unix)]
-use nix::sys::signal::SIGTERM;
-use tokio::{
-    sync::{Mutex, Semaphore, mpsc, oneshot},
-    task::JoinSet,
-};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 /// Run task(s)
 ///
@@ -201,14 +196,9 @@ pub struct Run {
 
     #[clap(skip)]
     pub context_builder: crate::task::task_context_builder::TaskContextBuilder,
-}
 
-struct SpawnCtx {
-    semaphore: Arc<Semaphore>,
-    config: Arc<Config>,
-    sched_tx: Arc<mpsc::UnboundedSender<(Task, Arc<Mutex<Deps>>)>>,
-    jset: Arc<Mutex<JoinSet<Result<()>>>>,
-    in_flight: Arc<std::sync::atomic::AtomicUsize>,
+    #[clap(skip)]
+    pub scheduler: Option<crate::task::task_scheduler::Scheduler>,
 }
 
 impl Run {
@@ -415,13 +405,11 @@ impl Run {
         .await?;
 
         let timer = std::time::Instant::now();
-        let jset = Arc::new(Mutex::new(JoinSet::new()));
         let config = config.clone();
 
-        type SchedMsg = (Task, Arc<Mutex<Deps>>);
-        let (sched_tx, mut sched_rx) = mpsc::unbounded_channel::<SchedMsg>();
-        let sched_tx = Arc::new(sched_tx);
-        let in_flight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        // Initialize scheduler
+        let mut scheduler = crate::task::task_scheduler::Scheduler::new(this.jobs());
+        let sched_tx = scheduler.sender();
         let (main_done_tx, main_done_rx) = tokio::sync::watch::channel(false);
 
         // Pump initial deps leaves into scheduler
@@ -479,7 +467,7 @@ impl Run {
         }
 
         // Inline scheduler loop; drains ready tasks and exits when main deps done and in-flight is zero
-        let semaphore = Arc::new(Semaphore::new(this.jobs()));
+        let mut sched_rx = scheduler.take_receiver().unwrap();
         let mut main_done_rx = main_done_rx.clone();
         loop {
             // Drain ready tasks without awaiting
@@ -496,13 +484,7 @@ impl Run {
                             this.clone(),
                             task,
                             deps_for_remove,
-                            SpawnCtx {
-                                semaphore: semaphore.clone(),
-                                config: config.clone(),
-                                sched_tx: sched_tx.clone(),
-                                jset: jset.clone(),
-                                in_flight: in_flight.clone(),
-                            },
+                            scheduler.spawn_context(config.clone()),
                         )
                         .await?;
                     }
@@ -525,10 +507,7 @@ impl Run {
             }
 
             // Exit if main deps finished and nothing is running/queued
-            if *main_done_rx.borrow()
-                && in_flight.load(std::sync::atomic::Ordering::SeqCst) == 0
-                && !drained_any
-            {
+            if *main_done_rx.borrow() && scheduler.in_flight_count() == 0 && !drained_any {
                 trace!("scheduler drain complete; exiting loop");
                 break;
             }
@@ -543,13 +522,7 @@ impl Run {
                             this.clone(),
                             task,
                             deps_for_remove,
-                            SpawnCtx {
-                                semaphore: semaphore.clone(),
-                                config: config.clone(),
-                                sched_tx: sched_tx.clone(),
-                                jset: jset.clone(),
-                                in_flight: in_flight.clone(),
-                            },
+                            scheduler.spawn_context(config.clone()),
                         )
                         .await?;
                     } else {
@@ -562,16 +535,7 @@ impl Run {
             }
         }
 
-        while let Some(result) = jset.lock().await.join_next().await {
-            if result.is_ok() || this.continue_on_error {
-                continue;
-            }
-            #[cfg(unix)]
-            CmdLineRunner::kill_all(SIGTERM);
-            #[cfg(windows)]
-            CmdLineRunner::kill_all();
-            break;
-        }
+        scheduler.join_all(this.continue_on_error).await?;
         // scheduler loop done
 
         if this.output(None) == TaskOutput::KeepOrder {
@@ -624,7 +588,7 @@ impl Run {
         this: Arc<Self>,
         task: Task,
         deps_for_remove: Arc<Mutex<Deps>>,
-        ctx: SpawnCtx,
+        ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
         // If we're already stopping due to a previous failure and not in
         // continue-on-error mode, do not launch this task. Ensure we remove

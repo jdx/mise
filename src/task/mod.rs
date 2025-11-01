@@ -42,6 +42,7 @@ pub mod task_list;
 mod task_load_context;
 pub mod task_output;
 pub mod task_output_handler;
+pub mod task_scheduler;
 mod task_script_parser;
 pub mod task_source_checker;
 pub mod task_sources;

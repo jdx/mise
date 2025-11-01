@@ -527,6 +527,7 @@ impl Cli {
                         tool: Default::default(),
                         output_handler: None,
                         context_builder: Default::default(),
+                        scheduler: None,
                         no_cache: Default::default(),
                         timeout: None,
                     })));
