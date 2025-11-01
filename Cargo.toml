@@ -29,7 +29,7 @@ include = [
   "/src/plugins/core/assets/**",
 ]
 build = "build.rs"
-rust-version = "1.85"
+rust-version = "1.88"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
