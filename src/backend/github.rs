@@ -123,7 +123,7 @@ impl Backend for UnifiedGitBackend {
             lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
         {
             let bin_path = template_string(&bin_path_template, tv);
-            Ok(vec![tv.install_path().join(bin_path)])
+            Ok(vec![tv.install_path().join(&bin_path)])
         } else {
             self.discover_bin_paths(tv)
         }
