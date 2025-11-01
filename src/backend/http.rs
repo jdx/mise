@@ -171,13 +171,15 @@ impl HttpBackend {
             let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
 
             // Determine the destination path
-            let (dest_dir, dest_filename) = if let Some(bin_path_template) = opts.get("bin_path") {
+            let (dest_dir, dest_filename) = if let Some(bin_path_template) =
+                lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+            {
                 // If bin_path is specified, use it as directory
-                let bin_path = template_string(bin_path_template, tv);
+                let bin_path = template_string(&bin_path_template, tv);
                 let bin_dir = cache_path.join(&bin_path);
                 (bin_dir, std::ffi::OsString::from(decompressed_name))
             } else if let Some(bin_name) =
-                lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+                lookup_platform_key(&opts, "bin").or_else(|| opts.get("bin").cloned())
             {
                 // If bin is specified, rename the file to this name
                 (
@@ -210,13 +212,15 @@ impl HttpBackend {
             file::make_executable(&dest)?;
         } else if format == file::TarFormat::Raw {
             // For raw files, determine the destination
-            let (dest_dir, dest_filename) = if let Some(bin_path_template) = opts.get("bin_path") {
+            let (dest_dir, dest_filename) = if let Some(bin_path_template) =
+                lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+            {
                 // If bin_path is specified, use it as directory
-                let bin_path = template_string(bin_path_template, tv);
+                let bin_path = template_string(&bin_path_template, tv);
                 let bin_dir = cache_path.join(&bin_path);
                 (bin_dir, file_path.file_name().unwrap().to_os_string())
             } else if let Some(bin_name) =
-                lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+                lookup_platform_key(&opts, "bin").or_else(|| opts.get("bin").cloned())
             {
                 // If bin is specified, rename the file to this name
                 (
@@ -245,7 +249,9 @@ impl HttpBackend {
             // Auto-detect if we need strip_components=1 before extracting
             // Only auto-strip if strip_components is not set AND bin_path is not explicitly configured
             if strip_components.is_none()
-                && opts.get("bin_path").is_none()
+                && lookup_platform_key(&opts, "bin_path")
+                    .or_else(|| opts.get("bin_path").cloned())
+                    .is_none()
                 && let Ok(should_strip) = file::should_strip_components(file_path, format)
                 && should_strip
             {

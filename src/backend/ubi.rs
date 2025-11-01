@@ -111,9 +111,8 @@ impl Backend for UbiBackend {
     ) -> eyre::Result<ToolVersion> {
         let v = tv.version.to_string();
         let opts = tv.request.options();
-        let bin_path = opts
-            .get("bin_path")
-            .cloned()
+        let bin_path = lookup_platform_key(&opts, "bin_path")
+            .or_else(|| opts.get("bin_path").cloned())
             .unwrap_or_else(|| "bin".to_string());
         let extract_all = opts.get("extract_all").is_some_and(|v| v == "true");
         let bin_dir = tv.install_path();

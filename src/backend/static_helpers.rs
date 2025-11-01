@@ -213,9 +213,11 @@ pub fn install_artifact(
         // Handle compressed single binary
         let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
         // Determine the destination path with support for bin_path
-        let dest = if let Some(bin_path_template) = opts.get("bin_path") {
-            let bin_path = template_string(bin_path_template, tv);
-            let bin_dir = install_path.join(bin_path);
+        let dest = if let Some(bin_path_template) =
+            lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+        {
+            let bin_path = template_string(&bin_path_template, tv);
+            let bin_dir = install_path.join(&bin_path);
             file::create_dir_all(&bin_dir)?;
             bin_dir.join(decompressed_name)
         } else if let Some(bin_name) =
@@ -239,9 +241,11 @@ pub fn install_artifact(
         file::make_executable(&dest)?;
     } else if format == file::TarFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
-        if let Some(bin_path_template) = opts.get("bin_path") {
-            let bin_path = template_string(bin_path_template, tv);
-            let bin_dir = install_path.join(bin_path);
+        if let Some(bin_path_template) =
+            lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+        {
+            let bin_path = template_string(&bin_path_template, tv);
+            let bin_dir = install_path.join(&bin_path);
             file::create_dir_all(&bin_dir)?;
             let dest = bin_dir.join(file_path.file_name().unwrap());
             file::copy(file_path, &dest)?;
@@ -266,7 +270,9 @@ pub fn install_artifact(
         // Auto-detect if we need strip_components=1 before extracting
         // Only do this if strip_components was not explicitly set by the user AND bin_path is not configured
         if strip_components.is_none()
-            && opts.get("bin_path").is_none()
+            && lookup_platform_key(opts, "bin_path")
+                .or_else(|| opts.get("bin_path").cloned())
+                .is_none()
             && let Ok(should_strip) = file::should_strip_components(file_path, format)
             && should_strip
         {
