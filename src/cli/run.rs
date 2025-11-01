@@ -1631,15 +1631,115 @@ impl Run {
                 cmd = cmd.stdout(Stdio::null()).stderr(Stdio::null());
             }
             TaskOutput::SilentStdout => {
+                // Suppress stdout but route stderr through the appropriate output mode
                 cmd = cmd.stdout(Stdio::null());
-                if raw || redactions.is_empty() {
-                    cmd = cmd.stdin(Stdio::inherit()).stderr(Stdio::inherit());
+
+                // Determine what the base output mode would be (without task-specific silent)
+                let base_output = if self.prefix {
+                    TaskOutput::Prefix
+                } else if self.interleave {
+                    TaskOutput::Interleave
+                } else if let Some(output) = Settings::get().task_output {
+                    output
+                } else if self.raw(Some(task)) || self.jobs() == 1 || self.is_linear {
+                    TaskOutput::Interleave
+                } else {
+                    TaskOutput::Prefix
+                };
+
+                // Apply stderr handlers based on the base output mode
+                match base_output {
+                    TaskOutput::Prefix => {
+                        cmd = cmd.with_on_stderr(|line| {
+                            if console::colors_enabled() {
+                                self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                            } else {
+                                self.eprint(task, prefix, &line);
+                            }
+                        });
+                    }
+                    TaskOutput::KeepOrder => {
+                        cmd = cmd.with_on_stderr(|line| {
+                            let mut map = self.keep_order_output.lock().unwrap();
+                            if !map.contains_key(task) {
+                                map.insert(task.clone(), Default::default());
+                            }
+                            if let Some(entry) = map.get_mut(task) {
+                                entry.1.push((prefix.to_string(), line));
+                            }
+                        });
+                    }
+                    TaskOutput::Timed => {
+                        cmd = cmd.with_on_stderr(|line| {
+                            if console::colors_enabled() {
+                                self.eprint(task, prefix, &format!("{line}\x1b[0m"));
+                            } else {
+                                self.eprint(task, prefix, &line);
+                            }
+                        });
+                    }
+                    TaskOutput::Quiet | TaskOutput::Interleave => {
+                        if raw || redactions.is_empty() {
+                            cmd = cmd.stdin(Stdio::inherit()).stderr(Stdio::inherit());
+                        }
+                    }
+                    _ => {}
                 }
             }
             TaskOutput::SilentStderr => {
+                // Suppress stderr but route stdout through the appropriate output mode
                 cmd = cmd.stderr(Stdio::null());
-                if raw || redactions.is_empty() {
-                    cmd = cmd.stdin(Stdio::inherit()).stdout(Stdio::inherit());
+
+                // Determine what the base output mode would be (without task-specific silent)
+                let base_output = if self.prefix {
+                    TaskOutput::Prefix
+                } else if self.interleave {
+                    TaskOutput::Interleave
+                } else if let Some(output) = Settings::get().task_output {
+                    output
+                } else if self.raw(Some(task)) || self.jobs() == 1 || self.is_linear {
+                    TaskOutput::Interleave
+                } else {
+                    TaskOutput::Prefix
+                };
+
+                // Apply stdout handlers based on the base output mode
+                match base_output {
+                    TaskOutput::Prefix => {
+                        cmd = cmd.with_on_stdout(|line| {
+                            if console::colors_enabled() {
+                                prefix_println!(prefix, "{line}\x1b[0m");
+                            } else {
+                                prefix_println!(prefix, "{line}");
+                            }
+                        });
+                    }
+                    TaskOutput::KeepOrder => {
+                        cmd = cmd.with_on_stdout(|line| {
+                            let mut map = self.keep_order_output.lock().unwrap();
+                            if !map.contains_key(task) {
+                                map.insert(task.clone(), Default::default());
+                            }
+                            if let Some(entry) = map.get_mut(task) {
+                                entry.0.push((prefix.to_string(), line));
+                            }
+                        });
+                    }
+                    TaskOutput::Timed => {
+                        let timed_outputs = self.timed_outputs.clone();
+                        cmd = cmd.with_on_stdout(move |line| {
+                            timed_outputs
+                                .lock()
+                                .unwrap()
+                                .insert(prefix.to_string(), (SystemTime::now(), line));
+                        });
+                    }
+                    TaskOutput::Quiet | TaskOutput::Interleave => {
+                        if raw || redactions.is_empty() {
+                            cmd = cmd.stdin(Stdio::inherit()).stdout(Stdio::inherit());
+                        }
+                    }
+                    _ => {}
                 }
             }
             TaskOutput::Quiet | TaskOutput::Interleave => {
