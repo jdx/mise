@@ -17,6 +17,8 @@ use itertools::Itertools;
 pub struct ToolRequestSet {
     pub tools: IndexMap<Arc<BackendArg>, Vec<ToolRequest>>,
     pub sources: BTreeMap<Arc<BackendArg>, ToolSource>,
+    /// Tools that were filtered out because they don't exist in the registry (BackendType::Unknown)
+    pub unknown_tools: Vec<Arc<BackendArg>>,
 }
 
 impl ToolRequestSet {
@@ -167,6 +169,10 @@ impl ToolRequestSetBuilder {
 
         for ba in trs.tools.keys().cloned().collect_vec() {
             if self.is_disabled(&ba) {
+                // Track tools that don't exist in the registry
+                if ba.backend_type() == BackendType::Unknown {
+                    trs.unknown_tools.push(ba.clone());
+                }
                 trs.tools.shift_remove(&ba);
                 trs.sources.remove(&ba);
             }
