@@ -71,9 +71,10 @@ impl OutputHandler {
 
     /// Determine the output mode for a task
     pub fn output(&self, task: Option<&Task>) -> TaskOutput {
-        // Task-level silent takes precedence
+        // Check for full silent mode (both streams)
+        // Only Silent::Bool(true) means completely silent, not Silent::Stdout or Silent::Stderr
         if let Some(task_ref) = task
-            && task_ref.silent.is_silent()
+            && matches!(task_ref.silent, crate::task::Silent::Bool(true))
         {
             return TaskOutput::Silent;
         }
