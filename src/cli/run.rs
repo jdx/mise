@@ -2016,10 +2016,6 @@ impl Run {
     }
 }
 
-// Helper functions moved to src/task/ modules:
-// - split_task_spec, validate_monorepo_setup -> task_list.rs
-// - is_glob_pattern, last_modified_* -> task_source_checker.rs
-
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
