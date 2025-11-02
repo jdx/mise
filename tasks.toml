@@ -23,7 +23,7 @@ depends = ['lint:*']
 [build]
 alias = "b"
 run = "cargo build --all-features"
-run_windows = "cargo build --features clap_mangen"
+run_windows = "cargo build"
 description = "Build the project"
 #sources = ["Cargo.*", "src/**/*.rs"]
 #outputs = ["target/debug/mise"]
