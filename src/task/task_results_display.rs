@@ -88,11 +88,7 @@ impl TaskResultsDisplay {
             let status_str = status
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "unknown".to_string());
-            self.eprint(
-                &task,
-                &prefix,
-                &format!("exited with status {}", status_str),
-            );
+            self.eprint(task, &prefix, &format!("exited with status {}", status_str));
         }
     }
 
