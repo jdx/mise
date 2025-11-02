@@ -1,5 +1,15 @@
 # Changelog
 
+## [2025.11.2](https://github.com/jdx/mise/compare/v2025.11.1..v2025.11.2) - 2025-11-02
+
+### 🚀 Features
+
+- **(task)** add selective stream suppression for silent configuration by @jdx in [#6851](https://github.com/jdx/mise/pull/6851)
+
+### 🐛 Bug Fixes
+
+- Don't set empty env var if decryption fails with age.strict=false by @iamkroot in [#6847](https://github.com/jdx/mise/pull/6847)
+
 ## [2025.11.1](https://github.com/jdx/mise/compare/v2025.11.0..v2025.11.1) - 2025-11-01
 
 ### 📦 Registry
