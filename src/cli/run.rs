@@ -8,7 +8,6 @@ use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::config::{Config, Settings};
 use crate::duration;
-use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
@@ -382,7 +381,8 @@ impl Run {
     /// Prepare tasks: resolve dependencies, fetch remote tasks, create dependency graph
     async fn prepare_tasks(&mut self, config: &Arc<Config>, tasks: Vec<Task>) -> Result<Deps> {
         let mut tasks = resolve_depends(config, tasks).await?;
-        self.fetch_tasks(&mut tasks).await?;
+        let fetcher = crate::task::task_fetcher::TaskFetcher::new(self.no_cache);
+        fetcher.fetch_tasks(&mut tasks).await?;
         let tasks = Deps::new(config, tasks).await?;
         self.is_linear = tasks.is_linear();
         Ok(tasks)
@@ -527,34 +527,6 @@ impl Run {
 
     fn quiet(&self, task: Option<&Task>) -> bool {
         self.output_handler.as_ref().unwrap().quiet(task)
-    }
-
-    async fn fetch_tasks(&self, tasks: &mut Vec<Task>) -> Result<()> {
-        let no_cache = self.no_cache || Settings::get().task_remote_no_cache.unwrap_or(false);
-        let task_file_providers = TaskFileProvidersBuilder::new()
-            .with_cache(!no_cache)
-            .build();
-
-        for t in tasks {
-            if let Some(file) = &t.file {
-                let source = file.to_string_lossy().to_string();
-
-                let provider = task_file_providers.get_provider(&source);
-
-                if provider.is_none() {
-                    bail!("No provider found for file: {}", source);
-                }
-
-                let local_path = provider.unwrap().get_local_path(&source).await?;
-
-                // Store the original remote source before replacing with local path
-                // This is used to determine if the task should use monorepo config file context
-                t.remote_file_source = Some(source);
-                t.file = Some(local_path);
-            }
-        }
-
-        Ok(())
     }
 }
 
