@@ -257,65 +257,10 @@ impl Run {
 
         // Step 4: Initialize scheduler and run tasks
         let mut scheduler = crate::task::task_scheduler::Scheduler::new(this.jobs());
-        let sched_tx = scheduler.sender();
-        let (main_done_tx, main_done_rx) = tokio::sync::watch::channel(false);
-
-        // Pump initial deps leaves into scheduler
         let main_deps = Arc::new(Mutex::new(tasks));
-        {
-            let sched_tx = sched_tx.clone();
-            let main_deps_clone = main_deps.clone();
-            // forward initial leaves synchronously
-            {
-                let mut rx = main_deps_clone.lock().await.subscribe();
-                loop {
-                    match rx.try_recv() {
-                        Ok(Some(task)) => {
-                            trace!(
-                                "main deps initial leaf: {} {}",
-                                task.name,
-                                task.args.join(" ")
-                            );
-                            let _ = sched_tx.send((task, main_deps_clone.clone()));
-                        }
-                        Ok(None) => {
-                            trace!("main deps initial done");
-                            break;
-                        }
-                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {
-                            break;
-                        }
-                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
-                            break;
-                        }
-                    }
-                }
-            }
-            // then forward remaining leaves asynchronously
-            tokio::spawn(async move {
-                let mut rx = main_deps_clone.lock().await.subscribe();
-                while let Some(msg) = rx.recv().await {
-                    match msg {
-                        Some(task) => {
-                            trace!(
-                                "main deps leaf scheduled: {} {}",
-                                task.name,
-                                task.args.join(" ")
-                            );
-                            let _ = sched_tx.send((task, main_deps_clone.clone()));
-                        }
-                        None => {
-                            trace!("main deps completed");
-                            let _ = main_done_tx.send(true);
-                            break;
-                        }
-                    }
-                }
-            });
-        }
 
-        // Run scheduler loop
-        let mut main_done_rx = main_done_rx.clone();
+        // Pump deps leaves into scheduler
+        let mut main_done_rx = scheduler.pump_deps(main_deps.clone()).await;
         let spawn_context = scheduler.spawn_context(config.clone());
         scheduler
             .run_loop(

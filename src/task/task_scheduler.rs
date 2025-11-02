@@ -38,11 +38,6 @@ impl Scheduler {
         self.sched_rx.take()
     }
 
-    /// Get the sender for scheduling tasks
-    pub fn sender(&self) -> Arc<mpsc::UnboundedSender<SchedMsg>> {
-        self.sched_tx.clone()
-    }
-
     /// Wait for all spawned tasks to complete
     pub async fn join_all(&self, continue_on_error: bool) -> Result<()> {
         while let Some(result) = self.jset.lock().await.join_next().await {
@@ -72,6 +67,68 @@ impl Scheduler {
     /// Get the in-flight task count
     pub fn in_flight_count(&self) -> usize {
         self.in_flight.load(Ordering::SeqCst)
+    }
+
+    /// Pump dependency graph leaves into the scheduler
+    ///
+    /// Forwards initial leaves synchronously, then spawns an async task to forward
+    /// remaining leaves as they become available. Returns a watch receiver that signals
+    /// when all dependencies are complete.
+    pub async fn pump_deps(&self, deps: Arc<Mutex<Deps>>) -> tokio::sync::watch::Receiver<bool> {
+        let (main_done_tx, main_done_rx) = tokio::sync::watch::channel(false);
+        let sched_tx = self.sched_tx.clone();
+        let deps_clone = deps.clone();
+
+        // Forward initial leaves synchronously
+        {
+            let mut rx = deps_clone.lock().await.subscribe();
+            loop {
+                match rx.try_recv() {
+                    Ok(Some(task)) => {
+                        trace!(
+                            "main deps initial leaf: {} {}",
+                            task.name,
+                            task.args.join(" ")
+                        );
+                        let _ = sched_tx.send((task, deps_clone.clone()));
+                    }
+                    Ok(None) => {
+                        trace!("main deps initial done");
+                        break;
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => {
+                        break;
+                    }
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Forward remaining leaves asynchronously
+        tokio::spawn(async move {
+            let mut rx = deps_clone.lock().await.subscribe();
+            while let Some(msg) = rx.recv().await {
+                match msg {
+                    Some(task) => {
+                        trace!(
+                            "main deps leaf scheduled: {} {}",
+                            task.name,
+                            task.args.join(" ")
+                        );
+                        let _ = sched_tx.send((task, deps_clone.clone()));
+                    }
+                    None => {
+                        trace!("main deps completed");
+                        let _ = main_done_tx.send(true);
+                        break;
+                    }
+                }
+            }
+        });
+
+        main_done_rx
     }
 
     /// Run the scheduler loop, draining tasks and spawning them via the callback
@@ -177,14 +234,6 @@ mod tests {
             0,
             "in_flight should start at 0"
         );
-    }
-
-    #[tokio::test]
-    async fn test_scheduler_sender() {
-        let scheduler = Scheduler::new(4);
-        let sender = scheduler.sender();
-        // Verify we can send messages
-        assert!(!sender.is_closed(), "sender should not be closed");
     }
 
     #[tokio::test]
