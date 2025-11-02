@@ -8,12 +8,11 @@ use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::config::{Config, Settings};
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
-use crate::task::task_helpers::{canonicalize_path, task_needs_permit};
+use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::{Deps, Task};
-use crate::toolset::{InstallOptions, ToolSource, Toolset};
 use crate::ui::{ctrlc, style, time};
 use crate::{duration, exit};
 use clap::{CommandFactory, ValueHint};
@@ -501,105 +500,11 @@ impl Run {
 
     /// Collect and install all tools needed by tasks
     async fn install_task_tools(&self, config: &mut Arc<Config>, tasks: &Deps) -> Result<()> {
-        let mut all_tools = self.tool.clone();
-        let mut all_tool_requests = vec![];
-        let all_tasks: Vec<_> = tasks.all().collect();
-
-        trace!("Collecting tools from {} tasks", all_tasks.len());
-
-        for t in &all_tasks {
-            // Collect tools from task.tools (task-level tool overrides)
-            for (k, v) in &t.tools {
-                all_tools.push(format!("{k}@{v}").parse()?);
-            }
-
-            // Collect tools from monorepo task config files
-            if let Some(task_cf) = t.cf(config) {
-                let config_path = canonicalize_path(task_cf.get_path());
-
-                // Check cache first
-                let cache = self
-                    .context_builder
-                    .tool_request_set_cache()
-                    .read()
-                    .expect("tool_request_set_cache RwLock poisoned");
-                let tool_request_set = if let Some(cached) = cache.get(&config_path) {
-                    trace!(
-                        "Using cached tool request set from {}",
-                        config_path.display()
-                    );
-                    Arc::clone(cached)
-                } else {
-                    drop(cache); // Release read lock before write
-                    match task_cf.to_tool_request_set() {
-                        Ok(trs) => {
-                            let trs = Arc::new(trs);
-                            let mut cache = self
-                                .context_builder
-                                .tool_request_set_cache()
-                                .write()
-                                .expect("tool_request_set_cache RwLock poisoned");
-                            cache.entry(config_path.clone()).or_insert_with(|| {
-                                trace!("Cached tool request set to {}", config_path.display());
-                                Arc::clone(&trs)
-                            });
-                            trs
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to parse tools from {} for task {}: {}",
-                                task_cf.get_path().display(),
-                                t.name,
-                                e
-                            );
-                            continue;
-                        }
-                    }
-                };
-
-                trace!(
-                    "Found {} tools in config file for task {}",
-                    tool_request_set.tools.len(),
-                    t.name
-                );
-
-                for (_, reqs) in tool_request_set.tools.iter() {
-                    all_tool_requests.extend(reqs.iter().cloned());
-                }
-            }
-        }
-
-        // Build and install toolset
-        let source = ToolSource::Argument;
-        let mut ts = Toolset::new(source.clone());
-
-        // Add tools from CLI args and task.tools
-        for tool_arg in all_tools {
-            if let Some(tvr) = tool_arg.tvr {
-                ts.add_version(tvr);
-            }
-        }
-
-        // Add tools from config files
-        for tr in all_tool_requests {
-            trace!("Adding tool from config: {}", tr);
-            ts.add_version(tr);
-        }
-
-        ts.resolve(config).await?;
-
-        ts.install_missing_versions(
-            config,
-            &InstallOptions {
-                missing_args_only: !Settings::get().task_run_auto_install,
-                skip_auto_install: !Settings::get().task_run_auto_install
-                    || !Settings::get().auto_install,
-                ..Default::default()
-            },
-        )
-        .await?;
-
-        Ok(())
+        let installer = crate::task::task_tool_installer::TaskToolInstaller::new(
+            &self.context_builder,
+            &self.tool,
+        );
+        installer.install_tools(config, tasks).await
     }
 
     /// Display final results and handle failures
