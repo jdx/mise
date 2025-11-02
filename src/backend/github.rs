@@ -119,8 +119,10 @@ impl Backend for UnifiedGitBackend {
         tv: &ToolVersion,
     ) -> Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
-        if let Some(bin_path_template) = opts.get("bin_path") {
-            let bin_path = template_string(bin_path_template, tv);
+        if let Some(bin_path_template) =
+            lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+        {
+            let bin_path = template_string(&bin_path_template, tv);
             Ok(vec![tv.install_path().join(bin_path)])
         } else {
             self.discover_bin_paths(tv)
