@@ -145,7 +145,6 @@ jobs:
           - dotnet-core
           - neovim
           - poetry
-          # TODO: - haskell not working due to already existing on image
           - lua
           - redis
           - gcloud
