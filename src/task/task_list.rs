@@ -274,7 +274,22 @@ pub async fn get_task_lists(
             .flat_map(|(_, t)| {
                 t.aliases
                     .iter()
-                    .map(|a| (a.to_string(), t))
+                    .map(|a| {
+                        // For monorepo tasks, prefix aliases with the monorepo path
+                        // e.g., task "//:format" with alias "fmt" becomes "//:fmt"
+                        if let Some(path) = crate::task::extract_monorepo_path(&t.name) {
+                            if path.is_empty() {
+                                // Root level task (e.g., "//:task")
+                                (format!("//:{}", a), t)
+                            } else {
+                                // Nested task (e.g., "//path:task")
+                                (format!("//{}:{}", path, a), t)
+                            }
+                        } else {
+                            // Non-monorepo task, use alias as-is
+                            (a.to_string(), t)
+                        }
+                    })
                     .chain(once((t.name.clone(), t)))
                     .collect::<Vec<_>>()
             })
@@ -363,7 +378,22 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
         .flat_map(|(_, t)| {
             t.aliases
                 .iter()
-                .map(|a| (a.to_string(), t.clone()))
+                .map(|a| {
+                    // For monorepo tasks, prefix aliases with the monorepo path
+                    // e.g., task "//:format" with alias "fmt" becomes "//:fmt"
+                    if let Some(path) = extract_monorepo_path(&t.name) {
+                        if path.is_empty() {
+                            // Root level task (e.g., "//:task")
+                            (format!("//:{}", a), t.clone())
+                        } else {
+                            // Nested task (e.g., "//path:task")
+                            (format!("//{}:{}", path, a), t.clone())
+                        }
+                    } else {
+                        // Non-monorepo task, use alias as-is
+                        (a.to_string(), t.clone())
+                    }
+                })
                 .chain(once((t.name.clone(), t.clone())))
                 .collect::<Vec<_>>()
         })

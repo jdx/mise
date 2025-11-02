@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Test that task aliases work properly in monorepo mode
+# Regression test for: https://github.com/jdx/mise/discussions/6854
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config with tasks that have aliases
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.format]
+alias = "fmt"
+run = "echo 'formatting code'"
+
+[tasks.lint]
+alias = ["l", "check"]
+run = "echo 'linting code'"
+TOML
+
+# Test 1: Running root task by full name
+echo "=== Test 1: Run root task by full name ==="
+output=$(mise run //:format 2>&1)
+echo "$output"
+echo "$output" | grep -q "formatting code" || (echo "FAIL: Task did not run" && exit 1)
+
+# Test 2: Running root task by alias (without //)
+echo "=== Test 2: Run root task by alias (without //) ==="
+output=$(mise run fmt 2>&1)
+echo "$output"
+echo "$output" | grep -q "formatting code" || (echo "FAIL: Alias did not work" && exit 1)
+
+# Test 3: Running root task by alias (with //)
+echo "=== Test 3: Run root task by alias (with //) ==="
+output=$(mise run //:fmt 2>&1)
+echo "$output"
+echo "$output" | grep -q "formatting code" || (echo "FAIL: Alias with // prefix did not work" && exit 1)
+
+# Test 4: Running task with multiple aliases
+echo "=== Test 4: Run task with multiple aliases ==="
+output=$(mise run //:l 2>&1)
+echo "$output"
+echo "$output" | grep -q "linting code" || (echo "FAIL: First alias did not work" && exit 1)
+
+output=$(mise run //:check 2>&1)
+echo "$output"
+echo "$output" | grep -q "linting code" || (echo "FAIL: Second alias did not work" && exit 1)
+
+# Test 5: Nested project task with alias
+mkdir -p projects/backend
+cat <<'TOML' >projects/backend/mise.toml
+[tasks.build]
+alias = "b"
+run = "echo 'building backend'"
+TOML
+
+echo "=== Test 5: Run nested project task by alias ==="
+output=$(mise run //projects/backend:b 2>&1)
+echo "$output"
+echo "$output" | grep -q "building backend" || (echo "FAIL: Nested task alias did not work" && exit 1)
+
+# Test 6: Task depends using alias
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.format]
+alias = "fmt"
+run = "echo 'formatting code'"
+
+[tasks.deploy]
+depends = ["//:fmt"]
+run = "echo 'deploying'"
+TOML
+
+echo "=== Test 6: Task depends on alias ==="
+output=$(mise run //:deploy 2>&1)
+echo "$output"
+echo "$output" | grep -q "formatting code" || (echo "FAIL: Dependency alias did not resolve" && exit 1)
+echo "$output" | grep -q "deploying" || (echo "FAIL: Dependent task did not run" && exit 1)
+
+echo "=== All tests passed! ==="
