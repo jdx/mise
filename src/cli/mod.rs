@@ -1,6 +1,6 @@
-use crate::cli::run::TaskOutput;
 use crate::config::{Config, Settings};
 use crate::exit::exit;
+use crate::task::TaskOutput;
 use crate::ui::{self, ctrlc};
 use crate::{Result, backend};
 use crate::{cli::args::ToolArg, path::PathExt};
@@ -510,7 +510,6 @@ impl Cli {
                         cd: self.cd,
                         continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,
-                        failed_tasks: Default::default(),
                         force: self.force,
                         interleave: self.interleave,
                         is_linear: false,
@@ -525,12 +524,9 @@ impl Cli {
                         timings: self.timings,
                         tmpdir: Default::default(),
                         tool: Default::default(),
-                        keep_order_output: Default::default(),
-                        task_prs: Default::default(),
-                        timed_outputs: Default::default(),
-                        toolset_cache: Default::default(),
-                        tool_request_set_cache: Default::default(),
-                        env_resolution_cache: Default::default(),
+                        output_handler: None,
+                        context_builder: Default::default(),
+                        executor: None,
                         no_cache: Default::default(),
                         timeout: None,
                     })));
