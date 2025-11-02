@@ -100,10 +100,10 @@ impl Shell for Xonsh {
                     hndl.remove(fn)
                     break
 
-            del XSH.aliases['mise']
-            del XSH.env['MISE_SHELL']
-            del XSH.env['__MISE_DIFF']
-            del XSH.env['__MISE_SESSION']
+            XSH.aliases.pop('mise', None)
+            XSH.env.pop('MISE_SHELL', None)
+            XSH.env.pop('__MISE_DIFF', None)
+            XSH.env.pop('__MISE_SESSION', None)
             "#}
     }
 

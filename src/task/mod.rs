@@ -33,14 +33,29 @@ use xx::regex;
 static FUZZY_MATCHER: Lazy<SkimMatcherV2> =
     Lazy::new(|| SkimMatcherV2::default().use_cache(true).smart_case());
 
+/// Type alias for tracking failed tasks with their exit codes
+pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
+
 mod deps;
+pub mod task_context_builder;
 mod task_dep;
+pub mod task_executor;
+pub mod task_fetcher;
 pub mod task_file_providers;
+pub mod task_helpers;
+pub mod task_list;
 mod task_load_context;
+pub mod task_output;
+pub mod task_output_handler;
+pub mod task_results_display;
+pub mod task_scheduler;
 mod task_script_parser;
+pub mod task_source_checker;
 pub mod task_sources;
+pub mod task_tool_installer;
 
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
+pub use task_output::TaskOutput;
 
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
@@ -463,13 +478,14 @@ impl Task {
     }
 
     pub fn all_depends(&self, tasks: &BTreeMap<String, Task>) -> Result<Vec<Task>> {
+        let tasks_ref = build_task_ref_map(tasks.iter());
         let mut path = vec![self.name.clone()];
-        self.all_depends_recursive(tasks, &mut path)
+        self.all_depends_recursive(&tasks_ref, &mut path)
     }
 
     fn all_depends_recursive(
         &self,
-        tasks: &BTreeMap<String, Task>,
+        tasks: &BTreeMap<String, &Task>,
         path: &mut Vec<String>,
     ) -> Result<Vec<Task>> {
         let mut depends: Vec<Task> = self
@@ -537,16 +553,7 @@ impl Task {
         };
 
         let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
-        let tasks: BTreeMap<String, Task> = all_tasks
-            .iter()
-            .flat_map(|(_, t)| {
-                t.aliases
-                    .iter()
-                    .map(|a| (a.to_string(), t.clone()))
-                    .chain(once((t.name.clone(), t.clone())))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+        let tasks = build_task_ref_map(all_tasks.iter());
         let depends = self
             .depends
             .iter()
@@ -898,6 +905,33 @@ pub(crate) fn extract_monorepo_path(name: &str) -> Option<String> {
     })
 }
 
+/// Build a map of task names and aliases to task references
+/// For monorepo tasks, creates entries for both prefixed and unprefixed aliases
+/// e.g., task "//:format" with alias "fmt" creates both "//:fmt" and "fmt"
+pub(crate) fn build_task_ref_map<'a, I>(tasks: I) -> BTreeMap<String, &'a Task>
+where
+    I: Iterator<Item = (&'a String, &'a Task)> + 'a,
+{
+    tasks
+        .flat_map(|(_, t)| {
+            t.aliases
+                .iter()
+                .flat_map(|a| {
+                    // For monorepo tasks, create entries for both prefixed and unprefixed aliases
+                    // This allows references like "fmt" to resolve to "//:format"
+                    if let Some(path) = extract_monorepo_path(&t.name) {
+                        vec![(format!("//{}:{}", path, a), t), (a.to_string(), t)]
+                    } else {
+                        // Non-monorepo task, use alias as-is
+                        vec![(a.to_string(), t)]
+                    }
+                })
+                .chain(once((t.name.clone(), t)))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 /// Resolve a task dependency pattern, optionally relative to a parent task
 /// If pattern starts with ":" and parent_task is provided, resolve relative to parent's path
 /// For example: parent "//projects/frontend:test" with pattern ":build" -> "//projects/frontend:build"
@@ -934,7 +968,7 @@ pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) ->
 }
 
 fn match_tasks_with_context(
-    tasks: &BTreeMap<String, Task>,
+    tasks: &BTreeMap<String, &Task>,
     td: &TaskDep,
     parent_task: Option<&Task>,
 ) -> Result<Vec<Task>> {
@@ -943,7 +977,7 @@ fn match_tasks_with_context(
         .get_matching(&resolved_pattern)?
         .into_iter()
         .map(|t| {
-            let mut t = t.clone();
+            let mut t = (*t).clone();
             t.args = td.args.clone();
             t
         })
