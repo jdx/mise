@@ -149,3 +149,50 @@ EOF
 
 assert "mise -q check_args" "no args received"
 assert "mise check_args -q" "args: -q"
+
+# Test 17: Task with usage spec shows help correctly
+cat <<'EOF' >mise.toml
+[tasks.with_usage]
+run = 'echo "running with_usage: $@"'
+usage = """
+flag "-q --quiet" help="Suppress output"
+arg "<file>" help="File to process"
+"""
+EOF
+
+# Test --help shows usage information (--help exits with status 1, so use || true)
+export MISE_TASK_DOUBLE_DASH_BEHAVIOR=legacy
+output=$(mise run with_usage --help 2>&1 || true)
+[[ $output == *"Usage: with_usage"* ]] || (echo "Expected 'Usage: with_usage' in output" && exit 1)
+[[ $output == *"-q --quiet"* ]] || (echo "Expected '-q --quiet' in output" && exit 1)
+[[ $output == *"<file>"* ]] || (echo "Expected '<file>' in output" && exit 1)
+
+export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
+output=$(mise run with_usage --help 2>&1 || true)
+[[ $output == *"Usage: with_usage"* ]] || (echo "Expected 'Usage: with_usage' in output" && exit 1)
+[[ $output == *"-q --quiet"* ]] || (echo "Expected '-q --quiet' in output" && exit 1)
+[[ $output == *"<file>"* ]] || (echo "Expected '<file>' in output" && exit 1)
+
+# Test that naked run also shows help
+output=$(mise with_usage --help 2>&1 || true)
+[[ $output == *"Usage: with_usage"* ]] || (echo "Expected 'Usage: with_usage' in naked run" && exit 1)
+
+# Test 18: Verify separator mode passes -- with --help
+export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
+# When using explicit --, help should be passed to the task as a regular arg
+cat <<'EOF' >mise.toml
+[tasks.check_help_arg]
+run = '''
+#!/usr/bin/env bash
+if [ "$1" = "--" ] && [ "$2" = "--help" ]; then
+  echo "received -- --help as args"
+elif [ "$1" = "--help" ]; then
+  echo "received --help directly"
+else
+  echo "received: $@"
+fi
+'''
+EOF
+
+# In separator mode with explicit --, --help is passed as an argument
+assert "mise run check_help_arg -- --help" "received -- --help as args"
