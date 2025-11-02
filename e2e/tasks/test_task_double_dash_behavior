@@ -45,7 +45,7 @@ assert "mise -q echo_args --custom arg1" "args: --custom arg1"
 # Test 7: Task with usage spec
 cat <<'EOF' >mise.toml
 [tasks.with_usage]
-run = 'echo "running with_usage: $@"'
+run = 'echo "custom=$usage_custom file=$usage_file args=$@"'
 usage = """
 flag "-x --custom" help="Custom flag"
 arg "<file>" help="File to process"
@@ -53,11 +53,12 @@ arg "<file>" help="File to process"
 EOF
 
 # Usage spec handles its own flags (parsed by usage spec, not passed as $@)
-assert "mise run with_usage -x myfile 2>&1" '[with_usage] $ echo "running with_usage: $@"
-running with_usage: '
+# shellcheck disable=SC2016
+assert "mise run with_usage -x myfile 2>&1" '[with_usage] $ echo "custom=$usage_custom file=$usage_file args=$@"
+custom=true file=myfile args='
 
 # But mise flags still go to mise (myfile is consumed by usage spec, not passed to $@)
-assert "mise run -q with_usage myfile" "running with_usage: "
+assert "mise run -q with_usage myfile" "custom= file=myfile args="
 
 # Test 8: --help shows usage spec help
 assert "mise run with_usage --help 2>&1 || true" "Usage: with_usage [-x --custom] <file>
