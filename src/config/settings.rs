@@ -281,22 +281,22 @@ impl Settings {
         if cli.yes {
             s.yes = Some(true);
         }
-        if cli.global_output_flags.quiet {
+        if cli.quiet {
             s.quiet = Some(true);
         }
-        if cli.global_output_flags.trace {
+        if cli.trace {
             s.log_level = Some("trace".to_string());
         }
-        if cli.global_output_flags.debug {
+        if cli.debug {
             s.log_level = Some("debug".to_string());
         }
-        if let Some(log_level) = &cli.global_output_flags.log_level {
+        if let Some(log_level) = &cli.log_level {
             s.log_level = Some(log_level.to_string());
         }
-        if cli.global_output_flags.verbose > 0 {
+        if cli.verbose > 0 {
             s.verbose = Some(true);
         }
-        if cli.global_output_flags.verbose > 1 {
+        if cli.verbose > 1 {
             s.log_level = Some("trace".to_string());
         }
         Self::reset(Some(s));
