@@ -22,6 +22,7 @@ EOF
 # When parent has multiple deps, it would previously export MISE_TASK_OUTPUT=prefix
 # which would override the child task's quiet=true setting
 # After the fix, the child task should respect its quiet directive
-assert "mise run parent" "[dep1] dep1
-[dep2] dep2
-[parent] child output"
+# Note: dep1 and dep2 run in parallel so their order is non-deterministic
+assert_contains "mise run parent" "[dep1] dep1"
+assert_contains "mise run parent" "[dep2] dep2"
+assert_contains "mise run parent" "[parent] child output"
