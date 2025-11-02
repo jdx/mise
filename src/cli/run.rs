@@ -164,9 +164,6 @@ pub struct Run {
     #[clap(skip)]
     pub is_linear: bool,
 
-    #[clap(skip)]
-    pub failed_tasks: std::sync::Mutex<Vec<(Task, i32)>>,
-
     /// Change how tasks information is output when running tasks
     ///
     /// - `prefix` - Print stdout/stderr by line, prefixed with the task's label
@@ -639,14 +636,22 @@ impl Run {
         }
 
         this.maybe_print_failure_summary();
-        if let Some((task, status)) = this.failed_tasks.lock().unwrap().first() {
+        if let Some((task, status)) = this
+            .executor
+            .as_ref()
+            .unwrap()
+            .failed_tasks
+            .lock()
+            .unwrap()
+            .first()
+        {
             let prefix = task.estyled_prefix();
             this.eprint(
                 task,
                 &prefix,
                 &format!("{} task failed", style::ered("ERROR")),
             );
-            exit(*status);
+            exit(status.unwrap_or(1));
         }
     }
 
@@ -658,7 +663,14 @@ impl Run {
         if !self.continue_on_error {
             return;
         }
-        let failed = self.failed_tasks.lock().unwrap().clone();
+        let failed = self
+            .executor
+            .as_ref()
+            .unwrap()
+            .failed_tasks
+            .lock()
+            .unwrap()
+            .clone();
         if failed.is_empty() {
             return;
         }
@@ -666,7 +678,10 @@ impl Run {
         eprintln!("{} {} task(s) failed:", style::ered("ERROR"), count);
         for (task, status) in &failed {
             let prefix = task.estyled_prefix();
-            self.eprint(task, &prefix, &format!("exited with status {}", status));
+            let status_str = status
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            self.eprint(task, &prefix, &format!("exited with status {}", status_str));
         }
     }
 
