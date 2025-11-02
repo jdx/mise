@@ -176,8 +176,6 @@ impl TaskExecutor {
             task.name,
             env_render_start.elapsed().as_millis()
         );
-        let output = self.output(Some(task));
-        env.insert("MISE_TASK_OUTPUT".into(), output.to_string());
         if !self.timings {
             env.insert("MISE_TASK_TIMINGS".to_string(), "0".to_string());
         }
