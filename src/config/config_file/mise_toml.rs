@@ -1466,7 +1466,24 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                             }
                         },
                         _ => {
-                            options.opts.insert(k, v.as_str().unwrap().to_string());
+                            // Handle nested tables (like platform.macos-arm64)
+                            // and convert them to string representation for ToolVersionOptions
+                            let value_str = match v {
+                                toml::Value::String(s) => {
+                                    // Convert {{version}} to {version} for backend templating
+                                    s.replace("{{version}}", "{version}")
+                                }
+                                toml::Value::Table(_) | toml::Value::Array(_) => {
+                                    // Serialize complex types back to TOML string
+                                    // This preserves nested structures like platform.macos-arm64.bin_path
+                                    toml::to_string(&v).map_err(de::Error::custom)?
+                                }
+                                toml::Value::Boolean(b) => b.to_string(),
+                                toml::Value::Integer(i) => i.to_string(),
+                                toml::Value::Float(f) => f.to_string(),
+                                toml::Value::Datetime(dt) => dt.to_string(),
+                            };
+                            options.opts.insert(k, value_str);
                         }
                     }
                 }
