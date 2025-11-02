@@ -477,9 +477,10 @@ impl Task {
             .collect()
     }
 
-    pub fn all_depends(&self, tasks: &BTreeMap<String, &Task>) -> Result<Vec<Task>> {
+    pub fn all_depends(&self, tasks: &BTreeMap<String, Task>) -> Result<Vec<Task>> {
+        let tasks_ref = build_task_ref_map(tasks.iter());
         let mut path = vec![self.name.clone()];
-        self.all_depends_recursive(tasks, &mut path)
+        self.all_depends_recursive(&tasks_ref, &mut path)
     }
 
     fn all_depends_recursive(
@@ -1740,9 +1741,7 @@ echo "hello world"
         tasks.insert("task_b".to_string(), task_b);
 
         // Should detect circular dependency
-        let tasks_ref: BTreeMap<String, &Task> =
-            tasks.iter().map(|(k, v)| (k.clone(), v)).collect();
-        let result = task_a.all_depends(&tasks_ref);
+        let result = task_a.all_depends(&tasks);
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("circular dependency detected"));
@@ -1788,9 +1787,7 @@ echo "hello world"
         tasks.insert("task_c".to_string(), task_c);
 
         // Should detect circular dependency
-        let tasks_ref: BTreeMap<String, &Task> =
-            tasks.iter().map(|(k, v)| (k.clone(), v)).collect();
-        let result = task_a.all_depends(&tasks_ref);
+        let result = task_a.all_depends(&tasks);
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("circular dependency detected"));
@@ -1848,9 +1845,7 @@ echo "hello world"
         tasks.insert("common".to_string(), common);
 
         // Should NOT detect circular dependency (diamond is OK)
-        let tasks_ref: BTreeMap<String, &Task> =
-            tasks.iter().map(|(k, v)| (k.clone(), v)).collect();
-        let result = root.all_depends(&tasks_ref);
+        let result = root.all_depends(&tasks);
         assert!(result.is_ok());
         let deps = result.unwrap();
         // Should have task_a, task_b, and common (deduplicated)

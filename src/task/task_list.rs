@@ -349,12 +349,11 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
     };
 
     let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
-    let all_tasks_map = crate::task::build_task_ref_map(all_tasks.iter());
 
     tasks
         .into_iter()
         .map(|t| {
-            let depends = t.all_depends(&all_tasks_map)?;
+            let depends = t.all_depends(&all_tasks)?;
             Ok(once(t).chain(depends).collect::<Vec<_>>())
         })
         .flatten_ok()
