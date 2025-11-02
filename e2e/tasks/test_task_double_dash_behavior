@@ -89,3 +89,63 @@ assert "mise -q echo_args arg1" "args: arg1"
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
 assert_not_contains "mise echo_args arg1 2>&1" "deprecated"
 assert "mise -q echo_args arg1" "args: arg1"
+
+# Test 14: Task with custom -q flag (legacy mode)
+cat <<'EOF' >mise.toml
+[tasks.custom_quiet]
+run = '''
+#!/usr/bin/env bash
+while getopts "q" opt; do
+  case $opt in
+    q) echo "custom quiet flag received" ;;
+  esac
+done
+'''
+EOF
+
+export MISE_TASK_DOUBLE_DASH_BEHAVIOR=legacy
+# In legacy mode with explicit --, the flag is passed to the task
+assert "mise run custom_quiet -- -q" "custom quiet flag received"
+# In naked run, -q after task name is passed to task
+assert "mise custom_quiet -q" "custom quiet flag received"
+
+# Test 15: Task with custom -q flag (separator mode)
+export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
+# In separator mode with explicit --, the task needs to handle the -- separator
+cat <<'EOF' >mise.toml
+[tasks.custom_quiet_separator]
+run = '''
+#!/usr/bin/env bash
+# Skip the -- separator if present
+if [ "$1" = "--" ]; then
+  shift
+fi
+while getopts "q" opt; do
+  case $opt in
+    q) echo "custom quiet flag received" ;;
+  esac
+done
+'''
+EOF
+
+assert "mise run custom_quiet_separator -- -q" "custom quiet flag received"
+# In naked run, -q after task name is passed to task (no -- injected for flags)
+assert "mise custom_quiet_separator -q" "custom quiet flag received"
+
+# Test 16: Verify mise's own -q still works when placed before task name
+export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
+# mise's -q should suppress output, task should receive no args
+cat <<'EOF' >mise.toml
+[tasks.check_args]
+run = '''
+#!/usr/bin/env bash
+if [ $# -eq 0 ]; then
+  echo "no args received"
+else
+  echo "args: $@"
+fi
+'''
+EOF
+
+assert "mise -q check_args" "no args received"
+assert "mise check_args -q" "args: -q"
