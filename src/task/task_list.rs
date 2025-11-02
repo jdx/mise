@@ -11,7 +11,7 @@ use demand::{DemandOption, Select};
 use eyre::{Result, bail, ensure, eyre};
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use itertools::Itertools;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -269,16 +269,7 @@ pub async fn get_task_lists(
             config.tasks().await?
         };
 
-        let tasks_with_aliases: BTreeMap<String, &Task> = all_tasks
-            .iter()
-            .flat_map(|(_, t)| {
-                t.aliases
-                    .iter()
-                    .map(|a| (a.to_string(), t))
-                    .chain(once((t.name.clone(), t)))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+        let tasks_with_aliases = crate::task::build_task_ref_map(all_tasks.iter());
 
         let cur_tasks = tasks_with_aliases
             .get_matching(&t)?
@@ -358,21 +349,11 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
     };
 
     let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
-    let all_tasks_map: BTreeMap<String, Task> = all_tasks
-        .iter()
-        .flat_map(|(_, t)| {
-            t.aliases
-                .iter()
-                .map(|a| (a.to_string(), t.clone()))
-                .chain(once((t.name.clone(), t.clone())))
-                .collect::<Vec<_>>()
-        })
-        .collect();
 
     tasks
         .into_iter()
         .map(|t| {
-            let depends = t.all_depends(&all_tasks_map)?;
+            let depends = t.all_depends(&all_tasks)?;
             Ok(once(t).chain(depends).collect::<Vec<_>>())
         })
         .flatten_ok()
