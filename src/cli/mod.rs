@@ -8,10 +8,6 @@ use crate::{logger, migrate, shims};
 use clap::{ArgAction, CommandFactory, Parser, Subcommand};
 use eyre::bail;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-/// Global flag to track if "--" was injected by naked run preprocessing
-pub(crate) static NAKED_RUN_INJECTED_SEPARATOR: AtomicBool = AtomicBool::new(false);
 
 mod activate;
 mod alias;
@@ -436,18 +432,13 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
         return args.to_vec();
     }
 
-    // This is a naked run - inject "--" separator if there are args after the task name
-    // This tells clap that everything after "--" should go to task_args_last
-    // Set a global flag to indicate this was a naked run injection
-    if i + 1 < args.len() {
-        NAKED_RUN_INJECTED_SEPARATOR.store(true, Ordering::Relaxed);
-        let mut result = args[..=i].to_vec();
-        result.push("--".to_string());
-        result.extend_from_slice(&args[i + 1..]);
-        return result;
-    }
-
-    args.to_vec()
+    // This is a naked run - inject "run" subcommand so clap routes it correctly
+    // Format: ["mise", "-q", "task", "arg1"] becomes ["mise", "-q", "run", "task", "arg1"]
+    // This preserves global flags while making it an explicit run command
+    let mut result = args[..i].to_vec(); // Keep program name + global flags
+    result.push("run".to_string()); // Insert "run" subcommand
+    result.extend_from_slice(&args[i..]); // Add task name and args
+    result
 }
 
 impl Cli {
