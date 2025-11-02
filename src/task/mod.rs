@@ -477,14 +477,14 @@ impl Task {
             .collect()
     }
 
-    pub fn all_depends(&self, tasks: &BTreeMap<String, Task>) -> Result<Vec<Task>> {
+    pub fn all_depends(&self, tasks: &BTreeMap<String, &Task>) -> Result<Vec<Task>> {
         let mut path = vec![self.name.clone()];
         self.all_depends_recursive(tasks, &mut path)
     }
 
     fn all_depends_recursive(
         &self,
-        tasks: &BTreeMap<String, Task>,
+        tasks: &BTreeMap<String, &Task>,
         path: &mut Vec<String>,
     ) -> Result<Vec<Task>> {
         let mut depends: Vec<Task> = self
@@ -552,7 +552,7 @@ impl Task {
         };
 
         let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
-        let tasks = build_task_map(all_tasks.iter().map(|(k, v)| (k.clone(), v.clone())));
+        let tasks = build_task_ref_map(all_tasks.iter());
         let depends = self
             .depends
             .iter()
@@ -904,36 +904,6 @@ pub(crate) fn extract_monorepo_path(name: &str) -> Option<String> {
     })
 }
 
-/// Build a map of task names and aliases to tasks
-/// For monorepo tasks, creates entries for both prefixed and unprefixed aliases
-/// e.g., task "//:format" with alias "fmt" creates both "//:fmt" and "fmt"
-pub(crate) fn build_task_map<'a, I>(tasks: I) -> BTreeMap<String, Task>
-where
-    I: Iterator<Item = (String, Task)> + 'a,
-{
-    tasks
-        .flat_map(|(_, t)| {
-            t.aliases
-                .iter()
-                .flat_map(|a| {
-                    // For monorepo tasks, create entries for both prefixed and unprefixed aliases
-                    // This allows references like "fmt" to resolve to "//:format"
-                    if let Some(path) = extract_monorepo_path(&t.name) {
-                        vec![
-                            (format!("//{}:{}", path, a), t.clone()),
-                            (a.to_string(), t.clone()),
-                        ]
-                    } else {
-                        // Non-monorepo task, use alias as-is
-                        vec![(a.to_string(), t.clone())]
-                    }
-                })
-                .chain(once((t.name.clone(), t.clone())))
-                .collect::<Vec<_>>()
-        })
-        .collect()
-}
-
 /// Build a map of task names and aliases to task references
 /// For monorepo tasks, creates entries for both prefixed and unprefixed aliases
 /// e.g., task "//:format" with alias "fmt" creates both "//:fmt" and "fmt"
@@ -997,7 +967,7 @@ pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) ->
 }
 
 fn match_tasks_with_context(
-    tasks: &BTreeMap<String, Task>,
+    tasks: &BTreeMap<String, &Task>,
     td: &TaskDep,
     parent_task: Option<&Task>,
 ) -> Result<Vec<Task>> {
@@ -1006,7 +976,7 @@ fn match_tasks_with_context(
         .get_matching(&resolved_pattern)?
         .into_iter()
         .map(|t| {
-            let mut t = t.clone();
+            let mut t = (*t).clone();
             t.args = td.args.clone();
             t
         })
@@ -1770,7 +1740,9 @@ echo "hello world"
         tasks.insert("task_b".to_string(), task_b);
 
         // Should detect circular dependency
-        let result = task_a.all_depends(&tasks);
+        let tasks_ref: BTreeMap<String, &Task> =
+            tasks.iter().map(|(k, v)| (k.clone(), v)).collect();
+        let result = task_a.all_depends(&tasks_ref);
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("circular dependency detected"));
@@ -1816,7 +1788,9 @@ echo "hello world"
         tasks.insert("task_c".to_string(), task_c);
 
         // Should detect circular dependency
-        let result = task_a.all_depends(&tasks);
+        let tasks_ref: BTreeMap<String, &Task> =
+            tasks.iter().map(|(k, v)| (k.clone(), v)).collect();
+        let result = task_a.all_depends(&tasks_ref);
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
         assert!(err_msg.contains("circular dependency detected"));
@@ -1874,7 +1848,9 @@ echo "hello world"
         tasks.insert("common".to_string(), common);
 
         // Should NOT detect circular dependency (diamond is OK)
-        let result = root.all_depends(&tasks);
+        let tasks_ref: BTreeMap<String, &Task> =
+            tasks.iter().map(|(k, v)| (k.clone(), v)).collect();
+        let result = root.all_depends(&tasks_ref);
         assert!(result.is_ok());
         let deps = result.unwrap();
         // Should have task_a, task_b, and common (deduplicated)

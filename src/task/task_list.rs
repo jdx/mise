@@ -349,8 +349,7 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
     };
 
     let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
-    let all_tasks_map =
-        crate::task::build_task_map(all_tasks.iter().map(|(k, v)| (k.clone(), v.clone())));
+    let all_tasks_map = crate::task::build_task_ref_map(all_tasks.iter());
 
     tasks
         .into_iter()
