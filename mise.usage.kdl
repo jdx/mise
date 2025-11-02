@@ -1287,7 +1287,6 @@ cmd which help="Shows the path that a tool's bin points to." {
     arg "[BIN_NAME]" help="The bin to look up" required=#false
 }
 cmd render-help hide=#true help="internal command to generate markdown from help"
-cmd render-mangen hide=#true help="internal command to generate markdown from help"
 source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
 {%- if cmd.subcommands | length > 0 -%}
