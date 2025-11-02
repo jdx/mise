@@ -277,14 +277,9 @@ pub async fn get_task_lists(
                     .map(|a| {
                         // For monorepo tasks, prefix aliases with the monorepo path
                         // e.g., task "//:format" with alias "fmt" becomes "//:fmt"
+                        // e.g., task "//path:build" with alias "b" becomes "//path:b"
                         if let Some(path) = crate::task::extract_monorepo_path(&t.name) {
-                            if path.is_empty() {
-                                // Root level task (e.g., "//:task")
-                                (format!("//:{}", a), t)
-                            } else {
-                                // Nested task (e.g., "//path:task")
-                                (format!("//{}:{}", path, a), t)
-                            }
+                            (format!("//{}:{}", path, a), t)
                         } else {
                             // Non-monorepo task, use alias as-is
                             (a.to_string(), t)
@@ -381,14 +376,9 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
                 .map(|a| {
                     // For monorepo tasks, prefix aliases with the monorepo path
                     // e.g., task "//:format" with alias "fmt" becomes "//:fmt"
+                    // e.g., task "//path:build" with alias "b" becomes "//path:b"
                     if let Some(path) = extract_monorepo_path(&t.name) {
-                        if path.is_empty() {
-                            // Root level task (e.g., "//:task")
-                            (format!("//:{}", a), t.clone())
-                        } else {
-                            // Nested task (e.g., "//path:task")
-                            (format!("//{}:{}", path, a), t.clone())
-                        }
+                        (format!("//{}:{}", path, a), t.clone())
                     } else {
                         // Non-monorepo task, use alias as-is
                         (a.to_string(), t.clone())
