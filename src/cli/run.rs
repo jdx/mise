@@ -7,14 +7,14 @@ use std::time::Duration;
 use super::args::ToolArg;
 use crate::cli::Cli;
 use crate::config::{Config, Settings};
+use crate::duration;
 use crate::task::task_file_providers::TaskFileProvidersBuilder;
 use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::{Deps, Task};
-use crate::ui::{ctrlc, style, time};
-use crate::{duration, exit};
+use crate::ui::{ctrlc, style};
 use clap::{CommandFactory, ValueHint};
 use eyre::{Result, bail, eyre};
 use itertools::Itertools;
@@ -281,7 +281,13 @@ impl Run {
         scheduler.join_all(this.continue_on_error).await?;
 
         // Step 5: Display results and handle failures
-        Self::display_results(&this, num_tasks, timer);
+        let results_display = crate::task::task_results_display::TaskResultsDisplay::new(
+            this.output_handler.clone().unwrap(),
+            this.executor.as_ref().unwrap().failed_tasks.clone(),
+            this.continue_on_error,
+            this.timings(),
+        );
+        results_display.display_results(num_tasks, timer);
         time!("parallelize_tasks done");
 
         Ok(())
@@ -452,88 +458,9 @@ impl Run {
         installer.install_tools(config, tasks).await
     }
 
-    /// Display final results and handle failures
-    fn display_results(this: &Arc<Self>, num_tasks: usize, timer: std::time::Instant) {
-        if this.output(None) == TaskOutput::KeepOrder {
-            let output = this
-                .output_handler
-                .as_ref()
-                .unwrap()
-                .keep_order_output
-                .lock()
-                .unwrap();
-            for (out, err) in output.values() {
-                for (prefix, line) in out {
-                    if console::colors_enabled() {
-                        prefix_println!(prefix, "{line}\x1b[0m");
-                    } else {
-                        prefix_println!(prefix, "{line}");
-                    }
-                }
-                for (prefix, line) in err {
-                    if console::colors_enabled_stderr() {
-                        prefix_eprintln!(prefix, "{line}\x1b[0m");
-                    } else {
-                        prefix_eprintln!(prefix, "{line}");
-                    }
-                }
-            }
-        }
-
-        if this.timings() && num_tasks > 1 {
-            let msg = format!("Finished in {}", time::format_duration(timer.elapsed()));
-            eprintln!("{}", style::edim(msg));
-        }
-
-        this.maybe_print_failure_summary();
-        if let Some((task, status)) = this
-            .executor
-            .as_ref()
-            .unwrap()
-            .failed_tasks
-            .lock()
-            .unwrap()
-            .first()
-        {
-            let prefix = task.estyled_prefix();
-            this.eprint(
-                task,
-                &prefix,
-                &format!("{} task failed", style::ered("ERROR")),
-            );
-            exit(status.unwrap_or(1));
-        }
-    }
-
     // ============================================================================
     // Helper methods
     // ============================================================================
-
-    fn maybe_print_failure_summary(&self) {
-        if !self.continue_on_error {
-            return;
-        }
-        let failed = self
-            .executor
-            .as_ref()
-            .unwrap()
-            .failed_tasks
-            .lock()
-            .unwrap()
-            .clone();
-        if failed.is_empty() {
-            return;
-        }
-        let count = failed.len();
-        eprintln!("{} {} task(s) failed:", style::ered("ERROR"), count);
-        for (task, status) in &failed {
-            let prefix = task.estyled_prefix();
-            let status_str = status
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "unknown".to_string());
-            self.eprint(task, &prefix, &format!("exited with status {}", status_str));
-        }
-    }
 
     fn eprint(&self, task: &Task, prefix: &str, line: &str) {
         self.output_handler
