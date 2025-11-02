@@ -528,6 +528,7 @@ impl Cli {
                         output_handler: None,
                         context_builder: Default::default(),
                         scheduler: None,
+                        executor: None,
                         no_cache: Default::default(),
                         timeout: None,
                     })));

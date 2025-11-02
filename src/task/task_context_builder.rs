@@ -26,6 +26,19 @@ pub struct TaskContextBuilder {
     env_resolution_cache: RwLock<IndexMap<PathBuf, EnvResolutionResult>>,
 }
 
+impl Clone for TaskContextBuilder {
+    fn clone(&self) -> Self {
+        // Clone by creating a new instance with the same cache contents
+        Self {
+            toolset_cache: RwLock::new(self.toolset_cache.read().unwrap().clone()),
+            tool_request_set_cache: RwLock::new(
+                self.tool_request_set_cache.read().unwrap().clone(),
+            ),
+            env_resolution_cache: RwLock::new(self.env_resolution_cache.read().unwrap().clone()),
+        }
+    }
+}
+
 impl TaskContextBuilder {
     pub fn new() -> Self {
         Self {

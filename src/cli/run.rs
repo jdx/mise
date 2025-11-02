@@ -199,6 +199,9 @@ pub struct Run {
 
     #[clap(skip)]
     pub scheduler: Option<crate::task::task_scheduler::Scheduler>,
+
+    #[clap(skip)]
+    pub executor: Option<crate::task::task_executor::TaskExecutor>,
 }
 
 impl Run {

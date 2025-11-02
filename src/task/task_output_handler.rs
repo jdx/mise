@@ -26,6 +26,24 @@ pub struct OutputHandler {
     jobs: Option<usize>,
 }
 
+impl Clone for OutputHandler {
+    fn clone(&self) -> Self {
+        Self {
+            keep_order_output: Mutex::new(self.keep_order_output.lock().unwrap().clone()),
+            task_prs: self.task_prs.clone(),
+            timed_outputs: self.timed_outputs.clone(),
+            prefix: self.prefix,
+            interleave: self.interleave,
+            output: self.output,
+            silent: self.silent,
+            quiet: self.quiet,
+            raw: self.raw,
+            is_linear: self.is_linear,
+            jobs: self.jobs,
+        }
+    }
+}
+
 impl OutputHandler {
     pub fn new(
         prefix: bool,
