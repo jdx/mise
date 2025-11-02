@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use super::args::ToolArg;
 use crate::cli::Cli;
+use crate::cli::version::V;
 use crate::config::{Config, Settings};
 use crate::duration;
 use crate::task::task_helpers::task_needs_permit;
@@ -18,6 +19,7 @@ use clap::{CommandFactory, ValueHint};
 use eyre::{Result, bail, eyre};
 use itertools::Itertools;
 use tokio::sync::Mutex;
+use versions::Versioning;
 
 /// Run task(s)
 ///
@@ -201,11 +203,97 @@ impl Run {
         time!("run init");
         let tmpdir = tempfile::tempdir()?;
         self.tmpdir = tmpdir.path().to_path_buf();
-        let args = once(self.task.clone())
-            .chain(self.args.clone())
-            .chain(self.args_last.clone())
-            .collect_vec();
-        let task_list = get_task_lists(&config, &args, true).await?;
+
+        // Handle double-dash behavior
+        let settings = Settings::get();
+        let use_separator_mode = if !self.args_last.is_empty() {
+            // Determine the effective behavior
+            let behavior = settings.task_double_dash_behavior.as_deref();
+
+            // Debug assertion to ensure we change the default after 2026.5.0
+            let default_change_version = Versioning::new("2026.5.0").unwrap();
+
+            match behavior {
+                Some("separator") => {
+                    // In separator mode, args_last should be passed to the task directly
+                    // without any mise argument parsing
+                    true
+                }
+                Some("legacy") => {
+                    // Explicitly set to legacy - no deprecation warning
+                    false
+                }
+                None => {
+                    // Unset - use legacy behavior before 2026.5.0, separator after
+                    if *V < default_change_version {
+                        // Before 2026.5.0: use legacy and show deprecation warning
+                        deprecated!(
+                            "task_double_dash",
+                            "Use of {} with task runs is changing behavior.\n\
+                            \n\
+                            Currently, arguments after {} are still parsed by mise, but in mise 2026.5.0\n\
+                            they will be passed directly to tasks without parsing. This change avoids\n\
+                            needing to use double separators like {} to pass flags to tasks.\n\
+                            \n\
+                            To opt into the new behavior now:\n\
+                            {}\n\
+                            \n\
+                            To silence this warning (keep current behavior):\n\
+                            {}\n\
+                            \n\
+                            See: {}",
+                            style::ecyan("'--'"),
+                            style::ecyan("'--'"),
+                            style::ered("'-- -- --help'"),
+                            style::eyellow("export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator"),
+                            style::eyellow("export MISE_TASK_DOUBLE_DASH_BEHAVIOR=legacy"),
+                            style::eunderline("https://github.com/jdx/mise/discussions/5074")
+                        );
+                        false
+                    } else {
+                        // After 2026.5.0: default to separator
+                        debug_assert!(
+                            false,
+                            "The default for task_double_dash_behavior should now be 'separator' in mise 2026.5.0. \
+                             The unset case should default to separator behavior."
+                        );
+                        true
+                    }
+                }
+                Some(unknown) => {
+                    // Unknown behavior, default to legacy with warning
+                    warn!(
+                        "Unknown task_double_dash_behavior: '{}'. Using 'legacy' mode.",
+                        unknown
+                    );
+                    false
+                }
+            }
+        } else {
+            false
+        };
+
+        // In separator mode, don't include args_last in args passed to get_task_lists
+        // They will be added to tasks after task list is created
+        let args = if use_separator_mode {
+            once(self.task.clone())
+                .chain(self.args.clone())
+                .collect_vec()
+        } else {
+            once(self.task.clone())
+                .chain(self.args.clone())
+                .chain(self.args_last.clone())
+                .collect_vec()
+        };
+
+        let mut task_list = get_task_lists(&config, &args, true).await?;
+
+        // In separator mode, append args_last to each task's args
+        if use_separator_mode {
+            for task in &mut task_list {
+                task.args.extend(self.args_last.clone());
+            }
+        }
         time!("run get_task_lists");
 
         // Apply global timeout for entire run if configured

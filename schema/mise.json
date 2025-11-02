@@ -1155,6 +1155,10 @@
           "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
           "type": "boolean"
         },
+        "task_double_dash_behavior": {
+          "description": "Controls how double-dash (--) is handled in task runs.",
+          "type": "string"
+        },
         "trace": {
           "description": "Sets log level to trace",
           "type": "boolean"

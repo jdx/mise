@@ -1243,6 +1243,33 @@ env = "MISE_TASK_TIMINGS"
 optional = true
 type = "Bool"
 
+[task_double_dash_behavior]
+description = "Controls how double-dash (--) is handled in task runs."
+docs = """
+Controls how double-dash (`--`) arguments are handled when running tasks with `mise run`.
+
+* Values:
+  * `legacy` - Current behavior where arguments after `--` are still parsed by mise. No deprecation warning.
+  * `separator` - New behavior where `--` acts as a true separator, passing all following arguments directly to the task without mise parsing them. This will become the default in mise 2026.5.0.
+  * [unset] - Defaults to `legacy` before mise 2026.5.0, shows deprecation warning. After 2026.5.0, defaults to `separator`.
+
+Examples:
+```bash
+# Explicitly set legacy mode (no warning):
+$ export MISE_TASK_DOUBLE_DASH_BEHAVIOR=legacy
+$ mise run mytask -- --help
+# Still shows mise help (no warning)
+
+# Separator mode (future default):
+$ export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
+$ mise run mytask -- --help
+# Passes --help to mytask instead of showing mise help
+```
+"""
+env = "MISE_TASK_DOUBLE_DASH_BEHAVIOR"
+optional = true
+type = "String"
+
 [trace]
 description = "Sets log level to trace"
 env = "MISE_TRACE"
