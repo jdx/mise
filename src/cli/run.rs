@@ -201,11 +201,20 @@ impl Run {
         time!("run init");
         let tmpdir = tempfile::tempdir()?;
         self.tmpdir = tmpdir.path().to_path_buf();
+
+        // Build args list - don't include args_last yet, they'll be added after task resolution
         let args = once(self.task.clone())
             .chain(self.args.clone())
-            .chain(self.args_last.clone())
             .collect_vec();
-        let task_list = get_task_lists(&config, &args, true).await?;
+
+        let mut task_list = get_task_lists(&config, &args, true).await?;
+
+        // Args after -- go directly to tasks (no prefix)
+        if !self.args_last.is_empty() {
+            for task in &mut task_list {
+                task.args.extend(self.args_last.clone());
+            }
+        }
         time!("run get_task_lists");
 
         // Apply global timeout for entire run if configured
