@@ -76,4 +76,23 @@ echo "$output"
 echo "$output" | grep -q "formatting code" || (echo "FAIL: Dependency alias did not resolve" && exit 1)
 echo "$output" | grep -q "deploying" || (echo "FAIL: Dependent task did not run" && exit 1)
 
+# Test 7: Task depends on unprefixed alias (should resolve to monorepo task)
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.format]
+alias = "fmt"
+run = "echo 'formatting code'"
+
+[tasks.test]
+depends = ["fmt"]
+run = "echo 'running tests'"
+TOML
+
+echo "=== Test 7: Task depends on unprefixed alias ==="
+output=$(mise run //:test 2>&1)
+echo "$output"
+echo "$output" | grep -q "formatting code" || (echo "FAIL: Unprefixed dependency alias did not resolve" && exit 1)
+echo "$output" | grep -q "running tests" || (echo "FAIL: Test task did not run" && exit 1)
+
 echo "=== All tests passed! ==="

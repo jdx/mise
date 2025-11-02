@@ -552,26 +552,7 @@ impl Task {
         };
 
         let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
-        let tasks: BTreeMap<String, Task> = all_tasks
-            .iter()
-            .flat_map(|(_, t)| {
-                t.aliases
-                    .iter()
-                    .map(|a| {
-                        // For monorepo tasks, prefix aliases with the monorepo path
-                        // e.g., task "//:format" with alias "fmt" becomes "//:fmt"
-                        // e.g., task "//path:build" with alias "b" becomes "//path:b"
-                        if let Some(path) = extract_monorepo_path(&t.name) {
-                            (format!("//{}:{}", path, a), t.clone())
-                        } else {
-                            // Non-monorepo task, use alias as-is
-                            (a.to_string(), t.clone())
-                        }
-                    })
-                    .chain(once((t.name.clone(), t.clone())))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+        let tasks = build_task_map(all_tasks.iter().map(|(k, v)| (k.clone(), v.clone())));
         let depends = self
             .depends
             .iter()
@@ -921,6 +902,63 @@ pub(crate) fn extract_monorepo_path(name: &str) -> Option<String> {
         // Find the FIRST colon after "//" prefix to handle task names with colons like "do:item-1"
         stripped.find(':').map(|idx| stripped[..idx].to_string())
     })
+}
+
+/// Build a map of task names and aliases to tasks
+/// For monorepo tasks, creates entries for both prefixed and unprefixed aliases
+/// e.g., task "//:format" with alias "fmt" creates both "//:fmt" and "fmt"
+pub(crate) fn build_task_map<'a, I>(tasks: I) -> BTreeMap<String, Task>
+where
+    I: Iterator<Item = (String, Task)> + 'a,
+{
+    tasks
+        .flat_map(|(_, t)| {
+            t.aliases
+                .iter()
+                .flat_map(|a| {
+                    // For monorepo tasks, create entries for both prefixed and unprefixed aliases
+                    // This allows references like "fmt" to resolve to "//:format"
+                    if let Some(path) = extract_monorepo_path(&t.name) {
+                        vec![
+                            (format!("//{}:{}", path, a), t.clone()),
+                            (a.to_string(), t.clone()),
+                        ]
+                    } else {
+                        // Non-monorepo task, use alias as-is
+                        vec![(a.to_string(), t.clone())]
+                    }
+                })
+                .chain(once((t.name.clone(), t.clone())))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Build a map of task names and aliases to task references
+/// For monorepo tasks, creates entries for both prefixed and unprefixed aliases
+/// e.g., task "//:format" with alias "fmt" creates both "//:fmt" and "fmt"
+pub(crate) fn build_task_ref_map<'a, I>(tasks: I) -> BTreeMap<String, &'a Task>
+where
+    I: Iterator<Item = (&'a String, &'a Task)> + 'a,
+{
+    tasks
+        .flat_map(|(_, t)| {
+            t.aliases
+                .iter()
+                .flat_map(|a| {
+                    // For monorepo tasks, create entries for both prefixed and unprefixed aliases
+                    // This allows references like "fmt" to resolve to "//:format"
+                    if let Some(path) = extract_monorepo_path(&t.name) {
+                        vec![(format!("//{}:{}", path, a), t), (a.to_string(), t)]
+                    } else {
+                        // Non-monorepo task, use alias as-is
+                        vec![(a.to_string(), t)]
+                    }
+                })
+                .chain(once((t.name.clone(), t)))
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// Resolve a task dependency pattern, optionally relative to a parent task

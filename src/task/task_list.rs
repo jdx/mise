@@ -11,7 +11,7 @@ use demand::{DemandOption, Select};
 use eyre::{Result, bail, ensure, eyre};
 use fuzzy_matcher::{FuzzyMatcher, skim::SkimMatcherV2};
 use itertools::Itertools;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -269,26 +269,7 @@ pub async fn get_task_lists(
             config.tasks().await?
         };
 
-        let tasks_with_aliases: BTreeMap<String, &Task> = all_tasks
-            .iter()
-            .flat_map(|(_, t)| {
-                t.aliases
-                    .iter()
-                    .map(|a| {
-                        // For monorepo tasks, prefix aliases with the monorepo path
-                        // e.g., task "//:format" with alias "fmt" becomes "//:fmt"
-                        // e.g., task "//path:build" with alias "b" becomes "//path:b"
-                        if let Some(path) = crate::task::extract_monorepo_path(&t.name) {
-                            (format!("//{}:{}", path, a), t)
-                        } else {
-                            // Non-monorepo task, use alias as-is
-                            (a.to_string(), t)
-                        }
-                    })
-                    .chain(once((t.name.clone(), t)))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+        let tasks_with_aliases = crate::task::build_task_ref_map(all_tasks.iter());
 
         let cur_tasks = tasks_with_aliases
             .get_matching(&t)?
@@ -368,26 +349,8 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
     };
 
     let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
-    let all_tasks_map: BTreeMap<String, Task> = all_tasks
-        .iter()
-        .flat_map(|(_, t)| {
-            t.aliases
-                .iter()
-                .map(|a| {
-                    // For monorepo tasks, prefix aliases with the monorepo path
-                    // e.g., task "//:format" with alias "fmt" becomes "//:fmt"
-                    // e.g., task "//path:build" with alias "b" becomes "//path:b"
-                    if let Some(path) = extract_monorepo_path(&t.name) {
-                        (format!("//{}:{}", path, a), t.clone())
-                    } else {
-                        // Non-monorepo task, use alias as-is
-                        (a.to_string(), t.clone())
-                    }
-                })
-                .chain(once((t.name.clone(), t.clone())))
-                .collect::<Vec<_>>()
-        })
-        .collect();
+    let all_tasks_map =
+        crate::task::build_task_map(all_tasks.iter().map(|(k, v)| (k.clone(), v.clone())));
 
     tasks
         .into_iter()
