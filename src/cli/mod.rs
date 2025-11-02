@@ -49,8 +49,6 @@ mod prune;
 mod registry;
 #[cfg(debug_assertions)]
 mod render_help;
-#[cfg(feature = "clap_mangen")]
-mod render_mangen;
 mod reshim;
 pub mod run;
 mod search;
@@ -254,9 +252,6 @@ pub enum Commands {
 
     #[cfg(debug_assertions)]
     RenderHelp(render_help::RenderHelp),
-
-    #[cfg(feature = "clap_mangen")]
-    RenderMangen(render_mangen::RenderMangen),
 }
 
 impl Commands {
@@ -323,9 +318,6 @@ impl Commands {
 
             #[cfg(debug_assertions)]
             Self::RenderHelp(cmd) => cmd.run(),
-
-            #[cfg(feature = "clap_mangen")]
-            Self::RenderMangen(cmd) => cmd.run(),
         }
     }
 }
