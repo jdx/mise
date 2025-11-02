@@ -33,14 +33,29 @@ use xx::regex;
 static FUZZY_MATCHER: Lazy<SkimMatcherV2> =
     Lazy::new(|| SkimMatcherV2::default().use_cache(true).smart_case());
 
+/// Type alias for tracking failed tasks with their exit codes
+pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
+
 mod deps;
+pub mod task_context_builder;
 mod task_dep;
+pub mod task_executor;
+pub mod task_fetcher;
 pub mod task_file_providers;
+pub mod task_helpers;
+pub mod task_list;
 mod task_load_context;
+pub mod task_output;
+pub mod task_output_handler;
+pub mod task_results_display;
+pub mod task_scheduler;
 mod task_script_parser;
+pub mod task_source_checker;
 pub mod task_sources;
+pub mod task_tool_installer;
 
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
+pub use task_output::TaskOutput;
 
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;

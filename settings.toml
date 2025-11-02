@@ -1208,7 +1208,7 @@ enum = [
 ]
 env = "MISE_TASK_OUTPUT"
 optional = true
-rust_type = "crate::cli::run::TaskOutput"
+rust_type = "crate::task::TaskOutput"
 type = "String"
 
 [task_remote_no_cache]
