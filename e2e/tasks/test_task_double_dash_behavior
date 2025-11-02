@@ -15,19 +15,20 @@ assert_contains "mise run echo_args -- arg1 2>&1" "task_double_dash"
 # Test 1b: Legacy mode (explicit) - should NOT show deprecation warning
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=legacy
 assert_not_contains "mise run echo_args -- arg1 2>&1" "deprecated"
+assert "mise run echo_args -q -- arg1" "args: arg1"
 
 # Test 2: Separator mode - should NOT show deprecation warning, exact output
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
 assert_not_contains "mise run echo_args -- arg1 2>&1" "deprecated"
-assert "mise run echo_args -q -- arg1" "args: arg1"
+assert "mise run echo_args -q -- arg1" "args: -- arg1"
 
 # Test 3: Separator mode - multiple args after --
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
-assert "mise run echo_args -q -- arg1 arg2 arg3" "args: arg1 arg2 arg3"
+assert "mise run echo_args -q -- arg1 arg2 arg3" "args: -- arg1 arg2 arg3"
 
 # Test 4: Separator mode - double double-dash passes through to task
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
-assert "mise run echo_args -q -- -- arg1" "args: -- arg1"
+assert "mise run echo_args -q -- -- arg1" "args: -- -- arg1"
 
 # Test 5: No double-dash - no warning in either mode
 unset MISE_TASK_DOUBLE_DASH_BEHAVIOR
@@ -50,7 +51,7 @@ run = 'echo "help flag received:\$@"'
 EOF
 
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
-assert "mise run show_help -q -- --help" "help flag received: --help"
+assert "mise run show_help -q -- --help" "help flag received: -- --help"
 
 # Test 7: Naked runs (without 'run' subcommand) - Unset (default)
 unset MISE_TASK_DOUBLE_DASH_BEHAVIOR
@@ -60,27 +61,29 @@ assert_contains "mise echo_args -- arg1 2>&1" "task_double_dash"
 # Test 7b: Naked runs - Legacy mode (explicit) - no warning
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=legacy
 assert_not_contains "mise echo_args -- arg1 2>&1" "deprecated"
+assert "mise echo_args -q -- arg1" "args: arg1"
 
 # Test 8: Naked runs - Separator mode, exact output
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
 assert_not_contains "mise echo_args -- arg1 2>&1" "deprecated"
-assert "mise echo_args -q -- arg1" "args: arg1"
+assert "mise echo_args -q -- arg1" "args: -- arg1"
 
 # Test 9: Naked runs - multiple args after --
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
-assert "mise echo_args -q -- arg1 arg2 arg3" "args: arg1 arg2 arg3"
+assert "mise echo_args -q -- arg1 arg2 arg3" "args: -- arg1 arg2 arg3"
 
 # Test 10: Naked runs - double double-dash passes through
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
-assert "mise echo_args -q -- -- arg1" "args: -- arg1"
+assert "mise echo_args -q -- -- arg1" "args: -- -- arg1"
 
 # Test 11: Naked runs - --help in separator mode
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator
-assert "mise show_help -q -- --help" "help flag received: --help"
+assert "mise show_help -q -- --help" "help flag received: -- --help"
 
 # Test 12: Naked runs - no double-dash, no warning (with explicit legacy mode)
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=legacy
 assert_not_contains "mise echo_args arg1 2>&1" "deprecated"
+assert "mise -q echo_args arg1" "args: arg1"
 
 # Test 13: Naked runs - no double-dash, no warning (with separator mode)
 export MISE_TASK_DOUBLE_DASH_BEHAVIOR=separator

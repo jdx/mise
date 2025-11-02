@@ -288,9 +288,18 @@ impl Run {
 
         let mut task_list = get_task_lists(&config, &args, true).await?;
 
-        // In separator mode, append args_last to each task's args
-        if use_separator_mode {
+        // In separator mode, append args_last to each task's args with the -- prefix
+        // But only if the user explicitly typed "--" (not if it was injected by naked run preprocessing)
+        if use_separator_mode && !self.args_last.is_empty() {
+            // Check if "--" was injected by preprocessing (not explicitly typed by user)
+            let naked_run_injection =
+                crate::cli::NAKED_RUN_INJECTED_SEPARATOR.load(std::sync::atomic::Ordering::Relaxed);
+
             for task in &mut task_list {
+                // Only add "--" prefix if this was NOT a naked run with injected separator
+                if !naked_run_injection {
+                    task.args.push("--".to_string());
+                }
                 task.args.extend(self.args_last.clone());
             }
         }
