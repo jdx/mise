@@ -73,6 +73,85 @@ impl Scheduler {
     pub fn in_flight_count(&self) -> usize {
         self.in_flight.load(Ordering::SeqCst)
     }
+
+    /// Run the scheduler loop, draining tasks and spawning them via the callback
+    ///
+    /// The loop continues until:
+    /// - main_done signal is received AND
+    /// - no tasks are in-flight AND
+    /// - no tasks were recently drained
+    ///
+    /// Or if should_stop returns true (for early exit due to failures)
+    pub async fn run_loop<F, Fut>(
+        &mut self,
+        main_done_rx: &mut tokio::sync::watch::Receiver<bool>,
+        main_deps: Arc<Mutex<Deps>>,
+        should_stop: impl Fn() -> bool,
+        continue_on_error: bool,
+        mut spawn_job: F,
+    ) -> Result<()>
+    where
+        F: FnMut(Task, Arc<Mutex<Deps>>) -> Fut,
+        Fut: std::future::Future<Output = Result<()>>,
+    {
+        let mut sched_rx = self.take_receiver().expect("receiver already taken");
+
+        loop {
+            // Drain ready tasks without awaiting
+            let mut drained_any = false;
+            loop {
+                match sched_rx.try_recv() {
+                    Ok((task, deps_for_remove)) => {
+                        drained_any = true;
+                        trace!("scheduler received: {} {}", task.name, task.args.join(" "));
+                        if should_stop() && !continue_on_error {
+                            break;
+                        }
+                        spawn_job(task, deps_for_remove).await?;
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => break,
+                }
+            }
+
+            // Check if we should stop early due to failure
+            if should_stop() && !continue_on_error {
+                trace!("scheduler: stopping early due to failure, cleaning up main deps");
+                // Clean up the dependency graph to ensure the main_done signal is sent
+                let mut deps = main_deps.lock().await;
+                let tasks_to_remove: Vec<Task> = deps.all().cloned().collect();
+                for task in tasks_to_remove {
+                    deps.remove(&task);
+                }
+                drop(deps);
+                break;
+            }
+
+            // Exit if main deps finished and nothing is running/queued
+            if *main_done_rx.borrow() && self.in_flight_count() == 0 && !drained_any {
+                trace!("scheduler drain complete; exiting loop");
+                break;
+            }
+
+            // Await either new work or main_done change
+            tokio::select! {
+                m = sched_rx.recv() => {
+                    if let Some((task, deps_for_remove)) = m {
+                        trace!("scheduler received: {} {}", task.name, task.args.join(" "));
+                        if should_stop() && !continue_on_error { break; }
+                        spawn_job(task, deps_for_remove).await?;
+                    } else {
+                        // channel closed; rely on main_done/in_flight to exit soon
+                    }
+                }
+                _ = main_done_rx.changed() => {
+                    trace!("main_done changed: {}", *main_done_rx.borrow());
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Context passed to spawned tasks

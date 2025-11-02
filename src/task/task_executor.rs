@@ -92,7 +92,13 @@ impl TaskExecutor {
     }
 
     pub fn task_timings(&self) -> bool {
-        self.timings || Settings::get().task_timings.unwrap_or(false)
+        let output_mode = self.output_handler.output(None);
+        self.timings
+            || Settings::get().task_timings.unwrap_or(
+                output_mode == TaskOutput::Prefix
+                    || output_mode == TaskOutput::Timed
+                    || output_mode == TaskOutput::KeepOrder,
+            )
     }
 
     pub async fn run_task_sched(
