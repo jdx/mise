@@ -27,35 +27,35 @@ Set the environment for loading `mise.<ENV>.toml`
 
 How many jobs to run in parallel [default: 8]
 
-### `--raw`
-
-Read/write directly to stdin/stdout/stderr instead of by line
-
-### `-y --yes`
-
-Answer yes to all confirmation prompts
-
 ### `-q --quiet`
 
 Suppress non-error messages
-
-### `--silent`
-
-Suppress all task output and mise non-error messages
 
 ### `-v --verbose…`
 
 Show extra output (use -vv for even more)
 
-## Flags
+### `-y --yes`
 
-### `--output <OUTPUT>`
+Answer yes to all confirmation prompts
+
+### `--raw`
+
+Read/write directly to stdin/stdout/stderr instead of by line
+
+### `--silent`
+
+Suppress all task output and mise non-error messages
+
+## Flags
 
 ### `--no-config`
 
 Do not load any config files
 
 Can also use `MISE_NO_CONFIG=1`
+
+### `--output <OUTPUT>`
 
 ## Subcommands
 
@@ -71,7 +71,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise cache <SUBCOMMAND>`](/cli/cache.md)
 - [`mise cache clear [PLUGIN]…`](/cli/cache/clear.md)
 - [`mise cache path`](/cli/cache/path.md)
-- [`mise cache prune [--dry-run] [-v --verbose…] [PLUGIN]…`](/cli/cache/prune.md)
+- [`mise cache prune [-v --verbose…] [--dry-run] [PLUGIN]…`](/cli/cache/prune.md)
 - [`mise completion [--include-bash-completion-lib] [SHELL]`](/cli/completion.md)
 - [`mise config [FLAGS] <SUBCOMMAND>`](/cli/config.md)
 - [`mise config generate [-t --tool-versions <TOOL_VERSIONS>] [-o --output <OUTPUT>]`](/cli/config/generate.md)

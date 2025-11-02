@@ -4,11 +4,10 @@ bin mise
 about "The front-end to your dev env"
 long_about "mise manages dev tools, env vars, and runs tasks. https://github.com/jdx/mise"
 usage "Usage: mise [OPTIONS] [TASK] [COMMAND]"
+flag "-c --continue-on-error" help="Continue running tasks even if one fails" hide=#true
 flag "-C --cd" help="Change directory before running command" global=#true {
     arg <DIR>
 }
-flag "-c --continue-on-error" help="Continue running tasks even if one fails" hide=#true
-flag "-n --dry-run" help="Dry run, don't actually do anything" hide=#true
 flag "-E --env" help="Set the environment for loading `mise.<ENV>.toml`" var=#true global=#true {
     arg <ENV>
 }
@@ -17,29 +16,19 @@ flag "-i --interleave" help="Set the log output verbosity" hide=#true
 flag "-j --jobs" help="How many jobs to run in parallel [default: 8]" global=#true {
     arg <JOBS>
 }
+flag "-n --dry-run" help="Dry run, don't actually do anything" hide=#true
 flag "-p --prefix" hide=#true
-flag --output {
-    arg <OUTPUT>
-}
 flag "-P --profile" help="Set the profile (environment)" var=#true hide=#true global=#true {
     arg <PROFILE>
 }
+flag "-q --quiet" help="Suppress non-error messages" global=#true
 flag "-s --shell" hide=#true {
     arg <SHELL>
 }
 flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true hide=#true {
     arg <TOOL@VERSION>
 }
-flag --raw help="Read/write directly to stdin/stdout/stderr instead of by line" global=#true
-flag --timings help="Shows elapsed time after each task completes" hide=#true {
-    long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
-}
-flag --no-config help="Do not load any config files" {
-    long_help "Do not load any config files\n\nCan also use `MISE_NO_CONFIG=1`"
-}
-flag --no-timings help="Hides elapsed time after each task completes" hide=#true {
-    long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
-}
+flag "-v --verbose" help="Show extra output (use -vv for even more)" var=#true global=#true count=#true
 flag "-V --version" hide=#true
 flag "-y --yes" help="Answer yes to all confirmation prompts" global=#true
 flag --debug help="Sets log level to debug" hide=#true global=#true
@@ -48,29 +37,40 @@ flag --log-level hide=#true global=#true {
         choices trace debug info warning error
     }
 }
-flag "-q --quiet" help="Suppress non-error messages" global=#true
+flag --no-config help="Do not load any config files" {
+    long_help "Do not load any config files\n\nCan also use `MISE_NO_CONFIG=1`"
+}
+flag --no-timings help="Hides elapsed time after each task completes" hide=#true {
+    long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
+}
+flag --output {
+    arg <OUTPUT>
+}
+flag --raw help="Read/write directly to stdin/stdout/stderr instead of by line" global=#true
 flag --silent help="Suppress all task output and mise non-error messages" global=#true
+flag --timings help="Shows elapsed time after each task completes" hide=#true {
+    long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"
+}
 flag --trace help="Sets log level to trace" hide=#true global=#true
-flag "-v --verbose" help="Show extra output (use -vv for even more)" var=#true global=#true count=#true
 arg "[TASK]" help="Task to run" help_long="Task to run.\n\nShorthand for `mise task run <TASK>`." required=#false
 arg "[TASK_ARGS]…" help="Task arguments" required=#false var=#true hide=#true
 arg "[-- TASK_ARGS_LAST]…" required=#false var=#true hide=#true
 cmd activate help="Initializes mise in the current shell session" {
     long_help "Initializes mise in the current shell session\n\nThis should go into your shell's rc file or login shell.\nOtherwise, it will only take effect in the current session.\n(e.g. ~/.zshrc, ~/.zprofile, ~/.zshenv, ~/.bashrc, ~/.bash_profile, ~/.profile, ~/.config/fish/config.fish, or $PROFILE for powershell)\n\nTypically, this can be added with something like the following:\n\n    echo 'eval \"$(mise activate zsh)\"' >> ~/.zshrc\n\nHowever, this requires that \"mise\" is in your PATH. If it is not, you need to\nspecify the full path like this:\n\n    echo 'eval \"$(/path/to/mise activate zsh)\"' >> ~/.zshrc\n\nCustomize status output with `status` settings."
     after_long_help "Examples:\n\n    $ eval \"$(mise activate bash)\"\n    $ eval \"$(mise activate zsh)\"\n    $ mise activate fish | source\n    $ execx($(mise activate xonsh))\n    $ (&mise activate pwsh) | Out-String | Invoke-Expression\n"
+    flag "-q --quiet" help="Suppress non-error messages"
     flag "-s --shell" help="Shell type to generate the script for" hide=#true {
         arg <SHELL> {
             choices bash elvish fish nu xonsh zsh pwsh
         }
     }
-    flag --status help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=#true
-    flag --shims help="Use shims instead of modifying PATH\nEffectively the same as:" {
-        long_help "Use shims instead of modifying PATH\nEffectively the same as:\n\n    PATH=\"$HOME/.local/share/mise/shims:$PATH\"\n\n`mise activate --shims` does not support all the features of `mise activate`.\nSee https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information"
-    }
-    flag "-q --quiet" help="Suppress non-error messages"
     flag --no-hook-env help="Do not automatically call hook-env" {
         long_help "Do not automatically call hook-env\n\nThis can be helpful for debugging mise. If you run `eval \"$(mise activate --no-hook-env)\"`, then you can call `mise hook-env` manually which will output the env vars to stdout without actually modifying the environment. That way you can do things like `mise hook-env --trace` to get more information or just see the values that hook-env is outputting."
     }
+    flag --shims help="Use shims instead of modifying PATH\nEffectively the same as:" {
+        long_help "Use shims instead of modifying PATH\nEffectively the same as:\n\n    PATH=\"$HOME/.local/share/mise/shims:$PATH\"\n\n`mise activate --shims` does not support all the features of `mise activate`.\nSee https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information"
+    }
+    flag --status help="Show \"mise: <PLUGIN>@<VERSION>\" message when changing directories" hide=#true
     arg "[SHELL_TYPE]" help="Shell type to generate the script for" required=#false {
         choices bash elvish fish nu xonsh zsh pwsh
     }
@@ -139,8 +139,8 @@ cmd cache help="Manage the mise cache" {
     cmd prune help="Removes stale mise cache files" {
         alias p
         long_help "Removes stale mise cache files\n\nBy default, this command will remove files that have not been accessed in 30 days.\nChange this with the MISE_CACHE_PRUNE_AGE environment variable."
-        flag --dry-run help="Just show what would be pruned"
         flag "-v --verbose" help="Show pruned files" var=#true count=#true
+        flag --dry-run help="Just show what would be pruned"
         arg "[PLUGIN]…" help="Plugin(s) to clear cache for e.g.: node, python" required=#false var=#true
     }
 }
@@ -152,11 +152,11 @@ cmd completion help="Generate shell completions" {
             choices bash fish zsh
         }
     }
+    flag --include-bash-completion-lib help="Include the bash completion library in the bash completion script" {
+        long_help "Include the bash completion library in the bash completion script\n\nThis is required for completions to work in bash, but it is not included by default\nyou may source it separately or enable this flag to enable it in the script."
+    }
     flag --usage help="Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first." hide=#true {
         long_help "Always use usage for completions.\nCurrently, usage is the default for fish and bash but not zsh since it has a few quirks\nto work out first.\n\nThis requires the `usage` CLI to be installed.\nhttps://usage.jdx.dev"
-    }
-    flag --include-bash-completion-lib help="Include the bash completion library in the bash completion script" {
-        long_help "Include the bash completion library in the bash completion script\n\nThis is required for completions to work in bash, but it is not included by default\nyou may source it separately or enable this flag to include it in the script."
     }
     arg "[SHELL]" help="Shell type to generate completions for" required=#false {
         choices bash fish zsh
@@ -166,9 +166,9 @@ cmd config help="Manage config files" {
     alias cfg
     alias toml hide=#true
     after_long_help "Examples:\n\n    $ mise config ls\n    Path                        Tools\n    ~/.config/mise/config.toml  pitchfork\n    ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-edit, cargo:cargo-insta\n"
+    flag "-J --json" help="Output in JSON format"
     flag --no-header help="Do not print table header"
     flag --tracked-configs help="List all tracked config files"
-    flag "-J --json" help="Output in JSON format"
     cmd generate help="Generate a mise.toml file" {
         alias g
         after_long_help "Examples:\n\n    $ mise cf generate > mise.toml\n    $ mise cf generate --output=mise.toml\n"
@@ -190,9 +190,9 @@ cmd config help="Manage config files" {
     cmd ls help="List config files currently in use" {
         alias list
         after_long_help "Examples:\n\n    $ mise config ls\n    Path                        Tools\n    ~/.config/mise/config.toml  pitchfork\n    ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-edit, cargo:cargo-insta\n"
+        flag "-J --json" help="Output in JSON format"
         flag --no-header help="Do not print table header"
         flag --tracked-configs help="List all tracked config files"
-        flag "-J --json" help="Output in JSON format"
     }
     cmd set help="Set the value of a setting in a mise.toml file" {
         after_long_help "Examples:\n\n    $ mise config set tools.python 3.12\n    $ mise config set settings.always_keep_download true\n    $ mise config set env.TEST_ENV_VAR ABC\n    $ mise config set settings.disable_tools --type list node,rust\n\n    # Type for `settings` is inferred\n    $ mise config set settings.jobs 4\n"
@@ -638,6 +638,8 @@ cmd registry help="List available tools to install" {
     flag --hide-aliased help="Hide aliased tools"
     arg "[NAME]" help="Show only the specified tool's full name" required=#false
 }
+cmd render-help hide=#true help="internal command to generate markdown from help"
+cmd render-mangen hide=#true help="internal command to generate markdown from help"
 cmd reshim help="Creates new shims based on bin paths from currently installed tools." {
     long_help "Creates new shims based on bin paths from currently installed tools.\n\nThis creates new shims in ~/.local/share/mise/shims for CLIs that have been added.\nmise will try to do this automatically for commands like `npm i -g` but there are\nother ways to install things (like using yarn or pnpm for node) that mise does\nnot know about and so it will be necessary to call this explicitly.\n\nIf you think mise should automatically call this for a particular command, please\nopen an issue on the mise repo. You can also setup a shell function to reshim\nautomatically (it's really fast so you don't need to worry about overhead):\n\n    npm() {\n      command npm \"$@\"\n      mise reshim\n    }\n\nNote that this creates shims for _all_ installed tools, not just the ones that are\ncurrently active in mise.toml."
     after_long_help "Examples:\n\n    $ mise reshim\n    $ ~/.local/share/mise/shims/node -v\n    v20.0.0\n"
@@ -1286,8 +1288,6 @@ cmd which help="Shows the path that a tool's bin points to." {
     }
     arg "[BIN_NAME]" help="The bin to look up" required=#false
 }
-cmd render-help hide=#true help="internal command to generate markdown from help"
-cmd render-mangen hide=#true help="internal command to generate markdown from help"
 source_code_link_template #"""
 {%- set path = path | replace(from='-', to='_') -%}
 {%- if cmd.subcommands | length > 0 -%}

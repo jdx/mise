@@ -4,7 +4,7 @@
 .SH NAME
 mise \- The front\-end to your dev env
 .SH SYNOPSIS
-\fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-E\fR|\fB\-\-env\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-\-output\fR] [\fB\-\-raw\fR] [\fB\-\-no\-config\fR] [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-\-silent\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-h\fR|\fB\-\-help\fR] [\fITASK\fR] [\fITASK_ARGS\fR] [\fITASK_ARGS_LAST\fR] [\fIsubcommands\fR]
+\fBmise\fR [\fB\-C\fR|\fB\-\-cd\fR] [\fB\-E\fR|\fB\-\-env\fR] [\fB\-j\fR|\fB\-\-jobs\fR] [\fB\-q\fR|\fB\-\-quiet\fR] [\fB\-v\fR|\fB\-\-verbose\fR]... [\fB\-y\fR|\fB\-\-yes\fR] [\fB\-\-no\-config\fR] [\fB\-\-output\fR] [\fB\-\-raw\fR] [\fB\-\-silent\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fITASK\fR] [\fITASK_ARGS\fR] [\fITASK_ARGS_LAST\fR] [\fIsubcommands\fR]
 .SH DESCRIPTION
 mise manages dev tools, env vars, and runs tasks. https://github.com/jdx/mise
 .SH OPTIONS
@@ -21,28 +21,28 @@ How many jobs to run in parallel [default: 8]
 May also be specified with the \fBMISE_JOBS\fR environment variable.
 .RE
 .TP
-\fB\-\-output\fR \fI<OUTPUT>\fR
-
+\fB\-q\fR, \fB\-\-quiet\fR
+Suppress non\-error messages
 .TP
-\fB\-\-raw\fR
-Read/write directly to stdin/stdout/stderr instead of by line
+\fB\-v\fR, \fB\-\-verbose\fR
+Show extra output (use \-vv for even more)
+.TP
+\fB\-y\fR, \fB\-\-yes\fR
+Answer yes to all confirmation prompts
 .TP
 \fB\-\-no\-config\fR
 Do not load any config files
 
 Can also use `MISE_NO_CONFIG=1`
 .TP
-\fB\-y\fR, \fB\-\-yes\fR
-Answer yes to all confirmation prompts
+\fB\-\-output\fR \fI<OUTPUT>\fR
+
 .TP
-\fB\-q\fR, \fB\-\-quiet\fR
-Suppress non\-error messages
+\fB\-\-raw\fR
+Read/write directly to stdin/stdout/stderr instead of by line
 .TP
 \fB\-\-silent\fR
 Suppress all task output and mise non\-error messages
-.TP
-\fB\-v\fR, \fB\-\-verbose\fR
-Show extra output (use \-vv for even more)
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help (see a summary with \*(Aq\-h\*(Aq)

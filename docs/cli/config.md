@@ -9,6 +9,10 @@ Manage config files
 
 ## Flags
 
+### `-J --json`
+
+Output in JSON format
+
 ### `--no-header`
 
 Do not print table header
@@ -16,10 +20,6 @@ Do not print table header
 ### `--tracked-configs`
 
 List all tracked config files
-
-### `-J --json`
-
-Output in JSON format
 
 ## Subcommands
 

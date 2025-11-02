@@ -92,12 +92,6 @@ const completionSpec: Fig.Spec = {
       description: "Initializes mise in the current shell session",
       options: [
         {
-          name: "--shims",
-          description:
-            "Use shims instead of modifying PATH\nEffectively the same as:",
-          isRepeatable: false,
-        },
-        {
           name: ["-q", "--quiet"],
           description: "Suppress non-error messages",
           isRepeatable: false,
@@ -105,6 +99,12 @@ const completionSpec: Fig.Spec = {
         {
           name: "--no-hook-env",
           description: "Do not automatically call hook-env",
+          isRepeatable: false,
+        },
+        {
+          name: "--shims",
+          description:
+            "Use shims instead of modifying PATH\nEffectively the same as:",
           isRepeatable: false,
         },
       ],
@@ -288,14 +288,14 @@ esac`),
           description: "Removes stale mise cache files",
           options: [
             {
-              name: "--dry-run",
-              description: "Just show what would be pruned",
-              isRepeatable: false,
-            },
-            {
               name: ["-v", "--verbose"],
               description: "Show pruned files",
               isRepeatable: true,
+            },
+            {
+              name: "--dry-run",
+              description: "Just show what would be pruned",
+              isRepeatable: false,
             },
           ],
           args: {
@@ -379,6 +379,11 @@ esac`),
           description: "List config files currently in use",
           options: [
             {
+              name: ["-J", "--json"],
+              description: "Output in JSON format",
+              isRepeatable: false,
+            },
+            {
               name: "--no-header",
               description: "Do not print table header",
               isRepeatable: false,
@@ -386,11 +391,6 @@ esac`),
             {
               name: "--tracked-configs",
               description: "List all tracked config files",
-              isRepeatable: false,
-            },
-            {
-              name: ["-J", "--json"],
-              description: "Output in JSON format",
               isRepeatable: false,
             },
           ],
@@ -439,6 +439,11 @@ esac`),
       ],
       options: [
         {
+          name: ["-J", "--json"],
+          description: "Output in JSON format",
+          isRepeatable: false,
+        },
+        {
           name: "--no-header",
           description: "Do not print table header",
           isRepeatable: false,
@@ -446,11 +451,6 @@ esac`),
         {
           name: "--tracked-configs",
           description: "List all tracked config files",
-          isRepeatable: false,
-        },
-        {
-          name: ["-J", "--json"],
-          description: "Output in JSON format",
           isRepeatable: false,
         },
       ],
@@ -3498,6 +3498,26 @@ esac`),
       },
     },
     {
+      name: ["-q", "--quiet"],
+      description: "Suppress non-error messages",
+      isRepeatable: false,
+    },
+    {
+      name: ["-v", "--verbose"],
+      description: "Show extra output (use -vv for even more)",
+      isRepeatable: true,
+    },
+    {
+      name: ["-y", "--yes"],
+      description: "Answer yes to all confirmation prompts",
+      isRepeatable: false,
+    },
+    {
+      name: "--no-config",
+      description: "Do not load any config files",
+      isRepeatable: false,
+    },
+    {
       name: "--output",
       isRepeatable: false,
       args: {
@@ -3511,29 +3531,9 @@ esac`),
       isRepeatable: false,
     },
     {
-      name: "--no-config",
-      description: "Do not load any config files",
-      isRepeatable: false,
-    },
-    {
-      name: ["-y", "--yes"],
-      description: "Answer yes to all confirmation prompts",
-      isRepeatable: false,
-    },
-    {
-      name: ["-q", "--quiet"],
-      description: "Suppress non-error messages",
-      isRepeatable: false,
-    },
-    {
       name: "--silent",
       description: "Suppress all task output and mise non-error messages",
       isRepeatable: false,
-    },
-    {
-      name: ["-v", "--verbose"],
-      description: "Show extra output (use -vv for even more)",
-      isRepeatable: true,
     },
   ],
   args: {
