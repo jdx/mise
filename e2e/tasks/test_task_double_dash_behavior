@@ -9,13 +9,13 @@ EOF
 
 # Test 1: Mise flags work anywhere before --
 # -q is a mise flag, so it should suppress output regardless of position
-assert "mise run -q echo_args arg1" "args: arg1"
-assert "mise run echo_args -q arg1" "args: arg1"
-assert "mise -q run echo_args arg1" "args: arg1"
+assert "mise run -q echo_args arg1 2>&1" "args: arg1"
+assert "mise run echo_args -q arg1 2>&1" "args: arg1"
+assert "mise -q run echo_args arg1 2>&1" "args: arg1"
 
 # Test 2: Naked runs - mise flags still go to mise
-assert "mise -q echo_args arg1" "args: arg1"
-assert "mise echo_args -q arg1" "args: arg1"
+assert "mise -q echo_args arg1 2>&1" "args: arg1"
+assert "mise echo_args -q arg1 2>&1" "args: arg1"
 
 # Test 3: Unknown flags go to task
 cat <<'EOF' >mise.toml
