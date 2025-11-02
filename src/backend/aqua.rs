@@ -247,7 +247,7 @@ impl Backend for AquaBackend {
 
 impl AquaBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        let full = ba.full();
+        let full = ba.full_without_opts();
         let mut id = full.split_once(":").unwrap_or(("", &full)).1;
         if !id.contains("/") {
             id = REGISTRY

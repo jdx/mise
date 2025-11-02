@@ -273,6 +273,14 @@ impl BackendArg {
         full
     }
 
+    pub fn full_without_opts(&self) -> String {
+        let full = self.full();
+        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
+            return c.get(1).unwrap().as_str().to_string();
+        }
+        full
+    }
+
     pub fn opts(&self) -> ToolVersionOptions {
         self.opts.clone().unwrap_or_else(|| {
             if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&self.full()) {
