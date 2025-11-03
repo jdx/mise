@@ -5096,8 +5096,9 @@ description = "yq is a portable command-line YAML processor"
 test = ["yq --version", "version v{{version}}"]
 
 [tools.yt-dlp]
-backends = ["github:yt-dlp/yt-dlp", "asdf:duhow/asdf-yt-dlp"]
+backends = ["ubi:yt-dlp/yt-dlp[rename_exe=yt-dlp]", "asdf:duhow/asdf-yt-dlp"]
 description = "A feature-rich command-line audio/video downloader"
+test = ["yt-dlp --version", "{{version}}"]
 
 [tools.ytt]
 backends = ["aqua:carvel-dev/ytt", "asdf:vmware-tanzu/asdf-carvel"]

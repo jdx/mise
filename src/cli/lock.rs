@@ -25,24 +25,24 @@ pub struct Lock {
     #[clap(value_name = "TOOL", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 
-    /// Comma-separated list of platforms to target
-    /// e.g.: linux-x64,macos-arm64,windows-x64
-    /// If not specified, all platforms already in lockfile will be updated
-    #[clap(long, short, value_delimiter = ',', verbatim_doc_comment)]
-    pub platform: Vec<String>,
-
     /// Update all tools even if lockfile data already exists
     #[clap(long, short, verbatim_doc_comment)]
     pub force: bool,
-
-    /// Show what would be updated without making changes
-    #[clap(long, short = 'n', verbatim_doc_comment)]
-    pub dry_run: bool,
 
     /// Number of jobs to run in parallel
     /// [default: 4]
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
+
+    /// Show what would be updated without making changes
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    pub dry_run: bool,
+
+    /// Comma-separated list of platforms to target
+    /// e.g.: linux-x64,macos-arm64,windows-x64
+    /// If not specified, all platforms already in lockfile will be updated
+    #[clap(long, short, value_delimiter = ',', verbatim_doc_comment)]
+    pub platform: Vec<String>,
 }
 
 impl Lock {

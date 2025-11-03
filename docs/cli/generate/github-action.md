@@ -11,10 +11,6 @@ when you push changes to your repository.
 
 ## Flags
 
-### `--name <NAME>`
-
-the name of the workflow to generate
-
 ### `-t --task <TASK>`
 
 The task to run when the workflow is triggered
@@ -22,6 +18,10 @@ The task to run when the workflow is triggered
 ### `-w --write`
 
 write to .github/workflows/$name.yml
+
+### `--name <NAME>`
+
+the name of the workflow to generate
 
 Examples:
 

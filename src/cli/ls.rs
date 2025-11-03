@@ -29,9 +29,6 @@ pub struct Ls {
     #[clap(conflicts_with = "tool_flag")]
     installed_tool: Option<Vec<BackendArg>>,
 
-    #[clap(long = "plugin", short = 'p', hide = true)]
-    tool_flag: Option<BackendArg>,
-
     /// Only show tool versions currently specified in a mise.toml
     #[clap(long, short)]
     current: bool,
@@ -40,30 +37,37 @@ pub struct Ls {
     #[clap(long, short, conflicts_with = "local")]
     global: bool,
 
-    /// Only show tool versions currently specified in the local mise.toml
-    #[clap(long, short, conflicts_with = "global")]
-    local: bool,
-
     /// Only show tool versions that are installed
     /// (Hides tools defined in mise.toml but not installed)
     #[clap(long, short)]
     installed: bool,
 
-    /// Don't fetch information such as outdated versions
-    #[clap(long, short, hide = true)]
-    offline: bool,
-
-    /// Display whether a version is outdated
-    #[clap(long)]
-    outdated: bool,
-
     /// Output in JSON format
     #[clap(long, short = 'J')]
     json: bool,
 
+    /// Only show tool versions currently specified in the local mise.toml
+    #[clap(long, short, conflicts_with = "global")]
+    local: bool,
+
     /// Display missing tool versions
     #[clap(long, short, conflicts_with = "installed")]
     missing: bool,
+
+    /// Don't fetch information such as outdated versions
+    #[clap(long, short, hide = true)]
+    offline: bool,
+
+    #[clap(long = "plugin", short = 'p', hide = true)]
+    tool_flag: Option<BackendArg>,
+
+    /// Don't display headers
+    #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = &["json"])]
+    no_header: bool,
+
+    /// Display whether a version is outdated
+    #[clap(long)]
+    outdated: bool,
 
     /// Display versions matching this prefix
     #[clap(long, requires = "installed_tool")]
@@ -72,10 +76,6 @@ pub struct Ls {
     /// List only tools that can be pruned with `mise prune`
     #[clap(long)]
     prunable: bool,
-
-    /// Don't display headers
-    #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = &["json"])]
-    no_header: bool,
 }
 
 impl Ls {

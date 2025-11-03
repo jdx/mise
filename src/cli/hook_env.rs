@@ -28,25 +28,25 @@ pub enum HookReason {
 #[derive(Debug, clap::Args)]
 #[clap(hide = true)]
 pub struct HookEnv {
-    /// Shell type to generate script for
-    #[clap(long, short)]
-    shell: Option<ShellType>,
-
     /// Skip early exit check
     #[clap(long, short)]
     force: bool,
-
-    /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
-    #[clap(long, hide = true)]
-    status: bool,
 
     /// Hide warnings such as when a tool is not installed
     #[clap(long, short)]
     quiet: bool,
 
+    /// Shell type to generate script for
+    #[clap(long, short)]
+    shell: Option<ShellType>,
+
     /// Reason for calling hook-env (e.g., "precmd", "chpwd")
     #[clap(long, hide = true)]
     reason: Option<HookReason>,
+
+    /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
+    #[clap(long, hide = true)]
+    status: bool,
 }
 
 impl HookEnv {

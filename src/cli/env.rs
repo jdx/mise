@@ -18,25 +18,25 @@ pub struct Env {
     #[clap(value_name = "TOOL@VERSION")]
     tool: Vec<ToolArg>,
 
+    /// Output in dotenv format
+    #[clap(long, short = 'D', overrides_with = "shell")]
+    dotenv: bool,
+
     /// Output in JSON format
     #[clap(long, short = 'J', overrides_with = "shell")]
     json: bool,
+
+    /// Shell type to generate environment variables for
+    #[clap(long, short, overrides_with = "json")]
+    shell: Option<ShellType>,
 
     /// Output in JSON format with additional information (source, tool)
     #[clap(long, overrides_with = "shell")]
     json_extended: bool,
 
-    /// Output in dotenv format
-    #[clap(long, short = 'D', overrides_with = "shell")]
-    dotenv: bool,
-
     /// Only show redacted environment variables
     #[clap(long)]
     redacted: bool,
-
-    /// Shell type to generate environment variables for
-    #[clap(long, short, overrides_with = "json")]
-    shell: Option<ShellType>,
 
     /// Only show values of environment variables
     #[clap(long)]

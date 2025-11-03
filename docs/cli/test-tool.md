@@ -18,6 +18,11 @@ Tool(s) to test
 
 Test every tool specified in registry.toml
 
+### `-j --jobs <JOBS>`
+
+Number of jobs to run in parallel
+[default: 4]
+
 ### `--all-config`
 
 Test all tools specified in config files
@@ -25,11 +30,6 @@ Test all tools specified in config files
 ### `--include-non-defined`
 
 Also test tools not defined in registry.toml, guessing how to test it
-
-### `-j --jobs <JOBS>`
-
-Number of jobs to run in parallel
-[default: 4]
 
 ### `--raw`
 

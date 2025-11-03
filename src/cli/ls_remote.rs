@@ -19,14 +19,14 @@ pub struct LsRemote {
     #[clap(value_name = "TOOL@VERSION", required_unless_present = "all")]
     pub plugin: Option<ToolArg>,
 
-    /// Show all installed plugins and versions
-    #[clap(long, verbatim_doc_comment, conflicts_with_all = ["plugin", "prefix"])]
-    pub all: bool,
-
     /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
     #[clap(verbatim_doc_comment)]
     pub prefix: Option<String>,
+
+    /// Show all installed plugins and versions
+    #[clap(long, verbatim_doc_comment, conflicts_with_all = ["plugin", "prefix"])]
+    pub all: bool,
 }
 
 impl LsRemote {

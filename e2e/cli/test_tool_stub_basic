@@ -84,3 +84,17 @@ assert_contains "bin/gh --version" "gh version"
 assert_contains "bin/gh --version" "gh version" # short-circuit works
 mise uninstall --all
 assert_contains "bin/gh --version" "gh version" # refetches even if it's cached
+
+# Test 12: Aqua backend
+cat >bin/flyctl <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "flyctl"
+version = "0.3.206"
+bin = "flyctl"
+EOF
+
+chmod +x bin/flyctl
+
+assert_contains "bin/flyctl version" "flyctl v0.3.206"
+mise uninstall --all
+assert_contains "bin/flyctl version" "flyctl v0.3.206"

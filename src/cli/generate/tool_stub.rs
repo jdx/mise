@@ -29,15 +29,34 @@ pub struct ToolStub {
     #[clap(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
 
-    /// Version of the tool
-    #[clap(long, default_value = "latest")]
-    pub version: String,
+    /// Binary path within the extracted archive
+    ///
+    /// If not specified and the archive is downloaded, will auto-detect the most likely binary
+    #[clap(long, short)]
+    pub bin: Option<String>,
 
     /// URL for downloading the tool
     ///
     /// Example: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz
     #[clap(long, short)]
     pub url: Option<String>,
+
+    /// Fetch checksums and sizes for an existing tool stub file
+    ///
+    /// This reads an existing stub file and fills in any missing checksum/size fields
+    /// by downloading the files. URLs must already be present in the stub.
+    #[clap(long, conflicts_with_all = &["url", "platform_url", "version", "bin", "platform_bin", "skip_download"])]
+    pub fetch: bool,
+
+    /// HTTP backend type to use
+    #[clap(long, default_value = "http")]
+    pub http: String,
+
+    /// Platform-specific binary paths in the format platform:path
+    ///
+    /// Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
+    #[clap(long)]
+    pub platform_bin: Vec<String>,
 
     /// Platform-specific URLs in the format platform:url or just url (auto-detect platform)
     ///
@@ -53,32 +72,13 @@ pub struct ToolStub {
     #[clap(long)]
     pub platform_url: Vec<String>,
 
-    /// Platform-specific binary paths in the format platform:path
-    ///
-    /// Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
-    #[clap(long)]
-    pub platform_bin: Vec<String>,
-
-    /// Binary path within the extracted archive
-    ///
-    /// If not specified and the archive is downloaded, will auto-detect the most likely binary
-    #[clap(long, short)]
-    pub bin: Option<String>,
-
     /// Skip downloading for checksum and binary path detection (faster but less informative)
     #[clap(long)]
     pub skip_download: bool,
 
-    /// Fetch checksums and sizes for an existing tool stub file
-    ///
-    /// This reads an existing stub file and fills in any missing checksum/size fields
-    /// by downloading the files. URLs must already be present in the stub.
-    #[clap(long, conflicts_with_all = &["url", "platform_url", "version", "bin", "platform_bin", "skip_download"])]
-    pub fetch: bool,
-
-    /// HTTP backend type to use
-    #[clap(long, default_value = "http")]
-    pub http: String,
+    /// Version of the tool
+    #[clap(long, default_value = "latest")]
+    pub version: String,
 }
 
 impl ToolStub {

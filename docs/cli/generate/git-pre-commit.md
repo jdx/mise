@@ -16,10 +16,6 @@ For more advanced pre-commit functionality, see mise's sister project: <https://
 
 ## Flags
 
-### `--hook <HOOK>`
-
-Which hook to generate (saves to .git/hooks/$hook)
-
 ### `-t --task <TASK>`
 
 The task to run when the pre-commit hook is triggered
@@ -27,6 +23,10 @@ The task to run when the pre-commit hook is triggered
 ### `-w --write`
 
 write to .git/hooks/pre-commit and make it executable
+
+### `--hook <HOOK>`
+
+Which hook to generate (saves to .git/hooks/$hook)
 
 Examples:
 

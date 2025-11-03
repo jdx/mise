@@ -16,6 +16,11 @@ The bin to look up
 
 ## Flags
 
+### `-t --tool <TOOL@VERSION>`
+
+Use a specific tool@version
+e.g.: `mise which npm --tool=node@20`
+
 ### `--plugin`
 
 Show the plugin name instead of the path
@@ -23,11 +28,6 @@ Show the plugin name instead of the path
 ### `--version`
 
 Show the version instead of the path
-
-### `-t --tool <TOOL@VERSION>`
-
-Use a specific tool@version
-e.g.: `mise which npm --tool=node@20`
 
 Examples:
 

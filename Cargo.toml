@@ -3,7 +3,7 @@ members = ["crates/vfox", "crates/aqua-registry"]
 
 [package]
 name = "mise"
-version = "2025.11.1"
+version = "2025.11.2"
 edition = "2024"
 description = "The front-end to your dev env"
 authors = ["Jeff Dickey (@jdx)"]
@@ -197,6 +197,7 @@ indexmap = "2"
 serde_yaml = "0.9"
 
 [dev-dependencies]
+clap-sort = "1"
 ctor = "0.4"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1.6.1"

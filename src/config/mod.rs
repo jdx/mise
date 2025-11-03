@@ -846,6 +846,7 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
             ".config/mise/mise.local.toml",
             ".config/mise.local.toml",
             ".mise/config.local.toml",
+            "mise/config.local.toml",
             ".rtx.local.toml",
             "mise.local.toml",
             ".mise.local.toml",
