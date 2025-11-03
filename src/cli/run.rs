@@ -464,6 +464,7 @@ impl Run {
             self.context_builder.clone(),
             self.output_handler.clone().unwrap(),
             executor_config,
+            self.no_cache,
         ));
 
         Ok(())

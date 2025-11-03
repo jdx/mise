@@ -49,6 +49,7 @@ pub struct TaskExecutor {
     pub timings: bool,
     pub continue_on_error: bool,
     pub dry_run: bool,
+    pub no_cache: bool,
 }
 
 impl TaskExecutor {
@@ -56,6 +57,7 @@ impl TaskExecutor {
         context_builder: TaskContextBuilder,
         output_handler: OutputHandler,
         config: TaskExecutorConfig,
+        no_cache: bool,
     ) -> Self {
         Self {
             context_builder,
@@ -68,6 +70,7 @@ impl TaskExecutor {
             timings: config.timings,
             continue_on_error: config.continue_on_error,
             dry_run: config.dry_run,
+            no_cache,
         }
     }
 
@@ -207,7 +210,13 @@ impl TaskExecutor {
             );
         } else {
             let rendered_run_scripts = task
-                .render_run_scripts_with_args(config, self.cd.clone(), &task.args, &env)
+                .render_run_scripts_with_args(
+                    config,
+                    self.cd.clone(),
+                    self.no_cache,
+                    &task.args,
+                    &env,
+                )
                 .await?;
 
             let get_args = || {
@@ -730,7 +739,9 @@ impl TaskExecutor {
         env: &mut BTreeMap<String, String>,
         get_args: impl Fn() -> Vec<String>,
     ) -> Result<()> {
-        let (spec, _) = task.parse_usage_spec(config, self.cd.clone(), env).await?;
+        let (spec, _) = task
+            .parse_usage_spec(config, self.cd.clone(), self.no_cache, env)
+            .await?;
         if !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() {
             let args: Vec<String> = get_args();
             trace!("Parsing usage spec for {:?}", args);
