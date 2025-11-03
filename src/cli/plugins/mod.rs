@@ -29,13 +29,6 @@ pub struct Plugins {
     #[clap(short, long, verbatim_doc_comment, conflicts_with = "all")]
     pub core: bool,
 
-    /// List installed plugins
-    ///
-    /// This is the default behavior but can be used with --core
-    /// to show core and user plugins
-    #[clap(long, verbatim_doc_comment, conflicts_with = "all")]
-    pub user: bool,
-
     /// Show the git url for each plugin
     /// e.g.: https://github.com/asdf-vm/asdf-nodejs.git
     #[clap(short, long, alias = "url", verbatim_doc_comment)]
@@ -45,6 +38,13 @@ pub struct Plugins {
     /// e.g.: main 1234abc
     #[clap(long, hide = true, verbatim_doc_comment)]
     pub refs: bool,
+
+    /// List installed plugins
+    ///
+    /// This is the default behavior but can be used with --core
+    /// to show core and user plugins
+    #[clap(long, verbatim_doc_comment, conflicts_with = "all")]
+    pub user: bool,
 }
 
 #[derive(Debug, Subcommand)]

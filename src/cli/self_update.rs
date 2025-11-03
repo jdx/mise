@@ -63,20 +63,20 @@ pub fn append_self_update_instructions(mut message: String) -> String {
 #[derive(Debug, Default, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct SelfUpdate {
+    /// Update to a specific version
+    version: Option<String>,
+
     /// Update even if already up to date
     #[clap(long, short)]
     force: bool,
-
-    /// Disable auto-updating plugins
-    #[clap(long)]
-    no_plugins: bool,
 
     /// Skip confirmation prompt
     #[clap(long, short)]
     yes: bool,
 
-    /// Update to a specific version
-    version: Option<String>,
+    /// Disable auto-updating plugins
+    #[clap(long)]
+    no_plugins: bool,
 }
 
 impl SelfUpdate {

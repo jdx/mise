@@ -22,6 +22,10 @@ pub struct Outdated {
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 
+    /// Output in JSON format
+    #[clap(short = 'J', long, verbatim_doc_comment)]
+    pub json: bool,
+
     /// Compares against the latest versions available, not what matches the current config
     ///
     /// For example, if you have `node = "20"` in your config by default `mise outdated` will only
@@ -30,10 +34,6 @@ pub struct Outdated {
     /// Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
     #[clap(long, short = 'l', verbatim_doc_comment)]
     pub bump: bool,
-
-    /// Output in JSON format
-    #[clap(short = 'J', long, verbatim_doc_comment)]
-    pub json: bool,
 
     /// Don't show table header
     #[clap(long)]

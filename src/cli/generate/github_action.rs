@@ -10,15 +10,15 @@ use crate::git::Git;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct GithubAction {
-    /// the name of the workflow to generate
-    #[clap(long, default_value = "ci")]
-    name: String,
     /// The task to run when the workflow is triggered
     #[clap(long, short, default_value = "ci")]
     task: String,
     /// write to .github/workflows/$name.yml
     #[clap(long, short)]
     write: bool,
+    /// the name of the workflow to generate
+    #[clap(long, default_value = "ci")]
+    name: String,
 }
 
 impl GithubAction {

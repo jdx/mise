@@ -14,13 +14,13 @@ pub struct PluginsUninstall {
     #[clap(verbatim_doc_comment)]
     plugin: Vec<String>,
 
-    /// Also remove the plugin's installs, downloads, and cache
-    #[clap(long, short, verbatim_doc_comment)]
-    purge: bool,
-
     /// Remove all plugins
     #[clap(long, short, verbatim_doc_comment, conflicts_with = "plugin")]
     all: bool,
+
+    /// Also remove the plugin's installs, downloads, and cache
+    #[clap(long, short, verbatim_doc_comment)]
+    purge: bool,
 }
 
 impl PluginsUninstall {

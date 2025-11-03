@@ -13,58 +13,58 @@ pub struct TasksAdd {
     #[clap()]
     task: String,
 
-    /// Description of the task
-    #[clap(long)]
-    description: Option<String>,
+    #[clap(last = true)]
+    run: Vec<String>,
+
     /// Other names for the task
     #[clap(long, short)]
     alias: Vec<String>,
-    /// Dependencies to run after the task runs
-    #[clap(long)]
-    depends_post: Vec<String>,
-    /// Wait for these tasks to complete if they are to run
+    /// Add dependencies to the task
     #[clap(long, short)]
-    wait_for: Vec<String>,
+    depends: Vec<String>,
     /// Run the task in a specific directory
     #[clap(long, short = 'D')]
     dir: Option<String>,
+    /// Create a file task instead of a toml task
+    #[clap(long, short)]
+    file: bool,
     /// Hide the task from `mise task` and completions
     #[clap(long, short = 'H')]
     hide: bool,
+    /// Do not print the command before running
+    #[clap(long, short)]
+    quiet: bool,
     /// Directly connect stdin/stdout/stderr
     #[clap(long, short)]
     raw: bool,
     /// Glob patterns of files this task uses as input
     #[clap(long, short)]
     sources: Vec<String>,
+    /// Wait for these tasks to complete if they are to run
+    #[clap(long, short)]
+    wait_for: Vec<String>,
+
+    /// Dependencies to run after the task runs
+    #[clap(long)]
+    depends_post: Vec<String>,
+    /// Description of the task
+    #[clap(long)]
+    description: Option<String>,
     /// Glob patterns of files this task creates, to skip if they are not modified
     #[clap(long)]
     outputs: Vec<String>,
+    /// Command to run on windows
+    #[clap(long)]
+    run_windows: Option<String>,
     /// Run the task in a specific shell
     #[clap(long)]
     shell: Option<String>,
-    /// Do not print the command before running
-    #[clap(long, short)]
-    quiet: bool,
     /// Do not print the command or its output
     #[clap(long)]
     silent: bool,
     // TODO
     // env: Vec<String>,
     // tools: Vec<String>,
-    /// Add dependencies to the task
-    #[clap(long, short)]
-    depends: Vec<String>,
-    /// Command to run on windows
-    #[clap(long)]
-    run_windows: Option<String>,
-
-    /// Create a file task instead of a toml task
-    #[clap(long, short)]
-    file: bool,
-
-    #[clap(last = true)]
-    run: Vec<String>,
 }
 
 impl TasksAdd {

@@ -13,12 +13,12 @@ pub struct Settings {
     #[clap(subcommand)]
     command: Option<Commands>,
 
-    #[clap(flatten)]
-    ls: ls::SettingsLs,
-
     /// Setting value to set
     #[clap(conflicts_with = "all")]
     value: Option<String>,
+
+    #[clap(flatten)]
+    ls: ls::SettingsLs,
 }
 
 #[derive(Debug, Subcommand)]

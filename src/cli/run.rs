@@ -65,37 +65,17 @@ pub struct Run {
     #[clap(allow_hyphen_values = true, hide = true, last = true)]
     pub args_last: Vec<String>,
 
-    /// Do not use cache on remote tasks
-    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
-    pub no_cache: bool,
+    /// Continue running tasks even if one fails
+    #[clap(long, short = 'c', verbatim_doc_comment)]
+    pub continue_on_error: bool,
 
     /// Change to this directory before executing the command
     #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
     pub cd: Option<PathBuf>,
 
-    /// Continue running tasks even if one fails
-    #[clap(long, short = 'c', verbatim_doc_comment)]
-    pub continue_on_error: bool,
-
-    /// Don't actually run the tasks(s), just print them in order of execution
-    #[clap(long, short = 'n', verbatim_doc_comment)]
-    pub dry_run: bool,
-
     /// Force the tasks to run even if outputs are up to date
     #[clap(long, short, verbatim_doc_comment)]
     pub force: bool,
-
-    /// Print stdout/stderr by line, prefixed with the task's label
-    /// Defaults to true if --jobs > 1
-    /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
-    #[clap(
-        long,
-        short,
-        verbatim_doc_comment,
-        hide = true,
-        overrides_with = "interleave"
-    )]
-    pub prefix: bool,
 
     /// Print directly to stdout/stderr instead of by line
     /// Defaults to true if --jobs == 1
@@ -109,58 +89,15 @@ pub struct Run {
     )]
     pub interleave: bool,
 
-    /// Shell to use to run toml tasks
-    ///
-    /// Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
-    /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
-    /// Or it can be overridden with the `shell` property on a task.
-    #[clap(long, short, verbatim_doc_comment)]
-    pub shell: Option<String>,
-
-    /// Tool(s) to run in addition to what is in mise.toml files
-    /// e.g.: node@20 python@3.10
-    #[clap(short, long, value_name = "TOOL@VERSION")]
-    pub tool: Vec<ToolArg>,
-
     /// Number of tasks to run in parallel
     /// [default: 4]
     /// Configure with `jobs` config or `MISE_JOBS` env var
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
-    /// Read/write directly to stdin/stdout/stderr instead of by line
-    /// Redactions are not applied with this option
-    /// Configure with `raw` config or `MISE_RAW` env var
-    #[clap(long, short, verbatim_doc_comment)]
-    pub raw: bool,
-
-    /// Don't show any output except for errors
-    #[clap(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
-    pub silent: bool,
-
-    /// Timeout for the task to complete
-    /// e.g.: 30s, 5m
-    #[clap(long, verbatim_doc_comment)]
-    pub timeout: Option<String>,
-
-    /// Shows elapsed time after each task completes
-    ///
-    /// Default to always show with `MISE_TASK_TIMINGS=1`
-    #[clap(long, alias = "timing", verbatim_doc_comment, hide = true)]
-    pub timings: bool,
-
-    /// Hides elapsed time after each task completes
-    ///
-    /// Default to always hide with `MISE_TASK_TIMINGS=0`
-    #[clap(long, alias = "no-timing", verbatim_doc_comment)]
-    pub no_timings: bool,
-
-    /// Don't show extra output
-    #[clap(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
-    pub quiet: bool,
-
-    #[clap(skip)]
-    pub is_linear: bool,
+    /// Don't actually run the tasks(s), just print them in order of execution
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    pub dry_run: bool,
 
     /// Change how tasks information is output when running tasks
     ///
@@ -173,6 +110,69 @@ pub struct Run {
     /// - `silent` - Don't show any output including stdout and stderr from the task except for errors
     #[clap(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
     pub output: Option<TaskOutput>,
+
+    /// Print stdout/stderr by line, prefixed with the task's label
+    /// Defaults to true if --jobs > 1
+    /// Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+    #[clap(
+        long,
+        short,
+        verbatim_doc_comment,
+        hide = true,
+        overrides_with = "interleave"
+    )]
+    pub prefix: bool,
+
+    /// Don't show extra output
+    #[clap(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
+    pub quiet: bool,
+
+    /// Read/write directly to stdin/stdout/stderr instead of by line
+    /// Redactions are not applied with this option
+    /// Configure with `raw` config or `MISE_RAW` env var
+    #[clap(long, short, verbatim_doc_comment)]
+    pub raw: bool,
+
+    /// Shell to use to run toml tasks
+    ///
+    /// Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
+    /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
+    /// Or it can be overridden with the `shell` property on a task.
+    #[clap(long, short, verbatim_doc_comment)]
+    pub shell: Option<String>,
+
+    /// Don't show any output except for errors
+    #[clap(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
+    pub silent: bool,
+
+    /// Tool(s) to run in addition to what is in mise.toml files
+    /// e.g.: node@20 python@3.10
+    #[clap(short, long, value_name = "TOOL@VERSION")]
+    pub tool: Vec<ToolArg>,
+
+    #[clap(skip)]
+    pub is_linear: bool,
+
+    /// Do not use cache on remote tasks
+    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
+    pub no_cache: bool,
+
+    /// Hides elapsed time after each task completes
+    ///
+    /// Default to always hide with `MISE_TASK_TIMINGS=0`
+    #[clap(long, alias = "no-timing", verbatim_doc_comment)]
+    pub no_timings: bool,
+
+    /// Timeout for the task to complete
+    /// e.g.: 30s, 5m
+    #[clap(long, verbatim_doc_comment)]
+    pub timeout: Option<String>,
+
+    /// Shows elapsed time after each task completes
+    ///
+    /// Default to always show with `MISE_TASK_TIMINGS=1`
+    #[clap(long, alias = "timing", verbatim_doc_comment, hide = true)]
+    pub timings: bool,
 
     #[clap(skip)]
     pub tmpdir: PathBuf,
