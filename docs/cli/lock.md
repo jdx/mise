@@ -21,24 +21,24 @@ If not specified, all tools in lockfile will be updated
 
 ## Flags
 
-### `-p --platform… <PLATFORM>`
-
-Comma-separated list of platforms to target
-e.g.: linux-x64,macos-arm64,windows-x64
-If not specified, all platforms already in lockfile will be updated
-
 ### `-f --force`
 
 Update all tools even if lockfile data already exists
-
-### `-n --dry-run`
-
-Show what would be updated without making changes
 
 ### `-j --jobs <JOBS>`
 
 Number of jobs to run in parallel
 [default: 4]
+
+### `-n --dry-run`
+
+Show what would be updated without making changes
+
+### `-p --platform… <PLATFORM>`
+
+Comma-separated list of platforms to target
+e.g.: linux-x64,macos-arm64,windows-x64
+If not specified, all platforms already in lockfile will be updated
 
 Examples:
   

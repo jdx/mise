@@ -1,5 +1,5 @@
 use crate::backend::backend_type::BackendType;
-use crate::backend::static_helpers::try_with_v_prefix;
+use crate::backend::static_helpers::{lookup_platform_key, try_with_v_prefix};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::env::{
@@ -111,9 +111,8 @@ impl Backend for UbiBackend {
     ) -> eyre::Result<ToolVersion> {
         let v = tv.version.to_string();
         let opts = tv.request.options();
-        let bin_path = opts
-            .get("bin_path")
-            .cloned()
+        let bin_path = lookup_platform_key(&opts, "bin_path")
+            .or_else(|| opts.get("bin_path").cloned())
             .unwrap_or_else(|| "bin".to_string());
         let extract_all = opts.get("extract_all").is_some_and(|v| v == "true");
         let bin_dir = tv.install_path();
@@ -240,9 +239,11 @@ impl Backend for UbiBackend {
         tv: &ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
-        if let Some(bin_path) = opts.get("bin_path") {
+        if let Some(bin_path) =
+            lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+        {
             // bin_path should always point to a directory containing binaries
-            Ok(vec![tv.install_path().join(bin_path)])
+            Ok(vec![tv.install_path().join(&bin_path)])
         } else if opts.get("extract_all").is_some_and(|v| v == "true") {
             Ok(vec![tv.install_path()])
         } else {

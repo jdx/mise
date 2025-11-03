@@ -18,9 +18,17 @@ Tool name to get information about
 
 Output in JSON format
 
+### `--active`
+
+Only show active versions
+
 ### `--backend`
 
 Only show backend field
+
+### `--config-source`
+
+Only show config source
 
 ### `--description`
 
@@ -30,17 +38,9 @@ Only show description field
 
 Only show installed versions
 
-### `--active`
-
-Only show active versions
-
 ### `--requested`
 
 Only show requested versions
-
-### `--config-source`
-
-Only show config source
 
 ### `--tool-options`
 

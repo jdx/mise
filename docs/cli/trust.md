@@ -30,14 +30,14 @@ Trust all config files in the current directory and its parents
 
 Do not trust this config and ignore it in the future
 
-### `--untrust`
-
-No longer trust this config, will prompt in the future
-
 ### `--show`
 
 Show the trusted status of config files from the current directory and its parents.
 Does not trust or untrust any files.
+
+### `--untrust`
+
+No longer trust this config, will prompt in the future
 
 Examples:
 

@@ -171,14 +171,21 @@ impl HttpBackend {
             let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
 
             // Determine the destination path
-            let (dest_dir, dest_filename) = if let Some(bin_path_template) = opts.get("bin_path") {
+            let (dest_dir, dest_filename) = if let Some(bin_path_template) =
+                lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+            {
                 // If bin_path is specified, use it as directory
-                let bin_path = template_string(bin_path_template, tv);
+                let bin_path = template_string(&bin_path_template, tv);
                 let bin_dir = cache_path.join(&bin_path);
                 (bin_dir, std::ffi::OsString::from(decompressed_name))
-            } else if let Some(bin_name) = opts.get("bin") {
+            } else if let Some(bin_name) =
+                lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+            {
                 // If bin is specified, rename the file to this name
-                (cache_path.to_path_buf(), std::ffi::OsString::from(bin_name))
+                (
+                    cache_path.to_path_buf(),
+                    std::ffi::OsString::from(&bin_name),
+                )
             } else {
                 // Always auto-clean binary names by removing OS/arch suffixes
                 let cleaned_name = clean_binary_name(decompressed_name, Some(&self.ba.tool_name));
@@ -205,14 +212,21 @@ impl HttpBackend {
             file::make_executable(&dest)?;
         } else if format == file::TarFormat::Raw {
             // For raw files, determine the destination
-            let (dest_dir, dest_filename) = if let Some(bin_path_template) = opts.get("bin_path") {
+            let (dest_dir, dest_filename) = if let Some(bin_path_template) =
+                lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+            {
                 // If bin_path is specified, use it as directory
-                let bin_path = template_string(bin_path_template, tv);
+                let bin_path = template_string(&bin_path_template, tv);
                 let bin_dir = cache_path.join(&bin_path);
                 (bin_dir, file_path.file_name().unwrap().to_os_string())
-            } else if let Some(bin_name) = opts.get("bin") {
+            } else if let Some(bin_name) =
+                lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+            {
                 // If bin is specified, rename the file to this name
-                (cache_path.to_path_buf(), std::ffi::OsString::from(bin_name))
+                (
+                    cache_path.to_path_buf(),
+                    std::ffi::OsString::from(&bin_name),
+                )
             } else {
                 // Always auto-clean binary names by removing OS/arch suffixes
                 let original_name = file_path.file_name().unwrap().to_string_lossy();
@@ -235,7 +249,9 @@ impl HttpBackend {
             // Auto-detect if we need strip_components=1 before extracting
             // Only auto-strip if strip_components is not set AND bin_path is not explicitly configured
             if strip_components.is_none()
-                && opts.get("bin_path").is_none()
+                && lookup_platform_key(opts, "bin_path")
+                    .or_else(|| opts.get("bin_path").cloned())
+                    .is_none()
                 && let Ok(should_strip) = file::should_strip_components(file_path, format)
                 && should_strip
             {
@@ -461,8 +477,10 @@ impl Backend for HttpBackend {
         tv: &ToolVersion,
     ) -> Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
-        if let Some(bin_path_template) = opts.get("bin_path") {
-            let bin_path = template_string(bin_path_template, tv);
+        if let Some(bin_path_template) =
+            lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+        {
+            let bin_path = template_string(&bin_path_template, tv);
             Ok(vec![tv.install_path().join(bin_path)])
         } else {
             // Look for bin directory in the install path

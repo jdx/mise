@@ -23,7 +23,7 @@ depends = ['lint:*']
 [build]
 alias = "b"
 run = "cargo build --all-features"
-run_windows = "cargo build --features clap_mangen"
+run_windows = "cargo build"
 description = "Build the project"
 #sources = ["Cargo.*", "src/**/*.rs"]
 #outputs = ["target/debug/mise"]
@@ -95,9 +95,9 @@ mise completion fish > completions/mise.fish
 
 ["render:mangen"]
 description = 'Generate man pages'
-depends = ["build"]
+depends = ["render:usage"]
 env = { NO_COLOR = "1" }
-run = "mise render-mangen"
+run = "usage generate manpage --file mise.usage.kdl > man/man1/mise.1"
 
 ["render:fig"]
 description = 'Generate Fig completion spec'

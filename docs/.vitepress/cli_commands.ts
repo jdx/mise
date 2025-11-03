@@ -219,9 +219,6 @@ export const commands: { [key: string]: Command } = {
   "render-help": {
     hide: true,
   },
-  "render-mangen": {
-    hide: true,
-  },
   reshim: {
     hide: false,
   },

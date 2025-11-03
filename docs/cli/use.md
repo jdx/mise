@@ -37,9 +37,32 @@ mise use ubi:BurntSushi/ripgrep[exe=rg]
 
 ## Flags
 
+### `-e --env <ENV>`
+
+Create/modify an environment-specific config file like .mise.&lt;env>.toml
+
 ### `-f --force`
 
 Force reinstall even if already installed
+
+### `-g --global`
+
+Use the global config file (`~/.config/mise/config.toml`) instead of the local one
+
+### `-j --jobs <JOBS>`
+
+Number of jobs to run in parallel
+[default: 4]
+
+### `-n --dry-run`
+
+Perform a dry run, showing what would be installed and modified without making changes
+
+### `-p --path <PATH>`
+
+Specify a path to a config file or directory
+
+If a directory is specified, it will look for a config file in that directory following the rules above.
 
 ### `--fuzzy`
 
@@ -47,37 +70,6 @@ Save fuzzy version to config file
 
 e.g.: `mise use --fuzzy node@20` will save 20 as the version
 this is the default behavior unless `MISE_PIN=1`
-
-### `-g --global`
-
-Use the global config file (`~/.config/mise/config.toml`) instead of the local one
-
-### `-n --dry-run`
-
-Perform a dry run, showing what would be installed and modified without making changes
-
-### `-e --env <ENV>`
-
-Create/modify an environment-specific config file like .mise.&lt;env>.toml
-
-### `-j --jobs <JOBS>`
-
-Number of jobs to run in parallel
-[default: 4]
-
-### `--raw`
-
-Directly pipe stdin/stdout/stderr from plugin to user Sets `--jobs=1`
-
-### `--remove… <PLUGIN>`
-
-Remove the plugin(s) from config file
-
-### `-p --path <PATH>`
-
-Specify a path to a config file or directory
-
-If a directory is specified, it will look for a config file in that directory following the rules above.
 
 ### `--pin`
 
@@ -87,6 +79,14 @@ Set `MISE_PIN=1` to make this the default behavior
 
 Consider using mise.lock as a better alternative to pinning in mise.toml:
 <https://mise.jdx.dev/configuration/settings.html#lockfile>
+
+### `--raw`
+
+Directly pipe stdin/stdout/stderr from plugin to user Sets `--jobs=1`
+
+### `--remove… <PLUGIN>`
+
+Remove the plugin(s) from config file
 
 Examples:
 ```

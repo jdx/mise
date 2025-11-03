@@ -24,10 +24,10 @@ Update to a specific version
 
 Update even if already up to date
 
-### `--no-plugins`
-
-Disable auto-updating plugins
-
 ### `-y --yes`
 
 Skip confirmation prompt
+
+### `--no-plugins`
+
+Disable auto-updating plugins

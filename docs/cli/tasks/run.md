@@ -51,37 +51,17 @@ Arguments to pass to the tasks. Use ":::" to separate tasks
 
 ## Flags
 
-### `--no-cache`
+### `-c --continue-on-error`
 
-Do not use cache on remote tasks
+Continue running tasks even if one fails
 
 ### `-C --cd <CD>`
 
 Change to this directory before executing the command
 
-### `-c --continue-on-error`
-
-Continue running tasks even if one fails
-
-### `-n --dry-run`
-
-Don't actually run the tasks(s), just print them in order of execution
-
 ### `-f --force`
 
 Force the tasks to run even if outputs are up to date
-
-### `-s --shell <SHELL>`
-
-Shell to use to run toml tasks
-
-Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
-Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
-Or it can be overridden with the `shell` property on a task.
-
-### `-t --tool… <TOOL@VERSION>`
-
-Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 
 ### `-j --jobs <JOBS>`
 
@@ -89,30 +69,9 @@ Number of tasks to run in parallel
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 
-### `-r --raw`
+### `-n --dry-run`
 
-Read/write directly to stdin/stdout/stderr instead of by line
-Redactions are not applied with this option
-Configure with `raw` config or `MISE_RAW` env var
-
-### `-S --silent`
-
-Don't show any output except for errors
-
-### `--timeout <TIMEOUT>`
-
-Timeout for the task to complete
-e.g.: 30s, 5m
-
-### `--no-timings`
-
-Hides elapsed time after each task completes
-
-Default to always hide with `MISE_TASK_TIMINGS=0`
-
-### `-q --quiet`
-
-Don't show extra output
+Don't actually run the tasks(s), just print them in order of execution
 
 ### `-o --output <OUTPUT>`
 
@@ -125,6 +84,47 @@ Change how tasks information is output when running tasks
 - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
 - `quiet` - Don't show extra output
 - `silent` - Don't show any output including stdout and stderr from the task except for errors
+
+### `-q --quiet`
+
+Don't show extra output
+
+### `-r --raw`
+
+Read/write directly to stdin/stdout/stderr instead of by line
+Redactions are not applied with this option
+Configure with `raw` config or `MISE_RAW` env var
+
+### `-s --shell <SHELL>`
+
+Shell to use to run toml tasks
+
+Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
+Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
+Or it can be overridden with the `shell` property on a task.
+
+### `-S --silent`
+
+Don't show any output except for errors
+
+### `-t --tool… <TOOL@VERSION>`
+
+Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
+
+### `--no-cache`
+
+Do not use cache on remote tasks
+
+### `--no-timings`
+
+Hides elapsed time after each task completes
+
+Default to always hide with `MISE_TASK_TIMINGS=0`
+
+### `--timeout <TIMEOUT>`
+
+Timeout for the task to complete
+e.g.: 30s, 5m
 
 Examples:
 

@@ -67,7 +67,6 @@ chrono = { version = "0.4", default-features = false, features = [
 ] }
 ci_info = "0.14"
 clap = { version = "4", features = ["env", "derive", "string"] }
-clap_mangen = { version = "0.2", optional = true }
 color-eyre = "0.6"
 color-print = "0.3"
 comfy-table = "7.1.3"

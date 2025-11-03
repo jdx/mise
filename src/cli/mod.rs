@@ -49,8 +49,6 @@ mod prune;
 mod registry;
 #[cfg(debug_assertions)]
 mod render_help;
-#[cfg(feature = "clap_mangen")]
-mod render_mangen;
 mod reshim;
 pub mod run;
 mod search;
