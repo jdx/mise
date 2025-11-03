@@ -64,12 +64,10 @@ assert "mise run -q with_usage myfile" "custom= file=myfile args="
 assert "mise run with_usage --help 2>&1 || true" "Usage: with_usage [-x --custom] <file>
 
 Arguments:
-  <file>
-    File to process
+  <file>  File to process
 
 Flags:
-  -x --custom
-    Custom flag"
+  -x --custom  Custom flag"
 
 # Test 9: Help passed as explicit argument with -- (recreate echo_args task)
 cat <<'EOF' >mise.toml
