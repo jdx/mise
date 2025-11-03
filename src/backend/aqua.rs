@@ -853,7 +853,7 @@ impl AquaBackend {
                     "http" => bundle.url(pkg, v, os(), arch())?,
                     t => {
                         warn!(
-                            "unsupported cosign signature type for {}/{}: {t}",
+                            "unsupported cosign bundle type for {}/{}: {t}",
                             pkg.repo_owner, pkg.repo_name
                         );
                         String::new()
