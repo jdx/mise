@@ -24,21 +24,21 @@ Name of setting
 
 List all settings
 
-### `-l --local`
-
-Use the local config file instead of the global one
-
 ### `-J --json`
 
 Output in JSON format
 
-### `--json-extended`
+### `-l --local`
 
-Output in JSON format with sources
+Use the local config file instead of the global one
 
 ### `-T --toml`
 
 Output in TOML format
+
+### `--json-extended`
+
+Output in JSON format with sources
 
 Examples:
 

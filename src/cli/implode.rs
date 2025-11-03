@@ -13,13 +13,13 @@ use crate::{dirs, env, file};
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
 pub struct Implode {
-    /// Also remove config directory
-    #[clap(long, verbatim_doc_comment)]
-    config: bool,
-
     /// List directories that would be removed without actually removing them
     #[clap(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
+
+    /// Also remove config directory
+    #[clap(long, verbatim_doc_comment)]
+    config: bool,
 }
 
 impl Implode {

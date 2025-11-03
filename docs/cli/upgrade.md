@@ -23,10 +23,6 @@ If not specified, all current tools will be upgraded
 
 ## Flags
 
-### `-n --dry-run`
-
-Just print what would be done, don't actually do it
-
 ### `-i --interactive`
 
 Display multiselect menu to choose which tools to upgrade
@@ -45,6 +41,10 @@ this will install 22.1.0 and set `node = "22.1.0"` in your config.
 
 It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
 would change your config to `node = "22"`.
+
+### `-n --dry-run`
+
+Just print what would be done, don't actually do it
 
 ### `--raw`
 

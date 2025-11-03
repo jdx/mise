@@ -10,13 +10,13 @@ use crate::toolset::ToolsetBuilder;
 #[derive(Debug, clap::Args)]
 #[clap(hide = true)]
 pub struct HookNotFound {
-    /// Shell type to generate script for
-    #[clap(long, short)]
-    shell: Option<ShellType>,
-
     /// Attempted bin to run
     #[clap()]
     bin: String,
+
+    /// Shell type to generate script for
+    #[clap(long, short)]
+    shell: Option<ShellType>,
 }
 
 impl HookNotFound {

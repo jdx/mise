@@ -27,24 +27,24 @@ pub struct Global {
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
-    /// Save exact version to `~/.tool-versions`
-    /// e.g.: `mise global --pin node@20` will save `node 20.0.0` to ~/.tool-versions
-    #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
-    pin: bool,
-
     /// Save fuzzy version to `~/.tool-versions`
     /// e.g.: `mise global --fuzzy node@20` will save `node 20` to ~/.tool-versions
     /// this is the default behavior unless MISE_ASDF_COMPAT=1
     #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
     fuzzy: bool,
 
-    /// Remove the plugin(s) from ~/.tool-versions
-    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
-    remove: Option<Vec<BackendArg>>,
-
     /// Get the path of the global config file
     #[clap(long)]
     path: bool,
+
+    /// Save exact version to `~/.tool-versions`
+    /// e.g.: `mise global --pin node@20` will save `node 20.0.0` to ~/.tool-versions
+    #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
+    pin: bool,
+
+    /// Remove the plugin(s) from ~/.tool-versions
+    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
+    remove: Option<Vec<BackendArg>>,
 }
 
 impl Global {

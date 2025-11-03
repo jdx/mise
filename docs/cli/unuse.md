@@ -27,13 +27,13 @@ Tool(s) to remove
 
 ## Flags
 
-### `-g --global`
-
-Use the global config file (`~/.config/mise/config.toml`) instead of the local one
-
 ### `-e --env <ENV>`
 
 Create/modify an environment-specific config file like .mise.&lt;env>.toml
+
+### `-g --global`
+
+Use the global config file (`~/.config/mise/config.toml`) instead of the local one
 
 ### `-p --path <PATH>`
 

@@ -19,13 +19,13 @@ pub struct TasksDeps {
     #[clap(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
 
-    /// Show hidden tasks
-    #[clap(long, verbatim_doc_comment)]
-    pub hidden: bool,
-
     /// Display dependencies in DOT format
     #[clap(long, alias = "dot", verbatim_doc_comment)]
     pub dot: bool,
+
+    /// Show hidden tasks
+    #[clap(long, verbatim_doc_comment)]
+    pub hidden: bool,
 }
 
 impl TasksDeps {

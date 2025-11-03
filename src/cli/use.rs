@@ -47,42 +47,26 @@ pub struct Use {
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
+    /// Create/modify an environment-specific config file like .mise.<env>.toml
+    #[clap(long, short, overrides_with_all = & ["global", "path"])]
+    env: Option<String>,
+
     /// Force reinstall even if already installed
     #[clap(long, short, requires = "tool")]
     force: bool,
 
-    /// Save fuzzy version to config file
-    ///
-    /// e.g.: `mise use --fuzzy node@20` will save 20 as the version
-    /// this is the default behavior unless `MISE_PIN=1`
-    #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
-    fuzzy: bool,
-
     /// Use the global config file (`~/.config/mise/config.toml`) instead of the local one
     #[clap(short, long, overrides_with_all = & ["path", "env"])]
     global: bool,
-
-    /// Perform a dry run, showing what would be installed and modified without making changes
-    #[clap(long, short = 'n', verbatim_doc_comment)]
-    dry_run: bool,
-
-    /// Create/modify an environment-specific config file like .mise.<env>.toml
-    #[clap(long, short, overrides_with_all = & ["global", "path"])]
-    env: Option<String>,
 
     /// Number of jobs to run in parallel
     /// [default: 4]
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets `--jobs=1`
-    #[clap(long, overrides_with = "jobs")]
-    raw: bool,
-
-    /// Remove the plugin(s) from config file
-    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
-    remove: Vec<BackendArg>,
+    /// Perform a dry run, showing what would be installed and modified without making changes
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    dry_run: bool,
 
     /// Specify a path to a config file or directory
     ///
@@ -90,6 +74,13 @@ pub struct Use {
     /// the rules above.
     #[clap(short, long, overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
     path: Option<PathBuf>,
+
+    /// Save fuzzy version to config file
+    ///
+    /// e.g.: `mise use --fuzzy node@20` will save 20 as the version
+    /// this is the default behavior unless `MISE_PIN=1`
+    #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
+    fuzzy: bool,
 
     /// Save exact version to config file
     /// e.g.: `mise use --pin node@20` will save 20.0.0 as the version
@@ -99,6 +90,15 @@ pub struct Use {
     /// https://mise.jdx.dev/configuration/settings.html#lockfile
     #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
+
+    /// Directly pipe stdin/stdout/stderr from plugin to user
+    /// Sets `--jobs=1`
+    #[clap(long, overrides_with = "jobs")]
+    raw: bool,
+
+    /// Remove the plugin(s) from config file
+    #[clap(long, value_name = "PLUGIN", aliases = ["rm", "unset"])]
+    remove: Vec<BackendArg>,
 }
 
 impl Use {

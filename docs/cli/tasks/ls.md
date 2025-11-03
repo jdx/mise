@@ -14,18 +14,6 @@ tasks will override the global ones if they have the same name.
 
 ## Flags
 
-### `-x --extended`
-
-Show all columns
-
-### `--no-header`
-
-Do not print table header
-
-### `--hidden`
-
-Show hidden tasks
-
 ### `-g --global`
 
 Only show global tasks
@@ -38,10 +26,22 @@ Output in JSON format
 
 Only show non-global tasks
 
+### `-x --extended`
+
+Show all columns
+
 ### `--all`
 
 Load all tasks from the entire monorepo, including sibling directories.
 By default, only tasks from the current directory hierarchy are loaded.
+
+### `--hidden`
+
+Show hidden tasks
+
+### `--no-header`
+
+Do not print table header
 
 ### `--sort <COLUMN>`
 

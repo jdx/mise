@@ -29,25 +29,29 @@ Only show tool versions currently specified in a mise.toml
 
 Only show tool versions currently specified in the global mise.toml
 
-### `-l --local`
-
-Only show tool versions currently specified in the local mise.toml
-
 ### `-i --installed`
 
 Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
-
-### `--outdated`
-
-Display whether a version is outdated
 
 ### `-J --json`
 
 Output in JSON format
 
+### `-l --local`
+
+Only show tool versions currently specified in the local mise.toml
+
 ### `-m --missing`
 
 Display missing tool versions
+
+### `--no-header`
+
+Don't display headers
+
+### `--outdated`
+
+Display whether a version is outdated
 
 ### `--prefix <PREFIX>`
 
@@ -56,10 +60,6 @@ Display versions matching this prefix
 ### `--prunable`
 
 List only tools that can be pruned with `mise prune`
-
-### `--no-header`
-
-Don't display headers
 
 Examples:
 

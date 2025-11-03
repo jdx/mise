@@ -13,15 +13,15 @@ use xx::file::display_path;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TaskStubs {
+    /// Directory to create task stubs inside of
+    #[clap(long, short, verbatim_doc_comment, default_value="bin", value_hint=ValueHint::DirPath)]
+    dir: PathBuf,
+
     /// Path to a mise bin to use when running the task stub.
     ///
     /// Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`
     #[clap(long, short, verbatim_doc_comment, default_value = "mise")]
     mise_bin: PathBuf,
-
-    /// Directory to create task stubs inside of
-    #[clap(long, short, verbatim_doc_comment, default_value="bin", value_hint=ValueHint::DirPath)]
-    dir: PathBuf,
 }
 
 impl TaskStubs {

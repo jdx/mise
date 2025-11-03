@@ -11,12 +11,12 @@ use crate::{env, file};
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "g", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct ConfigGenerate {
-    /// Path to a .tool-versions file to import tools from
-    #[clap(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
-    tool_versions: Option<PathBuf>,
     /// Output to file instead of stdout
     #[clap(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     output: Option<PathBuf>,
+    /// Path to a .tool-versions file to import tools from
+    #[clap(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
+    tool_versions: Option<PathBuf>,
 }
 
 impl ConfigGenerate {

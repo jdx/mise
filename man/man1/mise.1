@@ -8,14 +8,11 @@ mise manages dev tools, env vars, and runs tasks. https://github.com/jdx/mise
 .PP
 .SH OPTIONS
 .TP
-\fB\-C, \-\-cd\fR \fI<DIR>\fR
-Change directory before running command
-.TP
 \fB\-c, \-\-continue\-on\-error\fR
 Continue running tasks even if one fails
 .TP
-\fB\-n, \-\-dry\-run\fR
-Dry run, don't actually do anything
+\fB\-C, \-\-cd\fR \fI<DIR>\fR
+Change directory before running command
 .TP
 \fB\-E, \-\-env\fR \fI<ENV>\fR
 Set the environment for loading `mise.<ENV>.toml`
@@ -29,35 +26,24 @@ Set the log output verbosity
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 How many jobs to run in parallel [default: 8]
 .TP
-\fB\-p, \-\-prefix\fR
+\fB\-n, \-\-dry\-run\fR
+Dry run, don't actually do anything
 .TP
-\fB\-\-output\fR \fI<OUTPUT>\fR
+\fB\-p, \-\-prefix\fR
 .TP
 \fB\-P, \-\-profile\fR \fI<PROFILE>\fR
 Set the profile (environment)
+.TP
+\fB\-q, \-\-quiet\fR
+Suppress non\-error messages
 .TP
 \fB\-s, \-\-shell\fR \fI<SHELL>\fR
 .TP
 \fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 .TP
-\fB\-\-raw\fR
-Read/write directly to stdin/stdout/stderr instead of by line
-.TP
-\fB\-\-timings\fR
-Shows elapsed time after each task completes
-
-Default to always show with `MISE_TASK_TIMINGS=1`
-.TP
-\fB\-\-no\-config\fR
-Do not load any config files
-
-Can also use `MISE_NO_CONFIG=1`
-.TP
-\fB\-\-no\-timings\fR
-Hides elapsed time after each task completes
-
-Default to always hide with `MISE_TASK_TIMINGS=0`
+\fB\-v, \-\-verbose\fR
+Show extra output (use \-vv for even more)
 .TP
 \fB\-V, \-\-version\fR
 .TP
@@ -69,17 +55,31 @@ Sets log level to debug
 .TP
 \fB\-\-log\-level\fR \fI<LEVEL>\fR
 .TP
-\fB\-q, \-\-quiet\fR
-Suppress non\-error messages
+\fB\-\-no\-config\fR
+Do not load any config files
+
+Can also use `MISE_NO_CONFIG=1`
+.TP
+\fB\-\-no\-timings\fR
+Hides elapsed time after each task completes
+
+Default to always hide with `MISE_TASK_TIMINGS=0`
+.TP
+\fB\-\-output\fR \fI<OUTPUT>\fR
+.TP
+\fB\-\-raw\fR
+Read/write directly to stdin/stdout/stderr instead of by line
 .TP
 \fB\-\-silent\fR
 Suppress all task output and mise non\-error messages
 .TP
+\fB\-\-timings\fR
+Shows elapsed time after each task completes
+
+Default to always show with `MISE_TASK_TIMINGS=1`
+.TP
 \fB\-\-trace\fR
 Sets log level to trace
-.TP
-\fB\-v, \-\-verbose\fR
-Show extra output (use \-vv for even more)
 .SH ARGUMENTS
 .TP
 \fB<TASK>\fR
@@ -503,11 +503,16 @@ Customize status output with `status` settings.
 \fBOptions:\fR
 .PP
 .TP
+\fB\-q, \-\-quiet\fR
+Suppress non\-error messages
+.TP
 \fB\-s, \-\-shell\fR \fI<SHELL>\fR
 Shell type to generate the script for
 .TP
-\fB\-\-status\fR
-Show "mise: <PLUGIN>@<VERSION>" message when changing directories
+\fB\-\-no\-hook\-env\fR
+Do not automatically call hook\-env
+
+This can be helpful for debugging mise. If you run `eval "$(mise activate \-\-no\-hook\-env)"`, then you can call `mise hook\-env` manually which will output the env vars to stdout without actually modifying the environment. That way you can do things like `mise hook\-env \-\-trace` to get more information or just see the values that hook\-env is outputting.
 .TP
 \fB\-\-shims\fR
 Use shims instead of modifying PATH
@@ -518,13 +523,8 @@ Effectively the same as:
 `mise activate \-\-shims` does not support all the features of `mise activate`.
 See https://mise.jdx.dev/dev\-tools/shims.html#shims\-vs\-path for more information
 .TP
-\fB\-q, \-\-quiet\fR
-Suppress non\-error messages
-.TP
-\fB\-\-no\-hook\-env\fR
-Do not automatically call hook\-env
-
-This can be helpful for debugging mise. If you run `eval "$(mise activate \-\-no\-hook\-env)"`, then you can call `mise hook\-env` manually which will output the env vars to stdout without actually modifying the environment. That way you can do things like `mise hook\-env \-\-trace` to get more information or just see the values that hook\-env is outputting.
+\fB\-\-status\fR
+Show "mise: <PLUGIN>@<VERSION>" message when changing directories
 \fBArguments:\fR
 .PP
 .TP
@@ -650,11 +650,11 @@ Change this with the MISE_CACHE_PRUNE_AGE environment variable.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-dry\-run\fR
-Just show what would be pruned
-.TP
 \fB\-v, \-\-verbose\fR
 Show pruned files
+.TP
+\fB\-\-dry\-run\fR
+Just show what would be pruned
 \fBArguments:\fR
 .PP
 .TP
@@ -671,6 +671,12 @@ Generate shell completions
 \fB\-s, \-\-shell\fR \fI<SHELL_TYPE>\fR
 Shell type to generate completions for
 .TP
+\fB\-\-include\-bash\-completion\-lib\fR
+Include the bash completion library in the bash completion script
+
+This is required for completions to work in bash, but it is not included by default
+you may source it separately or enable this flag to enable it in the script.
+.TP
 \fB\-\-usage\fR
 Always use usage for completions.
 Currently, usage is the default for fish and bash but not zsh since it has a few quirks
@@ -678,12 +684,6 @@ to work out first.
 
 This requires the `usage` CLI to be installed.
 https://usage.jdx.dev
-.TP
-\fB\-\-include\-bash\-completion\-lib\fR
-Include the bash completion library in the bash completion script
-
-This is required for completions to work in bash, but it is not included by default
-you may source it separately or enable this flag to include it in the script.
 \fBArguments:\fR
 .PP
 .TP
@@ -697,14 +697,14 @@ Manage config files
 \fBOptions:\fR
 .PP
 .TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
 \fB\-\-no\-header\fR
 Do not print table header
 .TP
 \fB\-\-tracked\-configs\fR
 List all tracked config files
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
 .SH "MISE CONFIG GENERATE"
 Generate a mise.toml file
 .PP
@@ -713,11 +713,11 @@ Generate a mise.toml file
 \fBOptions:\fR
 .PP
 .TP
-\fB\-t, \-\-tool\-versions\fR \fI<TOOL_VERSIONS>\fR
-Path to a .tool\-versions file to import tools from
-.TP
 \fB\-o, \-\-output\fR \fI<OUTPUT>\fR
 Output to file instead of stdout
+.TP
+\fB\-t, \-\-tool\-versions\fR \fI<TOOL_VERSIONS>\fR
+Path to a .tool\-versions file to import tools from
 .SH "MISE CONFIG GET"
 Display the value of a setting in a mise.toml file
 .PP
@@ -743,14 +743,14 @@ List config files currently in use
 \fBOptions:\fR
 .PP
 .TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
 \fB\-\-no\-header\fR
 Do not print table header
 .TP
 \fB\-\-tracked\-configs\fR
 List all tracked config files
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
 .SH "MISE CONFIG SET"
 Set the value of a setting in a mise.toml file
 .PP
@@ -827,20 +827,20 @@ use this if you have `mise activate` in your shell rc file.
 \fBOptions:\fR
 .PP
 .TP
+\fB\-D, \-\-dotenv\fR
+Output in dotenv format
+.TP
 \fB\-J, \-\-json\fR
 Output in JSON format
+.TP
+\fB\-s, \-\-shell\fR \fI<SHELL>\fR
+Shell type to generate environment variables for
 .TP
 \fB\-\-json\-extended\fR
 Output in JSON format with additional information (source, tool)
 .TP
-\fB\-D, \-\-dotenv\fR
-Output in dotenv format
-.TP
 \fB\-\-redacted\fR
 Only show redacted environment variables
-.TP
-\fB\-s, \-\-shell\fR \fI<SHELL>\fR
-Shell type to generate environment variables for
 .TP
 \fB\-\-values\fR
 Only show values of environment variables
@@ -915,14 +915,14 @@ Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a
 
 This is necessary if users may use a different version of mise outside the project.
 .TP
-\fB\-\-localized\-dir\fR \fI<LOCALIZED_DIR>\fR
-Directory to put localized data into
-.TP
 \fB\-V, \-\-version\fR \fI<VERSION>\fR
 Specify mise version to fetch
 .TP
 \fB\-w, \-\-write\fR \fI<WRITE>\fR
 instead of outputting the script to stdout, write to a file and make it executable
+.TP
+\fB\-\-localized\-dir\fR \fI<LOCALIZED_DIR>\fR
+Directory to put localized data into
 .SH "MISE GENERATE CONFIG"
 [experimental] Generate a mise.toml file
 .PP
@@ -931,11 +931,11 @@ instead of outputting the script to stdout, write to a file and make it executab
 \fBOptions:\fR
 .PP
 .TP
-\fB\-t, \-\-tool\-versions\fR \fI<TOOL_VERSIONS>\fR
-Path to a .tool\-versions file to import tools from
-.TP
 \fB\-o, \-\-output\fR \fI<OUTPUT>\fR
 Output to file instead of stdout
+.TP
+\fB\-t, \-\-tool\-versions\fR \fI<TOOL_VERSIONS>\fR
+Path to a .tool\-versions file to import tools from
 .SH "MISE GENERATE DEVCONTAINER"
 Generate a devcontainer to execute mise
 .PP
@@ -944,14 +944,14 @@ Generate a devcontainer to execute mise
 \fBOptions:\fR
 .PP
 .TP
-\fB\-n, \-\-name\fR \fI<NAME>\fR
-The name of the devcontainer
-.TP
 \fB\-i, \-\-image\fR \fI<IMAGE>\fR
 The image to use for the devcontainer
 .TP
 \fB\-m, \-\-mount\-mise\-data\fR
 Bind the mise\-data\-volume to the devcontainer
+.TP
+\fB\-n, \-\-name\fR \fI<NAME>\fR
+The name of the devcontainer
 .TP
 \fB\-w, \-\-write\fR
 write to .devcontainer/devcontainer.json
@@ -970,14 +970,14 @@ For more advanced pre\-commit functionality, see mise's sister project: https://
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-hook\fR \fI<HOOK>\fR
-Which hook to generate (saves to .git/hooks/$hook)
-.TP
 \fB\-t, \-\-task\fR \fI<TASK>\fR
 The task to run when the pre\-commit hook is triggered
 .TP
 \fB\-w, \-\-write\fR
 write to .git/hooks/pre\-commit and make it executable
+.TP
+\fB\-\-hook\fR \fI<HOOK>\fR
+Which hook to generate (saves to .git/hooks/$hook)
 .SH "MISE GENERATE GITHUB-ACTION"
 Generate a GitHub Action workflow file
 
@@ -989,14 +989,14 @@ when you push changes to your repository.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-name\fR \fI<NAME>\fR
-the name of the workflow to generate
-.TP
 \fB\-t, \-\-task\fR \fI<TASK>\fR
 The task to run when the workflow is triggered
 .TP
 \fB\-w, \-\-write\fR
 write to .github/workflows/$name.yml
+.TP
+\fB\-\-name\fR \fI<NAME>\fR
+the name of the workflow to generate
 .SH "MISE GENERATE TASK-DOCS"
 Generate documentation for tasks in a project
 .PP
@@ -1005,15 +1005,15 @@ Generate documentation for tasks in a project
 \fBOptions:\fR
 .PP
 .TP
-\fB\-I, \-\-index\fR
-write only an index of tasks, intended for use with `\-\-multi`
-.TP
 \fB\-i, \-\-inject\fR
 inserts the documentation into an existing file
 
 This will look for a special comment, `<!\-\- mise\-tasks \-\->`, and replace it with the generated documentation.
 It will replace everything between the comment and the next comment, `<!\-\- /mise\-tasks \-\->` so it can be
 run multiple times on the same file to update the documentation.
+.TP
+\fB\-I, \-\-index\fR
+write only an index of tasks, intended for use with `\-\-multi`
 .TP
 \fB\-m, \-\-multi\fR
 render each task as a separate document, requires `\-\-output` to be a directory
@@ -1036,13 +1036,13 @@ so contributors to a project can execute mise tasks without installing mise into
 \fBOptions:\fR
 .PP
 .TP
+\fB\-d, \-\-dir\fR \fI<DIR>\fR
+Directory to create task stubs inside of
+.TP
 \fB\-m, \-\-mise\-bin\fR \fI<MISE_BIN>\fR
 Path to a mise bin to use when running the task stub.
 
 Use `\-\-mise\-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`
-.TP
-\fB\-d, \-\-dir\fR \fI<DIR>\fR
-Directory to create task stubs inside of
 .SH "MISE GENERATE TOOL-STUB"
 Generate a tool stub for HTTP\-based tools
 
@@ -1059,13 +1059,28 @@ to incrementally build cross\-platform tool stubs.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-version\fR \fI<VERSION>\fR
-Version of the tool
+\fB\-b, \-\-bin\fR \fI<BIN>\fR
+Binary path within the extracted archive
+
+If not specified and the archive is downloaded, will auto\-detect the most likely binary
 .TP
 \fB\-u, \-\-url\fR \fI<URL>\fR
 URL for downloading the tool
 
 Example: https://github.com/owner/repo/releases/download/v2.0.0/tool\-linux\-x64.tar.gz
+.TP
+\fB\-\-fetch\fR
+Fetch checksums and sizes for an existing tool stub file
+
+This reads an existing stub file and fills in any missing checksum/size fields by downloading the files. URLs must already be present in the stub.
+.TP
+\fB\-\-http\fR \fI<HTTP>\fR
+HTTP backend type to use
+.TP
+\fB\-\-platform\-bin\fR \fI<PLATFORM_BIN>\fR
+Platform\-specific binary paths in the format platform:path
+
+Examples: \-\-platform\-bin windows\-x64:tool.exe \-\-platform\-bin linux\-x64:bin/tool
 .TP
 \fB\-\-platform\-url\fR \fI<PLATFORM_URL>\fR
 Platform\-specific URLs in the format platform:url or just url (auto\-detect platform)
@@ -1076,26 +1091,11 @@ If only a URL is provided (without platform:), the platform will be automaticall
 
 Examples: \-\-platform\-url linux\-x64:https://... \-\-platform\-url https://nodejs.org/dist/v22.17.1/node\-v22.17.1\-darwin\-arm64.tar.gz
 .TP
-\fB\-\-platform\-bin\fR \fI<PLATFORM_BIN>\fR
-Platform\-specific binary paths in the format platform:path
-
-Examples: \-\-platform\-bin windows\-x64:tool.exe \-\-platform\-bin linux\-x64:bin/tool
-.TP
-\fB\-b, \-\-bin\fR \fI<BIN>\fR
-Binary path within the extracted archive
-
-If not specified and the archive is downloaded, will auto\-detect the most likely binary
-.TP
 \fB\-\-skip\-download\fR
 Skip downloading for checksum and binary path detection (faster but less informative)
 .TP
-\fB\-\-fetch\fR
-Fetch checksums and sizes for an existing tool stub file
-
-This reads an existing stub file and fills in any missing checksum/size fields by downloading the files. URLs must already be present in the stub.
-.TP
-\fB\-\-http\fR \fI<HTTP>\fR
-HTTP backend type to use
+\fB\-\-version\fR \fI<VERSION>\fR
+Version of the tool
 \fBArguments:\fR
 .PP
 .TP
@@ -1111,11 +1111,11 @@ Skips config directory by default.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-config\fR
-Also remove config directory
-.TP
 \fB\-n, \-\-dry\-run\fR
 List directories that would be removed without actually removing them
+.TP
+\fB\-\-config\fR
+Also remove config directory
 .SH "MISE INSTALL"
 Install a tool version
 
@@ -1132,9 +1132,6 @@ Tools will be installed in parallel. To disable, set `\-\-jobs=1` or `MISE_JOBS=
 \fBOptions:\fR
 .PP
 .TP
-\fB\-n, \-\-dry\-run\fR
-Show what would be installed without actually installing
-.TP
 \fB\-f, \-\-force\fR
 Force reinstall even if already installed
 .TP
@@ -1142,13 +1139,16 @@ Force reinstall even if already installed
 Number of jobs to run in parallel
 [default: 4]
 .TP
-\fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
+\fB\-n, \-\-dry\-run\fR
+Show what would be installed without actually installing
 .TP
 \fB\-v, \-\-verbose\fR
 Show installation output
 
 This argument will print plugin output such as download, configuration, and compilation output.
+.TP
+\fB\-\-raw\fR
+Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
@@ -1223,20 +1223,20 @@ Operates on the lockfile in the current config root. Use TOOL arguments to targe
 \fBOptions:\fR
 .PP
 .TP
-\fB\-p, \-\-platform\fR \fI<PLATFORM>\fR
-Comma\-separated list of platforms to target
-e.g.: linux\-x64,macos\-arm64,windows\-x64
-If not specified, all platforms already in lockfile will be updated
-.TP
 \fB\-f, \-\-force\fR
 Update all tools even if lockfile data already exists
-.TP
-\fB\-n, \-\-dry\-run\fR
-Show what would be updated without making changes
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 [default: 4]
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show what would be updated without making changes
+.TP
+\fB\-p, \-\-platform\fR \fI<PLATFORM>\fR
+Comma\-separated list of platforms to target
+e.g.: linux\-x64,macos\-arm64,windows\-x64
+If not specified, all platforms already in lockfile will be updated
 \fBArguments:\fR
 .PP
 .TP
@@ -1258,40 +1258,40 @@ It's a useful command to get the current state of your tools.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-p, \-\-plugin\fR \fI<TOOL_FLAG>\fR
-.TP
 \fB\-c, \-\-current\fR
 Only show tool versions currently specified in a mise.toml
 .TP
 \fB\-g, \-\-global\fR
 Only show tool versions currently specified in the global mise.toml
 .TP
-\fB\-l, \-\-local\fR
-Only show tool versions currently specified in the local mise.toml
-.TP
 \fB\-i, \-\-installed\fR
 Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
-.TP
-\fB\-o, \-\-offline\fR
-Don't fetch information such as outdated versions
-.TP
-\fB\-\-outdated\fR
-Display whether a version is outdated
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format
 .TP
+\fB\-l, \-\-local\fR
+Only show tool versions currently specified in the local mise.toml
+.TP
 \fB\-m, \-\-missing\fR
 Display missing tool versions
+.TP
+\fB\-o, \-\-offline\fR
+Don't fetch information such as outdated versions
+.TP
+\fB\-p, \-\-plugin\fR \fI<TOOL_FLAG>\fR
+.TP
+\fB\-\-no\-header\fR
+Don't display headers
+.TP
+\fB\-\-outdated\fR
+Display whether a version is outdated
 .TP
 \fB\-\-prefix\fR \fI<PREFIX>\fR
 Display versions matching this prefix
 .TP
 \fB\-\-prunable\fR
 List only tools that can be pruned with `mise prune`
-.TP
-\fB\-\-no\-header\fR
-Don't display headers
 \fBArguments:\fR
 .PP
 .TP
@@ -1328,6 +1328,9 @@ See `mise upgrade` to upgrade these versions.
 \fBOptions:\fR
 .PP
 .TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
 \fB\-l, \-\-bump\fR
 Compares against the latest versions available, not what matches the current config
 
@@ -1335,9 +1338,6 @@ For example, if you have `node = "20"` in your config by default `mise outdated`
 show other 20.x versions, not 21.x or 22.x versions.
 
 Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
-.TP
-\fB\-J, \-\-json\fR
-Output in JSON format
 .TP
 \fB\-\-no\-header\fR
 Don't show table header
@@ -1365,12 +1365,6 @@ same as `mise plugins ls\-remote`
 The built\-in plugins only
 Normally these are not shown
 .TP
-\fB\-\-user\fR
-List installed plugins
-
-This is the default behavior but can be used with \-\-core
-to show core and user plugins
-.TP
 \fB\-u, \-\-urls\fR
 Show the git url for each plugin
 e.g.: https://github.com/asdf\-vm/asdf\-nodejs.git
@@ -1378,6 +1372,12 @@ e.g.: https://github.com/asdf\-vm/asdf\-nodejs.git
 \fB\-\-refs\fR
 Show the git refs for each plugin
 e.g.: main 1234abc
+.TP
+\fB\-\-user\fR
+List installed plugins
+
+This is the default behavior but can be used with \-\-core
+to show core and user plugins
 .SH "MISE PLUGINS INSTALL"
 Install a plugin
 
@@ -1391,19 +1391,19 @@ This behavior can be modified in ~/.config/mise/config.toml
 \fBOptions:\fR
 .PP
 .TP
-\fB\-f, \-\-force\fR
-Reinstall even if plugin exists
-.TP
 \fB\-a, \-\-all\fR
 Install all missing plugins
 This will only install plugins that have matching shorthands.
 i.e.: they don't need the full git repo url
 .TP
-\fB\-v, \-\-verbose\fR
-Show installation output
+\fB\-f, \-\-force\fR
+Reinstall even if plugin exists
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
+.TP
+\fB\-v, \-\-verbose\fR
+Show installation output
 \fBArguments:\fR
 .PP
 .TP
@@ -1454,9 +1454,6 @@ Same as `mise plugins ls\-remote`
 The built\-in plugins only
 Normally these are not shown
 .TP
-\fB\-\-user\fR
-List installed plugins
-.TP
 \fB\-u, \-\-urls\fR
 Show the git url for each plugin
 e.g.: https://github.com/asdf\-vm/asdf\-nodejs.git
@@ -1464,6 +1461,9 @@ e.g.: https://github.com/asdf\-vm/asdf\-nodejs.git
 \fB\-\-refs\fR
 Show the git refs for each plugin
 e.g.: main 1234abc
+.TP
+\fB\-\-user\fR
+List installed plugins
 .SH "MISE PLUGINS LS-REMOTE"
 
 List all available remote plugins
@@ -1493,11 +1493,11 @@ Removes a plugin
 \fBOptions:\fR
 .PP
 .TP
-\fB\-p, \-\-purge\fR
-Also remove the plugin's installs, downloads, and cache
-.TP
 \fB\-a, \-\-all\fR
 Remove all plugins
+.TP
+\fB\-p, \-\-purge\fR
+Also remove the plugin's installs, downloads, and cache
 \fBArguments:\fR
 .PP
 .TP
@@ -1633,70 +1633,27 @@ The name of the script will be the name of the tasks.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-no\-cache\fR
-Do not use cache on remote tasks
+\fB\-c, \-\-continue\-on\-error\fR
+Continue running tasks even if one fails
 .TP
 \fB\-C, \-\-cd\fR \fI<CD>\fR
 Change to this directory before executing the command
 .TP
-\fB\-c, \-\-continue\-on\-error\fR
-Continue running tasks even if one fails
-.TP
-\fB\-n, \-\-dry\-run\fR
-Don't actually run the tasks(s), just print them in order of execution
-.TP
 \fB\-f, \-\-force\fR
 Force the tasks to run even if outputs are up to date
-.TP
-\fB\-p, \-\-prefix\fR
-Print stdout/stderr by line, prefixed with the task's label
-Defaults to true if \-\-jobs > 1
-Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 .TP
 \fB\-i, \-\-interleave\fR
 Print directly to stdout/stderr instead of by line
 Defaults to true if \-\-jobs == 1
 Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 .TP
-\fB\-s, \-\-shell\fR \fI<SHELL>\fR
-Shell to use to run toml tasks
-
-Defaults to `sh \-c \-o errexit \-o pipefail` on unix, and `cmd /c` on Windows
-Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
-Or it can be overridden with the `shell` property on a task.
-.TP
-\fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
-Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
-.TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tasks to run in parallel
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 .TP
-\fB\-r, \-\-raw\fR
-Read/write directly to stdin/stdout/stderr instead of by line
-Redactions are not applied with this option
-Configure with `raw` config or `MISE_RAW` env var
-.TP
-\fB\-S, \-\-silent\fR
-Don't show any output except for errors
-.TP
-\fB\-\-timeout\fR \fI<TIMEOUT>\fR
-Timeout for the task to complete
-e.g.: 30s, 5m
-.TP
-\fB\-\-timings\fR
-Shows elapsed time after each task completes
-
-Default to always show with `MISE_TASK_TIMINGS=1`
-.TP
-\fB\-\-no\-timings\fR
-Hides elapsed time after each task completes
-
-Default to always hide with `MISE_TASK_TIMINGS=0`
-.TP
-\fB\-q, \-\-quiet\fR
-Don't show extra output
+\fB\-n, \-\-dry\-run\fR
+Don't actually run the tasks(s), just print them in order of execution
 .TP
 \fB\-o, \-\-output\fR \fI<OUTPUT>\fR
 Change how tasks information is output when running tasks
@@ -1708,6 +1665,49 @@ Change how tasks information is output when running tasks
 \- `keep\-order` \- Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
 \- `quiet` \- Don't show extra output
 \- `silent` \- Don't show any output including stdout and stderr from the task except for errors
+.TP
+\fB\-p, \-\-prefix\fR
+Print stdout/stderr by line, prefixed with the task's label
+Defaults to true if \-\-jobs > 1
+Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+.TP
+\fB\-q, \-\-quiet\fR
+Don't show extra output
+.TP
+\fB\-r, \-\-raw\fR
+Read/write directly to stdin/stdout/stderr instead of by line
+Redactions are not applied with this option
+Configure with `raw` config or `MISE_RAW` env var
+.TP
+\fB\-s, \-\-shell\fR \fI<SHELL>\fR
+Shell to use to run toml tasks
+
+Defaults to `sh \-c \-o errexit \-o pipefail` on unix, and `cmd /c` on Windows
+Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
+Or it can be overridden with the `shell` property on a task.
+.TP
+\fB\-S, \-\-silent\fR
+Don't show any output except for errors
+.TP
+\fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
+Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
+.TP
+\fB\-\-no\-cache\fR
+Do not use cache on remote tasks
+.TP
+\fB\-\-no\-timings\fR
+Hides elapsed time after each task completes
+
+Default to always hide with `MISE_TASK_TIMINGS=0`
+.TP
+\fB\-\-timeout\fR \fI<TIMEOUT>\fR
+Timeout for the task to complete
+e.g.: 30s, 5m
+.TP
+\fB\-\-timings\fR
+Shows elapsed time after each task completes
+
+Default to always show with `MISE_TASK_TIMINGS=1`
 .SH "MISE SEARCH"
 Search for tools in the registry
 
@@ -1751,11 +1751,11 @@ This command is not available if mise is installed via a package manager.
 \fB\-f, \-\-force\fR
 Update even if already up to date
 .TP
-\fB\-\-no\-plugins\fR
-Disable auto\-updating plugins
-.TP
 \fB\-y, \-\-yes\fR
 Skip confirmation prompt
+.TP
+\fB\-\-no\-plugins\fR
+Disable auto\-updating plugins
 \fBArguments:\fR
 .PP
 .TP
@@ -1772,31 +1772,19 @@ Use `\-E <env>` to create/modify environment\-specific config files like `mise.<
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-file\fR \fI<FILE>\fR
-The TOML file to update
-
-Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
-.TP
-\fB\-\-complete\fR
-Render completions
+\fB\-E, \-\-env\fR \fI<ENV>\fR
+Create/modify an environment\-specific config file like .mise.<env>.toml
 .TP
 \fB\-g, \-\-global\fR
 Set the environment variable in the global config file
 .TP
-\fB\-E, \-\-env\fR \fI<ENV>\fR
-Create/modify an environment\-specific config file like .mise.<env>.toml
-.TP
-\fB\-\-remove, \-\-rm, \-\-unset\fR \fI<ENV_KEY>\fR
-Remove the environment variable from config file
-
-Can be used multiple times.
-.TP
-\fB\-\-prompt\fR
-Prompt for environment variable values
-.TP
 \fB\-\-age\-encrypt\fR
 [experimental] Encrypt the value with age before storing
+.TP
+\fB\-\-age\-key\-file\fR \fI<PATH>\fR
+[experimental] Age identity file for encryption
+
+Defaults to ~/.config/mise/age.txt if it exists
 .TP
 \fB\-\-age\-recipient\fR \fI<RECIPIENT>\fR
 [experimental] Age recipient (x25519 public key) for encryption
@@ -1808,10 +1796,22 @@ Can be used multiple times. Requires \-\-age\-encrypt.
 
 Can be used multiple times. Requires \-\-age\-encrypt.
 .TP
-\fB\-\-age\-key\-file\fR \fI<PATH>\fR
-[experimental] Age identity file for encryption
+\fB\-\-complete\fR
+Render completions
+.TP
+\fB\-\-file\fR \fI<FILE>\fR
+The TOML file to update
 
-Defaults to ~/.config/mise/age.txt if it exists
+Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
+Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
+.TP
+\fB\-\-prompt\fR
+Prompt for environment variable values
+.TP
+\fB\-\-remove, \-\-rm, \-\-unset\fR \fI<ENV_KEY>\fR
+Remove the environment variable from config file
+
+Can be used multiple times.
 \fBArguments:\fR
 .PP
 .TP
@@ -1834,20 +1834,20 @@ but managed separately with `mise aliases`
 \fB\-a, \-\-all\fR
 List all settings
 .TP
-\fB\-\-complete\fR
-Print all settings with descriptions for shell completions
+\fB\-J, \-\-json\fR
+Output in JSON format
 .TP
 \fB\-l, \-\-local\fR
 Use the local config file instead of the global one
 .TP
-\fB\-J, \-\-json\fR
-Output in JSON format
+\fB\-T, \-\-toml\fR
+Output in TOML format
+.TP
+\fB\-\-complete\fR
+Print all settings with descriptions for shell completions
 .TP
 \fB\-\-json\-extended\fR
 Output in JSON format with sources
-.TP
-\fB\-T, \-\-toml\fR
-Output in TOML format
 \fBArguments:\fR
 .PP
 .TP
@@ -1913,20 +1913,20 @@ but managed separately with `mise aliases`
 \fB\-a, \-\-all\fR
 List all settings
 .TP
-\fB\-\-complete\fR
-Print all settings with descriptions for shell completions
+\fB\-J, \-\-json\fR
+Output in JSON format
 .TP
 \fB\-l, \-\-local\fR
 Use the local config file instead of the global one
 .TP
-\fB\-J, \-\-json\fR
-Output in JSON format
+\fB\-T, \-\-toml\fR
+Output in TOML format
+.TP
+\fB\-\-complete\fR
+Print all settings with descriptions for shell completions
 .TP
 \fB\-\-json\-extended\fR
 Output in JSON format with sources
-.TP
-\fB\-T, \-\-toml\fR
-Output in TOML format
 \fBArguments:\fR
 .PP
 .TP
@@ -1986,11 +1986,11 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
 Number of jobs to run in parallel
 [default: 4]
 .TP
-\fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
-.TP
 \fB\-u, \-\-unset\fR
 Removes a previously set version
+.TP
+\fB\-\-raw\fR
+Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
@@ -2011,11 +2011,11 @@ This won't overwrite any existing installs but will overwrite any existing symli
 \fB\-\-brew\fR
 Get tool versions from Homebrew
 .TP
-\fB\-\-nvm\fR
-Get tool versions from nvm
-.TP
 \fB\-\-nodenv\fR
 Get tool versions from nodenv
+.TP
+\fB\-\-nvm\fR
+Get tool versions from nvm
 .SH "MISE SYNC PYTHON"
 Symlinks all tool versions from an external tool into mise
 
@@ -2051,18 +2051,6 @@ Manage tasks
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-complete\fR
-Display tasks for usage completion
-.TP
-\fB\-x, \-\-extended\fR
-Show all columns
-.TP
-\fB\-\-no\-header\fR
-Do not print table header
-.TP
-\fB\-\-hidden\fR
-Show hidden tasks
-.TP
 \fB\-g, \-\-global\fR
 Only show global tasks
 .TP
@@ -2072,9 +2060,21 @@ Output in JSON format
 \fB\-l, \-\-local\fR
 Only show non\-global tasks
 .TP
+\fB\-x, \-\-extended\fR
+Show all columns
+.TP
 \fB\-\-all\fR
 Load all tasks from the entire monorepo, including sibling directories.
 By default, only tasks from the current directory hierarchy are loaded.
+.TP
+\fB\-\-complete\fR
+Display tasks for usage completion
+.TP
+\fB\-\-hidden\fR
+Show hidden tasks
+.TP
+\fB\-\-no\-header\fR
+Do not print table header
 .TP
 \fB\-\-sort\fR \fI<COLUMN>\fR
 Sort by column. Default is name.
@@ -2096,23 +2096,23 @@ Create a new task
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-description\fR \fI<DESCRIPTION>\fR
-Description of the task
-.TP
 \fB\-a, \-\-alias\fR \fI<ALIAS>\fR
 Other names for the task
 .TP
-\fB\-\-depends\-post\fR \fI<DEPENDS_POST>\fR
-Dependencies to run after the task runs
-.TP
-\fB\-w, \-\-wait\-for\fR \fI<WAIT_FOR>\fR
-Wait for these tasks to complete if they are to run
+\fB\-d, \-\-depends\fR \fI<DEPENDS>\fR
+Add dependencies to the task
 .TP
 \fB\-D, \-\-dir\fR \fI<DIR>\fR
 Run the task in a specific directory
 .TP
+\fB\-f, \-\-file\fR
+Create a file task instead of a toml task
+.TP
 \fB\-H, \-\-hide\fR
 Hide the task from `mise task` and completions
+.TP
+\fB\-q, \-\-quiet\fR
+Do not print the command before running
 .TP
 \fB\-r, \-\-raw\fR
 Directly connect stdin/stdout/stderr
@@ -2120,26 +2120,26 @@ Directly connect stdin/stdout/stderr
 \fB\-s, \-\-sources\fR \fI<SOURCES>\fR
 Glob patterns of files this task uses as input
 .TP
+\fB\-w, \-\-wait\-for\fR \fI<WAIT_FOR>\fR
+Wait for these tasks to complete if they are to run
+.TP
+\fB\-\-depends\-post\fR \fI<DEPENDS_POST>\fR
+Dependencies to run after the task runs
+.TP
+\fB\-\-description\fR \fI<DESCRIPTION>\fR
+Description of the task
+.TP
 \fB\-\-outputs\fR \fI<OUTPUTS>\fR
 Glob patterns of files this task creates, to skip if they are not modified
-.TP
-\fB\-\-shell\fR \fI<SHELL>\fR
-Run the task in a specific shell
-.TP
-\fB\-q, \-\-quiet\fR
-Do not print the command before running
-.TP
-\fB\-\-silent\fR
-Do not print the command or its output
-.TP
-\fB\-d, \-\-depends\fR \fI<DEPENDS>\fR
-Add dependencies to the task
 .TP
 \fB\-\-run\-windows\fR \fI<RUN_WINDOWS>\fR
 Command to run on windows
 .TP
-\fB\-f, \-\-file\fR
-Create a file task instead of a toml task
+\fB\-\-shell\fR \fI<SHELL>\fR
+Run the task in a specific shell
+.TP
+\fB\-\-silent\fR
+Do not print the command or its output
 \fBArguments:\fR
 .PP
 .TP
@@ -2153,11 +2153,11 @@ Display a tree visualization of a dependency graph
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-hidden\fR
-Show hidden tasks
-.TP
 \fB\-\-dot\fR
 Display dependencies in DOT format
+.TP
+\fB\-\-hidden\fR
+Show hidden tasks
 \fBArguments:\fR
 .PP
 .TP
@@ -2211,18 +2211,6 @@ tasks will override the global ones if they have the same name.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-complete\fR
-Display tasks for usage completion
-.TP
-\fB\-x, \-\-extended\fR
-Show all columns
-.TP
-\fB\-\-no\-header\fR
-Do not print table header
-.TP
-\fB\-\-hidden\fR
-Show hidden tasks
-.TP
 \fB\-g, \-\-global\fR
 Only show global tasks
 .TP
@@ -2232,9 +2220,21 @@ Output in JSON format
 \fB\-l, \-\-local\fR
 Only show non\-global tasks
 .TP
+\fB\-x, \-\-extended\fR
+Show all columns
+.TP
 \fB\-\-all\fR
 Load all tasks from the entire monorepo, including sibling directories.
 By default, only tasks from the current directory hierarchy are loaded.
+.TP
+\fB\-\-complete\fR
+Display tasks for usage completion
+.TP
+\fB\-\-hidden\fR
+Show hidden tasks
+.TP
+\fB\-\-no\-header\fR
+Do not print table header
 .TP
 \fB\-\-sort\fR \fI<COLUMN>\fR
 Sort by column. Default is name.
@@ -2275,70 +2275,27 @@ The name of the script will be the name of the tasks.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-\-no\-cache\fR
-Do not use cache on remote tasks
+\fB\-c, \-\-continue\-on\-error\fR
+Continue running tasks even if one fails
 .TP
 \fB\-C, \-\-cd\fR \fI<CD>\fR
 Change to this directory before executing the command
 .TP
-\fB\-c, \-\-continue\-on\-error\fR
-Continue running tasks even if one fails
-.TP
-\fB\-n, \-\-dry\-run\fR
-Don't actually run the tasks(s), just print them in order of execution
-.TP
 \fB\-f, \-\-force\fR
 Force the tasks to run even if outputs are up to date
-.TP
-\fB\-p, \-\-prefix\fR
-Print stdout/stderr by line, prefixed with the task's label
-Defaults to true if \-\-jobs > 1
-Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 .TP
 \fB\-i, \-\-interleave\fR
 Print directly to stdout/stderr instead of by line
 Defaults to true if \-\-jobs == 1
 Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
 .TP
-\fB\-s, \-\-shell\fR \fI<SHELL>\fR
-Shell to use to run toml tasks
-
-Defaults to `sh \-c \-o errexit \-o pipefail` on unix, and `cmd /c` on Windows
-Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
-Or it can be overridden with the `shell` property on a task.
-.TP
-\fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
-Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
-.TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tasks to run in parallel
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 .TP
-\fB\-r, \-\-raw\fR
-Read/write directly to stdin/stdout/stderr instead of by line
-Redactions are not applied with this option
-Configure with `raw` config or `MISE_RAW` env var
-.TP
-\fB\-S, \-\-silent\fR
-Don't show any output except for errors
-.TP
-\fB\-\-timeout\fR \fI<TIMEOUT>\fR
-Timeout for the task to complete
-e.g.: 30s, 5m
-.TP
-\fB\-\-timings\fR
-Shows elapsed time after each task completes
-
-Default to always show with `MISE_TASK_TIMINGS=1`
-.TP
-\fB\-\-no\-timings\fR
-Hides elapsed time after each task completes
-
-Default to always hide with `MISE_TASK_TIMINGS=0`
-.TP
-\fB\-q, \-\-quiet\fR
-Don't show extra output
+\fB\-n, \-\-dry\-run\fR
+Don't actually run the tasks(s), just print them in order of execution
 .TP
 \fB\-o, \-\-output\fR \fI<OUTPUT>\fR
 Change how tasks information is output when running tasks
@@ -2350,6 +2307,49 @@ Change how tasks information is output when running tasks
 \- `keep\-order` \- Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
 \- `quiet` \- Don't show extra output
 \- `silent` \- Don't show any output including stdout and stderr from the task except for errors
+.TP
+\fB\-p, \-\-prefix\fR
+Print stdout/stderr by line, prefixed with the task's label
+Defaults to true if \-\-jobs > 1
+Configure with `task_output` config or `MISE_TASK_OUTPUT` env var
+.TP
+\fB\-q, \-\-quiet\fR
+Don't show extra output
+.TP
+\fB\-r, \-\-raw\fR
+Read/write directly to stdin/stdout/stderr instead of by line
+Redactions are not applied with this option
+Configure with `raw` config or `MISE_RAW` env var
+.TP
+\fB\-s, \-\-shell\fR \fI<SHELL>\fR
+Shell to use to run toml tasks
+
+Defaults to `sh \-c \-o errexit \-o pipefail` on unix, and `cmd /c` on Windows
+Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
+Or it can be overridden with the `shell` property on a task.
+.TP
+\fB\-S, \-\-silent\fR
+Don't show any output except for errors
+.TP
+\fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
+Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
+.TP
+\fB\-\-no\-cache\fR
+Do not use cache on remote tasks
+.TP
+\fB\-\-no\-timings\fR
+Hides elapsed time after each task completes
+
+Default to always hide with `MISE_TASK_TIMINGS=0`
+.TP
+\fB\-\-timeout\fR \fI<TIMEOUT>\fR
+Timeout for the task to complete
+e.g.: 30s, 5m
+.TP
+\fB\-\-timings\fR
+Shows elapsed time after each task completes
+
+Default to always show with `MISE_TASK_TIMINGS=1`
 \fBArguments:\fR
 .PP
 .TP
@@ -2377,15 +2377,15 @@ Test a tool installs and executes
 \fB\-a, \-\-all\fR
 Test every tool specified in registry.toml
 .TP
+\fB\-j, \-\-jobs\fR \fI<JOBS>\fR
+Number of jobs to run in parallel
+[default: 4]
+.TP
 \fB\-\-all\-config\fR
 Test all tools specified in config files
 .TP
 \fB\-\-include\-non\-defined\fR
 Also test tools not defined in registry.toml, guessing how to test it
-.TP
-\fB\-j, \-\-jobs\fR \fI<JOBS>\fR
-Number of jobs to run in parallel
-[default: 4]
 .TP
 \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
@@ -2405,8 +2405,14 @@ Gets information about a tool
 \fB\-J, \-\-json\fR
 Output in JSON format
 .TP
+\fB\-\-active\fR
+Only show active versions
+.TP
 \fB\-\-backend\fR
 Only show backend field
+.TP
+\fB\-\-config\-source\fR
+Only show config source
 .TP
 \fB\-\-description\fR
 Only show description field
@@ -2414,14 +2420,8 @@ Only show description field
 \fB\-\-installed\fR
 Only show installed versions
 .TP
-\fB\-\-active\fR
-Only show active versions
-.TP
 \fB\-\-requested\fR
 Only show requested versions
-.TP
-\fB\-\-config\-source\fR
-Only show config source
 .TP
 \fB\-\-tool\-options\fR
 Only show tool options
@@ -2481,12 +2481,12 @@ Trust all config files in the current directory and its parents
 \fB\-\-ignore\fR
 Do not trust this config and ignore it in the future
 .TP
-\fB\-\-untrust\fR
-No longer trust this config, will prompt in the future
-.TP
 \fB\-\-show\fR
 Show the trusted status of config files from the current directory and its parents.
 Does not trust or untrust any files.
+.TP
+\fB\-\-untrust\fR
+No longer trust this config, will prompt in the future
 \fBArguments:\fR
 .PP
 .TP
@@ -2553,11 +2553,11 @@ Will also prune the installed version if no other configurations are using it.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-g, \-\-global\fR
-Use the global config file (`~/.config/mise/config.toml`) instead of the local one
-.TP
 \fB\-e, \-\-env\fR \fI<ENV>\fR
 Create/modify an environment\-specific config file like .mise.<env>.toml
+.TP
+\fB\-g, \-\-global\fR
+Use the global config file (`~/.config/mise/config.toml`) instead of the local one
 .TP
 \fB\-p, \-\-path\fR \fI<PATH>\fR
 Specify a path to a config file or directory
@@ -2585,9 +2585,6 @@ This will update mise.lock if it is enabled, see https://mise.jdx.dev/configurat
 \fBOptions:\fR
 .PP
 .TP
-\fB\-n, \-\-dry\-run\fR
-Just print what would be done, don't actually do it
-.TP
 \fB\-i, \-\-interactive\fR
 Display multiselect menu to choose which tools to upgrade
 .TP
@@ -2603,6 +2600,9 @@ this will install 22.1.0 and set `node = "22.1.0"` in your config.
 
 It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
 would change your config to `node = "22"`.
+.TP
+\fB\-n, \-\-dry\-run\fR
+Just print what would be done, don't actually do it
 .TP
 \fB\-\-raw\fR
 Directly pipe stdin/stdout/stderr from plugin to user Sets \-\-jobs=1
@@ -2634,38 +2634,32 @@ Use the `\-\-global` flag to use the global config file instead.
 \fBOptions:\fR
 .PP
 .TP
+\fB\-e, \-\-env\fR \fI<ENV>\fR
+Create/modify an environment\-specific config file like .mise.<env>.toml
+.TP
 \fB\-f, \-\-force\fR
 Force reinstall even if already installed
+.TP
+\fB\-g, \-\-global\fR
+Use the global config file (`~/.config/mise/config.toml`) instead of the local one
+.TP
+\fB\-j, \-\-jobs\fR \fI<JOBS>\fR
+Number of jobs to run in parallel
+[default: 4]
+.TP
+\fB\-n, \-\-dry\-run\fR
+Perform a dry run, showing what would be installed and modified without making changes
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Specify a path to a config file or directory
+
+If a directory is specified, it will look for a config file in that directory following the rules above.
 .TP
 \fB\-\-fuzzy\fR
 Save fuzzy version to config file
 
 e.g.: `mise use \-\-fuzzy node@20` will save 20 as the version
 this is the default behavior unless `MISE_PIN=1`
-.TP
-\fB\-g, \-\-global\fR
-Use the global config file (`~/.config/mise/config.toml`) instead of the local one
-.TP
-\fB\-n, \-\-dry\-run\fR
-Perform a dry run, showing what would be installed and modified without making changes
-.TP
-\fB\-e, \-\-env\fR \fI<ENV>\fR
-Create/modify an environment\-specific config file like .mise.<env>.toml
-.TP
-\fB\-j, \-\-jobs\fR \fI<JOBS>\fR
-Number of jobs to run in parallel
-[default: 4]
-.TP
-\fB\-\-raw\fR
-Directly pipe stdin/stdout/stderr from plugin to user Sets `\-\-jobs=1`
-.TP
-\fB\-\-remove\fR \fI<PLUGIN>\fR
-Remove the plugin(s) from config file
-.TP
-\fB\-p, \-\-path\fR \fI<PATH>\fR
-Specify a path to a config file or directory
-
-If a directory is specified, it will look for a config file in that directory following the rules above.
 .TP
 \fB\-\-pin\fR
 Save exact version to config file
@@ -2674,6 +2668,12 @@ Set `MISE_PIN=1` to make this the default behavior
 
 Consider using mise.lock as a better alternative to pinning in mise.toml:
 https://mise.jdx.dev/configuration/settings.html#lockfile
+.TP
+\fB\-\-raw\fR
+Directly pipe stdin/stdout/stderr from plugin to user Sets `\-\-jobs=1`
+.TP
+\fB\-\-remove\fR \fI<PLUGIN>\fR
+Remove the plugin(s) from config file
 \fBArguments:\fR
 .PP
 .TP
@@ -3249,6 +3249,10 @@ Use this to figure out what version of a tool is currently active.
 \fBOptions:\fR
 .PP
 .TP
+\fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
+Use a specific tool@version
+e.g.: `mise which npm \-\-tool=node@20`
+.TP
 \fB\-\-complete\fR
 .TP
 \fB\-\-plugin\fR
@@ -3256,10 +3260,6 @@ Show the plugin name instead of the path
 .TP
 \fB\-\-version\fR
 Show the version instead of the path
-.TP
-\fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
-Use a specific tool@version
-e.g.: `mise which npm \-\-tool=node@20`
 \fBArguments:\fR
 .PP
 .TP

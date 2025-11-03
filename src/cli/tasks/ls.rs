@@ -19,22 +19,6 @@ use serde_json::json;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TasksLs {
-    /// Display tasks for usage completion
-    #[clap(long, hide = true)]
-    pub complete: bool,
-
-    /// Show all columns
-    #[clap(short = 'x', long, global = true, verbatim_doc_comment)]
-    pub extended: bool,
-
-    /// Do not print table header
-    #[clap(long, alias = "no-headers", global = true, verbatim_doc_comment)]
-    pub no_header: bool,
-
-    /// Show hidden tasks
-    #[clap(long, global = true, verbatim_doc_comment)]
-    pub hidden: bool,
-
     /// Only show global tasks
     #[clap(
         short,
@@ -59,10 +43,26 @@ pub struct TasksLs {
     )]
     pub local: bool,
 
+    /// Show all columns
+    #[clap(short = 'x', long, global = true, verbatim_doc_comment)]
+    pub extended: bool,
+
     /// Load all tasks from the entire monorepo, including sibling directories.
     /// By default, only tasks from the current directory hierarchy are loaded.
     #[clap(long, global = true, verbatim_doc_comment)]
     pub all: bool,
+
+    /// Display tasks for usage completion
+    #[clap(long, hide = true)]
+    pub complete: bool,
+
+    /// Show hidden tasks
+    #[clap(long, global = true, verbatim_doc_comment)]
+    pub hidden: bool,
+
+    /// Do not print table header
+    #[clap(long, alias = "no-headers", global = true, verbatim_doc_comment)]
+    pub no_header: bool,
 
     /// Sort by column. Default is name.
     #[clap(long, global = true, value_name = "COLUMN", verbatim_doc_comment)]
