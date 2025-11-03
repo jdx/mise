@@ -60,6 +60,7 @@ file  = "git::${LOCAL_GIT_URL}//xtasks/lint/ripgrep"
 EOF
 
 assert_contains "mise tasks" "remote_lint_https_latest"
+assert_contains "mise tasks remote_lint_https_latest" "Lint using ripgrep"
 assert_succeed "mise run remote_lint_https_latest" # Remote task should be downloaded
 assert_directory_exists "${REMOTE_TASKS_DIR}"
 assert_directory_not_empty "${REMOTE_TASKS_DIR}"
