@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: codeclimate
+    repo_name: test-reporter
+    description: Code Climate Test Reporter
+    format: raw
+    url: https://codeclimate.com/downloads/test-reporter/test-reporter-{{trimV .Version}}-{{.OS}}-{{.Arch}}
+    rosetta2: true
+    supported_envs:
+      - darwin
+      - linux
+    files:
+      - name: cc-test-reporter
+        src: test-reporter

@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: prometheus
+    repo_name: prometheus
+    asset: prometheus-{{trimV .Version}}.{{.OS}}-{{.Arch}}.tar.gz
+    description: The Prometheus monitoring system and time series database
+    checksum:
+      type: github_release
+      asset: sha256sums.txt
+      algorithm: sha256
+    files:
+      - name: prometheus
+        src: prometheus-{{trimV .Version}}.{{.OS}}-{{.Arch}}/prometheus
+      - name: promtool
+        src: prometheus-{{trimV .Version}}.{{.OS}}-{{.Arch}}/promtool

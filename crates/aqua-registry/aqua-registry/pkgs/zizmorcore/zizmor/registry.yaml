@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: zizmorcore
+    repo_name: zizmor
+    description: Static analysis for GitHub Actions
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.8.0-rc2") || Version in ["v1.12.0", "v1.13.0"]
+        type: cargo
+        crate: zizmor
+      - version_constraint: "true"
+        asset: zizmor-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        github_artifact_attestations:
+          signer_workflow: zizmorcore/zizmor/.github/workflows/release-binaries.yml

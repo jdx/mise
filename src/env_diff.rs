@@ -81,7 +81,7 @@ impl EnvDiff {
             "--noprofile",
             "-c",
             indoc::formatdoc! {"
-                . {script}
+                . \"{script}\"
                 export -p
             ", script = script.display()}
         )
@@ -115,11 +115,11 @@ impl EnvDiff {
         }
         for (k, v) in additions.clone().iter() {
             let v = normalize_escape_sequences(v);
-            if let Some(orig) = env.get(k) {
-                if &v == orig {
-                    additions.remove(k);
-                    continue;
-                }
+            if let Some(orig) = env.get(k)
+                && &v == orig
+            {
+                additions.remove(k);
+                continue;
             }
             additions.insert(k.into(), v);
         }

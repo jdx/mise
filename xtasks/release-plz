@@ -1,56 +1,176 @@
 #!/usr/bin/env bash
+#MISE description="Release with release-plz"
 set -euxo pipefail
+
+# Ensure this script is only run in GitHub Actions
+if [[ -z ${GITHUB_ACTIONS:-} ]]; then
+	echo "Error: This script must be run in GitHub Actions"
+	echo "The release-plz script should only be executed in the CI/CD pipeline"
+	exit 1
+fi
 
 git config user.name mise-en-dev
 git config user.email release@mise.jdx.dev
 
+exists_on_crates() {
+	crate="$1"
+	version="$2"
+	if cargo info --registry "crates-io" --color never --quiet "$crate" | grep -E "^version:\s+$version$" >/dev/null 2>&1; then
+		return 0
+	fi
+	if curl -fsSL "https://crates.io/api/v1/crates/$crate/$version" >/dev/null 2>&1; then
+		return 0
+	fi
+	return 1
+}
+
 cur_version="$(cargo pkgid mise | cut -d# -f2)"
-latest_version="$(cargo search mise --limit 1 | grep '^mise = "' | cut -d'"' -f2)"
+latest_version="$(cargo info --registry "crates-io" --color never --quiet mise | grep "^version:" | cut -d' ' -f2)"
 if [[ $cur_version != "$latest_version" ]]; then
 	echo "Releasing $cur_version"
-	cargo publish
+	cargo set-version "$cur_version" --workspace
+	if exists_on_crates vfox "$cur_version"; then
+		echo "vfox@$cur_version already on crates.io, skipping publish"
+	else
+		cargo publish --allow-dirty -p vfox
+	fi
+	cargo add "vfox@$cur_version"
+
+	if exists_on_crates aqua-registry "$cur_version"; then
+		echo "aqua-registry@$cur_version already on crates.io, skipping publish"
+	else
+		cargo publish --allow-dirty -p aqua-registry
+	fi
+	cargo add "aqua-registry@$cur_version"
+
+	if exists_on_crates mise "$cur_version"; then
+		echo "mise@$cur_version already on crates.io, skipping publish"
+	else
+		cargo publish --allow-dirty -p mise
+	fi
+
 	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
 	changelog="$(echo "$changelog" | tail -n +3)"
-	git tag "v$cur_version" -s -m "$changelog"
-	git push --tags
-	gh release create "v$cur_version" --title "v$cur_version" --notes "$changelog" --draft
+	if git rev-parse -q --verify "refs/tags/v$cur_version" >/dev/null ||
+		git ls-remote --exit-code --tags origin "v$cur_version" >/dev/null 2>&1; then
+		echo "Tag v$cur_version already exists, skipping tag creation"
+	else
+		git tag "v$cur_version" -s -m "$changelog"
+		git push --tags
+	fi
 	exit 0
 fi
-
-git submodule update --remote
 
 year="$(date +%Y)"
 month="$(date +%-m)"
 if echo "$cur_version" | grep -e "^$year\.$month\."; then
-	cargo set-version --bump patch
+	cargo set-version --bump patch -p mise
 elif echo "$cur_version" | grep -e "^$year\."; then
-	cargo set-version --bump minor
+	cargo set-version --bump minor -p mise
 else
-	cargo set-version "$year.1.0"
+	cargo set-version "$year.1.0" -p mise
 fi
 
 version="$(cargo pkgid mise | cut -d# -f2)"
-git cliff --tag "v$version" -o CHANGELOG.md
-changelog="$(git cliff --tag "v$version" --unreleased --strip all)"
-changelog="$(echo "$changelog" | tail -n +3)"
 sed -i.bak "s/^[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\? macos-arm64 (a1b2d3e [0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\})$/$version macos-arm64 (a1b2d3e $(date +%Y-%m-%d))/" README.md
 sed -i.bak "s/^Version: [0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?$/Version: $version/" packaging/rpm/mise.spec
 sed -i.bak "s/version = \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\";$/version = \"$version\";/" default.nix
+sed -i.bak "s/version: \"[0-9]\+\.[0-9]\+\.[0-9]\+\(-rc\.[0-9]\+\)\?\"$/version: \"$version\"/" snapcraft.yaml
+
+# Update GitHub star count using gh CLI
+stars_raw="$(gh api repos/jdx/mise --jq '.stargazers_count')"
+if [[ -n $stars_raw ]]; then
+	if [[ $stars_raw -ge 1000 ]]; then
+		# Format as k notation (e.g., 19346 -> 19.3k)
+		stars_formatted="$(echo "scale=1; $stars_raw / 1000" | bc)k"
+		# Remove trailing .0k
+		stars_formatted="${stars_formatted/.0k/k}"
+	else
+		stars_formatted="$stars_raw"
+	fi
+
+	# Update the stars data file
+	cat >docs/.vitepress/stars.data.ts <<EOF
+// This file is auto-updated by xtasks/release-plz
+// Current star count from GitHub API
+export default {
+  load() {
+    return {
+      stars: "$stars_formatted",
+    };
+  },
+};
+EOF
+	echo "Updated star count to $stars_formatted"
+fi
 
 mise run render ::: lint-fix
 
+# Capture current aqua-registry package list before updating
+OLD_AQUA_PKGS=""
+if [[ -d crates/aqua-registry/aqua-registry/pkgs ]]; then
+	OLD_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yaml -type f | sed 's|crates/aqua-registry/aqua-registry/pkgs/||;s|/registry.yaml||' | sort)"
+fi
+
+rm -rf crates/aqua-registry/aqua-registry
+git clone https://github.com/aquaproj/aqua-registry crates/aqua-registry/aqua-registry
+# Keep only pkgs/**/registry.yaml files, remove everything else
+find crates/aqua-registry/aqua-registry -type f ! -path "crates/aqua-registry/aqua-registry/pkgs/*/registry.yaml" ! -name LICENSE -delete
+find crates/aqua-registry/aqua-registry -type d -empty -delete
+
+# Capture new aqua-registry package list after updating
+NEW_AQUA_PKGS="$(find crates/aqua-registry/aqua-registry/pkgs -name registry.yaml -type f | sed 's|crates/aqua-registry/aqua-registry/pkgs/||;s|/registry.yaml||' | sort)"
+
+# Generate aqua-registry changelog section for both CHANGELOG.md and PR body
+AQUA_CHANGELOG_MD="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "###" || true)"
+AQUA_CHANGELOG_PR="$(./scripts/gen-aqua-changelog.sh "$OLD_AQUA_PKGS" "$NEW_AQUA_PKGS" "##" || true)"
+
+# Generate only the new release section (unreleased changes)
+# Use --prepend to preserve existing changelog content
+git cliff --tag "v$version" --unreleased --prepend CHANGELOG.md
+
+# Inject aqua-registry updates into CHANGELOG.md if there are any
+if [[ -n $AQUA_CHANGELOG_MD ]]; then
+	# Find the FIRST release section (the one we just added) and inject aqua section at the end, before the next release
+	awk -v aqua_section="$AQUA_CHANGELOG_MD" '
+		/^## \[/ {
+			if (release_count == 1 && !inserted) {
+				# We are at the second release, inject aqua section before it
+				print aqua_section
+				inserted = 1
+			}
+			release_count++
+		}
+		{print}
+		END {
+			# If we never hit a second release (only one release in file), append at end
+			if (release_count == 1 && !inserted) {
+				print aqua_section
+			}
+		}
+	' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+fi
+
+# Generate changelog for PR body
+changelog="$(git cliff --tag "v$version" --unreleased --strip all)"
+changelog="$(echo "$changelog" | tail -n +3)"
+
 mise up
+git status
 # cargo update
 git add \
 	Cargo.lock \
 	Cargo.toml \
 	CHANGELOG.md \
 	README.md \
-	aqua-registry \
+	crates/aqua-registry/aqua-registry \
 	default.nix \
+	snapcraft.yaml \
+	docs/.vitepress/stars.data.ts \
 	packaging/rpm/mise.spec \
 	mise.usage.kdl \
 	completions \
+	mise.lock \
 	man/
 git clean -df
 git checkout -B release
@@ -58,7 +178,17 @@ git commit -m "chore: release $version"
 git push origin release --force
 
 if [[ "$(gh pr list --label release)" == "" ]]; then
-	gh pr create --title "chore: release $version" --body "$changelog" --label "release" --head release
+	# Append aqua-registry updates to PR body if available
+	PR_BODY="$changelog"
+	if [[ -n $AQUA_CHANGELOG_PR ]]; then
+		PR_BODY="$changelog"$'\n\n'"$AQUA_CHANGELOG_PR"
+	fi
+	gh pr create --title "chore: release $version" --body "$PR_BODY" --label "release" --head release
 else
-	gh pr edit --title "chore: release $version" --body "$changelog"
+	# Append aqua-registry updates to PR body if available
+	PR_BODY="$changelog"
+	if [[ -n $AQUA_CHANGELOG_PR ]]; then
+		PR_BODY="$changelog"$'\n\n'"$AQUA_CHANGELOG_PR"
+	fi
+	gh pr edit --title "chore: release $version" --body "$PR_BODY"
 fi

@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: hashicorp
+    repo_name: consul
+    description: Consul is a distributed, highly available, and data center aware solution to connect and configure applications across dynamic, distributed infrastructure
+    url: https://releases.hashicorp.com/consul/{{trimV .Version}}/consul_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    version_filter: Version matches "^v\\d+\\.\\d+\\.\\d+"
+    version_constraint: semver(">= 1.11.1")
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+    checksum:
+      type: http
+      url: https://releases.hashicorp.com/consul/{{trimV .Version}}/consul_{{trimV .Version}}_SHA256SUMS
+      algorithm: sha256

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ory
+    repo_name: hydra
+    asset: hydra_{{trimV .Version}}-{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: OpenID Certified OpenID Connect and OAuth Provider written in Go - cloud native, security-first, open source API security for your infrastructure. SDKs for any language. Works with Hardware Security Modules. Compatible with MITREid
+    replacements:
+      amd64: 64bit
+      darwin: macOS
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: rust-lang/rustup
+    aliases:
+      - name: rust-lang/rustup/rustup-init
+    type: http
+    repo_owner: rust-lang
+    repo_name: rustup
+    files:
+      - name: rustup
+        link: rustup
+      - name: rustup-init
+    description: The Rust toolchain installer
+    version_source: github_tag
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        url: https://static.rust-lang.org/rustup/archive/{{.Version}}/{{.Arch}}-{{.OS}}/rustup-init
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        checksum:
+          type: http
+          url: https://static.rust-lang.org/rustup/archive/{{.Version}}/{{.Arch}}-{{.OS}}/rustup-init.sha256
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            checksum:
+              type: http
+              url: https://static.rust-lang.org/rustup/archive/{{.Version}}/{{.Arch}}-{{.OS}}/rustup-init.exe.sha256
+              algorithm: sha256

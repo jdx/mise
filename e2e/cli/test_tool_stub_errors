@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Test proper error messages for tool-stub http backend tools
+
+# Disable backtraces for cleaner error messages
+export RUST_BACKTRACE=0
+export MISE_QUIET=1
+
+# Test 1: Default bin name (stub filename) not found shows available executables
+cat >test_http_default_bin <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+blake3 = "71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f"
+size = 518
+# bin defaults to filename: test_http_default_bin
+EOF
+chmod +x test_http_default_bin
+
+# Test error message content
+output=$(mise tool-stub ./test_http_default_bin 2>&1 || true)
+# Simple check that the key parts of the error message are present
+if [[ $output == *"does not have an executable named 'test_http_default_bin'"* ]] &&
+	[[ $output == *"Available executables: hello-world-1.0.0/bin/hello-world"* ]]; then
+	echo "✓ Test 1 passed: Error message contains expected content"
+else
+	echo "✗ Test 1 failed: Expected error message not found"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Clean up (skip uninstall for speed in testing)
+rm test_http_default_bin
+
+# Test 2: Binary not found should not show hidden files
+cat >test_hidden_files <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+blake3 = "71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f"
+size = 518
+bin = "nonexistent"
+EOF
+chmod +x test_hidden_files
+
+output=$(mise tool-stub ./test_hidden_files 2>&1 || true)
+if [[ $output == *"does not have an executable named 'nonexistent'"* ]] &&
+	[[ $output == *"Available executables: hello-world-1.0.0/bin/hello-world"* ]]; then
+	echo "✓ Test 2 passed: Error message contains expected content"
+else
+	echo "✗ Test 2 failed: Expected error message not found"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Clean up
+rm test_hidden_files
+
+# Test 3: Binary with path not found shows correct error
+cat >test_bin_path <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+blake3 = "71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f"
+size = 518
+bin = "bin/nonexistent"
+EOF
+chmod +x test_bin_path
+
+output=$(mise tool-stub ./test_bin_path 2>&1 || true)
+if [[ $output == *"does not have an executable named 'bin/nonexistent'"* ]] &&
+	[[ $output == *"Available executables: hello-world-1.0.0/bin/hello-world"* ]]; then
+	echo "✓ Test 3 passed: Error message contains expected content"
+else
+	echo "✗ Test 3 failed: Expected error message not found"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Clean up
+rm test_bin_path
+
+# Test 4: Actual tool not found (non-existent tool)
+cat >test_tool_notfound <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "nonexistent-tool-that-doesnt-exist"
+EOF
+chmod +x test_tool_notfound
+
+output=$(mise tool-stub ./test_tool_notfound 2>&1 || true)
+# The error for non-existent tools shows up as a toolset resolution error
+if [[ $output == *"No current versions found after resolving toolset"* ]]; then
+	echo "✓ Test 4 passed: Non-existent tool error handled correctly"
+else
+	echo "✗ Test 4 failed: Expected toolset resolution error"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Clean up
+rm test_tool_notfound

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 if [ -n "$EXCLUDE_FROM_CI" ]; then
-  echo "This test is not supported in CI, because it requires a SSH key to be added to the GitHub account"
-  exit 0
+	echo "This test is not supported in CI, because it requires a SSH key to be added to the GitHub account"
+	exit 0
 fi
 
 #################################################################################

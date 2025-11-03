@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: GoogleCloudPlatform
+    repo_name: cloud-sql-proxy
+    description: A utility for connecting securely to your Cloud SQL instances
+    format: raw
+    supported_envs:
+      - darwin
+      - linux
+      - windows/amd64
+    version_constraint: semver(">= 2.0.0")
+    url: https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/{{.Version}}/cloud-sql-proxy.{{.OS}}.{{.Arch}}
+    overrides:
+      - goos: windows
+        url: https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/{{.Version}}/cloud-sql-proxy.x64.exe
+    version_overrides:
+      - version_constraint: "true"
+        url: https://storage.googleapis.com/cloudsql-proxy/{{.Version}}/cloud_sql_proxy.{{.OS}}.{{.Arch}}
+        overrides:
+          - goos: windows
+            url: https://storage.googleapis.com/cloudsql-proxy/{{.Version}}/cloud_sql_proxy_x64.exe

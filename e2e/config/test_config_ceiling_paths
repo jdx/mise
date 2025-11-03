@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Test for MISE_CEILING_PATHS functionality
+# This tests that mise respects the ceiling paths configuration
+# which prevents traversing up the directory tree beyond specified paths
+
+# Create a test directory structure
+TEST_ROOT=$(pwd)
+
+# Setup directory structure
+mkdir -p "$TEST_ROOT/parent/child/grandchild"
+
+# Create config files at different levels using heredoc
+cat <<EOF >"$TEST_ROOT/parent/.mise.toml"
+[env]
+PARENT = "true"
+EOF
+
+cat <<EOF >"$TEST_ROOT/parent/child/.mise.toml"
+[env]
+CHILD = "true"
+EOF
+
+cat <<EOF >"$TEST_ROOT/parent/child/grandchild/.mise.toml"
+[env]
+GRANDCHILD = "true"
+EOF
+cd "$TEST_ROOT/parent/child/grandchild"
+
+# Test 1: Normal behavior without ceiling paths
+echo "Test 1: Without ceiling paths, should find all configs up to parent"
+assert_contains "mise env" "export GRANDCHILD=true"
+assert_contains "mise env" "export CHILD=true"
+assert_contains "mise env" "export PARENT=true"
+echo "Test 1: Passed"
+
+# Test 2: Set ceiling path to child directory
+echo "Test 2: With ceiling path at child, should not find parent or child config"
+export MISE_CEILING_PATHS="$TEST_ROOT/parent/child"
+assert_contains "mise env" "export GRANDCHILD=true"
+assert_not_contains "mise env" "export CHILD=true"
+assert_not_contains "mise env" "export PARENT=true"
+echo "Test 2: Passed"
+
+# Test 3: Set ceiling path to grandchild directory
+echo "Test 3: With ceiling path at grandchild, should not find any config"
+export MISE_CEILING_PATHS="$TEST_ROOT/parent/child/grandchild"
+assert_not_contains "mise env" "export GRANDCHILD=true"
+assert_not_contains "mise env" "export CHILD=true"
+assert_not_contains "mise env" "export PARENT=true"
+echo "Test 3: Passed"
+
+# Test 4: Multiple ceiling paths
+echo "Test 4: With multiple ceiling paths"
+export MISE_CEILING_PATHS="$TEST_ROOT/parent/child:$TEST_ROOT/parent"
+assert_contains "mise env" "export GRANDCHILD=true"
+assert_not_contains "mise env" "export CHILD=true"
+assert_not_contains "mise env" "export PARENT=true"
+echo "Test 4: Passed"
+
+# Test 5: Ceiling path with non-existent directory
+echo "Test 5: With non-existent ceiling path, should find all configs"
+export MISE_CEILING_PATHS="$TEST_ROOT/nonexistent"
+assert_contains "mise env" "export GRANDCHILD=true"
+assert_contains "mise env" "export CHILD=true"
+assert_contains "mise env" "export PARENT=true"
+echo "Test 5: Passed"
+
+echo "All tests passed!"

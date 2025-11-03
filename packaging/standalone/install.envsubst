@@ -43,9 +43,13 @@ get_os() {
 get_arch() {
   musl=""
   if type ldd >/dev/null 2>/dev/null; then
-    libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
-    if [ -n "$libc" ]; then
+    if [ "${MISE_INSTALL_MUSL-}" = "1" ] || [ "${MISE_INSTALL_MUSL-}" = "true" ]; then
       musl="-musl"
+    else
+      libc=$(ldd /bin/ls | grep 'musl' | head -1 | cut -d ' ' -f1)
+      if [ -n "$libc" ]; then
+        musl="-musl"
+      fi
     fi
   fi
   arch="$(uname -m)"
@@ -98,9 +102,9 @@ shasum_bin() {
 
 get_checksum() {
   version=$1
-  os="$(get_os)"
-  arch="$(get_arch)"
-  ext="$(get_ext)"
+  os=$2
+  arch=$3
+  ext=$4
   url="https://github.com/jdx/mise/releases/download/v${version}/SHASUMS256.txt"
 
   # For current version use static checksum otherwise
@@ -124,7 +128,7 @@ get_checksum() {
     checksum_macos_arm64_zstd="$MISE_CHECKSUM_MACOS_ARM64_ZSTD"
 
     # TODO: refactor this, it's a bit messy
-    if [ "$(get_ext)" = "tar.zst" ]; then
+    if [ "$ext" = "tar.zst" ]; then
       if [ "$os" = "linux" ]; then
         if [ "$arch" = "x64" ]; then
           echo "$checksum_linux_x86_64_zstd"
@@ -234,24 +238,31 @@ download_file() {
 install_mise() {
   version="${MISE_VERSION:-$MISE_CURRENT_VERSION}"
   version="${version#v}"
-  os="$(get_os)"
-  arch="$(get_arch)"
-  ext="$(get_ext)"
+  os="${MISE_INSTALL_OS:-$(get_os)}"
+  arch="${MISE_INSTALL_ARCH:-$(get_arch)}"
+  ext="${MISE_INSTALL_EXT:-$(get_ext)}"
   install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
   install_dir="$(dirname "$install_path")"
-  tarball_url="https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-${os}-${arch}.${ext}"
+  install_from_github="${MISE_INSTALL_FROM_GITHUB:-}"
+  if [ "$version" != "$MISE_CURRENT_VERSION" ] || [ "$install_from_github" = "1" ] || [ "$install_from_github" = "true" ]; then
+    tarball_url="https://github.com/jdx/mise/releases/download/v${version}/mise-v${version}-${os}-${arch}.${ext}"
+  elif [ -n "${MISE_TARBALL_URL-}" ]; then
+    tarball_url="$MISE_TARBALL_URL"
+  else
+    tarball_url="https://mise.jdx.dev/v${version}/mise-v${version}-${os}-${arch}.${ext}"
+  fi
 
   cache_file=$(download_file "$tarball_url")
   debug "mise-setup: tarball=$cache_file"
 
   debug "validating checksum"
-  cd "$(dirname "$cache_file")" && get_checksum "$version" | "$(shasum_bin)" -c >/dev/null
+  cd "$(dirname "$cache_file")" && get_checksum "$version" "$os" "$arch" "$ext" | "$(shasum_bin)" -c >/dev/null
 
   # extract tarball
   mkdir -p "$install_dir"
   rm -rf "$install_path"
   cd "$(mktemp -d)"
-  if [ "$(get_ext)" = "tar.zst" ] && ! tar_supports_zstd; then
+  if [ "$ext" = "tar.zst" ] && ! tar_supports_zstd; then
     zstd -d -c "$cache_file" | tar -xf -
   else
     tar -xf "$cache_file"

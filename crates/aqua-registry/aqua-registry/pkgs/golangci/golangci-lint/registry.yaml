@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: golangci
+    repo_name: golangci-lint
+    description: Fast linters Runner for Go
+    asset: golangci-lint-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    files:
+      - name: golangci-lint
+        src: golangci-lint-{{trimV .Version}}-{{.OS}}-{{.Arch}}/golangci-lint
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: golangci-lint-{{trimV .Version}}-checksums.txt
+      algorithm: sha256

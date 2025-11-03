@@ -20,5 +20,6 @@
     "files.exclude": {
       "aqua-registry/**": true
     },
+    "markdown.validate.enabled": true,
   },
 }

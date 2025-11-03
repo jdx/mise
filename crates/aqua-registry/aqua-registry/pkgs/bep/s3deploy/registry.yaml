@@ -1,0 +1,129 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bep
+    repo_name: s3deploy
+    description: A simple tool to deploy static websites to Amazon S3 and CloudFront with Gzip and custom headers support (e.g. "Cache-Control")
+    asset: s3deploy_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+      - goos: darwin
+        format: pkg
+        asset: s3deploy_{{trimV .Version}}_{{.OS}}-universal.{{.Format}}
+        files:
+          - name: s3deploy
+            src: Payload/s3deploy
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: s3deploy_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 2.11.0")
+    version_overrides:
+      - version_constraint: semver(">= 2.10.1")
+        format: tar.gz
+        overrides:
+          - goos: darwin
+            format: pkg
+            asset: s3deploy_{{trimV .Version}}_{{.OS}}-universal.{{.Format}}
+            files:
+              - name: s3deploy
+                src: Payload/s3deploy
+          - goos: windows
+            format: zip
+      - version_constraint: semver(">= 2.9.0")
+      - version_constraint: semver(">= 2.5.0")
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: 64bit
+          arm64: ARM64
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        rosetta2: false
+      - version_constraint: semver(">= 2.4.0")
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+            replacements:
+              arm64: arm64
+        replacements:
+          amd64: 64bit
+          arm64: ARM64
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: false
+      - version_constraint: semver(">= 1.1.1")
+        format: tar.gz
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: ARM64
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: semver(">= 1.0.2")
+        format: tar.gz
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: ARM64
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        checksum:
+          type: github_release
+          asset: s3deploy_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("< 1.0.2")
+        asset: s3deploy_{{.Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: ARM64
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        checksum:
+          type: github_release
+          asset: s3deploy_checksums.txt
+          algorithm: sha256

@@ -13,6 +13,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{display_path, remove_all, remove_all_with_warning};
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::plugins::core::CORE_PLUGINS;
 use crate::plugins::{PluginType, VERSION_REGEX};
 use crate::registry::{REGISTRY, tool_enabled};
@@ -31,20 +32,26 @@ use console::style;
 use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use platform_target::PlatformTarget;
 use regex::Regex;
 use std::sync::LazyLock as Lazy;
 
 pub mod aqua;
 pub mod asdf;
+pub mod asset_detector;
 pub mod backend_type;
 pub mod cargo;
 pub mod dotnet;
 mod external_plugin_cache;
 pub mod gem;
+pub mod github;
 pub mod go;
+pub mod http;
 pub mod npm;
 pub mod pipx;
+pub mod platform_target;
 pub mod spm;
+pub mod static_helpers;
 pub mod ubi;
 pub mod vfox;
 
@@ -52,6 +59,21 @@ pub type ABackend = Arc<dyn Backend>;
 pub type BackendMap = BTreeMap<String, ABackend>;
 pub type BackendList = Vec<ABackend>;
 pub type VersionCacheManager = CacheManager<Vec<String>>;
+
+/// Information about a GitHub/GitLab release for platform-specific tools
+#[derive(Debug, Clone)]
+pub struct GitHubReleaseInfo {
+    pub repo: String,
+    pub asset_pattern: Option<String>,
+    pub api_url: Option<String>,
+    pub release_type: ReleaseType,
+}
+
+#[derive(Debug, Clone)]
+pub enum ReleaseType {
+    GitHub,
+    GitLab,
+}
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
@@ -153,11 +175,18 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Dotnet => Some(Arc::new(dotnet::DotnetBackend::from_arg(ba))),
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
         BackendType::Gem => Some(Arc::new(gem::GemBackend::from_arg(ba))),
+        BackendType::Github => Some(Arc::new(github::UnifiedGitBackend::from_arg(ba))),
+        BackendType::Gitlab => Some(Arc::new(github::UnifiedGitBackend::from_arg(ba))),
         BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
+        BackendType::Http => Some(Arc::new(http::HttpBackend::from_arg(ba))),
         BackendType::Ubi => Some(Arc::new(ubi::UbiBackend::from_arg(ba))),
-        BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba))),
+        BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba, None))),
+        BackendType::VfoxBackend(plugin_name) => Some(Arc::new(vfox::VfoxBackend::from_arg(
+            ba,
+            Some(plugin_name.to_string()),
+        ))),
         BackendType::Unknown => None,
     }
 }
@@ -174,6 +203,16 @@ pub trait Backend: Debug + Send + Sync {
         BackendType::Core
     }
     fn ba(&self) -> &Arc<BackendArg>;
+
+    /// Generates a platform key for lockfile storage.
+    /// Default implementation uses os-arch format, but backends can override for more specific keys.
+    fn get_platform_key(&self) -> String {
+        let settings = Settings::get();
+        let os = settings.os();
+        let arch = settings.arch();
+        format!("{os}-{arch}")
+    }
+
     async fn description(&self) -> Option<String> {
         None
     }
@@ -246,7 +285,7 @@ pub trait Backend: Debug + Send + Sync {
                         }
                     })
                     .collect_vec();
-                if versions.is_empty() {
+                if versions.is_empty() && self.get_type() != BackendType::Http {
                     warn!("No versions found for {id}");
                 }
                 Ok(versions)
@@ -295,10 +334,10 @@ pub trait Backend: Debug + Send + Sync {
         match tv.request {
             ToolRequest::System { .. } => true,
             _ => {
-                if let Some(install_path) = tv.request.install_path(config) {
-                    if check_path(&install_path, true) {
-                        return true;
-                    }
+                if let Some(install_path) = tv.request.install_path(config)
+                    && check_path(&install_path, true)
+                {
+                    return true;
                 }
                 check_path(&tv.install_path(), check_symlink)
             }
@@ -406,7 +445,7 @@ pub trait Backend: Debug + Send + Sync {
         }
         Ok(())
     }
-    fn purge(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    fn purge(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
         rmdir(&self.ba().installs_path, pr)?;
         rmdir(&self.ba().cache_path, pr)?;
         rmdir(&self.ba().downloads_path, pr)?;
@@ -415,13 +454,13 @@ pub trait Backend: Debug + Send + Sync {
     fn get_aliases(&self) -> eyre::Result<BTreeMap<String, String>> {
         Ok(BTreeMap::new())
     }
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(REGISTRY
             .get(self.id())
             .map(|rt| rt.idiomatic_files.iter().map(|s| s.to_string()).collect())
             .unwrap_or_default())
     }
-    fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> eyre::Result<String> {
         let contents = file::read_to_string(path)?;
         Ok(contents.trim().to_string())
     }
@@ -434,12 +473,26 @@ pub trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        // Handle dry-run mode early to avoid plugin installation
+        if ctx.dry_run {
+            use crate::ui::progress_report::ProgressIcon;
+            if self.is_version_installed(&ctx.config, &tv, true) {
+                ctx.pr
+                    .finish_with_icon("already installed".into(), ProgressIcon::Skipped);
+            } else {
+                ctx.pr
+                    .finish_with_icon("would install".into(), ProgressIcon::Skipped);
+            }
+            return Ok(tv);
+        }
+
         if let Some(plugin) = self.plugin() {
             plugin.is_installed_err()?;
         }
+
         if self.is_version_installed(&ctx.config, &tv, true) {
             if ctx.force {
-                self.uninstall_version(&ctx.config, &tv, &ctx.pr, false)
+                self.uninstall_version(&ctx.config, &tv, ctx.pr.as_ref(), false)
                     .await?;
             } else {
                 return Ok(tv);
@@ -454,6 +507,7 @@ pub trait Backend: Debug + Send + Sync {
             Ok(tv) => tv,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);
+                // Pass through the error - it will be wrapped at a higher level
                 return Err(e);
             }
         };
@@ -473,8 +527,16 @@ pub trait Backend: Debug + Send + Sync {
                 trace!("error touching config file: {:?} {:?}", path, err);
             }
         }
-        if let Err(err) = file::remove_file(self.incomplete_file_path(&tv)) {
+        let incomplete_path = self.incomplete_file_path(&tv);
+        if let Err(err) = file::remove_file(&incomplete_path) {
             debug!("error removing incomplete file: {:?}", err);
+        } else {
+            // Sync parent directory to ensure file removal is immediately visible
+            if let Some(parent) = incomplete_path.parent()
+                && let Err(err) = file::sync_dir(parent)
+            {
+                debug!("error syncing incomplete file parent directory: {:?}", err);
+            }
         }
         if let Some(script) = tv.request.options().get("postinstall") {
             ctx.pr
@@ -492,12 +554,23 @@ pub trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
         script: &str,
     ) -> eyre::Result<()> {
+        // Get pre-tools environment variables from config
+        let mut env_vars = self.exec_env(&ctx.config, &ctx.ts, tv).await?;
+
+        // Add pre-tools environment variables from config if available
+        if let Some(config_env) = ctx.config.env_maybe() {
+            for (k, v) in config_env {
+                env_vars.entry(k).or_insert(v);
+            }
+        }
+
         CmdLineRunner::new(&*env::SHELL)
             .env(&*env::PATH_KEY, plugins::core::path_env_with_tv_path(tv)?)
-            .with_pr(&ctx.pr)
-            .arg("-c")
+            .env("MISE_TOOL_INSTALL_PATH", tv.install_path())
+            .with_pr(ctx.pr.as_ref())
+            .arg(env::SHELL_COMMAND_FLAG)
             .arg(script)
-            .envs(self.exec_env(&ctx.config, &ctx.ts, tv).await?)
+            .envs(env_vars)
             .execute()?;
         Ok(())
     }
@@ -506,7 +579,7 @@ pub trait Backend: Debug + Send + Sync {
         &self,
         config: &Arc<Config>,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         dryrun: bool,
     ) -> eyre::Result<()> {
         pr.set_message("uninstall".into());
@@ -534,7 +607,7 @@ pub trait Backend: Debug + Send + Sync {
     async fn uninstall_version_impl(
         &self,
         _config: &Arc<Config>,
-        _pr: &Box<dyn SingleReport>,
+        _pr: &dyn SingleReport,
         _tv: &ToolVersion,
     ) -> Result<()> {
         Ok(())
@@ -660,6 +733,44 @@ pub trait Backend: Debug + Send + Sync {
         b.which(config, &tv, bin).await.ok().flatten()
     }
 
+    /// Check if a required dependency is available and show a warning if not.
+    /// This provides a consistent warning message format across all backends.
+    /// Changed to warning instead of error to avoid CI failures on Windows.
+    async fn warn_if_dependency_missing(
+        &self,
+        config: &Arc<Config>,
+        program: &str,
+        install_instructions: &str,
+    ) {
+        let found = if self.dependency_which(config, program).await.is_some() {
+            true
+        } else if cfg!(windows) {
+            // On Windows, also check for program with Windows executable extensions
+            let settings = Settings::get();
+            let mut found = false;
+            for ext in &settings.windows_executable_extensions {
+                if self
+                    .dependency_which(config, &format!("{}.{}", program, ext))
+                    .await
+                    .is_some()
+                {
+                    found = true;
+                    break;
+                }
+            }
+            found
+        } else {
+            false
+        };
+
+        if !found {
+            warn!(
+                "{} may be required but was not found.\n\n{}",
+                program, install_instructions
+            );
+        }
+    }
+
     async fn dependency_env(&self, config: &Arc<Config>) -> eyre::Result<BTreeMap<String, String>> {
         self.dependency_toolset(config)
             .await?
@@ -721,18 +832,45 @@ pub trait Backend: Debug + Send + Sync {
         tv: &mut ToolVersion,
         file: &Path,
     ) -> Result<()> {
+        let settings = Settings::get();
         let filename = file.file_name().unwrap().to_string_lossy().to_string();
-        if let Some(checksum) = &tv.checksums.get(&filename) {
+        let lockfile_enabled = settings.lockfile && settings.experimental;
+
+        // Get the platform key for this tool and platform
+        let platform_key = self.get_platform_key();
+
+        // Get or create asset info for this platform
+        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
+
+        if let Some(checksum) = &platform_info.checksum {
             ctx.pr.set_message(format!("checksum {filename}"));
             if let Some((algo, check)) = checksum.split_once(':') {
-                hash::ensure_checksum(file, check, Some(&ctx.pr), algo)?;
+                hash::ensure_checksum(file, check, Some(ctx.pr.as_ref()), algo)?;
             } else {
                 bail!("Invalid checksum: {checksum}");
             }
-        } else if Settings::get().lockfile && Settings::get().experimental {
+        } else if lockfile_enabled {
             ctx.pr.set_message(format!("generate checksum {filename}"));
-            let hash = hash::file_hash_sha256(file, Some(&ctx.pr))?;
-            tv.checksums.insert(filename, format!("sha256:{hash}"));
+            let hash = hash::file_hash_blake3(file, Some(ctx.pr.as_ref()))?;
+            platform_info.checksum = Some(format!("blake3:{hash}"));
+        }
+
+        // Handle size verification and generation
+        if let Some(expected_size) = platform_info.size {
+            ctx.pr.set_message(format!("verify size {filename}"));
+            let actual_size = file.metadata()?.len();
+            if actual_size != expected_size {
+                bail!(
+                    "Size mismatch for {}: expected {}, got {}",
+                    filename,
+                    expected_size,
+                    actual_size
+                );
+            }
+        } else if lockfile_enabled {
+            ctx.pr.set_message(format!("record size {filename}"));
+            let size = file.metadata()?.len();
+            platform_info.size = Some(size);
         }
         Ok(())
     }
@@ -745,6 +883,120 @@ pub trait Backend: Debug + Send + Sync {
     ) -> Result<Option<OutdatedInfo>> {
         Ok(None)
     }
+
+    // ========== Lockfile Metadata Fetching Methods ==========
+
+    /// Optional: Provide tarball URL for platform-specific tool installation
+    /// Backends can implement this for simple tarball-based tools
+    async fn get_tarball_url(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        Ok(None) // Default: no tarball URL available
+    }
+
+    /// Optional: Provide GitHub/GitLab release info for platform-specific tool installation
+    /// Backends can implement this for GitHub/GitLab release-based tools
+    async fn get_github_release_info(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<Option<GitHubReleaseInfo>> {
+        Ok(None) // Default: no GitHub release info available
+    }
+
+    /// Resolve platform-specific lock information without installation
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // Try simple tarball approach first
+        if let Some(tarball_url) = self.get_tarball_url(tv, target).await? {
+            return self
+                .resolve_lock_info_from_tarball(&tarball_url, tv, target)
+                .await;
+        }
+
+        // Try GitHub/GitLab release approach second
+        if let Some(release_info) = self.get_github_release_info(tv, target).await? {
+            return self
+                .resolve_lock_info_from_github_release(&release_info, tv, target)
+                .await;
+        }
+
+        // Fall back to basic platform info without URLs/metadata
+        self.resolve_lock_info_fallback(tv, target).await
+    }
+
+    /// Shared logic for processing tarball-based tools
+    /// Downloads tarball headers, extracts size and URL info, and populates PlatformInfo
+    async fn resolve_lock_info_from_tarball(
+        &self,
+        tarball_url: &str,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // For now, just return basic info with the URL
+        // In a full implementation, this would:
+        // 1. Make HEAD request to get content-length
+        // 2. Potentially download to get checksum
+        // 3. Handle any URL-specific logic
+        Ok(PlatformInfo {
+            checksum: None, // TODO: Implement checksum fetching
+            name: None,     // TODO: Implement name extraction from URL if needed
+            size: None,     // TODO: Implement size fetching via HEAD request
+            url: Some(tarball_url.to_string()),
+            url_api: None,
+        })
+    }
+
+    /// Shared logic for processing GitHub/GitLab release-based tools
+    /// Queries release API, finds platform-specific assets, and populates PlatformInfo
+    async fn resolve_lock_info_from_github_release(
+        &self,
+        release_info: &GitHubReleaseInfo,
+        _tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // For now, just return basic info
+        // In a full implementation, this would:
+        // 1. Query GitHub/GitLab release API
+        // 2. Find matching asset for the target platform
+        // 3. Extract download URL, size, and checksums
+        let asset_url = release_info.asset_pattern.as_ref().map(|pattern| {
+            pattern
+                .replace("{os}", target.os_name())
+                .replace("{arch}", target.arch_name())
+        });
+
+        Ok(PlatformInfo {
+            checksum: None, // TODO: Implement checksum fetching from releases
+            name: None,     // TODO: Implement asset name fetching from releases
+            size: None,     // TODO: Implement size fetching from GitHub API
+            url: asset_url,
+            url_api: None,
+        })
+    }
+
+    /// Fallback method when no specific metadata resolution is available
+    /// Returns minimal PlatformInfo without external URLs
+    async fn resolve_lock_info_fallback(
+        &self,
+        _tv: &ToolVersion,
+        _target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // This is the fallback - no external metadata available
+        // The tool would need to be installed to generate platform info
+        Ok(PlatformInfo {
+            checksum: None,
+            size: None,
+            name: None,
+            url: None,
+            url_api: None,
+        })
+    }
 }
 
 fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
@@ -754,7 +1006,7 @@ fn find_match_in_list(list: &[String], query: &str) -> Option<String> {
     }
 }
 
-fn rmdir(dir: &Path, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+fn rmdir(dir: &Path, pr: &dyn SingleReport) -> eyre::Result<()> {
     if !dir.exists() {
         return Ok(());
     }

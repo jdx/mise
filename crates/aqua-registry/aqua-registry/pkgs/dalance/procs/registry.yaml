@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dalance
+    repo_name: procs
+    description: A modern replacement for ps written in Rust
+    replacements:
+      amd64: x86_64
+      darwin: mac
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    asset: procs-{{.Version}}-{{.Arch}}-{{.OS}}.zip
+    version_constraint: semver(">= 0.13.3")
+    version_overrides:
+      - version_constraint: "true"
+        # https://github.com/aquaproj/aqua-registry/pull/7156
+        # windows zip structure was changed from 0.13.3.
+        # https://github.com/dalance/procs/blob/master/CHANGELOG.md#v0133---2022-10-18
+        # > [Changed] Release zip for Windows has the exe at toplevel
+        overrides:
+          - goos: windows
+            files:
+              - name: procs
+                src: target/x86_64-pc-windows-msvc/release/procs.exe

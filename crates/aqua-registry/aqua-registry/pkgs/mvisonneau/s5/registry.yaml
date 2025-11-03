@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mvisonneau
+    repo_name: s5
+    description: Safely Store Super Sensitive Stuff
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.14"
+        no_asset: true
+      - version_constraint: Version == "0.1.3"
+        asset: s5_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: Version == "0.1.9"
+        asset: s5_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: s5_{{.Version}}_SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "edge"
+        asset: s5_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: s5_{{.Version}}_sha512sums.txt
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v0.1.10"
+        asset: s5_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: s5_{{.Version}}_sha512sums.txt
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.1.1")
+        asset: s5_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.1.8")
+        asset: s5_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: s5_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: s5_{{.Version}}_sha512sums.txt
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip

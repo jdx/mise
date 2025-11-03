@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: kastenhq/external-tools/k10tools
+    type: github_release
+    repo_owner: kastenhq
+    repo_name: external-tools
+    description: Used to distribute external tools
+    asset: k10tools_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: k10tools
+    replacements:
+      darwin: macOS
+    supported_envs:
+      - linux
+      - darwin
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 6.0.3")
+    version_overrides:
+      - version_constraint: semver(">= 4.5.0")
+        rosetta2: false
+      - version_constraint: semver(">= 4.0.3")
+        asset: k10tools_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: false
+      - version_constraint: semver(">= 3.0.7")
+        asset: k10tools_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("< 3.0.7")
+        no_asset: true

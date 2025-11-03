@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Songmu
+    repo_name: gocredits
+    description: creates CREDITS file from LICENSE files of dependencies
+    rosetta2: true
+    asset: gocredits_{{.Version}}_{{.OS}}_amd64.{{.Format}}
+    supported_envs:
+      - darwin
+      - linux
+    files:
+      - name: gocredits
+        src: gocredits_{{.Version}}_{{.OS}}_amd64/gocredits
+    format: tar.gz
+    overrides:
+      - goos: darwin
+        format: zip

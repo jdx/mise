@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+echo "=== Testing basic lockfile creation detection ==="
+# Create a mise.toml without a lockfile
+cat <<EOF >mise.toml
+[tools]
+tiny = "1.0.0"
+dummy = "2.0.0"
+EOF
+
+echo "=== Testing lockfile creation use case ==="
+# Test when no lockfiles exist but mise.toml exists
+assert_contains "mise lock" "No lockfile found, would create"
+assert_contains "mise lock" "mise.lock"
+
+# Should detect the missing lockfile and show what would be created
+assert_contains "mise lock" "No lockfile found, would create"
+assert_contains "mise lock" "mise.lock"
+assert_contains "mise lock" "Would create lockfile with 2 tool(s): tiny, dummy"
+assert_contains "mise lock" "Would initialize 2 tool(s) in new lockfile"
+
+echo "=== Testing dry-run mode for lockfile creation ==="
+# Test detailed dry-run output
+output=$(mise lock --dry-run)
+assert_contains "echo '$output'" "✓ tiny (new lockfile)"
+assert_contains "echo '$output'" "✓ dummy (new lockfile)"
+
+echo "=== Testing tool filtering for lockfile creation ==="
+# Test filtering by specific tool
+assert_contains "mise lock tiny" "Would initialize 1 tool(s) in new lockfile"
+output=$(mise lock tiny --dry-run)
+assert_contains "echo '$output'" "✓ tiny (new lockfile)"
+assert_not_contains "echo '$output'" "✓ dummy (new lockfile)"
+
+# Test filtering by multiple tools
+assert_contains "mise lock tiny dummy" "Would initialize 2 tool(s) in new lockfile"
+
+# Test non-existent tool filtering
+assert_not_contains "mise lock nonexistent" "Would initialize"
+
+echo "=== Testing transition from creation to existing ==="
+# Create a lockfile - now it should show as existing instead of missing
+cat <<EOF >mise.lock
+[tools.tiny]
+version = "1.0.0"
+backend = "asdf:tiny"
+EOF
+
+# Should now show existing lockfile instead of missing
+assert_contains "mise lock" "Found lockfile"
+assert_not_contains "mise lock" "No lockfile found, would create"
+
+echo "=== Testing platform filtering with existing lockfile ==="
+# Platform filtering should work with existing lockfile
+assert_contains "mise lock --platform linux-x64" "Would update"
+
+echo "=== Testing help for creation ==="
+# Help should mention both updating and creating
+assert_contains "mise lock --help" "Update lockfile checksums and URLs"
+
+echo "=== Cleanup ==="
+rm -f mise.toml mise.lock
+
+echo "mise lock creation tests passed!"

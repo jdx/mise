@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: int128
+    repo_name: kubectl-external-forward
+    asset: kubectl-external_forward_{{.OS}}_{{.Arch}}.zip
+    description: kubectl plugin to connect to external host via Envoy Proxy in Kubernetes cluster
+    files:
+      - name: kubectl-external_forward
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256

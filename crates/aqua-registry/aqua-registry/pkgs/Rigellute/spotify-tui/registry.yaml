@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Rigellute
+    repo_name: spotify-tui
+    asset: spotify-tui-{{.OS}}.tar.gz
+    description: Spotify for the terminal written in Rust
+    replacements:
+      darwin: macos
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    files:
+      - name: spt
+    checksum:
+      type: github_release
+      asset: spotify-tui-{{.OS}}.sha256
+      algorithm: sha256
+    overrides:
+      - goos: windows
+        checksum:
+          type: github_release
+          asset: spotify-tui-{{.OS}}.sha256
+          algorithm: sha256

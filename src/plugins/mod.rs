@@ -29,12 +29,14 @@ pub mod vfox_plugin;
 pub enum PluginType {
     Asdf,
     Vfox,
+    VfoxBackend,
 }
 
 #[derive(Debug)]
 pub enum PluginEnum {
     Asdf(Arc<AsdfPlugin>),
     Vfox(Arc<VfoxPlugin>),
+    VfoxBackend(Arc<VfoxPlugin>),
 }
 
 impl PluginEnum {
@@ -42,6 +44,7 @@ impl PluginEnum {
         match self {
             PluginEnum::Asdf(plugin) => plugin.name(),
             PluginEnum::Vfox(plugin) => plugin.name(),
+            PluginEnum::VfoxBackend(plugin) => plugin.name(),
         }
     }
 
@@ -49,6 +52,7 @@ impl PluginEnum {
         match self {
             PluginEnum::Asdf(plugin) => plugin.path(),
             PluginEnum::Vfox(plugin) => plugin.path(),
+            PluginEnum::VfoxBackend(plugin) => plugin.path(),
         }
     }
 
@@ -56,6 +60,7 @@ impl PluginEnum {
         match self {
             PluginEnum::Asdf(_) => PluginType::Asdf,
             PluginEnum::Vfox(_) => PluginType::Vfox,
+            PluginEnum::VfoxBackend(_) => PluginType::VfoxBackend,
         }
     }
 
@@ -63,6 +68,7 @@ impl PluginEnum {
         match self {
             PluginEnum::Asdf(plugin) => plugin.get_remote_url(),
             PluginEnum::Vfox(plugin) => plugin.get_remote_url(),
+            PluginEnum::VfoxBackend(plugin) => plugin.get_remote_url(),
         }
     }
 
@@ -70,6 +76,7 @@ impl PluginEnum {
         match self {
             PluginEnum::Asdf(plugin) => plugin.set_remote_url(url),
             PluginEnum::Vfox(plugin) => plugin.set_remote_url(url),
+            PluginEnum::VfoxBackend(plugin) => plugin.set_remote_url(url),
         }
     }
 
@@ -77,6 +84,7 @@ impl PluginEnum {
         match self {
             PluginEnum::Asdf(plugin) => plugin.current_abbrev_ref(),
             PluginEnum::Vfox(plugin) => plugin.current_abbrev_ref(),
+            PluginEnum::VfoxBackend(plugin) => plugin.current_abbrev_ref(),
         }
     }
 
@@ -84,6 +92,7 @@ impl PluginEnum {
         match self {
             PluginEnum::Asdf(plugin) => plugin.current_sha_short(),
             PluginEnum::Vfox(plugin) => plugin.current_sha_short(),
+            PluginEnum::VfoxBackend(plugin) => plugin.current_sha_short(),
         }
     }
 
@@ -91,6 +100,7 @@ impl PluginEnum {
         match self {
             PluginEnum::Asdf(plugin) => plugin.external_commands(),
             PluginEnum::Vfox(plugin) => plugin.external_commands(),
+            PluginEnum::VfoxBackend(plugin) => plugin.external_commands(),
         }
     }
 
@@ -98,35 +108,31 @@ impl PluginEnum {
         match self {
             PluginEnum::Asdf(plugin) => plugin.execute_external_command(command, args),
             PluginEnum::Vfox(plugin) => plugin.execute_external_command(command, args),
+            PluginEnum::VfoxBackend(plugin) => plugin.execute_external_command(command, args),
         }
     }
 
-    pub async fn update(
-        &self,
-        pr: &Box<dyn SingleReport>,
-        gitref: Option<String>,
-    ) -> eyre::Result<()> {
+    pub async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.update(pr, gitref).await,
             PluginEnum::Vfox(plugin) => plugin.update(pr, gitref).await,
+            PluginEnum::VfoxBackend(plugin) => plugin.update(pr, gitref).await,
         }
     }
 
-    pub async fn uninstall(&self, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    pub async fn uninstall(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.uninstall(pr).await,
             PluginEnum::Vfox(plugin) => plugin.uninstall(pr).await,
+            PluginEnum::VfoxBackend(plugin) => plugin.uninstall(pr).await,
         }
     }
 
-    pub async fn install(
-        &self,
-        config: &Arc<Config>,
-        pr: &Box<dyn SingleReport>,
-    ) -> eyre::Result<()> {
+    pub async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.install(config, pr).await,
             PluginEnum::Vfox(plugin) => plugin.install(config, pr).await,
+            PluginEnum::VfoxBackend(plugin) => plugin.install(config, pr).await,
         }
     }
 
@@ -134,6 +140,7 @@ impl PluginEnum {
         match self {
             PluginEnum::Asdf(plugin) => plugin.is_installed(),
             PluginEnum::Vfox(plugin) => plugin.is_installed(),
+            PluginEnum::VfoxBackend(plugin) => plugin.is_installed(),
         }
     }
 
@@ -141,6 +148,7 @@ impl PluginEnum {
         match self {
             PluginEnum::Asdf(plugin) => plugin.is_installed_err(),
             PluginEnum::Vfox(plugin) => plugin.is_installed_err(),
+            PluginEnum::VfoxBackend(plugin) => plugin.is_installed_err(),
         }
     }
 
@@ -149,10 +157,14 @@ impl PluginEnum {
         config: &Arc<Config>,
         mpr: &MultiProgressReport,
         force: bool,
+        dry_run: bool,
     ) -> eyre::Result<()> {
         match self {
-            PluginEnum::Asdf(plugin) => plugin.ensure_installed(config, mpr, force).await,
-            PluginEnum::Vfox(plugin) => plugin.ensure_installed(config, mpr, force).await,
+            PluginEnum::Asdf(plugin) => plugin.ensure_installed(config, mpr, force, dry_run).await,
+            PluginEnum::Vfox(plugin) => plugin.ensure_installed(config, mpr, force, dry_run).await,
+            PluginEnum::VfoxBackend(plugin) => {
+                plugin.ensure_installed(config, mpr, force, dry_run).await
+            }
         }
     }
 }
@@ -162,6 +174,7 @@ impl PluginType {
         match full.split(':').next() {
             Some("asdf") => Ok(Self::Asdf),
             Some("vfox") => Ok(Self::Vfox),
+            Some("vfox-backend") => Ok(Self::VfoxBackend),
             _ => Err(eyre!("unknown plugin type: {full}")),
         }
     }
@@ -171,6 +184,9 @@ impl PluginType {
         match self {
             PluginType::Asdf => PluginEnum::Asdf(Arc::new(AsdfPlugin::new(short, path))),
             PluginType::Vfox => PluginEnum::Vfox(Arc::new(VfoxPlugin::new(short, path))),
+            PluginType::VfoxBackend => {
+                PluginEnum::VfoxBackend(Arc::new(VfoxPlugin::new(short, path)))
+            }
         }
     }
 }
@@ -184,11 +200,25 @@ pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
 
 pub fn get(short: &str) -> Result<PluginEnum> {
     let (name, full) = short.split_once(':').unwrap_or((short, short));
-    let plugin_type = if let Some(plugin_type) = install_state::list_plugins().get(short) {
-        *plugin_type
+
+    // For plugin:tool format, look up the plugin by just the plugin name
+    let plugin_lookup_key = if short.contains(':') {
+        // Check if the part before the colon is a plugin name
+        if let Some(_plugin_type) = install_state::list_plugins().get(name) {
+            name
+        } else {
+            short
+        }
     } else {
-        PluginType::from_full(full)?
+        short
     };
+
+    let plugin_type =
+        if let Some(plugin_type) = install_state::list_plugins().get(plugin_lookup_key) {
+            *plugin_type
+        } else {
+            PluginType::from_full(full)?
+        };
     Ok(plugin_type.plugin(name.to_string()))
 }
 
@@ -216,24 +246,17 @@ pub trait Plugin: Debug + Send {
         _config: &Arc<Config>,
         _mpr: &MultiProgressReport,
         _force: bool,
+        _dry_run: bool,
     ) -> eyre::Result<()> {
         Ok(())
     }
-    async fn update(
-        &self,
-        _pr: &Box<dyn SingleReport>,
-        _gitref: Option<String>,
-    ) -> eyre::Result<()> {
+    async fn update(&self, _pr: &dyn SingleReport, _gitref: Option<String>) -> eyre::Result<()> {
         Ok(())
     }
-    async fn uninstall(&self, _pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    async fn uninstall(&self, _pr: &dyn SingleReport) -> eyre::Result<()> {
         Ok(())
     }
-    async fn install(
-        &self,
-        _config: &Arc<Config>,
-        _pr: &Box<dyn SingleReport>,
-    ) -> eyre::Result<()> {
+    async fn install(&self, _config: &Arc<Config>, _pr: &dyn SingleReport) -> eyre::Result<()> {
         Ok(())
     }
     fn external_commands(&self) -> eyre::Result<Vec<Command>> {

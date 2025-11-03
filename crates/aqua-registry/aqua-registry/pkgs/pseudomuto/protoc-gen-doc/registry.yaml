@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: pseudomuto
+    repo_name: protoc-gen-doc
+    asset: protoc-gen-doc_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    description: Documentation generator plugin for Google Protocol Buffers
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

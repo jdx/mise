@@ -29,7 +29,7 @@ enum Commands {
 impl Commands {
     pub async fn run(self) -> Result<()> {
         match self {
-            Self::Generate(cmd) => cmd.run(),
+            Self::Generate(cmd) => cmd.run().await,
             Self::Get(cmd) => cmd.run(),
             Self::Ls(cmd) => cmd.run().await,
             Self::Set(cmd) => cmd.run(),

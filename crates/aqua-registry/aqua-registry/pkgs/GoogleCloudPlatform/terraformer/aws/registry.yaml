@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: GoogleCloudPlatform/terraformer/aws
+    description: CLI tool to generate terraform files from existing infrastructure (reverse Terraform). Infrastructure to Code
+    type: github_release
+    repo_owner: GoogleCloudPlatform
+    repo_name: terraformer
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    asset: terraformer-aws-{{.OS}}-{{.Arch}}
+    files:
+      - name: terraformer
+        src: terraformer-aws-{{.OS}}-{{.Arch}}

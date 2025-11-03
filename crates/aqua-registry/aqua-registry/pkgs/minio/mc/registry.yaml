@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: minio
+    repo_name: mc
+    description: Unix like utilities for object store
+    url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}
+    complete_windows_ext: false
+    windows_arm_emulation: true
+    format: raw
+    overrides:
+      - goos: windows
+        files:
+          - name: mc
+            link: mc.exe
+    checksum:
+      type: http
+      algorithm: sha256
+      url: https://dl.min.io/client/mc/release/{{.OS}}-{{.Arch}}/archive/mc.{{.Version}}.sha256sum

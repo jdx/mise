@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Songmu
+    repo_name: ghch
+    description: Generate changelog from git history, tags and merged pull requests
+    rosetta2: true
+    asset: ghch_{{.Version}}_{{.OS}}_amd64.{{.Format}}
+    supported_envs:
+      - darwin
+      - amd64
+    files:
+      - name: ghch
+        src: ghch_{{.Version}}_{{.OS}}_amd64/ghch
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz

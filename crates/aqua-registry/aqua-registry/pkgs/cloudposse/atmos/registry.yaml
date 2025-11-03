@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cloudposse
+    repo_name: atmos
+    description: Workflow automation tool for DevOps. Keep configuration DRY with hierarchical imports of configurations, inheritance, and WAY more. Native support for Terraform and Helmfile
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.2")
+        asset: atmos
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.10.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.13.0")
+        asset: atmos
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "0.14.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.17.0")
+        asset: atmos
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.21.0")
+        asset: atmos_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: atmos_{{.Version}}_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: semver("<= 0.22.0")
+        asset: atmos_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+          - darwin
+        checksum:
+          type: github_release
+          asset: atmos_{{.Version}}_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: semver("<= 1.3.6")
+        asset: atmos_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: atmos_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: semver("<= 1.3.27")
+        asset: atmos_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: atmos_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: Version == "1.3.28"
+        asset: atmos_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: atmos_{{.Version}}_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: Version == "v1.3.28"
+        no_asset: true
+      - version_constraint: semver("<= 1.4.20")
+        asset: atmos_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: atmos_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: semver("<= 1.18.0")
+        asset: atmos_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: atmos_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+      - version_constraint: Version == "v1.19.0"
+        no_asset: true
+      - version_constraint: "true"
+        asset: atmos_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: atmos_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256

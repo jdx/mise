@@ -1,0 +1,185 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: anchore
+    repo_name: syft
+    description: CLI tool and library for generating a Software Bill of Materials from container images and filesystems
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.26.0"
+        asset: syft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: syft_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: darwin
+            checksum:
+              # checksum isn't included in checksums.txt
+              enabled: false
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.27.0"
+        asset: syft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: syft_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            format: zip
+            checksum:
+              # checksum isn't included in checksums.txt
+              enabled: false
+          - goos: windows
+            checksum:
+              # checksum isn't included in checksums.txt
+              enabled: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.36.0"
+        asset: syft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: syft_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            checksum:
+              # checksum isn't included in checksums.txt
+              enabled: false
+          - goos: windows
+            format: zip
+            checksum:
+              # checksum isn't included in checksums.txt
+              enabled: false
+      - version_constraint: semver("<= 0.5.0")
+        asset: syft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: syft_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            checksum:
+              # checksum isn't included in checksums.txt
+              enabled: false
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.24.0")
+        asset: syft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: syft_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: darwin
+            checksum:
+              # checksum isn't included in checksums.txt
+              enabled: false
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.25.0")
+        asset: syft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: syft_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            format: zip
+            checksum:
+              # checksum isn't included in checksums.txt
+              enabled: false
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.35.1")
+        asset: syft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: syft_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            checksum:
+              # checksum isn't included in checksums.txt
+              enabled: false
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            checksum:
+              # checksum isn't included in checksums.txt
+              enabled: false
+      - version_constraint: semver("< 0.37.10")
+        asset: syft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: syft_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            checksum:
+              # checksum isn't included in checksums.txt
+              enabled: false
+      - version_constraint: semver("<= 0.103.1")
+        asset: syft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: syft_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: syft_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: syft_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/anchore/syft/releases/download/{{.Version}}/syft_{{trimV .Version}}_checksums.txt.pem
+              - --certificate-identity
+              - https://github.com/anchore/syft/.github/workflows/release.yaml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/anchore/syft/releases/download/{{.Version}}/syft_{{trimV .Version}}_checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jreisinger
+    repo_name: checkip
+    aliases:
+      - name: jreisinger/checkip
+      - name: go-monk/checkip
+    description: Get (security) info about IP addresses
+    rosetta2: true
+    asset: checkip_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    supported_envs:
+      - darwin
+      - amd64
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

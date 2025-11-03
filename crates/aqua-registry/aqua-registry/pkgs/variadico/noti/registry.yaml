@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: variadico
+    repo_name: noti
+    description: Monitor a process and trigger a notification
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.3.0"
+        asset: noti1.3.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version in ["v2.0.0", "v2.6.0"]
+        asset: noti{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v2.1.0"
+        asset: noti{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "v2.7.0"
+        asset: noti{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.2.0")
+        asset: noti
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 2.2.1")
+        asset: noti{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 2.5.0")
+        asset: noti{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 3.2.0")
+        asset: noti{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 3.4.0")
+        asset: noti{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: "true"
+        asset: noti{{.Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

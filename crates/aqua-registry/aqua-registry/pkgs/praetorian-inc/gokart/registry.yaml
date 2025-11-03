@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: praetorian-inc
+    repo_name: gokart
+    description: A static analysis tool for securing Go code
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: gokart_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: darwin_macOS
+        checksum:
+          type: github_release
+          asset: gokart_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin

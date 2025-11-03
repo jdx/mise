@@ -2,6 +2,7 @@
 set -xeuo pipefail
 #MISE depends=["docs:build"]
 #MISE dir="docs"
+#MISE description="Release documentation site to production or remote"
 
 aws --version
 export AWS_REGION=auto

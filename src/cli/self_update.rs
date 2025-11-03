@@ -7,6 +7,51 @@ use self_update::{Status, cargo_crate_version};
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
 use crate::{cmd, env};
+use std::collections::BTreeMap;
+use std::fs;
+#[cfg(target_os = "macos")]
+use std::path::Path;
+use std::path::PathBuf;
+
+#[derive(Debug, Default, serde::Deserialize)]
+struct InstructionsToml {
+    message: Option<String>,
+    #[serde(flatten)]
+    commands: BTreeMap<String, String>,
+}
+
+fn read_instructions_file(path: &PathBuf) -> Option<String> {
+    let body = fs::read_to_string(path).ok()?;
+    let parsed: InstructionsToml = toml::from_str(&body).ok()?;
+    if let Some(msg) = parsed.message {
+        return Some(msg);
+    }
+    if let Some((_k, v)) = parsed.commands.into_iter().next() {
+        return Some(v);
+    }
+    None
+}
+
+pub fn upgrade_instructions_text() -> Option<String> {
+    if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS
+        && let Some(msg) = read_instructions_file(path)
+    {
+        return Some(msg);
+    }
+    None
+}
+
+/// Appends self-update guidance and packaging instructions (if any) to a message.
+pub fn append_self_update_instructions(mut message: String) -> String {
+    if SelfUpdate::is_available() {
+        message.push_str("\nRun `mise self-update` to update mise");
+    }
+    if let Some(instructions) = upgrade_instructions_text() {
+        message.push('\n');
+        message.push_str(&instructions);
+    }
+    message
+}
 
 /// Updates mise itself.
 ///
@@ -37,6 +82,9 @@ pub struct SelfUpdate {
 impl SelfUpdate {
     pub async fn run(self) -> Result<()> {
         if !Self::is_available() && !self.force {
+            if let Some(instructions) = upgrade_instructions_text() {
+                warn!("{}", instructions);
+            }
             bail!("mise is installed via a package manager, cannot update");
         }
         let status = self.do_update()?;
@@ -80,6 +128,8 @@ impl SelfUpdate {
             )
             .map(|v| format!("v{v}"))?;
         let target = format!("{}-{}", *OS, *ARCH);
+        #[cfg(target_env = "musl")]
+        let target = format!("{target}-musl");
         if self.force || self.version.is_some() {
             update.target_version_tag(&v);
         }
@@ -94,21 +144,63 @@ impl SelfUpdate {
             .no_confirm(settings.is_ok_and(|s| s.yes) || self.yes)
             .build()?
             .update()?;
+
+        // Verify macOS binary signature after update
+        #[cfg(target_os = "macos")]
+        if status.updated() {
+            Self::verify_macos_signature(&env::MISE_BIN)?;
+        }
+
         Ok(status)
     }
 
     pub fn is_available() -> bool {
-        !std::fs::canonicalize(&*env::MISE_BIN)
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .map(|p| {
-                p.join("lib").join(".disable-self-update").exists() // kept for compability, see #4476
-                    || p.join("lib")
-                        .join("mise")
-                        .join(".disable-self-update")
-                        .exists()
-            })
-            .unwrap_or_default()
+        if let Some(b) = *env::MISE_SELF_UPDATE_AVAILABLE {
+            return b;
+        }
+        let has_disable = env::MISE_SELF_UPDATE_DISABLED_PATH.is_some();
+        let has_instructions = env::MISE_SELF_UPDATE_INSTRUCTIONS.is_some();
+        !(has_disable || has_instructions)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn verify_macos_signature(binary_path: &Path) -> Result<()> {
+        use std::process::Command;
+
+        debug!(
+            "Verifying macOS code signature for: {}",
+            binary_path.display()
+        );
+
+        // Check if codesign is available
+        let codesign_check = Command::new("which").arg("codesign").output();
+
+        if codesign_check.is_err() || !codesign_check.unwrap().status.success() {
+            warn!("codesign command not found in PATH, skipping binary signature verification");
+            warn!("This is unusual on macOS - consider verifying your system installation");
+            return Ok(());
+        }
+
+        // Verify signature and identifier in one step using --test-requirement
+        let output = Command::new("codesign")
+            .args([
+                "--verify",
+                "--deep",
+                "--strict",
+                "-R=identifier \"dev.jdx.mise\"",
+            ])
+            .arg(binary_path)
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
+                "macOS binary signature verification failed (invalid signature or incorrect identifier): {}",
+                stderr.trim()
+            );
+        }
+
+        debug!("macOS binary signature verified successfully");
+        Ok(())
     }
 }

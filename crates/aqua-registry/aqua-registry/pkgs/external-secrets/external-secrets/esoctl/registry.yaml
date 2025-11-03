@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: external-secrets/external-secrets/esoctl
+    type: github_release
+    repo_owner: external-secrets
+    repo_name: external-secrets
+    description: External Secrets Operator reads information from a third-party service like AWS Secrets Manager and automatically injects the values as Kubernetes Secrets
+    version_filter: 'Version endsWith "-esoctl"'
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: esoctl_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+        checksum:
+          type: github_release
+          asset: esoctl_checksums.txt
+          algorithm: sha256

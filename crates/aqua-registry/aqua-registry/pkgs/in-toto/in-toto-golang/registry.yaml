@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: in-toto
+    repo_name: in-toto-golang
+    description: A Go implementation of in-toto. in-toto is a framework to protect software supply chain integrity
+    files:
+      - name: in-toto

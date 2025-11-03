@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: golang/vuln/govulncheck
+    type: go_install
+    path: golang.org/x/vuln/cmd/govulncheck
+    repo_owner: golang
+    repo_name: vuln
+    description: Go Vulnerability Management
+    link: https://go.dev/security/vuln/
+    version_source: github_tag
+    files:
+      - name: govulncheck

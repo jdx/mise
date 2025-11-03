@@ -1,5 +1,5 @@
 use crate::task::Task;
-use crate::{cli::run::resolve_depends, config::Config};
+use crate::{config::Config, task::task_list::resolve_depends};
 use itertools::Itertools;
 use petgraph::Direction;
 use petgraph::graph::DiGraph;
@@ -15,9 +15,10 @@ pub struct Deps {
     sent: HashSet<(String, Vec<String>)>, // tasks+args that have already started so should not run again
     removed: HashSet<(String, Vec<String>)>, // tasks+args that have already finished to track if we are in an infinitve loop
     tx: mpsc::UnboundedSender<Option<Task>>,
+    // not clone, notify waiters via tx None
 }
 
-fn task_key(task: &Task) -> (String, Vec<String>) {
+pub fn task_key(task: &Task) -> (String, Vec<String>) {
     (task.name.clone(), task.args.clone())
 }
 

@@ -1,0 +1,92 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jqlang
+    repo_name: jq
+    aliases:
+      - name: stedolan/jq
+    description: Command-line JSON processor
+    version_constraint: "false"
+    version_prefix: jq-
+    version_overrides:
+      - version_constraint: semver("<= 1.2")
+        no_asset: true
+      - version_constraint: semver("<= 1.4")
+        asset: jq-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: osx
+          windows: win64
+        overrides:
+          - goos: windows
+            asset: jq-{{.OS}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "jq-1.5rc1"
+        asset: jq-{{.OS}}-{{.Arch}}-static
+        format: raw
+        replacements:
+          windows: win64
+          amd64: x86_64
+        overrides:
+          - goos: windows
+            asset: jq-{{.OS}}
+        supported_envs:
+          - linux/amd64
+          - windows
+      - version_constraint: Version == "jq-1.5rc2"
+        asset: jq-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: osx
+          windows: win64
+        overrides:
+          - goos: windows
+            asset: jq-{{.OS}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.6")
+        asset: jq-{{.OS}}
+        format: raw
+        rosetta2: true
+        replacements:
+          linux: linux64
+          darwin: osx
+          windows: win64
+        overrides:
+          - goos: darwin
+            asset: jq-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("< 1.8.0")
+        asset: jq-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: jq-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: sha256sum.txt
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: jqlang/jq/.github/workflows/ci.yml

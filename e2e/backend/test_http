@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+
+# Test basic HTTP backend functionality with real tools
+cat <<EOF >mise.toml
+[tools]
+"http:hello" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+mise install
+mise env
+assert_contains "mise x -- hello-world" "hello world"
+
+cat <<EOF >mise.toml
+[tools]
+"http:hello-verified" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", checksum = "sha256:dbca4f08377d70dc0828f5822fc47ecec3895cd9a6dacbc54cc984d346a571af", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+mise install
+mise env
+
+cat <<EOF >mise.toml
+[tools]
+"http:version-test" = { version = "2.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-2.0.0.tar.gz", bin_path = "hello-world-2.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-2.0.0/bin/hello-world" }
+EOF
+
+mise install
+mise env
+assert_contains "mise x -- hello-world" "hello world 2.0.0"
+
+cat <<EOF >mise.toml
+[tools]
+"http:fd" = { version = "8.7.0", url = "https://mise.jdx.dev/test-fixtures/fd-8.7.0.tar.gz", bin_path = "fd-8.7.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/fd-8.7.0/bin/fd" }
+EOF
+
+mise install
+mise env
+assert_contains "mise x -- fd --version" "8.7.0"
+
+cat <<EOF >mise.toml
+[tools]
+"http:fd-explicit" = { version = "8.7.0", url = "https://mise.jdx.dev/test-fixtures/fd-8.7.0.tar.gz", bin_path = "fd-8.7.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/fd-8.7.0/bin/fd" }
+EOF
+
+mise install
+mise env
+assert_contains "mise x -- fd --version" "8.7.0"
+
+cat <<EOF >mise.toml
+[tools]
+"http:fd-multi" = { version = "8.7.0", url = "https://mise.jdx.dev/test-fixtures/fd-8.7.0.tar.gz", bin_path = "fd-8.7.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/fd-8.7.0/bin/fd" }
+EOF
+
+mise install
+mise env
+assert_contains "mise x -- fd --version" "8.7.0"
+
+cat <<EOF >mise.toml
+[tools]
+"http:hello-strip" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz", strip_components = 1, bin_path = "bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/bin/hello-world" }
+EOF
+
+mise install
+mise env
+assert_contains "mise x -- hello-world" "hello world"
+
+# Test HTTP backend with platform-specific URLs
+cat <<EOF >mise.toml
+[tools."http:hello-platform"]
+version = "1.0.0"
+bin_path = "bin"
+postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/bin/hello-world"
+strip_components = 1
+
+[tools."http:hello-platform".platforms]
+darwin-arm64 = { url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
+darwin-amd64 = { url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
+linux-amd64 = { url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz" }
+EOF
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+
+# Test HTTP backend with a raw file asset
+cat <<EOF >mise.toml
+[tools]
+"http:hello-raw" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world" }
+EOF
+
+mise install
+mise env
+assert_contains "mise x -- hello-world" "hello world"
+
+# Clear cache to avoid conflicts with different bin_path configurations
+mise cache clear
+
+# Test HTTP backend with a raw file asset and bin_path
+cat <<EOF >mise.toml
+[tools]
+"http:hello-raw-bin-path" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world", bin_path = "custom/path", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/custom/path/hello-world" }
+EOF
+
+mise install
+mise env
+assert_contains "mise x -- hello-world" "hello world"
+
+# Test HTTP backend with mise.lock checksum generation
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+touch mise.lock
+cat <<EOF >mise.toml
+[tools]
+"http:hello-lock" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+mise install
+assert_contains "cat mise.lock" '[tools."http:hello-lock"]'
+assert_contains "cat mise.lock" 'version = "1.0.0"'
+assert_contains "cat mise.lock" 'backend = "http:hello-lock[url=https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]"'
+assert_contains "cat mise.lock" 'platforms'
+assert_contains "cat mise.lock" 'checksum = "blake3:71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f"'
+assert_contains "cat mise.lock" 'url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"'
+assert_contains "cat mise.lock" 'size = '
+
+# Test HTTP backend with URL templating
+cat <<EOF >mise.toml
+[tools]
+"http:hello-world" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-{{version}}.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+mise uninstall --all && mise install
+mise env
+assert_contains "mise x -- hello-world" "hello world"
+
+# Test HTTP backend with templated bin_path
+cat <<EOF >mise.toml
+[tools]
+"http:hello-world" = { version = "1.0.0", url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz", bin_path = "hello-world-{{version}}/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+mise uninstall --all && mise install
+mise env
+assert_contains "mise x -- hello-world" "hello world"

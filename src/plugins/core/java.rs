@@ -13,7 +13,6 @@ use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::plugins::VERSION_REGEX;
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
@@ -27,6 +26,13 @@ use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 use xx::regex;
 
+static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?i)(^Available versions:|-src|-dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|snapshot|SNAPSHOT|master)"
+    )
+        .unwrap()
+});
+
 #[derive(Debug)]
 pub struct JavaPlugin {
     ba: Arc<BackendArg>,
@@ -38,20 +44,16 @@ impl JavaPlugin {
     pub fn new() -> Self {
         let settings = Settings::get();
         let ba = Arc::new(plugins::core::new_backend_arg("java"));
-        let java_metadata_ga_cache_filename =
-            format!("java_metadata_ga_{}_{}.msgpack.z", os(), arch(&settings));
-        let java_metadata_ea_cache_filename =
-            format!("java_metadata_ea_{}_{}.msgpack.z", os(), arch(&settings));
         Self {
             java_metadata_ea_cache: CacheManagerBuilder::new(
-                ba.cache_path.join(java_metadata_ea_cache_filename),
+                ba.cache_path.join("java_metadata_ea.msgpack.z"),
             )
-            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+            .with_fresh_duration(settings.fetch_remote_versions_cache())
             .build(),
             java_metadata_ga_cache: CacheManagerBuilder::new(
-                ba.cache_path.join(java_metadata_ga_cache_filename),
+                ba.cache_path.join("java_metadata_ga.msgpack.z"),
             )
-            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+            .with_fresh_duration(settings.fetch_remote_versions_cache())
             .build(),
             ba,
         }
@@ -88,7 +90,7 @@ impl JavaPlugin {
         tv.install_path().join("bin/java")
     }
 
-    fn test_java(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
+    fn test_java(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         CmdLineRunner::new(self.java_bin(tv))
             .with_pr(pr)
             .env("JAVA_HOME", tv.install_path())
@@ -100,7 +102,7 @@ impl JavaPlugin {
         &self,
         ctx: &InstallContext,
         tv: &mut ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         m: &JavaMetadata,
     ) -> Result<PathBuf> {
         let filename = m.url.split('/').next_back().unwrap();
@@ -109,9 +111,13 @@ impl JavaPlugin {
         pr.set_message(format!("download {filename}"));
         HTTP.download_file(&m.url, &tarball_path, Some(pr)).await?;
 
-        if !tv.checksums.contains_key(filename) && m.checksum.is_some() {
-            tv.checksums
-                .insert(filename.to_string(), m.checksum.as_ref().unwrap().clone());
+        let platform_key = self.get_platform_key();
+        if !tv.lock_platforms.contains_key(&platform_key) {
+            let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+            platform_info.url = Some(m.url.clone());
+            if m.checksum.is_some() {
+                platform_info.checksum = m.checksum.clone();
+            }
         }
         self.verify_checksum(ctx, tv, &tarball_path)?;
 
@@ -121,27 +127,23 @@ impl JavaPlugin {
     fn install(
         &self,
         tv: &ToolVersion,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         tarball_path: &Path,
         m: &JavaMetadata,
     ) -> Result<()> {
         let filename = tarball_path.file_name().unwrap().to_string_lossy();
         pr.set_message(format!("extract {filename}"));
-        if m.file_type
-            .as_ref()
-            .is_some_and(|file_type| file_type == "zip")
-        {
-            file::unzip(tarball_path, &tv.download_path())?;
-        } else {
-            file::untar(
+        match m.file_type.as_deref() {
+            Some("zip") => file::unzip(tarball_path, &tv.download_path(), &Default::default())?,
+            _ => file::untar(
                 tarball_path,
                 &tv.download_path(),
                 &TarOptions {
-                    format: TarFormat::TarGz,
+                    format: TarFormat::Auto,
                     pr: Some(pr),
                     ..Default::default()
                 },
-            )?;
+            )?,
         }
         self.move_to_install_path(tv, m)
     }
@@ -231,7 +233,7 @@ impl JavaPlugin {
         Ok(())
     }
 
-    fn verify(&self, tv: &ToolVersion, pr: &Box<dyn SingleReport>) -> Result<()> {
+    fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         pr.set_message("java -version".into());
         self.test_java(tv, pr)
     }
@@ -295,7 +297,7 @@ impl Backend for JavaPlugin {
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
         // TODO: find out how to get this to work for different os/arch
-        // See https://github.com/jdx/mise/issues/1196
+        // See https://github.com/jdx/mise/discussions/6738
         // match self.core.fetch_remote_versions_from_mise() {
         //     Ok(Some(versions)) => return Ok(versions),
         //     Ok(None) => {}
@@ -349,11 +351,11 @@ impl Backend for JavaPlugin {
         Ok(aliases)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
         Ok(vec![".java-version".into(), ".sdkmanrc".into()])
     }
 
-    fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
         let contents = file::read_to_string(path)?;
         if path.file_name() == Some(".sdkmanrc".as_ref()) {
             let version = contents
@@ -395,10 +397,50 @@ impl Backend for JavaPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        let metadata = self.tv_to_metadata(&tv).await?;
-        let tarball_path = self.download(ctx, &mut tv, &ctx.pr, metadata).await?;
-        self.install(&tv, &ctx.pr, &tarball_path, metadata)?;
-        self.verify(&tv, &ctx.pr)?;
+        // Java installation has 3 operations: download, install (extract), verify
+        ctx.pr.start_operations(3);
+
+        // Check if URL already exists in lockfile platforms first
+        let platform_key = self.get_platform_key();
+        let (metadata, tarball_path) =
+            if let Some(platform_info) = tv.lock_platforms.get(&platform_key) {
+                if let Some(ref url) = platform_info.url {
+                    // Use the filename from the URL, not the platform key
+                    let filename = url.split('/').next_back().unwrap();
+                    debug!("Using existing URL from lockfile for {}: {}", filename, url);
+                    let tarball_path = tv.download_path().join(filename);
+
+                    // If the file does not exist, download using the lockfile URL
+                    if !tarball_path.exists() {
+                        debug!("File not found, downloading from cached URL: {}", url);
+                        // Download using the lockfile URL, not JavaMetadata
+                        HTTP.download_file(url, &tarball_path, Some(ctx.pr.as_ref()))
+                            .await?;
+                        // Optionally verify checksum if present
+                        self.verify_checksum(ctx, &mut tv, &tarball_path)?;
+                    }
+
+                    // Fetch metadata for installation (for install/move logic)
+                    let metadata = self.tv_to_metadata(&tv).await?;
+                    (metadata, tarball_path)
+                } else {
+                    // No URL in lockfile, fallback to metadata
+                    let metadata = self.tv_to_metadata(&tv).await?;
+                    let tarball_path = self
+                        .download(ctx, &mut tv, ctx.pr.as_ref(), metadata)
+                        .await?;
+                    (metadata, tarball_path)
+                }
+            } else {
+                let metadata = self.tv_to_metadata(&tv).await?;
+                let tarball_path = self
+                    .download(ctx, &mut tv, ctx.pr.as_ref(), metadata)
+                    .await?;
+                (metadata, tarball_path)
+            };
+
+        self.install(&tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
+        self.verify(&tv, ctx.pr.as_ref())?;
 
         Ok(tv)
     }
@@ -417,17 +459,11 @@ impl Backend for JavaPlugin {
     }
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
-        let query_trim = regex::escape(query.trim_end_matches('-'));
-        let query_version = format!("{}[0-9.]+", regex::escape(query));
-        let query_trim_version = format!("{query_trim}-[0-9.]+");
+        let query_escaped = regex::escape(query);
         let query = match query {
             "latest" => "[0-9].*",
-            // ends with a dash; use <query><version>
-            q if q.ends_with('-') => &query_version,
-            // not a shorthand version; use <query>-<version>
-            q if regex!("^[a-zA-Z]+$").is_match(q) => &query_trim_version,
-            // else; use trimmed query
-            _ => &query_trim,
+            // else; use escaped query
+            _ => &query_escaped,
         };
         let query_regex = Regex::new(&format!("^{query}([+-.].+)?$")).unwrap();
 
@@ -449,21 +485,19 @@ impl Backend for JavaPlugin {
 fn os() -> &'static str {
     if cfg!(target_os = "macos") {
         "macosx"
+    } else if OS.as_str() == "freebsd" {
+        "linux"
     } else {
         &OS
     }
 }
 
 fn arch(settings: &Settings) -> &str {
-    let arch = settings.arch();
-    if arch == "x86_64" {
-        "x86_64"
-    } else if arch == "arm" {
-        "arm32-vfp-hflt"
-    } else if arch == "aarch64" {
-        "aarch64"
-    } else {
-        arch
+    match settings.arch() {
+        "x64" => "x86_64",
+        "arm64" => "aarch64",
+        "arm" => "arm32-vfp-hflt",
+        other => other,
     }
 }
 
@@ -477,7 +511,7 @@ struct JavaMetadata {
     file_type: Option<String>,
     // filename: String,
     image_type: Option<String>,
-    // java_version: String,
+    java_version: String,
     jvm_impl: String,
     // os: String,
     // release_type: String,
@@ -509,6 +543,14 @@ impl Display for JavaMetadata {
         if self.jvm_impl == "openj9" {
             v.push(self.jvm_impl.clone());
         }
+        if self.vendor == "liberica-nik" {
+            let major = self
+                .java_version
+                .split('.')
+                .next()
+                .unwrap_or(&self.java_version);
+            v.push(format!("openjdk{}", major));
+        }
         v.push(self.version.clone());
         write!(f, "{}", v.join("-"))
     }
@@ -520,7 +562,7 @@ static JAVA_FEATURES: Lazy<HashSet<String>> = Lazy::new(|| {
 });
 #[cfg(unix)]
 static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
-    Lazy::new(|| HashSet::from(["tar.gz"].map(|s| s.to_string())));
+    Lazy::new(|| HashSet::from(["tar.gz", "tar.xz"].map(|s| s.to_string())));
 #[cfg(windows)]
 static JAVA_FILE_TYPES: Lazy<HashSet<String>> =
     Lazy::new(|| HashSet::from(["zip"].map(|s| s.to_string())));

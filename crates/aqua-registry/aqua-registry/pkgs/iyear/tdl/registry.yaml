@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: iyear
+    repo_name: tdl
+    description: A Telegram toolkit written in Golang
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: tdl_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: 64bit
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: tdl_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

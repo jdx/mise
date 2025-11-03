@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# Test basic GitLab backend functionality with real tools
+cat <<EOF >mise.toml
+[tools]
+"gitlab:jdxcode/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+mise uninstall gitlab:jdxcode/mise-test-fixtures
+
+# Test GitLab backend with platform-specific URLs
+cat <<EOF >mise.toml
+[tools."gitlab:jdxcode/mise-test-fixtures"]
+platform_darwin_arm64_url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+platform_darwin_amd64_url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+platform_linux_amd64_url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+version = "1.0.0"
+bin_path = "bin"
+postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/bin/hello-world"
+strip_components = 1
+EOF
+
+mise install
+assert_contains "mise x -- hello-world" "hello world"
+mise uninstall gitlab:jdxcode/mise-test-fixtures
+
+# Test GitLab backend with mise.lock checksum generation
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+touch mise.lock
+cat <<EOF >mise.toml
+[tools]
+"gitlab:jdxcode/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world-1.0.0.tar.gz", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+mise install
+# Verify mise.lock is written correctly with checksums
+assert_contains "cat mise.lock" '[tools."gitlab:jdxcode/mise-test-fixtures"]'
+assert_contains "cat mise.lock" 'version = "1.0.0"'
+assert_contains "cat mise.lock" 'backend = "gitlab:jdxcode/mise-test-fixtures[asset_pattern=hello-world-1.0.0.tar.gz,bin_path=hello-world-1.0.0/bin]"'
+# Get the current platform key
+PLATFORM_KEY=$(mise x --cd . -- bash -c "echo \"\$(uname -s | tr '[:upper:]' '[:lower:]' | sed 's/darwin/macos/')-\$(uname -m | sed 's/x86_64/x64/' | sed 's/aarch64/arm64/')\"")
+assert_contains "cat mise.lock" "[tools.\"gitlab:jdxcode/mise-test-fixtures\".platforms.$PLATFORM_KEY]"
+assert_contains "cat mise.lock" 'checksum = "blake3:71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f"'
+assert_contains "cat mise.lock" 'url = "https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"'
+assert_contains "cat mise.lock" 'size = '

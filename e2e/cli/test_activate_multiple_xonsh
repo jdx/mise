@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec mise x uv -- uv tool run --with 'xonsh[full]' xonsh --no-rc "$TEST_DIR/activate_multiple_xonsh.xsh"

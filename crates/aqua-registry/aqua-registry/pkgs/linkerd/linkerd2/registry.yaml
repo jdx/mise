@@ -1,0 +1,94 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: linkerd
+    repo_name: linkerd2
+    description: Ultralight, security-first service mesh for Kubernetes. Main repo for Linkerd 2.x
+    files:
+      - name: linkerd
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "stable-2.9.0"
+        no_asset: true
+      - version_constraint: semver("<= 2.8.1")
+        version_prefix: stable-
+        asset: linkerd2-cli-{{.Version}}-{{.OS}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.10.0")
+        version_prefix: stable-
+        asset: linkerd2-cli-{{.Version}}-{{.OS}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: linkerd2-cli-{{.Version}}-{{.OS}}-{{.Arch}}
+      - version_constraint: Version startsWith "stable-"
+        asset: linkerd2-cli-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            asset: linkerd2-cli-{{.Version}}-{{.OS}}
+          - goos: windows
+            asset: linkerd2-cli-{{.Version}}-{{.OS}}
+      - version_constraint: semver("<= 20.7.5")
+        version_prefix: edge-
+        asset: linkerd2-cli-{{.Version}}-{{.OS}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 21.3.2")
+        version_prefix: edge-
+        asset: linkerd2-cli-{{.Version}}-{{.OS}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: linkerd2-cli-{{.Version}}-{{.OS}}-{{.Arch}}
+      - version_constraint: semver("<= 25.9.3")
+        version_prefix: edge-
+        asset: linkerd2-cli-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            asset: linkerd2-cli-{{.Version}}-{{.OS}}
+          - goos: windows
+            asset: linkerd2-cli-{{.Version}}-{{.OS}}
+      - version_constraint: Version startsWith "edge-"
+        asset: linkerd2-cli-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            asset: linkerd2-cli-{{.Version}}-{{.OS}}
+          - goos: windows
+            asset: linkerd2-cli-{{.Version}}-{{.OS}}

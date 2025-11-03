@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: babarot
+    repo_name: stein
+    aliases:
+      - name: b4b4r07/stein
+    description: A linter for config files with a customizable rule set
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.0")
+        asset: stein_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: stein_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: stein_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: stein_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin

@@ -1,17 +1,32 @@
 <div align="center">
-<h1><a href="https://mise.jdx.dev">
-  <img src="https://github.com/jdx/mise/assets/216188/27a8ea18-9383-4d86-a445-305b9a6248c1" alt="mise-logo" width="400" /><br />
-  mise-en-place
-</a></h1>
-<!-- <a href="https://mise.jdx.dev"><picture> -->
-<!--   <source media="(prefers-color-scheme: dark)" width="617" srcset="./docs/logo-dark@2x.png"> -->
-<!--   <img alt="mise logo" width="617" src="./docs/logo-light@2x.png"> -->
-<!-- </picture></a> -->
-<a href="https://crates.io/crates/mise"><img alt="Crates.io" src="https://img.shields.io/crates/v/mise?style=for-the-badge"></a>
-<a href="https://github.com/jdx/mise/blob/main/LICENSE"><img alt="GitHub" src="https://img.shields.io/github/license/jdx/mise?color=%2344CC11&style=for-the-badge"></a>
-<a href="https://github.com/jdx/mise/actions/workflows/test.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdx/mise/test.yml?style=for-the-badge"></a>
-<a href="https://discord.gg/mABnUDvP57"><img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?color=%23738ADB&style=for-the-badge"></a>
-<p><em>The front-end to your dev env.</em></p>
+
+<h1 align="center">
+  <a href="https://mise.jdx.dev">
+    <img src="docs/public/logo.svg" alt="mise" width="256" height="256" />
+    <br>
+    mise-en-place
+  </a>
+</h1>
+
+<p>
+  <a href="https://crates.io/crates/mise"><img alt="Crates.io" src="https://img.shields.io/crates/v/mise?style=for-the-badge&color=00d9ff"></a>
+  <a href="https://github.com/jdx/mise/blob/main/LICENSE"><img alt="GitHub" src="https://img.shields.io/github/license/jdx/mise?style=for-the-badge&color=52e892"></a>
+  <a href="https://github.com/jdx/mise/actions/workflows/test.yml"><img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/jdx/mise/test.yml?style=for-the-badge&color=ff9100"></a>
+  <a href="https://discord.gg/mABnUDvP57"><img alt="Discord" src="https://img.shields.io/discord/1066429325269794907?style=for-the-badge&color=00d9ff"></a>
+</p>
+
+<p><b>The front-end to your dev env</b></p>
+
+<p align="center">
+  <a href="https://mise.jdx.dev/getting-started.html">Getting Started</a> •
+  <a href="https://mise.jdx.dev">Documentation</a> •
+  <a href="https://mise.jdx.dev/dev-tools/">Dev Tools</a> •
+  <a href="https://mise.jdx.dev/environments/">Environments</a> •
+  <a href="https://mise.jdx.dev/tasks/">Tasks</a>
+</p>
+
+<hr />
+
 </div>
 
 ## What is it?
@@ -40,7 +55,7 @@ See [Getting started](https://mise.jdx.dev/getting-started.html) for more option
 ```sh-session
 $ curl https://mise.run | sh
 $ ~/.local/bin/mise --version
-2025.6.5 macos-arm64 (a1b2d3e 2025-06-16)
+2025.11.1 macos-arm64 (a1b2d3e 2025-11-01)
 ```
 
 Hook mise into your shell (pick the right one for your shell):
@@ -154,6 +169,22 @@ Find more examples in the [mise cookbook](https://mise.jdx.dev/mise-cookbook/).
 ## Full Documentation
 
 See [mise.jdx.dev](https://mise.jdx.dev)
+
+## GitHub Issues & Discussions
+
+Due to the volume of issue submissions mise received, using GitHub Issues became unsustainable for
+the project. Instead, mise uses GitHub Discussions which provide a more community-centric platform
+for communication and require less management on the part of the maintainers.
+
+Please note the following discussion categories, which match how issues are often used:
+
+- [Announcements](https://github.com/jdx/mise/discussions/categories/announcements)
+- [Ideas](https://github.com/jdx/mise/discussions/categories/ideas): for feature requests, etc.
+- [Troubleshooting & Bug Reports](https://github.com/jdx/mise/discussions/categories/troubleshooting-and-bug-reports)
+
+## Special Thanks
+
+We're grateful for Cloudflare's support through [Project Alexandria](https://www.cloudflare.com/lp/project-alexandria/).
 
 ## Contributors
 

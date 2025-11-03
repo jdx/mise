@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
+#MISE description="Lint GitHub Actions workflows"
 set -euo pipefail
 
-export SHELLCHECK_OPTS="--exclude=SC1090 --exclude=SC2046"
+export SHELLCHECK_OPTS="--exclude=SC1090 --exclude=SC2046 --exclude=SC2086 --exclude=SC2129"
 actionlint

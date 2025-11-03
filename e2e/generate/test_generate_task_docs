@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+# Test the `mise generate task-docs` functionality (render_markdown)
+
+# Test 1: Basic task docs generation
+cat <<EOF >mise.toml
+[tasks.simple]
+run = 'echo "simple task"'
+description = "A simple task with no arguments"
+
+[tasks.with-args]
+run = 'echo "arg={{arg(name="filename")}}"'
+description = "Task with arguments"
+
+[tasks.with-flags]
+run = 'echo "verbose={{flag(name="verbose")}}"'
+description = "Task with flags"
+
+[tasks.with-options]
+run = 'echo "user={{option(name="user", default="admin")}}"'
+description = "Task with options"
+EOF
+
+# Test basic task docs generation
+assert_contains "mise generate task-docs" '## `simple`'
+assert_contains "mise generate task-docs" "A simple task with no arguments"
+assert_contains "mise generate task-docs" '## `with-args`'
+assert_contains "mise generate task-docs" "Task with arguments"
+assert_contains "mise generate task-docs" '## `with-flags`'
+assert_contains "mise generate task-docs" "Task with flags"
+assert_contains "mise generate task-docs" '## `with-options`'
+assert_contains "mise generate task-docs" "Task with options"
+
+# Test 2: Tasks with aliases and dependencies
+cat <<EOF >mise.toml
+[tasks.parent]
+run = 'echo "parent"'
+description = "Parent task"
+
+[tasks.child]
+run = 'echo "child"'
+description = "Child task"
+alias = "c"
+depends = ["parent"]
+EOF
+
+assert_contains "mise generate task-docs" '## `parent`'
+assert_contains "mise generate task-docs" "Parent task"
+assert_contains "mise generate task-docs" '## `child`'
+assert_contains "mise generate task-docs" "Child task"
+assert_contains "mise generate task-docs" '**Aliases**: `c`'
+
+# Test 3: File-based tasks
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/file-task
+#!/usr/bin/env bash
+#MISE description="A file-based task"
+#MISE alias="ft"
+echo "file task"
+EOF
+chmod +x mise-tasks/file-task
+
+assert_contains "mise generate task-docs" '## `file-task`'
+assert_contains "mise generate task-docs" "A file-based task"
+assert_contains "mise generate task-docs" '**Aliases**: `ft`'
+
+# Test 4: Tasks with complex usage specs
+cat <<'EOF' >mise-tasks/complex-task
+#!/usr/bin/env node
+//MISE description="Complex task with usage spec"
+//USAGE flag "-v --verbose" help="Enable verbose output"
+//USAGE flag "-f --force" help="Force operation"
+//USAGE arg "input" help="Input file"
+//USAGE arg "output" help="Output file" default="stdout"
+
+console.log("complex task");
+EOF
+chmod +x mise-tasks/complex-task
+
+assert_contains "mise generate task-docs" '## `complex-task`'
+assert_contains "mise generate task-docs" "Complex task with usage spec"
+
+# Test 5: Hidden tasks should not appear
+cat <<EOF >mise.toml
+[tasks.visible]
+run = 'echo "visible"'
+description = "Visible task"
+
+[tasks.hidden]
+run = 'echo "hidden"'
+description = "Hidden task"
+hide = true
+EOF
+
+assert_contains "mise generate task-docs" '## `visible`'
+assert_contains "mise generate task-docs" "Visible task"
+assert_not_contains "mise generate task-docs" '## `hidden`'
+assert_not_contains "mise generate task-docs" "Hidden task"
+
+# Test 6: Output to file
+cat <<EOF >mise.toml
+[tasks.file-output]
+run = 'echo "file output task"'
+description = "Task for file output test"
+EOF
+
+mise generate task-docs --output test_docs.md
+assert_contains "cat test_docs.md" '## `file-output`'
+assert_contains "cat test_docs.md" "Task for file output test"
+
+# Test 7: Multi-file output
+mkdir -p docs_output
+mise generate task-docs --multi --output docs_output
+
+# Check that individual markdown files are created
+assert "ls docs_output/0.md" ""
+# The multi-file output creates separate files for each task
+# Just verify that the file contains task documentation
+assert_contains "cat docs_output/0.md" '##'
+assert_contains "cat docs_output/0.md" '**Usage**'
+
+# Test 8: Performance test - should be fast even with complex environment
+cat <<EOF >mise.toml
+[tasks.complex-env]
+run = 'echo "arg={{arg(name="test_arg")}}"'
+description = "Task with complex environment"
+
+[tasks.complex-env.env]
+TEST_VAR = "test_value"
+
+[tasks.complex-env.tools]
+node = "latest"
+EOF
+
+# This should complete quickly (within 5 seconds)
+timeout 5 mise generate task-docs >/dev/null || fail "Task docs generation took too long"
+
+echo "All render_markdown tests passed!"

@@ -3,9 +3,5 @@ source: src/shell/xonsh.rs
 expression: "Xonsh::default().unset_env(\"FOO\")"
 snapshot_kind: text
 ---
-from os               import environ
-from xonsh.built_ins  import XSH
-
-envx = XSH.env
-envx.pop(   'FOO',None)
-environ.pop('FOO',None)
+from xonsh.built_ins import XSH
+XSH.env.pop('FOO',None)

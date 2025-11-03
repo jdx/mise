@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: g-plane
+    repo_name: pnpm-shell-completion
+    description: |
+      Complete your pnpm command fastly
+
+      ## Set up
+
+      You need to execute a script within the running shell's process.
+      For details, please see the document.
+
+      https://github.com/g-plane/pnpm-shell-completion#installation
+
+      Zsh:
+
+      ```sh
+      local plugin_path_dir=$(dirname $(aqua which pnpm-shell-completion))
+      local plugin_path="${plugin_path_dir}/pnpm-shell-completion.plugin.zsh"
+      source $plugin_path
+      ```
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.0")
+        asset: pnpm-shell-completion_{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.3.0"
+        asset: pnpm-shell-completion_{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: pnpm-shell-completion_{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            asset: pnpm-shell-completion_pwsh_{{.Arch}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

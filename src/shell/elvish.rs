@@ -2,7 +2,7 @@
 #![allow(clippy::literal_string_with_formatting_args)]
 use std::fmt::Display;
 
-use crate::shell::{ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, Shell};
 use indoc::formatdoc;
 
 #[derive(Default)]
@@ -15,6 +15,7 @@ impl Shell for Elvish {
         let exe = exe.to_string_lossy();
 
         let mut out = String::new();
+        out.push_str(&shell::build_deactivation_script(self));
         out.push_str(&self.format_activate_prelude(&opts.prelude));
         out.push_str(&formatdoc! {r#"
             var hook-enabled = $false

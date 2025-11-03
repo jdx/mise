@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: megaease
+    repo_name: easeprobe
+    description: A simple, standalone, and lightWeight tool that can do health/status checking, written in Go
+    asset: easeprobe-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz
+    files:
+      - name: easeprobe
+        src: bin/easeprobe
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Test HTTP backend binary name cleaning with docker-compose
+
+set -euo pipefail
+export MISE_EXPERIMENTAL=1
+
+# Test: Install docker-compose via HTTP backend
+# The binary name should be automatically cleaned from docker-compose-linux-x86_64 to docker-compose
+cat >mise.toml <<EOF
+[tools]
+"http:docker-compose" = { version = "2.29.1", url = "https://github.com/docker/compose/releases/download/v{version}/docker-compose-linux-x86_64" }
+EOF
+
+assert_succeed "mise install -f http:docker-compose"
+
+# Verify it's executable
+assert_succeed "mise exec http:docker-compose -- docker-compose version"
+
+# The binary should be cleaned to just "docker-compose" in the cache
+assert_succeed "test -f $HOME/.cache/mise/http-tarballs/*/docker-compose"

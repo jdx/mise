@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: sr.ht/~charles/rq
+    type: http
+    description: |
+      rq (Rego Query) is inspired by jq, and aims to offer a similar set of capabilities oriented around running Rego queries
+    link: https://sr.ht/~charles/rq/
+    url: https://git.sr.ht/~charles/rq/refs/download/{{.Version}}/rq-{{.OS}}-{{.Arch}}-{{trimV .Version}}.{{.Format}}
+    format: gz
+    files:
+      - name: rq
+        src: "{{.AssetWithoutExt}}"

@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: k1LoW
+    repo_name: octocov
+    description: octocov is a toolkit for collecting code metrics (code coverage, code to test ratio, test execution time and your own custom metrics)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.47.0"
+        asset: octocov_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums-{{.OS}}.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.28.2")
+        asset: octocov_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.40.1")
+        asset: octocov_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.51.0")
+        asset: octocov_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: checksums-{{.OS}}.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.56.1")
+        asset: octocov_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: checksums-{{.OS}}.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: octocov_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: checksums-{{.OS}}.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz

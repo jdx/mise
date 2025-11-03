@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Mikescher
+    repo_name: better-docker-ps
+    description: Because `docker ps` is annoying and does not fit my monitor/terminal width
+    asset: dops_{{.OS}}-{{.Arch}}
+    format: raw
+    replacements:
+      darwin: macos
+    supported_envs:
+      - linux
+      - darwin
+    files:
+      - name: dops
+    rosetta2: true
+    version_constraint: semver(">= 1.5")
+    version_overrides:
+      - version_constraint: semver("< 1.5")
+        asset: dops
+        supported_envs:
+          - linux/amd64

@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: containrrr
+    repo_name: shoutrrr
+    description: Notification library for gophers and their furry friends
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.1")
+        asset: shoutrrr_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: shoutrrr_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: shoutrrr_{{.OS}}_{{.Arch}}v8.{{.Format}}
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - windows/amd64
+      - version_constraint: semver("<= 0.7.1")
+        asset: shoutrrr_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: shoutrrr_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        replacements:
+          arm64: arm64v8
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - windows
+      - version_constraint: "true"
+        asset: shoutrrr_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: shoutrrr_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux
+          - windows

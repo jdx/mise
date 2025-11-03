@@ -34,6 +34,11 @@ pub struct GithubAsset {
     pub name: String,
     // pub size: u64,
     pub browser_download_url: String,
+    pub url: String,
+    /// SHA256 digest provided by GitHub API (format: "sha256:hash")
+    /// Will be null for releases created before this feature was added
+    #[serde(default)]
+    pub digest: Option<String>,
 }
 
 type CacheGroup<T> = HashMap<String, CacheManager<T>>;
@@ -114,6 +119,7 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>>
 
     if *env::MISE_LIST_ALL_VERSIONS {
         while let Some(next) = next_page(&headers) {
+            headers = get_headers(&next);
             let (more, h) = crate::http::HTTP_FETCH
                 .json_headers_with_headers::<Vec<GithubRelease>, _>(next, &headers)
                 .await?;
@@ -155,6 +161,7 @@ async fn list_tags_(api_url: &str, repo: &str) -> Result<Vec<String>> {
 
     if *env::MISE_LIST_ALL_VERSIONS {
         while let Some(next) = next_page(&headers) {
+            headers = get_headers(&next);
             let (more, h) = crate::http::HTTP_FETCH
                 .json_headers_with_headers::<Vec<GithubTag>, _>(next, &headers)
                 .await?;
@@ -208,7 +215,7 @@ fn cache_dir() -> PathBuf {
     dirs::CACHE.join("github")
 }
 
-fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
+pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let mut headers = HeaderMap::new();
     let url = url.into_url().unwrap();
     let mut set_headers = |token: &str| {
@@ -228,6 +235,13 @@ fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
         }
     } else if let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN.as_ref() {
         set_headers(token);
+    }
+
+    if url.path().contains("/releases/assets/") {
+        headers.insert(
+            "accept",
+            HeaderValue::from_static("application/octet-stream"),
+        );
     }
 
     headers

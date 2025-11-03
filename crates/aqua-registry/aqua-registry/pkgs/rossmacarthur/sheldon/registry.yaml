@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rossmacarthur
+    repo_name: sheldon
+    description: ":bowtie: Fast, configurable, shell plugin manager"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.4.6")
+        asset: sheldon-{{.Version}}-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.5.0")
+        asset: sheldon-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.7.4")
+        asset: sheldon-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: sheldon-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - linux
+          - darwin/arm64

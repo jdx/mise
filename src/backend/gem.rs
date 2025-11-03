@@ -2,7 +2,6 @@ use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::Settings;
 use crate::file;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
@@ -45,7 +44,14 @@ impl Backend for GemBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
-        Settings::get().ensure_experimental("gem backend")?;
+        // Check if gem is available
+        self.warn_if_dependency_missing(
+            &ctx.config,
+            "gem",
+            "To use gem packages with mise, you need to install Ruby first:\n\
+              mise use ruby@latest",
+        )
+        .await;
 
         CmdLineRunner::new("gem")
             .arg("install")
@@ -60,7 +66,7 @@ impl Backend for GemBackend {
             //       uninstalling the ruby version used to install the gem will break the
             //       gem. We should find a way to fix this.
             // .arg("--env-shebang")
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
             .execute()?;
 

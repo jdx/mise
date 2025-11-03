@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mattn
+    repo_name: gof
+    asset: gof_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    description: Go Fuzzy
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: gof
+        src: gof_{{.Version}}_{{.OS}}_{{.Arch}}/gof
+    version_constraint: semver(">= 0.0.12")
+    version_overrides:
+      - version_constraint: "true"
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64

@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sdslabs
+    repo_name: gasper
+    asset: gasper_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: Your Cloud in a Binary
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    rosetta2: true
+    files:
+      - name: gasper
+        src: gasper_{{.Version}}_{{.OS}}_{{.Arch}}/gasper
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: md5

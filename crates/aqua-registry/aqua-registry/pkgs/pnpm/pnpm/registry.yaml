@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: pnpm
+    repo_name: pnpm
+    description: Fast, disk space efficient package manager
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 6.11.5")
+        no_asset: true
+      - version_constraint: semver("<= 6.12.1")
+        asset: pnpm-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 6.16.1")
+        asset: pnpm-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+          windows: win
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 6.18.0")
+        asset: pnpm-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+          windows: win
+      - version_constraint: semver("<= 6.20.0")
+        asset: pnpm-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 7.0.0-alpha.0")
+        asset: pnpm-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos
+          windows: win
+      - version_constraint: Version == "v7.0.0-alpha.1"
+        no_asset: true
+      - version_constraint: "true"
+        asset: pnpm-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        files:
+          - name: pnpm
+            link: pnpm
+            hard: true
+        replacements:
+          amd64: x64
+          darwin: macos
+          windows: win

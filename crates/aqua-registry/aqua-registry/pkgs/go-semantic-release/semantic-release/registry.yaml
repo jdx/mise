@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: go-semantic-release
+    repo_name: semantic-release
+    description: semantic-release written in Go
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v2.14.0", "v2.22.0", "v2.22.1"]
+        no_asset: true
+      - version_constraint: semver("<= 2.2.0")
+        asset: semantic-release_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.13.0")
+        asset: semantic-release_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: semantic-release_{{.Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.14.3")
+        asset: semantic-release_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: semantic-release_{{.Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: semantic-release_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: semantic-release_{{.Version}}_checksums.txt
+          algorithm: sha256

@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: noborus
+    repo_name: trdsql
+    asset: trdsql_{{.Version}}_{{.OS}}_{{.Arch}}.zip
+    description: CLI tool that can execute SQL queries on CSV, LTSV, JSON and TBLN. Can output to various formats
+    files:
+      - name: trdsql
+        src: trdsql_{{.Version}}_{{.OS}}_{{.Arch}}/trdsql
+    supported_envs:
+      - darwin
+      - linux
+      - amd64

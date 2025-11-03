@@ -15,15 +15,15 @@ node = "18.0.0"
 EOF
 
 assert_path() {
-  local expected="${1//$HOME/\~}"
-  local actual="${PATH/%$orig_path/}"
-  actual="${actual//$HOME/\~}"
-  actual="${actual/%:/}"
-  if [[ $actual != "$expected" ]]; then
-    echo "Invalid PATH:  $actual"
-    echo "Expected PATH: $expected"
-    exit 1
-  fi
+	local expected="${1//$HOME/\~}"
+	local actual="${PATH/%$orig_path/}"
+	actual="${actual//$HOME/\~}"
+	actual="${actual/%:/}"
+	if [[ $actual != "$expected" ]]; then
+		echo "Invalid PATH:  $actual"
+		echo "Expected PATH: $expected"
+		exit 1
+	fi
 }
 
 mise install node@20.0.0 node@18.0.0

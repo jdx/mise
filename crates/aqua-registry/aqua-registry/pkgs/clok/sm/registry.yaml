@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: clok
+    repo_name: sm
+    asset: sm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: AWS Secrets Manager CLI Tool
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: sm
+        src: sm_{{trimV .Version}}_{{.OS}}_{{.Arch}}/sm
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

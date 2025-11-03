@@ -7,8 +7,6 @@ use versions::Versioning;
 
 use crate::build_time::BUILD_TIME;
 use crate::cli::self_update::SelfUpdate;
-#[cfg(not(test))]
-use crate::config::Settings;
 use crate::file::modified_duration;
 use crate::ui::style;
 use crate::{dirs, duration, env, file};
@@ -60,12 +58,17 @@ pub static ARCH: Lazy<String> = Lazy::new(|| {
     .to_string()
 });
 
-pub static VERSION: Lazy<String> = Lazy::new(|| {
+pub static VERSION_PLAIN: Lazy<String> = Lazy::new(|| {
     let mut v = V.to_string();
     if cfg!(debug_assertions) {
         v.push_str("-DEBUG");
     };
+    v
+});
+
+pub static VERSION: Lazy<String> = Lazy::new(|| {
     let build_time = BUILD_TIME.format("%Y-%m-%d");
+    let v = &*VERSION_PLAIN;
     format!("{v} {os}-{arch} ({build_time})", os = *OS, arch = *ARCH)
 });
 
@@ -82,13 +85,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 pub static V: Lazy<Versioning> = Lazy::new(|| Versioning::new(env!("CARGO_PKG_VERSION")).unwrap());
 
 pub fn print_version_if_requested(args: &[String]) -> std::io::Result<bool> {
-    #[cfg(unix)]
-    let mise_bin = "mise";
-    #[cfg(windows)]
-    let mise_bin = "mise.exe";
-    if args.len() == 2
-        && (*env::MISE_BIN_NAME == mise_bin || env::MISE_BIN_NAME.starts_with("mise-"))
-    {
+    if args.len() == 2 && !*crate::env::IS_RUNNING_AS_SHIM {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" || cmd == "v" {
             show_version()?;
@@ -127,6 +124,8 @@ pub async fn show_latest() {
         if SelfUpdate::is_available() {
             let cmd = style("mise self-update").bright().yellow().for_stderr();
             warn!("To update, run {}", cmd);
+        } else if let Some(instructions) = crate::cli::self_update::upgrade_instructions_text() {
+            warn!("{}", instructions);
         }
     }
 }
@@ -135,22 +134,24 @@ pub async fn check_for_new_version(cache_duration: Duration) -> Option<String> {
     if let Some(latest) = get_latest_version(cache_duration)
         .await
         .and_then(Versioning::new)
+        && *V < latest
     {
-        if *V < latest {
-            return Some(latest.to_string());
-        }
+        return Some(latest.to_string());
     }
     None
 }
 
 async fn get_latest_version(duration: Duration) -> Option<String> {
     let version_file_path = dirs::CACHE.join("latest-version");
-    if let Ok(metadata) = modified_duration(&version_file_path) {
-        if metadata < duration {
-            if let Ok(version) = file::read_to_string(&version_file_path) {
-                return Some(version.trim().to_string());
-            }
-        }
+    if let Ok(metadata) = modified_duration(&version_file_path)
+        && metadata < duration
+        && let Some(version) = file::read_to_string(&version_file_path)
+            .ok()
+            .map(|s| s.trim().to_string())
+            .and_then(Versioning::new)
+        && *V <= version
+    {
+        return Some(version.to_string());
     }
     let _ = file::create_dir_all(*dirs::CACHE);
     let version = get_latest_version_call().await;
@@ -165,12 +166,7 @@ async fn get_latest_version_call() -> Option<String> {
 
 #[cfg(not(test))]
 async fn get_latest_version_call() -> Option<String> {
-    let settings = Settings::get();
-    let url = match settings.paranoid {
-        true => "https://mise.jdx.dev/VERSION",
-        // using http is not a security concern and enabling tls makes mise significantly slower
-        false => "http://mise.jdx.dev/VERSION",
-    };
+    let url = "https://mise.jdx.dev/VERSION";
     debug!("checking mise version from {}", url);
     match crate::http::HTTP_VERSION_CHECK.get_text(url).await {
         Ok(text) => {

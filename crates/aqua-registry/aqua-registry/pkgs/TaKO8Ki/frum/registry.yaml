@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: TaKO8Ki
+    repo_name: frum
+    asset: frum-{{.Version}}-{{.Arch}}-{{.OS}}.tar.gz
+    description: A little bit fast and modern Ruby version manager written in Rust
+    replacements:
+      amd64: x86_64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+    supported_envs:
+      - linux/amd64
+      - darwin
+    rosetta2: true
+    files:
+      - name: frum
+        src: frum-{{.Version}}-{{.Arch}}-{{.OS}}/frum

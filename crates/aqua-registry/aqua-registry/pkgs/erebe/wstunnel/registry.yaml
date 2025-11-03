@@ -1,0 +1,237 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: erebe
+    repo_name: wstunnel
+    description: Tunnel all your traffic over Websocket or HTTP2 - Bypass firewalls/DPI
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "1.0"
+        asset: wstunnel
+        format: raw
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version in ["1.1", "1.2"]
+        asset: wstunnel_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            format: raw
+            asset: wstunnel_{{.OS}}_{{.Arch}}
+          - goos: windows
+            files:
+              - name: wstunnel
+                src: wstunnel_{{.OS}}_{{.Arch}}/wstunnel
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: Version == "2.0"
+        asset: wstunnel_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            asset: wstunnel-{{.OS}}
+          - goos: windows
+            format: zip
+            asset: wstunnel_{{.OS}}_{{.Arch}}.{{.Format}}
+            files:
+              - name: wstunnel
+                src: wstunnel_{{.OS}}_{{.Arch}}/wstunnel
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.1.5"
+        asset: wstunnel_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v3.0"
+        asset: wstunnel-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            asset: wstunnel-{{.Arch}}-{{.OS}}.exe.{{.Format}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v3.1"
+        asset: wstunnel-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            goarch: amd64
+            format: raw
+            asset: wstunnel-{{.Arch}}-{{.OS}}
+          - goos: linux
+            goarch: arm64
+            asset: wstunnel-{{.Arch}}-{{.OS}}.{{.Format}}
+            files:
+              - name: wstunnel
+                src: wstunnel/wstunnel
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            asset: wstunnel-{{.OS}}-{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x64
+          darwin: macos
+      - version_constraint: Version == "v4.0"
+        asset: wstunnel-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            format: raw
+            asset: wstunnel-{{.Arch}}-{{.OS}}
+          - goos: windows
+            asset: wstunnel-{{.OS}}-{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v4.1"
+        asset: wstunnel-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            goarch: amd64
+            format: raw
+            asset: wstunnel-{{.Arch}}-{{.OS}}
+          - goos: linux
+            goarch: arm64
+            files:
+              - name: wstunnel
+                src: wstunnel_{{.Arch}}
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: wstunnel-{{.OS}}.{{.Format}}
+          - goos: windows
+            asset: wstunnel-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+        replacements:
+          amd64: x64
+          darwin: macos
+      - version_constraint: Version == "v5.0"
+        asset: wstunnel-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            goarch: amd64
+            format: raw
+            asset: wstunnel-{{.OS}}-{{.Arch}}
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            asset: wstunnel-{{.OS}}.{{.Format}}
+        replacements:
+          amd64: x64
+          darwin: macos
+      - version_constraint: Version == "v5.1"
+        asset: wstunnel-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v6.0"
+        asset: wstunnel-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            asset: wstunnel-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+        replacements:
+          amd64: x64
+          arm64: aarch64
+          darwin: macos
+      - version_constraint: Version == "v7.0-rc1"
+        asset: wstunnel-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+      - version_constraint: Version == "v7.0.0-rc2"
+        asset: wstunnel-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - linux
+          - windows/amd64
+      - version_constraint: semver("<= 7.1.0")
+        asset: wstunnel-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+      - version_constraint: semver("<= 8.4.2")
+        asset: wstunnel_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: wstunnel_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

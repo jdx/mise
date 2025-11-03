@@ -143,7 +143,9 @@ impl PluginsInstall {
             warn!("Use --force to install anyway");
         } else {
             let mpr = MultiProgressReport::get();
-            plugin.ensure_installed(config, &mpr, self.force).await?;
+            plugin
+                .ensure_installed(config, &mpr, self.force, false)
+                .await?;
         }
         Ok(())
     }

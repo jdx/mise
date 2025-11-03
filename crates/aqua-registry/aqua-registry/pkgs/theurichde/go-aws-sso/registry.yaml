@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: theurichde
+    repo_name: go-aws-sso
+    description: Makes dealing with AWS SSO Logins an ease
+    asset: go-aws-sso_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    checksum:
+      type: github_release
+      asset: go-aws-sso_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 1.2.0-dev.1")
+    version_overrides:
+      - version_constraint: semver(">= 0.6.1")
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver(">= 0.3.0")
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: semver(">= 0.1.0")
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("< 0.1.0")
+        asset: go-aws-sso-util_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+        files:
+          - name: go-aws-sso-util
+        checksum:
+          type: github_release
+          asset: go-aws-sso-util_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

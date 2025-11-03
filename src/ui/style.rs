@@ -55,6 +55,10 @@ pub fn ebold<D>(val: D) -> StyledObject<D> {
     estyle(val).bold()
 }
 
+pub fn nbold<D>(val: D) -> StyledObject<D> {
+    nstyle(val).bold()
+}
+
 pub fn epath(path: &Path) -> StyledObject<String> {
     estyle(display_path(path))
 }

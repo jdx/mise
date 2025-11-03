@@ -5,5 +5,5 @@ assert_contains "mise alias ls tiny" "tiny  xxx 2"
 assert "mise alias unset tiny xxx"
 assert_not_contains "mise alias ls" "tiny  xxx"
 
-assert "mise config set alias.nushell aqua:nushell/nushell"
+assert "mise alias set nushell aqua:nushell/nushell"
 assert "mise x nushell -- nu --version"

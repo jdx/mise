@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: pre-commit
+    repo_name: pre-commit
+    description: A framework for managing and maintaining multi-language pre-commit hooks
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: pre-commit-{{trimV .Version}}.pyz
+        format: raw
+        complete_windows_ext: false
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256

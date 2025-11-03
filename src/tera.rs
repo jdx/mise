@@ -6,6 +6,7 @@ use heck::{
     ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
     ToUpperCamelCase,
 };
+use path_absolutize::Absolutize;
 use rand::prelude::*;
 use std::sync::LazyLock as Lazy;
 use tera::{Context, Tera, Value};
@@ -95,7 +96,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         move |input: &Value, args: &HashMap<String, Value>| match input {
             Value::String(s) => {
                 let path = Path::new(s);
-                let mut hash = hash::file_hash_sha256(path, None).unwrap();
+                let mut hash = hash::file_hash_blake3(path, None).unwrap();
                 if let Some(len) = args.get("len").and_then(Value::as_u64) {
                     hash = hash.chars().take(len as usize).collect();
                 }
@@ -108,7 +109,7 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         "hash",
         move |input: &Value, args: &HashMap<String, Value>| match input {
             Value::String(s) => {
-                let mut hash = hash::hash_sha256_to_str(s);
+                let mut hash = hash::hash_blake3_to_str(s);
                 if let Some(len) = args.get("len").and_then(Value::as_u64) {
                     hash = hash.chars().take(len as usize).collect();
                 }
@@ -117,8 +118,16 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
             _ => Err("hash input must be a string".into()),
         },
     );
-    // TODO: add `absolute` feature.
-    // wait until #![feature(absolute_path)] hits Rust stable release channel
+    tera.register_filter(
+        "absolute",
+        move |input: &Value, _args: &HashMap<String, Value>| match input {
+            Value::String(s) => {
+                let p = Path::new(s).absolutize()?;
+                Ok(Value::String(p.to_string_lossy().to_string()))
+            }
+            _ => Err("absolute input must be a string".into()),
+        },
+    );
     tera.register_filter(
         "canonicalize",
         move |input: &Value, _args: &HashMap<String, Value>| match input {
@@ -303,7 +312,8 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
 pub fn get_tera(dir: Option<&Path>) -> Tera {
     let mut tera = TERA.clone();
     let dir = dir.map(PathBuf::from);
-    tera.register_function("exec", tera_exec(dir, env::PRISTINE_ENV.clone()));
+    tera.register_function("exec", tera_exec(dir.clone(), env::PRISTINE_ENV.clone()));
+    tera.register_function("read_file", tera_read_file(dir));
 
     tera
 }
@@ -343,7 +353,7 @@ pub fn tera_exec(
                     cmd = cmd.dir(dir);
                 }
                 let result = if cache.is_some() || cache_duration.is_some() {
-                    let cachehash = hash::hash_sha256_to_str(
+                    let cachehash = hash::hash_blake3_to_str(
                         &(dir
                             .as_ref()
                             .map(|d| d.to_string_lossy().to_string())
@@ -370,6 +380,32 @@ pub fn tera_exec(
                 Ok(Value::String(result))
             }
             _ => Err("exec command must be a string".into()),
+        }
+    }
+}
+
+pub fn tera_read_file(
+    dir: Option<PathBuf>,
+) -> impl Fn(&HashMap<String, Value>) -> tera::Result<Value> {
+    move |args: &HashMap<String, Value>| -> tera::Result<Value> {
+        match args.get("path") {
+            Some(Value::String(path_str)) => {
+                let path = if let Some(ref base_dir) = dir {
+                    // Resolve relative to config directory
+                    base_dir.join(path_str)
+                } else {
+                    // Use path as-is if no directory context
+                    PathBuf::from(path_str)
+                };
+
+                match std::fs::read_to_string(&path) {
+                    Ok(contents) => Ok(Value::String(contents)),
+                    Err(e) => {
+                        Err(format!("Failed to read file '{}': {}", path.display(), e).into())
+                    }
+                }
+            }
+            _ => Err("read_file path must be a string".into()),
         }
     }
 }
@@ -553,7 +589,7 @@ mod tests {
     async fn test_hash() {
         let _config = Config::get().await.unwrap();
         let s = render("{{ \"foo\" | hash(len=8) }}");
-        assert_eq!(s, "2c26b46b");
+        assert_eq!(s, "04e0bb39");
     }
 
     #[tokio::test]
@@ -561,7 +597,18 @@ mod tests {
     async fn test_hash_file() {
         let _config = Config::get().await.unwrap();
         let s = render("{{ \"../fixtures/shorthands.toml\" | hash_file(len=64) }}");
-        insta::assert_snapshot!(s, @"518349c5734814ff9a21ab8d00ed2da6464b1699910246e763a4e6d5feb139fa");
+        insta::assert_snapshot!(s, @"ce17f44735ea2083038e61c4b291ed31593e6cf4d93f5dc147e97e62962ac4e6");
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_absolute() {
+        let _config = Config::get().await.unwrap();
+        let s = render("{{ \"/a/b/../c\" | absolute }}");
+        assert_eq!(s, "/a/c");
+        // relative path
+        let s = render("{{ \"a/b/../c\" | absolute }}");
+        assert!(s.ends_with("/a/c"));
     }
 
     #[tokio::test]
@@ -652,6 +699,37 @@ mod tests {
             r#"{% set p = "1.10.2" %}{% if p is semver_matching("^1.10.0") %} ok {% endif %}"#,
         );
         assert_eq!(s.trim(), "ok");
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_read_file() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let _config = Config::get().await.unwrap();
+
+        // Create a temp directory and test file
+        let temp_dir = TempDir::new().unwrap();
+        let test_file_path = temp_dir.path().join("test.txt");
+        fs::write(&test_file_path, "test content\nwith multiple lines").unwrap();
+
+        // Test with the temp file
+        let mut tera_ctx = BASE_CONTEXT.clone();
+        tera_ctx.insert("config_root", &temp_dir.path().to_str().unwrap());
+        tera_ctx.insert("cwd", temp_dir.path().to_str().unwrap());
+        let mut tera = get_tera(Some(temp_dir.path()));
+
+        let s = tera
+            .render_str(r#"{{ read_file(path="test.txt") }}"#, &tera_ctx)
+            .unwrap();
+        assert_eq!(s, "test content\nwith multiple lines");
+
+        // Test with trim filter
+        let s = tera
+            .render_str(r#"{{ read_file(path="test.txt") | trim }}"#, &tera_ctx)
+            .unwrap();
+        assert_eq!(s, "test content\nwith multiple lines");
     }
 
     fn render(s: &str) -> String {

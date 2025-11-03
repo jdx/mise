@@ -43,7 +43,7 @@ impl AsdfPlugin {
         }
     }
 
-    fn repo(&self) -> MutexGuard<Git> {
+    fn repo(&self) -> MutexGuard<'_, Git> {
         self.repo.lock().unwrap()
     }
 
@@ -59,7 +59,7 @@ impl AsdfPlugin {
 
     fn exec_hook_post_plugin_update(
         &self,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         pre: String,
         post: String,
     ) -> eyre::Result<()> {
@@ -78,12 +78,12 @@ impl AsdfPlugin {
         Ok(())
     }
 
-    fn exec_hook(&self, pr: &Box<dyn SingleReport>, hook: &str) -> eyre::Result<()> {
+    fn exec_hook(&self, pr: &dyn SingleReport, hook: &str) -> eyre::Result<()> {
         self.exec_hook_env(pr, hook, Default::default())
     }
     fn exec_hook_env(
         &self,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         hook: &str,
         env: HashMap<OsString, OsString>,
     ) -> eyre::Result<()> {
@@ -232,6 +232,7 @@ impl Plugin for AsdfPlugin {
         config: &Arc<Config>,
         mpr: &MultiProgressReport,
         force: bool,
+        dry_run: bool,
     ) -> Result<()> {
         let settings = Settings::try_get()?;
         if !force {
@@ -261,12 +262,16 @@ impl Plugin for AsdfPlugin {
             }
         }
         let prefix = format!("plugin:{}", style(&self.name).blue().for_stderr());
-        let pr = mpr.add(&prefix);
-        let _lock = lock_file::get(&self.plugin_path, force)?;
-        self.install(config, &pr).await
+        let pr = mpr.add_with_options(&prefix, dry_run);
+        if !dry_run {
+            let _lock = lock_file::get(&self.plugin_path, force)?;
+            self.install(config, pr.as_ref()).await
+        } else {
+            Ok(())
+        }
     }
 
-    async fn update(&self, pr: &Box<dyn SingleReport>, gitref: Option<String>) -> Result<()> {
+    async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
         let plugin_path = self.plugin_path.to_path_buf();
         if plugin_path.is_symlink() {
             warn!(
@@ -295,7 +300,7 @@ impl Plugin for AsdfPlugin {
         Ok(())
     }
 
-    async fn uninstall(&self, pr: &Box<dyn SingleReport>) -> Result<()> {
+    async fn uninstall(&self, pr: &dyn SingleReport) -> Result<()> {
         if !self.is_installed() {
             return Ok(());
         }
@@ -320,7 +325,7 @@ impl Plugin for AsdfPlugin {
         Ok(())
     }
 
-    async fn install(&self, config: &Arc<Config>, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
+    async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
         let repository = self.get_repo_url(config)?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
         debug!("asdf_plugin[{}]:install {:?}", self.name, repository);
@@ -411,17 +416,16 @@ Plugins could support local directories in the future but for now a symlink is r
 
 fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
     let plugin_path_s = plugin_path.to_string_lossy().to_string();
-    let mut sm = ScriptManager::new(plugin_path.to_path_buf())
+    let token = env::GITHUB_TOKEN.as_deref().unwrap_or("");
+    ScriptManager::new(plugin_path.to_path_buf())
         .with_env("ASDF_PLUGIN_PATH", plugin_path_s.clone())
         .with_env("RTX_PLUGIN_PATH", plugin_path_s.clone())
         .with_env("RTX_PLUGIN_NAME", name.to_string())
         .with_env("RTX_SHIMS_DIR", *dirs::SHIMS)
         .with_env("MISE_PLUGIN_NAME", name.to_string())
         .with_env("MISE_PLUGIN_PATH", plugin_path)
-        .with_env("MISE_SHIMS_DIR", *dirs::SHIMS);
-    if let Some(token) = &*env::GITHUB_TOKEN {
+        .with_env("MISE_SHIMS_DIR", *dirs::SHIMS)
+        .with_env("GITHUB_TOKEN", token)
         // asdf plugins often use GITHUB_API_TOKEN as the env var for GitHub API token
-        sm = sm.with_env("GITHUB_API_TOKEN", token.to_string());
-    }
-    sm
+        .with_env("GITHUB_API_TOKEN", token)
 }

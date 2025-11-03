@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dagu-org
+    repo_name: dagu
+    aliases:
+      - name: yohamta/dagu
+      - name: hotaruswarm/dagu
+      - name: dagu-dev/dagu
+      - name: daguflow/dagu
+    description: Yet another cron alternative with a Web UI, but with much more capabilities. It aims to solve greater problems
+    asset: dagu_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    supported_envs:
+      - linux
+      - darwin
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 1.10.6")
+    version_overrides:
+      - version_constraint: semver(">= 1.1.0")
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+      - version_constraint: semver("< 1.1.0")
+        # https://github.com/dagu-dev/dagu/pull/15
+        # Rename jobctl to dagu
+        asset: jobctl_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        files:
+          - name: jobctl

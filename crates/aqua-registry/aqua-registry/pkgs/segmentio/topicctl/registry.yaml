@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: segmentio
+    repo_name: topicctl
+    description: Tool for declarative management of Kafka topics
+    path: github.com/segmentio/topicctl/cmd/topicctl
+    search_words:
+      - kafka

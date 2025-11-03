@@ -50,7 +50,6 @@ done
 
 echo "::group::Checksums"
 pushd "$RELEASE_DIR"
-echo "$MISE_VERSION" | tr -d 'v' >VERSION
 cp mise-latest-linux-x64 mise-latest-linux-amd64
 cp mise-latest-macos-x64 mise-latest-macos-amd64
 sha256sum ./mise-latest-* >SHASUMS256.txt
@@ -76,19 +75,13 @@ gpg -u 8B81C9D17413A06D --output "$RELEASE_DIR"/install.sh.sig --sign "$RELEASE_
 minisign -WSs "$BASE_DIR/minisign.key" -p "$BASE_DIR/minisign.pub" -m "$RELEASE_DIR"/install.sh </dev/zero
 cp "$RELEASE_DIR"/{install.sh,install.sh.sig,install.sh.minisig} "$RELEASE_DIR/$MISE_VERSION"
 
+echo "::group::mise.run scripts"
+./scripts/render-mise-run.sh
+
 echo "::group::Sign source tarball"
 TMP_FILE="$(mktemp)"
 curl -L -o "$TMP_FILE" "https://github.com/jdx/mise/archive/refs/tags/$MISE_VERSION.tar.gz"
 gpg --detach-sign -u 8B81C9D17413A06D <"$TMP_FILE" >"$RELEASE_DIR/$MISE_VERSION/$MISE_VERSION.tar.gz.sig"
 rm "$TMP_FILE"
 
-if [[ $DRY_RUN != 1 ]]; then
-	echo "::group::Publish npm @jdxcode/mise"
-	NPM_PREFIX=@jdxcode/mise ./scripts/release-npm.sh
-	#  echo "::group::Publish npm mise-cli"
-	#  NPM_PREFIX=mise-cli ./scripts/release-npm.sh
-	echo "::group::Publish r2"
-	./scripts/publish-r2.sh
-	echo "::group::Publish GitHub releases"
-	gh release edit --draft=false "$MISE_VERSION"
-fi
+# Publishing is now done after GitHub release is created

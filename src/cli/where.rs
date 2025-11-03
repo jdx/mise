@@ -2,7 +2,7 @@ use eyre::Result;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::errors::Error::VersionNotInstalled;
+use crate::errors::Error;
 use crate::toolset::ToolsetBuilder;
 
 /// Display the installation path for a tool
@@ -49,7 +49,10 @@ impl Where {
             miseprintln!("{}", tv.install_path().to_string_lossy());
             Ok(())
         } else {
-            Err(VersionNotInstalled(tv.ba().clone(), tv.version))?
+            Err(Error::VersionNotInstalled(
+                Box::new(tv.ba().clone()),
+                tv.version,
+            ))?
         }
     }
 }

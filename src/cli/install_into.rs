@@ -28,7 +28,7 @@ impl InstallInto {
         let config = Config::get().await?;
         let ts = Arc::new(
             ToolsetBuilder::new()
-                .with_args(&[self.tool.clone()])
+                .with_args(std::slice::from_ref(&self.tool))
                 .build(&config)
                 .await?,
         );
@@ -47,6 +47,7 @@ impl InstallInto {
             ts: ts.clone(),
             pr: mpr.add(&tv.style()),
             force: true,
+            dry_run: false,
         };
         tv.install_path = Some(self.path.clone());
         backend.install_version(install_ctx, tv).await?;

@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: EdenEast
+    repo_name: repo
+    asset: repo-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    description: Repository Management utility
+    replacements:
+      amd64: x86_64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+      windows: pc-windows-msvc
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256

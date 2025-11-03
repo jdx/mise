@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: GoogleCloudPlatform
+    repo_name: terraformer
+    description: CLI tool to generate terraform files from existing infrastructure (reverse Terraform). Infrastructure to Code
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.8.3")
+        no_asset: true
+      - version_constraint: semver("<= 0.8.12")
+        asset: terraformer-all-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.8.18")
+        asset: terraformer-all-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.8.24")
+        asset: terraformer-all-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+      - version_constraint: "true"
+        asset: terraformer-all-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+          - darwin

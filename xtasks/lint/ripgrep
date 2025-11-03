@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Lint using ripgrep"
 set -euo pipefail
 
 found=0

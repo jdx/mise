@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: jreleaser/jreleaser
+    type: github_release
+    repo_owner: jreleaser
+    repo_name: jreleaser
+    description: Release projects quickly and easily with JReleaser
+    complete_windows_ext: false
+    asset: jreleaser-{{trimV .Version}}.zip
+    files:
+      - name: jreleaser
+        src: jreleaser-{{trimV .Version}}/bin/jreleaser
+    checksum:
+      type: github_release
+      asset: jreleaser-{{trimV .Version}}.zip.sha256
+      algorithm: sha256

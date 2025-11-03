@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kdheepak
+    repo_name: taskwarrior-tui
+    description: "`taskwarrior-tui`: A terminal user interface for taskwarrior"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.0")
+        asset: taskwarrior-tui-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.2.0"
+        asset: taskwarrior-tui-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version in ["v0.13.3", "v0.25.2"]
+        asset: taskwarrior-tui-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: taskwarrior-tui-{{.Arch}}-{{.OS}}.sha256
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version in ["v0.26.1", "v0.26.2"]
+        no_asset: true
+      - version_constraint: "true"
+        asset: taskwarrior-tui-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: taskwarrior-tui-{{.Arch}}-{{.OS}}.sha256
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

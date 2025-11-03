@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: hashicorp
+    repo_name: terraform-plugin-docs
+    description: Generate and validate Terraform plugin/provider documentation
+    asset: tfplugindocs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.zip
+    files:
+      - name: tfplugindocs
+    checksum:
+      type: github_release
+      asset: tfplugindocs_{{trimV .Version}}_SHA256SUMS
+      algorithm: sha256

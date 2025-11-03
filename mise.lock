@@ -1,146 +1,208 @@
-[tools.actionlint]
-version = "1.7.7"
+[[tools.actionlint]]
+version = "1.7.8"
 backend = "aqua:rhysd/actionlint"
 
-[tools.actionlint.checksums]
-"actionlint_1.7.7_darwin_arm64.tar.gz" = "sha256:2693315b9093aeacb4ebd91a993fea54fc215057bf0da2659056b4bc033873db"
-"actionlint_1.7.7_linux_amd64.tar.gz" = "sha256:023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
-"actionlint_1.7.7_linux_arm64.tar.gz" = "sha256:401942f9c24ed71e4fe71b76c7d638f66d8633575c4016efd2977ce7c28317d0"
+[tools.actionlint.platforms.linux-x64]
+checksum = "sha256:be92c2652ab7b6d08425428797ceabeb16e31a781c07bc388456b4e592f3e36a"
+size = 2219735
+url = "https://github.com/rhysd/actionlint/releases/download/v1.7.8/actionlint_1.7.8_linux_amd64.tar.gz"
 
-[tools.bun]
-version = "1.2.14"
+[[tools.age]]
+version = "1.2.1"
+backend = "aqua:FiloSottile/age"
+
+[tools.age.platforms.linux-x64]
+checksum = "blake3:8441277927f75428a6d22897a5cc05e8cdc03562d7a203b2bb9a7c6cd1d0c3bd"
+size = 5194720
+url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz"
+
+[tools.age.platforms.macos-arm64]
+checksum = "blake3:5c7e92baa305e64738b31e6ed9725d6cecdb8915af6e1b6c59bb4d7890efaaca"
+size = 4758557
+url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"
+
+[[tools.bun]]
+version = "1.3.1"
 backend = "core:bun"
 
-[tools.bun.checksums]
-"bun-darwin-aarch64.zip" = "sha256:274c37bad6dd5041f74f65330b0c3980317b1142a1bdece7bebeb3aab44b88da"
-"bun-linux-x64-baseline.zip" = "sha256:8590c16b934317401b69eae06109d36c399d64b041386b892f39bf75969abe12"
+[tools.bun.platforms.linux-x64]
+checksum = "blake3:a4bc824cf6779a832fe1a10dd83d94f7d3311f0ca4707666c287a01e281def7e"
+size = 39510697
 
-[tools.cargo-binstall]
-version = "1.12.5"
+[tools.bun.platforms.macos-arm64]
+checksum = "blake3:1643fe56ae2f8adc8229a82672484113c01c82b5fe15b3e498610fc050831ffd"
+size = 22437956
+
+[[tools.cargo-binstall]]
+version = "1.15.10"
 backend = "aqua:cargo-bins/cargo-binstall"
 
-[tools.cargo-binstall.checksums]
-"cargo-binstall-aarch64-apple-darwin.zip" = "sha256:c59a3f059b9b8d7ffaf66c5791a7ae09b9b09f46e2bf68a069a70cfc451ae0ea"
-"cargo-binstall-x86_64-unknown-linux-musl.tgz" = "sha256:c6378f62f878e566cbfedc8bb693b143297313b6e2768ac3811ed0a1a51da095"
+[tools.cargo-binstall.platforms.macos-arm64]
+checksum = "sha256:9aa40aca226028c4ec45637f060815d8899fb4e49fb6e97947280c83d34a82d8"
+size = 5958077
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.10/cargo-binstall-aarch64-apple-darwin.zip"
 
-[tools."cargo:cargo-edit"]
-version = "0.13.4"
+[[tools."cargo:cargo-edit"]]
+version = "0.13.7"
 backend = "cargo:cargo-edit"
 
-[tools."cargo:cargo-insta"]
-version = "1.43.1"
+[[tools."cargo:cargo-insta"]]
+version = "1.43.2"
 backend = "cargo:cargo-insta"
 
-[tools."cargo:git-cliff"]
-version = "2.8.0"
+[[tools."cargo:cargo-release"]]
+version = "0.25.20"
+backend = "cargo:cargo-release"
+
+[[tools."cargo:git-cliff"]]
+version = "2.10.1"
 backend = "cargo:git-cliff"
 
-[tools."cargo:toml-cli"]
+[[tools."cargo:toml-cli"]]
 version = "0.2.3"
 backend = "cargo:toml-cli"
 
-[tools."cargo:usage-cli"]
-version = "2.1.1"
+[[tools."cargo:usage-cli"]]
+version = "2.6.0"
 backend = "cargo:usage-cli"
 
-[tools.cosign]
-version = "2.5.0"
-backend = "aqua:sigstore/cosign"
+[[tools.gh]]
+version = "2.82.1"
+backend = "aqua:cli/cli"
 
-[tools.cosign.checksums]
-cosign-darwin-arm64 = "sha256:780da3654d9601367b0d54686ac65cb9716578610cabe292d725c7008de4db85"
-cosign-linux-amd64 = "sha256:1f6c194dd0891eb345b436bb71ff9f996768355f5e0ce02dde88567029ac2188"
+[tools.gh.platforms.linux-x64]
+checksum = "sha256:afada88676dfccea384e6cc28ae990b3e31bbc55f9d75c4697f902c757fa462b"
+size = 18099610
+url = "https://github.com/cli/cli/releases/download/v2.82.1/gh_2.82.1_linux_amd64.tar.gz"
 
-[tools.hk]
-version = "1.1.2"
+[tools.gh.platforms.macos-arm64]
+checksum = "sha256:8cf015d101a5a43bbf662155d47ba6242bd1a1630c814e764254efa86e448ba7"
+size = 17577889
+url = "https://github.com/cli/cli/releases/download/v2.82.1/gh_2.82.1_macOS_arm64.zip"
+
+[[tools.hk]]
+version = "1.20.0"
 backend = "aqua:jdx/hk"
 
-[tools.hk.checksums]
-"hk-x86_64-unknown-linux-gnu.tar.gz" = "sha256:2f889c916a641efb7b5861503bbcaee11752d874e1e4de72bc4727bd571256d5"
+[tools.hk.platforms.linux-x64]
+checksum = "sha256:f35036c5e43f32e5c110a6c147df598d69d2afb56186ffa7b5d5af0d517c7069"
+size = 7184547
+url = "https://github.com/jdx/hk/releases/download/v1.20.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 
-[tools.jq]
-version = "1.7.1"
+[[tools.jq]]
+version = "1.8.1"
 backend = "aqua:jqlang/jq"
 
-[tools.jq.checksums]
-jq-linux-amd64 = "sha256:5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5"
-jq-linux-arm64 = "sha256:4dd2d8a0661df0b22f1bb9a1f9830f06b6f3b8f7d91211a1ef5d7c4f06a8b4a5"
-jq-macos-arm64 = "sha256:0bbe619e663e0de2c550be2fe0d240d076799d6f8a652b70fa04aea8a8362e8a"
-"jq-windows-amd64.exe" = "sha256:7451fbbf37feffb9bf262bd97c54f0da558c63f0748e64152dd87b0a07b6d6ab"
+[tools.jq.platforms.linux-x64]
+checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d"
+size = 2255816
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"
 
-[tools."npm:markdownlint-cli"]
+[tools.jq.platforms.macos-arm64]
+checksum = "sha256:a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263603"
+size = 841408
+url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
+
+[[tools.node]]
+version = "24.11.0"
+backend = "core:node"
+
+[tools.node.platforms.linux-x64]
+checksum = "sha256:b3c071cdf47aab867c3b2aa287257df12ec5d7c962bf922b32fd33226c4295fd"
+size = 58899117
+url = "https://nodejs.org/dist/v24.11.0/node-v24.11.0-linux-x64.tar.gz"
+
+[[tools."npm:ajv-cli"]]
+version = "5.0.0"
+backend = "npm:ajv-cli"
+
+[[tools."npm:markdownlint-cli"]]
 version = "0.45.0"
 backend = "npm:markdownlint-cli"
 
-[tools."npm:prettier"]
-version = "3.5.3"
+[[tools."npm:prettier"]]
+version = "3.6.2"
 backend = "npm:prettier"
 
-[tools."pipx:toml-sort"]
-version = "0.24.2"
-backend = "pipx:toml-sort"
-
-[tools.pkl]
-version = "0.28.2"
+[[tools.pkl]]
+version = "0.29.1"
 backend = "aqua:apple/pkl"
 
-[tools.pkl.checksums]
-pkl-linux-amd64 = "sha256:ba8722ba6971f7cb2b8b90fdca76c947a9510a57119baf05263bf4fcf9f9b0ba"
-pkl-macos-aarch64 = "sha256:452c75769d85c07714356f223a9d99a02bdc0bf360c0741765958e9aa080a50c"
+[tools.pkl.platforms.linux-x64]
+checksum = "blake3:8b26122653f2b25453211286c68f96eb53373763dc743bf8ff6c2c80917848e2"
+size = 103994144
+url = "https://github.com/apple/pkl/releases/download/0.29.1/pkl-linux-amd64"
 
-[tools.pre-commit]
-version = "4.2.0"
+[tools.pkl.platforms.macos-arm64]
+checksum = "blake3:5160399295c75f15f6b2b1e2925945a5d42a66793aa4eec821ab2dc60a5ae4ea"
+size = 104874656
+url = "https://github.com/apple/pkl/releases/download/0.29.1/pkl-macos-aarch64"
+
+[[tools.pre-commit]]
+version = "4.3.0"
 backend = "aqua:pre-commit/pre-commit"
 
-[tools.pre-commit.checksums]
-"pre-commit-4.2.0.pyz" = "sha256:0d4d80fd598dd1f7c268569de49e7c7a692a3de6f7a97cf14ad4e6cce993bbdf"
+[tools.pre-commit.platforms.linux-x64]
+checksum = "sha256:f1d50b97e9ca9167aceb76c14e90b07cde8b6789bc199d5005cfd817a718878c"
+size = 8268268
+url = "https://github.com/pre-commit/pre-commit/releases/download/v4.3.0/pre-commit-4.3.0.pyz"
 
-[tools.ripgrep]
-version = "14.1.1"
+[tools.pre-commit.platforms.macos-arm64]
+checksum = "sha256:f1d50b97e9ca9167aceb76c14e90b07cde8b6789bc199d5005cfd817a718878c"
+size = 8268268
+url = "https://github.com/pre-commit/pre-commit/releases/download/v4.3.0/pre-commit-4.3.0.pyz"
+
+[[tools.ripgrep]]
+version = "15.1.0"
 backend = "aqua:BurntSushi/ripgrep"
 
-[tools.ripgrep.checksums]
-"ripgrep-14.1.1-aarch64-apple-darwin.tar.gz" = "sha256:24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be"
-"ripgrep-14.1.1-aarch64-unknown-linux-gnu.tar.gz" = "sha256:c827481c4ff4ea10c9dc7a4022c8de5db34a5737cb74484d62eb94a95841ab2f"
-"ripgrep-14.1.1-x86_64-pc-windows-msvc.zip" = "sha256:d0f534024c42afd6cb4d38907c25cd2b249b79bbe6cc1dbee8e3e37c2b6e25a1"
-"ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz" = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
+[tools.ripgrep.platforms.linux-x64]
+checksum = "sha256:1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599"
+size = 2263077
+url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz"
 
-[tools.shellcheck]
-version = "0.10.0"
-backend = "ubi:koalaman/shellcheck"
+[[tools.shellcheck]]
+version = "0.11.0"
+backend = "aqua:koalaman/shellcheck"
 
-[tools.shellcheck.checksums]
-shellcheck-linux-x86_64 = "sha256:f35ae15a4677945428bdfe61ccc297490d89dd1e544cc06317102637638c6deb"
-shellcheck-macos-aarch64 = "sha256:b9e420df8c78ec7d261d66277d5767cbd4cf6da4e4a9f8b02ea4811cd4cc1109"
-"shellcheck-v0.10.0.darwin.aarch64.tar.xz" = "sha256:bbd2f14826328eee7679da7221f2bc3afb011f6a928b848c80c321f6046ddf81"
+[tools.shellcheck.platforms.linux-x64]
+checksum = "blake3:0ad9524f3f16ad030f8350e7b970c62c24aeff3d813f2565665aecc5a8b79644"
+size = 2559196
+url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
 
-[tools.shfmt]
-version = "3.11.0"
+[[tools.shfmt]]
+version = "3.12.0"
 backend = "aqua:mvdan/sh"
 
-[tools.shfmt.checksums]
-"shfmt_v3.11.0_linux_amd64" = "sha256:1904ec6bac715c1d05cd7f6612eec8f67a625c3749cb327e5bfb4127d09035ff"
+[tools.shfmt.platforms.linux-x64]
+checksum = "sha256:d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a745ea"
+size = 2916536
+url = "https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_linux_amd64"
 
-[tools.slsa-verifier]
-version = "2.7.0"
-backend = "ubi:slsa-framework/slsa-verifier"
+[[tools.sops]]
+version = "3.11.0"
+backend = "aqua:getsops/sops"
 
-[tools.slsa-verifier.checksums]
-slsa-verifier-linux-x86_64 = "sha256:499befb675efcca9001afe6e5156891b91e71f9c07ab120a8943979f85cc82e6"
-slsa-verifier-macos-aarch64 = "sha256:84d9122ce12e0c79080844285fd5c4976407ed3463e434a1b21b0979c46b1e55"
+[tools.sops.platforms.linux-x64]
+checksum = "sha256:775f1384d55decfad228e7196a3f683791914f92a473f78fc47700531c29dfef"
+size = 46346424
+url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.linux.amd64"
 
-[tools.taplo]
+[[tools.taplo]]
 version = "0.10.0"
 backend = "aqua:tamasfe/taplo"
 
-[tools.taplo.checksums]
-"taplo-darwin-aarch64.gz" = "sha256:713734314c3e71894b9e77513c5349835eefbd52908445a0d73b0c7dc469347d"
-"taplo-linux-x86_64.gz" = "sha256:8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156"
+[tools.taplo.platforms.linux-x64]
+checksum = "blake3:4871fab0e60275a1eb46e7190726e144f56c9a9527f59b0d1da5a042baead8e2"
+size = 5116068
+url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz"
 
-[tools.wait-for-gh-rate-limit]
+[[tools.wait-for-gh-rate-limit]]
 version = "1.0.0"
 backend = "ubi:jdx/wait-for-gh-rate-limit"
 
-[tools.wait-for-gh-rate-limit.checksums]
-wait-for-gh-rate-limit-linux-x86_64 = "sha256:fd8bb89c91936cf530e1da2699810c9a3793922315611b6938c89c9364ee2e76"
-wait-for-gh-rate-limit-macos-aarch64 = "sha256:a3a12519075fdb18eb933e8c369e78a6c27d2e17575fdd6a86ab26dbeba34247"
+[tools.wait-for-gh-rate-limit.platforms.linux-x64-wait-for-gh-rate-limit]
+checksum = "blake3:2123971d2eea236d17fb0475c94bef89adf9239df4a8da53261d2eaf8551c622"
+
+[tools.wait-for-gh-rate-limit.platforms.macos-arm64-wait-for-gh-rate-limit]
+checksum = "blake3:8feb249767c436b69fd9bcb56901fdc56713c09247e9f6c1ce67f55b613bc082"

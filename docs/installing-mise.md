@@ -14,10 +14,43 @@ file, mise will automatically add itself to `PATH`.
 
 ```sh
 curl https://mise.run | sh
+```
 
-# or with options
+or with options
+
+```sh
 curl https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
 ```
+
+#### Shell-specific installation + activation
+
+For a more streamlined setup, you can use shell-specific endpoints that will install mise and automatically configure activation in your shell's configuration file:
+
+::: code-group
+
+```sh [zsh]
+curl https://mise.run/zsh | sh
+# Installs mise and adds activation to ~/.zshrc
+```
+
+```sh [bash]
+curl https://mise.run/bash | sh
+# Installs mise and adds activation to ~/.bashrc
+```
+
+```sh [fish]
+curl https://mise.run/fish | sh
+# Installs mise and adds activation to ~/.config/fish/config.fish
+```
+
+:::
+
+These shell-specific installers will:
+
+- Install mise using the same logic as the main installer
+- Automatically detect your shell's configuration file
+- Add the activation line if it's not already present
+- Skip adding activation if it's already configured (safe to run multiple times)
 
 Options:
 
@@ -40,34 +73,6 @@ As long as you don't change the version with `MISE_VERSION`, the install script 
 version was when it was downloaded with checksums inside the file. This makes downloading the file and putting it into
 a project a great way to ensure that anyone installing with that script fetches the exact same mise bin.
 :::
-
-or if you're allergic to `| sh`:
-
-::: code-group
-
-```sh [macos-arm64]
-curl https://mise.jdx.dev/mise-latest-macos-arm64 > ~/.local/bin/mise
-chmod +x ~/.local/bin/mise
-```
-
-```sh [macos-x64]
-curl https://mise.jdx.dev/mise-latest-macos-x64 > ~/.local/bin/mise
-chmod +x ~/.local/bin/mise
-```
-
-```sh [linux-x64]
-curl https://mise.jdx.dev/mise-latest-linux-x64 > ~/.local/bin/mise
-chmod +x ~/.local/bin/mise
-```
-
-```sh [linux-arm64]
-curl https://mise.jdx.dev/mise-latest-linux-arm64 > ~/.local/bin/mise
-chmod +x ~/.local/bin/mise
-```
-
-:::
-
-It doesn't matter where you put it. So use `~/bin`, `/usr/local/bin`, `~/.local/bin` or whatever.
 
 Supported os/arch:
 
@@ -152,24 +157,20 @@ cargo install mise --git https://github.com/jdx/mise --branch main
 
 ### dnf
 
-For Fedora 40, CentOS, Amazon Linux, RHEL and other dnf-based distributions:
+#### Fedora 41+, RHEL 9+, CentOS Stream 9+
 
 ```sh
-dnf install -y dnf-plugins-core
-dnf config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
-dnf install -y mise
+dnf copr enable jdxcode/mise
+dnf install mise
 ```
 
-Fedora 41+ (dnf5)
+### Snap (Linux, currently in beta)
 
 ```sh
-dnf install -y dnf-plugins-core
-dnf config-manager addrepo --from-repofile=https://mise.jdx.dev/rpm/mise.repo
-dnf install -y mise
+sudo snap install mise --classic --beta
 ```
 
-> [!NOTE]
-> This repository maintains only the latest version of the mise CLI. Previous versions are removed and are not available once a new release is made.
+[snapcraft.io page](https://snapcraft.io/mise)
 
 ### Docker
 
@@ -225,12 +226,24 @@ You can also import the package directly using
 `mise-flake.packages.${system}.mise`. It supports all default Nix
 systems.
 
-### yum
+::: tip NixOS compiles from source by default
+For precompiled binaries, enable [nix-ld](https://github.com/Mic92/nix-ld) and disable [`all_compile`](/configuration/settings.html#all_compile).
+:::
+
+### yum (RHEL 8, CentOS Stream 8, Amazon Linux 2)
 
 ```sh
 yum install -y yum-utils
 yum-config-manager --add-repo https://mise.jdx.dev/rpm/mise.repo
 yum install -y mise
+```
+
+### zypper
+
+```sh
+sudo wget https://mise.jdx.dev/rpm/mise.repo -O /etc/zypp/repos.d/mise.repo
+sudo zypper refresh
+sudo zypper install mise
 ```
 
 ### Windows - Scoop
@@ -288,7 +301,7 @@ echo 'mise activate fish | source' >> ~/.config/fish/config.fish
 For homebrew and possibly other installs mise is automatically activated so
 this is not necessary.
 
-See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise_fish_auto_activate1) for more information.
+See [`MISE_FISH_AUTO_ACTIVATE=1`](/configuration#mise-fish-auto-activate-1) for more information.
 :::
 
 ### Powershell
@@ -392,7 +405,7 @@ Then, run the following commands to install the completion script for your shell
 
 ```sh [bash]
 # This requires bash-completion to be installed
-mkdir -p ~/.local/share/bash-completion/
+mkdir -p ~/.local/share/bash-completion/completions/
 mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise
 ```
 

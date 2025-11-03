@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: RoseSecurity
+    repo_name: Kuzco
+    description: Kuzco reviews your Terraform resources, compares them to the provider schema to detect unused parameters, and uses AI to suggest improvements
+    files:
+      - name: kuzco
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: Kuzco_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: kuzco
+            src: Kuzco
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: Kuzco_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

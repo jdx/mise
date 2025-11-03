@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gogs
+    repo_name: gogs
+    asset: gogs_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    description: Gogs is a painless self-hosted Git service
+    overrides:
+      - goos: linux
+        format: tar.gz
+    supported_envs:
+      - darwin
+      - amd64
+    files:
+      - name: gogs
+        src: gogs/gogs
+    checksum:
+      type: github_release
+      asset: checksum_sha256.txt
+      algorithm: sha256

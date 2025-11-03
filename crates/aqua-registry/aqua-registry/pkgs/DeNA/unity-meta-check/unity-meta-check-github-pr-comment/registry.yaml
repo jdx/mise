@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: DeNA/unity-meta-check/unity-meta-check-github-pr-comment
+    type: github_release
+    repo_owner: DeNA
+    repo_name: unity-meta-check
+    description: Reporter for GitHub comments of GitHub issues or pull requests. It need a result of unity-meta-check from stdin.
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 3.3.0")
+        asset: unity-meta-check-github-pr-comment-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - linux/amd64
+          - windows
+      - version_constraint: "true"
+        asset: unity-meta-check-github-pr-comment-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - linux
+          - windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

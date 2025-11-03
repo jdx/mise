@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+# Detect platform key and expected URL for ripgrep
+OS=$(uname -s)
+ARCH=$(uname -m)
+case "$OS" in
+Darwin)
+	if [ "$ARCH" = "arm64" ]; then
+		PLATFORM="macos-arm64"
+		URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
+	else
+		PLATFORM="macos-x64"
+		URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-apple-darwin.tar.gz"
+	fi
+	;;
+Linux)
+	if [ "$ARCH" = "aarch64" ]; then
+		PLATFORM="linux-arm64"
+		URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-unknown-linux-musl.tar.gz"
+	else
+		PLATFORM="linux-x64"
+		URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"
+	fi
+	;;
+*)
+	PLATFORM="unknown"
+	URL=""
+	;;
+esac
+
+# Test that aqua backend stores URLs in lockfile
+rm -rf mise.lock
+
+touch mise.lock
+
+mise use ripgrep@14.1.1
+
+assert_contains "cat mise.lock" "[tools.ripgrep.platforms.$PLATFORM]"
+assert_contains "cat mise.lock" "url = \"$URL\""
+
+echo "Lockfile content:"
+cat mise.lock
+
+echo ""
+echo "Aqua URL storage test passed!"

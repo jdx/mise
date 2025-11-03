@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    name: golang/tools/gorename
+    repo_owner: golang
+    repo_name: tools
+    description: The gorename command performs precise type-safe renaming of identifiers in Go source code
+    link: https://pkg.go.dev/golang.org/x/tools/cmd/gorename
+    version_source: github_tag
+    version_filter: not (Version startsWith "gopls/") and semver("<= 0.25.0")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.25.0")
+        path: golang.org/x/tools/cmd/gorename
+      - version_constraint: "true"
+        error_message: |
+          gorename was deleted at v0.26.0. https://github.com/golang/go/issues/69360

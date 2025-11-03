@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_content
+    repo_owner: awslabs
+    repo_name: git-secrets
+    description: Prevents you from committing secrets and credentials into git repositories
+    supported_envs:
+      - darwin
+      - linux
+    version_source: github_tag
+    path: git-secrets

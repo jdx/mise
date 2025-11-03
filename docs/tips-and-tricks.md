@@ -13,9 +13,7 @@ setting or by using a dedicated rosetta mise bin as described below:
 First, you'll need a copy of mise that's built for x86_64:
 
 ```sh
-$ mkdir -p ~/.local/bin
-$ curl https://mise.jdx.dev/mise-latest-macos-x64 > ~/.local/bin/mise-x64
-$ chmod +x ~/.local/bin/mise-x64
+$ curl https://mise.run | MISE_INSTALL_PATH=~/.local/bin/mise-x64 MISE_INSTALL_ARCH=x64 sh
 $ ~/.local/bin/mise-x64 --version
 mise 2024.x.x
 ```
@@ -130,11 +128,24 @@ Don't do this inside of scripts because mise may add a command in a future versi
 
 ## Software verification
 
-Install cosign, slsa-verifier, and gpg (cosign and slsa-verifier can be installed with mise) in order to verify tools automatically.
+mise provides **native software verification** for aqua tools without requiring external dependencies. For aqua tools, Cosign/Minisign signatures, SLSA provenance, and GitHub attestations are verified automatically using mise's built-in implementation.
+
+For other verification needs (like GPG), you can install additional tools:
 
 ```sh
 brew install gpg
-mise use -g cosign slsa-verifier
+# Note: cosign and slsa-verifier are no longer needed for aqua tools
+# mise now handles verification natively
+```
+
+To configure aqua verification (all enabled by default):
+
+```sh
+# Disable specific verification methods if needed
+export MISE_AQUA_COSIGN=false
+export MISE_AQUA_SLSA=false
+export MISE_AQUA_GITHUB_ATTESTATIONS=false
+export MISE_AQUA_MINISIGN=false
 ```
 
 ## [`mise up --bump`](/cli/upgrade.html)
@@ -211,7 +222,19 @@ touch mise.lock
 mise i
 ```
 
+The lockfile uses a consolidated format with `[tools.name.assets]` sections to organize asset information under each tool. Asset information includes checksums, file sizes, and optional download URLs. Legacy lockfiles with separate `[tools.name.checksums]` and `[tools.name.sizes]` sections are automatically migrated to the new format.
+
 Note that at least currently mise needs to actually install the tool to get the tarball checksum (otherwise it would need to download the tarball just
 to get the checksum of it since normally that gets deleted). So you may need to run something like `mise uninstall --all` first in order to have it
 reinstall everything. It will store the full versions even if it doesn't know the checksum though so it'll still lock the version just not have a checksum
 to go with it.
+
+## Lockfile URL Tracking (Avoiding Rate Limits)
+
+When you use a lockfile (`mise.lock`), mise stores the exact download URLs for each tool asset. This means that after the initial install, future `mise install` runs will use the URLs from the lockfile instead of making API calls to GitHub (or other providers). This has several benefits:
+
+- **Avoids GitHub API rate limits**: No need to make repeated API calls for every install, which can quickly exhaust your rate limit, especially in CI or large teams.
+- **No need for GITHUB_TOKEN**: Since the URLs are already known, you don’t need to set up a `GITHUB_TOKEN` for simple installs.
+- **Faster installs**: Skipping API lookups speeds up repeated installs.
+
+This is especially useful in CI/CD or when working in environments with strict network or authentication requirements.

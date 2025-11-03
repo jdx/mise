@@ -1,0 +1,110 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: caarlos0
+    repo_name: fork-cleaner
+    description: Quickly clean up unused forks on your github account
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.1.0"
+        asset: fork-cleaner_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: fork-cleaner_{{.OS}}_{{.Arch}}.tar.gz.checksums
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v2.1.0"
+        asset: fork-cleaner_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: fork-cleaner_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v2.2.0"
+        asset: fork-cleaner_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: fork-cleaner_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v2.2.1"
+        asset: fork-cleaner_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: fork-cleaner_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.0.8")
+        asset: fork-cleaner_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.2.0")
+        asset: fork-cleaner_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: fork-cleaner_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 1.8.0")
+        asset: fork-cleaner_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: fork-cleaner_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 2.0.3")
+        asset: fork-cleaner_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: fork-cleaner_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: fork-cleaner_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: fork-cleaner_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: fork-cleaner_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip

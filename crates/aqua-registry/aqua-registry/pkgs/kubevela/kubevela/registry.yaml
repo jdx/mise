@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kubevela
+    repo_name: kubevela
+    aliases:
+      - name: oam-dev/kubevela
+    description: The Modern Application Platform
+    files:
+      - name: vela
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v1.7.0", "v1.7.1"]
+        no_asset: true
+      - version_constraint: Version == "v0.3.4"
+        asset: vela-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: vela
+            src: "{{.OS}}-{{.Arch}}/vela"
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version in ["v1.3.3"]
+        asset: vela-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.0.1.1")
+        no_asset: true
+      - version_constraint: semver("<= 0.0.3")
+        asset: vela-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.3.0")
+        asset: vela-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        # checksum files are broken
+        files:
+          - name: vela
+            src: "{{.OS}}-{{.Arch}}/vela"
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.3.3")
+        asset: vela-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        # checksum files are broken
+        files:
+          - name: vela
+            src: "{{.OS}}-{{.Arch}}/vela"
+      - version_constraint: semver("<= 1.1.13")
+        asset: vela-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        # checksum files are broken
+        files:
+          - name: vela
+            src: "{{.OS}}-{{.Arch}}/vela"
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.6.7")
+        asset: vela-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        # checksum files are broken
+        files:
+          - name: vela
+            src: "{{.OS}}-{{.Arch}}/vela"
+      - version_constraint: semver("<= 1.10.2")
+        asset: vela-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: vela
+            src: "{{.OS}}-{{.Arch}}/vela"
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: vela-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: vela
+            src: "{{.OS}}-{{.Arch}}/vela"
+        checksum:
+          type: github_release
+          asset: sha256sums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/kubevela/kubevela/releases/download/{{.Version}}/sha256sums.txt-keyless.pem
+              - --certificate-identity
+              - https://github.com/kubevela/kubevela/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/kubevela/kubevela/releases/download/{{.Version}}/sha256sums.txt-keyless.sig
+        slsa_provenance:
+          type: github_release
+          asset: multiple.intoto.jsonl

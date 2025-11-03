@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: rajatjindal
+    repo_name: krew-release-bot
+    description: bot to bump version of plugin in krew-index on new releases
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.34-2")
+        no_asset: true
+      - version_constraint: "true"
+        asset: krew-release-bot_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: krew-release-bot_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin

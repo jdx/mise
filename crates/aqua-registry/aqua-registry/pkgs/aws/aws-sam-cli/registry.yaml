@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: aws
+    repo_name: aws-sam-cli
+    description: CLI tool to build, test, debug, and deploy Serverless applications using AWS SAM
+    files:
+      - name: sam
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.65.0")
+        asset: aws-sam-cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: sam
+            src: dist/sam
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 1.103.0")
+        asset: aws-sam-cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: sam
+            src: dist/sam
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            format: pkg
+            files:
+              - name: sam
+                src: aws-sam-cli.pkg/Payload/aws-sam-cli/sam
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: aws-sam-cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: sam
+            src: dist/sam
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            format: pkg
+            files:
+              - name: sam
+                src: aws-sam-cli.pkg/Payload/aws-sam-cli/sam
+        supported_envs:
+          - linux
+          - darwin

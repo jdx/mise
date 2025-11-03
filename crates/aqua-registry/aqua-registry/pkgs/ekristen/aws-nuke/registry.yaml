@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ekristen
+    repo_name: aws-nuke
+    description: Remove all the resources from an AWS account
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v3.0.0-beta.25", "v3.0.0-beta.44", "v3.0.0-beta.56", "v3.46.0"]
+        no_asset: true
+      - version_constraint: Version == "v2.17.0-ek.1"
+        asset: aws-nuke-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v2.18.6"
+        asset: aws-nuke-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 2.17.0-ek.4")
+        asset: aws-nuke-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 3.0.0-beta.7")
+        asset: aws-nuke-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --key
+              - https://github.com/ekristen/aws-nuke/releases/download/{{.Version}}/cosign.pub
+              - --signature
+              - https://github.com/ekristen/aws-nuke/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: aws-nuke-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/ekristen/aws-nuke/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity
+              - "https://github.com/ekristen/aws-nuke/.github/workflows/goreleaser.yml@refs/tags/{{.Version}}"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/ekristen/aws-nuke/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip

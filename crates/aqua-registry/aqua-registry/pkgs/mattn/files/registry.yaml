@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mattn
+    repo_name: files
+    description: Fast file find
+    asset: files_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: files
+        src: files_{{.Version}}_{{.OS}}_{{.Arch}}/files
+    version_constraint: semver(">= 0.3.4")
+    version_overrides:
+      - version_constraint: semver("< 0.3.4")
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true

@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2103
+
+# Test basic tool stub functionality with stable tools
+
+# Disable GPG verification to avoid test failures
+export MISE_GPG_VERIFY=false
+
+# Create a test project directory
+mkdir -p tool_stub_basic/bin
+cd tool_stub_basic
+
+# Test 1: Basic tool stub with Node.js
+cat >bin/node <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+# Basic Node.js tool stub
+
+version = "20.0.0"
+EOF
+chmod +x bin/node
+
+# Test the tool stub via CLI command
+assert_contains "mise tool-stub bin/node --version" "v20.0.0"
+
+# Test 2: Tool stub with explicit tool specification
+cat >bin/python <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+# Python tool stub with explicit tool
+
+tool = "python"
+version = "3.11"
+EOF
+chmod +x bin/python
+
+assert_contains "mise tool-stub bin/python --version" "Python 3.11"
+
+# Test 3: Tool stub with different bin name
+cat >bin/py <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+# Python tool stub with custom bin name
+
+tool = "python"
+version = "3.11"
+bin = "python"
+EOF
+chmod +x bin/py
+
+assert_contains "mise tool-stub bin/py --version" "Python 3.11"
+
+# Test 4: Error handling - missing version
+cat >bin/no_version <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+# Missing version field
+
+tool = "python"
+EOF
+chmod +x bin/no_version
+
+assert_fail "mise tool-stub bin/no_version --version"
+
+# Test 5: Error handling - malformed TOML
+cat >bin/malformed <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+# Malformed TOML
+
+version = "1.0.0
+tool = invalid syntax
+EOF
+chmod +x bin/malformed
+
+assert_fail "mise tool-stub bin/malformed --version"
+
+# Test 7: Verify we can see the tool-stub command in help (it's there but minimal)
+assert_contains "mise --help" "tool-stub"
+
+# Test 11: GitHub backend
+cat >bin/gh <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "github:cli/cli"
+EOF
+chmod +x bin/gh
+
+assert_contains "bin/gh --version" "gh version"
+assert_contains "bin/gh --version" "gh version" # short-circuit works
+mise uninstall --all
+assert_contains "bin/gh --version" "gh version" # refetches even if it's cached

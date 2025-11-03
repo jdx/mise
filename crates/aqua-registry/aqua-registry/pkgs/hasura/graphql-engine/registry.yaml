@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: hasura
+    repo_name: graphql-engine
+    description: Hasura GraphQL Engine CLI
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    format: raw
+    asset: cli-hasura-{{.OS}}-{{.Arch}}
+    files:
+      - name: hasura

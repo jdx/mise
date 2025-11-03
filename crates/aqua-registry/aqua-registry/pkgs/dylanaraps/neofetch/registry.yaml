@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_content
+    repo_owner: dylanaraps
+    repo_name: neofetch
+    path: neofetch
+    description: A command-line system information tool written in bash 3.2+
+    supported_envs:
+      - darwin
+      - linux

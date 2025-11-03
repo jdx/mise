@@ -7,128 +7,162 @@ ROOT="$(cd "$SCRIPT_DIR"/.. && pwd)"
 source "$SCRIPT_DIR/style.sh"
 
 TEST="$1"
-TEST_SCRIPT="$SCRIPT_DIR/$TEST"
+# Handle both relative and absolute paths
+if [[ $TEST == /* ]]; then
+	# If it's an absolute path, use it as is
+	TEST_SCRIPT="$TEST"
+elif [[ $TEST == e2e/* ]]; then
+	# If it starts with e2e/, treat it as relative to the project root
+	TEST_SCRIPT="$ROOT/$TEST"
+else
+	# Otherwise, treat it as relative to the e2e directory
+	TEST_SCRIPT="$SCRIPT_DIR/$TEST"
+fi
 
 setup_isolated_env() {
-  TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
-  if [[ $(os) == "macos" ]]; then
-    TEST_ISOLATED_DIR="$(realpath "$TEST_ISOLATED_DIR")"
-  fi
+	TEST_ISOLATED_DIR="$(mktemp --tmpdir --directory "$(basename "$TEST").XXXXXX")"
+	if [[ $(os) == "macos" ]]; then
+		TEST_ISOLATED_DIR="$(realpath "$TEST_ISOLATED_DIR")"
+	fi
 
-  # Use a fake HOME and a fake temporary directory
-  TEST_HOME="$TEST_ISOLATED_DIR/home"
-  TEST_WORKDIR="$TEST_HOME/workdir"
-  TEST_TMPDIR="$TEST_ISOLATED_DIR/tmp"
+	# Use a fake HOME and a fake temporary directory
+	TEST_HOME="$TEST_ISOLATED_DIR/home"
+	TEST_WORKDIR="$TEST_HOME/workdir"
+	TEST_TMPDIR="$TEST_ISOLATED_DIR/tmp"
 
-  # Tell mise to look for its directory in the isolated environment
-  MISE_SYSTEM_DIR="$TEST_ISOLATED_DIR/etc/mise"
-  MISE_DATA_DIR="$TEST_HOME/.local/share/mise"
-  MISE_CACHE_DIR="$TEST_HOME/.cache/mise"
-  MISE_CONFIG_DIR="$TEST_HOME/.config/mise"
-  MISE_STATE_DIR="$TEST_HOME/.local/state/mise"
+	# Tell mise to look for its directory in the isolated environment
+	MISE_SYSTEM_DIR="$TEST_ISOLATED_DIR/etc/mise"
+	MISE_DATA_DIR="$TEST_HOME/.local/share/mise"
+	MISE_CACHE_DIR="$TEST_HOME/.cache/mise"
+	MISE_CONFIG_DIR="$TEST_HOME/.config/mise"
+	MISE_STATE_DIR="$TEST_HOME/.local/state/mise"
 
-  # Set default values
-  : "${CARGO_HOME:=$HOME/.cargo}"
-  : "${RUSTUP_HOME:=$HOME/.rustup}"
+	# Set default values
+	: "${CARGO_HOME:=$HOME/.cargo}"
+	: "${RUSTUP_HOME:=$HOME/.rustup}"
 }
 
 create_isolated_env() {
-  # Create the required directories
-  mkdir -p "$TEST_HOME/bin" "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
+	# Create the required directories
+	mkdir -p "$TEST_HOME/bin" "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
 
-  # The dummy plugin is required for some tests
-  mkdir -p "$MISE_DATA_DIR/plugins"
-  ln -s "$ROOT/test/data/plugins/dummy" "$MISE_DATA_DIR/plugins/dummy"
+	# The dummy plugin is required for some tests
+	mkdir -p "$MISE_DATA_DIR/plugins"
+	ln -s "$ROOT/test/data/plugins/dummy" "$MISE_DATA_DIR/plugins/dummy"
 }
 
 remove_isolated_env() {
-  rm -rf "$TEST_ISOLATED_DIR" &
+	rm -rf "$TEST_ISOLATED_DIR" &
 }
 
 within_isolated_env() {
-  _env \
-    --ignore-environment \
-    --chdir="$TEST_WORKDIR" \
-    - \
-    CARGO_HOME="$CARGO_HOME" \
-    CARGO_LLVM_COV="${CARGO_LLVM_COV:-}" \
-    CARGO_LLVM_COV_SHOW_ENV="${CARGO_LLVM_COV_SHOW_ENV:-}" \
-    CARGO_LLVM_COV_TARGET_DIR="${CARGO_LLVM_COV_TARGET_DIR:-}" \
-    GITHUB_ACTION="${GITHUB_ACTION:-}" \
-    GITHUB_TOKEN="${GITHUB_TOKEN:-}" \
-    GOPROXY="${GOPROXY:-}" \
-    HOME="$TEST_HOME" \
-    LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
-    LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
-    MISE_CACHE_DIR="$MISE_CACHE_DIR" \
-    MISE_CACHE_PRUNE_AGE="0" \
-    MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \
-    MISE_DATA_DIR="$MISE_DATA_DIR" \
-    MISE_DEBUG="${MISE_DEBUG:-0}" \
-    MISE_EXPERIMENTAL=1 \
-    MISE_GPG_VERIFY="${MISE_GPG_VERIFY:-}" \
-    MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}" \
-    MISE_STATE_DIR="$MISE_STATE_DIR" \
-    MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \
-    MISE_TIMINGS="${MISE_TIMINGS:-0}" \
-    MISE_TMP_DIR="$TEST_TMPDIR" \
-    MISE_TRACE="${MISE_TRACE:-0}" \
-    MISE_TRUSTED_CONFIG_PATHS="$TEST_ISOLATED_DIR" \
-    MISE_USE_VERSIONS_HOST="${MISE_USE_VERSIONS_HOST:-1}" \
-    MISE_YES=1 \
-    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" \
-    ROOT="$ROOT" \
-    RUSTUP_HOME="$RUSTUP_HOME" \
-    RUST_BACKTRACE="${RUST_BACKTRACE:-1}" \
-    SHELL="$(type -p bash)" \
-    TEST_DIR="$(dirname "$TEST_SCRIPT")" \
-    TEST_NAME="$TEST" \
-    TEST_ROOT="$SCRIPT_DIR" \
-    TEST_SCRIPT="$TEST_SCRIPT" \
-    TMPDIR="$TEST_TMPDIR" \
-    EXCLUDE_FROM_CI="${CI:-}" \
-    "$@" || return $?
+	_env \
+		--ignore-environment \
+		--chdir="$TEST_WORKDIR" \
+		- \
+		CARGO_HOME="$CARGO_HOME" \
+		CARGO_LLVM_COV="${CARGO_LLVM_COV:-}" \
+		CARGO_LLVM_COV_SHOW_ENV="${CARGO_LLVM_COV_SHOW_ENV:-}" \
+		CARGO_LLVM_COV_TARGET_DIR="${CARGO_LLVM_COV_TARGET_DIR:-}" \
+		GITHUB_ACTION="${GITHUB_ACTION:-}" \
+		GITHUB_TOKEN="${GITHUB_TOKEN:-}" \
+		GOPROXY="${GOPROXY:-}" \
+		HOME="$TEST_HOME" \
+		LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
+		LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
+		MISE_CACHE_DIR="$MISE_CACHE_DIR" \
+		MISE_CACHE_PRUNE_AGE="0" \
+		MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \
+		MISE_DATA_DIR="$MISE_DATA_DIR" \
+		MISE_DEBUG="${MISE_DEBUG:-0}" \
+		MISE_EXPERIMENTAL=1 \
+		MISE_GPG_VERIFY="${MISE_GPG_VERIFY:-}" \
+		MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}" \
+		MISE_STATE_DIR="$MISE_STATE_DIR" \
+		MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \
+		MISE_TIMINGS="${MISE_TIMINGS:-0}" \
+		MISE_TMP_DIR="$TEST_TMPDIR" \
+		MISE_TRACE="${MISE_TRACE:-0}" \
+		MISE_TRUSTED_CONFIG_PATHS="$TEST_ISOLATED_DIR" \
+		MISE_USE_VERSIONS_HOST="${MISE_USE_VERSIONS_HOST:-1}" \
+		MISE_YES=1 \
+		PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" \
+		ROOT="$ROOT" \
+		RUSTUP_HOME="$RUSTUP_HOME" \
+		RUST_BACKTRACE="${RUST_BACKTRACE:-1}" \
+		SHELL="$(type -p bash)" \
+		TEST_DIR="$(dirname "$TEST_SCRIPT")" \
+		TEST_NAME="$TEST" \
+		TEST_ROOT="$SCRIPT_DIR" \
+		TEST_SCRIPT="$TEST_SCRIPT" \
+		TMPDIR="$TEST_TMPDIR" \
+		EXCLUDE_FROM_CI="${CI:-}" \
+		"$@" || return $?
 }
 
 run_test() {
-  setup_isolated_env
-  create_isolated_env
+	# Check for problematic /tmp/mise.toml that can interfere with tests
+	if [[ -f /tmp/mise.toml ]]; then
+		err "/tmp/mise.toml exists and will interfere with e2e tests. Please remove it."
+		return 1
+	fi
 
-  local status=0
+	setup_isolated_env
+	create_isolated_env
 
-  START="$(date +%s)"
-  within_isolated_env bash --noprofile --norc -euo pipefail -c "source $SCRIPT_DIR/assert.sh && source $TEST_SCRIPT" || status=$?
-  END="$(date +%s)"
-  DURATION=$((END - START))s
+	local status=0
 
-  echo "$TEST: $DURATION" >&2
+	START="$(date +%s)"
+	# Check shebang to determine which shell to use
+	local shebang
+	shebang="$(head -n 1 "$TEST_SCRIPT")"
+	if [[ $shebang == "#!/usr/bin/env zsh"* ]]; then
+		within_isolated_env zsh -f -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+	elif [[ $shebang == "#!/usr/bin/env fish"* ]]; then
+		within_isolated_env fish --no-config "$TEST_SCRIPT" || status=$?
+	else
+		within_isolated_env bash --noprofile --norc -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+	fi
+	END="$(date +%s)"
+	DURATION=$((END - START))s
 
-  if [[ $status == 0 ]]; then
-    remove_isolated_env
-    summary "$TEST" "$DURATION" ":white_check_mark:"
-  else
-    title="E2E test $TEST failed" err "exited with status code $status"
-    echo "Test environment can be examined in $TEST_ISOLATED_DIR" >&2
-    summary "$TEST" "$DURATION" ":x:"
-  fi
+	echo "$TEST: $DURATION" >&2
 
-  return "$status"
+	# Check if test took >20s and isn't marked as slow
+	DURATION_NUM="${DURATION%s}"
+	if [[ $DURATION_NUM -gt 20 && ! $TEST =~ "_slow"$ ]]; then
+		warn "Test $TEST took ${DURATION} (>20s) but is not marked as slow. Consider renaming to ${TEST}_slow"
+		if [[ -n ${GITHUB_ACTIONS:-} ]]; then
+			echo "::warning title=Slow test not marked::Test $TEST took ${DURATION} (>20s). Consider renaming to ${TEST}_slow to improve CI performance." >&2
+		fi
+	fi
+
+	if [[ $status == 0 ]]; then
+		remove_isolated_env
+		summary "$TEST" "$DURATION" ":white_check_mark:"
+	else
+		title="E2E test $TEST failed" err "exited with status code $status"
+		echo "Test environment can be examined in $TEST_ISOLATED_DIR" >&2
+		summary "$TEST" "$DURATION" ":x:"
+	fi
+
+	return "$status"
 }
 
 _env() {
-  if type genv >/dev/null 2>&1; then
-    genv "$@"
-  else
-    env "$@"
-  fi
+	if type genv >/dev/null 2>&1; then
+		genv "$@"
+	else
+		env "$@"
+	fi
 }
 
 os() {
-  case "$(uname -s)" in
-    Darwin) echo "macos" ;;
-    Linux) echo "linux" ;;
-    *) echo "unknown" ;;
-  esac
+	case "$(uname -s)" in
+	Darwin) echo "macos" ;;
+	Linux) echo "linux" ;;
+	*) echo "unknown" ;;
+	esac
 }
 
 as_group "E2E $TEST" run_test

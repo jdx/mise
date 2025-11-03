@@ -1,0 +1,128 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sigstore
+    repo_name: cosign
+    description: Code signing and transparency for containers and binaries
+    version_filter: not (Version matches "-dev$")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        asset: cosign
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v0.2.0"
+        asset: cosign-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: cosign.sha256
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.6.0"
+        asset: cosign_{{.OS}}_{{.Arch}}_{{trimV .Version}}_linux_amd64
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: cosign_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            asset: cosign_{{.OS}}_{{.Arch}}_{{trimV .Version}}_darwin_amd64
+          - goos: darwin
+            goarch: arm64
+            asset: cosign_{{.OS}}_{{.Arch}}_{{trimV .Version}}_darwin_arm64
+          - goos: windows
+            asset: cosign_{{.OS}}_{{.Arch}}_{{trimV .Version}}_windows_amd64
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.3.1")
+        asset: cosign-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.5.0")
+        asset: cosign-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.2.1")
+        asset: cosign-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: cosign_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.4.1")
+        asset: cosign-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: cosign_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 2.6.1")
+        asset: cosign-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: cosign_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/sigstore/cosign/releases/download/{{.Version}}/cosign_checksums.txt-keyless.pem
+              - --certificate-identity
+              - keyless@projectsigstore.iam.gserviceaccount.com
+              - --certificate-oidc-issuer
+              - https://accounts.google.com
+              - --signature
+              - https://github.com/sigstore/cosign/releases/download/{{.Version}}/cosign_checksums.txt-keyless.sig
+      - version_constraint: "true"
+        asset: cosign-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: cosign_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: cosign_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - keyless@projectsigstore.iam.gserviceaccount.com
+              - --certificate-oidc-issuer
+              - https://accounts.google.com

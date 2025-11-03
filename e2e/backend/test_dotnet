@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
 if ! command -v dotnet >/dev/null 2>&1; then
-  echo "dotnet is not installed"
-  exit 0
+	echo "dotnet is not installed"
+	exit 0
 fi
 
 export MISE_EXPERIMENTAL=1
 
 test() {
-  assert_contains "mise x $1 -- $2" "$3"
+	assert_contains "mise x $1 -- $2" "$3"
 }
 
 assert_not_contains "mise ls-remote dotnet:GitVersion.Tool" "-beta"

@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: slackhq
+    repo_name: nebula
+    description: A scalable overlay networking tool with a focus on performance, simplicity and security
+    files:
+      - name: nebula
+      - name: nebula-cert
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0"
+        asset: nebula-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: Version == "v1.4.0"
+        asset: nebula-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.3.0")
+        asset: nebula-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.5.2")
+        asset: nebula-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: darwin
+            asset: nebula-{{.OS}}.{{.Format}}
+      - version_constraint: "true"
+        asset: nebula-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: darwin
+            asset: nebula-{{.OS}}.{{.Format}}

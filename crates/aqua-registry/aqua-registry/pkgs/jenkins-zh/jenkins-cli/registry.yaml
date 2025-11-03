@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jenkins-zh
+    repo_name: jenkins-cli
+    description: Jenkins CLI allows you to manage your Jenkins in an easy way
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: jcli-{{.OS}}-{{.Arch}}.{{.Format}}
+    # There is a binary for darwin arm64, but it doesn't work.
+    # > zsh: killed      --help
+    rosetta2: true
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    files:
+      - name: jcli
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

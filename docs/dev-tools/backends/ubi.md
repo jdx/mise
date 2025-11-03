@@ -2,7 +2,7 @@
 
 You may install GitHub Releases and URL packages directly using [ubi](https://github.com/houseabsolute/ubi) backend. ubi is directly compiled into
 the mise codebase so it does not need to be installed separately to be used. ubi is preferred over
-asdf/vfox for new tools since it doesn't require a plugin, supports Windows, and is really easy to use.
+plugins for new tools since it doesn't require a plugin, supports Windows, and is really easy to use.
 
 ubi doesn't require plugins or even any configuration for each tool. What it does is try to deduce what
 the proper binary/tarball is from GitHub releases and downloads the right one. As long as the vendor
@@ -60,7 +60,7 @@ use the `rename_exe` option to specify the target executable name:
 ### `matching`
 
 Set a string to match against the release filename when there are multiple files for your
-OS/arch, i.e. "gnu" or "musl". Note that this is only used when there is more than one
+OS/arch, i.e. "gnu", "musl", or "msvc". Note that this is only used when there is more than one
 matching release filename for your OS/arch. If only one release asset matches your OS/arch,
 then this will be ignored.
 
@@ -119,6 +119,13 @@ This only makes sense when `extract_all` is set to `true`.
 "ubi:BurntSushi/ripgrep" = { version = "latest", extract_all = "true", bin_path = "target/release" }
 ```
 
+**Binary path lookup order:**
+
+1. If `bin_path` is specified, use that directory
+2. If `extract_all` is set to `true`, use the install path root
+3. If `bin_path` is not set, look for a `bin/` directory in the install path
+4. If no `bin/` directory exists, use the root of the extracted directory
+
 ### `tag_regex`
 
 Set a regex to filter out tags that don't match the regex. This is useful when a vendor has a bunch of
@@ -128,7 +135,7 @@ releases.
 
 ```toml
 [tools]
-"ubi:cargo-bins/cargo-binstall" = { version = "latest", tag_regex = "^\d+\." }
+"ubi:cargo-bins/cargo-binstall" = { version = "latest", tag_regex = '^\d+\.' }
 ```
 
 ## Self-hosted GitHub/GitLab
@@ -148,7 +155,7 @@ authenticate with the API.
 ### `ubi` resolver can't find os/arch
 
 Sometimes vendors use strange formats for their releases that ubi can't figure out, possibly for a
-specific os/arch combination. For example this recently happend in [this ticket](https://github.com/houseabsolute/ubi/issues/79) because a vendor used
+specific os/arch combination. For example this recently happened in [this ticket](https://github.com/houseabsolute/ubi/issues/79) because a vendor used
 "mac" instead of the more common "macos" or "darwin" tags.
 
 Try using ubi by itself to see if the issue is related to mise or ubi:

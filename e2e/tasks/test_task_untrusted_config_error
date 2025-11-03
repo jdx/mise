@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Test that untrusted config files give a helpful error message
+# Issue: https://github.com/jdx/mise/discussions/6631
+
+# Ensure we start with a clean slate - no trusted configs
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+# Create a config file with a task
+cat <<EOF >mise.toml
+[tasks.make]
+run = "echo 'hello from task'"
+EOF
+
+# Running a task from an untrusted config should give a helpful error
+# It should either:
+# 1. Prompt the user to trust the config (when interactive), or
+# 2. Show a clear "config not trusted" error (not "no tasks defined")
+#
+# This test verifies we don't get the misleading "no tasks defined" error
+output=$(mise run make 2>&1 || true)
+
+# The error should mention "trust" or "untrusted", not just "no tasks defined"
+if echo "$output" | grep -q "no tasks defined.*Are you in a project directory"; then
+	echo "FAIL: Got misleading 'no tasks defined' error instead of trust error"
+	echo "Output: $output"
+	exit 1
+fi
+
+# Verify we get a trust-related error
+if echo "$output" | grep -qi "trust"; then
+	echo "PASS: Got trust-related error message"
+else
+	echo "FAIL: Expected trust-related error, got: $output"
+	exit 1
+fi

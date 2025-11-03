@@ -1,0 +1,138 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: chainguard-dev
+    repo_name: apko
+    description: Build OCI images from APK packages directly without Dockerfile
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.4.0")
+        asset: apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: apko
+            src: apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}/apko
+        format: tar.gz
+        supported_envs:
+          - linux
+        cosign:
+          opts:
+            - --certificate-identity-regexp
+            - "https://github\\.com/chainguard-dev/apko/\\.github/workflows/release\\.yaml@.*"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --signature
+            - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}.sig
+            - --certificate
+            - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}.crt
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/chainguard-dev/apko/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/checksums.txt.crt
+      - version_constraint: semver("<= 0.6.1")
+        asset: apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: apko
+            src: apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}/apko
+        supported_envs:
+          - linux
+        cosign:
+          opts:
+            - --certificate-identity-regexp
+            - "https://github\\.com/chainguard-dev/apko/\\.github/workflows/release\\.yaml@.*"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --signature
+            - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}.sig
+            - --certificate
+            - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}.crt
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/chainguard-dev/apko/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/checksums.txt.crt
+      - version_constraint: semver("<= 0.11.0")
+        asset: apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: apko
+            src: apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}/apko
+        supported_envs:
+          - linux
+          - darwin
+        cosign:
+          opts:
+            - --certificate-identity-regexp
+            - "https://github\\.com/chainguard-dev/apko/\\.github/workflows/release\\.yaml@.*"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --signature
+            - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}.sig
+            - --certificate
+            - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}.crt
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/chainguard-dev/apko/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/checksums.txt.crt
+      - version_constraint: "true"
+        asset: apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: apko
+            src: apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}/apko
+        format: tar.gz
+        supported_envs:
+          - linux
+          - darwin
+        cosign:
+          opts:
+            - --certificate-identity-regexp
+            - "https://github\\.com/chainguard-dev/apko/\\.github/workflows/release\\.yaml@.*"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+            - --signature
+            - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}.sig
+            - --certificate
+            - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/apko_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}.crt
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/chainguard-dev/apko/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+              - --signature
+              - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/chainguard-dev/apko/releases/download/{{.Version}}/checksums.txt.crt

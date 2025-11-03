@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ankitpokhrel
+    repo_name: jira-cli
+    description: Feature-rich interactive Jira command line
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.4.0")
+        asset: jira_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: jira
+            src: jira_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/jira
+        format: tar.gz
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: jira
+                src: bin/jira
+            replacements:
+              amd64: amd64
+        replacements:
+          amd64: x86_64
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: jira_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        files:
+          - name: jira
+            src: jira_{{trimV .Version}}_{{.OS}}_{{.Arch}}/bin/jira
+        format: tar.gz
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: jira
+                src: bin/jira
+        replacements:
+          amd64: x86_64
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

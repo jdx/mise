@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: argoproj
+    repo_name: argo-workflows
+    rosetta2: true
+    asset: argo-{{.OS}}-{{.Arch}}.gz
+    description: Argo Worfkflows CLI. Workflow engine for Kubernetes
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    overrides:
+      - goos: windows
+        asset: argo-{{.OS}}-{{.Arch}}.exe.gz
+    files:
+      - name: argo
+        src: argo-{{.OS}}-{{.Arch}}
+    version_constraint: semver(">= 3.4.4")
+    checksum:
+      type: github_release
+      asset: argo-workflows-cli-checksums.txt
+      algorithm: sha256
+      # TODO enable cosign https://github.com/argoproj/argo-workflows/discussions/12828
+      # cosign:
+      #   opts:
+      #     - --certificate-identity-regexp
+      #     - "https://github\\.com/argoproj/argo-workflows/\\.github/workflows/release\\.yaml@.*"
+      #     - --certificate-oidc-issuer
+      #     - "https://token.actions.githubusercontent.com"
+      #     - --signature
+      #     - https://github.com/argoproj/argo-workflows/releases/download/{{.Version}}/argo-workflows-cli-checksums.sig
+      #     - --key
+      #     - https://github.com/argoproj/argo-workflows/releases/download/{{.Version}}/argo-workflows-cosign.pub
+    version_overrides:
+      - version_constraint: "true"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256

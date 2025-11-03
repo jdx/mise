@@ -6,15 +6,25 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source-path=SCRIPTDIR
 source "$SCRIPT_DIR/style.sh"
 
+# Check for .release-skip-e2e and skip all tests if version matches
+RELEASE_SKIP_FILE="$ROOT/.release-skip-e2e"
+VERSION="$(. "$ROOT/scripts/get-version.sh" | tr -d '\n')"
+if [[ -f $RELEASE_SKIP_FILE ]]; then
+	if grep -Fxq "$VERSION" "$RELEASE_SKIP_FILE"; then
+		echo "[e2e] Skipping all e2e tests: .release-skip-e2e contains $VERSION" >&2
+		exit 0
+	fi
+fi
+
 pushd e2e
 # Avoid mapfile that is not available on bash 3.2 for compatibility with macOS
 SLOW_FILES=()
 while IFS= read -r line; do
-  SLOW_FILES+=("$line")
+	SLOW_FILES+=("$line")
 done < <(fd -tf -g "test_*_slow" | sort)
 FAST_FILES=()
 while IFS= read -r line; do
-  FAST_FILES+=("$line")
+	FAST_FILES+=("$line")
 done < <(fd -tf -g "test_*" | grep -v "_slow$" | sort)
 popd
 FILES=("${FAST_FILES[@]}" "${SLOW_FILES[@]}")
@@ -26,30 +36,30 @@ summary "Test" "Duration" "Result"
 summary "---" "---" "---"
 
 for index in "${!FILES[@]}"; do
-  TEST_NAME="${FILES[$index]}"
+	TEST_NAME="${FILES[$index]}"
 
-  # split tests into tranches to reduce test time
-  if [[ -n ${TEST_TRANCHE_COUNT:-} ]]; then
-    if [[ $((index % TEST_TRANCHE_COUNT)) -ne $TEST_TRANCHE ]]; then
-      continue
-    fi
-  fi
+	# split tests into tranches to reduce test time
+	if [[ -n ${TEST_TRANCHE_COUNT:-} ]]; then
+		if [[ $((index % TEST_TRANCHE_COUNT)) -ne $TEST_TRANCHE ]]; then
+			continue
+		fi
+	fi
 
-  # Skip slow tests unless TEST_ALL == 1
-  if [[ ${TEST_ALL:-0} != 1 && $TEST_NAME == *_slow ]]; then
-    #    title="E2E test $TEST_NAME skipped" file="e2e/$TEST_NAME" warn "slow tests are disabled"
-    skipped_count=$((skipped_count + 1))
-    summary "$TEST_NAME" "-" ":zap:"
-    continue
-  fi
+	# Skip slow tests unless TEST_ALL == 1
+	if [[ ${TEST_ALL:-0} != 1 && $TEST_NAME == *_slow ]]; then
+		#    title="E2E test $TEST_NAME skipped" file="e2e/$TEST_NAME" warn "slow tests are disabled"
+		skipped_count=$((skipped_count + 1))
+		summary "$TEST_NAME" "-" ":zap:"
+		continue
+	fi
 
-  mise x -- wait-for-gh-rate-limit
-  # Actually run the test
-  "$ROOT/e2e/run_test" "$TEST_NAME" # fail fast for now
-  # if ! "$ROOT/e2e/run_test" "$TEST_NAME"; then
-  #   status=1
-  # fi
-  test_count=$((test_count + 1))
+	mise x -- wait-for-gh-rate-limit
+	# Actually run the test
+	"$ROOT/e2e/run_test" "$TEST_NAME" # fail fast for now
+	# if ! "$ROOT/e2e/run_test" "$TEST_NAME"; then
+	#   status=1
+	# fi
+	test_count=$((test_count + 1))
 done
 
 echo "E2E: ran $test_count tests, skipped $skipped_count tests" >&2

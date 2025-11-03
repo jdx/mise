@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: zmap
+    repo_name: zlint
+    description: X.509 Certificate Linter focused on Web PKI standards and requirements
+    version_filter: not (Version matches "-rc")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.1.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: zlint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: zlint
+            src: "{{.AssetWithoutExt}}/{{.FileName}}"
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: zlint_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

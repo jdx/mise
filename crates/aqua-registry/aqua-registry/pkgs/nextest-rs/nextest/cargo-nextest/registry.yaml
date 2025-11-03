@@ -1,0 +1,137 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: nextest-rs/nextest/cargo-nextest
+    type: github_release
+    repo_owner: nextest-rs
+    repo_name: nextest
+    description: A next-generation test runner for Rust
+    version_prefix: "cargo-nextest-"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: SemVer in ["0.9.85-rc.1", "0.9.41-a.5", "0.9.49-rc.1", "0.9.65", "0.9.69", "0.9.71"] or semver("> 0.9.59, <= 0.9.61-rc.1") or semver("> 0.9.61, <= 0.9.62-a.1") or semver("> 0.9.40, <= 0.9.41-a.3")
+        no_asset: true
+      - version_constraint: Version in ["cargo-nextest-0.9.30-rc.1", "cargo-nextest-0.9.41", "cargo-nextest-0.9.41-a.4"]
+        asset: "{{.Version}}-universal-{{.OS}}.{{.Format}}"
+        format: tar.gz
+        replacements:
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "cargo-nextest-0.9.30-rc.2"
+        asset: "{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}"
+        format: tar.gz
+        replacements:
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            asset: "{{.Version}}-universal-{{.OS}}.{{.Format}}"
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "cargo-nextest-0.9.46"
+        asset: "{{.Version}}-i686-{{.OS}}.{{.Format}}"
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            asset: "{{.Version}}-universal-{{.OS}}.{{.Format}}"
+        supported_envs:
+          - darwin
+          - windows
+      - version_constraint: Version == "cargo-nextest-0.9.49-rc.2"
+        asset: "{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}"
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - windows
+      - version_constraint: Version == "cargo-nextest-0.9.58-rc.1"
+        asset: "{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}"
+        format: tar.gz
+        replacements:
+          arm64: aarch64
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux/arm64
+      - version_constraint: semver("<= 0.9.28")
+        asset: "{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}"
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: darwin
+            asset: "{{.Version}}-universal-{{.OS}}.{{.Format}}"
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.9.84")
+        asset: "{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}"
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: darwin
+            asset: "{{.Version}}-universal-{{.OS}}.{{.Format}}"
+      - version_constraint: "true"
+        asset: "{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}"
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Version}}-{{.Arch}}-{{.OS}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: darwin
+            replacements:
+              amd64: universal
+              arm64: universal

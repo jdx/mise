@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bytecodealliance
+    repo_name: wasm-tools
+    description: CLI and Rust libraries for low-level manipulation of WebAssembly modules
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.0.60")
+        asset: "{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}"
+        format: tar.gz
+        windows_arm_emulation: true
+        version_prefix: wasm-tools-
+        files:
+          - name: wasm-tools
+            src: "{{.AssetWithoutExt}}/wasm-tools"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            replacements: {}
+      - version_constraint: semver("<= 1.202.0")
+        asset: wasm-tools-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: wasm-tools
+            src: "{{.AssetWithoutExt}}/wasm-tools"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.239.0")
+        asset: wasm-tools-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: wasm-tools
+            src: "{{.AssetWithoutExt}}/wasm-tools"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            replacements: {}
+      - version_constraint: "true"
+        asset: wasm-tools-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: wasm-tools
+            src: "{{.AssetWithoutExt}}/wasm-tools"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            replacements: {}
+        github_artifact_attestations:
+          signer_workflow: bytecodealliance/wasm-tools/.github/workflows/publish.yml

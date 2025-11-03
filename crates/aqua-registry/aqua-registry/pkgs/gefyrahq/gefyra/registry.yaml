@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gefyrahq
+    repo_name: gefyra
+    description: "Blazingly-fast :rocket:, rock-solid, local application development :arrow_right: with Kubernetes"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.5.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.6.7")
+        asset: gefyra-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "0.6.8"
+        no_asset: true
+      - version_constraint: Version == "0.6.9"
+        asset: gefyra-0.6.7-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.8.0")
+        asset: gefyra-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.8.4")
+        asset: gefyra-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        overrides:
+          - goos: windows
+            replacements:
+              amd64: x86_64
+            files:
+              - name: gefyra
+                src: dist/gefyra
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.0.3")
+        asset: gefyra-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            asset: gefyra-{{.Version}}-{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            replacements:
+              amd64: x86_64
+            files:
+              - name: gefyra
+                src: dist/gefyra
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: gefyra-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            asset: gefyra-{{.Version}}-{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            replacements:
+              amd64: x86_64
+            files:
+              - name: gefyra
+                src: dist-exe/gefyra.exe
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

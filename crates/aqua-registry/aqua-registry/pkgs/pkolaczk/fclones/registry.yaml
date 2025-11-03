@@ -1,0 +1,212 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: pkolaczk
+    repo_name: fclones
+    description: Efficient Duplicate File Finder
+    version_filter: not (Version matches "^gui")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.12.3", "v0.18.1", "v0.29.2", "v0.31.1"]
+        no_asset: true
+      - version_constraint: Version == "0.2.0"
+        asset: fclones-{{.Version}}.{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          windows: win
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            asset: fclones-{{.Version}}-{{.OS}}.{{.Arch}}.{{.Format}}
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - linux/arm64
+          - windows/amd64
+      - version_constraint: Version in ["v0.19.0", "v0.23.0"]
+        asset: fclones-{{trimV .Version}}-{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: win
+        supported_envs:
+          - windows/amd64
+      - version_constraint: Version == "v0.20.0"
+        asset: fclones-{{trimV .Version}}.{{.Format}}
+        format: tgz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            files:
+              - name: fclones
+                src: usr/bin/fclones
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v0.20.1"
+        asset: fclones-{{trimV .Version}}-{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: win
+        overrides:
+          - goos: linux
+            asset: fclones-{{trimV .Version}}.{{.Format}}
+            format: tgz
+            files:
+              - name: fclones
+                src: usr/bin/fclones
+        supported_envs:
+          - darwin
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: Version == "v0.21.0"
+        asset: fclones-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: win
+        overrides:
+          - goos: windows
+            asset: fclones-{{trimV .Version}}-{{.OS}}.{{.Arch}}.{{.Format}}
+          - goos: linux
+            asset: fclones-{{trimV .Version}}.{{.Format}}
+            format: tgz
+            files:
+              - name: fclones
+                src: usr/bin/fclones
+        supported_envs:
+          - darwin
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: Version == "v0.22.0"
+        asset: fclones-{{trimV .Version}}-{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          windows: win
+        overrides:
+          - goos: darwin
+            format: tar.gz
+          - goos: linux
+            asset: fclones-{{trimV .Version}}.{{.Format}}
+            format: tgz
+            files:
+              - name: fclones
+                src: usr/bin/fclones
+        supported_envs:
+          - darwin
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: Version in ["v0.24.0", "v0.26.0"]
+        asset: fclones-{{trimV .Version}}-{{.OS}}.{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: win
+          linux: linux-musl
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: Version == "v0.25.0"
+        asset: fclones-{{trimV .Version}}-{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          linux: linux-musl
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: semver("<= 0.1.2")
+        no_asset: true
+      - version_constraint: semver("<= 0.6.0")
+        asset: fclones-{{.Version}}-{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          windows: win
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - linux/arm64
+          - windows/amd64
+      - version_constraint: semver("<= 0.9.1")
+        asset: fclones-{{.Version}}-{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: win
+        supported_envs:
+          - windows/amd64
+      - version_constraint: semver("<= 0.10.2")
+        asset: fclones-{{trimV .Version}}-{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: win
+        supported_envs:
+          - windows/amd64
+      - version_constraint: semver("<= 0.12.0")
+        no_asset: true
+      - version_constraint: semver("<= 0.28.0")
+        asset: fclones-{{trimV .Version}}-{{.OS}}.{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            asset: fclones-{{trimV .Version}}.{{.Format}}
+            format: tgz
+            files:
+              - name: fclones
+                src: usr/bin/fclones
+        replacements:
+          amd64: x86_64
+          windows: win
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: "true"
+        asset: fclones-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          linux: linux-musl
+        overrides:
+          - goos: linux
+            format: tar.gz
+            files:
+              - name: fclones
+                src: target/{{.Arch}}-unknown-{{.OS}}/release/fclones
+        supported_envs:
+          - linux/amd64
+          - windows/amd64

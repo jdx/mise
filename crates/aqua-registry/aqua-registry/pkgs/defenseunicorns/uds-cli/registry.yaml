@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: defenseunicorns
+    repo_name: uds-cli
+    files:
+      - name: uds
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "nightly-unstable"
+        error_message: "nightly-unstable is not supported."
+      - version_constraint: "true"
+        asset: uds-cli_{{.Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        files:
+          - name: uds
+            src: "uds-cli_{{.Version}}_{{.OS}}_{{.Arch}}"
+        replacements:
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

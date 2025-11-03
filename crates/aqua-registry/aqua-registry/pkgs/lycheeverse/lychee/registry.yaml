@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: lycheeverse
+    repo_name: lychee
+    description: Fast, async, stream-based link checker written in Rust. Finds broken URLs and mail addresses inside Markdown, HTML, reStructuredText, websites and more
+    version_filter: not (Version startsWith "lychee-lib-")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.1") || Version == "v0.6.0-alpha"
+        no_asset: true
+      - version_constraint: Version == "v0.8.0"
+        asset: lychee-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+        overrides:
+          - goos: darwin
+            asset: lychee-{{.Version}}-macos-x86_64.dmg
+            format: dmg
+          - goos: windows
+            format: raw
+            asset: lychee-{{.Version}}-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.5.1-alpha")
+        asset: lychee-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: darwin
+            asset: lychee-{{.Version}}-macos-x86_64.dmg
+            format: dmg
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: raw
+            asset: lychee-{{.Version}}-{{.OS}}-{{.Arch}}
+      - version_constraint: semver("<= 0.15.1")
+        asset: lychee-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: darwin
+            asset: lychee-{{.Version}}-macos-x86_64.dmg
+            format: dmg
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: raw
+            asset: lychee-{{.Version}}-{{.OS}}-{{.Arch}}
+      - version_constraint: "true"
+        version_prefix: lychee-
+        asset: lychee-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            format: dmg
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: raw
+            asset: lychee-{{.Arch}}-{{.OS}}
+        supported_envs:
+          - linux
+          - windows/amd64
+          - darwin/arm64

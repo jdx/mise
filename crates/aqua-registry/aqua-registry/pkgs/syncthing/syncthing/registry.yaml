@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: syncthing
+    repo_name: syncthing
+    asset: syncthing-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+    format: zip
+    description: Open Source Continuous File Synchronization
+    replacements:
+      darwin: macos
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: syncthing
+        src: syncthing-{{.OS}}-{{.Arch}}-{{.Version}}/syncthing
+    checksum:
+      type: github_release
+      asset: sha256sum.txt.asc
+      algorithm: sha256

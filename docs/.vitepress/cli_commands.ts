@@ -48,6 +48,9 @@ export const commands: { [key: string]: Command } = {
       clear: {
         hide: false,
       },
+      path: {
+        hide: false,
+      },
       prune: {
         hide: false,
       },
@@ -137,6 +140,9 @@ export const commands: { [key: string]: Command } = {
       "task-stubs": {
         hide: false,
       },
+      "tool-stub": {
+        hide: false,
+      },
     },
   },
   global: {
@@ -166,10 +172,16 @@ export const commands: { [key: string]: Command } = {
   local: {
     hide: true,
   },
+  lock: {
+    hide: false,
+  },
   ls: {
     hide: false,
   },
   "ls-remote": {
+    hide: false,
+  },
+  mcp: {
     hide: false,
   },
   outdated: {
@@ -205,9 +217,6 @@ export const commands: { [key: string]: Command } = {
     hide: false,
   },
   "render-help": {
-    hide: true,
-  },
-  "render-mangen": {
     hide: true,
   },
   reshim: {
@@ -289,6 +298,9 @@ export const commands: { [key: string]: Command } = {
     hide: false,
   },
   tool: {
+    hide: false,
+  },
+  "tool-stub": {
     hide: false,
   },
   trust: {

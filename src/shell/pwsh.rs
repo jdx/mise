@@ -6,58 +6,81 @@ use std::fmt::Display;
 
 use indoc::formatdoc;
 
-use crate::shell::{ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
 pub struct Pwsh {}
+
+impl Pwsh {}
 
 impl Shell for Pwsh {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
+
         let exe = exe.to_string_lossy();
         let mut out = String::new();
+
+        out.push_str(&shell::build_deactivation_script(self));
 
         out.push_str(&self.format_activate_prelude(&opts.prelude));
         out.push_str(&formatdoc! {r#"
             $env:MISE_SHELL = 'pwsh'
-            $env:__MISE_ORIG_PATH = $env:PATH
+            if (-not (Test-Path -Path Env:/__MISE_ORIG_PATH)) {{
+                $env:__MISE_ORIG_PATH = $env:PATH
+            }}
 
             function mise {{
-                # Read line directly from input to workaround powershell input parsing for functions
-                $code = [System.Management.Automation.Language.Parser]::ParseInput($MyInvocation.Statement.Substring($MyInvocation.OffsetInLine - 1), [ref]$null, [ref]$null)
-                $myLine = $code.Find({{ $args[0].CommandElements }}, $true).CommandElements | ForEach-Object {{ $_.ToString() }} | Join-String -Separator ' '
-                $command, [array]$arguments = Invoke-Expression ('Write-Output -- ' + $myLine)
-                
-                if ($null -eq $arguments) {{ 
+                [CmdletBinding()]
+                param(
+                    [Parameter(ValueFromRemainingArguments=$true)]  # Allow any number of arguments, including none
+                    [string[]] $arguments
+                )
+
+                $previous_out_encoding = $OutputEncoding
+                $previous_console_out_encoding = [Console]::OutputEncoding
+                $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8
+
+                function _reset_output_encoding {{
+                    $OutputEncoding = $previous_out_encoding
+                    [Console]::OutputEncoding = $previous_console_out_encoding
+                }}
+
+                if ($arguments.count -eq 0) {{
                     & {exe}
+                    _reset_output_encoding
                     return
-                }} 
+                }} elseif ($arguments -contains '-h' -or $arguments -contains '--help') {{
+                    & {exe} @arguments
+                    _reset_output_encoding
+                    return
+                }}
 
                 $command = $arguments[0]
-                $arguments = $arguments[1..$arguments.Length]
-
-                if ($arguments -contains '--help') {{
-                    return & {exe} $command $arguments 
+                if ($arguments.Length -gt 1) {{
+                    $remainingArgs = $arguments[1..($arguments.Length - 1)]
+                }} else {{
+                    $remainingArgs = @()
                 }}
 
                 switch ($command) {{
                     {{ $_ -in 'deactivate', 'shell', 'sh' }} {{
-                        if ($arguments -contains '-h' -or $arguments -contains '--help') {{
-                            & {exe} $command $arguments
-                        }}
-                        else {{
-                            & {exe} $command $arguments | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
-                        }}
+                        & {exe} $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                        _reset_output_encoding
                     }}
                     default {{
-                        & {exe} $command $arguments
+                        & {exe} $command @remainingArgs
                         $status = $LASTEXITCODE
                         if ($(Test-Path -Path Function:\_mise_hook)){{
                             _mise_hook
                         }}
+                        _reset_output_encoding
                         # Pass down exit code from mise after _mise_hook
-                        pwsh -NoProfile -Command exit $status 
+                        if ($PSVersionTable.PSVersion.Major -ge 7) {{
+                            pwsh -NoProfile -Command exit $status
+                        }} else {{
+                            powershell -NoProfile -Command exit $status
+                        }}
                     }}
                 }}
             }}
@@ -73,6 +96,12 @@ impl Shell for Pwsh {
             }}
 
             function __enable_mise_chpwd{{
+                if ($PSVersionTable.PSVersion.Major -lt 7) {{
+                    if ($env:MISE_PWSH_CHPWD_WARNING -ne '0') {{
+                        Write-Warning "mise: chpwd functionality requires PowerShell version 7 or higher. Your current version is $($PSVersionTable.PSVersion). You can add `$env:MISE_PWSH_CHPWD_WARNING=0` to your environment to disable this warning."
+                    }}
+                    return
+                }}
                 if (-not $__mise_pwsh_chpwd){{
                     $Global:__mise_pwsh_chpwd= $true
                     $_mise_chpwd_hook = [EventHandler[System.Management.Automation.LocationChangedEventArgs]] {{
@@ -151,7 +180,7 @@ impl Shell for Pwsh {
         Remove-Item -ErrorAction SilentlyContinue function:mise
         Remove-Item -ErrorAction SilentlyContinue -Path Env:/MISE_SHELL
         Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_WATCH
-        Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_DIFF
+        Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_SESSION
         "#}
     }
 
@@ -228,6 +257,12 @@ mod tests {
 
     #[test]
     fn test_activate() {
+        // Unset __MISE_ORIG_PATH to avoid PATH restoration logic in output
+        unsafe {
+            std::env::remove_var("__MISE_ORIG_PATH");
+            std::env::remove_var("__MISE_DIFF");
+        }
+
         let pwsh = Pwsh::default();
         let exe = Path::new("/some/dir/mise");
         let opts = ActivateOptions {

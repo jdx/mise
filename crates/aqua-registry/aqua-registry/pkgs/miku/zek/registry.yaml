@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: miku
+    repo_name: zek
+    description: Generate a Go struct from XML
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.9"
+        asset: zek-{{trimV .Version}}.{{.OS}}.{{.Arch}}.bin
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "0.1.19"
+        asset: zek_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: zek_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 0.1.12")
+        no_asset: true
+      - version_constraint: semver("<= 0.1.26")
+        asset: zek_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: zek_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: zek_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: zek_checksums.txt
+          algorithm: sha256

@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    name: ipinfo/cli/prips
+    repo_owner: ipinfo
+    repo_name: cli
+    description: Official Command Line Interface for the IPinfo API (IP geolocation and other types of IP data)
+    version_filter: Version startsWith "prips-"
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: prips_{{trimPrefix "prips-" .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+        files:
+          - name: prips
+            src: prips_{{trimPrefix "prips-" .Version}}_{{.OS}}_{{.Arch}}.exe
+    files:
+      - name: prips
+        src: prips_{{trimPrefix "prips-" .Version}}_{{.OS}}_{{.Arch}}

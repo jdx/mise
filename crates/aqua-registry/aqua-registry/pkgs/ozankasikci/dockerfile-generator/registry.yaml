@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: ozankasikci
+    repo_name: dockerfile-generator
+    description: dfg - Generates dockerfiles based on various input channels
+    rosetta2: true
+    format: raw
+    asset: dfg_{{.Version}}_{{.OS}}_{{.Arch}}
+    supported_envs:
+      - darwin
+      - amd64
+    files:
+      - name: dfg

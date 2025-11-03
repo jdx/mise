@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tilt-dev
+    repo_name: tilt
+    description: Define your dev environment as code. For microservice apps on Kubernetes
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: tilt.{{trimV .Version}}.{{.OS}}.{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      darwin: mac
+      386: i386
+      amd64: x86_64
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

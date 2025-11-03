@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cpisciotta
+    repo_name: xcbeautify
+    description: A little beautifier tool for xcodebuild
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "1.5.0-beta.1"
+        no_asset: true
+      - version_constraint: Version == "0.9.0"
+        asset: xcbeautify-{{.Version}}-universal-{{.OS}}-macosx.{{.Format}}
+        format: zip
+        replacements:
+          darwin: apple
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "0.9.1"
+        asset: xcbeautify-{{.Version}}-{{.Arch}}-{{.OS}}-macosx.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          darwin: apple
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: linux
+            format: tar.xz
+            asset: xcbeautify-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.3.8")
+        asset: xcbeautify-{{.Version}}-{{.Arch}}-{{.OS}}-macosx10.10.{{.Format}}
+        format: zip
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 0.4.1")
+        asset: xcbeautify-{{.Version}}-{{.Arch}}-{{.OS}}-macosx10.14.{{.Format}}
+        format: zip
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 0.8.1")
+        asset: xcbeautify-{{.Version}}-{{.Arch}}-{{.OS}}-macosx.{{.Format}}
+        format: zip
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 1.7.0")
+        asset: xcbeautify-{{.Version}}-{{.Arch}}-{{.OS}}-macosx.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          darwin: apple
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: linux
+            format: tar.xz
+            asset: xcbeautify-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 2.0.0-beta.3")
+        no_asset: true
+      - version_constraint: "true"
+        asset: xcbeautify-{{.Version}}-{{.Arch}}-{{.OS}}-macosx.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+          darwin: apple
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: linux
+            format: tar.xz
+            asset: xcbeautify-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin

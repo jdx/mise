@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: VictoriaMetrics/VictoriaMetrics/vmutils
+    type: github_release
+    repo_owner: VictoriaMetrics
+    repo_name: VictoriaMetrics
+    description: "VictoriaMetrics: fast, cost-effective monitoring solution and time series database"
+    files:
+      - name: vmalert-tool
+        src: vmalert-tool-prod
+    version_filter: semver("> 1.78.1") and not (Version endsWith "-victorialogs") and (Version endsWith ".0")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.103.0"
+        asset: vmutils-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: vmutils-{{.OS}}-{{.Arch}}-{{.Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: vmutils-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: vmutils-{{.OS}}-{{.Arch}}-{{.Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: vmalert-tool
+                src: vmalert-tool-windows-{{.Arch}}-prod.exe

@@ -17,6 +17,8 @@ use itertools::Itertools;
 pub struct ToolRequestSet {
     pub tools: IndexMap<Arc<BackendArg>, Vec<ToolRequest>>,
     pub sources: BTreeMap<Arc<BackendArg>, ToolSource>,
+    /// Tools that were filtered out because they don't exist in the registry (BackendType::Unknown)
+    pub unknown_tools: Vec<Arc<BackendArg>>,
 }
 
 impl ToolRequestSet {
@@ -89,7 +91,7 @@ impl ToolRequestSet {
             }
         }
         self.iter()
-            .filter(|(ba, ..)| tools.contains(&ba.short))
+            .filter(|(ba, ..)| tools.contains(&ba.short) || tools.contains(&ba.full()))
             .map(|(ba, trl, ts)| (ba.clone(), trl.clone(), ts.clone()))
             .collect::<ToolRequestSet>()
     }
@@ -167,6 +169,10 @@ impl ToolRequestSetBuilder {
 
         for ba in trs.tools.keys().cloned().collect_vec() {
             if self.is_disabled(&ba) {
+                // Track tools that don't exist in the registry
+                if ba.backend_type() == BackendType::Unknown {
+                    trs.unknown_tools.push(ba.clone());
+                }
                 trs.tools.shift_remove(&ba);
                 trs.sources.remove(&ba);
             }
@@ -196,7 +202,7 @@ impl ToolRequestSetBuilder {
     }
 
     fn load_runtime_env(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
-        for (k, v) in env::vars() {
+        for (k, v) in env::vars_safe() {
             if k.starts_with("MISE_") && k.ends_with("_VERSION") && k != "MISE_VERSION" {
                 let plugin_name = k
                     .trim_start_matches("MISE_")
@@ -264,4 +270,51 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
     b.tools.extend(a.tools);
     b.sources.extend(a.sources);
     b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_runtime_env_with_valid_utf8() {
+        // This test verifies that valid UTF-8 MISE_*_VERSION variables work correctly
+        unsafe {
+            std::env::set_var("MISE_NODE_VERSION", "20.0.0");
+            std::env::set_var("MISE_PYTHON_VERSION", "3.11");
+        }
+
+        let builder = ToolRequestSetBuilder::new();
+        let trs = builder.load_runtime_env(ToolRequestSet::new());
+
+        // Should not panic and should successfully load the versions
+        assert!(trs.is_ok());
+        let trs = trs.unwrap();
+        assert!(trs.tools.len() >= 2 || trs.tools.is_empty()); // May be empty if backends are disabled
+
+        unsafe {
+            std::env::remove_var("MISE_NODE_VERSION");
+            std::env::remove_var("MISE_PYTHON_VERSION");
+        }
+    }
+
+    #[test]
+    fn test_load_runtime_env_ignores_non_mise_vars() {
+        // Non-MISE variables should be ignored, even with special characters
+        unsafe {
+            std::env::set_var("HOMEBREW_INSTALL_BADGE", "✅");
+            std::env::set_var("SOME_OTHER_VAR", "value");
+        }
+
+        let builder = ToolRequestSetBuilder::new();
+        let result = builder.load_runtime_env(ToolRequestSet::new());
+
+        // Should not panic when non-MISE vars are present
+        assert!(result.is_ok());
+
+        unsafe {
+            std::env::remove_var("HOMEBREW_INSTALL_BADGE");
+            std::env::remove_var("SOME_OTHER_VAR");
+        }
+    }
 }

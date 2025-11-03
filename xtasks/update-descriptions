@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Update all task descriptions in the project"
 set -euxo pipefail
 
 for tool in $(mise registry | awk '{print $1}'); do

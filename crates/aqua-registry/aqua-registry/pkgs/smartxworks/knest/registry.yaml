@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: smartxworks
+    repo_name: knest
+    description: Kubernetes-in-Kubernetes Made Simple
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0"
+        asset: knest
+        supported_envs:
+          - linux/amd64
+      - version_constraint: "true"
+        asset: knest-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true

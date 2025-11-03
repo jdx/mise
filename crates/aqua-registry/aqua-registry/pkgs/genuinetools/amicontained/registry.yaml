@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: genuinetools
+    repo_name: amicontained
+    description: Container introspection tool. Find out what container runtime is being used as well as features available
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.4.5")
+        asset: amicontained-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        supported_envs:
+          - linux
+      - version_constraint: "true"
+        asset: amicontained-{{.OS}}-{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.md5"
+          algorithm: md5
+        supported_envs:
+          - linux/amd64

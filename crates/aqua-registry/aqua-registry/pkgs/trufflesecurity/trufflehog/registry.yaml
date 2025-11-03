@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: trufflesecurity
+    repo_name: trufflehog
+    description: Find, verify, and analyze leaked credentials
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["2.0.97", "v3.6.5", "v3.7.1", "v3.41.0", "v3.80.0", "3.80.4", "v3.82.10"]
+        no_asset: true
+      - version_constraint: semver("<= 3.63.1")
+        asset: trufflehog_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: trufflehog_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: trufflehog_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: trufflehog_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/trufflesecurity/trufflehog/releases/download/{{.Version}}/trufflehog_{{trimV .Version}}_checksums.txt.pem
+              - --certificate-identity
+              - https://github.com/trufflesecurity/trufflehog/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/trufflesecurity/trufflehog/releases/download/{{.Version}}/trufflehog_{{trimV .Version}}_checksums.txt.sig

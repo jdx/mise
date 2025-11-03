@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: blst-security
+    repo_name: cherrybomb
+    description: Stop half-done APIs! Cherrybomb is a CLI tool that helps you avoid undefined user behaviour by auditing your API specifications, validating them and running API security tests
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.4.2")
+        asset: cherrybomb_{{.OS}}
+        format: raw
+        rosetta2: true
+        replacements:
+          darwin: mac
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.6.0")
+        asset: cherrybomb_{{.OS}}_gnu
+        format: raw
+        rosetta2: true
+        overrides:
+          - goos: darwin
+            asset: cherrybomb_{{.OS}}_{{.Arch}}
+        replacements:
+          amd64: x86_64
+          darwin: mac
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.7.0")
+        no_asset: true
+      - version_constraint: semver("<= 1.0.0")
+        asset: cherrybomb_{{.OS}}_gnu
+        format: raw
+        rosetta2: true
+        overrides:
+          - goos: darwin
+            asset: cherrybomb_{{.OS}}_{{.Arch}}
+        replacements:
+          amd64: x86_64
+          darwin: mac
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v1.0.1"
+        asset: cherrybomb
+        format: raw
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: cherrybomb_{{.OS}}_gnu
+        format: raw
+        rosetta2: true
+        overrides:
+          - goos: darwin
+            asset: cherrybomb_{{.OS}}_{{.Arch}}
+        replacements:
+          amd64: x86_64
+          darwin: mac
+        supported_envs:
+          - linux/amd64
+          - darwin

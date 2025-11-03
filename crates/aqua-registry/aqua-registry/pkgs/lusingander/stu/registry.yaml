@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: lusingander
+    repo_name: stu
+    description: TUI explorer application for Amazon S3 (AWS S3)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.4")
+        no_asset: true
+      - version_constraint: semver("<= 0.4.0")
+        asset: stu-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 0.6.5")
+        asset: stu-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        checksum:
+          type: github_release
+          asset: checksum.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: stu-{{trimV .Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        checksum:
+          type: github_release
+          asset: checksum.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

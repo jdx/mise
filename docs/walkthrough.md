@@ -26,7 +26,7 @@ node -v
 
 And you'll also note that you now have a `mise.toml` file with the following content:
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 [tools]
 node = "22"
 ```
@@ -130,7 +130,7 @@ Tasks are defined in a project to execute commands.
 
 You can define tasks in a `mise.toml`:
 
-```toml [mise.toml]
+```mise-toml [mise.toml]
 [tasks]
 build = "npm run build"
 test = "npm test"
@@ -176,7 +176,7 @@ set -e
 echo "all available options are in the env with the prefix 'usage_'"
 env | grep usage_
 
-echo "$usage_greeting, $usage_user! Your message is: $usage_message"
+echo "${usage_greeting?}, ${usage_user?}! Your message is: ${usage_message?}"
 ```
 
 This task can be run like so:
@@ -208,7 +208,7 @@ Since there are a lot of commands available in mise, here are what I consider th
 - [`mise ls-remote`](/cli/ls-remote) – List all available versions of a tool.
 - [`mise ls`](/cli/ls) – Lists information about installed/active tools.
 - [`mise outdated`](/cli/outdated) – Informs you of any tools with newer versions available.
-- [`mise plugin`](/cli/plugins) – Plugins can extend mise with new functionality like extra tools or environment variable management. Commonly, these are simply asdf/vfox plugins.
+- [`mise plugin`](/cli/plugins) – Plugins can extend mise with new functionality like extra tools or environment variable management. Commonly, these are simply asdf plugins or modern plugins.
 - [`mise r|run`](/cli/run) – Run a task defined in `mise.toml` or `mise-tasks`.
 - [`mise self-update`](/cli/self-update) – Update mise to the latest version. Don't use this if you installed mise via a package manager.
 - [`mise settings`](/cli/settings) – CLI access to get/set configuration settings.

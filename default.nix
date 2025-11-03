@@ -1,8 +1,8 @@
-{ pkgs, lib, stdenv, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, openssl, git }:
+{ pkgs, lib, fetchFromGitHub, rustPlatform, coreutils, bash, direnv, openssl, git }:
 
 rustPlatform.buildRustPackage {
   pname = "mise";
-  version = "2025.6.5";
+  version = "2025.11.1";
 
   src = lib.cleanSource ./.;
 
@@ -10,16 +10,23 @@ rustPlatform.buildRustPackage {
     lockFile = ./Cargo.lock;
   };
 
-  nativeBuildInputs = with pkgs; [ pkg-config ];
+  nativeBuildInputs = with pkgs; [
+    cmakeMinimal
+    clang
+    llvmPackages.libclang
+    pkg-config
+  ];
   buildInputs = with pkgs; [
-    coreutils
     bash
+    coreutils
     direnv
-    gnused
-    git
     gawk
+    git
+    gnused
     openssl
-  ] ++ lib.optionals stdenv.isDarwin [ darwin.apple_sdk.frameworks.Security darwin.apple_sdk.frameworks.SystemConfiguration ];
+  ];
+
+  LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
 
   prePatch = ''
     substituteInPlace ./src/test.rs ./test/data/plugins/**/bin/* \

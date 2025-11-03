@@ -1,4 +1,4 @@
-# Rust <Badge type="warning" text="experimental" />
+# Rust
 
 Rust/cargo can be installed which uses rustup under the hood. mise will install rustup if it is not already
 installed and add the requested targets. By default, mise respects the `RUSTUP_HOME` and `CARGO_HOME` environment
@@ -7,7 +7,7 @@ not set. You can change this by setting the `MISE_RUSTUP_HOME` and `MISE_CARGO_H
 to isolate mise's rustup/cargo from your other rustup/cargo installations.
 
 Unlike most tools, these won't exist inside of `~/.local/share/mise/installs` because they are managed by rustup.
-All mise does is set the `RUST_TOOLCHAIN` environment variable to the requested version and rustup will
+All mise does is set the `RUSTUP_TOOLCHAIN` environment variable to the requested version and rustup will
 automatically install it if it doesn't exist.
 
 ## Usage
@@ -54,9 +54,11 @@ toolchains. Please consult the Rust documentation for the most up-to-date list o
 The `profile` option allows you to specify the type of release to install. The following values
 are supported:
 
-- `minimal`: Includes as few components as possible to get a working compiler (rustc, rust-std, and cargo)
-- `default` (default): Includes all of components in the minimal profile, and adds rust-docs, rustfmt, and clippy
-- `complete`: Includes all the components available through rustup. This should never be used, as it includes every component ever included in the metadata and thus will almost always fail.
+- `minimal`: Includes as few components as possible to get a working compiler (`rustc`, `rust-std`, and `cargo`)
+- `default`: Includes all of the components in the minimal profile, and adds `rust-docs`, `rustfmt`, and `clippy`
+- `complete`: Includes all the components available through `rustup`. This should never be used, as it includes every component ever included in the metadata and thus will almost always fail.
+
+If not set, it defaults to the profile configured in `rustup`. You can check your current default by running `rustup show profile`.
 
 ```toml
 [tools]

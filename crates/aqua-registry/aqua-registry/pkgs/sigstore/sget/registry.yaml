@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    repo_owner: sigstore
+    repo_name: sget
+    description: sget is command for safer, automatic verification of signatures and integration with Sigstore's binary transparency log, Rekor

@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: michidk
+    repo_name: vscli
+    description: A CLI tool to launch vscode projects, which supports devcontainers
+    asset: vscli-{{.Arch}}-{{.OS}}.{{.Format}}
+    files:
+      - name: vscli
+        src: vscli-{{.Arch}}-{{.OS}}/vscli
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      amd64: x86_64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+      windows: pc-windows-msvc
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    version_constraint: semver(">= 0.1.7")
+    version_overrides:
+      - version_constraint: Version == "v0.1.6"
+        format: zip
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            checksum:
+              enabled: false
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+        rosetta2: false
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: Version == "v0.1.5"
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+        rosetta2: false
+        overrides:
+          - goos: windows
+            format: zip
+            checksum:
+              enabled: false
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: semver("< 0.1.5")
+        format: zip
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            checksum:
+              enabled: false
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+        rosetta2: false
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256

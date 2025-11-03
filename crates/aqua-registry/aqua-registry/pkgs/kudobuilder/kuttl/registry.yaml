@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kudobuilder
+    repo_name: kuttl
+    description: KUbernetes Test TooL (kuttl)
+    supported_envs:
+      - darwin
+      - linux
+    asset: kuttl_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    files:
+      - name: kubectl-kuttl
+    replacements:
+      386: i386
+      amd64: x86_64
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

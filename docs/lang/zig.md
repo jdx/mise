@@ -44,3 +44,10 @@ mise use -g zls@latest # install latest zls release
 
 Note that a tagged release of `zig` should be used with
 the same tagged release of `zls`. Currently there is no Mach version of `zls`.
+
+## Settings
+
+<script setup>
+import Settings from '/components/settings.vue';
+</script>
+<Settings child="zig" :level="3" />

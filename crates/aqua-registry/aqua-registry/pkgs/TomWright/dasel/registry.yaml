@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: TomWright
+    repo_name: dasel
+    rosetta2: true
+    asset: dasel_{{.OS}}_{{.Arch}}
+    format: raw
+    description: Select, put and delete data from JSON, TOML, YAML, XML and CSV files with a single tool. Supports conversion between formats and can be used as a Go package
+    supported_envs:
+      - darwin
+      - linux
+      - amd64

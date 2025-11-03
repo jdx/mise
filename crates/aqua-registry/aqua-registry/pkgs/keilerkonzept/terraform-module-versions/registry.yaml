@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: keilerkonzept
+    repo_name: terraform-module-versions
+    description: "CLI tool that checks Terraform code for module updates. Single binary, no dependencies. linux, osx, windows. #golang #cli #terraform"
+    asset: terraform-module-versions_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    replacements:
+      amd64: x86_64
+      darwin: osx
+    supported_envs:
+      - darwin
+    rosetta2: true
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["3.0.29", "3.1.14"]
+        no_asset: true
+      - version_constraint: semver("< 3.1.14")
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - linux
+          - amd64

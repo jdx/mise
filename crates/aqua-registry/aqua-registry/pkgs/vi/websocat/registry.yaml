@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: vi
+    repo_name: websocat
+    description: "Command-line client for WebSockets, like netcat (or curl) for ws:// with advanced socat-like functions"
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    format: raw
+    rosetta2: true
+    version_constraint: semver(">= 1.10.0")
+    asset: websocat.{{.Arch}}-{{.OS}}
+    replacements:
+      darwin: apple-darwin
+      amd64: x86_64
+      windows: pc-windows-gnu
+      linux: unknown-linux-musl
+      arm64: aarch64
+    version_overrides:
+      - version_constraint: "true"
+        supported_envs:
+          - darwin
+          - amd64
+        asset: websocat_{{.OS}}
+        replacements:
+          darwin: mac
+          linux: linux64
+          windows: win64

@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: librespeed
+    repo_name: speedtest-cli
+    asset: librespeed-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: librespeed-cli
+        src: librespeed-cli
+    description: Command line client for LibreSpeed
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

@@ -10,8 +10,8 @@ assert "./bin/xxx" "running xxx"
 assert "mise generate bootstrap -l -w"
 
 # ensure that that the commands don't rely on the global mise bin
-orginal_mise="$(which mise)"
-mv "$orginal_mise" "orginal_mise"
+original_mise="$(which mise)"
+mv "$original_mise" "original_mise"
 
 assert_contains "./bin/mise tasks ls" "xxx"
 
@@ -27,4 +27,4 @@ run = ["{{mise_bin}} run other_task"]
 
 assert_contains "./bin/mise run my_task" "running other_task"
 
-mv "orginal_mise" "$orginal_mise"
+mv "original_mise" "$original_mise"

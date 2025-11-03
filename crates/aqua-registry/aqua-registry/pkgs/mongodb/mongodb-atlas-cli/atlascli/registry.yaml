@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: mongodb/mongodb-atlas-cli/atlascli
+    type: github_release
+    repo_owner: mongodb
+    repo_name: mongodb-atlas-cli
+    description: MongoDB Atlas CLI and MongoDB CLI enable you to manage your MongoDB in the Cloud
+    asset: mongodb-atlas-cli_{{trimPrefix "atlascli/v" .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    replacements:
+      darwin: macos
+      amd64: x86_64
+    files:
+      - name: atlas
+        src: bin/atlas
+    overrides:
+      - goos: linux
+        format: tar.gz
+        files:
+          - name: atlas
+            src: mongodb-atlas-cli_{{trimPrefix "atlascli/v" .Version}}_{{.OS}}_{{.Arch}}/bin/atlas
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    version_filter: Version startsWith "atlascli/"
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: transcend-io
+    repo_name: terragrunt-atlantis-config
+    description: Generate Atlantis config for Terragrunt projects
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.10.1") || Version in ["v0.12.0", "v1.0.0", "v1.4.0", "v1.7.1", "v1.17.1", "v1.17.2"]
+        no_asset: true
+      - version_constraint: semver("<= 1.7.0")
+        asset: terragrunt-atlantis-config_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: terragrunt-atlantis-config
+            src: "{{.AssetWithoutExt}}/{{.AssetWithoutExt}}"
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: terragrunt-atlantis-config
+                src: "{{.AssetWithoutExt}}"
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.17.4")
+        asset: terragrunt-atlantis-config_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: terragrunt-atlantis-config
+            src: "{{.AssetWithoutExt}}/{{.AssetWithoutExt}}"
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: terragrunt-atlantis-config
+                src: "{{.AssetWithoutExt}}"
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: terragrunt-atlantis-config_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: SHA512SUMS
+          algorithm: sha512

@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: goreleaser
+    repo_name: nfpm
+    description: nFPM is Not FPM - a simple deb, rpm and apk packager written in Go
+    asset: nfpm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+      cosign:
+        opts:
+          - --certificate-identity-regexp
+          - "https://github\\.com/goreleaser/nfpm/\\.github/workflows/release\\.yml@.*"
+          - --certificate-oidc-issuer
+          - "https://token.actions.githubusercontent.com"
+          - --signature
+          - https://github.com/goreleaser/nfpm/releases/download/{{.Version}}/checksums.txt.sig
+          - --certificate
+          - https://github.com/goreleaser/nfpm/releases/download/{{.Version}}/checksums.txt.pem
+    version_constraint: semver(">= 2.30.1")
+    version_overrides:
+      - version_constraint: Version == "v2.30.0"
+        # https://github.com/goreleaser/nfpm/pull/674
+        asset: nfpm_.{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        checksum:
+          enabled: false
+      - version_constraint: semver(">= 2.11.0")
+        # Disable Cosign
+        # > Error: none of the expected identities matched what was in the certificate, got subjects [carlos@becker.software] with issuer https://github.com/login/oauth
+        # > main.go:74: error during command execution: none of the expected identities matched what was in the certificate, got subjects [carlos@becker.software] with issuer https://github.com/login/oauth
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver(">= 2.7.1")
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: semver(">= 2.7.0")
+        checksum:
+          type: github_release
+          asset: nfpm_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver(">= 2.5.0")
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        checksum:
+          type: github_release
+          asset: nfpm_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver(">= 2.2.5")
+        overrides: []
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        checksum:
+          type: github_release
+          asset: nfpm_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver(">= 2.2.0")
+        overrides: []
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: nfpm_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver(">= 1.3.1")
+        overrides: []
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: nfpm_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("< 1.3.1")
+        overrides: []
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: nfpm_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

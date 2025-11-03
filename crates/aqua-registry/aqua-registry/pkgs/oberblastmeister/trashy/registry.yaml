@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: oberblastmeister
+    repo_name: trashy
+    description: A cli system trash manager, alternative to rm and trash-cli
+    asset: trash-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: trash
+    overrides:
+      - goos: windows
+        format: raw
+        asset: trash-{{.Arch}}-{{.OS}}
+    replacements:
+      amd64: x86_64
+      linux: unknown-linux-gnu
+      windows: pc-windows-msvc
+    supported_envs:
+      - linux/amd64
+      - windows/amd64

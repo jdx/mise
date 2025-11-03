@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Songmu
+    repo_name: maltmill
+    asset: maltmill_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: zip
+    description: create and update Homebrew thrid party Formulae
+    overrides:
+      - goos: linux
+        format: tar.gz
+    files:
+      - name: maltmill
+        src: maltmill_{{.Version}}_{{.OS}}_{{.Arch}}/maltmill
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256

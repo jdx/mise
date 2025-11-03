@@ -10,7 +10,7 @@ use path_absolutize::Absolutize;
 
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::ConfigFile;
-use crate::config::{Config, Settings, config_file};
+use crate::config::{Config, ConfigPathOptions, Settings, config_file, resolve_target_config_path};
 use crate::file::display_path;
 use crate::registry::REGISTRY;
 use crate::toolset::{
@@ -62,6 +62,10 @@ pub struct Use {
     #[clap(short, long, overrides_with_all = & ["path", "env"])]
     global: bool,
 
+    /// Perform a dry run, showing what would be installed and modified without making changes
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    dry_run: bool,
+
     /// Create/modify an environment-specific config file like .mise.<env>.toml
     #[clap(long, short, overrides_with_all = & ["global", "path"])]
     env: Option<String>,
@@ -108,7 +112,7 @@ impl Use {
             .with_global_only(self.global)
             .build(&config)
             .await?;
-        let cf = self.get_config_file()?;
+        let cf = self.get_config_file().await?;
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
             use_locked_version: true,
@@ -139,9 +143,11 @@ impl Use {
                 &mut config,
                 versions.clone(),
                 &InstallOptions {
+                    reason: "use".to_string(),
                     force: self.force,
                     jobs: self.jobs,
                     raw: self.raw,
+                    dry_run: self.dry_run,
                     resolve_options,
                     ..Default::default()
                 },
@@ -155,21 +161,20 @@ impl Use {
                 .into_iter()
                 .map(|tv| {
                     let mut request = tv.request.clone();
-                    if pin {
-                        if let ToolRequest::Version {
+                    if pin
+                        && let ToolRequest::Version {
                             version: _version,
                             source,
                             options,
                             backend,
                         } = request
-                        {
-                            request = ToolRequest::Version {
-                                version: tv.version.clone(),
-                                source,
-                                options,
-                                backend,
-                            };
-                        }
+                    {
+                        request = ToolRequest::Version {
+                            version: tv.version.clone(),
+                            source,
+                            options,
+                            backend,
+                        };
                     }
                     request
                 })
@@ -183,45 +188,47 @@ impl Use {
         for plugin_name in &self.remove {
             cf.remove_tool(plugin_name)?;
         }
-        cf.save()?;
 
-        for tv in &mut versions {
-            // update the source so the lockfile is updated correctly
-            tv.request.set_source(cf.source());
+        if !self.dry_run {
+            cf.save()?;
+            for tv in &mut versions {
+                // update the source so the lockfile is updated correctly
+                tv.request.set_source(cf.source());
+            }
+
+            let config = Config::reset().await?;
+            let ts = config.get_toolset().await?;
+            config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
         }
 
-        let config = Config::reset().await?;
-        let ts = config.get_toolset().await?;
-        config::rebuild_shims_and_runtime_symlinks(&config, ts, &versions).await?;
-
-        self.render_success_message(cf.as_ref(), &versions)?;
+        self.render_success_message(cf.as_ref(), &versions, &self.remove)?;
         Ok(())
     }
 
-    fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
+    async fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
-        let path = if self.global {
-            config::global_config_path()
-        } else if let Some(p) = &self.path {
+
+        // Handle special case for --path that needs absolutize logic for compatibility
+        let path = if let Some(p) = &self.path {
             let from_dir = config::config_file_from_dir(p).absolutize()?.to_path_buf();
             if from_dir.starts_with(&cwd) {
                 from_dir
             } else {
                 p.clone()
             }
-        } else if let Some(env) = &self.env {
-            let p = cwd.join(format!(".mise.{env}.toml"));
-            if p.exists() {
-                p
-            } else {
-                cwd.join(format!("mise.{env}.toml"))
-            }
-        } else if env::in_home_dir() {
-            config::global_config_path()
         } else {
-            config::config_file_from_dir(&cwd)
+            let opts = ConfigPathOptions {
+                global: self.global,
+                path: None, // handled above
+                env: self.env.clone(),
+                cwd: Some(cwd),
+                prefer_toml: false, // mise use supports .tool-versions and other formats
+                prevent_home_local: true, // When in HOME, use global config
+            };
+            resolve_target_config_path(opts)?
         };
-        config_file::parse_or_init(&path)
+
+        config_file::parse_or_init(&path).await
     }
 
     async fn warn_if_hidden(&self, config: &Arc<Config>, global: &Path) {
@@ -236,24 +243,62 @@ impl Use {
             warn!("{plugin} is defined in {p} which overrides the global config ({global})");
         };
         for targ in &self.tool {
-            if let Some(tv) = ts.versions.get(targ.ba.as_ref()) {
-                if let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source {
-                    if !file::same_file(p, global) {
-                        warn(targ, p);
-                    }
-                }
+            if let Some(tv) = ts.versions.get(targ.ba.as_ref())
+                && let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source
+                && !file::same_file(p, global)
+            {
+                warn(targ, p);
             }
         }
     }
 
-    fn render_success_message(&self, cf: &dyn ConfigFile, versions: &[ToolVersion]) -> Result<()> {
+    fn render_success_message(
+        &self,
+        cf: &dyn ConfigFile,
+        versions: &[ToolVersion],
+        remove: &[BackendArg],
+    ) -> Result<()> {
         let path = display_path(cf.get_path());
-        let tools = versions.iter().map(|t| t.style()).join(", ");
-        miseprintln!(
-            "{} {} tools: {tools}",
-            style("mise").green(),
-            style(path).cyan().for_stderr(),
-        );
+
+        if self.dry_run {
+            let mut messages = vec![];
+
+            if !versions.is_empty() {
+                let tools = versions.iter().map(|t| t.style()).join(", ");
+                messages.push(format!("add: {tools}"));
+            }
+
+            if !remove.is_empty() {
+                let tools_to_remove = remove.iter().map(|r| r.to_string()).join(", ");
+                messages.push(format!("remove: {tools_to_remove}"));
+            }
+
+            if !messages.is_empty() {
+                miseprintln!(
+                    "{} would update {} ({})",
+                    style("mise").green(),
+                    style(&path).cyan().for_stderr(),
+                    messages.join(", ")
+                );
+            }
+        } else {
+            if !versions.is_empty() {
+                let tools = versions.iter().map(|t| t.style()).join(", ");
+                miseprintln!(
+                    "{} {} tools: {tools}",
+                    style("mise").green(),
+                    style(&path).cyan().for_stderr(),
+                );
+            }
+            if !remove.is_empty() {
+                let tools_to_remove = remove.iter().map(|r| r.to_string()).join(", ");
+                miseprintln!(
+                    "{} {} removed: {tools_to_remove}",
+                    style("mise").green(),
+                    style(&path).cyan().for_stderr(),
+                );
+            }
+        }
         Ok(())
     }
 

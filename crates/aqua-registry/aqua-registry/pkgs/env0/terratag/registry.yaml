@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: env0
+    repo_name: terratag
+    asset: terratag_{{trimV .Version}}_{{.OS}}_amd64.tar.gz
+    description: Terratag is a CLI tool that enables users of Terraform to automatically create and maintain tags across their entire set of AWS, Azure, and GCP resources
+    checksum:
+      type: github_release
+      asset: terratag_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

@@ -152,7 +152,9 @@ python -m venv {p}",
 #[cfg(unix)]
 mod tests {
     use super::*;
-    use crate::config::env_directive::{EnvDirective, EnvDirectiveOptions, EnvResolveOptions};
+    use crate::config::env_directive::{
+        EnvDirective, EnvDirectiveOptions, EnvResolveOptions, ToolsFilter,
+    };
     use crate::tera::BASE_CONTEXT;
     use crate::test::replace_path;
     use insta::assert_debug_snapshot;
@@ -175,7 +177,8 @@ mod tests {
                         python_create_args: None,
                         options: EnvDirectiveOptions {
                             tools: true,
-                            redact: false,
+                            redact: Some(false),
+                            required: crate::config::env_directive::RequiredValue::False,
                         },
                     },
                     Default::default(),
@@ -189,15 +192,17 @@ mod tests {
                         python_create_args: None,
                         options: EnvDirectiveOptions {
                             tools: true,
-                            redact: false,
+                            redact: Some(false),
+                            required: crate::config::env_directive::RequiredValue::False,
                         },
                     },
                     Default::default(),
                 ),
             ],
             EnvResolveOptions {
-                tools: true,
-                ..Default::default()
+                vars: false,
+                tools: ToolsFilter::ToolsOnly,
+                warn_on_missing_required: false,
             },
         )
         .await

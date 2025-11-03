@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use eyre::Result;
 
-use crate::backend::{self, BackendList};
+use crate::backend::{self, Backend, BackendList};
 use crate::cli::args::BackendArg;
 use crate::config::config_file::ConfigFile;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
@@ -23,12 +24,12 @@ impl IdiomaticVersionFile {
         }
     }
 
-    pub fn parse(path: PathBuf, plugins: BackendList) -> Result<Self> {
+    pub async fn parse(path: PathBuf, plugins: BackendList) -> Result<Self> {
         let source = ToolSource::IdiomaticVersionFile(path.clone());
         let mut tools = ToolRequestSet::new();
 
         for plugin in plugins {
-            let version = plugin.parse_idiomatic_file(&path)?;
+            let version = plugin.parse_idiomatic_file(&path).await?;
             for version in version.split_whitespace() {
                 let tr = ToolRequest::new(plugin.ba().clone(), version, source.clone())?;
                 tools.add_version(tr, &source);
@@ -38,17 +39,19 @@ impl IdiomaticVersionFile {
         Ok(Self { tools, path })
     }
 
-    pub fn from_file(path: &Path) -> Result<Self> {
+    pub async fn from_file(path: &Path) -> Result<Self> {
         trace!("parsing idiomatic version: {}", path.display());
         let file_name = &path.file_name().unwrap().to_string_lossy().to_string();
-        let tools = backend::list()
-            .into_iter()
-            .filter(|f| match f.idiomatic_filenames() {
-                Ok(f) => f.contains(file_name),
-                Err(_) => false,
-            })
-            .collect::<Vec<_>>();
-        Self::parse(path.to_path_buf(), tools)
+        let mut tools: Vec<Arc<dyn Backend>> = vec![];
+        for b in backend::list().into_iter() {
+            if b.idiomatic_filenames()
+                .await
+                .is_ok_and(|f| f.contains(file_name))
+            {
+                tools.push(b);
+            }
+        }
+        Self::parse(path.to_path_buf(), tools).await
     }
 }
 

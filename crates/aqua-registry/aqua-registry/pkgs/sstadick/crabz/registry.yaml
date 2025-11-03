@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sstadick
+    repo_name: crabz
+    description: Like pigz, but rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.7.0", "v0.7.6"]
+        asset: crabz-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 0.7.2")
+        asset: crabz-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: crabz-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

@@ -20,7 +20,7 @@ env:
   NPM_CONFIG_FUND: false
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
-  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
   release-plz:
@@ -28,23 +28,22 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
-          submodules: true
-      - uses: crazy-max/ghaction-import-gpg@v6
+          token: ${{ secrets.MISE_GH_TOKEN }}
+      - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true
           git_commit_gpgsign: true
           git_tag_gpgsign: true
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
         with:
           shared-key: build
       - run: mkdir -p "$HOME/bin" && echo "$HOME/bin" >> "$GITHUB_PATH"
       - run: cargo build --all-features && cp target/debug/mise "$HOME"/bin
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
           path: |

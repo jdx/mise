@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: apple
+    repo_name: container
+    description: A tool for creating and running Linux containers using lightweight virtual machines on a Mac. It's written in Swift, and optimized for Apple silicon
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: container-{{.Version}}-installer-signed.{{.Format}}
+        format: pkg
+        files:
+          - name: container
+            src: Payload/bin/container
+        supported_envs:
+          - darwin

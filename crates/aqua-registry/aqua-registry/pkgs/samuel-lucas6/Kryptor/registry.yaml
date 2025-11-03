@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: samuel-lucas6
+    repo_name: Kryptor
+    description: A simple, modern, and secure encryption and signing tool that aims to be a better version of age and Minisign
+    files:
+      - name: kryptor
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v2.2.2"
+        asset: KryptorCLI-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.2.1")
+        no_asset: true
+      - version_constraint: semver("<= 3.1.1")
+        asset: kryptor-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: kryptor-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          darwin: macos

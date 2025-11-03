@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: nvarner
+    repo_name: typst-lsp
+    description: A brand-new language server for Typst, plus a VS Code extension
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.0") or Version in ["v0.5.0", "v0.6.0", "v0.6.1", "v0.8.0"]
+        no_asset: true
+      - version_constraint: semver("<= 0.7.2")
+        asset: typst-lsp-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+          windows: win32
+      - version_constraint: Version == "v0.8.1"
+        asset: typst-lsp
+        format: raw
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+      - version_constraint: "true"
+        asset: typst-lsp-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc

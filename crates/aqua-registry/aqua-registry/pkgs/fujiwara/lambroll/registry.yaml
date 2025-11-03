@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: fujiwara
+    repo_name: lambroll
+    description: lambroll is a minimal deployment tool for AWS Lambda
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.12.7")
+        asset: lambroll_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        rosetta2: true
+        files:
+          - name: lambroll
+            src: lambroll_{{.Version}}_{{.OS}}_{{.Arch}}/lambroll
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.14.7")
+        asset: lambroll_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: lambroll
+            src: lambroll_{{.Version}}_{{.OS}}_{{.Arch}}/lambroll
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: lambroll_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin

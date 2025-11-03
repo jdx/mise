@@ -173,12 +173,19 @@ fn find_sysconfigdata(
     suffix: &str,
 ) -> Result<PathBuf, Error> {
     // Find the `lib` directory in the Python installation.
-    let lib = real_prefix
+    let lib_with_suffix = real_prefix
         .join("lib")
         .join(format!("python{major}.{minor}{suffix}"));
-    if !lib.exists() {
+    let lib_without_suffix = real_prefix
+        .join("lib")
+        .join(format!("python{major}.{minor}"));
+    let lib = if lib_with_suffix.exists() {
+        lib_with_suffix
+    } else if lib_without_suffix.exists() {
+        lib_without_suffix
+    } else {
         return Err(Error::MissingLib);
-    }
+    };
 
     // Probe the `lib` directory for `_sysconfigdata_`.
     for entry in lib.read_dir()? {

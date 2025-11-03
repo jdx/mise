@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: inlets
+    repo_name: mixctl
+    description: A tiny TCP load balancer
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.0.3-rc1"
+        no_asset: true
+      - version_constraint: "true"
+        format: raw
+        asset: mixctl
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: mixctl-arm64
+          - goos: darwin
+            goarch: amd64
+            asset: mixctl-darwin
+          - goos: darwin
+            goarch: arm64
+            asset: mixctl-darwin-arm64
+        supported_envs:
+          - darwin
+          - linux
+          - amd64

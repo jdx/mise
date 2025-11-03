@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Test that project tasks can be called from root task run blocks
+# Regression test for: https://github.com/jdx/mise/discussions/6739
+export MISE_EXPERIMENTAL=1
+
+# Create monorepo root config with a task that calls a project task via run block
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.call-backend-via-run]
+run = [
+    { task = "//projects/backend:hello" }
+]
+
+[tasks.call-backend-via-depends]
+depends = ["//projects/backend:hello"]
+run = "echo 'after dependency'"
+TOML
+
+# Create backend project with a simple task
+mkdir -p projects/backend
+cat <<'TOML' >projects/backend/mise.toml
+[tasks.hello]
+run = "echo 'hello from backend'"
+TOML
+
+# Test 1: Calling project task from root task run block (this should work but currently fails)
+echo "=== Test 1: Call project task from root task run block ==="
+output=$(mise run //:call-backend-via-run 2>&1)
+echo "$output"
+echo "$output" | grep -q "hello from backend" || (echo "FAIL: Project task not called from run block" && exit 1)
+
+# Test 2: Calling project task via depends (this already works)
+echo "=== Test 2: Call project task from root task depends ==="
+output=$(mise run //:call-backend-via-depends)
+echo "$output"
+echo "$output" | grep -q "hello from backend" || (echo "FAIL: Project task not called from depends" && exit 1)
+echo "$output" | grep -q "after dependency" || (echo "FAIL: Root task did not run after dependency" && exit 1)
+
+# Test 3: Multiple project tasks in run block
+cat <<'TOML' >mise.toml
+experimental_monorepo_root = true
+
+[tasks.call-multiple]
+run = [
+    { task = "//projects/backend:hello" },
+    { task = "//projects/frontend:greet" }
+]
+TOML
+
+mkdir -p projects/frontend
+cat <<'TOML' >projects/frontend/mise.toml
+[tasks.greet]
+run = "echo 'greetings from frontend'"
+TOML
+
+echo "=== Test 3: Call multiple project tasks from root task run block ==="
+output=$(mise run //:call-multiple)
+echo "$output"
+echo "$output" | grep -q "hello from backend" || (echo "FAIL: Backend task not called" && exit 1)
+echo "$output" | grep -q "greetings from frontend" || (echo "FAIL: Frontend task not called" && exit 1)
+
+echo "=== All tests passed! ==="

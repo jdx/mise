@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: cycloidio
+    repo_name: terracognita
+    asset: terracognita-{{.OS}}-{{.Arch}}.tar.gz
+    description: Reads from existing public and private cloud providers (reverse Terraform) and generates your infrastructure as code on Terraform configuration
+    supported_envs:
+      - darwin
+      - amd64
+    files:
+      - name: terracognita
+        src: terracognita-{{.OS}}-{{.Arch}}
+    rosetta2: true
+    checksum:
+      enabled: false

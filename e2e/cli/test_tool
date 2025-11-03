@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Test valid tool information
+mise tool node | grep -q "Backend:" || fail "Backend field not found"
+
+# Test JSON output
+mise tool node --json | grep -q '"backend"' || fail "JSON backend field not found"
+
+# Test specific field filters
+backend_output=$(mise tool node --backend)
+[[ -n $backend_output ]] || fail "Backend output is empty"
+
+# Test that invalid tool names should error
+assert_fail "mise tool INVALID_TOOL_NAME"
+
+# Test duplicate version bug - install multiple versions of a tool
+mise use tiny@1.0.0
+mise use tiny@1.1.0
+assert "mise tool tiny --installed" "1.0.0 1.1.0"

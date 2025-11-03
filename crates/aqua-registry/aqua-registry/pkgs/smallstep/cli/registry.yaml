@@ -1,0 +1,128 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: smallstep
+    repo_name: cli
+    description: A zero trust swiss army knife for working with X509, OAuth, JWT, OATH OTP, etc
+    version_filter: not (Version matches "-rc[0-9.]+$")
+    files:
+      - name: step
+        src: step_{{.OS}}_{{.Arch}}/bin/step
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.15.1", "v0.27.0", "v0.28.1", "v0.28.4"]
+        no_asset: true
+      - version_constraint: Version == "v0.0.1"
+        asset: step_{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step
+            src: step_{{trimV .Version}}/bin/step
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.14.0"
+        asset: step_{{.OS}}_{{trimV .Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step
+            src: step_{{trimV .Version}}/bin/step
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: Version == "v0.14.1"
+        asset: step_{{.OS}}_{{trimV .Version}}-dev_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step
+            src: step_{{trimV .Version}}-dev/bin/step
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.13.3")
+        asset: step_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step
+            src: step_{{trimV .Version}}/bin/step
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.15.3")
+        asset: step_{{.OS}}_{{trimV .Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step
+            src: step_{{trimV .Version}}/bin/step
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.17.6")
+        asset: step_{{.OS}}_{{trimV .Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step
+            src: step_{{trimV .Version}}/bin/step
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.22.0")
+        asset: step_{{.OS}}_{{trimV .Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step
+            src: step_{{trimV .Version}}/bin/step
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.24.4")
+        asset: step_{{.OS}}_{{trimV .Version}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: step
+            src: step_{{trimV .Version}}/bin/step
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/smallstep/cli/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity
+              - https://github.com/smallstep/cli/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/smallstep/cli/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: step_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/smallstep/cli/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity
+              - https://github.com/smallstep/workflows/.github/workflows/goreleaser.yml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/smallstep/cli/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip

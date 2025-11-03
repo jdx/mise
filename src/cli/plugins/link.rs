@@ -55,6 +55,7 @@ impl PluginsLink {
         }
         file::create_dir_all(*dirs::PLUGINS)?;
         make_symlink(&path, &symlink)?;
+
         Ok(())
     }
 }

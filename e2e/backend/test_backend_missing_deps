@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+
+# Test that package manager backends show helpful warnings when their dependencies are missing
+
+# Create a PATH that has mise but not package managers
+# ROOT is set by run_test script
+# Resolve the mise binary from PATH (release e2e ensures it's installed)
+MISE_BIN="$(command -v mise)"
+MISE_DIR="$(dirname "$MISE_BIN")"
+export PATH="$MISE_DIR:/usr/bin:/bin:/usr/sbin:/sbin"
+
+# Track overall test status
+TEST_FAILED=0
+
+# Helper function to check if a command exists in PATH
+check_command_missing() {
+	local cmd=$1
+	if command -v "$cmd" >/dev/null 2>&1; then
+		echo "ERROR: $cmd is found in PATH, test cannot verify missing dependency behavior"
+		exit 1
+	fi
+}
+
+# Helper function to test an expected error message
+test_error_message() {
+	local test_name=$1
+	local output=$2
+	local expected=$3
+
+	if [[ $output == *"$expected"* ]]; then
+		echo "✓ $test_name"
+	else
+		echo "ERROR: $test_name failed"
+		echo "Expected: $expected"
+		echo "Got: $output"
+		TEST_FAILED=1
+		return 1
+	fi
+}
+
+# Helper function to test a command that should show a warning
+test_backend_warning() {
+	local backend_name=$1
+	local command=$2
+	local expected_warning=$3
+
+	local output
+	# Commands will succeed but show warnings, capture stderr
+	output=$(MISE_LOG_LEVEL=warn eval "$command" 2>&1 || true)
+	test_error_message "$backend_name shows correct warning" "$output" "$expected_warning"
+}
+
+# Test npm backend
+test_npm() {
+	echo "Testing npm backend with missing npm..."
+	check_command_missing "npm"
+
+	# Test ls-remote - should show warning but continue
+	test_backend_warning "npm" "mise ls-remote npm:test-package" "npm may be required but was not found"
+
+	# Check for helpful install instructions
+	local output
+	output=$(MISE_LOG_LEVEL=warn mise ls-remote npm:test-package 2>&1 || true)
+	test_error_message "npm suggests installing node" "$output" "mise use node@latest"
+	test_error_message "npm mentions npm is needed for queries" "$output" "npm is required for querying package information"
+
+	# Test install - should show warning but continue
+	test_backend_warning "npm" "mise install npm:test-package@latest" "npm may be required but was not found"
+
+	# Test with bun mode enabled but npm still missing
+	echo "Testing npm backend with bun mode enabled but npm missing..."
+	export MISE_NPM_BUN=true
+	test_backend_warning "npm (bun mode)" "mise ls-remote npm:test-package" "npm may be required but was not found"
+	output=$(mise ls-remote npm:test-package 2>&1 || true)
+	test_error_message "npm (bun mode) shows npm is required for queries" "$output" "npm is required for querying package information"
+	unset MISE_NPM_BUN
+}
+
+# Test cargo backend
+test_cargo() {
+	echo "Testing cargo backend with missing cargo..."
+
+	# Remove cargo from PATH if it exists
+	local new_path=""
+	local IFS=':'
+	read -ra PATHS <<<"$PATH"
+	for p in "${PATHS[@]}"; do
+		if [[ ! -x "$p/cargo" ]]; then
+			[[ -z $new_path ]] && new_path="$p" || new_path="$new_path:$p"
+		fi
+	done
+	export PATH="$new_path"
+
+	check_command_missing "cargo"
+	test_backend_warning "cargo" "mise install cargo:tiny@latest" "cargo may be required but was not found"
+}
+
+# Test go backend
+test_go() {
+	echo "Testing go backend with missing go..."
+
+	# Remove go from PATH if it exists
+	local new_path=""
+	local IFS=':'
+	read -ra PATHS <<<"$PATH"
+	for p in "${PATHS[@]}"; do
+		if [[ ! -x "$p/go" ]]; then
+			[[ -z $new_path ]] && new_path="$p" || new_path="$new_path:$p"
+		fi
+	done
+	export PATH="$new_path"
+
+	check_command_missing "go"
+	test_backend_warning "go" "mise ls-remote go:github.com/test/test" "go may be required but was not found"
+}
+
+# Run all tests
+test_npm
+test_cargo
+test_go
+
+if [ $TEST_FAILED -eq 0 ]; then
+	echo "✓ backend dependency warning test passed"
+else
+	echo "✗ Some tests failed"
+	exit 1
+fi

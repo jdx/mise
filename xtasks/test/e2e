@@ -1,22 +1,64 @@
 #!/usr/bin/env bash
 #MISE depends=["build"]
-#MISE alias="e"
-#MISE description="run end-to-end tests"
+#MISE alias=["e", "e2e"]
+#MISE description="Run end-to-end tests"
 set -euo pipefail
 
 export RUST_TEST_THREADS=1
 
-if [[ ${1:-all} == all ]]; then
+# Show help
+if [[ ${1:-} == --help ]]; then
+	cat >&2 <<EOF
+Usage: mise run test:e2e [OPTIONS] [TEST_PATTERNS...]
+
+Options:
+  --help     Show this help message
+  --list     List all available tests
+  --all      Run all tests
+
+Arguments:
+  TEST_PATTERNS...  Test patterns to run (e.g., "tasks", "cli", "test_task_run")
+
+Examples:
+  mise run test:e2e --list                    # List all available tests
+  mise run test:e2e --all                     # Run all tests
+  mise run test:e2e -- tasks                  # Run all task-related tests
+  mise run test:e2e -- cli                    # Run all CLI-related tests
+  mise run test:e2e -- test_task_run          # Run specific test
+EOF
+	exit 0
+fi
+
+# List all available tests
+if [[ ${1:-} == --list ]]; then
+	echo "Available tests:" >&2
+	pushd e2e >/dev/null
+	fd -tf "^test_" | sort
+	popd >/dev/null
+	exit 0
+fi
+
+if [[ ${1:-} == --all ]]; then
 	./e2e/run_all_tests
 else
-	pushd e2e
-	FILES="$(fd -tf "$1" --and "^test_")"
-	popd
-	if [[ -z $FILES ]]; then
-		echo "Not test matches $1" >&2
-		exit 1
-	fi
-	for FILE in $FILES; do
-		./e2e/run_test "$FILE"
+	# Handle multiple test arguments
+	for TEST_ARG in "$@"; do
+		# Strip e2e/ prefix if present, then extract just the filename
+		PATTERN="${TEST_ARG#e2e/}"
+		FILENAME="$(basename "$PATTERN")"
+
+		pushd e2e >/dev/null
+		FILES="$(fd -tf "$FILENAME" --and "^test_")"
+		popd >/dev/null
+
+		if [[ -z $FILES ]]; then
+			echo "No test matches $TEST_ARG" >&2
+			exit 1
+		fi
+
+		for FILE in $FILES; do
+			echo "[xtask:e2e] Running test: $FILE" >&2
+			./e2e/run_test "$FILE"
+		done
 	done
 fi

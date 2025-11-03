@@ -1,0 +1,132 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mozilla
+    repo_name: sccache
+    description: sccache is ccache with cloud storage
+    asset: sccache-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: sccache
+        src: sccache-{{.Version}}-{{.Arch}}-{{.OS}}/sccache
+    overrides:
+      - goos: windows
+        replacements:
+          arm64: arm64
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+      windows: pc-windows-msvc
+    supported_envs:
+      - darwin
+      - amd64
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256
+    version_constraint: semver(">= 0.6.0")
+    # > aarch64-unknown-linux-musl was disabled
+    # https://github.com/mozilla/sccache/pull/1917
+    version_overrides:
+      - version_constraint: semver(">= 0.5.2")
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: semver(">= 0.5.1")
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: semver(">= 0.4.0-pre.2")
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+      - version_constraint: semver(">= 0.3.3")
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: semver(">= 0.2.14")
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        overrides:
+          - goos: windows
+            replacements:
+              arm64: arm64
+            checksum:
+              # https://github.com/aquaproj/aqua-registry/pull/13027
+              # https://github.com/aquaproj/aqua-registry/actions/runs/5262947082/jobs/9512626767
+              enabled: false # ERRO[0001] install the package                           actual_checksum=BA6BF184D2B0A78978629AAEF0D9FE3CA57923E228D949B1932EC1A91AB4CEAC aqua_version=2.8.0 env=windows/amd64 error="checksum is invalid" expected_checksum="��B\x00A\x006\x00B\x00F\x001\x008\x004\x00D\x002\x00B\x000\x00A\x007\x008\x009\x007\x008\x006\x002\x009\x00A\x00A\x00E\x00F\x000\x00D\x009\x00F\x00E\x003\x00C\x00A\x005\x007\x009\x002\x003\x00E\x002\x002\x008\x00D\x009\x004\x009\x00B\x001\x009\x003\x002\x00E\x00C\x001\x00A\x009\x001\x00A\x00B\x004\x00C\x00E\x00A\x00C\x00" package_name=mozilla/sccache package_version=0.2.14 program=aqua registry=standard
+      - version_constraint: semver(">= 0.2.13")
+        overrides: []
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+      - version_constraint: semver(">= 0.2.9")
+        overrides:
+          - goos: windows
+            checksum:
+              # https://github.com/aquaproj/aqua-registry/pull/13027
+              # https://github.com/aquaproj/aqua-registry/actions/runs/5262947082/jobs/9512626767
+              enabled: false # ERRO[0001] install the package                           actual_checksum=6DD85F65FCCB1CDB00E7C5804C3F3BA523C1ED20EA8F777D454826EEF17C636F aqua_version=2.8.0 env=windows/amd64 error="checksum is invalid" expected_checksum="��6\x00D\x00D\x008\x005\x00F\x006\x005\x00F\x00C\x00C\x00B\x001\x00C\x00D\x00B\x000\x000\x00E\x007\x00C\x005\x008\x000\x004\x00C\x003\x00F\x003\x00B\x00A\x005\x002\x003\x00C\x001\x00E\x00D\x002\x000\x00E\x00A\x008\x00F\x007\x007\x007\x00D\x004\x005\x004\x008\x002\x006\x00E\x00E\x00F\x001\x007\x00C\x006\x003\x006\x00F\x00" package_name=mozilla/sccache package_version=0.2.9 program=aqua registry=standard
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver(">= 0.2.6")
+        overrides: []
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+        checksum:
+          enabled: false
+      - version_constraint: semver("< 0.2.6")
+        overrides: []
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+        rosetta2: true
+        checksum:
+          enabled: false

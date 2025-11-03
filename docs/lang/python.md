@@ -28,6 +28,13 @@ $ python3.11 -V
 3.11.0
 ```
 
+You can also install a specific python flavour. To get the latest version from a flavour just use the
+flavour prefix.
+
+```sh
+mise use -g python@anaconda         # latest version of anaconda
+```
+
 See the [Python Cookbook](/mise-cookbook/python.html) for common tasks and examples.
 
 ## `.python-version` support
@@ -56,6 +63,7 @@ _.python.venv = { path = ".venv", create = true, uv_create_args = ['--seed'] }
 ```
 
 The venv will need to be created manually with `python -m venv /path/to/venv` unless `create=true`.
+See [env-directives](https://mise.jdx.dev/environments/#env-directives) for `_.python.venv`.
 
 ## mise & uv
 

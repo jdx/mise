@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# Test that multiple depends_post entries work correctly without hanging
+cat <<EOF >mise.toml
+[tasks.bar]
+run = "echo bar"
+
+[tasks.foo]
+run = "echo foo"
+
+[tasks.baz]
+run = "echo baz"
+depends_post = ["foo", "bar"]
+EOF
+
+# Test that task dependencies are resolved correctly
+# With depends_post, the dependencies appear as children in the tree
+assert "mise task deps" "bar
+└── baz
+baz
+foo
+└── baz"
+
+# Test that the task runs successfully (just check it doesn't hang)
+assert "mise run baz"
+
+# Test with three post dependencies
+cat <<EOF >mise.toml
+[tasks.one]
+run = "echo one"
+
+[tasks.two]
+run = "echo two"
+
+[tasks.three]
+run = "echo three"
+
+[tasks.main]
+run = "echo main"
+depends_post = ["one", "two", "three"]
+EOF
+
+assert "mise task deps" "main
+one
+└── main
+three
+└── main
+two
+└── main"
+
+assert "mise run main"

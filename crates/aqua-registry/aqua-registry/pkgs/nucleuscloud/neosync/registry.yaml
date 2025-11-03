@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: nucleuscloud
+    repo_name: neosync
+    description: Open source data anonymization and synthetic data orchestration for developers. Create high fidelity synthetic data and sync it across your environments
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.25")
+        asset: neosync_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: neosync_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: neosync_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

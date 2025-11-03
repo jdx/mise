@@ -1,0 +1,315 @@
+name: ppa-publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      distributions:
+        description: "Ubuntu distributions to target (space-separated)"
+        required: false
+        default: "jammy noble"
+        type: string
+      use_serious_profile:
+        description: 'Use the "serious" profile for optimized builds (LTO enabled)'
+        required: false
+        default: false
+        type: boolean
+      build_revision:
+        description: "Build revision number (increment for packaging fixes of same version)"
+        required: false
+        default: "1"
+        type: string
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  publish-ppa:
+    runs-on: ubuntu-latest
+    environment: ppa-publishing
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up environment variables
+        run: |
+          VERSION=$(./scripts/get-version.sh | sed 's/^v//')
+
+          if [ "${{ github.event_name }}" = "release" ]; then
+            DISTRIBUTIONS="jammy noble"
+            BUILD_REVISION="1"
+          else
+            DISTRIBUTIONS="${{ inputs.distributions }}"
+            BUILD_REVISION="${{ inputs.build_revision || '1' }}"
+          fi
+
+          {
+            echo "VERSION=${VERSION}"
+            echo "DISTRIBUTIONS=${DISTRIBUTIONS}"
+            echo "BUILD_REVISION=${BUILD_REVISION}"
+            echo "PACKAGE_NAME=mise"
+            echo "MAINTAINER_NAME=${{ vars.PPA_MAINTAINER_NAME || 'mise Release Bot' }}"
+            echo "MAINTAINER_EMAIL=${{ vars.PPA_MAINTAINER_EMAIL || 'noreply@mise.jdx.dev' }}"
+            echo "PPA_NAME=${{ vars.PPA_NAME || 'ppa:jdxcode/mise' }}"
+          } >> "$GITHUB_ENV"
+
+          # Set build profile
+          if [ "${{ github.event_name }}" = "release" ] || [ "${{ inputs.use_serious_profile }}" = "true" ]; then
+            echo "BUILD_PROFILE=serious" >> "$GITHUB_ENV"
+          else
+            echo "BUILD_PROFILE=release" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            devscripts \
+            debhelper \
+            dh-make \
+            build-essential \
+            git-buildpackage \
+            dput \
+            lintian \
+            quilt \
+            fakeroot \
+            debian-keyring \
+            gpg \
+            libssl-dev \
+            pkg-config
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install mise
+        run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
+      - name: Install cargo-vendor
+        run: mise use -g cargo-binstall cargo:cargo-vendor
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "${{ env.MAINTAINER_NAME }}"
+          git config --global user.email "${{ env.MAINTAINER_EMAIL }}"
+
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
+        with:
+          gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+          trust_level: 5
+
+      - name: Configure GPG for package signing
+        run: |
+          # List available keys
+          echo "Available GPG keys:"
+          gpg --list-secret-keys --with-colons
+
+          # Get the key ID  
+          KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^sec:' | cut -d: -f5 | head -1)
+          if [ -n "$KEY_ID" ]; then
+            echo "Using GPG key: $KEY_ID"
+            echo "DEBSIGN_KEYID=$KEY_ID" >> "$GITHUB_ENV"
+            
+            # Configure debsign to use this key specifically
+            cat > ~/.devscripts << EOF
+          DEBSIGN_KEYID=$KEY_ID
+          DEBUILD_DPKG_BUILDPACKAGE_OPTS="-i -I -S -sa"
+          DEBUILD_LINTIAN_OPTS="-i -I --show-overrides --profile ubuntu"
+          DEBSIGN_PROGRAM=gpg
+          EOF
+            
+            echo "devscripts configuration:"
+            cat ~/.devscripts
+            
+            # Test that the key works for signing
+            echo "Testing GPG signing..."
+            echo "test" | gpg --clearsign --default-key "$KEY_ID" --armor || echo "Warning: GPG signing test failed"
+            
+          else
+            echo "Error: No GPG key found"
+            exit 1
+          fi
+
+      - name: Create source package for each distribution
+        run: |
+          # Create tarball
+          git archive --format=tar --prefix="${PACKAGE_NAME}-${VERSION}/" HEAD > "../${PACKAGE_NAME}_${VERSION}.orig.tar"
+
+          # Compress the tarball
+          gzip "../${PACKAGE_NAME}_${VERSION}.orig.tar"
+
+          # Create working directory
+          WORK_DIR="/tmp/ppa-build"
+          mkdir -p "$WORK_DIR"
+
+          # Copy the tarball to the working directory (where debuild expects it to be in parent of source dir)
+          cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "$WORK_DIR/${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+
+          cd "$WORK_DIR"
+
+          # Extract source
+          tar -xzf "${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+          cd "${PACKAGE_NAME}-${VERSION}"
+
+          # Create debian directory structure
+          mkdir -p debian/source
+
+          echo "3.0 (quilt)" > debian/source/format
+
+          # Create debian/watch file for upstream monitoring
+          cat > debian/watch << EOF
+          version=4
+          opts="filenamemangle=s/.+\/v?(\d\S+)\.tar\.gz/${PACKAGE_NAME}-\$1\.tar\.gz/" \\
+          https://github.com/jdx/mise/tags .*/v?(\d\S+)\.tar\.gz
+          EOF
+
+          # Create basic debian files
+          cat > debian/control << EOF
+          Source: ${PACKAGE_NAME}
+          Section: utils
+          Priority: optional
+          Maintainer: ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>
+          Build-Depends: debhelper-compat (= 13), curl, libssl-dev, pkgconf
+          Standards-Version: 4.6.2
+          Homepage: https://mise.jdx.dev
+          Vcs-Git: https://github.com/jdx/mise.git
+          Vcs-Browser: https://github.com/jdx/mise
+
+          Package: ${PACKAGE_NAME}
+          Architecture: any
+          Depends: \${shlibs:Depends}, \${misc:Depends}
+          Description: The front-end to your dev env
+           mise is a development environment setup tool that handles runtime versions,
+           environment variables, and tasks. It's a replacement for tools like nvm, rbenv,
+           pyenv, etc. and works with any language.
+          EOF
+
+          cat > debian/rules << 'EOF'
+          #!/usr/bin/make -f
+
+          %:
+          	dh $@
+
+          override_dh_auto_build:
+          	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          	. ~/.cargo/env
+          	cargo build --profile ${BUILD_PROFILE} --locked --bin mise
+
+          override_dh_auto_install:
+          	mkdir -p debian/mise/usr/bin
+          	cp target/${BUILD_PROFILE}/mise debian/mise/usr/bin/
+          	mkdir -p debian/mise/usr/share/man/man1
+          	if [ -f man/man1/mise.1 ]; then cp man/man1/mise.1 debian/mise/usr/share/man/man1/; fi
+          	mkdir -p debian/mise/usr/share/bash-completion/completions
+          	if [ -f completions/mise.bash ]; then cp completions/mise.bash debian/mise/usr/share/bash-completion/completions/mise; fi
+          	mkdir -p debian/mise/usr/share/zsh/site-functions
+          	if [ -f completions/_mise ]; then cp completions/_mise debian/mise/usr/share/zsh/site-functions/; fi
+          	mkdir -p debian/mise/usr/share/fish/vendor_completions.d
+          	if [ -f completions/mise.fish ]; then cp completions/mise.fish debian/mise/usr/share/fish/vendor_completions.d/; fi
+          	mkdir -p debian/mise/usr/lib/mise
+          	echo 'message = "To update, run:\n\n  sudo apt update && sudo apt install --only-upgrade mise\n"' > debian/mise/usr/lib/mise/mise-self-update-instructions.toml
+
+          override_dh_auto_clean:
+          	cargo clean || true
+          EOF
+
+          chmod +x debian/rules
+
+          cat > debian/copyright << EOF
+          Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+          Upstream-Name: ${PACKAGE_NAME}
+          Source: https://github.com/jdx/mise
+
+          Files: *
+          Copyright: 2023-2025 Jeff Dickey
+          License: MIT
+
+          License: MIT
+           Permission is hereby granted, free of charge, to any person obtaining a
+           copy of this software and associated documentation files (the "Software"),
+           to deal in the Software without restriction, including without limitation
+           the rights to use, copy, modify, merge, publish, distribute, sublicense,
+           and/or sell copies of the Software, and to permit persons to whom the
+           Software is furnished to do so, subject to the following conditions:
+           .
+           The above copyright notice and this permission notice shall be included
+           in all copies or substantial portions of the Software.
+           .
+           THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+           OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+           MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+           IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+           CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+           TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+           SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+          EOF
+
+          # Ensure original tarball is available for all builds
+          cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz.backup"
+
+          # Build source packages for each distribution
+          for DIST in ${DISTRIBUTIONS}; do
+            echo "Building source package for $DIST"
+            
+            # Restore original tarball for this build (in case previous build affected it)
+            cp "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz.backup" "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz"
+            
+            # Create distribution-specific version
+            DIST_VERSION="${VERSION}-${BUILD_REVISION}${DIST}1"
+            
+            # Create changelog
+            cat > debian/changelog << EOF
+          ${PACKAGE_NAME} (${DIST_VERSION}) ${DIST}; urgency=medium
+
+            * New upstream release ${VERSION}
+
+           -- ${MAINTAINER_NAME} <${MAINTAINER_EMAIL}>  $(date -R)
+          EOF
+            
+            # Build source package (devscripts configuration provides all options)
+            debuild
+            
+            # Move built packages
+            mkdir -p "/tmp/packages"
+            mv ../*"${DIST_VERSION}"*.dsc "/tmp/packages/"
+            mv ../*"${DIST_VERSION}"*.tar.* "/tmp/packages/"
+            mv ../*"${DIST_VERSION}"*.changes "/tmp/packages/"
+            mv ../*"${DIST_VERSION}"*.buildinfo "/tmp/packages/" 2>/dev/null || true
+            
+            # Clean for next distribution
+            rm -f ../mise_"${DIST_VERSION}"*
+          done
+
+          # Move original source tarball to packages directory (after all distributions are built)
+          mv "../${PACKAGE_NAME}_${VERSION}.orig.tar.gz" "/tmp/packages/" 2>/dev/null || true
+
+      - name: Upload source packages to PPA
+        run: |
+          cd /tmp/packages
+
+          # Configure dput
+          cat > ~/.dput.cf << EOF
+          [mise-ppa]
+          fqdn = ppa.launchpad.net
+          method = ftp
+          incoming = ~${PPA_NAME#ppa:}/ubuntu/
+          login = anonymous
+          allow_unsigned_uploads = 0
+          EOF
+
+          # Upload each changes file
+          for changes_file in *.changes; do
+            echo "Uploading $changes_file to PPA..."
+            dput mise-ppa "$changes_file"
+          done

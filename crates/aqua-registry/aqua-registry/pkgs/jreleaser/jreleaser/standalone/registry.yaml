@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: jreleaser/jreleaser/standalone
+    type: github_release
+    repo_owner: jreleaser
+    repo_name: jreleaser
+    description: Release projects quickly and easily with JReleaser
+    rosetta2: true
+    replacements:
+      amd64: x86_64
+      darwin: osx
+      linux: linux_musl
+      arm64: aarch64
+    asset: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}.zip
+    files:
+      - name: jreleaser
+        src: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}/bin/jreleaser
+      - name: java
+        src: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}/bin/java
+      - name: keytool
+        src: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}/bin/keytool
+      - name: rmiregistry
+        src: jreleaser-standalone-{{trimV .Version}}-{{.OS}}-{{.Arch}}/bin/rmiregistry
+    checksum:
+      type: github_release
+      asset: checksums_sha256.txt
+      algorithm: sha256

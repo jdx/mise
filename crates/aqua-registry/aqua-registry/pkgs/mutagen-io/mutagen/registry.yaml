@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mutagen-io
+    repo_name: mutagen
+    asset: mutagen_{{.OS}}_{{.Arch}}_{{.Version}}.tar.gz
+    description: Fast file synchronization and network forwarding for remote development
+    checksum:
+      type: github_release
+      asset: SHA256SUMS
+      algorithm: sha256

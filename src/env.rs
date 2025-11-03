@@ -31,6 +31,10 @@ pub static MISE_SHELL: Lazy<Option<ShellType>> = Lazy::new(|| {
         .parse()
         .ok()
 });
+#[cfg(unix)]
+pub static SHELL_COMMAND_FLAG: &str = "-c";
+#[cfg(windows)]
+pub static SHELL_COMMAND_FLAG: &str = "/c";
 
 // paths and directories
 #[cfg(test)]
@@ -73,9 +77,32 @@ pub static XDG_DATA_HOME: Lazy<PathBuf> = Lazy::new(|| {
 pub static XDG_STATE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local").join("state")));
 
-/// always display "friendly" errors even in debug mode
-pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| var_is_true("MISE_FRIENDLY_ERROR"));
+/// control display of "friendly" errors - defaults to release mode behavior unless overridden
+pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| {
+    if var_is_true("MISE_FRIENDLY_ERROR") {
+        true
+    } else if var_is_false("MISE_FRIENDLY_ERROR") {
+        false
+    } else {
+        // default behavior: friendly in release mode unless debug logging
+        !cfg!(debug_assertions) && log::max_level() < log::LevelFilter::Debug
+    }
+});
+pub static MISE_TOOL_STUB: Lazy<bool> =
+    Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("tool-stub"));
 pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
+pub static MISE_PROGRESS_TRACE: Lazy<bool> = Lazy::new(|| var_is_true("MISE_PROGRESS_TRACE"));
+/// true if RUST_BACKTRACE is set (enables detailed error tracebacks)
+pub static RUST_BACKTRACE: Lazy<bool> = Lazy::new(|| {
+    match var("RUST_BACKTRACE") {
+        Ok(v) => {
+            let v = v.to_lowercase();
+            // RUST_BACKTRACE accepts "1" and "full" as valid values
+            v == "1" || v == "full"
+        }
+        Err(_) => false,
+    }
+});
 pub static MISE_CACHE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("mise")));
 pub static MISE_CONFIG_DIR: Lazy<PathBuf> =
@@ -144,19 +171,105 @@ pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         })
         .unwrap_or_default()
 });
-pub static MISE_TASK_LEVEL: Lazy<u8> = Lazy::new(|| var_u8("MISE_TASK_LEVEL"));
+pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
+    var("MISE_CEILING_PATHS")
+        .ok()
+        .map(|v| {
+            split_paths(&v)
+                .filter(|p| !p.as_os_str().is_empty())
+                .map(replace_path)
+                .collect()
+        })
+        .unwrap_or_default()
+});
 pub static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| !var_is_false("MISE_USE_TOML"));
 pub static MISE_LIST_ALL_VERSIONS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LIST_ALL_VERSIONS"));
 pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
 pub static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
 pub static MISE_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_LOG_FILE"));
 pub static MISE_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
+fn find_in_tree(base: &Path, rels: &[&[&str]]) -> Option<PathBuf> {
+    for rel in rels {
+        let mut p = base.to_path_buf();
+        for part in *rel {
+            p = p.join(part);
+        }
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+fn mise_install_base() -> Option<PathBuf> {
+    std::fs::canonicalize(&*MISE_BIN)
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+}
+
+pub static MISE_SELF_UPDATE_INSTRUCTIONS: Lazy<Option<PathBuf>> = Lazy::new(|| {
+    if let Some(p) = var_path("MISE_SELF_UPDATE_INSTRUCTIONS") {
+        return Some(p);
+    }
+    let base = mise_install_base()?;
+    // search lib/, lib/mise/, lib64/mise/
+    find_in_tree(
+        &base,
+        &[
+            &["lib", "mise-self-update-instructions.toml"],
+            &["lib", "mise", "mise-self-update-instructions.toml"],
+            &["lib64", "mise", "mise-self-update-instructions.toml"],
+        ],
+    )
+});
+pub static MISE_SELF_UPDATE_AVAILABLE: Lazy<Option<bool>> = Lazy::new(|| {
+    if var_is_true("MISE_SELF_UPDATE_AVAILABLE") {
+        Some(true)
+    } else if var_is_false("MISE_SELF_UPDATE_AVAILABLE") {
+        Some(false)
+    } else {
+        None
+    }
+});
+pub static MISE_SELF_UPDATE_DISABLED_PATH: Lazy<Option<PathBuf>> = Lazy::new(|| {
+    let base = mise_install_base()?;
+    find_in_tree(
+        &base,
+        &[
+            &["lib", ".disable-self-update"],
+            &["lib", "mise", ".disable-self-update"],
+            &["lib64", "mise", ".disable-self-update"],
+        ],
+    )
+});
 pub static MISE_LOG_HTTP: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LOG_HTTP"));
 
 pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
 
 // true if running inside a shim
 pub static __MISE_SHIM: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SHIM"));
+
+// true if the current process is running as a shim (not direct mise invocation)
+pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
+    // When running tests, always treat as direct mise invocation
+    // to avoid interfering with test expectations
+    if cfg!(test) {
+        return false;
+    }
+
+    // Check if running as tool stub
+    if *MISE_TOOL_STUB {
+        return true;
+    }
+
+    #[cfg(unix)]
+    let mise_bin = "mise";
+    #[cfg(windows)]
+    let mise_bin = "mise.exe";
+    let bin_name = *MISE_BIN_NAME;
+    bin_name != mise_bin && !bin_name.starts_with("mise-")
+});
 
 #[cfg(test)]
 pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| 80);
@@ -181,15 +294,18 @@ pub static MISE_PID: Lazy<String> = Lazy::new(|| process::id().to_string());
 pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
+pub static __MISE_ZSH_PRECMD_RUN: Lazy<bool> = Lazy::new(|| !var_is_false("__MISE_ZSH_PRECMD_RUN"));
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
 pub static OFFLINE: Lazy<bool> = Lazy::new(|| offline(&ARGS.read().unwrap()));
+pub static WARN_ON_MISSING_REQUIRED_ENV: Lazy<bool> =
+    Lazy::new(|| warn_on_missing_required_env(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<EnvMap> =
-    Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
+    Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars_safe().collect()));
 pub static PATH_KEY: Lazy<String> = Lazy::new(|| {
-    vars()
+    vars_safe()
         .map(|(k, _)| k)
         .find_or_first(|k| k.to_uppercase() == "PATH")
         .map(|k| k.to_string())
@@ -204,63 +320,15 @@ pub static PATH_NON_PRISTINE: Lazy<Vec<PathBuf>> = Lazy::new(|| match var(&*PATH
     Err(_) => vec![],
 });
 pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
-pub static GITHUB_TOKEN: Lazy<Option<String>> = Lazy::new(|| {
-    let token = var("MISE_GITHUB_TOKEN")
-        .or_else(|_| var("GITHUB_API_TOKEN"))
-        .or_else(|_| var("GITHUB_TOKEN"))
-        .ok()
-        .and_then(|v| if v.is_empty() { None } else { Some(v) });
 
-    // set or unset the token for plugins+ubi
-    if let Some(token) = token.as_ref() {
-        set_var("MISE_GITHUB_TOKEN", token);
-        set_var("GITHUB_TOKEN", token);
-        set_var("GITHUB_API_TOKEN", token);
-    } else {
-        remove_var("MISE_GITHUB_TOKEN");
-        remove_var("GITHUB_TOKEN");
-        remove_var("GITHUB_API_TOKEN");
-    }
-
-    token
-});
+pub static GITHUB_TOKEN: Lazy<Option<String>> =
+    Lazy::new(|| get_token(&["MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN", "GITHUB_TOKEN"]));
 pub static MISE_GITHUB_ENTERPRISE_TOKEN: Lazy<Option<String>> =
-    Lazy::new(|| match var("MISE_GITHUB_ENTERPRISE_TOKEN") {
-        Ok(v) if v.trim() != "" => {
-            set_var("MISE_GITHUB_ENTERPRISE_TOKEN", &v);
-            Some(v)
-        }
-        _ => {
-            remove_var("MISE_GITHUB_ENTERPRISE_TOKEN");
-            None
-        }
-    });
+    Lazy::new(|| get_token(&["MISE_GITHUB_ENTERPRISE_TOKEN"]));
 pub static GITLAB_TOKEN: Lazy<Option<String>> =
-    Lazy::new(
-        || match var("MISE_GITLAB_TOKEN").or_else(|_| var("GITLAB_TOKEN")) {
-            Ok(v) if v.trim() != "" => {
-                set_var("MISE_GITLAB_TOKEN", &v);
-                set_var("GITLAB_TOKEN", &v);
-                Some(v)
-            }
-            _ => {
-                remove_var("MISE_GITLAB_TOKEN");
-                remove_var("GITLAB_TOKEN");
-                None
-            }
-        },
-    );
+    Lazy::new(|| get_token(&["MISE_GITLAB_TOKEN", "GITLAB_TOKEN"]));
 pub static MISE_GITLAB_ENTERPRISE_TOKEN: Lazy<Option<String>> =
-    Lazy::new(|| match var("MISE_GITLAB_ENTERPRISE_TOKEN") {
-        Ok(v) if v.trim() != "" => {
-            set_var("MISE_GITLAB_ENTERPRISE_TOKEN", &v);
-            Some(v)
-        }
-        _ => {
-            remove_var("MISE_GITLAB_ENTERPRISE_TOKEN");
-            None
-        }
-    });
+    Lazy::new(|| get_token(&["MISE_GITLAB_ENTERPRISE_TOKEN"]));
 
 pub static TEST_TRANCHE: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE") as usize);
 pub static TEST_TRANCHE_COUNT: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE_COUNT") as usize);
@@ -271,12 +339,22 @@ pub static CLICOLOR_FORCE: Lazy<Option<bool>> =
 pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
     if *CLICOLOR_FORCE == Some(true) {
         Some(true)
+    } else if *NO_COLOR {
+        Some(false)
     } else if let Ok(v) = var("CLICOLOR") {
         Some(v != "0")
     } else {
         None
     }
 });
+
+/// Disable color output - https://no-color.org/
+pub static NO_COLOR: Lazy<bool> = Lazy::new(|| var("NO_COLOR").is_ok_and(|v| !v.is_empty()));
+
+// Terminal detection
+pub static TERM_PROGRAM: Lazy<Option<String>> = Lazy::new(|| var("TERM_PROGRAM").ok());
+pub static WT_SESSION: Lazy<bool> = Lazy::new(|| var("WT_SESSION").is_ok());
+pub static VTE_VERSION: Lazy<bool> = Lazy::new(|| var("VTE_VERSION").is_ok());
 
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =
@@ -348,7 +426,7 @@ pub const PATH_ENV_SEP: char = ':';
 pub const PATH_ENV_SEP: char = ';';
 
 fn get_env_diff() -> EnvDiff {
-    let env = vars().collect::<HashMap<_, _>>();
+    let env = vars_safe().collect::<HashMap<_, _>>();
     match env.get("__MISE_DIFF") {
         Some(raw) => EnvDiff::deserialize(raw).unwrap_or_else(|err| {
             warn!("Failed to deserialize __MISE_DIFF: {:#}", err);
@@ -489,26 +567,49 @@ fn prefer_offline(args: &[String]) -> bool {
         .unwrap_or_default()
 }
 
+/// returns true if missing required env vars should produce warnings instead of errors
+fn warn_on_missing_required_env(args: &[String]) -> bool {
+    // Check if we're running in a command that should warn instead of error
+    args.iter()
+        .take_while(|a| *a != "--")
+        .filter(|a| !a.starts_with('-'))
+        .nth(1)
+        .map(|a| {
+            [
+                "hook-env", // Shell activation should not break the shell
+            ]
+            .contains(&a.as_str())
+        })
+        .unwrap_or_default()
+}
+
 fn environment(args: &[String]) -> Vec<String> {
     let arg_defs = HashSet::from(["--profile", "-P", "--env", "-E"]);
 
-    args.windows(2)
-        .take_while(|window| !window.iter().any(|a| a == "--"))
-        .find_map(|window| {
-            if arg_defs.contains(&*window[0]) {
-                Some(window[1].clone())
-            } else {
-                None
-            }
-        })
-        .or_else(|| var("MISE_ENV").ok())
-        .or_else(|| var("MISE_PROFILE").ok())
-        .or_else(|| var("MISE_ENVIRONMENT").ok())
-        .unwrap_or_default()
-        .split(',')
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect()
+    // Get environment value from args or env vars
+    if *IS_RUNNING_AS_SHIM {
+        // When running as shim, ignore command line args and use env vars only
+        None
+    } else {
+        // Try to get from command line args first
+        args.windows(2)
+            .take_while(|window| !window.iter().any(|a| a == "--"))
+            .find_map(|window| {
+                if arg_defs.contains(&*window[0]) {
+                    Some(window[1].clone())
+                } else {
+                    None
+                }
+            })
+    }
+    .or_else(|| var("MISE_ENV").ok())
+    .or_else(|| var("MISE_PROFILE").ok())
+    .or_else(|| var("MISE_ENVIRONMENT").ok())
+    .unwrap_or_default()
+    .split(',')
+    .filter(|s| !s.is_empty())
+    .map(String::from)
+    .collect()
 }
 
 fn log_file_level() -> Option<LevelFilter> {
@@ -527,6 +628,12 @@ fn filename(path: &str) -> &str {
     path.rsplit_once(path::MAIN_SEPARATOR_STR)
         .map(|(_, file)| file)
         .unwrap_or(path)
+}
+
+fn get_token(keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| var(key).ok())
+        .and_then(|v| if v.trim().is_empty() { None } else { Some(v) })
 }
 
 fn is_ninja_on_path() -> bool {
@@ -551,6 +658,17 @@ pub fn remove_var<K: AsRef<OsStr>>(key: K) {
     unsafe {
         std::env::remove_var(key);
     }
+}
+
+/// Safe wrapper around std::env::vars() that handles invalid UTF-8 gracefully.
+/// This function uses vars_os() and converts OsString to String, skipping any
+/// environment variables that contain invalid UTF-8 sequences.
+pub fn vars_safe() -> impl Iterator<Item = (String, String)> {
+    vars_os().filter_map(|(k, v)| {
+        let k_str = k.to_str()?;
+        let v_str = v.to_str()?;
+        Some((k_str.to_string(), v_str.to_string()))
+    })
 }
 
 pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
@@ -599,5 +717,29 @@ mod tests {
             PathBuf::from("/foo/bar")
         );
         remove_var("MISE_TEST_PATH");
+    }
+
+    #[test]
+    fn test_token_overwrite() {
+        // Clean up any existing environment variables that might interfere
+        remove_var("MISE_GITHUB_TOKEN");
+        remove_var("GITHUB_TOKEN");
+        remove_var("GITHUB_API_TOKEN");
+
+        set_var("MISE_GITHUB_TOKEN", "");
+        set_var("GITHUB_TOKEN", "invalid_token");
+        assert_eq!(
+            get_token(&["MISE_GITHUB_TOKEN", "GITHUB_TOKEN"]),
+            None,
+            "Empty token should overwrite other tokens"
+        );
+        assert_eq!(
+            get_token(&["GITHUB_API_TOKEN", "GITHUB_TOKEN"]),
+            Some("invalid_token".into()),
+            "Unset token should not overwrite other tokens"
+        );
+        remove_var("MISE_GITHUB_TOKEN");
+        remove_var("GITHUB_TOKEN");
+        remove_var("GITHUB_API_TOKEN");
     }
 }

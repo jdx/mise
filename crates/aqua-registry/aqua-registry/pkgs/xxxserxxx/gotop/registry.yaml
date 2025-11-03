@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: xxxserxxx
+    repo_name: gotop
+    description: A terminal based graphical activity monitor inspired by gtop and vtop
+    asset: gotop_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tgz
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64

@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: smtg-ai
+    repo_name: claude-squad
+    description: Manage multiple AI agents like Claude Code, Aider, Codex, and Amp. 10x your productivity
+    files:
+      - name: cs
+      - name: claude-squad
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: claude-squad_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: claude-squad
+          - name: cs
+            src: claude-squad
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

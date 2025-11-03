@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Canop
+    repo_name: rhit
+    description: A nginx log explorer
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: rhit_{{trimV .Version}}.{{.Format}}
+        format: zip
+        files:
+          - name: rhit
+            src: build/{{.Arch}}-{{.OS}}/rhit
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          linux: unknown-linux-gnu
+        overrides:
+          - envs:
+              - darwin
+              - windows
+            type: cargo
+            crate: rhit
+            cargo:
+              locked: true

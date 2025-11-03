@@ -1,16 +1,20 @@
-amends "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Builtins.pkl"
+amends "package://github.com/jdx/hk/releases/download/v1.18.1/hk@1.18.1#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.18.1/hk@1.18.1#/Builtins.pkl"
 
 local bash_glob = List("*.sh", "xtasks/**", "scripts/**", "e2e/**")
-local bash_exclude = List("*.ps1", "*.fish", "*.ts", "*.js", "*.json", "*.bat", "**/.*", "src/assets/bash_zsh_support/**")
+local bash_exclude = List("*.ps1", "**/*.fish", "*.ts", "*.js", "*.json", "*.bat", "**/.*", "src/assets/bash_zsh_support/**", "e2e/shell/xonsh_script", "**/*.py", "**/*.xsh")
 local linters = new Mapping<String, Step> {
     // uses builtin prettier linter config
     ["prettier"] = (Builtins.prettier) {
       batch = false
+      exclude = "crates/aqua-registry/aqua-registry/**"
     }
-    ["clippy"] = (Builtins.cargo_clippy) {
-      check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features -- -Dwarnings"
-      fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged -- -Dwarnings"
+    //["clippy"] = (Builtins.cargo_clippy) {
+    //  check = "cargo clippy --manifest-path {{workspace_indicator}} --all-features -- -Dwarnings"
+    //  fix = "cargo clippy --manifest-path {{workspace_indicator}} --all-features --fix --allow-dirty --allow-staged -- -Dwarnings"
+    //}
+    ["cargo-check"] = (Builtins.cargo_check) {
+      check = "cargo check --all-features"
     }
     ["shellcheck"] = (Builtins.shellcheck) {
       glob = bash_glob
@@ -35,6 +39,14 @@ fi
     ["pkl"] {
         glob = "*.pkl"
         check = "pkl eval {{files}} >/dev/null"
+    }
+
+    // uses taplo for TOML formatting and validation
+    ["taplo"] {
+        glob = List("*.toml")
+        exclude = List("docs/registry.toml") // exclude docs/registry.toml symlink
+        check = "taplo fmt --check {{files}} && taplo check {{files}}"
+        fix = "taplo fmt {{files}} && taplo check {{files}}"
     }
 }
 

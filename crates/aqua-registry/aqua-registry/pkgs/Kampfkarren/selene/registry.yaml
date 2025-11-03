@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Kampfkarren
+    repo_name: selene
+    description: A blazing-fast modern Lua linter written in Rust
+    replacements:
+      darwin: macos
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    version_constraint: semver(">= 0.6.0")
+    asset: selene-{{.Version}}-{{.OS}}.zip
+    version_overrides:
+      - version_constraint: semver(">= 0.4.3")
+        asset: selene-{{.OS}}
+        replacements:
+          darwin: osx
+        overrides:
+          - goos: windows
+            asset: selene.exe
+      - version_constraint: "true"
+        asset: selene
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+        overrides:
+          - goos: windows
+            asset: selene.exe

@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+echo "=== Testing basic lock command with no lockfiles ==="
+# Test basic lock command with no lockfiles
+assert_contains "mise lock" "No lockfile found, would create"
+assert_contains "mise lock" "full implementation coming in next phase"
+
+echo "=== Testing basic lock command with simple lockfile ==="
+# Create a basic lockfile and corresponding toml file for testing
+cat <<EOF >mise.toml
+[tools]
+tiny = "1.0.0"
+dummy = "2.0.0"
+EOF
+
+cat <<EOF >mise.lock
+[tools.tiny]
+version = "1.0.0"
+backend = "asdf:tiny"
+
+[tools.dummy]
+version = "2.0.0"
+backend = "core:dummy"
+EOF
+
+# Test basic lock analysis
+assert_contains "mise lock" "Found lockfile"
+assert_contains "mise lock" "Tools: dummy, tiny"
+assert_contains "mise lock" "No platform data found"
+
+# Test dry-run mode with no platforms
+assert_contains "mise lock --dry-run" "Found lockfile"
+assert_contains "mise lock --dry-run" "Tools: dummy, tiny"
+assert_contains "mise lock --dry-run" "No platform data found"
+
+echo "=== Testing lockfile with platform data ==="
+# Create lockfile with platform-specific data
+cat <<EOF >mise.lock
+[tools.tiny]
+version = "1.0.0"
+backend = "asdf:tiny"
+
+[tools.tiny.platforms.linux-x64]
+checksum = "sha256:abc123"
+size = 1024
+url = "https://example.com/tiny-1.0.0-linux-x64.tar.gz"
+
+[tools.tiny.platforms.macos-arm64]
+checksum = "sha256:def456"
+size = 2048
+url = "https://example.com/tiny-1.0.0-macos-arm64.tar.gz"
+
+[tools.dummy]
+version = "2.0.0"
+backend = "core:dummy"
+
+[tools.dummy.platforms.linux-x64]
+checksum = "sha256:ghi789"
+size = 4096
+url = "https://example.com/dummy-2.0.0-linux-x64.tar.gz"
+EOF
+
+# Test platform detection
+assert_contains "mise lock" "Platforms: linux-x64, macos-arm64"
+assert_contains "mise lock" "Would update 2 tool(s) for 2 platform(s)"
+
+echo "=== Testing dry-run with detailed output ==="
+# Test detailed dry-run output
+output=$(mise lock --dry-run)
+assert_contains "echo '$output'" "✓ tiny for linux-x64"
+assert_contains "echo '$output'" "✓ tiny for macos-arm64"
+assert_contains "echo '$output'" "✓ dummy for linux-x64"
+
+echo "=== Testing tool filtering ==="
+# Test filtering by specific tool
+assert_contains "mise lock tiny" "Would update 1 tool(s) for 2 platform(s)"
+assert_contains "mise lock dummy" "Would update 1 tool(s) for 2 platform(s)"
+
+# Test multiple tool filtering
+assert_contains "mise lock tiny dummy" "Would update 2 tool(s) for 2 platform(s)"
+
+# Test non-existent tool filtering - when no matching tools, no update line is shown
+assert_not_contains "mise lock nonexistent" "Would update"
+
+echo "=== Testing platform filtering ==="
+# Test filtering by specific platform
+assert_contains "mise lock --platform linux-x64" "Would update 2 tool(s) for 1 platform(s)"
+assert_contains "mise lock --platform macos-arm64" "Would update 2 tool(s) for 1 platform(s)"
+
+# Test multiple platform filtering
+assert_contains "mise lock --platform linux-x64,macos-arm64" "Would update 2 tool(s) for 2 platform(s)"
+
+# Test non-existent platform filtering - when no matching platforms, no update line is shown
+assert_not_contains "mise lock --platform windows-x64" "Would update"
+
+echo "=== Testing combined filtering ==="
+# Test tool + platform filtering
+assert_contains "mise lock tiny --platform linux-x64" "Would update 1 tool(s) for 1 platform(s)"
+assert_contains "mise lock dummy --platform macos-arm64" "Would update 1 tool(s) for 1 platform(s)"
+
+# Test dry-run with filtering
+output=$(mise lock tiny --platform linux-x64 --dry-run)
+assert_contains "echo '$output'" "✓ tiny for linux-x64"
+assert_not_contains "echo '$output'" "✓ tiny for macos-arm64"
+assert_not_contains "echo '$output'" "✓ dummy for linux-x64"
+
+echo "=== Testing flag combinations ==="
+# Test force flag (should still work in analysis mode)
+assert_contains "mise lock --force" "Would update 2 tool(s) for 2 platform(s)"
+
+# Test jobs flag
+assert_contains "mise lock --jobs 2" "Would update 2 tool(s) for 2 platform(s)"
+
+echo "=== Testing local config focus ==="
+# The lock command now focuses on just the current config root
+# Verify it works correctly with the local lockfile
+assert_contains "mise lock" "Found lockfile"
+
+echo "=== Testing error cases ==="
+# Test invalid tool argument - should still show analysis but with no updates
+assert_not_contains "mise lock 'invalid@version'" "Would update"
+
+echo "=== Testing lockfile preservation ==="
+# Verify that running lock command doesn't modify lockfiles (in current phase)
+if command -v sha256sum >/dev/null; then
+	checksum_before=$(sha256sum mise.lock | cut -d' ' -f1)
+	mise lock >/dev/null 2>&1
+	checksum_after=$(sha256sum mise.lock | cut -d' ' -f1)
+elif command -v shasum >/dev/null; then
+	checksum_before=$(shasum -a 256 mise.lock | cut -d' ' -f1)
+	mise lock >/dev/null 2>&1
+	checksum_after=$(shasum -a 256 mise.lock | cut -d' ' -f1)
+else
+	# Skip checksum test if neither command is available
+	echo "Skipping checksum test - neither sha256sum nor shasum available"
+	checksum_before="test"
+	checksum_after="test"
+fi
+assert "echo $checksum_before" "$checksum_after"
+
+echo "=== Testing help and version info ==="
+# Test that help works
+assert_contains "mise lock --help" "Update lockfile checksums and URLs"
+
+echo "=== Cleanup ==="
+# Clean up test files
+rm -f mise.lock mise.toml
+
+echo "mise lock tests passed!"

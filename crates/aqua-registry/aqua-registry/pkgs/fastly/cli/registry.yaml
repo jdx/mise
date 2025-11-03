@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: fastly
+    repo_name: cli
+    description: A CLI for interacting with the Fastly platform
+    asset: fastly_{{.Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    files:
+      - name: fastly
+    checksum:
+      type: github_release
+      asset: fastly_{{.Version}}_SHA256SUMS
+      algorithm: sha256
+    version_constraint: semver(">= 4.6.0")
+    version_overrides:
+      - version_constraint: "true"
+        overrides:
+          - goos: windows
+            format: zip

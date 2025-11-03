@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gradle
+    repo_name: gradle-distributions
+    aliases:
+      - name: gradle/gradle
+    description: Adaptable, fast automation for all
+    files:
+      - name: gradle
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 9.0.0-M7")
+        asset: gradle-{{trimV .Version | replace ".0-RC" "-rc-" | replace ".0-M" "-milestone-" | trimSuffix ".0"}}-bin.zip
+        files:
+          - name: gradle
+            src: >-
+              {{.AssetWithoutExt | trimSuffix "-bin"}}/bin/gradle
+      - version_constraint: "true"
+        asset: gradle-{{trimV .Version | replace "-RC" "-rc-" | replace "-M" "-milestone-"}}-bin.zip
+        files:
+          - name: gradle
+            src: >-
+              {{.AssetWithoutExt | trimSuffix "-bin"}}/bin/gradle

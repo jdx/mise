@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: guptarohit
+    repo_name: asciigraph
+    description: Go package to make lightweight ASCII line graph ╭┈╯ in command line apps with no other dependencies
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.4.2"
+        asset: asciigraph_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.5.2")
+        asset: asciigraph_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: asciigraph_{{trimV .Version}}_sha512-checksums.txt
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: asciigraph_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: asciigraph_{{trimV .Version}}_sha512-checksums.txt
+          algorithm: sha512
+        overrides:
+          - goos: windows
+            format: zip

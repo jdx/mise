@@ -1,0 +1,90 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tinygo-org
+    repo_name: tinygo
+    description: Go compiler for small places. Microcontrollers, WebAssembly (WASM/WASI), and command-line tools. Based on LLVM
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1"
+        asset: tinygo{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tinygo
+            src: tinygo/bin/tinygo
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v0.7.1"
+        asset: tinygo{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: tinygo
+            src: tinygo/bin/tinygo
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.8.0"
+        asset: tinygo{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: tinygo
+            src: tinygo/bin/tinygo
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version in ["v0.13.0", "v0.22.0", "v0.25.0-beta1"]
+        asset: tinygo{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: tinygo
+            src: tinygo/bin/tinygo
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.4.1")
+        asset: tinygo{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: tinygo
+            src: tinygo/bin/tinygo
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 0.7.0")
+        asset: tinygo{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: tinygo
+            src: tinygo/bin/tinygo
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.30.0")
+        asset: tinygo{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: tinygo
+            src: tinygo/bin/tinygo
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: tinygo{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: tinygo
+            src: tinygo/bin/tinygo
+        overrides:
+          - goos: windows
+            format: zip

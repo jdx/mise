@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: authzed
+    repo_name: zed
+    description: Official command-line tool for managing SpiceDB
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.3.0")
+        asset: zed_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+      - version_constraint: Version == "v0.7.4"
+        no_asset: true
+      - version_constraint: "true"
+        asset: zed_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          # NOTE:
+          # musl version exists for linux,
+          # but it is dynamically linked to musl libc
+          # and therefore doesn't work on glibc systems
+          - goos: linux
+            asset: zed_{{trimV .Version}}_{{.OS}}_{{.Arch}}_gnu.{{.Format}}

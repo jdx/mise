@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mitsuhiko
+    repo_name: insta
+    description: A snapshot testing library for rust
+    files:
+      - name: cargo-insta
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: cargo-insta-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: cargo-insta
+            src: "{{.AssetWithoutExt}}/cargo-insta"
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            files:
+              - name: cargo-insta
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: tamasfe
+    repo_name: taplo
+    name: tamasfe/taplo/full
+    description: A TOML toolkit written in Rust
+    version_constraint: not (Version startsWith "release-taplo-cli-") and not (Version startsWith "release-cli-") and semver(">= 0.8.0")
+    asset: taplo-full-{{.OS}}-{{.Arch}}.{{.Format}}
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+    supported_envs:
+      - darwin
+      - linux
+      - windows/amd64
+    format: gz
+    files:
+      - name: taplo
+        src: taplo-full-{{.OS}}-{{.Arch}}
+    overrides:
+      - goos: windows
+        format: zip
+        files:
+          - name: taplo
+            src: taplo.exe
+    version_overrides:
+      - version_constraint: Version startsWith "release-taplo-cli-"
+        asset: taplo-full-{{.Arch}}-{{.OS}}-gnu.{{.Format}}
+        rosetta2: true
+        format: tar.gz
+        supported_envs:
+          - darwin
+          - linux/amd64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux
+        overrides: []
+        files:
+          - name: taplo
+      - version_constraint: Version startsWith "release-cli-" and semverWithVersion(">= 0.6.0", trimPrefix(Version, "release-cli-"))
+        asset: taplo-full-{{trimPrefix "release-cli-" .Version}}-{{.Arch}}-{{.OS}}-gnu.{{.Format}}
+        rosetta2: true
+        format: tar.gz
+        supported_envs:
+          - darwin
+          - linux/amd64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux
+        overrides: []
+        files:
+          - name: taplo

@@ -3,9 +3,5 @@ source: src/shell/xonsh.rs
 expression: "replace_path(&sh.prepend_env(\"PATH\", \"/some/dir:/2/dir\"))"
 snapshot_kind: text
 ---
-from os               import environ
-from xonsh.built_ins  import XSH
-
-envx = XSH.env
-envx[   'PATH'].add('/some/dir:/2/dir', front=True)
-environ['PATH'] = envx.get_detyped('PATH')
+from xonsh.built_ins import XSH
+XSH.env['PATH'].add('/some/dir:/2/dir', front=True)

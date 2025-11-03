@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: atc0005
+    repo_name: send2teams
+    description: Small CLI tool used to submit messages to Microsoft Teams
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.4.7")
+        no_asset: true
+      - version_constraint: semver("<= 0.10.3")
+        error_message: |
+          Versions 0.10.3 and earlier include a random string in the asset, making it difficult to predict the filename.
+          To avoid maintaining a registry with numerous overrides, we have decided not to support versions up to and including 0.10.3.
+          Please use a version later than 0.10.3.
+      - version_constraint: "true"
+        asset: send2teams-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: xz
+        files:
+          - name: send2teams
+            src: send2teams-{{.OS}}-{{.Arch}}
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            asset: send2teams-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - windows/amd64

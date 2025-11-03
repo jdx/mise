@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: nodejs
+    repo_name: node
+    description: |
+      Node.js JavaScript runtime
+
+      ## How to set up
+
+      Please see https://aquaproj.github.io/docs/reference/nodejs-support
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 24.10.0")
+        url: https://nodejs.org/dist/{{.Version}}/node-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          windows: win
+        files:
+          - name: corepack
+            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/corepack
+          - name: node
+            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/node
+          - name: npm
+            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/npm
+          - name: npx
+            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/npx
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: corepack
+                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/corepack.cmd
+              - name: node
+                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/node
+              - name: npm
+                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/npm.cmd
+              - name: npx
+                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/npx.cmd
+      - version_constraint: "true"
+        url: https://nodejs.org/dist/{{.Version}}/node-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+          windows: win
+        files:
+          - name: node
+            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/node
+          - name: npm
+            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/npm
+          - name: npx
+            src: node-{{.Version}}-{{.OS}}-{{.Arch}}/bin/npx
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: node
+                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/node
+              - name: npm
+                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/npm.cmd
+              - name: npx
+                src: node-{{.Version}}-{{.OS}}-{{.Arch}}/npx.cmd

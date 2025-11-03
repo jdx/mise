@@ -8,4 +8,8 @@ assert "PATH="" $(which mise) doctor --json"
 mise p add uv
 mise use uv
 assert_contains "mise doctor" "asdf:uv@"
+assert_contains "mise doctor" "self_update_available"
 assert_contains "mise doctor -J" "dummy"
+assert_contains "mise doctor -J" "self_update_available"
+assert_contains "mise doctor -J" "aqua"
+assert_contains "mise doctor" "aqua"

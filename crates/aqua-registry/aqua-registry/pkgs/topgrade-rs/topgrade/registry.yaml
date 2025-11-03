@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: topgrade-rs
+    repo_name: topgrade
+    asset: topgrade-{{.Version}}-{{.Arch}}-{{.OS}}.tar.gz
+    description: Upgrade all the things
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      darwin: apple-darwin
+      linux: unknown-linux-musl
+    supported_envs:
+      - linux
+      - darwin
+    rosetta2: true

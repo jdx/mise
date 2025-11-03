@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: aws
+    repo_name: eks-hybrid
+    description: Use your on-premises and edge infrastructure as nodes in EKS clusters with EKS Hybrid Nodes
+    version_source: github_tag
+    format: raw
+    url: https://hybrid-assets.eks.amazonaws.com/releases/{{.Version}}/bin/{{.OS}}/{{.Arch}}/nodeadm
+    files:
+      - name: nodeadm
+    checksum:
+      type: http
+      url: https://hybrid-assets.eks.amazonaws.com/releases/{{.Version}}/bin/{{.OS}}/{{.Arch}}/nodeadm.sha256
+      algorithm: sha256
+    supported_envs:
+      - linux

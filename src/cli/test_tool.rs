@@ -1,7 +1,7 @@
 use crate::cli::args::ToolArg;
 use crate::config::Config;
 use crate::file::display_path;
-use crate::registry::REGISTRY;
+use crate::registry::{REGISTRY, RegistryTool};
 use crate::tera::get_tera;
 use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::time;
@@ -14,14 +14,14 @@ use std::{collections::BTreeSet, sync::Arc};
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TestTool {
-    /// Tool name to test
+    /// Tool(s) to test
     #[clap(required_unless_present_any = ["all", "all_config"])]
-    pub tool: Option<ToolArg>,
+    pub tools: Option<Vec<ToolArg>>,
     /// Test every tool specified in registry.toml
-    #[clap(long, short, conflicts_with = "tool", conflicts_with = "all_config")]
+    #[clap(long, short, conflicts_with = "tools", conflicts_with = "all_config")]
     pub all: bool,
     /// Test all tools specified in config files
-    #[clap(long, conflicts_with = "tool", conflicts_with = "all")]
+    #[clap(long, conflicts_with = "tools", conflicts_with = "all")]
     pub all_config: bool,
     /// Also test tools not defined in registry.toml, guessing how to test it
     #[clap(long)]
@@ -50,32 +50,16 @@ impl TestTool {
             "---".to_string(),
         ])?;
         let mut config = Config::get().await?;
-        let ts = ToolsetBuilder::new().build(&config).await?;
-        let tools: BTreeSet<String> = ts.versions.keys().map(|t| t.short.clone()).collect();
-        let mut found = false;
-        for (i, (short, rt)) in REGISTRY.iter().enumerate() {
+
+        let target_tools = self.get_target_tools(&config).await?;
+        for (i, (tool, rt)) in target_tools.into_iter().enumerate() {
             if *env::TEST_TRANCHE_COUNT > 0 && (i % *env::TEST_TRANCHE_COUNT) != *env::TEST_TRANCHE
             {
                 continue;
             }
-            let mut tool: ToolArg = short.parse()?;
-            if let Some(t) = &self.tool {
-                if t.short != tool.short {
-                    continue;
-                }
-                found = true;
-                tool = t.clone();
-            }
-            if self.all_config && !tools.contains(rt.short) {
-                continue;
-            }
-            if self.all && rt.short != *short {
-                // means this is an alias
-                continue;
-            }
             let (cmd, expected) = if let Some(test) = &rt.test {
                 (test.0.to_string(), test.1)
-            } else if self.include_non_defined || self.tool.is_some() {
+            } else if self.include_non_defined {
                 (format!("{} --version", tool.short), "__TODO__")
             } else {
                 continue;
@@ -101,13 +85,53 @@ impl TestTool {
                 }
             };
         }
-        if !found && self.tool.is_some() {
-            bail!("{} not found", self.tool.unwrap().short);
-        }
         if !errored.is_empty() {
             bail!("tools failed: {}", errored.join(", "));
         }
         Ok(())
+    }
+
+    async fn get_target_tools(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<Vec<(ToolArg, &RegistryTool)>> {
+        if let Some(tools) = &self.tools {
+            let mut targets = Vec::new();
+            let mut not_found = Vec::new();
+            for tool_arg in tools {
+                if let Some(rt) = REGISTRY.get(tool_arg.short.as_str()) {
+                    targets.push((tool_arg.clone(), rt));
+                } else {
+                    not_found.push(tool_arg.short.clone());
+                }
+            }
+            if !not_found.is_empty() {
+                bail!("tools not found: {}", not_found.join(", "));
+            }
+            Ok(targets)
+        } else if self.all {
+            REGISTRY
+                .iter()
+                .filter(|(short, rt)| rt.short == **short) // Filter out aliases
+                .map(|(short, rt)| short.parse().map(|s| (s, rt)))
+                .collect()
+        } else if self.all_config {
+            let ts = ToolsetBuilder::new().build(config).await?;
+            let config_tools = ts
+                .versions
+                .keys()
+                .map(|t| t.short.clone())
+                .collect::<BTreeSet<_>>();
+            let mut targets = Vec::new();
+            for tool in config_tools {
+                if let Some(rt) = REGISTRY.get(tool.as_str()) {
+                    targets.push((tool.parse()?, rt));
+                }
+            }
+            Ok(targets)
+        } else {
+            unreachable!()
+        }
     }
 
     fn github_summary(&self, parts: Vec<String>) -> Result<()> {
@@ -124,6 +148,46 @@ impl TestTool {
         cmd: &str,
         expected: &str,
     ) -> Result<()> {
+        // First, clean all backend data by removing directories
+        let pr = crate::ui::multi_progress_report::MultiProgressReport::get()
+            .add(&format!("cleaning {}", tool.short));
+
+        let mut cleaned_any = false;
+
+        // Remove entire installs directory for this tool
+        if tool.ba.installs_path.exists() {
+            info!(
+                "Removing installs directory: {}",
+                tool.ba.installs_path.display()
+            );
+            file::remove_all(&tool.ba.installs_path)?;
+            cleaned_any = true;
+        }
+
+        // Clear cache directory (contains metadata)
+        if tool.ba.cache_path.exists() {
+            info!("Removing cache directory: {}", tool.ba.cache_path.display());
+            file::remove_all(&tool.ba.cache_path)?;
+            cleaned_any = true;
+        }
+
+        // Clear downloads directory
+        if tool.ba.downloads_path.exists() {
+            info!(
+                "Removing downloads directory: {}",
+                tool.ba.downloads_path.display()
+            );
+            file::remove_all(&tool.ba.downloads_path)?;
+            cleaned_any = true;
+        }
+
+        pr.finish();
+
+        // Reset the config to clear in-memory backend metadata caches if we cleaned anything
+        if cleaned_any {
+            *config = Config::reset().await?;
+        }
+
         let mut args = vec![tool.clone()];
         args.extend(
             tool.ba

@@ -158,17 +158,17 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise search jq</bold>
     Tool  Description
     jq    Command-line JSON processor. https://github.com/jqlang/jq
-    jqp   https://github.com/noahgorstein/jqp
-    jiq   https://github.com/fiatjaf/jiq
-    gojq  https://github.com/itchyny/gojq
+    jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
+    jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
+    gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
 
     $ <bold>mise search --interactive</bold>
     Tool
     Search a tool
     ❯ jq    Command-line JSON processor. https://github.com/jqlang/jq
-      jqp   https://github.com/noahgorstein/jqp
-      jiq   https://github.com/fiatjaf/jiq
-      gojq  https://github.com/itchyny/gojq
+      jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
+      jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
+      gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
     /jq 
     esc clear filter • enter confirm
 "#

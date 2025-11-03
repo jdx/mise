@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: pimalaya
+    repo_name: himalaya
+    aliases:
+      - name: soywod/himalaya
+    description: CLI to manage emails
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.7.2"
+        asset: himalaya-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.7.3"
+        asset: himalaya-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.8.2"
+        asset: himalaya-{{.OS}}.{{.Format}}
+        format: tgz
+        supported_envs:
+          - linux/amd64
+      - version_constraint: Version == "v0.8.3"
+        asset: himalaya-{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v1.0.0-beta.4"
+        asset: himalaya.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+      - version_constraint: semver("< 0.3.2")
+        asset: himalaya-{{.OS}}.{{.Format}}
+        format: tar.gz
+        files:
+          # https://github.com/soywod/himalaya/issues/144
+          - name: himalaya
+            src: himalaya.exe
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.5.5")
+        asset: himalaya-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.5.9")
+        asset: himalaya-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.7.1")
+        asset: himalaya-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.9.0")
+        asset: himalaya-{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.0.0-beta.3")
+        asset: himalaya-{{.OS}}.{{.Format}}
+        format: tgz
+        replacements:
+          darwin: macos
+        overrides:
+          - goos: linux
+            asset: himalaya-{{.OS}}-musl.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: himalaya.{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tgz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        overrides:
+          - goos: windows
+            replacements: {}

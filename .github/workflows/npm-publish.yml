@@ -1,0 +1,71 @@
+name: npm-publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run in dry-run mode (no actual publish)"
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  group: npm-publish-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
+
+env:
+  DRY_RUN: ${{ github.event_name == 'release' && '0' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.dry_run && '1' || '0')) || '1' }}
+
+jobs:
+  npm-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      (github.event_name == 'release' && 
+       startsWith(github.event.release.tag_name, 'v') && 
+       !github.event.release.prerelease) ||
+      github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+
+      - name: Download release artifacts
+        run: |
+          VERSION="$(./scripts/get-version.sh)"
+          mkdir -p releases/$VERSION
+
+          # Download release artifacts from GitHub release
+          gh release download "$VERSION" \
+            --repo ${{ github.repository }} \
+            --dir releases/$VERSION \
+            --pattern "mise-*.tar.gz" \
+            --pattern "mise-*.tar.xz" || {
+              echo "Failed to download release artifacts"
+              exit 1
+            }
+
+          # Also download to releases/ directory for compatibility
+          cp releases/$VERSION/mise-*.tar.gz releases/ || true
+          cp releases/$VERSION/mise-*.tar.xz releases/ || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24.x"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish npm packages
+        run: |
+          if [[ ${DRY_RUN:-0} != 1 ]]; then
+            MISE_VERSION="$(./scripts/get-version.sh)"
+            export MISE_VERSION
+            export RELEASE_DIR="releases"
+            NPM_PREFIX=@jdxcode/mise ./scripts/release-npm.sh
+          else
+            echo "DRY RUN: Would publish npm packages"
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

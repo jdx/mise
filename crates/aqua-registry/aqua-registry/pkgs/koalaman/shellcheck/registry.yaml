@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: koalaman
+    repo_name: shellcheck
+    description: ShellCheck, a static analysis tool for shell scripts
+    version_filter: (not (Version in ["latest", "stable"])) and semver("> 0.4.5")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.4.5")
+        no_asset: true
+      - version_constraint: semver("<= 0.6.0")
+        asset: shellcheck-{{.Version}}.{{.OS}}.{{.Arch}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: shellcheck
+            src: shellcheck-{{.Version}}/shellcheck
+        overrides:
+          - goos: windows
+            asset: shellcheck-{{.Version}}.{{.Format}}
+            format: zip
+            files:
+              - name: shellcheck
+                src: shellcheck-{{.Version}}.exe
+        replacements:
+          amd64: x86_64
+        supported_envs:
+          - linux/amd64
+          - windows
+      - version_constraint: semver("<= 0.9.0")
+        asset: shellcheck-{{.Version}}.{{.OS}}.{{.Arch}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        files:
+          - name: shellcheck
+            src: shellcheck-{{.Version}}/shellcheck
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            asset: shellcheck-{{.Version}}.{{.Format}}
+            format: zip
+            files:
+              - name: shellcheck
+      - version_constraint: "true"
+        asset: shellcheck-{{.Version}}.{{.OS}}.{{.Arch}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: shellcheck
+            src: shellcheck-{{.Version}}/shellcheck
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        overrides:
+          - goos: windows
+            asset: shellcheck-{{.Version}}.{{.Format}}
+            format: zip
+            files:
+              - name: shellcheck

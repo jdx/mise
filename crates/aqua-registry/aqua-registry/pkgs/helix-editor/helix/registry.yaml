@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: helix-editor
+    repo_name: helix
+    description: A post-modern modal text editor
+    files:
+      - name: hx
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.0")
+        asset: helix-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: hx
+            src: "{{.AssetWithoutExt}}/hx"
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 22.5.0")
+        asset: helix-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: hx
+            src: "{{.AssetWithoutExt}}/hx"
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 22.8.1")
+        asset: helix-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: hx
+            src: "{{.AssetWithoutExt}}/hx"
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: helix-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: hx
+            src: "{{.AssetWithoutExt}}/hx"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            replacements: {}

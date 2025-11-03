@@ -20,20 +20,19 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GITHUB_TOKEN: ${{ secrets.MY_RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:
   docs:
     if: github.repository == 'jdx/mise'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
         with:
           fetch-depth: 0 # for lastUpdated
-      - uses: jdx/mise-action@13abe502c30c1559a5c37dff303831bab82c9402 # v2
+      - uses: jdx/mise-action@e3d7b8d67a7958d1207f6ed871e83b1ea780e7b0 # v3
         with:
           install_args: bun
-          cache: true
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: bun i
       - run: mise run docs:release

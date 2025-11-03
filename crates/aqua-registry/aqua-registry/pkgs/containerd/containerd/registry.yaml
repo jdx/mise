@@ -1,0 +1,124 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: containerd
+    repo_name: containerd
+    description: An open and reliable container runtime
+    files:
+      - name: containerd
+        src: bin/{{.FileName}}
+      - name: containerd-shim-runc-v2
+        src: bin/{{.FileName}}
+      - name: containerd-stress
+        src: bin/{{.FileName}}
+      - name: ctr
+        src: bin/{{.FileName}}
+    overrides:
+      - goos: windows
+        files:
+          - name: containerd
+            src: bin/{{.FileName}}
+          - name: containerd-shim-runhcs-v1
+            src: bin/{{.FileName}}
+          - name: containerd-stress
+            src: bin/{{.FileName}}
+          - name: ctr
+            src: bin/{{.FileName}}
+    version_filter: Version matches "^v[0-9]+.[0-9]+.[0-9]+$"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.2.11"
+        no_asset: true
+      - version_constraint: semver("<= 0.2.9")
+        no_asset: true
+      - version_constraint: semver("<= 1.2.13")
+        asset: containerd-{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux/amd64
+        files:
+          - name: containerd
+            src: bin/{{.FileName}}
+          - name: containerd-shim
+            src: bin/{{.FileName}}
+          - name: containerd-shim-runc-v1
+            src: bin/{{.FileName}}
+          - name: ctr
+            src: bin/{{.FileName}}
+      - version_constraint: semver("<= 1.3.4")
+        asset: containerd-{{trimV .Version}}.{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+        files:
+          - name: containerd
+            src: bin/{{.FileName}}
+          - name: containerd-shim
+            src: bin/{{.FileName}}
+          - name: containerd-shim-runc-v1
+            src: bin/{{.FileName}}
+          - name: containerd-shim-runc-v2
+            src: bin/{{.FileName}}
+          - name: containerd-stress
+            src: bin/{{.FileName}}
+          - name: ctr
+            src: bin/{{.FileName}}
+      - version_constraint: semver("<= 1.5.18")
+        asset: containerd-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+        files:
+          - name: containerd
+            src: bin/{{.FileName}}
+          - name: containerd-shim
+            src: bin/{{.FileName}}
+          - name: containerd-shim-runc-v1
+            src: bin/{{.FileName}}
+          - name: containerd-shim-runc-v2
+            src: bin/{{.FileName}}
+          - name: ctr
+            src: bin/{{.FileName}}
+        overrides:
+          - goos: windows
+            files:
+              - name: containerd
+                src: bin/{{.FileName}}
+              - name: containerd-shim-runhcs-v1
+                src: bin/{{.FileName}}
+              - name: ctr
+                src: bin/{{.FileName}}
+      - version_constraint: semver("<= 2.0.0")
+        asset: containerd-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - windows/amd64
+      - version_constraint: "true"
+        asset: containerd-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        github_artifact_attestations:
+          signer-workflow: containerd/containerd/.github/workflows/release.yml
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256sum"
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - windows/amd64

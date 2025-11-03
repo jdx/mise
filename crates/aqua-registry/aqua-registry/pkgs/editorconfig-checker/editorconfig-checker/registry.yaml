@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: editorconfig-checker
+    repo_name: editorconfig-checker
+    description: A tool to verify that your files are in harmony with your .editorconfig
+    files:
+      - name: ec
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.1.0")
+        asset: ec-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: ec
+            src: bin/ec-{{.OS}}-{{.Arch}}
+      - version_constraint: semver("<= 2.3.5")
+        asset: ec-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: ec
+            src: bin/ec-{{.OS}}-{{.Arch}}
+        overrides:
+          - goos: windows
+            asset: ec-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+      - version_constraint: semver("<= 2.5.0")
+        asset: ec-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: ec
+            src: bin/ec-{{.OS}}-{{.Arch}}
+        overrides:
+          - goos: windows
+            asset: ec-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+      - version_constraint: Version == "2.6.0"
+        asset: ec-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ec
+            src: bin/ec-{{.OS}}-{{.Arch}}
+      - version_constraint: semver("<= 3.0.3")
+        asset: ec-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ec
+            src: bin/ec-{{.OS}}-{{.Arch}}
+        overrides:
+          - goos: windows
+            asset: ec-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+      - version_constraint: "true"
+        asset: ec-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: ec
+            src: bin/ec-{{.OS}}-{{.Arch}}
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip

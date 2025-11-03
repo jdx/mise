@@ -1,0 +1,84 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: goreleaser
+    repo_name: goreleaser
+    description: Deliver Go binaries as fast and easily as possible
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 0.182.0")
+        asset: goreleaser_{{title .OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.2.1")
+        asset: goreleaser_{{title .OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: goreleaser_{{title .OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: semver("< 2.7.0")
+        asset: goreleaser_{{title .OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/goreleaser/goreleaser/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/goreleaser/goreleaser/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/goreleaser/goreleaser/releases/download/{{.Version}}/checksums.txt.pem
+        overrides:
+          - goos: darwin
+            asset: goreleaser_{{title .OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: goreleaser_{{title .OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity
+              - https://github.com/goreleaser/goreleaser/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/goreleaser/goreleaser/releases/download/{{.Version}}/checksums.txt.sig
+              - --certificate
+              - https://github.com/goreleaser/goreleaser/releases/download/{{.Version}}/checksums.txt.pem
+        github_artifact_attestations:
+          signer_workflow: goreleaser/goreleaser/.github/workflows/release.yml
+        overrides:
+          - goos: darwin
+            asset: goreleaser_{{title .OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip

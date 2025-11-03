@@ -1,0 +1,54 @@
+[package]
+name = "aqua-registry"
+version = "2025.9.11"
+edition = "2024"
+description = "Aqua registry backend for mise"
+authors = ["Jeff Dickey (@jdx)"]
+license = "MIT"
+repository = "https://github.com/jdx/mise"
+homepage = "https://mise.jdx.dev"
+readme = "README.md"
+keywords = ["mise", "aqua", "registry", "package-manager"]
+categories = ["development-tools"]
+build = "build.rs"
+include = [
+  "/README.md",
+  "/build.rs",
+  "/src/**/*.rs",
+  "/aqua-registry/pkgs/**/registry.yaml",
+]
+
+[package.metadata.cargo-machete]
+ignored = ["serde"]
+
+[features]
+default = []
+
+[dependencies]
+# Core dependencies
+serde = { version = "1", features = ["derive"] }
+serde_derive = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+eyre = "0.6"
+indexmap = { version = "2", features = ["serde"] }
+itertools = "0.14"
+strum = { version = "0.27", features = ["derive"] }
+
+# Template parsing and evaluation
+expr-lang = "0.3"
+versions = { version = "6", features = ["serde"] }
+heck = "0.5"
+
+# Async runtime
+tokio = { version = "1", features = ["sync"] }
+
+# Logging
+log = "0.4"
+
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }
+
+[build-dependencies]
+serde_yaml = "0.9"

@@ -38,15 +38,25 @@ impl VfoxPlugin {
         }
     }
 
-    fn repo(&self) -> MutexGuard<Git> {
+    fn repo(&self) -> MutexGuard<'_, Git> {
         self.repo.lock().unwrap()
     }
 
-    fn get_repo_url(&self) -> eyre::Result<Url> {
+    fn get_repo_url(&self, config: &Config) -> eyre::Result<Url> {
         if let Some(url) = self.repo().get_remote_url() {
             return Ok(Url::parse(&url)?);
         }
-        vfox_to_url(self.full.as_ref().unwrap_or(&self.name))
+        if let Some(url) = config.get_repo_url(&self.name) {
+            return Ok(Url::parse(&url)?);
+        }
+        let url = self
+            .full
+            .as_ref()
+            .unwrap_or(&self.name)
+            .split_once(':')
+            .map(|f| f.1)
+            .unwrap_or(&self.name);
+        vfox_to_url(url)
     }
 
     pub async fn mise_env(&self, opts: &toml::Value) -> Result<Option<IndexMap<String, String>>> {
@@ -127,21 +137,24 @@ impl Plugin for VfoxPlugin {
 
     async fn ensure_installed(
         &self,
-        _config: &Arc<Config>,
+        config: &Arc<Config>,
         mpr: &MultiProgressReport,
         _force: bool,
+        dry_run: bool,
     ) -> Result<()> {
         if !self.plugin_path.exists() {
-            let url = self.get_repo_url()?;
+            let url = self.get_repo_url(config)?;
             trace!("Cloning vfox plugin: {url}");
-            let pr = mpr.add(&format!("clone vfox plugin {url}"));
-            self.repo()
-                .clone(url.as_str(), CloneOptions::default().pr(&pr))?;
+            let pr = mpr.add_with_options(&format!("clone vfox plugin {url}"), dry_run);
+            if !dry_run {
+                self.repo()
+                    .clone(url.as_str(), CloneOptions::default().pr(pr.as_ref()))?;
+            }
         }
         Ok(())
     }
 
-    async fn update(&self, pr: &Box<dyn SingleReport>, gitref: Option<String>) -> Result<()> {
+    async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> Result<()> {
         let plugin_path = self.plugin_path.to_path_buf();
         if plugin_path.is_symlink() {
             warn!(
@@ -169,7 +182,7 @@ impl Plugin for VfoxPlugin {
         Ok(())
     }
 
-    async fn uninstall(&self, pr: &Box<dyn SingleReport>) -> Result<()> {
+    async fn uninstall(&self, pr: &dyn SingleReport) -> Result<()> {
         if !self.is_installed() {
             return Ok(());
         }
@@ -193,8 +206,8 @@ impl Plugin for VfoxPlugin {
         Ok(())
     }
 
-    async fn install(&self, _config: &Arc<Config>, pr: &Box<dyn SingleReport>) -> eyre::Result<()> {
-        let repository = self.get_repo_url()?;
+    async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
+        let repository = self.get_repo_url(config)?;
         let (repo_url, repo_ref) = Git::split_url_and_ref(repository.as_str());
         debug!("vfox_plugin[{}]:install {:?}", self.name, repository);
 

@@ -1,0 +1,666 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: commercialhaskell
+    repo_name: stack
+    description: The Haskell Tool Stack
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.0-beta")
+        asset: stack-0.0.0-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: gz
+        rosetta2: true
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.0.2-beta"
+        asset: stack-0.0.2-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: gz
+        rosetta2: true
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v0.0.3-beta"
+        asset: stack-0.0.3-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: gz
+        rosetta2: true
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.1.1.0")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: gz
+        rosetta2: true
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.1.3.1")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.1.5.0")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: stack
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.1.0")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: stack
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.1.2"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: stack
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.5.1")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        overrides:
+          - goos: linux
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.6.0.20171022"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        overrides:
+          - goos: darwin
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "v1.6.0.20171202"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        overrides:
+          - goos: linux
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.6.1"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        overrides:
+          - goos: linux
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.6.5")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.9.3")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+      - version_constraint: semver("<= 2.1.0.3")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.1.3")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+      - version_constraint: semver("<= 2.3.1")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.5.1")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "rc/v2.7.0.1"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "rc/v2.7.0.3"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v2.7.1"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+      - version_constraint: semver("<= 2.7.5")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "rc/v2.9.0.1"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: stack-2.9.0.1-{{.OS}}-{{.Arch}}-static.{{.Format}}
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+      - version_constraint: Version == "v2.9.1"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+      - version_constraint: Version == "rc/v2.9.2.1"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: stack-2.9.2.1-{{.OS}}-{{.Arch}}-static.{{.Format}}
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+      - version_constraint: Version == "v2.9.3"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+      - version_constraint: Version == "rc/v2.11.0.1"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: stack-2.11.0.1-{{.OS}}-{{.Arch}}-static.{{.Format}}
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+      - version_constraint: Version == "v2.11.1"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            goarch: amd64
+            asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}-static.{{.Format}}
+      - version_constraint: Version == "rc/v2.13.0.1"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: Version == "v2.13.1"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: Version == "rc/v2.15.0.1"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: semver("<= 2.15.3")
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: Version == "rc/v2.15.4.1"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+      - version_constraint: "true"
+        asset: stack-{{trimPrefix "rc/" .Version | trimV}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        complete_windows_ext: false
+        files:
+          - name: stack
+            src: "{{.AssetWithoutExt}}/stack"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: osx
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256

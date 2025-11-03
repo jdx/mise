@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
 use crate::{
-    config::Settings,
+    dirs,
     file::{self, display_path},
     git::Git,
 };
 use serde::Serialize;
 
-/// [experimental] Generate a devcontainer to execute mise
+/// Generate a devcontainer to execute mise
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Devcontainer {
@@ -54,11 +54,16 @@ struct DevcontainerMount {
 
 impl Devcontainer {
     pub async fn run(self) -> eyre::Result<()> {
-        Settings::get().ensure_experimental("generate devcontainer")?;
         let output = self.generate()?;
 
         if self.write {
-            let path = Git::get_root()?.join(".devcontainer/devcontainer.json");
+            let path = match Git::get_root() {
+                Ok(root) => root.join(".devcontainer/devcontainer.json"),
+                Err(_) => dirs::CWD
+                    .as_ref()
+                    .unwrap()
+                    .join(".devcontainer/devcontainer.json"),
+            };
             file::create(&path)?;
             file::write(&path, &output)?;
             miseprintln!("Wrote to {}", display_path(&path));

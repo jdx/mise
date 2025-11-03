@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# Java
+# assert shorthand is a N.N.N version
+assert "mise latest java | grep -E '^[0-9]+(\\.[0-9]+)*$'"
+# assert vendor version ends with -N.N.N(-SUFFIX)?
+assert "mise latest java@temurin | grep -E '\\-[0-9]+(\\.[0-9]+)*(\..*)?$'"
+# assert vendor 21 version ends with -21.N.N(-SUFFIX)?
+assert "mise latest java@temurin-21 | grep -E '\\-21(\\.[0-9]+)*(\..*)?$'"
+
+# Python
+# assert shorthand is a N.N.N version
+assert "mise latest python | grep -E '^[0-9]+(\\.[0-9]+)*$'"
+# assert vendor version ends with -N.N.N
+assert "mise latest python@anaconda | grep -E '\\-[0-9]+(\\.[0-9]+)*$'"
+# assert vendor 2 version ends with -2.N.N
+assert "mise latest python@anaconda-2 | grep -E '\\-2(\\.[0-9]+)*$'"
+
+# Ruby
+# assert shorthand is a N.N.N version
+assert "mise latest ruby | grep -E '^[0-9]+(\\.[0-9]+)*$'"
+# assert vendor version ends with -N.N.N
+assert "mise latest ruby@truffleruby | grep -E '\\-[0-9]+(\\.[0-9]+)*$'"
+# assert vendor 22 version ends with -22.N.N
+assert "mise latest ruby@truffleruby-22 | grep -E '\\-22(\\.[0-9]+)*$'"

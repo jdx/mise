@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: upx
+    repo_name: upx
+    description: "UPX - the Ultimate Packer for eXecutables"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v3.00", "v3.99"]
+        no_asset: true
+      - version_constraint: Version == "v3.91"
+        asset: upx-{{trimV .Version}}-{{.Arch}}_{{.OS}}.{{.Format}}
+        format: tar.bz2
+        files:
+          - name: upx
+            src: "{{.AssetWithoutExt}}/upx"
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 3.94.0")
+        asset: upx-{{trimV .Version}}-{{.Arch}}_{{.OS}}.{{.Format}}
+        format: tar.xz
+        files:
+          - name: upx
+            src: "{{.AssetWithoutExt}}/upx"
+        supported_envs:
+          - linux/amd64
+      - version_constraint: "true"
+        asset: upx-{{trimV .Version}}-{{.OS}}.{{.Format}}
+        format: zip
+        files:
+          - name: upx
+            src: "{{.AssetWithoutExt}}/upx"
+        replacements:
+          windows: win64
+        overrides:
+          - goos: linux
+            format: tar.xz
+            asset: upx-{{trimV .Version}}-{{.Arch}}_{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux
+          - windows/amd64

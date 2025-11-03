@@ -51,16 +51,16 @@ pub async fn handle_shim() -> Result<()> {
 
 async fn which_shim(config: &mut Arc<Config>, bin_name: &str) -> Result<PathBuf> {
     let mut ts = ToolsetBuilder::new().build(config).await?;
-    if let Some((p, tv)) = ts.which(config, bin_name).await {
-        if let Some(bin) = p.which(config, &tv, bin_name).await? {
-            trace!(
-                "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
-                bin = display_path(&bin)
-            );
-            return Ok(bin);
-        }
+    if let Some((p, tv)) = ts.which(config, bin_name).await
+        && let Some(bin) = p.which(config, &tv, bin_name).await?
+    {
+        trace!(
+            "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
+            bin = display_path(&bin)
+        );
+        return Ok(bin);
     }
-    if Settings::get().not_found_auto_install && console::user_attended() {
+    if Settings::get().not_found_auto_install {
         for tv in ts
             .install_missing_bin(config, bin_name)
             .await?

@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: go_install
+    name: golang/tools/guru
+    path: golang.org/x/tools/cmd/guru
+    repo_owner: golang
+    repo_name: tools
+    description: A tool for answering questions about Go source code
+    link: https://pkg.go.dev/golang.org/x/tools/cmd/guru
+    version_source: github_tag
+    version_filter: not (Version startsWith "gopls/")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver(">= 0.20.0")
+        error_message: guru was deleted https://github.com/golang/go/issues/65880
+      - version_constraint: "true"

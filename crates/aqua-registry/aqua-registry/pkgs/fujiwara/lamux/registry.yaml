@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: fujiwara
+    repo_name: lamux
+    description: Lamux is a HTTP multiplexer for AWS Lambda Function aliases
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: lamux_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

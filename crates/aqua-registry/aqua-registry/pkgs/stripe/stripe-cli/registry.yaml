@@ -1,0 +1,196 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: stripe
+    repo_name: stripe-cli
+    description: A command-line tool for Stripe
+    files:
+      - name: stripe
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.5.10"
+        asset: stripe_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: mac-os
+        checksum:
+          type: github_release
+          asset: stripe-{{.OS}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            checksum:
+              type: github_release
+              asset: stripe-checksums.txt
+              algorithm: sha256
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.7.2"
+        asset: stripe_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: mac
+        checksum:
+          type: github_release
+          asset: stripe-{{.OS}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: stripe_{{trimV .Version}}_{{.OS}}-os_{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.7.5"
+        asset: stripe_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: stripe-{{.OS}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - windows
+      - version_constraint: Version == "v1.7.6"
+        asset: stripe_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: mac
+        checksum:
+          type: github_release
+          asset: stripe-{{.OS}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: stripe_{{trimV .Version}}_{{.OS}}-os_{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.7.7"
+        asset: stripe_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: stripe-{{.OS}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - windows
+      - version_constraint: Version == "v1.13.2"
+        asset: stripe_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: mac
+        checksum:
+          type: github_release
+          asset: stripe-{{.OS}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            format: tar.gz
+            asset: stripe_{{trimV .Version}}_{{.OS}}-os_{{.Arch}}.{{.Format}}
+        supported_envs:
+          - darwin
+          - windows
+      - version_constraint: semver("<= 0.8.2")
+        asset: stripe_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: mac-os
+        checksum:
+          type: github_release
+          asset: stripe-checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.5.9")
+        asset: stripe_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: mac-os
+        checksum:
+          type: github_release
+          asset: stripe-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.12.3")
+        asset: stripe_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: mac
+        checksum:
+          type: github_release
+          asset: stripe-{{.OS}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: stripe_{{trimV .Version}}_{{.OS}}-os_{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: stripe_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: mac
+        checksum:
+          type: github_release
+          asset: stripe-{{.OS}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: stripe_{{trimV .Version}}_{{.OS}}-os_{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip

@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+# Test for future mise lock full implementation
+# This test will be useful once the command actually updates lockfiles
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+echo "=== Testing actual lockfile updates (future implementation) ==="
+
+# Create basic setup
+cat <<EOF >mise.toml
+[tools]
+tiny = "1.0.0"
+EOF
+
+cat <<EOF >mise.lock
+[tools.tiny]
+version = "1.0.0"
+backend = "asdf:tiny"
+
+[tools.tiny.platforms.linux-x64]
+checksum = "sha256:old_checksum"
+size = 1024
+url = "https://example.com/old_url"
+EOF
+
+echo "Initial lockfile:"
+cat mise.lock
+
+# When full implementation is ready, this should:
+# 1. Download assets for all platforms
+# 2. Generate new checksums
+# 3. Update URLs if needed
+# 4. Update lockfile with fresh data
+
+echo "Running mise lock..."
+mise lock
+
+echo "Updated lockfile:"
+cat mise.lock
+
+# Future tests should verify:
+# - Checksums are updated
+# - URLs are current
+# - All existing platforms are refreshed
+# - New platforms can be added via --platform flag
+
+echo "=== Testing platform addition (future) ==="
+# This should add a new platform to the lockfile
+mise lock --platform macos-arm64
+
+echo "Lockfile with new platform:"
+cat mise.lock
+
+# Should now contain both linux-x64 and macos-arm64 sections
+
+echo "=== Testing selective updates (future) ==="
+# This should only update specific tools
+mise lock tiny
+
+echo "=== Cleanup ==="
+rm -f mise.lock mise.toml
+
+echo "Future implementation tests completed!"

@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: zitadel
+    repo_name: zitadel
+    description: ZITADEL - The best of Auth0 and Keycloak combined. Built for the serverless era
+    asset: zitadel-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256
+    files:
+      - name: zitadel
+        src: zitadel-{{.OS}}-{{.Arch}}/zitadel

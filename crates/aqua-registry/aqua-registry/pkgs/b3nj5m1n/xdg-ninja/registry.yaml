@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_archive
+    repo_owner: b3nj5m1n
+    repo_name: xdg-ninja
+    description: A shell script which checks your $HOME for unwanted files and directories
+    supported_envs:
+      - darwin
+      - linux
+    version_source: github_tag
+    files:
+      - name: xdg-ninja
+        src: xdg-ninja-{{trimV .Version}}/xdg-ninja.sh

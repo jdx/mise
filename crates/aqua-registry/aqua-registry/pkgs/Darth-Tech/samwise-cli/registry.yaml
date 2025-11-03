@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Darth-Tech
+    repo_name: samwise-cli
+    description: A CLI application to accompany on your terraform module journey and sharing your burden of module dependency updates, just as one brave Hobbit helped Frodo carry his :)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.2.0")
+        asset: samwise-cli-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: samwise-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: samwise-cli_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin

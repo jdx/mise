@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+
+# Test --redacted flag to filter only redacted env vars
+cat <<EOF >mise.toml
+[env]
+SECRET_VAR = {value = "my_secret_value", redact = true}
+NORMAL_VAR = "normal_value"
+API_KEY = {value = "api_key_123", redact = true}
+EOF
+
+# Test that all vars are shown by default
+assert_contains "mise env" "SECRET_VAR=my_secret_value"
+assert_contains "mise env" "NORMAL_VAR=normal_value"
+assert_contains "mise env" "API_KEY=api_key_123"
+
+# Test --redacted flag filters to only redacted vars
+assert_contains "mise env --redacted" "SECRET_VAR=my_secret_value"
+assert_not_contains "mise env --redacted" "NORMAL_VAR=normal_value"
+assert_contains "mise env --redacted" "API_KEY=api_key_123"
+
+# Test --values flag shows only values
+assert_contains "mise env --values" "my_secret_value"
+assert_contains "mise env --values" "normal_value"
+assert_contains "mise env --values" "api_key_123"
+assert_not_contains "mise env --values" "SECRET_VAR="
+assert_not_contains "mise env --values" "NORMAL_VAR="
+
+# Test --redacted --values together shows only values of redacted vars
+output=$(mise env --redacted --values)
+echo "$output" | grep -q "my_secret_value" || fail "Expected 'my_secret_value' in output"
+echo "$output" | grep -qv "normal_value" || fail "Expected 'normal_value' not in output"
+echo "$output" | grep -q "api_key_123" || fail "Expected 'api_key_123' in output"
+
+# Test with redactions array (these are exact matches, not patterns)
+cat <<EOF >mise.toml
+redactions = ["DB_PASSWORD", "AUTH_TOKEN"]
+[env]
+DB_PASSWORD = "super_secret"
+AUTH_TOKEN = "token_123"
+USERNAME = "john_doe"
+EOF
+
+# All vars shown by default
+assert_contains "mise env" "DB_PASSWORD=super_secret"
+assert_contains "mise env" "AUTH_TOKEN=token_123"
+assert_contains "mise env" "USERNAME=john_doe"
+
+# Only redacted vars with --redacted
+assert_contains "mise env --redacted" "DB_PASSWORD=super_secret"
+assert_contains "mise env --redacted" "AUTH_TOKEN=token_123"
+assert_not_contains "mise env --redacted" "USERNAME=john_doe"
+
+# Test wildcard redactions
+cat <<EOF >mise.toml
+redactions = ["SECRET_*", "*_KEY"]
+[env]
+SECRET_ONE = "secret1"
+SECRET_TWO = "secret2"
+API_KEY = "key123"
+AUTH_KEY = "key456"
+PUBLIC_VAR = "public"
+EOF
+
+# Test --redacted with wildcards
+assert_contains "mise env --redacted" "SECRET_ONE=secret1"
+assert_contains "mise env --redacted" "SECRET_TWO=secret2"
+assert_contains "mise env --redacted" "API_KEY=key123"
+assert_contains "mise env --redacted" "AUTH_KEY=key456"
+assert_not_contains "mise env --redacted" "PUBLIC_VAR=public"
+
+# Test JSON output with --redacted
+cat <<EOF >mise.toml
+[env]
+SECRET_VAR = {value = "my_secret", redact = true}
+PUBLIC_VAR = "public"
+EOF
+
+assert_contains "mise env -J --redacted" '"SECRET_VAR": "my_secret"'
+assert_not_contains "mise env -J --redacted" '"PUBLIC_VAR"'
+
+# Test dotenv format with --redacted
+assert_contains "mise env -D --redacted" "SECRET_VAR=my_secret"
+assert_not_contains "mise env -D --redacted" "PUBLIC_VAR=public"
+
+# Test file-based redaction
+echo '{"FILE_SECRET": "file_secret_value", "FILE_PUBLIC": "public_value"}' >.env.json
+cat <<EOF >mise.toml
+[env]
+_.file = {path = ".env.json", redact = true}
+EOF
+
+# With file redaction, all vars from file are redacted
+assert_contains "mise env --redacted" "FILE_SECRET=file_secret_value"
+assert_contains "mise env --redacted" "FILE_PUBLIC=public_value"
+
+# Cleanup
+rm -f .env.json

@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: kyoshidajp
+    repo_name: dep-doctor
+    description: Diagnose whether your software dependency libraries are maintained
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: dep-doctor_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: dep-doctor_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

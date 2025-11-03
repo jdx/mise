@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+# Test task environment directives: _.source, _.file, _.path
+
+# Test 1: _.file directive with .env file
+echo "TEST_FILE_VAR=from_env_file" >.env
+cat <<EOF >mise.toml
+[tasks.test-env-file]
+run = 'echo "FILE_VAR=\$TEST_FILE_VAR OTHER_VAR=\$OTHER_VAR"'
+[tasks.test-env-file.env]
+_.file = ".env"
+OTHER_VAR = "normal_value"
+EOF
+assert "mise run test-env-file" "FILE_VAR=from_env_file OTHER_VAR=normal_value"
+
+# Test 2: _.source directive with shell script
+cat <<'EOF' >env_source.sh
+export TEST_SOURCE_VAR="from_source_script"
+export ANOTHER_VAR="source_value"
+EOF
+cat <<EOF >mise.toml
+[tasks.test-env-source]
+run = 'echo "SOURCE_VAR=\$TEST_SOURCE_VAR ANOTHER_VAR=\$ANOTHER_VAR REGULAR_VAR=\$REGULAR_VAR"'
+[tasks.test-env-source.env]
+_.source = "env_source.sh"
+REGULAR_VAR = "regular_value"
+EOF
+assert "mise run test-env-source" "SOURCE_VAR=from_source_script ANOTHER_VAR=source_value REGULAR_VAR=regular_value"
+
+# Test 3: _.path directive
+mkdir -p custom_bin
+echo '#!/bin/bash
+echo "custom command executed"' >custom_bin/custom_cmd
+chmod +x custom_bin/custom_cmd
+cat <<EOF >mise.toml
+[tasks.test-env-path]
+run = 'custom_cmd'
+[tasks.test-env-path.env]
+_.path = "./custom_bin"
+EOF
+assert "mise run test-env-path" "custom command executed"
+
+# Test 4: Multiple directives combined
+echo "MULTI_FILE_VAR=from_multi_file" >.env.multi
+cat <<'EOF' >multi_source.sh
+export MULTI_SOURCE_VAR="from_multi_source"
+EOF
+cat <<EOF >mise.toml
+[tasks.test-multi-env]
+run = 'echo "FILE=\$MULTI_FILE_VAR SOURCE=\$MULTI_SOURCE_VAR COMBINED=\$COMBINED_VAR" && custom_cmd'
+[tasks.test-multi-env.env]
+_.file = ".env.multi"
+_.source = "multi_source.sh"
+_.path = "./custom_bin"
+COMBINED_VAR = "combined_value"
+EOF
+assert "mise run test-multi-env" "FILE=from_multi_file SOURCE=from_multi_source COMBINED=combined_value
+custom command executed"
+
+# Test 5: Arrays of files/sources
+echo "ARRAY1_VAR=value1" >.env1
+echo "ARRAY2_VAR=value2" >.env2
+cat <<'EOF' >source1.sh
+export SOURCE1_VAR="source1_value"
+EOF
+cat <<'EOF' >source2.sh
+export SOURCE2_VAR="source2_value"
+EOF
+cat <<EOF >mise.toml
+[tasks.test-env-arrays]
+run = 'echo "ARRAY1=\$ARRAY1_VAR ARRAY2=\$ARRAY2_VAR SOURCE1=\$SOURCE1_VAR SOURCE2=\$SOURCE2_VAR"'
+[tasks.test-env-arrays.env]
+_.file = [".env1", ".env2"]
+_.source = ["source1.sh", "source2.sh"]
+EOF
+assert "mise run test-env-arrays" "ARRAY1=value1 ARRAY2=value2 SOURCE1=source1_value SOURCE2=source2_value"
+
+# Test 6: Variable types (string, int, bool)
+cat <<EOF >mise.toml
+[tasks.test-env-types]
+run = 'env | grep "_VAR=" | sort'
+[tasks.test-env-types.env]
+STRING_VAR = "test_string"
+INT_VAR = 42
+BOOL_TRUE_VAR = true
+BOOL_FALSE_VAR = false
+EOF
+assert_contains "mise run test-env-types" "BOOL_TRUE_VAR=true"
+assert_contains "mise run test-env-types" "INT_VAR=42"
+assert_contains "mise run test-env-types" "STRING_VAR=test_string"
+# false values should unset the variable, so BOOL_FALSE_VAR should not be present
+assert_not_contains "mise run test-env-types" "BOOL_FALSE_VAR"
+
+# Test 7: Verify task info shows correct directive syntax
+cat <<EOF >mise.toml
+[tasks.test-info-display]
+run = 'echo "testing info display"'
+[tasks.test-info-display.env]
+TEST_VAR = "test_value"
+_.file = ".env"
+_.path = "./custom_bin"
+_.source = "env_source.sh"
+EOF
+echo "Testing task info directive display..."
+assert_contains "mise tasks info test-info-display" '_.file = ".env"'
+assert_contains "mise tasks info test-info-display" '_.path = "./custom_bin"'
+assert_contains "mise tasks info test-info-display" '_.source = "env_source.sh"'
+assert_contains "mise tasks info test-info-display" 'TEST_VAR=test_value'
+
+# Test 8: Verify task info JSON output shows correct directive syntax
+assert_contains "mise tasks info test-info-display --json" '"_.file = \".env\""'
+assert_contains "mise tasks info test-info-display --json" '"_.path = \"./custom_bin\""'
+assert_contains "mise tasks info test-info-display --json" '"_.source = \"env_source.sh\""'
+assert_contains "mise tasks info test-info-display --json" '"TEST_VAR=test_value"'
+
+echo "All task environment directive tests passed!"
+
+# Clean up
+rm -f .env .env.multi .env1 .env2 env_source.sh multi_source.sh source1.sh source2.sh
+rm -rf custom_bin

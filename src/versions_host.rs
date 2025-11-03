@@ -31,20 +31,20 @@ pub async fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>>
         return Ok(None);
     }
     // ensure that we're using a default shorthand plugin
-    if let Some(plugin) = ba.backend()?.plugin() {
-        if let Ok(Some(remote_url)) = plugin.get_remote_url() {
-            let normalized_remote = normalize_remote(&remote_url).unwrap_or("INVALID_URL".into());
-            let shorthand_remote = REGISTRY
-                .get(plugin.name())
-                .and_then(|rt| rt.backends().first().map(|b| registry::full_to_url(b)))
-                .unwrap_or_default();
-            if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
-                trace!(
-                    "Skipping versions host check for {} because it has a non-default remote",
-                    ba.short
-                );
-                return Ok(None);
-            }
+    if let Some(plugin) = ba.backend()?.plugin()
+        && let Ok(Some(remote_url)) = plugin.get_remote_url()
+    {
+        let normalized_remote = normalize_remote(&remote_url).unwrap_or("INVALID_URL".into());
+        let shorthand_remote = REGISTRY
+            .get(plugin.name())
+            .and_then(|rt| rt.backends().first().map(|b| registry::full_to_url(b)))
+            .unwrap_or_default();
+        if normalized_remote != normalize_remote(&shorthand_remote).unwrap_or_default() {
+            trace!(
+                "Skipping versions host check for {} because it has a non-default remote",
+                ba.short
+            );
+            return Ok(None);
         }
     }
     static CACHE: LazyLock<Mutex<HashMap<String, Vec<String>>>> =
@@ -57,26 +57,19 @@ pub async fn list_versions(ba: &BackendArg) -> eyre::Result<Option<Vec<String>>>
         warn!("{ba}: skipping versions host check due to rate limit");
         return Ok(None);
     }
-    let url = match Settings::get().paranoid {
-        true => format!("https://mise-versions.jdx.dev/{}", &ba.short),
-        false => format!("http://mise-versions.jdx.dev/{}", &ba.short),
-    };
-    let versions =
-        // using http is not a security concern and enabling tls makes mise significantly slower
-        match HTTP_FETCH.get_text(url).await {
-            Ok(res) => res,
-            Err(err) => {
-                match http::error_code(&err).unwrap_or(0) {
-                    404 => return Ok(None),
-                    429 => {
-                        RATE_LIMITED.store(true, Ordering::Relaxed);
-                        warn!("{ba}: mise-version rate limited");
-                        return Ok(None);
-                    }
-                    _ => return Err(err),
-                }
+    let url = format!("https://mise-versions.jdx.dev/{}", &ba.short);
+    let versions = match HTTP_FETCH.get_text(url).await {
+        Ok(res) => res,
+        Err(err) => match http::error_code(&err).unwrap_or(0) {
+            404 => return Ok(None),
+            429 => {
+                RATE_LIMITED.store(true, Ordering::Relaxed);
+                warn!("{ba}: mise-version rate limited");
+                return Ok(None);
             }
-        };
+            _ => return Err(err),
+        },
+    };
     let versions = versions
         .lines()
         .map(|v| v.trim().to_string())

@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: mumoshu
+    repo_name: variant2
+    description: Turn your bash scripts into a modern, single-executable CLI app today
+    asset: variant_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    supported_envs:
+      - darwin
+      - linux
+    files:
+      - name: variant
+    checksum:
+      type: github_release
+      asset: variant_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

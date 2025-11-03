@@ -70,13 +70,22 @@ sudo apt update
 sudo apt install -y mise
 ```
 
-== Fedora (dnf)
+== Fedora 41+, RHEL/CentOS Stream 9+ (dnf)
 
 ```sh
-sudo dnf install -y dnf-plugins-core
-sudo dnf config-manager addrepo --from-repofile=https://mise.jdx.dev/rpm/mise.repo
-sudo dnf install -y mise
+sudo dnf copr enable jdxcode/mise
+sudo dnf install mise
 ```
+
+See the [copr page](https://copr.fedorainfracloud.org/coprs/jdxcode/mise/) for more information.
+
+== Snap (beta)
+
+```sh
+sudo snap install mise --classic --beta
+```
+
+See the [snapcraft.io page](https://snapcraft.io/mise) for more information.
 
 :::
 
@@ -115,7 +124,7 @@ mise exec -- node my-script.js
 
 Another useful command is [`mise r|run`](/cli/run.html) which allows you to run a [`mise task`](/tasks/) or a script with the `mise` context.
 
-:::tip
+::: tip
 You can set a shell alias in your shell's rc file like `alias x="mise x --"` to save some keystrokes.
 :::
 
@@ -222,11 +231,124 @@ Note that when you ran `mise use --global node@22`, `mise` updated the global `m
 node = "22"
 ```
 
-## 4. Next steps {#next-steps}
+## 4. Use tools from backends (npm, pipx, core, aqua, github) {#tool-backends}
+
+```mermaid
+flowchart LR
+  subgraph Backends
+    core
+    aqua
+    github
+    npm
+    pipx
+  end
+
+  core --> node["core:node"]
+  core --> python["core:python"]
+  aqua -->gh["aqua:cli/cli"]
+  github -->ripgrep["github:BurntSushi/ripgrep"]
+  github -->ruff["github:astral-sh/ruff"]
+  npm --> prettier["npm:prettier"]
+  npm --> claude_code["npm:@anthropic-ai/claude-code"]
+  pipx -->black["pipx:black"]
+  pipx -->pycowsay["pipx:pycowsay"]
+  aqua -->terraform["aqua:hashicorp/terraform"]
+
+  subgraph Tools
+    node
+    python
+    gh
+    ripgrep
+    ruff
+    prettier
+    claude_code
+    black
+    pycowsay
+    terraform
+  end
+```
+
+Backends are ecosystems or package managers that mise uses to install tools. With `mise use`, you can install multiple tools from each backend.
+
+For example, to install [claude-code](https://www.npmjs.com/package/@anthropic-ai/claude-code) with the npm backend:
+
+```sh
+# run claude-code via mise x|exec
+mise exec npm:@anthropic-ai/claude-code -- claude --version
+
+# or if mise is activated in your shell
+mise use --global npm:@anthropic-ai/claude-code
+claude --version
+```
+
+Install [black](https://github.com/psf/black) with the pipx backend:
+
+```sh
+# run black via mise x|exec
+mise exec pipx:black -- black --version
+
+# or if mise is activated in your shell
+mise use --global pipx:black
+black --version
+```
+
+mise can also install tools directly from github with the github backend:
+
+```sh
+# run ripgrep via mise x|exec
+mise exec github:BurntSushi/ripgrep -- ripgrep --version
+
+# or if mise is activated in your shell
+mise use --global github:BurntSushi/ripgrep
+ripgrep --version
+```
+
+See [Backends](/dev-tools/backends/) for more ecosystems and details.
+
+### 5. Setting environment variables {#environment-variables}
+
+You can set environment variables in `mise.toml` which will be set if mise is activated or if `mise x|exec` is used in a directory:
+
+```toml [mise.toml]
+[env]
+NODE_ENV = "production"
+```
+
+```sh
+mise exec -- node --eval 'console.log(process.env.NODE_ENV)'
+
+# or if mise is activated in your shell
+echo "node env: $NODE_ENV"
+# node env: production
+```
+
+### 6. Run a task {#run-a-task}
+
+You can define simple tasks in `mise.toml` and run them with `mise run`:
+
+```toml [mise.toml]
+[tasks]
+hello = "echo hello from mise"
+```
+
+Run it:
+
+```sh
+mise run hello
+# hello from mise
+```
+
+:::tip
+mise tasks will automatically install all of the tools from `mise.toml` before running the task.
+:::
+
+See [tasks](/tasks/) for more information on how to define and use tasks.
+
+## 7. Next steps {#next-steps}
 
 Follow the [walkthrough](/walkthrough) for more examples on how to use mise.
 
-### Set up the autocompletion {#autocompletion}
+### Set up autocompletion {#autocompletion}
 
 See [autocompletion](/installing-mise.html#autocompletion) to learn how to set up autocompletion for your shell.
 

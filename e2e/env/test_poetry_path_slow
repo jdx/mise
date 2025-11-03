@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+# Test MISE_ADD_PATH functionality with poetry plugin
+# This reproduces the regression reported in https://github.com/jdx/mise/discussions/5934
+# Poetry plugin internally sets MISE_ADD_PATH to add virtual environment to PATH
+
+export POETRY_HOME="$HOME/.poetry"
+
+cat >.mise.toml <<EOF
+[tools]
+python = "3.12"
+poetry = {version="1.8", pyproject="pyproject.toml"}
+EOF
+
+cat >pyproject.toml <<EOF
+[tool.poetry]
+name = "test-project"
+version = "0.1.0"
+description = "Test project for MISE_ADD_PATH"
+authors = ["mise"]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+pip-tools = "^7.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+EOF
+
+# Install Python and Poetry
+mise i
+
+# Install dependencies (this creates the virtual environment)
+mise x -- poetry install --no-root
+
+# Get the virtual environment path
+VENV_PATH=$(mise x -- poetry env info --path)
+
+# Test that poetry's virtual environment python is used
+assert_contains "mise x -- which python" "$VENV_PATH/bin/python"
+assert_contains "mise x -- which pip" "$VENV_PATH/bin/pip"
+
+# Test that pip-compile (installed in poetry venv) is accessible
+assert_contains "mise x -- which pip-compile" "$VENV_PATH/bin/pip-compile"
+
+# Test that the poetry virtual environment is properly added to PATH
+assert_contains "mise env -s bash | grep '^export PATH='" "$VENV_PATH/bin"

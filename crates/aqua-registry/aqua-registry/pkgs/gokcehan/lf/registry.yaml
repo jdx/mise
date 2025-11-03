@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gokcehan
+    repo_name: lf
+    description: Terminal file manager
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    rosetta2: true
+    asset: lf-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip

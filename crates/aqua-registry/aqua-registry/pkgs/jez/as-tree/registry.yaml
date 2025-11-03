@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jez
+    repo_name: as-tree
+    description: Print a list of paths as a tree of paths
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: as-tree-{{.Version}}-{{.OS}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: osx
+        supported_envs:
+          - linux/amd64
+          - darwin

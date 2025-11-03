@@ -6,21 +6,21 @@ mise use -g watchexec@latest
 mise tasks add example -- echo 'running example'
 
 test_mise_watch() {
-  local mise_path="$1"
-  output_file=.watch_output
+	local mise_path="$1"
+	output_file=.watch_output
 
-  rm -f "${output_file}"
+	rm -f "${output_file}"
 
-  $mise_path watch example -e '.aaa' >"${output_file}" &
-  PID_TO_KILL=$!
+	$mise_path watch example -e '.aaa' >"${output_file}" &
+	PID_TO_KILL=$!
 
-  while ! grep -q "running example" "${output_file}"; do
-    sleep 0.5
-  done
+	while ! grep -q "running example" "${output_file}"; do
+		sleep 0.5
+	done
 
-  kill -SIGINT $PID_TO_KILL
+	kill -SIGINT $PID_TO_KILL
 
-  assert_contains "cat ${output_file}" "running example"
+	assert_contains "cat ${output_file}" "running example"
 }
 
 # Test with original mise

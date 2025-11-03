@@ -3,9 +3,9 @@
 export NVM_DIR="$PWD/.nvm"
 
 install_fake_node() {
-  mkdir -p "$1/bin"
-  echo "#!/usr/bin/env echo" >"$1/bin/node"
-  chmod +x "$1/bin/node"
+	mkdir -p "$1/bin"
+	echo "#!/usr/bin/env echo" >"$1/bin/node"
+	chmod +x "$1/bin/node"
 }
 
 install_fake_node "$NVM_DIR/versions/node/v18.0.0"

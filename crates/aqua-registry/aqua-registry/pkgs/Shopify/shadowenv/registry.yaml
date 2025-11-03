@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: Shopify
+    repo_name: shadowenv
+    description: reversible directory-local environment variable manipulations
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "1.2.1"
+        asset: shadowenv-{{.OS}}-10.14
+        format: raw
+        replacements:
+          darwin: macOS
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "2.1.0"
+        asset: shadowenv-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "2.1.1"
+        asset: shadowenv-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 2.0.0")
+        asset: shadowenv-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 2.0.5")
+        asset: shadowenv-{{.OS}}-latest
+        format: raw
+        replacements:
+          darwin: macOS
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 2.0.7")
+        asset: shadowenv-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: shadowenv-{{.Arch}}-{{.OS}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin

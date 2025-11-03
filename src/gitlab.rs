@@ -234,7 +234,7 @@ fn cache_dir() -> PathBuf {
     dirs::CACHE.join("gitlab")
 }
 
-fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
+pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let mut headers = HeaderMap::new();
     let url = url.into_url().unwrap();
     let mut set_headers = |token: &str| {

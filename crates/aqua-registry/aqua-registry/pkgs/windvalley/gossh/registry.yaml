@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: windvalley
+    repo_name: gossh
+    description: A high-performance and high-concurrency ssh tool written in Go. It is 10 times faster than Ansible. If you need much more performance and better ease of use, you will love it
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.6.1"
+        no_asset: true
+      - version_constraint: semver("<= 1.12.0")
+        asset: gossh-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: gossh-{{.Version}}-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - linux
+          - darwin

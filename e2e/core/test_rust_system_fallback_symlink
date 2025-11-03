@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+# This test verifies that symlinked paths are correctly identified as duplicates
+# when filtering PATH entries. Without canonicalization, mise would treat
+# symlinked paths as different from their targets, leading to PATH duplication.
+
+# Create the real cargo bin directory
+mkdir -p "$HOME/.cargo-real/bin"
+
+# Create a symlink from .cargo to .cargo-real
+ln -s "$HOME/.cargo-real" "$HOME/.cargo"
+
+# Create fake rustc in the REAL directory
+cat >"$HOME/.cargo-real/bin/rustc" <<'EOF'
+#!/usr/bin/env bash
+if [ -n "$RUSTUP_TOOLCHAIN" ]; then
+	echo "rustc 1.81.0 (mise version via symlink)"
+else
+	echo "rustc 1.82.0 (system rustup via symlink)"
+fi
+EOF
+chmod +x "$HOME/.cargo-real/bin/rustc"
+
+# Add the SYMLINK path to PATH (this is what users typically have)
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# Verify system rustc is available via symlink
+assert_contains "rustc --version" "rustc 1.82.0 (system rustup via symlink)"
+
+# Activate mise
+eval "$(mise activate bash)"
+
+# Create a project with mise rust
+mkdir -p project
+cat >project/.mise.toml <<EOF
+[tools]
+rust = "1.81.0"
+EOF
+
+cd project || exit 1
+mise install
+eval "$(mise hook-env)"
+
+# Verify mise rust is active
+assert_contains "rustc --version" "1.81.0"
+
+# Leave the project
+# shellcheck disable=SC2103
+cd ..
+eval "$(mise hook-env)"
+
+# CRITICAL: System rustc should still be accessible via the symlink
+# Without proper canonicalization, mise would:
+# 1. See ~/.cargo/bin in PATH (symlink)
+# 2. Install rust to ~/.cargo/bin (resolves to ~/.cargo-real/bin)
+# 3. Think these are different paths
+# 4. Remove ~/.cargo/bin when deactivating, breaking system rustup
+assert_contains "rustc --version" "rustc 1.82.0 (system rustup via symlink)"

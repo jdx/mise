@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: abs-lang
+    repo_name: abs
+    description: "Home of the ABS programming language: the joy of shell scripting"
+    rosetta2: true
+    format: raw
+    asset: abs-{{.OS}}-{{.Arch}}
+    supported_envs:
+      - darwin
+      - linux
+      - amd64

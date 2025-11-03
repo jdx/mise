@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Test use --dry-run functionality
+
+set -euo pipefail
+
+# Create a temporary directory for testing
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
+
+# Test: Dry-run should show what would be added without actually modifying the file
+assert_contains "mise use tiny@3.1.0 --dry-run 2>&1" "would update"
+assert_contains "mise use tiny@3.1.0 --dry-run 2>&1" "add: tiny@3.1.0"
+# Config file should not exist after dry-run
+assert_fail "test -f mise.toml"
+
+# Test: Tool should not be installed after dry-run
+assert_fail "mise which tiny"
+
+# Test: Regular use should actually add the tool
+mise use tiny@3.1.0
+assert_contains "cat mise.toml" "tiny"
+
+# Test: Dry-run for removing a tool
+assert_contains "mise use --remove tiny --dry-run 2>&1" "would update"
+assert_contains "mise use --remove tiny --dry-run 2>&1" "remove: tiny"
+assert_contains "cat mise.toml" "tiny" # Should still be there
+
+# Test: Actually remove the tool
+mise use --remove tiny
+assert_not_contains "cat mise.toml" "tiny"
+
+# Test: Dry-run with multiple tools
+rm -f mise.toml # Start fresh
+output=$(mise use jq@latest shfmt@3.10.0 --dry-run 2>&1)
+assert_contains "echo '$output'" "would update"
+assert_contains "echo '$output'" "jq@"
+assert_contains "echo '$output'" "shfmt@"
+assert_fail "test -f mise.toml" # File should not be created
+
+# Clean up
+cd /
+rm -rf "$TEST_DIR"

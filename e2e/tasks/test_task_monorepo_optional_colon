@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+
+# Test that the leading colon is optional for monorepo task running and dependencies
+# This tests that "build" works the same as ":build" in monorepo contexts
+
+export MISE_EXPERIMENTAL=1
+
+# Set up monorepo structure
+cat <<'EOF' >mise.toml
+min_version = "2025.10.6"
+experimental_monorepo_root = true
+
+[settings]
+experimental = true
+EOF
+
+# Test 1: Task dependencies without leading colon
+mkdir -p app
+cat <<'EOF' >app/mise.toml
+[tasks.setup]
+run = 'echo "setup task executed"'
+
+[tasks.build]
+depends = ["setup"]
+run = 'echo "build task executed"'
+
+[tasks.test]
+depends = ["build"]
+run = 'echo "test task executed"'
+EOF
+
+# Dependencies without colon should work (resolve to same module)
+assert_contains "mise run //app:build" "setup task executed"
+assert_contains "mise run //app:build" "build task executed"
+
+assert_contains "mise run //app:test" "setup task executed"
+assert_contains "mise run //app:test" "build task executed"
+assert_contains "mise run //app:test" "test task executed"
+
+# Test 2: Running tasks from subdirectory without leading colon
+(
+	cd app
+	assert_contains "mise run build" "setup task executed"
+	assert_contains "mise run build" "build task executed"
+)
+
+# Test 3: Mixed colon and non-colon syntax
+mkdir -p frontend
+cat <<'EOF' >frontend/mise.toml
+[tasks.lint]
+run = 'echo "lint task executed"'
+
+[tasks.compile]
+depends = [":lint"]  # colon syntax
+run = 'echo "compile task executed"'
+
+[tasks.bundle]
+depends = ["compile"]  # non-colon syntax
+run = 'echo "bundle task executed"'
+EOF
+
+assert_contains "mise run //frontend:bundle" "lint task executed"
+assert_contains "mise run //frontend:bundle" "compile task executed"
+assert_contains "mise run //frontend:bundle" "bundle task executed"
+
+# Test 4: Task with colons in name and bare dependencies
+mkdir -p backend
+cat <<'EOF' >backend/mise.toml
+[tasks.before]
+run = 'echo "before task executed"'
+
+[tasks."deploy:staging"]
+depends = ["before"]  # no colon
+run = 'echo "deploy:staging task executed"'
+
+[tasks."deploy:prod"]
+depends = [":before", "deploy:staging"]  # mixed syntax
+run = 'echo "deploy:prod task executed"'
+EOF
+
+assert_contains "mise run //backend:deploy:staging" "before task executed"
+assert_contains "mise run //backend:deploy:staging" "deploy:staging task executed"
+
+assert_contains "mise run //backend:deploy:prod" "before task executed"
+assert_contains "mise run //backend:deploy:prod" "deploy:staging task executed"
+assert_contains "mise run //backend:deploy:prod" "deploy:prod task executed"
+
+# Test 5: depends_post with bare task names
+mkdir -p services
+cat <<'EOF' >services/mise.toml
+[tasks.cleanup]
+run = 'echo "cleanup task executed"'
+
+[tasks.process]
+depends_post = ["cleanup"]
+run = 'echo "process task executed"'
+EOF
+
+assert_contains "mise run //services:process" "process task executed"
+assert_contains "mise run //services:process" "cleanup task executed"
+
+# Test 6: Verify that dependencies are correctly scoped to their module
+# bare name "before" in different module should resolve to that module, not another
+mkdir -p other
+cat <<'EOF' >other/mise.toml
+[tasks.before]
+run = 'echo "other before task executed"'
+
+[tasks.main]
+depends = ["before"]
+run = 'echo "other main task executed"'
+EOF
+
+# Should run the "other before" task, not the "backend before" task
+OUTPUT=$(mise run //other:main)
+assert_contains "mise run //other:main" "other before task executed"
+assert_contains "mise run //other:main" "other main task executed"
+
+# Verify it's NOT running the backend's "before" task
+if echo "$OUTPUT" | grep -q "^before task executed$"; then
+	echo "ERROR: Task dependency incorrectly resolved to different module's task"
+	exit 1
+fi
+
+# Test 7: Running task from subdirectory
+(
+	cd frontend
+	assert_contains "mise run compile" "lint task executed"
+	assert_contains "mise run compile" "compile task executed"
+)
+
+# Test 8: Root level tasks - bare names work at root too
+cat <<'EOF' >>mise.toml
+[tasks.clean]
+run = 'echo "root clean task executed"'
+
+[tasks.init]
+depends = ["clean"]
+run = 'echo "root init task executed"'
+EOF
+
+# Running with explicit //:init prefix
+assert_contains "mise run //:init" "root clean task executed"
+assert_contains "mise run //:init" "root init task executed"
+
+# Running from root directory with bare name should work the same
+assert_contains "mise run init" "root clean task executed"
+assert_contains "mise run init" "root init task executed"

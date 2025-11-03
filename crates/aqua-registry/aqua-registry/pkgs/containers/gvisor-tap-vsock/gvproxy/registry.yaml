@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: containers/gvisor-tap-vsock/gvproxy
+    type: github_release
+    repo_owner: containers
+    repo_name: gvisor-tap-vsock
+    description: A new network stack based on gVisor
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.6.2"
+        asset: gvproxy-{{.OS}}
+        format: raw
+        overrides:
+          - goos: darwin
+            asset: gvproxy-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.7.0"
+        asset: gvproxy-{{.OS}}
+        format: raw
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.3.0")
+        asset: gvproxy-{{.OS}}
+        format: raw
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.5.0")
+        asset: gvproxy-{{.OS}}
+        format: raw
+        overrides:
+          - goos: darwin
+            asset: gvproxy-{{.OS}}-{{.Arch}}
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.6.1")
+        asset: gvproxy-{{.OS}}
+        format: raw
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.7.3")
+        asset: gvproxy-{{.OS}}
+        format: raw
+        overrides:
+          - goos: linux
+            asset: gvproxy-{{.OS}}-{{.Arch}}
+      - version_constraint: "true"
+        asset: gvproxy-{{.OS}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: sha256sums
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: gvproxy-{{.OS}}-{{.Arch}}
+          - goos: windows
+            goarch: arm64
+            asset: gvproxy-{{.Arch}}

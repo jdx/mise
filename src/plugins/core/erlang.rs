@@ -15,12 +15,17 @@ use async_trait::async_trait;
 use eyre::Result;
 use xx::regex;
 
+#[cfg(linux)]
+use crate::cmd::CmdLineRunner;
+#[cfg(linux)]
+use std::fs;
+
 #[derive(Debug)]
 pub struct ErlangPlugin {
     ba: Arc<BackendArg>,
 }
 
-const KERL_VERSION: &str = "4.1.1";
+const KERL_VERSION: &str = "4.4.0";
 
 impl ErlangPlugin {
     pub fn new() -> Self {
@@ -72,7 +77,101 @@ impl ErlangPlugin {
         Ok(())
     }
 
-    #[cfg(not(windows))]
+    #[cfg(linux)]
+    async fn install_precompiled(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> Result<Option<ToolVersion>> {
+        if Settings::get().erlang.compile == Some(true) {
+            return Ok(None);
+        }
+        let release_tag = format!("OTP-{}", tv.version);
+
+        let arch: String = match ARCH {
+            "x86_64" => "amd64".to_string(),
+            "aarch64" => "arm64".to_string(),
+            _ => {
+                debug!("Unsupported architecture: {}", ARCH);
+                return Ok(None);
+            }
+        };
+
+        let os_ver: String;
+        if let Ok(os) = std::env::var("ImageOS") {
+            os_ver = match os.as_str() {
+                "ubuntu24" => "ubuntu-24.04".to_string(),
+                "ubuntu22" => "ubuntu-22.04".to_string(),
+                "ubuntu20" => "ubuntu-20.04".to_string(),
+                _ => os,
+            };
+        } else if let Ok(os_release) = &*os_release::OS_RELEASE {
+            os_ver = format!("{}-{}", os_release.id, os_release.version_id);
+        } else {
+            return Ok(None);
+        };
+
+        // Currently, Bob only builds for Ubuntu, so we have to check that we're on ubuntu, and on a supported version
+        if !["ubuntu-20.04", "ubuntu-22.04", "ubuntu-24.04"].contains(&os_ver.as_str()) {
+            debug!("Unsupported OS version: {}", os_ver);
+            return Ok(None);
+        }
+
+        let url: String =
+            format!("https://builds.hex.pm/builds/otp/{arch}/{os_ver}/{release_tag}.tar.gz");
+
+        let filename = url.split('/').next_back().unwrap();
+        let tarball_path = tv.download_path().join(filename);
+
+        ctx.pr.set_message(format!("Downloading {filename}"));
+        if !tarball_path.exists() {
+            HTTP.download_file(&url, &tarball_path, Some(ctx.pr.as_ref()))
+                .await?;
+        }
+        ctx.pr.set_message(format!("Extracting {filename}"));
+        file::untar(
+            &tarball_path,
+            &tv.download_path(),
+            &TarOptions {
+                strip_components: 0,
+                pr: Some(ctx.pr.as_ref()),
+                format: file::TarFormat::TarGz,
+                ..Default::default()
+            },
+        )?;
+
+        self.move_to_install_path(&tv)?;
+
+        CmdLineRunner::new(tv.install_path().join("Install"))
+            .with_pr(ctx.pr.as_ref())
+            .arg("-minimal")
+            .arg(tv.install_path())
+            .execute()?;
+
+        Ok(Some(tv))
+    }
+
+    #[cfg(linux)]
+    fn move_to_install_path(&self, tv: &ToolVersion) -> Result<()> {
+        let base_dir = tv
+            .download_path()
+            .read_dir()?
+            .find(|e| e.as_ref().unwrap().file_type().unwrap().is_dir())
+            .unwrap()?
+            .path();
+        file::remove_all(tv.install_path())?;
+        file::create_dir_all(tv.install_path())?;
+        for entry in fs::read_dir(base_dir)? {
+            let entry = entry?;
+            let dest = tv.install_path().join(entry.file_name());
+            trace!("moving {:?} to {:?}", entry.path(), &dest);
+            file::rename(entry.path(), dest)?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(macos)]
     async fn install_precompiled(
         &self,
         ctx: &InstallContext,
@@ -99,8 +198,12 @@ impl ErlangPlugin {
         };
         ctx.pr.set_message(format!("Downloading {tarball_name}"));
         let tarball_path = tv.download_path().join(&tarball_name);
-        HTTP.download_file(&asset.browser_download_url, &tarball_path, Some(&ctx.pr))
-            .await?;
+        HTTP.download_file(
+            &asset.browser_download_url,
+            &tarball_path,
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.set_message(format!("Extracting {tarball_name}"));
         file::untar(
@@ -108,8 +211,9 @@ impl ErlangPlugin {
             &tv.install_path(),
             &TarOptions {
                 strip_components: 0,
-                pr: Some(&ctx.pr),
+                pr: Some(ctx.pr.as_ref()),
                 format: file::TarFormat::TarGz,
+                ..Default::default()
             },
         )?;
         Ok(Some(tv))
@@ -142,12 +246,25 @@ impl ErlangPlugin {
         };
         ctx.pr.set_message(format!("Downloading {}", zip_name));
         let zip_path = tv.download_path().join(&zip_name);
-        HTTP.download_file(&asset.browser_download_url, &zip_path, Some(&ctx.pr))
-            .await?;
+        HTTP.download_file(
+            &asset.browser_download_url,
+            &zip_path,
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
         self.verify_checksum(ctx, &mut tv, &zip_path)?;
         ctx.pr.set_message(format!("Extracting {}", zip_name));
-        file::unzip(&zip_path, &tv.install_path())?;
+        file::unzip(&zip_path, &tv.install_path(), &Default::default())?;
         Ok(Some(tv))
+    }
+
+    #[cfg(not(any(linux, macos, windows)))]
+    async fn install_precompiled(
+        &self,
+        ctx: &InstallContext,
+        tv: ToolVersion,
+    ) -> Result<Option<ToolVersion>> {
+        Ok(None)
     }
 
     async fn install_via_kerl(
@@ -232,6 +349,3 @@ const OS: &str = "win64";
 
 #[cfg(macos)]
 const OS: &str = "apple-darwin";
-
-#[cfg(not(any(windows, macos)))]
-const OS: &str = "unknown";

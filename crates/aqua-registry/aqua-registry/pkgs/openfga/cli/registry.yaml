@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: openfga
+    repo_name: cli
+    description: A cross-platform CLI to interact with an OpenFGA server
+    files:
+      - name: fga
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.1.0-beta1"
+        asset: openfga-cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/openfga/cli/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity
+              - "https://github.com/openfga/cli/.github/workflows/main.yaml@refs/tags/{{.Version}}"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/openfga/cli/releases/download/{{.Version}}/checksums.txt.sig
+      - version_constraint: semver("<= 0.4.0")
+        asset: fga_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/openfga/cli/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity
+              - "https://github.com/openfga/cli/.github/workflows/main.yaml@refs/tags/{{.Version}}"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/openfga/cli/releases/download/{{.Version}}/checksums.txt.sig
+      - version_constraint: "true"
+        asset: fga_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/openfga/cli/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity
+              - "https://github.com/openfga/cli/.github/workflows/main.yaml@refs/tags/{{.Version}}"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/openfga/cli/releases/download/{{.Version}}/checksums.txt.sig
+        slsa_provenance:
+          type: github_release
+          asset: fga.intoto.jsonl

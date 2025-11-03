@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dundee
+    repo_name: gdu
+    description: Fast disk usage analyzer with console interface written in Go
+    asset: gdu_{{.OS}}_{{.Arch}}.tgz
+    overrides:
+      - goos: windows
+        asset: gdu_windows_amd64.exe.zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    files:
+      - name: gdu
+        src: gdu_{{.OS}}_{{.Arch}}
+    checksum:
+      type: github_release
+      asset: sha256sums.txt
+      algorithm: sha256

@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - name: Nukesor/pueue/pueue
+    type: github_release
+    repo_owner: Nukesor
+    repo_name: pueue
+    description: |-
+      Pueue is a command-line task management tool for sequential and parallel execution of long-running tasks.
+
+      *Client version*
+    version_filter: not (Version matches "-rc")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.2.0"
+        asset: pueue-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.1.4")
+        asset: pueue-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.7.0")
+        asset: pueue-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          darwin: macos
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.10.2")
+        asset: pueue-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+      - version_constraint: semver("<= 0.11.1")
+        no_asset: true
+      - version_constraint: semver("<= 0.12.2")
+        asset: pueue-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+      - version_constraint: semver("<= 0.29.0")
+        no_asset: true
+      - version_constraint: semver("<= 2.1.0")
+        asset: pueue-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+      - version_constraint: semver("<= 3.4.1")
+        asset: pueue-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            replacements:
+              darwin: macos
+          - goos: windows
+            replacements: {}
+      - version_constraint: "true"
+        asset: pueue-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc

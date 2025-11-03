@@ -5,12 +5,24 @@ set -euxo pipefail
 cache_day="max-age=86400,s-maxage=86400,public,immutable"
 cache_week="max-age=604800,s-maxage=604800,public,immutable"
 
-#aws s3 cp "$RELEASE_DIR/$MISE_VERSION" "s3://$AWS_S3_BUCKET/$MISE_VERSION/" --cache-control "$cache_week" --no-progress --recursive --include "*" --exclude "*.tar.gz" --exclude "*.tar.xz"
+# Configure AWS CLI to use retry mode with exponential backoff
+export AWS_RETRY_MODE=adaptive
+export AWS_MAX_ATTEMPTS=10
+
+# Upload versioned tarballs to mise-v{version}/ directory
+aws s3 cp "$RELEASE_DIR/$MISE_VERSION" "s3://$AWS_S3_BUCKET/$MISE_VERSION/" --cache-control "$cache_week" --no-progress --recursive --include "*.tar.gz" --include "*.tar.xz" --include "*.tar.zst" --include "*.zip" --include "SHASUMS*"
 
 which -a aws
 aws --version
-aws s3 cp "$RELEASE_DIR" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --recursive --exclude "*.tar.gz" --exclude "*.tar.xz" --include "mise-latest-*"
+
+# Upload mise-latest-* binaries (excluding archives to avoid conflicts)
+# Note: --exclude must come before --include for proper filtering
+aws s3 cp "$RELEASE_DIR" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --recursive --exclude "*" --include "mise-latest-*" --exclude "*.tar.gz" --exclude "*.tar.xz" --exclude "*.tar.zst" --exclude "*.zip"
+
+# Upload SHASUMS files
 aws s3 cp "$RELEASE_DIR" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --content-type "text/plain" --recursive --exclude "*" --include "SHASUMS*"
+
+# Upload individual files sequentially to avoid rate limiting
 aws s3 cp "$RELEASE_DIR/VERSION" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --content-type "text/plain"
 aws s3 cp "$RELEASE_DIR/install.sh" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress --content-type "text/plain"
 aws s3 cp "$RELEASE_DIR/install.sh.sig" "s3://$AWS_S3_BUCKET/" --cache-control "$cache_day" --no-progress
@@ -18,6 +30,11 @@ aws s3 cp "$RELEASE_DIR/install.sh.minisig" "s3://$AWS_S3_BUCKET/" --cache-contr
 aws s3 cp "./schema/mise.json" "s3://$AWS_S3_BUCKET/schema/mise.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 aws s3 cp "./schema/mise.plugin.json" "s3://$AWS_S3_BUCKET/schema/mise.plugin.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 aws s3 cp "./schema/mise-task.json" "s3://$AWS_S3_BUCKET/schema/mise-task.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
+
+# Upload shell-specific mise.run scripts
+aws s3 cp artifacts/mise.run/zsh "s3://$AWS_S3_BUCKET/mise.run/zsh" --cache-control "$cache_week" --no-progress --content-type "text/plain"
+aws s3 cp artifacts/mise.run/bash "s3://$AWS_S3_BUCKET/mise.run/bash" --cache-control "$cache_week" --no-progress --content-type "text/plain"
+aws s3 cp artifacts/mise.run/fish "s3://$AWS_S3_BUCKET/mise.run/fish" --cache-control "$cache_week" --no-progress --content-type "text/plain"
 
 aws s3 cp artifacts/rpm/mise.repo "s3://$AWS_S3_BUCKET/rpm/" --cache-control "$cache_day" --no-progress
 aws s3 cp artifacts/rpm/packages/ "s3://$AWS_S3_BUCKET/rpm/packages/" --cache-control "$cache_week" --no-progress --recursive

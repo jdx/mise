@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dustinblackman
+    repo_name: oatmeal
+    description: Terminal UI to chat with large language models (LLM) using different model backends, and integrations with your favourite editors
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: oatmeal_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256

@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: abiosoft
+    repo_name: colima
+    description: Container runtimes on macOS (and Linux) with minimal setup
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.7.1"
+        # https://github.com/abiosoft/colima/issues/1106
+        asset: colima-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: colima-{{.OS}}-{{.Arch}}.sha256sum
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+          - goos: darwin
+            checksum:
+              enabled: false
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.1.10")
+        no_asset: true
+      - version_constraint: semver("<= 0.2.2")
+        asset: colima-amd64
+        rosetta2: true
+        supported_envs:
+          - darwin
+      - version_constraint: "true"
+        asset: colima-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: colima-{{.OS}}-{{.Arch}}.sha256sum
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin

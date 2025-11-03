@@ -12,7 +12,7 @@ use itertools::Itertools;
 use serde::ser::Error;
 use serde::{Deserialize, Deserializer};
 use serde_derive::Serialize;
-use std::env::consts::ARCH;
+use std::env::consts::{ARCH, OS};
 use std::fmt::{Debug, Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -39,6 +39,7 @@ pub enum SettingsType {
     ListString,
     ListPath,
     SetString,
+    IndexMap,
 }
 
 pub struct SettingsMeta {
@@ -78,10 +79,10 @@ static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static DEFAULT_SETTINGS: Lazy<SettingsPartial> = Lazy::new(|| {
     let mut s = SettingsPartial::empty();
     s.python.default_packages_file = Some(env::HOME.join(".default-python-packages"));
-    if let Some("alpine" | "nixos") = env::LINUX_DISTRO.as_ref().map(|s| s.as_str()) {
-        if !cfg!(test) {
-            s.all_compile = Some(true);
-        }
+    if let Some("alpine" | "nixos") = env::LINUX_DISTRO.as_ref().map(|s| s.as_str())
+        && !cfg!(test)
+    {
+        s.all_compile = Some(true);
     }
     s
 });
@@ -131,10 +132,14 @@ impl Settings {
 
         settings = sb.load()?;
         if !settings.legacy_version_file {
-            settings.idiomatic_version_file = false;
+            settings.idiomatic_version_file = Some(false);
         }
         if settings.raw {
             settings.jobs = 1;
+        }
+        // Handle NO_COLOR environment variable
+        if *env::NO_COLOR {
+            settings.color = false;
         }
         if settings.debug {
             settings.log_level = "debug".to_string();
@@ -176,7 +181,9 @@ impl Settings {
             settings.yes = true;
         }
         if settings.all_compile {
-            settings.node.compile = Some(true);
+            if settings.node.compile.is_none() {
+                settings.node.compile = Some(true);
+            }
             if settings.python.compile.is_none() {
                 settings.python.compile = Some(true);
             }
@@ -252,13 +259,15 @@ impl Settings {
 
     pub fn add_cli_matches(cli: &Cli) {
         let mut s = SettingsPartial::empty();
-        for arg in &*env::ARGS.read().unwrap() {
-            if arg == "--" {
-                break;
-            }
-            if arg == "--raw" {
-                s.raw = Some(true);
-            }
+
+        // Don't process mise-specific flags when running as a shim
+        if *crate::env::IS_RUNNING_AS_SHIM {
+            Self::reset(Some(s));
+            return;
+        }
+
+        if cli.raw {
+            s.raw = Some(true);
         }
         if let Some(cd) = &cli.cd {
             s.cd = Some(cd.clone());
@@ -333,6 +342,8 @@ impl Settings {
     pub fn reset(cli_settings: Option<SettingsPartial>) {
         *CLI_SETTINGS.lock().unwrap() = cli_settings;
         *BASE_SETTINGS.write().unwrap() = None;
+        // Clear caches that depend on settings and environment
+        crate::config::config_file::config_root::reset();
     }
 
     pub fn ensure_experimental(&self, what: &str) -> Result<()> {
@@ -347,6 +358,7 @@ impl Settings {
             .iter()
             .filter(|p| !p.to_string_lossy().is_empty())
             .map(file::replace_path)
+            .filter_map(|p| p.canonicalize().ok())
     }
 
     pub fn global_tools_file(&self) -> PathBuf {
@@ -363,12 +375,12 @@ impl Settings {
 
     pub fn env_files(&self) -> Vec<PathBuf> {
         let mut files = vec![];
-        if let Some(cwd) = &*dirs::CWD {
-            if let Some(env_file) = &self.env_file {
-                let env_file = env_file.to_string_lossy().to_string();
-                for p in FindUp::new(cwd, &[env_file]) {
-                    files.push(p);
-                }
+        if let Some(cwd) = &*dirs::CWD
+            && let Some(env_file) = &self.env_file
+        {
+            let env_file = env_file.to_string_lossy().to_string();
+            for p in FindUp::new(cwd, &[env_file]) {
+                files.push(p);
             }
         }
         files.into_iter().rev().collect()
@@ -404,6 +416,12 @@ impl Settings {
 
     pub fn http_timeout(&self) -> Duration {
         duration::parse_duration(&self.http_timeout).unwrap()
+    }
+
+    pub fn task_timeout_duration(&self) -> Option<Duration> {
+        self.task_timeout
+            .as_ref()
+            .and_then(|s| duration::parse_duration(s).ok())
     }
 
     pub fn log_level(&self) -> log::LevelFilter {
@@ -448,18 +466,32 @@ impl Settings {
         Ok(shell_words::split(sa)?)
     }
 
+    pub fn os(&self) -> &str {
+        match self.os.as_deref().unwrap_or(OS) {
+            "darwin" | "macos" => "macos",
+            "linux" => "linux",
+            "windows" => "windows",
+            other => other,
+        }
+    }
+
     pub fn arch(&self) -> &str {
-        self.arch.as_deref().unwrap_or(ARCH)
+        match self.arch.as_deref().unwrap_or(ARCH) {
+            "x86_64" | "amd64" => "x64",
+            "aarch64" | "arm64" => "arm64",
+            other => other,
+        }
     }
 
     pub fn no_config() -> bool {
         *env::MISE_NO_CONFIG
-            || env::ARGS
-                .read()
-                .unwrap()
-                .iter()
-                .take_while(|a| *a != "--")
-                .any(|a| a == "--no-config")
+            || !*crate::env::IS_RUNNING_AS_SHIM
+                && env::ARGS
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .take_while(|a| *a != "--")
+                    .any(|a| a == "--no-config")
     }
 }
 
@@ -515,4 +547,10 @@ where
         // collect into HashSet to remove duplicates
         .collect::<Result<BTreeSet<_>, _>>()
         .map(|set| set.into_iter().collect())
+}
+
+/// Parse URL replacements from JSON string format
+/// Expected format: {"source_domain": "replacement_domain", ...}
+pub fn parse_url_replacements(input: &str) -> Result<IndexMap<String, String>, serde_json::Error> {
+    serde_json::from_str(input)
 }

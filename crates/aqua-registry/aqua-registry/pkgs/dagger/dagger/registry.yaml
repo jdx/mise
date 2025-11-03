@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dagger
+    repo_name: dagger
+    description: A portable devkit for CI/CD pipelines
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    format: tar.gz
+    asset: dagger_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    overrides:
+      - goos: windows
+        format: zip
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

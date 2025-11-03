@@ -2,10 +2,14 @@
 
 - **Usage**: `aqua-tester`
 
+Test Aqua configuration with fish shell
+
 ## `build`
 
 - **Usage**: `build`
 - **Aliases**: `b`
+
+Build the project
 
 ## `ci`
 
@@ -13,9 +17,13 @@
 
 - **Usage**: `ci`
 
+Run all CI checks
+
 ## `clean`
 
 - **Usage**: `clean`
+
+Clean build artifacts
 
 ## `docs`
 
@@ -23,11 +31,15 @@
 
 - **Usage**: `docs`
 
+Start the documentation development server
+
 ## `docs:build`
 
 - Depends: docs:setup
 
 - **Usage**: `docs:build`
+
+Build the documentation site
 
 ## `docs:demos`
 
@@ -41,19 +53,27 @@ Create recordings with vhs
 
 - **Usage**: `docs:preview`
 
+Preview the documentation site
+
 ## `docs:release`
 
 - Depends: docs:build
 
 - **Usage**: `docs:release`
 
+Release documentation site to production or remote
+
 ## `docs:setup`
 
 - **Usage**: `docs:setup`
 
+Install documentation dependencies
+
 ## `fetch-gpg-keys`
 
 - **Usage**: `fetch-gpg-keys`
+
+Fetch GPG keys for signing or verification
 
 ## `filetask`
 
@@ -94,9 +114,13 @@ User to run as
 
 - **Usage**: `flamegraph`
 
+Generate a flamegraph for performance analysis
+
 ## `install-dev`
 
 - **Usage**: `install-dev`
+
+Install the current project in debug mode
 
 ## `lint`
 
@@ -104,53 +128,76 @@ User to run as
 
 - **Usage**: `lint`
 
+Run all lint checks
+
 ## `lint-fix`
 
 - **Usage**: `lint-fix`
 - **Aliases**: `format`, `fix`
 
+Automatically fix lint issues
+
 ## `lint:actionlint`
 
 - **Usage**: `lint:actionlint`
+
+Lint GitHub Actions workflows
 
 ## `lint:cargo-fmt`
 
 - **Usage**: `lint:cargo-fmt`
 
+Check Rust code formatting with cargo fmt
+
 ## `lint:hk`
 
 - **Usage**: `lint:hk`
+
+Lint HK files
 
 ## `lint:markdownlint`
 
 - **Usage**: `lint:markdownlint`
 
+Lint Markdown files
+
 ## `lint:ripgrep`
 
 - **Usage**: `lint:ripgrep`
 
-## `lint:toml`
+Lint using ripgrep
 
-- **Usage**: `lint:toml`
+## `lint:schema`
+
+- **Usage**: `lint:schema`
+
+Lint schemas
 
 ## `pre-commit`
 
 - **Usage**: `pre-commit`
 
+Run pre-commit hooks
+
 ## `release`
 
 - **Usage**: `release`
 
+Release the project
+
 ## `release-plz`
 
 - **Usage**: `release-plz`
+
+Release with release-plz
 
 ## `render`
 
 - Depends: render:*
 
 - **Usage**: `render`
-- **Aliases**: `render`
+
+Run all render tasks
 
 ## `render:completions`
 
@@ -158,11 +205,15 @@ User to run as
 
 - **Usage**: `render:completions`
 
+Generate shell completions
+
 ## `render:fig`
 
 - Depends: docs:setup
 
 - **Usage**: `render:fig`
+
+Generate Fig completion spec
 
 ## `render:help`
 
@@ -170,17 +221,23 @@ User to run as
 
 - **Usage**: `render:help`
 
+Render help documentation
+
 ## `render:mangen`
 
-- Depends: build
+- Depends: render:usage
 
 - **Usage**: `render:mangen`
 
-## `render:settings`
+Generate man pages
+
+## `render:schema`
 
 - Depends: docs:setup
 
-- **Usage**: `render:settings`
+- **Usage**: `render:schema`
+
+Render JSON schema
 
 ## `render:usage`
 
@@ -188,13 +245,19 @@ User to run as
 
 - **Usage**: `render:usage`
 
+Generate usage documentation
+
 ## `show-output-on-failure`
 
 - **Usage**: `show-output-on-failure`
 
+Show output on failure for documentation generation
+
 ## `signal-test`
 
 - **Usage**: `signal-test`
+
+Test signal handling in Node.js
 
 ## `snapshots`
 
@@ -219,16 +282,16 @@ task description
 
 - **Usage**: `test:coverage`
 
-run all tests with coverage report
+Run all tests with coverage report
 
 ## `test:e2e`
 
 - Depends: build
 
 - **Usage**: `test:e2e`
-- **Aliases**: `e`
+- **Aliases**: `e`, `e2e`
 
-run end-to-end tests
+Run end-to-end tests
 
 ## `test:perf`
 
@@ -236,9 +299,13 @@ run end-to-end tests
 
 - **Usage**: `test:perf`
 
+Run performance tests
+
 ## `test:shuffle`
 
 - **Usage**: `test:shuffle`
+
+Run tests with shuffling enabled
 
 ## `test:unit`
 
@@ -249,3 +316,5 @@ run unit tests
 ## `update-descriptions`
 
 - **Usage**: `update-descriptions`
+
+Update all task descriptions in the project

@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: jdx
+    repo_name: usage
+    description: A specification for CLIs
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["v0.1.16", "v0.7.1", "0.7.2"]
+        no_asset: true
+      - version_constraint: "true"
+        asset: usage-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+          - goos: darwin
+            asset: usage-universal-{{.OS}}.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin

@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bazelbuild
+    repo_name: bazelisk
+    description: A user-friendly launcher for Bazel
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.0.5")
+        asset: bazelisk-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: Version == "v0.0.6"
+        no_asset: true
+      - version_constraint: semver("<= 1.5.0")
+        asset: bazelisk-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin
+          - amd64
+        rosetta2: true
+      - version_constraint: semver("<= 1.6.1")
+        asset: bazelisk-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+      - version_constraint: Version == "v1.7.0"
+        no_asset: true
+      - version_constraint: semver("<= 1.8.1")
+        asset: bazelisk-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
+      - version_constraint: "true"
+        asset: bazelisk-{{.OS}}-{{.Arch}}
+        format: raw
+        supported_envs:
+          - darwin
+          - linux
+          - amd64

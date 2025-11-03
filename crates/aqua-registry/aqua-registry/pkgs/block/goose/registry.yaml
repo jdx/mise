@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: block
+    repo_name: goose
+    description: "an open source, extensible AI agent that goes beyond code suggestions - install, execute, edit, and test with any LLM"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 1.0.0")
+        error_message: |
+          Please use a version later than v1.0.
+      - version_constraint: "true"
+        asset: goose-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.bz2
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+        supported_envs:
+          - linux
+          - darwin

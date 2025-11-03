@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: lc
+    repo_name: gau
+    description: Fetch known URLs from AlienVault's Open Threat Exchange, the Wayback Machine, and Common Crawl
+    asset: gau_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: gau_{{trimV .Version}}_checksums.txt
+      algorithm: sha256
+    version_constraint: semver(">= 2.2.0")
+    version_overrides:
+      - version_constraint: semver(">= 1.0.1")
+        replacements:
+          darwin: macOS
+      - version_constraint: Version == "v1.0"
+        asset: gau-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar
+        files:
+          - name: gau
+            src: gau-{{.OS}}-{{.Arch}}
+        overrides:
+          - goos: windows
+            asset: gau-windows-amd64.exe.tar
+        checksum:
+          enabled: false

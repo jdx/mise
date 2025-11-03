@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Test behavior with non-existent tools in config
+
+set -euo pipefail
+
+# Disable backtraces for cleaner error messages
+export RUST_BACKTRACE=0
+export MISE_FRIENDLY_ERROR=1
+
+# Create mise.toml with a non-existent tool
+cat >mise.toml <<EOF
+[tools]
+nonexistent-tool-xyz = "1.0.0"
+EOF
+
+echo "Test 1: mise install should error for non-existent tool in mise.toml"
+status=0
+output=$(mise install 2>&1) || status=$?
+if [[ $status -ne 0 ]] && [[ $output == *"nonexistent-tool-xyz not found in mise tool registry"* ]]; then
+	echo "✓ Test 1 passed: mise install errors for non-existent tool"
+else
+	echo "✗ Test 1 failed: Expected error for non-existent tool"
+	echo "  Status: $status"
+	echo "  Output: $output"
+	exit 1
+fi
+
+echo "Test 2: mise use should error for non-existent tool"
+status=0
+output=$(mise use nonexistent-tool-abc@1.0.0 2>&1) || status=$?
+if [[ $status -ne 0 ]] && [[ $output == *"nonexistent-tool-abc not found in mise tool registry"* ]]; then
+	echo "✓ Test 2 passed: mise use errors for non-existent tool"
+else
+	echo "✗ Test 2 failed: Expected error for non-existent tool"
+	echo "  Status: $status"
+	echo "  Output: $output"
+	exit 1
+fi
+
+echo "Test 3: mise env should warn but not error for non-existent tool"
+status=0
+output=$(mise env 2>&1) || status=$?
+# mise env should warn about the non-existent tool but still exit successfully
+if [[ $status -eq 0 ]]; then
+	if [[ $output == *"WARN"* ]] && [[ $output == *"nonexistent-tool-xyz"* ]]; then
+		echo "✓ Test 3 passed: mise env warns but does not error"
+	else
+		echo "✗ Test 3 failed: Expected warning about nonexistent-tool-xyz"
+		echo "  Output: $output"
+		exit 1
+	fi
+else
+	echo "✗ Test 3 failed: mise env should not exit with error"
+	echo "  Status: $status"
+	echo "  Output: $output"
+	exit 1
+fi
+
+echo "Test 4: mise hook-env should not error for non-existent tool"
+status=0
+output=$(mise hook-env 2>&1) || status=$?
+# mise hook-env is designed for shell integration, so it should silently skip non-existent tools
+if [[ $status -eq 0 ]]; then
+	echo "✓ Test 4 passed: mise hook-env does not error"
+else
+	echo "✗ Test 4 failed: mise hook-env should not exit with error"
+	echo "  Status: $status"
+	echo "  Output: $output"
+	exit 1
+fi
+
+echo "Test 5: mise install with explicit non-existent tool should error"
+status=0
+output=$(mise install nonexistent-explicit-tool@1.0.0 2>&1) || status=$?
+if [[ $status -ne 0 ]] && [[ $output == *"nonexistent-explicit-tool not found in mise tool registry"* ]]; then
+	echo "✓ Test 5 passed: explicit mise install errors for non-existent tool"
+else
+	echo "✗ Test 5 failed: Expected error for non-existent tool"
+	echo "  Status: $status"
+	echo "  Output: $output"
+	exit 1
+fi
+
+echo "Test 6: mise ls should not list non-existent tool"
+status=0
+output=$(mise ls nonexistent-tool-xyz 2>&1) || status=$?
+# mise ls should either error or show nothing for a non-existent tool
+if [[ $output != *"nonexistent-tool-xyz"*"1.0.0"* ]]; then
+	echo "✓ Test 6 passed: mise ls does not list non-existent tool as installed"
+else
+	echo "✗ Test 6 failed: mise ls should not show non-existent tool"
+	echo "  Output: $output"
+	exit 1
+fi
+
+# Clean up
+rm -f mise.toml
+
+echo ""
+echo "Non-existent tool tests completed!"
+echo ""
+echo "Summary:"
+echo "  - mise install with config file: ✓ errors as expected"
+echo "  - mise use: ✓ errors as expected"
+echo "  - mise env: ✓ warns but succeeds"
+echo "  - mise hook-env: ✓ silently succeeds"
+echo "  - mise install explicit: ✓ errors as expected"

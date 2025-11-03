@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    name: oxc-project/oxc/oxlint
+    repo_owner: oxc-project
+    repo_name: oxc
+    description: The linter for oxc
+    version_constraint: "false"
+    version_prefix: oxlint_v
+    version_overrides:
+      - version_constraint: semver(">= 1.17.0")
+        error_message: |
+          aqua can't support oxlint 1.17.0 or later. 
+          > Newer versions of Oxlint require node.js. There isn’t a native executable alternative anymore.
+          https://github.com/oxc-project/oxc/discussions/14452#discussioncomment-14631344
+      - version_constraint: semver("<= 0.0.8")
+        asset: oxlint-{{.OS}}-{{.Arch}}
+        files:
+          - name: oxlint
+            src: oxlint-{{.OS}}-{{.Arch}}
+        replacements:
+          amd64: x64
+          windows: win32
+      - version_constraint: Version == "oxlint_v0.0.9"
+        no_asset: true
+      - version_constraint: semver("<= 0.0.19")
+        asset: oxlint-{{.OS}}-{{.Arch}}
+        files:
+          - name: oxlint
+            src: oxlint-{{.OS}}-{{.Arch}}
+        replacements:
+          amd64: x64
+          windows: win32
+      - version_constraint: Version == "oxlint_v0.1.1"
+        no_asset: true
+      - version_constraint: semver("<= 0.2.2")
+        asset: oxlint-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: oxlint
+            src: oxlint-{{.OS}}-{{.Arch}}
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x64
+          windows: win32
+      - version_constraint: "true"
+        asset: oxlint-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: oxlint
+            src: oxlint-{{.OS}}-{{.Arch}}
+        overrides:
+          - goos: windows
+            format: zip
+          - goos: linux
+            asset: oxlint-{{.OS}}-{{.Arch}}-gnu.{{.Format}}
+            files:
+              - name: oxlint
+                src: oxlint-{{.OS}}-{{.Arch}}-gnu
+        replacements:
+          amd64: x64
+          windows: win32

@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: buildkite
+    repo_name: cli
+    description: A command line interface for Buildkite
+    files:
+      - name: bk
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.1.0")
+        asset: bk-{{.OS}}-{{.Arch}}-{{trimV .Version}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v1.2.0"
+        asset: cli-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+      - version_constraint: Version == "v2.0.0"
+        asset: cli-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        complete_windows_ext: false
+      - version_constraint: Version == "v3.0.0-beta.20240202"
+        asset: bk_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+      - version_constraint: Version == "v3.0.0-beta.20240326"
+        asset: bk_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        rosetta2: true
+      - version_constraint: Version == "v3.0.0-beta.20240418"
+        asset: "{{.Version}}_{{.OS}}_{{.Arch}}"
+        format: raw
+      - version_constraint: "true"
+        asset: bk_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        files:
+          - name: bk
+            src: "{{.AssetWithoutExt}}/bk"
+        replacements:
+          darwin: macOS
+        checksum:
+          type: github_release
+          asset: bk_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: windows
+            files:
+              - name: bk

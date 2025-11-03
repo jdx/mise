@@ -164,16 +164,17 @@ impl ScriptManager {
             .wrap_err_with(|| ScriptFailed(display_path(self.get_script_path(script)), None))
     }
 
-    pub fn run_by_line(&self, script: &Script, pr: &Box<dyn SingleReport>) -> Result<()> {
+    pub fn run_by_line(&self, script: &Script, pr: &dyn SingleReport) -> Result<()> {
         let path = self.get_script_path(script);
         pr.set_message(display_path(&path));
         let mut cmd = CmdLineRunner::new(path.clone());
-        if let Some(arch) = &Settings::get().arch {
-            if arch == "x86_64" && cfg!(macos) {
-                cmd = CmdLineRunner::new("/usr/bin/arch")
-                    .arg("-x86_64")
-                    .arg(path.clone());
-            }
+        if let Some(arch) = &Settings::get().arch
+            && arch == "x86_64"
+            && cfg!(macos)
+        {
+            cmd = CmdLineRunner::new("/usr/bin/arch")
+                .arg("-x86_64")
+                .arg(path.clone());
         }
         let cmd = cmd.with_pr(pr).env_clear().envs(&self.env);
         if let Err(e) = cmd.execute() {

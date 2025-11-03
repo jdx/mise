@@ -1,0 +1,39 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: microsandbox
+    repo_name: microsandbox
+    description: Self-Hosted Plaform for Secure Execution of Untrusted User/AI Code
+    files:
+      - name: msb
+    version_prefix: microsandbox-v
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: microsandbox-{{.SemVer}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: msb
+            src: "{{.AssetWithoutExt}}/msb"
+          - name: msbrun
+            src: "{{.AssetWithoutExt}}/msbrun"
+          - name: msbserver
+            src: "{{.AssetWithoutExt}}/msbserver"
+          - name: msi
+            src: "{{.AssetWithoutExt}}/msi"
+          - name: msr
+            src: "{{.AssetWithoutExt}}/msr"
+          - name: msx
+            src: "{{.AssetWithoutExt}}/msx"
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+              arm64: aarch64
+        supported_envs:
+          - linux
+          - darwin/arm64

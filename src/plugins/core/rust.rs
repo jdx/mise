@@ -35,13 +35,13 @@ impl RustPlugin {
             return Ok(());
         }
         ctx.pr.set_message("Downloading rustup-init".into());
-        HTTP.download_file(rustup_url(&settings), &rustup_path(), Some(&ctx.pr))
+        HTTP.download_file(rustup_url(&settings), &rustup_path(), Some(ctx.pr.as_ref()))
             .await?;
         file::make_executable(rustup_path())?;
         file::create_dir_all(rustup_home())?;
         let ts = ctx.config.get_toolset().await?;
         let cmd = CmdLineRunner::new(rustup_path())
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .arg("--no-modify-path")
             .arg("--default-toolchain")
             .arg("none")
@@ -55,7 +55,7 @@ impl RustPlugin {
         ctx.pr.set_message(format!("{RUSTC_BIN} -V"));
         let ts = ctx.config.get_toolset().await?;
         CmdLineRunner::new(RUSTC_BIN)
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .arg("-V")
             .envs(self.exec_env(&ctx.config, ts, tv).await?)
             .prepend_path(self.list_bin_paths(&ctx.config, tv).await?)?
@@ -84,15 +84,11 @@ impl Backend for RustPlugin {
         Ok(versions)
     }
 
-    fn idiomatic_filenames(&self) -> Result<Vec<String>> {
-        if Settings::get().experimental {
-            Ok(vec!["rust-toolchain.toml".into()])
-        } else {
-            Ok(vec![])
-        }
+    async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
+        Ok(vec!["rust-toolchain.toml".into()])
     }
 
-    fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
+    async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
         let rt = parse_idiomatic_file(path)?;
         Ok(rt.channel)
     }
@@ -104,7 +100,7 @@ impl Backend for RustPlugin {
         let (profile, components, targets) = get_args(&tv);
 
         CmdLineRunner::new(RUSTUP_BIN)
-            .with_pr(&ctx.pr)
+            .with_pr(ctx.pr.as_ref())
             .arg("toolchain")
             .arg("install")
             .arg(&tv.version)
@@ -127,7 +123,7 @@ impl Backend for RustPlugin {
     async fn uninstall_version_impl(
         &self,
         config: &Arc<Config>,
-        pr: &Box<dyn SingleReport>,
+        pr: &dyn SingleReport,
         tv: &ToolVersion,
     ) -> Result<()> {
         let ts = config.get_toolset().await?;
@@ -191,13 +187,13 @@ impl Backend for RustPlugin {
             }
             let out = cmd.read()?;
             for line in out.lines() {
-                if line.starts_with(&self.target_triple(tv)) {
-                    if let Some(_cap) = v_re.captures(line) {
-                        // let requested = cap.get(1).unwrap().as_str().to_string();
-                        // let latest = cap.get(2).unwrap().as_str().to_string();
-                        let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
-                        return Ok(Some(oi));
-                    }
+                if line.starts_with(&self.target_triple(tv))
+                    && let Some(_cap) = v_re.captures(line)
+                {
+                    // let requested = cap.get(1).unwrap().as_str().to_string();
+                    // let latest = cap.get(2).unwrap().as_str().to_string();
+                    let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
+                    return Ok(Some(oi));
                 }
             }
             Ok(None)
@@ -313,7 +309,11 @@ fn rustup_url(_settings: &Settings) -> String {
 
 #[cfg(windows)]
 fn rustup_url(settings: &Settings) -> String {
-    let arch = settings.arch();
+    let arch = match settings.arch() {
+        "x64" => "x86_64",
+        "arm64" => "aarch64",
+        other => other,
+    };
     format!("https://win.rustup.rs/{arch}")
 }
 

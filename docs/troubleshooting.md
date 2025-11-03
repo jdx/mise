@@ -78,19 +78,48 @@ There are 2 places that versions are cached so a brand new release might not app
 
 The first is that the mise CLI caches versions for. The cache can be cleared with `mise cache clear`.
 
-The second uses the mise-versions.jdx.dev host as a centralized
+The second uses the <https://mise-versions.jdx.dev> host as a centralized
 place to list all of the versions of most plugins. This is intended to speed up mise and also
 get around GitHub rate limits when querying for new versions. Check that repo for your plugin to
 see if it has an updated version. This service can be disabled by
 setting `MISE_USE_VERSIONS_HOST=0`.
 
+mise-versions itself also struggles with rate limits but you can help it to fetch more frequently by authenticating
+with its [GitHub app](https://github.com/apps/mise-versions). It does not require any permissions since it simply
+fetches public repository information. The more people do this, the quicker
+mise will be able to fetch new versions of tools.
+
 ## Windows problems
 
+::: warning
 Very basic support for windows is currently available, however because Windows can't support asdf
 plugins, they must use core and vfox only—which means only a handful of tools are available on
 Windows.
+:::
 
-As of this writing, env var management and task execution are not yet supported on Windows.
+### Path limits
+
+If you have many tools defined in your `mise.toml` hierarchy, then it is possible that `mise x` will produce a `Path` environment variable that is too long for certain tools to handle, most notably, `cmd.exe`. This will affect `mise` tools that invoke `cmd.exe` (like `npm install`).
+
+You have a few options:
+
+1. Set the `MISE_INSTALLS_DIR` environment variable to a shorter location, e.g. `C:\.mise-installs`.
+1. Use `powershell.exe` or `pwsh.exe` instead of `cmd.exe`, since they can handle a longer `Path`.
+1. Re-organise the `mise.toml` files in your monorepo, to specify only the tools they need.
+
+You can run the following command to test whether you have hit the `cmd.exe` `Path` limitation:
+
+```powershell
+# Path is within limits
+❯ mise x -- cmd.exe /d /s /c "where.exe where"
+C:\Windows\System32\where.exe
+# Path exceeds cmd.exe limits
+❯ mise x -- cmd.exe /d /s /c "where.exe where"
+'where.exe' is not recognized as an internal or external command,
+operable program or batch file.
+mise ERROR command failed: exit code 1
+mise ERROR Run with --verbose or MISE_VERBOSE=1 for more information
+```
 
 ## mise isn't working when calling from tmux or another shell initialization script
 
@@ -140,3 +169,16 @@ use any of the following (in order of preference):
 - `MISE_GITHUB_TOKEN`
 - `GITHUB_TOKEN`
 - `GITHUB_API_TOKEN`
+
+## Auto-install on command not found handler does not work for new tools
+
+If you are expecting mise to automatically install a tool when you run a command that is not found (using the [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) feature), be aware of an important limitation:
+
+**mise can only auto-install missing versions of tools that already have at least one version installed.**
+
+This is because mise does not have a way of knowing which binaries a tool provides unless there is already an installed (even inactive) version of that tool. If you have never installed any version of a tool, mise cannot determine which tool is responsible for a given binary name, and so it cannot auto-install it on demand.
+
+**Workarounds:**
+
+- Manually install at least one version of the tool you want to be auto-installed in the future. After that, the auto-install feature will work for missing versions of that tool.
+- Use [`mise x|exec`](/cli/exec) or [`mise r|run`](/cli/run) to trigger auto-install for missing tools, even if no version is currently installed. These commands will attempt to install the required tool versions automatically.

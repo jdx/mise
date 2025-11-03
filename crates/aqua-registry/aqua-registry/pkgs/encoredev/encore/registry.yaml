@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: encoredev
+    repo_name: encore
+    description: Open Source Development Platform for building robust type-safe distributed systems with declarative infrastructure
+    url: https://d2f391esomvqpi.cloudfront.net/encore-{{trimV .Version}}-{{.OS}}_{{.Arch}}.tar.gz
+    files:
+      - name: encore
+        src: bin/encore
+    supported_envs:
+      - darwin
+      - linux
+      - amd64

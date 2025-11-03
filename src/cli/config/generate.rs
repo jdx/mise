@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 use clap::ValueHint;
 use eyre::Result;
 
-use crate::config::{Settings, config_file};
-use crate::file;
+use crate::config::config_file;
 use crate::file::display_path;
+use crate::{env, file};
 
-/// [experimental] Generate a mise.toml file
+/// Generate a mise.toml file
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "g", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct ConfigGenerate {
@@ -20,10 +20,9 @@ pub struct ConfigGenerate {
 }
 
 impl ConfigGenerate {
-    pub fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("`mise config generate`")?;
+    pub async fn run(self) -> Result<()> {
         let doc = if let Some(tool_versions) = &self.tool_versions {
-            self.tool_versions(tool_versions)?
+            self.tool_versions(tool_versions).await?
         } else {
             self.default()
         };
@@ -37,9 +36,10 @@ impl ConfigGenerate {
         Ok(())
     }
 
-    fn tool_versions(&self, tool_versions: &Path) -> Result<String> {
-        let to = config_file::parse_or_init(&PathBuf::from("mise.toml"))?;
-        let from = config_file::parse(tool_versions)?;
+    async fn tool_versions(&self, tool_versions: &Path) -> Result<String> {
+        let to =
+            config_file::parse_or_init(&PathBuf::from(&*env::MISE_DEFAULT_CONFIG_FILENAME)).await?;
+        let from = config_file::parse(tool_versions).await?;
         let tools = from.to_tool_request_set()?.tools;
         for (ba, tools) in tools {
             to.replace_versions(&ba, tools)?;

@@ -8,19 +8,11 @@ use std::{
     sync::Arc,
 };
 
-use eyre::{Result, eyre};
-use idiomatic_version::IdiomaticVersionFile;
-use path_absolutize::Absolutize;
-use serde_derive::Deserialize;
-use std::sync::LazyLock as Lazy;
-use tool_versions::ToolVersions;
-use versions::Versioning;
-use xx::regex;
-
 use crate::cli::args::{BackendArg, ToolArg};
+use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
-use crate::config::{AliasMap, Settings, is_global_config, settings};
+use crate::config::{AliasMap, Settings, settings};
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
 use crate::hash::hash_to_str;
@@ -31,10 +23,17 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, T
 use crate::ui::{prompt, style};
 use crate::watch_files::WatchFile;
 use crate::{backend, config, dirs, env, file, hash};
+use eyre::{Result, eyre};
+use idiomatic_version::IdiomaticVersionFile;
+use serde_derive::Deserialize;
+use std::sync::LazyLock as Lazy;
+use tool_versions::ToolVersions;
 
 use super::Config;
 
+pub mod config_root;
 pub mod idiomatic_version;
+pub mod min_version;
 pub mod mise_toml;
 pub mod toml;
 pub mod tool_versions;
@@ -48,14 +47,14 @@ pub enum ConfigFileType {
 
 pub trait ConfigFile: Debug + Send + Sync {
     fn get_path(&self) -> &Path;
-    fn min_version(&self) -> &Option<Versioning> {
-        &None
+    fn min_version(&self) -> Option<&MinVersionSpec> {
+        None
     }
     /// gets the project directory for the config
     /// if it's a global/system config, returns None
     /// files like ~/src/foo/.mise/config.toml will return ~/src/foo
     /// and ~/src/foo/.mise.config.toml will return None
-    fn project_root(&self) -> Option<&Path> {
+    fn project_root(&self) -> Option<PathBuf> {
         let p = self.get_path();
         if config::is_global_config(p) {
             return None;
@@ -65,14 +64,14 @@ pub trait ConfigFile: Debug + Send + Sync {
                 dir if dir.starts_with(*dirs::CONFIG) => None,
                 dir if dir.starts_with(*dirs::SYSTEM) => None,
                 dir if dir == *dirs::HOME => None,
-                dir => Some(dir),
+                _ => Some(config_root::config_root(p)),
             },
             None => None,
         }
     }
     fn config_type(&self) -> ConfigFileType;
     fn config_root(&self) -> PathBuf {
-        config_root(self.get_path())
+        config_root::config_root(self.get_path())
     }
     fn plugins(&self) -> Result<HashMap<String, String>> {
         Ok(Default::default())
@@ -102,6 +101,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn task_config(&self) -> &TaskConfig {
         static DEFAULT_TASK_CONFIG: Lazy<TaskConfig> = Lazy::new(TaskConfig::default);
         &DEFAULT_TASK_CONFIG
+    }
+
+    fn experimental_monorepo_root(&self) -> Option<bool> {
+        None
     }
 
     fn redactions(&self) -> &Redactions {
@@ -218,8 +221,8 @@ impl dyn ConfigFile {
     }
 }
 
-fn init(path: &Path) -> Arc<dyn ConfigFile> {
-    match detect_config_file_type(path) {
+async fn init(path: &Path) -> Arc<dyn ConfigFile> {
+    match detect_config_file_type(path).await {
         Some(ConfigFileType::MiseToml) => Arc::new(MiseToml::init(path)),
         Some(ConfigFileType::ToolVersions) => Arc::new(ToolVersions::init(path)),
         Some(ConfigFileType::IdiomaticVersion) => {
@@ -229,89 +232,33 @@ fn init(path: &Path) -> Arc<dyn ConfigFile> {
     }
 }
 
-pub fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
+pub async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
     let path = if path.is_dir() {
-        path.join("mise.toml")
+        path.join(&*env::MISE_DEFAULT_CONFIG_FILENAME)
     } else {
         path.into()
     };
     let cf = match path.exists() {
-        true => parse(&path)?,
-        false => init(&path),
+        true => parse(&path).await?,
+        false => init(&path).await,
     };
     Ok(cf)
 }
 
-pub fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
-    if let Ok(settings) = Settings::try_get() {
-        if settings.paranoid {
-            trust_check(path)?;
-        }
+pub async fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
+    if let Ok(settings) = Settings::try_get()
+        && settings.paranoid
+    {
+        trust_check(path)?;
     }
-    match detect_config_file_type(path) {
+    match detect_config_file_type(path).await {
         Some(ConfigFileType::MiseToml) => Ok(Arc::new(MiseToml::from_file(path)?)),
         Some(ConfigFileType::ToolVersions) => Ok(Arc::new(ToolVersions::from_file(path)?)),
         Some(ConfigFileType::IdiomaticVersion) => {
-            Ok(Arc::new(IdiomaticVersionFile::from_file(path)?))
+            Ok(Arc::new(IdiomaticVersionFile::from_file(path).await?))
         }
         #[allow(clippy::box_default)]
         _ => Ok(Arc::new(MiseToml::default())),
-    }
-}
-
-pub fn config_root(path: &Path) -> PathBuf {
-    if is_global_config(path) {
-        return env::MISE_GLOBAL_CONFIG_ROOT.to_path_buf();
-    }
-    let path = path
-        .absolutize()
-        .map(|p| p.to_path_buf())
-        .unwrap_or(path.to_path_buf());
-    let parts = path
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().to_string())
-        .collect::<Vec<_>>();
-    const EMPTY: &str = "";
-    let filename = parts.last().map(|p| p.as_str()).unwrap_or(EMPTY);
-    let parent = parts
-        .iter()
-        .nth_back(1)
-        .map(|p| p.as_str())
-        .unwrap_or(EMPTY);
-    let grandparent = parts
-        .iter()
-        .nth_back(2)
-        .map(|p| p.as_str())
-        .unwrap_or(EMPTY);
-    let great_grandparent = parts
-        .iter()
-        .nth_back(3)
-        .map(|p| p.as_str())
-        .unwrap_or(EMPTY);
-    let parent_path = || path.parent().unwrap().to_path_buf();
-    let grandparent_path = || parent_path().parent().unwrap().to_path_buf();
-    let great_grandparent_path = || grandparent_path().parent().unwrap().to_path_buf();
-    let great_great_grandparent_path = || great_grandparent_path().parent().unwrap().to_path_buf();
-    let is_mise_dir = |d: &str| d == "mise" || d == ".mise";
-    let is_config_filename = |f: &str| {
-        f == "config.toml" || f == "config.local.toml" || regex!(r"config\..+\.toml").is_match(f)
-    };
-    if parent == "conf.d" && is_mise_dir(grandparent) {
-        if great_grandparent == ".config" {
-            great_great_grandparent_path()
-        } else {
-            great_grandparent_path()
-        }
-    } else if is_mise_dir(parent) && is_config_filename(filename) {
-        if grandparent == ".config" {
-            great_grandparent_path()
-        } else {
-            grandparent_path()
-        }
-    } else if parent == ".config" {
-        grandparent_path()
-    } else {
-        parent_path()
     }
 }
 
@@ -319,7 +266,7 @@ pub fn config_trust_root(path: &Path) -> PathBuf {
     if settings::is_loaded() && Settings::get().paranoid {
         path.to_path_buf()
     } else {
-        config_root(path)
+        config_root::config_root(path)
     }
 }
 
@@ -376,6 +323,22 @@ pub fn is_trusted(path: &Path) -> bool {
         if canonicalized_path.starts_with(p) {
             add_trusted(canonicalized_path.to_path_buf());
             return true;
+        }
+    }
+
+    // Check if this path is within a trusted monorepo root
+    // Monorepo roots are marked with a special marker file when trusted
+    if settings.experimental
+        && let Some(parent) = canonicalized_path.parent()
+    {
+        let mut current = parent;
+        while let Some(dir) = current.parent() {
+            let monorepo_marker = trust_path(dir).with_extension("monorepo");
+            if monorepo_marker.exists() {
+                add_trusted(canonicalized_path.to_path_buf());
+                return true;
+            }
+            current = dir;
         }
     }
     if settings.paranoid {
@@ -459,6 +422,18 @@ pub fn trust(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Marks a trusted config as a monorepo root, allowing all descendant configs to be trusted
+pub fn mark_as_monorepo_root(path: &Path) -> Result<()> {
+    let config_root = config_trust_root(path);
+    let hashed_path = trust_path(&config_root);
+    let monorepo_marker = hashed_path.with_extension("monorepo");
+    if !monorepo_marker.exists() {
+        file::create_dir_all(monorepo_marker.parent().unwrap())?;
+        file::write(&monorepo_marker, "")?;
+    }
+    Ok(())
+}
+
 pub fn untrust(path: &Path) -> eyre::Result<()> {
     rm_ignored(path.to_path_buf())?;
     let hashed_path = trust_path(path);
@@ -519,24 +494,29 @@ fn trust_file_hash(path: &Path) -> eyre::Result<bool> {
     Ok(hash == actual)
 }
 
-fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
+async fn filename_is_idiomatic(file_name: String) -> bool {
+    for b in backend::list() {
+        match b.idiomatic_filenames().await {
+            Ok(filenames) => {
+                if filenames.contains(&file_name) {
+                    return true;
+                }
+            }
+            Err(e) => {
+                debug!("idiomatic_filenames failed for {}: {:?}", b, e);
+            }
+        }
+    }
+    false
+}
+
+async fn detect_config_file_type(path: &Path) -> Option<ConfigFileType> {
     match path
         .file_name()
         .and_then(|f| f.to_str())
         .unwrap_or("mise.toml")
     {
-        f if backend::list()
-            .iter()
-            .any(|b| match b.idiomatic_filenames() {
-                Ok(filenames) => filenames.contains(&f.to_string()),
-                Err(e) => {
-                    debug!("idiomatic_filenames failed for {}: {:?}", b, e);
-                    false
-                }
-            }) =>
-        {
-            Some(ConfigFileType::IdiomaticVersion)
-        }
+        f if filename_is_idiomatic(f.to_string()).await => Some(ConfigFileType::IdiomaticVersion),
         f if env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
             .as_ref()
             .is_some_and(|o| o.contains(f)) =>
@@ -587,59 +567,28 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_detect_config_file_type() {
+    #[tokio::test]
+    async fn test_detect_config_file_type() {
         env::set_var("MISE_EXPERIMENTAL", "true");
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/.nvmrc")),
+            detect_config_file_type(Path::new("/foo/bar/.nvmrc")).await,
             Some(ConfigFileType::IdiomaticVersion)
         );
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/.ruby-version")),
+            detect_config_file_type(Path::new("/foo/bar/.ruby-version")).await,
             Some(ConfigFileType::IdiomaticVersion)
         );
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/.test-tool-versions")),
+            detect_config_file_type(Path::new("/foo/bar/.test-tool-versions")).await,
             Some(ConfigFileType::ToolVersions)
         );
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/mise.toml")),
+            detect_config_file_type(Path::new("/foo/bar/mise.toml")).await,
             Some(ConfigFileType::MiseToml)
         );
         assert_eq!(
-            detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")),
+            detect_config_file_type(Path::new("/foo/bar/rust-toolchain.toml")).await,
             Some(ConfigFileType::IdiomaticVersion)
         );
-    }
-
-    #[test]
-    fn test_config_root() {
-        for p in &[
-            "/foo/bar/.config/mise/conf.d/config.toml",
-            "/foo/bar/.config/mise/conf.d/foo.toml",
-            "/foo/bar/.config/mise/config.local.toml",
-            "/foo/bar/.config/mise/config.toml",
-            "/foo/bar/.config/mise.local.toml",
-            "/foo/bar/.config/mise.toml",
-            "/foo/bar/.mise.env.toml",
-            "/foo/bar/.mise.local.toml",
-            "/foo/bar/.mise.toml",
-            "/foo/bar/.mise/conf.d/config.toml",
-            "/foo/bar/.mise/config.local.toml",
-            "/foo/bar/.mise/config.toml",
-            "/foo/bar/.tool-versions",
-            "/foo/bar/mise.env.toml",
-            "/foo/bar/mise.local.toml",
-            "/foo/bar/mise.toml",
-            "/foo/bar/mise/config.local.toml",
-            "/foo/bar/mise/config.toml",
-            "/foo/bar/.config/mise/config.env.toml",
-            "/foo/bar/.config/mise.env.toml",
-            "/foo/bar/.mise/config.env.toml",
-            "/foo/bar/.mise.env.toml",
-        ] {
-            println!("{p}");
-            assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/bar"));
-        }
     }
 }

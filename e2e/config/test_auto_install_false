@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+# Test that auto_install=false prevents ALL automatic installation
+
+# Clean up any previous installs
+mise uninstall dummy@1.0.0 2>/dev/null || true
+mise uninstall dummy@ref:master 2>/dev/null || true
+
+# Test 1: mise exec with auto_install=false should NOT install tools passed as CLI args
+cat <<EOF >mise.toml
+[settings]
+auto_install = false
+EOF
+
+# This should fail because auto_install is disabled
+assert_fail "mise exec dummy@1.0.0 -- dummy --version" "couldn't exec process"
+
+# Test 2: mise exec with exec_auto_install=false should NOT install tools
+cat <<EOF >mise.toml
+[settings]
+exec_auto_install = false
+EOF
+
+assert_fail "mise x dummy@1.0.0 -- dummy --version" "couldn't exec process"
+
+# Test 3: mise run with task_run_auto_install=false should NOT install tools
+cat <<EOF >mise.toml
+[tools]
+dummy = '1.0.0'
+
+[settings]
+task_run_auto_install = false
+
+[tasks.test]
+run = 'dummy --version'
+EOF
+
+assert_fail "mise run test" "not found"
+
+# Test 4: Verify auto_install=false cascades to sub-settings
+mise uninstall dummy@1.0.0 2>/dev/null || true
+
+cat <<EOF >mise.toml
+[tools]
+dummy = '1.0.0'
+
+[settings]
+auto_install = false
+
+[tasks.test]
+run = 'dummy --version'
+EOF
+
+# Both exec and run should fail when auto_install is false
+assert_fail "mise x dummy@ref:master -- dummy --version" "couldn't exec process"
+assert_fail "mise run test" "not found"
+
+# Test 5: Verify that explicit install still works
+assert "mise install dummy@1.0.0"
+
+# Now exec should work since it's already installed
+assert "mise x dummy@1.0.0 -- dummy --version"
+assert "mise run test"

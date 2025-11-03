@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: iann0036
+    repo_name: iamlive
+    asset: iamlive-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+    format: zip
+    description: Generate an IAM policy from AWS calls using client-side monitoring (CSM) or embedded proxy
+    overrides:
+      - goos: linux
+        format: tar.gz
+    supported_envs:
+      - darwin
+      - linux
+      - amd64

@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: denisidoro
+    repo_name: navi
+    description: An interactive cheatsheet tool for the command-line
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v2.15.0"
+        asset: navi-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: osx
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "v2.15.1"
+        asset: navi-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            replacements:
+              darwin: osx
+          - goos: darwin
+            goarch: arm64
+            asset: navi-{{.Version}}-{{.Arch}}-{{.OS}}-ios.{{.Format}}
+            replacements:
+              arm64: aarch64
+              darwin: apple
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v2.24.0"
+        asset: navi-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          windows: pc-windows-gnu
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              arm64: aarch64
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - windows/amd64
+      - version_constraint: semver("<= 1.0.0")
+        no_asset: true
+      - version_constraint: semver("<= 2.1.1")
+        asset: navi-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: osx
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 2.14.0")
+        asset: navi-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: osx
+          linux: unknown-linux-musl
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 2.19.0")
+        asset: navi-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          linux: unknown-linux-musl
+          windows: pc-windows-gnu
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            replacements:
+              darwin: apple-darwin
+          - goos: darwin
+            goarch: arm64
+            asset: navi-{{.Version}}-{{.Arch}}-{{.OS}}-ios.{{.Format}}
+            replacements:
+              arm64: aarch64
+              darwin: apple
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.20.1")
+        asset: navi-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          windows: pc-windows-gnu
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: darwin
+            goarch: amd64
+            replacements:
+              darwin: apple-darwin
+          - goos: darwin
+            goarch: arm64
+            asset: navi-{{.Version}}-{{.Arch}}-{{.OS}}-ios.{{.Format}}
+            replacements:
+              darwin: apple
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: navi-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-gnu
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip

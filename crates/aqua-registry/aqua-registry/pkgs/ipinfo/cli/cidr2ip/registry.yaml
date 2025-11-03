@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    name: ipinfo/cli/cidr2ip
+    repo_owner: ipinfo
+    repo_name: cli
+    description: Official Command Line Interface for the IPinfo API (IP geolocation and other types of IP data)
+    version_filter: Version startsWith "cidr2ip-"
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    asset: cidr2ip_{{trimPrefix "cidr2ip-" .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    overrides:
+      - goos: windows
+        format: zip
+        files:
+          - name: cidr2ip
+            src: cidr2ip_{{trimPrefix "cidr2ip-" .Version}}_{{.OS}}_{{.Arch}}.exe
+    files:
+      - name: cidr2ip
+        src: cidr2ip_{{trimPrefix "cidr2ip-" .Version}}_{{.OS}}_{{.Arch}}

@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: bufbuild
+    repo_name: protoc-gen-validate
+    description: "Protocol Buffer Validation - Being replaced by github.com/bufbuild/protovalidate"
+    files:
+      - name: protoc-gen-validate
+      - name: protoc-gen-validate-cpp
+      - name: protoc-gen-validate-go
+      - name: protoc-gen-validate-java
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.13")
+        no_asset: true
+      - version_constraint: semver("<= 0.9.1")
+        asset: protoc-gen-validate_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: protoc-gen-validate_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 1.0.2")
+        asset: protoc-gen-validate_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: protoc-gen-validate_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+      - version_constraint: semver("<= 1.1.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: protoc-gen-validate_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: protoc-gen-validate_{{trimV .Version}}_checksums.txt
+          algorithm: sha256

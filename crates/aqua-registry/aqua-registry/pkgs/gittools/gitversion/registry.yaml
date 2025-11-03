@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: gittools
+    repo_name: gitversion
+    description: From git log to SemVer in no time
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: gitversion-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - linux
+          - darwin
+          - windows
+        replacements:
+          amd64: x64
+          darwin: osx
+          windows: win
+        overrides:
+          - goos: windows
+            format: zip
+        checksum:
+          enabled: false

@@ -1,12 +1,14 @@
+use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
+use crate::config::Config;
 use crate::config::Settings;
 use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::ToolVersion;
-use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
+use itertools::Itertools;
 use std::{fmt::Debug, sync::Arc};
 use xx::regex;
 
@@ -30,12 +32,43 @@ impl Backend for GoBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        // Check if go is available
+        self.warn_if_dependency_missing(
+            config,
+            "go",
+            "To use go packages with mise, you need to install Go first:\n\
+              mise use go@latest\n\n\
+            Or install Go via https://go.dev/dl/",
+        )
+        .await;
+
         timeout::run_with_timeout_async(
             async || {
-                let mut mod_path = Some(self.tool_name());
+                let tool_name = self.tool_name();
+                let parts = tool_name.split('/').collect::<Vec<_>>();
+                let module_root_index = if parts[0] == "github.com" {
+                    // Try likely module root index first
+                    if parts.len() >= 3 {
+                        if parts.len() > 3 && regex!(r"^v\d+$").is_match(parts[3]) {
+                            Some(3)
+                        } else {
+                            Some(2)
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let indices = module_root_index
+                    .into_iter()
+                    .chain((1..parts.len()).rev())
+                    .unique()
+                    .collect::<Vec<_>>();
 
-                while let Some(cur_mod_path) = mod_path {
-                    let res = cmd!("go", "list", "-m", "-versions", "-json", &cur_mod_path)
+                for i in indices {
+                    let mod_path = parts[..=i].join("/");
+                    let res = cmd!("go", "list", "-m", "-versions", "-json", mod_path)
                         .full_env(self.dependency_env(config).await?)
                         .read();
                     if let Ok(raw) = res {
@@ -50,8 +83,6 @@ impl Backend for GoBackend {
                             return Ok(mod_info.versions);
                         }
                     };
-
-                    mod_path = trim_after_last_slash(cur_mod_path);
                 }
 
                 Ok(vec![])
@@ -66,7 +97,16 @@ impl Backend for GoBackend {
         ctx: &InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
-        Settings::get().ensure_experimental("go backend")?;
+        // Check if go is available
+        self.warn_if_dependency_missing(
+            &ctx.config,
+            "go",
+            "To use go packages with mise, you need to install Go first:\n\
+              mise use go@latest\n\n\
+            Or install Go via https://go.dev/dl/",
+        )
+        .await;
+
         let opts = self.ba.opts();
 
         let install = async |v| {
@@ -77,7 +117,7 @@ impl Backend for GoBackend {
             }
 
             cmd.arg(format!("{}@{v}", self.tool_name()))
-                .with_pr(&ctx.pr)
+                .with_pr(ctx.pr.as_ref())
                 .envs(self.dependency_env(&ctx.config).await?)
                 .env("GOBIN", tv.install_path().join("bin"))
                 .execute()
@@ -104,10 +144,6 @@ impl GoBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
-}
-
-fn trim_after_last_slash(s: String) -> Option<String> {
-    s.rsplit_once('/').map(|(new_path, _)| new_path.to_string())
 }
 
 #[derive(Debug, serde::Deserialize)]

@@ -29,17 +29,17 @@ body = """
     | filter(attribute="scope")
     | sort(attribute="scope") -%}
         {% if commit.scope -%}
-        - {{self::commit(commit=commit)}}\
+    - {{self::commit(commit=commit)}}\
         {% endif -%}
     {% endfor -%}
     {% for commit in commits -%}
         {% if commit.scope -%}
         {% else -%}
-          - {{self::commit(commit=commit)}}\
+    - {{self::commit(commit=commit)}}\
         {% endif -%}
     {% endfor -%}
-{% endfor %}
-{% if github.contributors | filter(attribute="is_first_time", value=true) | length != 0 -%}
+{% endfor -%}
+{% if github.contributors | filter(attribute="is_first_time", value=true) | length != 0 %}
 ### New Contributors
 {% for contributor in github.contributors | filter(attribute="is_first_time", value=true) %}
   - @{{ contributor.username }} made their first contribution
@@ -47,16 +47,15 @@ body = """
       [#{{ contributor.pr_number }}]($REPO/pull/{{ contributor.pr_number }})\
     {% endif %}\
 {% endfor %}
-
-{% endif -%}
+{% endif %}
 {% macro commit(commit) -%}
 {% if commit.scope %}**({{commit.scope}})** {% endif -%}
 {% if commit.breaking %}**breaking** {% endif -%}
-{{ commit.message | split(pat="\n") | first | trim }} by \
-{% if commit.remote.username %}[@{{commit.remote.username}}](https://github.com/{{commit.remote.username}})\
-{% else %}{{commit.author.name}}{% endif %} in \
-{% if commit.remote.pr_number %}[#{{ commit.remote.pr_number }}]($REPO/pull/{{ commit.remote.pr_number }})\
-{% else %}[{{ commit.id | truncate(length=7, end="") }}]($REPO/commit/{{ commit.id }})\
+{{ commit.message | split(pat="\n") | first | trim }} by\
+{% if commit.remote.username %} @{{commit.remote.username}}\
+{% else %} {{commit.author.name}}{% endif %} in\
+{% if commit.remote.pr_number %} [#{{ commit.remote.pr_number }}]($REPO/pull/{{ commit.remote.pr_number }})\
+{% else %} [{{ commit.id | truncate(length=7, end="") }}]($REPO/commit/{{ commit.id }})\
 {%- endif %}
 {% endmacro commit -%}
 """
@@ -68,6 +67,8 @@ footer = """
 trim = true
 postprocessors = [
   { pattern = '\$REPO', replace = "https://github.com/jdx/mise" },
+  { pattern = '\(gitlab:([^/\)]+/[^\)]+)\)', replace = "([gitlab:$1](https://gitlab.com/$1))" },
+  { pattern = '\((aqua|github|ubi):([^/\)]+/[^\)]+)\)', replace = "([$1:$2](https://github.com/$2))" },
 ]
 
 [git]
@@ -93,16 +94,17 @@ commit_parsers = [
   { message = '^chore: (release|Release)', skip = true },
   { message = '^Release', skip = true },
   { message = "^Merge commit", skip = true },
+  { message = '^registry:', group = "<!-- 00 -->📦 Registry" },
   { message = '^(chore|fix)\(deps\):', group = "<!-- 99 -->📦️ Dependency Updates", scope = "" },
   { message = '^(chore|fix)\(security\):', group = "<!-- 08 -->🛡️ Security" },
-  { message = '^feat', group = "<!-- 00 -->🚀 Features" },
-  { message = '^fix', group = "<!-- 01 -->🐛 Bug Fixes" },
-  { message = '^refactor', group = "<!-- 02 -->🚜 Refactor" },
-  { message = '^doc', group = "<!-- 03 -->📚 Documentation" },
-  { message = '^style', group = "<!-- 05 -->🎨 Styling" },
-  { message = '^perf', group = "<!-- 04 -->⚡ Performance" },
-  { message = '^test', group = "<!-- 06 -->🧪 Testing" },
-  { message = '^revert', group = "<!-- 09 -->◀️ Revert" },
+  { message = '^feat', group = "<!-- 01 -->🚀 Features" },
+  { message = '^fix', group = "<!-- 02 -->🐛 Bug Fixes" },
+  { message = '^refactor', group = "<!-- 03 -->🚜 Refactor" },
+  { message = '^doc', group = "<!-- 04 -->📚 Documentation" },
+  { message = '^style', group = "<!-- 06 -->🎨 Styling" },
+  { message = '^perf', group = "<!-- 05 -->⚡ Performance" },
+  { message = '^test', group = "<!-- 07 -->🧪 Testing" },
+  { message = '^[Rr]evert', group = "<!-- 09 -->◀️ Revert" },
 ]
 # protect breaking changes from being skipped due to matching a skipping commit_parser
 protect_breaking_commits = false

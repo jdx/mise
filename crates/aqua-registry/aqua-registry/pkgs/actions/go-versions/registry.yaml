@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: actions
+    repo_name: go-versions
+    description: Go releases for Actions Runner Images
+    files:
+      - name: go
+        src: bin/go
+      - name: gofmt
+        src: bin/gofmt
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: go-{{.Version | regexFind "^[^-]+"}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
+        replacements:
+          amd64: x64
+          windows: win32
+        checksum:
+          type: github_release
+          asset: hashes.sha256
+          algorithm: sha256

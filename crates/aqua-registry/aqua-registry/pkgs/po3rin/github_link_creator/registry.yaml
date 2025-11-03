@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: po3rin
+    repo_name: github_link_creator
+    asset: github_link_creator_{{trimV .Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    description: GitHub Link Card Creator lets you generate GitHub images has links to repositories
+    supported_envs:
+      - darwin
+      - amd64
+    rosetta2: true
+    files:
+      - name: repoimg
+    checksum:
+      type: github_release
+      asset: github_link_creator_{{trimV .Version}}_checksums.txt
+      algorithm: sha256

@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: dtan4
+    repo_name: s3url
+    asset: s3url_{{.OS}}_{{.Arch}}.{{.Format}}
+    format: tar.gz
+    description: Generate S3 object pre-signed URL in one command
+    replacements:
+      amd64: x86_64
+      darwin: Darwin
+      linux: Linux
+      windows: Windows
+    overrides:
+      - goos: windows
+        format: zip
+    supported_envs:
+      - darwin
+      - linux
+      - amd64
+    rosetta2: true
+    checksum:
+      type: github_release
+      asset: checksums.txt
+      algorithm: sha256

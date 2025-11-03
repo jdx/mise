@@ -1,0 +1,121 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: sarub0b0
+    repo_name: kubetui
+    description: An intuitive Terminal User Interface (TUI) tool for real-time monitoring and exploration of Kubernetes resources
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.1")
+        asset: kubetui-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.7.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.10.0")
+        asset: kubetui-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "v0.11.0"
+        no_asset: true
+      - version_constraint: semver("<= 0.11.3")
+        asset: kubetui-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.11.5")
+        no_asset: true
+      - version_constraint: Version == "v0.11.6"
+        asset: kubetui-{{.Arch}}-{{.OS}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.2.2")
+        asset: kubetui-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.5.0")
+        asset: kubetui-{{.Arch}}-{{.OS}}-openssl
+        format: raw
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: "true"
+        asset: kubetui-{{.Arch}}-{{.OS}}
+        format: raw
+        windows_arm_emulation: true
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+        replacements:
+          amd64: x86_64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        supported_envs:
+          - darwin
+          - windows
+          - amd64

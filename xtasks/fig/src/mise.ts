@@ -1,438 +1,11 @@
-// If not being published, these need to manually downloaded from https://github.com/withfig/autocomplete/tree/master/src
-/* eslint-disable @withfig/fig-linter/conventional-descriptions */
-import { createNpmSearchHandler } from "./npm";
-import { searchGenerator as createCargoSearchGenerator } from "./cargo";
-
-const singleCmdNewLineGenerator = (completion_cmd: string): Fig.Generator => ({
-  script: completion_cmd.split(" "),
-  splitOn: "\n",
-});
-
-const singleCmdJsonGenerator = (cmd: string): Fig.Generator => ({
-  script: cmd.split(" "),
-  postProcess: (out) =>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    JSON.parse(out).map((r: any) => ({
-      name: r.name,
-      description: r.description,
-    })),
-});
-
-const contextualGeneratorLastWord = (cmd: string): Fig.Generator => ({
-  script: (context) => {
-    if (context.length < 2) {
-      return [];
-    }
-
-    const prev = context[context.length - 2]; // -1 is the current word
-    return ["sh", "-c", [cmd, prev].join(" ")];
-  },
-});
-
-const aliasGenerator: Fig.Generator = {
-  ...contextualGeneratorLastWord("mise alias ls"),
-  postProcess: (out) => {
-    //return [{name: out}]
-    //return out.split('\t').map(l => ({name: l}))
-    //return [{name: "test", "description": out}]
-    const tokens = out.split(/\s+/);
-    if (tokens.length == 0) return [];
-
-    return tokens
-      .flatMap((_, i) => {
-        if (i % 3 == 0) {
-          return [tokens[i + 1]];
-        }
-        return [];
-      })
-      .filter((l) => l.trim().length > 0)
-      .map((l) => ({ name: l.trim() }));
-  },
-};
-
-const pluginWithAlias: Fig.Generator = {
-  script: "mise alias ls".split(" "),
-  postProcess: (output: string) => {
-    const plugins = output.split("\n").map((line) => {
-      const tokens = line.split(/\s+/);
-      return tokens[0];
-    });
-    return [...new Set(plugins)].map((p) => ({ name: p }));
-  },
-};
-
-const getInstalledTools = async (
-  executeShellCommand: Fig.ExecuteCommandFunction
-) => {
-  const { stdout } = await executeShellCommand({
-    command: "sh",
-    args: ["-c", "mise ls --installed"],
-  });
-  return [
-    ...new Set(
-      stdout.split("\n").map((l) => {
-        const tokens = l.split(/\s+/);
-        return { name: tokens[0], version: tokens[1] };
-      })
-    ),
-  ];
-};
-
-type ConfigLsOutput = {
-  path: string;
-  tools: string[];
-};
-
-const configPathGenerator: Fig.Generator = {
-  ...singleCmdJsonGenerator("mise config ls -J"),
-  postProcess: (out) =>
-    JSON.parse(out).map((r: ConfigLsOutput) => ({
-      name: r.path,
-      description: r.path,
-    })),
-};
-
-type ObjectKeyType = string | symbol | number;
-type ObjectAcceptableKeyValues = {
-  [key: string]: ObjectKeyType;
-};
-
-function groupBy<T extends ObjectAcceptableKeyValues>(
-  array: T[],
-  key: keyof T
-): Record<T[keyof T], T[]> {
-  return array.reduce(
-    (result, currentItem) => {
-      (result[currentItem[key] as ObjectKeyType] =
-        result[currentItem[key] as ObjectKeyType] || []).push(currentItem);
-      return result;
-    },
-    {} as Record<ObjectKeyType, T[]>
-  );
-}
-
-const installedToolsGenerator: Fig.Generator = {
-  script: ["sh", "-c", "mise ls --installed"],
-  postProcess: (stdout: string) => {
-    return [
-      ...new Set(
-        stdout.split("\n").map((l) => {
-          const tokens = l.split(/\s+/);
-          return { name: tokens[0], version: tokens[1] };
-        })
-      ),
-    ];
-  },
-};
-
-const pluginGenerator: Fig.Generator = installedToolsGenerator;
-const allPluginsGenerator: Fig.Generator =
-  singleCmdNewLineGenerator("mise plugins --all");
-const simpleTaskGenerator = singleCmdJsonGenerator("mise tasks -J");
-const settingsGenerator = singleCmdNewLineGenerator(`mise settings --keys`);
-
-const atsInStr = (s: string) => (s.match(/@/g) || []).length != 0;
-const backendSepInStr = (s: string) => (s.match(/:/g) || []).length != 0;
-
-type GitHubRepoInfo = {
-  name: string;
-  full_name: string;
-  description: string;
-};
-
-type GitHubAssetInfo = {
-  url: string;
-  uploader: object;
-  download_count: number;
-  state: string;
-};
-type GitHubVersionInfo = {
-  assets: string[];
-  tag_name: string;
-  draft: boolean;
-  body: string; // Markdown
-};
-
-const searchGitHub = async (
-  package_name: string,
-  executeShellCommand: Fig.ExecuteCommandFunction,
-  shellContext: Fig.GeneratorContext
-): Promise<Fig.Suggestion[]> => {
-  const query = [
-    "-H",
-    "Accept: application/vnd.github+json",
-    "-H",
-    "X-GitHub-Api-Version: 2022-11-28",
-  ];
-
-  const generalUrl =
-    "https://api.github.com/search/repositories?q=$NAME$+in:name";
-  const versionsUrl = "https://api.github.com/repos/$FULL_NAME$/releases";
-
-  try {
-    const envs = (
-      await executeShellCommand({
-        command: envVarGenerator.script[0],
-        args: envVarGenerator.script.slice(1),
-      })
-    ).stdout
-      .split("\n")
-      .map((l) => ({
-        name: l.split("=")[0].trim(),
-        value: l.split("=")[1].trim(),
-      }));
-
-    const gh_token = envs.find((v) => v.name == "GITHUB_TOKEN");
-    if (gh_token) {
-      query.push("-H");
-      query.push("Authorization: Bearer $TOKEN$");
-      query[query.length - 1] = query[query.length - 1].replace(
-        "$TOKEN$",
-        gh_token.value
-      );
-    }
-
-    const url =
-      package_name[package_name.length - 1] === "@" ? versionsUrl : generalUrl;
-    query.push(url);
-    query[query.length - 1] = query[query.length - 1].replace(
-      "$NAME$",
-      package_name
-    );
-    query[query.length - 1] = query[query.length - 1].replace(
-      "$FULL_NAME$",
-      package_name.slice(0, package_name.length - 1)
-    );
-
-    const { stdout } = await executeShellCommand({
-      command: "curl",
-      args: query,
-    });
-
-    if (package_name[package_name.length - 1] === "@") {
-      const package_real_name = package_name.slice(0, package_name.length - 1);
-      return [
-        ...new Set(
-          (JSON.parse(stdout) as GitHubVersionInfo[])
-            .filter((e) => e.assets.length > 0)
-            .slice(0, 200)
-            .map((e) => ({
-              name: `${package_real_name}@${e.tag_name}`,
-              description: e.body,
-            }))
-        ),
-      ];
-    } else {
-      return [
-        ...new Set(
-          (JSON.parse(stdout).items as GitHubRepoInfo[]).slice(0, 200).map(
-            (entry) =>
-              ({
-                name: entry.full_name,
-                displayName: entry.name,
-                description: entry.description,
-              }) as Fig.Suggestion
-          )
-        ),
-      ];
-    }
-  } catch (error) {
-    return [{ name: "error", description: error as string }];
-  }
-};
-
-const searchBackend = async (
-  backend: string,
-  context: string[],
-  executeShellCommand: Fig.ExecuteCommandFunction,
-  shellContext: Fig.GeneratorContext
-): Promise<Fig.Suggestion[]> => {
-  const customContext = context;
-  customContext[context.length - 1] = customContext[context.length - 1].replace(
-    `${backend}:`,
-    ""
-  );
-  switch (backend) {
-    case "npm":
-      return await createNpmSearchHandler()(
-        context,
-        executeShellCommand,
-        shellContext
-      );
-    case "cargo":
-      return await createCargoSearchGenerator.custom(
-        customContext,
-        executeShellCommand,
-        shellContext
-      );
-    case "asdf":
-      const { stdout } = await executeShellCommand({
-        command: "sh",
-        args: ["-c", "mise registry"],
-      });
-      return [
-        ...new Set(
-          stdout.split("\n").map((l) => {
-            const tokens = l.split(/\s+/);
-            return { name: tokens[1].replace(`${backend}:`, "") };
-          })
-        ),
-      ];
-    case "ubi":
-      return await searchGitHub(
-        customContext[customContext.length - 1],
-        executeShellCommand,
-        shellContext
-      );
-    default:
-      return [];
-  }
-};
-
-const compareVersions = (a: string, b: string): number => {
-  const result = [a, b].sort(); // Unless we can add semversort
-  if (result[0] != a) return 1;
-  return -1;
-};
-
-const getBackends = async (
-  executeShellCommand: Fig.ExecuteCommandFunction
-): Promise<string[]> => {
-  const { stdout, stderr, status } = await executeShellCommand({
-    command: "sh",
-    args: ["-c", "mise backends ls"],
-  });
-  if (status != 0) {
-    return [stderr];
-  }
-  return [stdout];
-};
-
-const toolVersionGenerator: Fig.Generator = {
-  trigger: (newToken: string, oldToken: string): boolean => {
-    return (
-      (backendSepInStr(newToken) && !backendSepInStr(oldToken)) ||
-      (atsInStr(newToken) && !atsInStr(oldToken))
-    );
-  },
-  getQueryTerm: "@",
-
-  custom: async (
-    context: string[],
-    executeShellCommand: Fig.ExecuteCommandFunction,
-    shellContext: Fig.GeneratorContext
-  ): Promise<Fig.Suggestion[]> => {
-    const currentWord = context[context.length - 1];
-    if (backendSepInStr(currentWord)) {
-      // Let's handle backends
-      const backend = currentWord.slice(0, currentWord.lastIndexOf(":"));
-
-      return (
-        await searchBackend(backend, context, executeShellCommand, shellContext)
-      ).map((s) => ({
-        ...s,
-        name: `${backend}:${s.name}`,
-        displayName: s.name as string,
-        icon: "📦",
-      }));
-    } else if (atsInStr(currentWord)) {
-      const tool = currentWord.slice(0, currentWord.lastIndexOf("@"));
-      const { stdout } = await executeShellCommand({
-        command: "sh",
-        args: ["-c", `mise ls-remote ${tool}`],
-      });
-      const remote_versions_suggestions = stdout
-        .split("\n")
-        .sort((a, b) => compareVersions(b, a))
-        .map((l) => ({ name: l }));
-      const { stdout: aliasStdout } = await executeShellCommand({
-        command: "sh",
-        args: ["-c", `mise alias ls ${tool}`],
-      });
-      const aliases_suggestions = aliasStdout.split("\n").map((l) => {
-        const tokens = l.split(/\s+/);
-        return { name: tokens[1] };
-      });
-      return [...aliases_suggestions, ...remote_versions_suggestions];
-    }
-
-    const { stdout: registryStdout } = await executeShellCommand({
-      command: "sh",
-      args: ["-c", "mise registry"],
-    });
-    const registrySuggestions = [
-      ...new Set(
-        registryStdout.split("\n").map((l) => {
-          const tokens = l.split(/\s+/);
-          return { name: tokens[0], description: tokens[1] };
-        })
-      ),
-    ];
-
-    const backendSuggestions = (await getBackends(executeShellCommand)).map(
-      (backend) => ({ name: backend, description: "Backend" })
-    );
-    return [...backendSuggestions, ...registrySuggestions];
-  },
-};
-
-const installedToolVersionGenerator: Fig.Generator = {
-  trigger: "@",
-  getQueryTerm: "@",
-  custom: async (
-    context: string[],
-    executeShellCommand: Fig.ExecuteCommandFunction
-  ) => {
-    const tools = await getInstalledTools(executeShellCommand);
-    const toolsVersions = groupBy(tools, "name");
-
-    const currentWord = context[context.length - 1];
-    if (atsInStr(currentWord)) {
-      const tool = currentWord.slice(0, currentWord.lastIndexOf("@"));
-
-      const { stdout: aliasStdout } = await executeShellCommand({
-        command: "sh",
-        args: ["-c", `mise alias ls ${tool}`],
-      });
-
-      // This lists all aliases even if they are not installed
-      /*
-      const aliases_suggestions = aliasStdout.split('\n').map(l => {
-        const tokens = l.split(/\s+/)
-        return {name: tokens[1], description: tokens[2]}
-      }) as Fig.Suggestion[]
-      */
-
-      const toolVersions = (toolsVersions[tool] || []) as {
-        name: string;
-        version: string;
-      }[];
-      const suggestions = toolVersions.map((s) => ({
-        name: s.version,
-      })) as Fig.Suggestion[];
-
-      return [...suggestions];
-    }
-
-    const suggestions: Fig.Suggestion[] = [];
-    Object.keys(toolsVersions).forEach((k) => {
-      if (toolsVersions[k].length == 1) {
-        suggestions.push({ name: k });
-      } else {
-        suggestions.push({ name: `${k}@` });
-      }
-    });
-
-    return suggestions;
-  },
-};
-
+// @generated by usage-cli from mise.usage.kdl
 const envVarGenerator = {
   script: ["sh", "-c", "env"],
   postProcess: (output: string) => {
     return output.split("\n").map((l) => ({ name: l.split("=")[0] }));
   },
 };
+
 const usageGenerateSpec = (cmds: string[]) => {
   return async (
     context: string[],
@@ -463,6 +36,7 @@ const usageGenerateSpec = (cmds: string[]) => {
         if (usageFigStatus !== 0) {
           return [{ name: "error", description: figSpecStderr }];
         }
+
         const start_of_json = figSpecOut.indexOf("{");
         const j = figSpecOut.slice(start_of_json);
         return JSON.parse(j).subcommands as Fig.Subcommand[];
@@ -470,6 +44,7 @@ const usageGenerateSpec = (cmds: string[]) => {
         return [{ name: "error", description: e }] as Fig.Subcommand[];
       }
     });
+
     // eslint-disable-next-line compat/compat
     const results = await Promise.allSettled(promises);
     const subcommands = results
@@ -478,9 +53,11 @@ const usageGenerateSpec = (cmds: string[]) => {
     const failed = results
       .filter((p) => p.status === "rejected")
       .map((p) => ({ name: "error", description: p.reason }));
+
     return { subcommands: [...subcommands.flat(), ...failed] } as Fig.Spec;
   };
 };
+
 const completionGeneratorTemplate = (
   argSuggestionBash: string
 ): Fig.Generator => {
@@ -493,6 +70,7 @@ const completionGeneratorTemplate = (
           tokens[tokens.length - 1]
         );
       }
+
       if (tokens.length >= 2) {
         arg = arg.replace(`{{words[PREV]}}`, tokens[tokens.length - 2]);
       }
@@ -505,6 +83,7 @@ const completionGeneratorTemplate = (
     },
   };
 };
+
 const completionSpec: Fig.Spec = {
   name: "mise",
   subcommands: [
@@ -547,14 +126,16 @@ const completionSpec: Fig.Spec = {
             {
               name: "plugin",
               description: "The plugin to show the alias for",
-              generators: pluginGenerator,
-              debounce: true,
+              generators: completionGeneratorTemplate(
+                `mise plugins --core --user`
+              ),
             },
             {
               name: "alias",
               description: "The alias to show",
-              generators: aliasGenerator,
-              debounce: true,
+              generators: completionGeneratorTemplate(
+                `mise alias ls {{words[PREV]}} | awk '{print $2}'`
+              ),
             },
           ],
         },
@@ -574,46 +155,51 @@ const completionSpec: Fig.Spec = {
             description: "Show aliases for <TOOL>",
             isOptional: true,
             generators: completionGeneratorTemplate(`mise registry --complete`),
-            debounce: true,
           },
         },
         {
           name: ["set", "add", "create"],
-          description: "Add/update an alias for a plugin",
+          description: "Add/update an alias for a backend/plugin",
           args: [
             {
               name: "plugin",
-              description: "The plugin to set the alias for",
-              generators: pluginGenerator,
-              debounce: true,
+              description: "The backend/plugin to set the alias for",
+              generators: completionGeneratorTemplate(
+                `mise plugins --core --user`
+              ),
             },
             {
               name: "alias",
               description: "The alias to set",
-              generators: aliasGenerator,
-              debounce: true,
+              generators: completionGeneratorTemplate(
+                `mise alias ls {{words[PREV]}} | awk '{print $2}'`
+              ),
             },
             {
               name: "value",
               description: "The value to set the alias to",
+              isOptional: true,
             },
           ],
         },
         {
           name: ["unset", "rm", "remove", "delete", "del"],
-          description: "Clears an alias for a plugin",
+          description: "Clears an alias for a backend/plugin",
           args: [
             {
               name: "plugin",
-              description: "The plugin to remove the alias from",
-              generators: pluginGenerator,
-              debounce: true,
+              description: "The backend/plugin to remove the alias from",
+              generators: completionGeneratorTemplate(
+                `mise plugins --core --user`
+              ),
             },
             {
               name: "alias",
               description: "The alias to remove",
-              generators: aliasGenerator,
-              debounce: true,
+              isOptional: true,
+              generators: completionGeneratorTemplate(
+                `mise alias ls {{words[PREV]}} | awk '{print $2}'`
+              ),
             },
           ],
         },
@@ -625,8 +211,9 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
           args: {
             name: "plugin",
-            generators: pluginGenerator,
-            debounce: true,
+            generators: completionGeneratorTemplate(
+              `mise plugins --core --user`
+            ),
           },
         },
         {
@@ -654,8 +241,25 @@ const completionSpec: Fig.Spec = {
         description: "Tool(s) to look up\ne.g.: ruby@3",
         isOptional: true,
         isVariadic: true,
-        generators: toolVersionGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
       },
     },
     {
@@ -670,9 +274,14 @@ const completionSpec: Fig.Spec = {
             description: "Plugin(s) to clear cache for e.g.: node, python",
             isOptional: true,
             isVariadic: true,
-            generators: pluginGenerator,
-            debounce: true,
+            generators: completionGeneratorTemplate(
+              `mise plugins --core --user`
+            ),
           },
+        },
+        {
+          name: ["path", "dir"],
+          description: "Show the cache directory path",
         },
         {
           name: ["prune", "p"],
@@ -694,8 +303,9 @@ const completionSpec: Fig.Spec = {
             description: "Plugin(s) to clear cache for e.g.: node, python",
             isOptional: true,
             isVariadic: true,
-            generators: pluginGenerator,
-            debounce: true,
+            generators: completionGeneratorTemplate(
+              `mise plugins --core --user`
+            ),
           },
         },
       ],
@@ -724,7 +334,7 @@ const completionSpec: Fig.Spec = {
       subcommands: [
         {
           name: ["generate", "g"],
-          description: "[experimental] Generate a mise.toml file",
+          description: "Generate a mise.toml file",
           options: [
             {
               name: ["-t", "--tool-versions"],
@@ -876,7 +486,7 @@ const completionSpec: Fig.Spec = {
     {
       name: "en",
       description:
-        "[experimental] starts a new shell with the mise environment built from the current configuration",
+        "Starts a new shell with the mise environment built from the current configuration",
       options: [
         {
           name: ["-s", "--shell"],
@@ -915,6 +525,11 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--redacted",
+          description: "Only show redacted environment variables",
+          isRepeatable: false,
+        },
+        {
           name: ["-s", "--shell"],
           description: "Shell type to generate environment variables for",
           isRepeatable: false,
@@ -931,14 +546,36 @@ const completionSpec: Fig.Spec = {
             ],
           },
         },
+        {
+          name: "--values",
+          description: "Only show values of environment variables",
+          isRepeatable: false,
+        },
       ],
       args: {
         name: "tool@version",
         description: "Tool(s) to use",
         isOptional: true,
         isVariadic: true,
-        generators: toolVersionGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
       },
     },
     {
@@ -974,8 +611,25 @@ const completionSpec: Fig.Spec = {
           description: "Tool(s) to start e.g.: node@20 python@3.10",
           isOptional: true,
           isVariadic: true,
-          generators: toolVersionGenerator,
-          debounce: true,
+          generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
         },
         {
           name: "command",
@@ -1010,12 +664,11 @@ const completionSpec: Fig.Spec = {
     },
     {
       name: ["generate", "gen"],
-      description: "[experimental] Generate files for various tools/services",
+      description: "Generate files for various tools/services",
       subcommands: [
         {
           name: "bootstrap",
-          description:
-            "[experimental] Generate a script to download+execute mise",
+          description: "Generate a script to download+execute mise",
           options: [
             {
               name: ["-l", "--localize"],
@@ -1075,7 +728,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "devcontainer",
-          description: "[experimental] Generate a devcontainer to execute mise",
+          description: "Generate a devcontainer to execute mise",
           options: [
             {
               name: ["-n", "--name"],
@@ -1107,7 +760,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: ["git-pre-commit", "pre-commit"],
-          description: "[experimental] Generate a git pre-commit hook",
+          description: "Generate a git pre-commit hook",
           options: [
             {
               name: "--hook",
@@ -1124,8 +777,9 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
               args: {
                 name: "task",
-                generators: simpleTaskGenerator,
-                debounce: true,
+                generators: completionGeneratorTemplate(
+                  `mise tasks ls --complete`
+                ),
               },
             },
             {
@@ -1138,7 +792,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "github-action",
-          description: "[experimental] Generate a GitHub Action workflow file",
+          description: "Generate a GitHub Action workflow file",
           options: [
             {
               name: "--name",
@@ -1154,8 +808,9 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
               args: {
                 name: "task",
-                generators: simpleTaskGenerator,
-                debounce: true,
+                generators: completionGeneratorTemplate(
+                  `mise tasks ls --complete`
+                ),
               },
             },
             {
@@ -1214,7 +869,7 @@ const completionSpec: Fig.Spec = {
         },
         {
           name: "task-stubs",
-          description: "[experimental] Generates shims to run mise tasks",
+          description: "Generates shims to run mise tasks",
           options: [
             {
               name: ["-m", "--mise-bin"],
@@ -1235,6 +890,78 @@ const completionSpec: Fig.Spec = {
               },
             },
           ],
+        },
+        {
+          name: "tool-stub",
+          description: "Generate a tool stub for HTTP-based tools",
+          options: [
+            {
+              name: "--version",
+              description: "Version of the tool",
+              isRepeatable: false,
+              args: {
+                name: "version",
+              },
+            },
+            {
+              name: ["-u", "--url"],
+              description: "URL for downloading the tool",
+              isRepeatable: false,
+              args: {
+                name: "url",
+              },
+            },
+            {
+              name: "--platform-url",
+              description:
+                "Platform-specific URLs in the format platform:url or just url (auto-detect platform)",
+              isRepeatable: true,
+              args: {
+                name: "platform_url",
+              },
+            },
+            {
+              name: "--platform-bin",
+              description:
+                "Platform-specific binary paths in the format platform:path",
+              isRepeatable: true,
+              args: {
+                name: "platform_bin",
+              },
+            },
+            {
+              name: ["-b", "--bin"],
+              description: "Binary path within the extracted archive",
+              isRepeatable: false,
+              args: {
+                name: "bin",
+              },
+            },
+            {
+              name: "--skip-download",
+              description:
+                "Skip downloading for checksum and binary path detection (faster but less informative)",
+              isRepeatable: false,
+            },
+            {
+              name: "--fetch",
+              description:
+                "Fetch checksums and sizes for an existing tool stub file",
+              isRepeatable: false,
+            },
+            {
+              name: "--http",
+              description: "HTTP backend type to use",
+              isRepeatable: false,
+              args: {
+                name: "http",
+              },
+            },
+          ],
+          args: {
+            name: "output",
+            description: "Output file path for the tool stub",
+          },
         },
       ],
     },
@@ -1259,6 +986,12 @@ const completionSpec: Fig.Spec = {
       name: ["install", "i"],
       description: "Install a tool version",
       options: [
+        {
+          name: ["-n", "--dry-run"],
+          description:
+            "Show what would be installed without actually installing",
+          isRepeatable: false,
+        },
         {
           name: ["-f", "--force"],
           description: "Force reinstall even if already installed",
@@ -1289,8 +1022,25 @@ const completionSpec: Fig.Spec = {
         description: "Tool(s) to install e.g.: node@20",
         isOptional: true,
         isVariadic: true,
-        generators: toolVersionGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
       },
     },
     {
@@ -1300,8 +1050,25 @@ const completionSpec: Fig.Spec = {
         {
           name: "tool@version",
           description: "Tool to install e.g.: node@20",
-          generators: toolVersionGenerator,
-          debounce: true,
+          generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
         },
         {
           name: "path",
@@ -1323,8 +1090,25 @@ const completionSpec: Fig.Spec = {
       args: {
         name: "tool@version",
         description: "Tool to get the latest version of",
-        generators: toolVersionGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
       },
     },
     {
@@ -1341,8 +1125,25 @@ const completionSpec: Fig.Spec = {
         {
           name: "tool@version",
           description: "Tool name and version to create a symlink for",
-          generators: toolVersionGenerator,
-          debounce: true,
+          generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
         },
         {
           name: "path",
@@ -1351,6 +1152,48 @@ const completionSpec: Fig.Spec = {
           template: "filepaths",
         },
       ],
+    },
+    {
+      name: "lock",
+      description:
+        "Update lockfile checksums and URLs for all specified platforms",
+      options: [
+        {
+          name: ["-p", "--platform"],
+          description:
+            "Comma-separated list of platforms to target\ne.g.: linux-x64,macos-arm64,windows-x64\nIf not specified, all platforms already in lockfile will be updated",
+          isRepeatable: true,
+          args: {
+            name: "platform",
+          },
+        },
+        {
+          name: ["-f", "--force"],
+          description: "Update all tools even if lockfile data already exists",
+          isRepeatable: false,
+        },
+        {
+          name: ["-n", "--dry-run"],
+          description: "Show what would be updated without making changes",
+          isRepeatable: false,
+        },
+        {
+          name: ["-j", "--jobs"],
+          description: "Number of jobs to run in parallel\n[default: 4]",
+          isRepeatable: false,
+          args: {
+            name: "jobs",
+          },
+        },
+      ],
+      args: {
+        name: "tool",
+        description:
+          "Tool(s) to update in lockfile\ne.g.: node python\nIf not specified, all tools in lockfile will be updated",
+        isOptional: true,
+        isVariadic: true,
+        generators: completionGeneratorTemplate(`mise registry --complete`),
+      },
     },
     {
       name: ["ls", "list"],
@@ -1404,7 +1247,6 @@ const completionSpec: Fig.Spec = {
             generators: completionGeneratorTemplate(
               `mise ls-remote {{words[PREV]}}`
             ),
-            debounce: true,
           },
         },
         {
@@ -1426,7 +1268,6 @@ const completionSpec: Fig.Spec = {
         generators: completionGeneratorTemplate(
           `mise ls -i | awk '{print $1}' | uniq`
         ),
-        debounce: true,
       },
     },
     {
@@ -1444,8 +1285,25 @@ const completionSpec: Fig.Spec = {
           name: "tool@version",
           description: "Tool to get versions for",
           isOptional: true,
-          generators: toolVersionGenerator,
-          debounce: true,
+          generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
         },
         {
           name: "prefix",
@@ -1455,9 +1313,12 @@ const completionSpec: Fig.Spec = {
           generators: completionGeneratorTemplate(
             `mise ls-remote {{words[PREV]}}`
           ),
-          debounce: true,
         },
       ],
+    },
+    {
+      name: "mcp",
+      description: "[experimental] Run Model Context Protocol (MCP) server",
     },
     {
       name: "outdated",
@@ -1486,8 +1347,25 @@ const completionSpec: Fig.Spec = {
           "Tool(s) to show outdated versions for\ne.g.: node@20 python@3.10\nIf not specified, all tools in global and local configs will be shown",
         isOptional: true,
         isVariadic: true,
-        generators: toolVersionGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
       },
     },
     {
@@ -1530,7 +1408,6 @@ const completionSpec: Fig.Spec = {
                 "The name of the plugin to install\ne.g.: node, ruby\nCan specify multiple plugins: `mise plugins install node ruby python`",
               isOptional: true,
               generators: completionGeneratorTemplate(`mise plugins --all`),
-              debounce: true,
             },
             {
               name: "git_url",
@@ -1613,8 +1490,9 @@ const completionSpec: Fig.Spec = {
             description: "Plugin(s) to remove",
             isOptional: true,
             isVariadic: true,
-            generators: pluginGenerator,
-            debounce: true,
+            generators: completionGeneratorTemplate(
+              `mise plugins --core --user`
+            ),
           },
         },
         {
@@ -1635,8 +1513,9 @@ const completionSpec: Fig.Spec = {
             description: "Plugin(s) to update",
             isOptional: true,
             isVariadic: true,
-            generators: pluginGenerator,
-            debounce: true,
+            generators: completionGeneratorTemplate(
+              `mise plugins --core --user`
+            ),
           },
         },
       ],
@@ -1689,7 +1568,6 @@ const completionSpec: Fig.Spec = {
         generators: completionGeneratorTemplate(
           `mise ls -i | awk '{print $1}' | uniq`
         ),
-        debounce: true,
       },
     },
     {
@@ -1703,7 +1581,6 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "backend",
             generators: completionGeneratorTemplate(`mise backends`),
-            debounce: true,
           },
         },
         {
@@ -1734,6 +1611,11 @@ const completionSpec: Fig.Spec = {
       name: ["run", "r"],
       description: "Run task(s)",
       options: [
+        {
+          name: "--no-cache",
+          description: "Do not use cache on remote tasks",
+          isRepeatable: false,
+        },
         {
           name: ["-C", "--cd"],
           description: "Change to this directory before executing the command",
@@ -1773,8 +1655,25 @@ const completionSpec: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "tool@version",
-            generators: toolVersionGenerator,
-            debounce: true,
+            generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
           },
         },
         {
@@ -1793,6 +1692,19 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: ["-S", "--silent"],
+          description: "Don't show any output except for errors",
+          isRepeatable: false,
+        },
+        {
+          name: "--timeout",
+          description: "Timeout for the task to complete\ne.g.: 30s, 5m",
+          isRepeatable: false,
+          args: {
+            name: "timeout",
+          },
+        },
+        {
           name: "--no-timings",
           description: "Hides elapsed time after each task completes",
           isRepeatable: false,
@@ -1803,11 +1715,6 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
-          name: ["-S", "--silent"],
-          description: "Don't show any output except for errors",
-          isRepeatable: false,
-        },
-        {
           name: ["-o", "--output"],
           description:
             "Change how tasks information is output when running tasks",
@@ -1815,10 +1722,6 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "output",
           },
-        },
-        {
-          name: "--no-cache",
-          isRepeatable: false,
         },
       ],
       generateSpec: usageGenerateSpec(["mise tasks --usage"]),
@@ -1898,6 +1801,54 @@ const completionSpec: Fig.Spec = {
           description: "Set the environment variable in the global config file",
           isRepeatable: false,
         },
+        {
+          name: ["-E", "--env"],
+          description:
+            "Create/modify an environment-specific config file like .mise.<env>.toml",
+          isRepeatable: false,
+          args: {
+            name: "env",
+          },
+        },
+        {
+          name: "--prompt",
+          description: "Prompt for environment variable values",
+          isRepeatable: false,
+        },
+        {
+          name: "--age-encrypt",
+          description:
+            "[experimental] Encrypt the value with age before storing",
+          isRepeatable: false,
+        },
+        {
+          name: "--age-recipient",
+          description:
+            "[experimental] Age recipient (x25519 public key) for encryption",
+          isRepeatable: true,
+          args: {
+            name: "recipient",
+          },
+        },
+        {
+          name: "--age-ssh-recipient",
+          description:
+            "[experimental] SSH recipient (public key or path) for age encryption",
+          isRepeatable: true,
+          args: {
+            name: "path_or_pubkey",
+            template: "filepaths",
+          },
+        },
+        {
+          name: "--age-key-file",
+          description: "[experimental] Age identity file for encryption",
+          isRepeatable: false,
+          args: {
+            name: "path",
+            template: "filepaths",
+          },
+        },
       ],
       args: {
         name: "env_var",
@@ -1928,8 +1879,9 @@ const completionSpec: Fig.Spec = {
             {
               name: "setting",
               description: "The setting to set",
-              generators: settingsGenerator,
-              debounce: true,
+              generators: completionGeneratorTemplate(
+                `mise settings --complete`
+              ),
             },
             {
               name: "value",
@@ -1951,8 +1903,7 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "setting",
             description: "The setting to show",
-            generators: settingsGenerator,
-            debounce: true,
+            generators: completionGeneratorTemplate(`mise settings --complete`),
           },
         },
         {
@@ -1990,8 +1941,7 @@ const completionSpec: Fig.Spec = {
             name: "setting",
             description: "Name of setting",
             isOptional: true,
-            generators: settingsGenerator,
-            debounce: true,
+            generators: completionGeneratorTemplate(`mise settings --complete`),
           },
         },
         {
@@ -2009,8 +1959,9 @@ const completionSpec: Fig.Spec = {
             {
               name: "setting",
               description: "The setting to set",
-              generators: settingsGenerator,
-              debounce: true,
+              generators: completionGeneratorTemplate(
+                `mise settings --complete`
+              ),
             },
             {
               name: "value",
@@ -2067,8 +2018,7 @@ const completionSpec: Fig.Spec = {
           name: "setting",
           description: "Name of setting",
           isOptional: true,
-          generators: settingsGenerator,
-          debounce: true,
+          generators: completionGeneratorTemplate(`mise settings --complete`),
         },
         {
           name: "value",
@@ -2105,8 +2055,25 @@ const completionSpec: Fig.Spec = {
         name: "tool@version",
         description: "Tool(s) to use",
         isVariadic: true,
-        generators: toolVersionGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
       },
     },
     {
@@ -2188,8 +2155,9 @@ const completionSpec: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "alias",
-                generators: aliasGenerator,
-                debounce: true,
+                generators: completionGeneratorTemplate(
+                  `mise alias ls {{words[PREV]}} | awk '{print $2}'`
+                ),
               },
             },
             {
@@ -2289,8 +2257,9 @@ const completionSpec: Fig.Spec = {
             {
               name: "task",
               description: "Tasks name to add",
-              generators: simpleTaskGenerator,
-              debounce: true,
+              generators: completionGeneratorTemplate(
+                `mise tasks ls --complete`
+              ),
             },
             {
               name: "run",
@@ -2336,8 +2305,7 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "task",
             description: "Tasks to edit",
-            generators: simpleTaskGenerator,
-            debounce: true,
+            generators: completionGeneratorTemplate(`mise tasks ls --complete`),
           },
         },
         {
@@ -2353,8 +2321,7 @@ const completionSpec: Fig.Spec = {
           args: {
             name: "task",
             description: "Name of the task to get information about",
-            generators: simpleTaskGenerator,
-            debounce: true,
+            generators: completionGeneratorTemplate(`mise tasks ls --complete`),
           },
         },
         {
@@ -2393,6 +2360,12 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: "--all",
+              description:
+                "Load all tasks from the entire monorepo, including sibling directories.\nBy default, only tasks from the current directory hierarchy are loaded.",
+              isRepeatable: false,
+            },
+            {
               name: "--sort",
               description: "Sort by column. Default is name.",
               isRepeatable: false,
@@ -2416,6 +2389,11 @@ const completionSpec: Fig.Spec = {
           name: ["run", "r"],
           description: "Run task(s)",
           options: [
+            {
+              name: "--no-cache",
+              description: "Do not use cache on remote tasks",
+              isRepeatable: false,
+            },
             {
               name: ["-C", "--cd"],
               description:
@@ -2457,8 +2435,26 @@ const completionSpec: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "tool@version",
-                generators: toolVersionGenerator,
-                debounce: true,
+                generators:
+                  completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
               },
             },
             {
@@ -2477,6 +2473,19 @@ const completionSpec: Fig.Spec = {
               isRepeatable: false,
             },
             {
+              name: ["-S", "--silent"],
+              description: "Don't show any output except for errors",
+              isRepeatable: false,
+            },
+            {
+              name: "--timeout",
+              description: "Timeout for the task to complete\ne.g.: 30s, 5m",
+              isRepeatable: false,
+              args: {
+                name: "timeout",
+              },
+            },
+            {
               name: "--no-timings",
               description: "Hides elapsed time after each task completes",
               isRepeatable: false,
@@ -2484,11 +2493,6 @@ const completionSpec: Fig.Spec = {
             {
               name: ["-q", "--quiet"],
               description: "Don't show extra output",
-              isRepeatable: false,
-            },
-            {
-              name: ["-S", "--silent"],
-              description: "Don't show any output except for errors",
               isRepeatable: false,
             },
             {
@@ -2500,10 +2504,6 @@ const completionSpec: Fig.Spec = {
                 name: "output",
               },
             },
-            {
-              name: "--no-cache",
-              isRepeatable: false,
-            },
           ],
           args: [
             {
@@ -2511,8 +2511,9 @@ const completionSpec: Fig.Spec = {
               description:
                 "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2",
               isOptional: true,
-              generators: simpleTaskGenerator,
-              debounce: true,
+              generators: completionGeneratorTemplate(
+                `mise tasks ls --complete`
+              ),
             },
             {
               name: "args",
@@ -2558,6 +2559,12 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
         },
         {
+          name: "--all",
+          description:
+            "Load all tasks from the entire monorepo, including sibling directories.\nBy default, only tasks from the current directory hierarchy are loaded.",
+          isRepeatable: false,
+        },
+        {
           name: "--sort",
           description: "Sort by column. Default is name.",
           isRepeatable: false,
@@ -2580,8 +2587,7 @@ const completionSpec: Fig.Spec = {
         name: "task",
         description: "Task name to get info of",
         isOptional: true,
-        generators: simpleTaskGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(`mise tasks ls --complete`),
       },
     },
     {
@@ -2620,11 +2626,10 @@ const completionSpec: Fig.Spec = {
         },
       ],
       args: {
-        name: "tool",
-        description: "Tool name to test",
+        name: "tools",
+        description: "Tool(s) to test",
         isOptional: true,
-        generators: completionGeneratorTemplate(`mise registry --complete`),
-        debounce: true,
+        isVariadic: true,
       },
     },
     {
@@ -2676,8 +2681,24 @@ const completionSpec: Fig.Spec = {
         name: "tool",
         description: "Tool name to get information about",
         generators: completionGeneratorTemplate(`mise registry --complete`),
-        debounce: true,
       },
+    },
+    {
+      name: "tool-stub",
+      description: "Execute a tool stub",
+      args: [
+        {
+          name: "file",
+          description: "Path to the TOML tool stub file to execute",
+          template: "filepaths",
+        },
+        {
+          name: "args",
+          description: "Arguments to pass to the tool",
+          isOptional: true,
+          isVariadic: true,
+        },
+      ],
     },
     {
       name: "trust",
@@ -2711,8 +2732,7 @@ const completionSpec: Fig.Spec = {
         description: "The config file to trust",
         isOptional: true,
         template: "filepaths",
-        generators: configPathGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(``),
       },
     },
     {
@@ -2735,8 +2755,28 @@ const completionSpec: Fig.Spec = {
         description: "Tool(s) to remove",
         isOptional: true,
         isVariadic: true,
-        generators: installedToolVersionGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    if [ ! -z "$prefix" ]; then
+      prefix="--prefix $prefix"
+    fi
+    versions=$(mise ls --installed $tool $prefix | awk '{print $2}' | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise ls --installed | awk '{print $1}' | sed '1!G;h;$!d')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
       },
     },
     {
@@ -2764,7 +2804,6 @@ const completionSpec: Fig.Spec = {
         isOptional: true,
         isVariadic: true,
         generators: completionGeneratorTemplate(`mise set --complete`),
-        debounce: true,
       },
     },
     {
@@ -2805,8 +2844,28 @@ const completionSpec: Fig.Spec = {
         name: "installed_tool@version",
         description: "Tool(s) to remove",
         isVariadic: true,
-        generators: installedToolVersionGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    if [ ! -z "$prefix" ]; then
+      prefix="--prefix $prefix"
+    fi
+    versions=$(mise ls --installed $tool $prefix | awk '{print $2}' | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise ls --installed | awk '{print $1}' | sed '1!G;h;$!d')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
       },
     },
     {
@@ -2851,8 +2910,25 @@ const completionSpec: Fig.Spec = {
           "Tool(s) to upgrade\ne.g.: node@20 python@3.10\nIf not specified, all current tools will be upgraded",
         isOptional: true,
         isVariadic: true,
-        generators: toolVersionGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
       },
     },
     {
@@ -2873,6 +2949,12 @@ const completionSpec: Fig.Spec = {
           name: ["-g", "--global"],
           description:
             "Use the global config file (`~/.config/mise/config.toml`) instead of the local one",
+          isRepeatable: false,
+        },
+        {
+          name: ["-n", "--dry-run"],
+          description:
+            "Perform a dry run, showing what would be installed and modified without making changes",
           isRepeatable: false,
         },
         {
@@ -2904,8 +2986,9 @@ const completionSpec: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "plugin",
-            generators: pluginGenerator,
-            debounce: true,
+            generators: completionGeneratorTemplate(
+              `mise plugins --core --user`
+            ),
           },
         },
         {
@@ -2929,8 +3012,25 @@ const completionSpec: Fig.Spec = {
         description: "Tool(s) to add to config file",
         isOptional: true,
         isVariadic: true,
-        generators: toolVersionGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
       },
     },
     {
@@ -3282,8 +3382,7 @@ const completionSpec: Fig.Spec = {
           description:
             "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`",
           isOptional: true,
-          generators: simpleTaskGenerator,
-          debounce: true,
+          generators: completionGeneratorTemplate(`mise tasks ls --complete`),
         },
         {
           name: "args",
@@ -3300,8 +3399,25 @@ const completionSpec: Fig.Spec = {
         name: "tool@version",
         description:
           'Tool(s) to look up\ne.g.: ruby@3\nif "@<PREFIX>" is specified, it will show the latest installed version\nthat matches the prefix\notherwise, it will show the current, active installed version',
-        generators: toolVersionGenerator,
-        debounce: true,
+        generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
       },
     },
     {
@@ -3325,8 +3441,25 @@ const completionSpec: Fig.Spec = {
           isRepeatable: false,
           args: {
             name: "tool@version",
-            generators: toolVersionGenerator,
-            debounce: true,
+            generators: completionGeneratorTemplate(`cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac`),
           },
         },
       ],
@@ -3335,7 +3468,6 @@ const completionSpec: Fig.Spec = {
         description: "The bin to look up",
         isOptional: true,
         generators: completionGeneratorTemplate(`mise which --complete`),
-        debounce: true,
       },
     },
   ],
@@ -3408,8 +3540,8 @@ const completionSpec: Fig.Spec = {
     name: "task",
     description: "Task to run",
     isOptional: true,
-    generators: simpleTaskGenerator,
-    debounce: true,
+    generators: completionGeneratorTemplate(`mise tasks ls --complete`),
   },
 };
+
 export default completionSpec;

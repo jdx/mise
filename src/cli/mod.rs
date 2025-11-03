@@ -1,11 +1,12 @@
-use crate::cli::run::TaskOutput;
 use crate::config::{Config, Settings};
 use crate::exit::exit;
-use crate::ui::ctrlc;
+use crate::task::TaskOutput;
+use crate::ui::{self, ctrlc};
 use crate::{Result, backend};
 use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{logger, migrate, shims};
 use clap::{ArgAction, CommandFactory, Parser, Subcommand};
+use eyre::bail;
 use std::path::PathBuf;
 
 mod activate;
@@ -30,22 +31,24 @@ mod generate;
 mod global;
 mod hook_env;
 mod hook_not_found;
+
+pub use hook_env::HookReason;
 mod implode;
 mod install;
 mod install_into;
 mod latest;
 mod link;
 mod local;
+mod lock;
 mod ls;
 mod ls_remote;
+mod mcp;
 mod outdated;
 mod plugins;
 mod prune;
 mod registry;
 #[cfg(debug_assertions)]
 mod render_help;
-#[cfg(feature = "clap_mangen")]
-mod render_mangen;
 mod reshim;
 pub mod run;
 mod search;
@@ -58,6 +61,7 @@ mod sync;
 mod tasks;
 mod test_tool;
 mod tool;
+pub mod tool_stub;
 mod trust;
 mod uninstall;
 mod unset;
@@ -188,7 +192,7 @@ pub struct CliGlobalOutputFlags {
 #[strum(serialize_all = "kebab-case")]
 pub enum Commands {
     Activate(activate::Activate),
-    Alias(alias::Alias),
+    Alias(Box<alias::Alias>),
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
@@ -213,14 +217,16 @@ pub enum Commands {
     Latest(latest::Latest),
     Link(link::Link),
     Local(local::Local),
+    Lock(lock::Lock),
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
+    Mcp(mcp::Mcp),
     Outdated(outdated::Outdated),
     Plugins(plugins::Plugins),
     Prune(prune::Prune),
     Registry(registry::Registry),
     Reshim(reshim::Reshim),
-    Run(run::Run),
+    Run(Box<run::Run>),
     Search(search::Search),
     #[cfg(feature = "self_update")]
     SelfUpdate(self_update::SelfUpdate),
@@ -231,6 +237,7 @@ pub enum Commands {
     Tasks(tasks::Tasks),
     TestTool(test_tool::TestTool),
     Tool(tool::Tool),
+    ToolStub(tool_stub::ToolStub),
     Trust(trust::Trust),
     Uninstall(uninstall::Uninstall),
     Unset(unset::Unset),
@@ -245,9 +252,6 @@ pub enum Commands {
 
     #[cfg(debug_assertions)]
     RenderHelp(render_help::RenderHelp),
-
-    #[cfg(feature = "clap_mangen")]
-    RenderMangen(render_mangen::RenderMangen),
 }
 
 impl Commands {
@@ -279,14 +283,16 @@ impl Commands {
             Self::Latest(cmd) => cmd.run().await,
             Self::Link(cmd) => cmd.run().await,
             Self::Local(cmd) => cmd.run().await,
+            Self::Lock(cmd) => cmd.run().await,
             Self::Ls(cmd) => cmd.run().await,
             Self::LsRemote(cmd) => cmd.run().await,
+            Self::Mcp(cmd) => cmd.run().await,
             Self::Outdated(cmd) => cmd.run().await,
             Self::Plugins(cmd) => cmd.run().await,
             Self::Prune(cmd) => cmd.run().await,
             Self::Registry(cmd) => cmd.run().await,
             Self::Reshim(cmd) => cmd.run().await,
-            Self::Run(cmd) => cmd.run().await,
+            Self::Run(cmd) => (*cmd).run().await,
             Self::Search(cmd) => cmd.run().await,
             #[cfg(feature = "self_update")]
             Self::SelfUpdate(cmd) => cmd.run().await,
@@ -297,6 +303,7 @@ impl Commands {
             Self::Tasks(cmd) => cmd.run().await,
             Self::TestTool(cmd) => cmd.run().await,
             Self::Tool(cmd) => cmd.run().await,
+            Self::ToolStub(cmd) => cmd.run().await,
             Self::Trust(cmd) => cmd.run().await,
             Self::Uninstall(cmd) => cmd.run().await,
             Self::Unset(cmd) => cmd.run().await,
@@ -311,24 +318,143 @@ impl Commands {
 
             #[cfg(debug_assertions)]
             Self::RenderHelp(cmd) => cmd.run(),
-
-            #[cfg(feature = "clap_mangen")]
-            Self::RenderMangen(cmd) => cmd.run(),
         }
     }
+}
+
+fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
+    let mut flags_with_values = Vec::new();
+    let mut boolean_flags = Vec::new();
+
+    for arg in cmd.get_arguments() {
+        let takes_value = matches!(
+            arg.get_action(),
+            clap::ArgAction::Set | clap::ArgAction::Append
+        );
+        let is_bool = matches!(
+            arg.get_action(),
+            clap::ArgAction::SetTrue | clap::ArgAction::SetFalse
+        );
+
+        if takes_value {
+            if let Some(long) = arg.get_long() {
+                flags_with_values.push(format!("--{}", long));
+            }
+            if let Some(short) = arg.get_short() {
+                flags_with_values.push(format!("-{}", short));
+            }
+        } else if is_bool {
+            if let Some(long) = arg.get_long() {
+                boolean_flags.push(format!("--{}", long));
+            }
+            if let Some(short) = arg.get_short() {
+                boolean_flags.push(format!("-{}", short));
+            }
+        }
+    }
+
+    (flags_with_values, boolean_flags)
+}
+
+fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<String> {
+    // Check if this might be a naked run (no subcommand)
+    if args.len() < 2 {
+        return args.to_vec();
+    }
+
+    // If there's already a '--' separator, let clap handle everything normally
+    if args.contains(&"--".to_string()) {
+        return args.to_vec();
+    }
+
+    let (flags_with_values, _) = get_global_flags(cmd);
+
+    // Skip global flags to find the first non-flag argument (subcommand or task)
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+
+        if !arg.starts_with('-') {
+            // Found first non-flag argument
+            break;
+        }
+
+        // Check if this flag takes a value
+        let flag_takes_value = if arg.starts_with("--") {
+            if arg.contains('=') {
+                // --flag=value format, doesn't consume next arg
+                i += 1;
+                continue;
+            } else {
+                let flag_name = arg.split('=').next().unwrap();
+                flags_with_values.iter().any(|f| f == flag_name)
+            }
+        } else {
+            // Short form: check if it's in flags_with_values list
+            if arg.len() >= 2 {
+                let flag_name = &arg[..2]; // Get -X part
+                flags_with_values.iter().any(|f| f == flag_name)
+            } else {
+                false
+            }
+        };
+
+        if flag_takes_value && i + 1 < args.len() {
+            // Skip both the flag and its value
+            i += 2;
+        } else {
+            // Skip just the flag
+            i += 1;
+        }
+    }
+
+    // No non-flag argument found
+    if i >= args.len() {
+        return args.to_vec();
+    }
+
+    // Extract all known subcommand names and aliases from the clap Command
+    let known_subcommands: Vec<_> = cmd
+        .get_subcommands()
+        .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
+        .collect();
+
+    // Check if the first non-flag argument is a known subcommand
+    if known_subcommands.contains(&args[i].as_str()) {
+        return args.to_vec();
+    }
+
+    // This is a naked run - inject "run" subcommand so clap routes it correctly
+    // Format: ["mise", "-q", "task", "arg1"] becomes ["mise", "-q", "run", "task", "arg1"]
+    // This preserves global flags while making it an explicit run command
+    let mut result = args[..i].to_vec(); // Keep program name + global flags
+    result.push("run".to_string()); // Insert "run" subcommand
+    result.extend_from_slice(&args[i..]); // Add task name and args
+    result
 }
 
 impl Cli {
     pub async fn run(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
+        if *crate::env::MISE_TOOL_STUB && args.len() >= 2 {
+            tool_stub::short_circuit_stub(&args[2..]).await?;
+        }
         measure!("logger", { logger::init() });
+        check_working_directory();
         measure!("handle_shim", { shims::handle_shim().await })?;
         ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
         let _ = measure!("backend::load_tools", { backend::load_tools().await });
+
+        // Pre-process args to handle naked runs before clap parsing
+        let cmd = Cli::command();
+        let processed_args = preprocess_args_for_naked_run(&cmd, args);
+
         let cli = measure!("get_matches_from", {
-            Cli::parse_from(crate::env::ARGS.read().unwrap().iter())
+            Cli::parse_from(processed_args.iter())
         });
+        // Validate --cd path BEFORE Settings processes it and changes the directory
+        validate_cd_path(&cli.cd)?;
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
@@ -353,15 +479,26 @@ impl Cli {
         } else {
             if let Some(task) = self.task {
                 let config = Config::get().await?;
-                if config.tasks().await?.iter().any(|(_, t)| t.is_match(&task)) {
-                    return Ok(Commands::Run(run::Run {
+
+                // Expand :task pattern to match tasks in current directory's config root
+                let task = crate::task::expand_colon_task_syntax(&task, &config)?;
+
+                // For monorepo task patterns (starting with //), we need to load
+                // tasks from the entire monorepo, not just the current hierarchy
+                let tasks = if task.starts_with("//") {
+                    let ctx = crate::task::TaskLoadContext::from_pattern(&task);
+                    config.tasks_with_context(Some(&ctx)).await?
+                } else {
+                    config.tasks().await?
+                };
+                if tasks.iter().any(|(_, t)| t.is_match(&task)) {
+                    return Ok(Commands::Run(Box::new(run::Run {
                         task,
                         args: self.task_args.unwrap_or_default(),
                         args_last: self.task_args_last,
                         cd: self.cd,
                         continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,
-                        failed_tasks: Default::default(),
                         force: self.force,
                         interleave: self.interleave,
                         is_linear: false,
@@ -376,11 +513,12 @@ impl Cli {
                         timings: self.timings,
                         tmpdir: Default::default(),
                         tool: Default::default(),
-                        keep_order_output: Default::default(),
-                        task_prs: Default::default(),
-                        timed_outputs: Default::default(),
+                        output_handler: None,
+                        context_builder: Default::default(),
+                        executor: None,
                         no_cache: Default::default(),
-                    }));
+                        timeout: None,
+                    })));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(
                         &task.into(),
@@ -436,3 +574,38 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise settings color=0</bold>          Disable color by modifying global config file
 "#
 );
+
+/// Check if the current working directory exists and warn if not
+fn check_working_directory() {
+    if std::env::current_dir().is_err() {
+        // Try to get the directory path from PWD env var, which might still contain the old path
+        let dir_path = std::env::var("PWD")
+            .or_else(|_| std::env::var("OLDPWD"))
+            .unwrap_or_else(|_| "(unknown)".to_string());
+        warn!(
+            "Current directory does not exist or is not accessible: {}",
+            dir_path
+        );
+    }
+}
+
+/// Validate the --cd path if provided and return an error if it doesn't exist
+fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
+    if let Some(path) = cd {
+        if !path.exists() {
+            bail!(
+                "Directory specified with --cd does not exist: {}\n\
+                 Please check the path and try again.",
+                ui::style::epath(path)
+            );
+        }
+        if !path.is_dir() {
+            bail!(
+                "Path specified with --cd is not a directory: {}\n\
+                 Please provide a valid directory path.",
+                ui::style::epath(path)
+            );
+        }
+    }
+    Ok(())
+}
