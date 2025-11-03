@@ -4128,7 +4128,11 @@ backends = ["aqua:slok/sloth", "asdf:slok/asdf-sloth"]
 description = "Easy and simple Prometheus SLO (service level objectives) generator"
 
 [tools.slsa-verifier]
-backends = ["github:slsa-framework/slsa-verifier"]
+backends = [
+  "aqua:slsa-framework/slsa-verifier",
+  "github:slsa-framework/slsa-verifier",
+  "go:github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier",
+]
 description = "Verify provenance from SLSA compliant builders"
 test = ["slsa-verifier version", "{{version}}"]
 
