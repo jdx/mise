@@ -24,13 +24,23 @@ pub struct TasksInfo {
 impl TasksInfo {
     pub async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let tasks = config.tasks().await?;
 
-        let task = tasks
-            .get(&self.task)
-            .or_else(|| tasks.values().find(|task| task.display_name == self.task));
+        let task_name = crate::task::expand_colon_task_syntax(&self.task, &config)?;
 
-        if let Some(task) = task {
+        let tasks = if task_name.starts_with("//") {
+            let ctx = crate::task::TaskLoadContext::from_pattern(&task_name);
+            config.tasks_with_context(Some(&ctx)).await?
+        } else {
+            config.tasks().await?
+        };
+
+        let tasks_with_aliases = crate::task::build_task_ref_map(tasks.iter());
+
+        use crate::task::GetMatchingExt;
+        let matching = tasks_with_aliases.get_matching(&task_name).ok();
+        let task = matching.and_then(|m| m.first().cloned().cloned());
+
+        if let Some(ref task) = task {
             if self.json {
                 self.display_json(&config, task).await?;
             } else {
@@ -38,7 +48,7 @@ impl TasksInfo {
             }
         } else {
             bail!(
-                "Task not found: {}, use `mise tasks ls` to list all tasks",
+                "Task not found: {}, use `mise tasks ls --all --hidden` to list all tasks",
                 self.task
             );
         }
