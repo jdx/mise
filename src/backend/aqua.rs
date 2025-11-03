@@ -745,7 +745,7 @@ impl AquaBackend {
                     "http" => key.url(pkg, v, os(), arch())?,
                     t => {
                         warn!(
-                            "unsupported cosign signature type for {}/{}: {t}",
+                            "unsupported cosign key type for {}/{}: {t}",
                             pkg.repo_owner, pkg.repo_name
                         );
                         String::new()
