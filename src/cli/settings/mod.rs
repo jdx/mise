@@ -47,11 +47,28 @@ impl Settings {
     pub async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or_else(|| {
             if let Some(value) = self.value {
-                Commands::Set(set::SettingsSet {
-                    setting: self.ls.setting.unwrap(),
-                    value,
-                    local: self.ls.local,
-                })
+                if let Some(setting) = self.ls.setting {
+                    // Two positional args: setting and value → set operation
+                    Commands::Set(set::SettingsSet {
+                        setting,
+                        value,
+                        local: self.ls.local,
+                    })
+                } else {
+                    // One positional arg in value field → get operation
+                    if let Some((setting, val)) = value.split_once('=') {
+                        Commands::Set(set::SettingsSet {
+                            setting: setting.to_string(),
+                            value: val.to_string(),
+                            local: self.ls.local,
+                        })
+                    } else {
+                        Commands::Get(get::SettingsGet {
+                            setting: value,
+                            local: self.ls.local,
+                        })
+                    }
+                }
             } else if let Some(setting) = self.ls.setting {
                 if let Some((setting, value)) = setting.split_once('=') {
                     Commands::Set(set::SettingsSet {

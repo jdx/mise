@@ -197,7 +197,7 @@ indexmap = "2"
 serde_yaml = "0.9"
 
 [dev-dependencies]
-clap-sort = "0.1"
+clap-sort = { path = "../clap-sort" }
 ctor = "0.4"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1.6.1"
