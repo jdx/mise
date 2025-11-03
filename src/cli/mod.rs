@@ -179,28 +179,6 @@ pub struct Cli {
     pub trace: bool,
 }
 
-#[derive(clap::Args)]
-#[group(multiple = false)]
-pub struct CliGlobalOutputFlags {
-    /// Suppress non-error messages
-    #[clap(short = 'q', long, global = true, overrides_with_all = &["silent", "trace", "verbose", "debug", "log_level"])]
-    pub quiet: bool,
-    /// Show extra output (use -vv for even more)
-    #[clap(short='v', long, global=true, action=ArgAction::Count, overrides_with_all = &["quiet", "silent", "trace", "debug"])]
-    pub verbose: u8,
-    /// Sets log level to debug
-    #[clap(long, global = true, hide = true, overrides_with_all = &["quiet", "trace", "verbose", "silent", "log_level"])]
-    pub debug: bool,
-    #[clap(long, global = true, hide = true, value_name = "LEVEL", value_enum, overrides_with_all = &["quiet", "trace", "verbose", "silent", "debug"])]
-    pub log_level: Option<LevelFilter>,
-    /// Suppress all task output and mise non-error messages
-    #[clap(long, global = true, overrides_with_all = &["quiet", "trace", "verbose", "debug", "log_level"])]
-    pub silent: bool,
-    /// Sets log level to trace
-    #[clap(long, global = true, hide = true, overrides_with_all = &["quiet", "silent", "verbose", "debug", "log_level"])]
-    pub trace: bool,
-}
-
 #[derive(Subcommand, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
 pub enum Commands {
@@ -240,8 +218,6 @@ pub enum Commands {
     Registry(registry::Registry),
     #[cfg(debug_assertions)]
     RenderHelp(render_help::RenderHelp),
-    #[cfg(feature = "clap_mangen")]
-    RenderMangen(render_mangen::RenderMangen),
     Reshim(reshim::Reshim),
     Run(Box<run::Run>),
     Search(search::Search),
@@ -307,8 +283,6 @@ impl Commands {
             Self::Registry(cmd) => cmd.run().await,
             #[cfg(debug_assertions)]
             Self::RenderHelp(cmd) => cmd.run(),
-            #[cfg(feature = "clap_mangen")]
-            Self::RenderMangen(cmd) => cmd.run(),
             Self::Reshim(cmd) => cmd.run().await,
             Self::Run(cmd) => (*cmd).run().await,
             Self::Search(cmd) => cmd.run().await,
