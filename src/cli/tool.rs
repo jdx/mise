@@ -25,9 +25,17 @@ pub struct Tool {
 #[derive(Debug, Clone, clap::Args)]
 #[group(multiple = false)]
 pub struct ToolInfoFilter {
+    /// Only show active versions
+    #[clap(long)]
+    active: bool,
+
     /// Only show backend field
     #[clap(long)]
     backend_: bool,
+
+    /// Only show config source
+    #[clap(long)]
+    config_source: bool,
 
     /// Only show description field
     #[clap(long)]
@@ -37,17 +45,9 @@ pub struct ToolInfoFilter {
     #[clap(long)]
     installed: bool,
 
-    /// Only show active versions
-    #[clap(long)]
-    active: bool,
-
     /// Only show requested versions
     #[clap(long)]
     requested: bool,
-
-    /// Only show config source
-    #[clap(long)]
-    config_source: bool,
 
     /// Only show tool options
     #[clap(long)]

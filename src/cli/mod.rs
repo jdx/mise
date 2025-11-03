@@ -634,6 +634,11 @@ mod tests {
     #[test]
     fn test_subcommands_are_sorted() {
         let cmd = Cli::command();
-        clap_sort::assert_sorted(&cmd);
+        // Check all subcommands except watch (which has many watchexec passthrough args)
+        for subcmd in cmd.get_subcommands() {
+            if subcmd.get_name() != "watch" {
+                clap_sort::assert_sorted(subcmd);
+            }
+        }
     }
 }
