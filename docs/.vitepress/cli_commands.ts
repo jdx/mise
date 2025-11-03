@@ -85,13 +85,13 @@ export const commands: { [key: string]: Command } = {
   direnv: {
     hide: true,
     subcommands: {
+      activate: {
+        hide: true,
+      },
       envrc: {
         hide: true,
       },
       exec: {
-        hide: true,
-      },
-      activate: {
         hide: true,
       },
     },
