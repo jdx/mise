@@ -758,41 +758,6 @@ impl AquaCosignSignature {
         Ok(asset_strs)
     }
 
-    pub fn arg(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
-        match self.r#type.as_deref().unwrap_or_default() {
-            "github_release" => {
-                let asset = pkg.parse_aqua_str(
-                    self.asset.as_ref().unwrap(),
-                    v,
-                    &Default::default(),
-                    os,
-                    arch,
-                )?;
-                let repo_owner = self
-                    .repo_owner
-                    .clone()
-                    .unwrap_or_else(|| pkg.repo_owner.clone());
-                let repo_name = self
-                    .repo_name
-                    .clone()
-                    .unwrap_or_else(|| pkg.repo_name.clone());
-                let repo = format!("{repo_owner}/{repo_name}");
-                Ok(format!(
-                    "https://github.com/{repo}/releases/download/{v}/{asset}"
-                ))
-            }
-            "http" => self.url(pkg, v, os, arch),
-            t => {
-                log::warn!(
-                    "unsupported cosign signature type for {}/{}: {t}",
-                    pkg.repo_owner,
-                    pkg.repo_name
-                );
-                Ok(String::new())
-            }
-        }
-    }
-
     fn merge(&mut self, other: Self) {
         if let Some(r#type) = other.r#type {
             self.r#type = Some(r#type);
