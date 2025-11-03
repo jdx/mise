@@ -62,7 +62,7 @@ Options:
 If you want to verify the install script hasn't been tampered with:
 
 ```sh
-gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 0x7413A06D
+gpg --keyserver hkps://keys.openpgp.org --recv-keys 24853EC9F655CE80B48E6C3A8B81C9D17413A06D
 curl https://mise.jdx.dev/install.sh.sig | gpg --decrypt > install.sh
 # ensure the above is signed with the mise release key
 sh ./install.sh
