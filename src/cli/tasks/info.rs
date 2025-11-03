@@ -40,7 +40,7 @@ impl TasksInfo {
         let matching = tasks_with_aliases.get_matching(&task_name).ok();
         let task = matching.and_then(|m| m.first().cloned().cloned());
 
-        if let Some(ref task) = task {
+        if let Some(task) = task {
             if self.json {
                 self.display_json(&config, task).await?;
             } else {
