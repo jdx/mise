@@ -693,6 +693,7 @@ impl AquaChecksum {
 }
 
 impl AquaCosign {
+    // TODO: This does not support `{{.Asset}}`.
     pub fn opts(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<Vec<String>> {
         self.opts
             .iter()
@@ -739,20 +740,34 @@ impl AquaCosignSignature {
         pkg.parse_aqua_str(self.url.as_ref().unwrap(), v, &Default::default(), os, arch)
     }
 
-    pub fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
-        pkg.parse_aqua_str(
-            self.asset.as_ref().unwrap(),
-            v,
-            &Default::default(),
-            os,
-            arch,
-        )
+    pub fn asset_strs(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<IndexSet<String>> {
+        let mut asset_strs = IndexSet::new();
+        if let Some(cosign_asset_template) = &self.asset {
+            for asset in pkg.asset_strs(v, os, arch)? {
+                let mut ctx = HashMap::new();
+                ctx.insert("Asset".to_string(), asset.to_string());
+                asset_strs.insert(pkg.parse_aqua_str(cosign_asset_template, v, &ctx, os, arch)?);
+            }
+        }
+        Ok(asset_strs)
     }
 
     pub fn arg(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
         match self.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
-                let asset = self.asset(pkg, v, os, arch)?;
+                let asset = pkg.parse_aqua_str(
+                self.asset.as_ref().unwrap(),
+                v,
+                &Default::default(),
+                os,
+                arch,
+            )?;
                 let repo_owner = self
                     .repo_owner
                     .clone()
@@ -798,14 +813,22 @@ impl AquaCosignSignature {
 }
 
 impl AquaSlsaProvenance {
-    pub fn asset(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
-        pkg.parse_aqua_str(
-            self.asset.as_ref().unwrap(),
-            v,
-            &Default::default(),
-            os,
-            arch,
-        )
+    pub fn asset_strs(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<IndexSet<String>> {
+        let mut asset_strs = IndexSet::new();
+        if let Some(slsa_asset_template) = &self.asset {
+            for asset in pkg.asset_strs(v, os, arch)? {
+                let mut ctx = HashMap::new();
+                ctx.insert("Asset".to_string(), asset.to_string());
+                asset_strs.insert(pkg.parse_aqua_str(slsa_asset_template, v, &ctx, os, arch)?);
+            }
+        }
+        Ok(asset_strs)
     }
 
     pub fn url(&self, pkg: &AquaPackage, v: &str, os: &str, arch: &str) -> Result<String> {
