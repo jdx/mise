@@ -2015,15 +2015,15 @@ esac`),
       ],
       args: [
         {
-          name: "value",
-          description: "Setting value to set",
-          isOptional: true,
-        },
-        {
           name: "setting",
           description: "Name of setting",
           isOptional: true,
           generators: completionGeneratorTemplate(`mise settings --complete`),
+        },
+        {
+          name: "value",
+          description: "Setting value to set",
+          isOptional: true,
         },
       ],
     },
