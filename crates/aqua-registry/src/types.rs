@@ -762,12 +762,12 @@ impl AquaCosignSignature {
         match self.r#type.as_deref().unwrap_or_default() {
             "github_release" => {
                 let asset = pkg.parse_aqua_str(
-                self.asset.as_ref().unwrap(),
-                v,
-                &Default::default(),
-                os,
-                arch,
-            )?;
+                    self.asset.as_ref().unwrap(),
+                    v,
+                    &Default::default(),
+                    os,
+                    arch,
+                )?;
                 let repo_owner = self
                     .repo_owner
                     .clone()

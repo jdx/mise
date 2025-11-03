@@ -731,8 +731,14 @@ impl AquaBackend {
             if let Some(key) = &cosign.key {
                 // Key-based verification
                 let mut key_pkg = pkg.clone();
-                key_pkg.repo_owner = key.repo_owner.clone().unwrap_or_else(|| pkg.repo_owner.clone());
-                key_pkg.repo_name = key.repo_name.clone().unwrap_or_else(|| pkg.repo_name.clone());
+                key_pkg.repo_owner = key
+                    .repo_owner
+                    .clone()
+                    .unwrap_or_else(|| pkg.repo_owner.clone());
+                key_pkg.repo_name = key
+                    .repo_name
+                    .clone()
+                    .unwrap_or_else(|| pkg.repo_name.clone());
                 let key_arg = match key.r#type.as_deref().unwrap_or_default() {
                     "github_release" => {
                         let asset_strs = key.asset_strs(pkg, v, os(), arch())?;
@@ -847,7 +853,9 @@ impl AquaBackend {
                         if asset_strs.is_empty() {
                             String::new()
                         } else {
-                            self.github_release_asset(&bundle_pkg, v, asset_strs).await?.0
+                            self.github_release_asset(&bundle_pkg, v, asset_strs)
+                                .await?
+                                .0
                         }
                     }
                     "http" => bundle.url(pkg, v, os(), arch())?,
