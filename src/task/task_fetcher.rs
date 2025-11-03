@@ -1,5 +1,5 @@
-use crate::task::task_file_providers::get_local_path;
 use crate::task::Task;
+use crate::task::task_file_providers::get_local_path;
 use eyre::Result;
 
 /// Handles fetching remote task files and converting them to local paths
