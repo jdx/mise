@@ -4361,6 +4361,13 @@ backends = ["aqua:realm/SwiftLint", "asdf:mise-plugins/mise-swiftlint"]
 description = "A tool to enforce Swift style and conventions"
 test = ["swiftlint --version", "{{version}}"]
 
+[tools.swift-outdated]
+backends = ["github:kiliankoe/swift-outdated"]
+description = "A swift subcommand for displaying when your dependencies (SwiftPM or Xcode) are out of date"
+depends = ["swift"]
+test = ["swift-outdated --version", "{{version}}"]
+os = ["linux", "macos"]
+
 [tools.swiprolog]
 backends = ["asdf:mise-plugins/mise-swiprolog"]
 description = "SWI-Prolog offers a comprehensive free Prolog environment"
