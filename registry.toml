@@ -5171,4 +5171,3 @@ test = ["zoxide --version", "zoxide {{version}}"]
 [tools.zprint]
 backends = ["asdf:mise-plugins/mise-zprint"]
 description = "Executables, uberjar, and library to beautifully format Clojure and Clojurescript source code and s-expressions"
-
