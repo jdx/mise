@@ -1171,6 +1171,11 @@ description = "A lightweight workspace manager for the shell"
 os = ["linux", "macos"]
 test = ["desk version", "desk {{version}}"]
 
+[tools.devcontainer-cli]
+backends = ["npm:@devcontainers/cli"]
+description = "Dev container CLI, which can take a devcontainer.json and create and configure a dev container from it."
+test = ["devcontainer --version", "{{version}}"]
+
 [tools.devspace]
 backends = ["aqua:devspace-sh/devspace", "asdf:NeoHsu/asdf-devspace"]
 description = "DevSpace - The Fastest Developer Tool for Kubernetes  Automate your deployment workflow with DevSpace and develop software directly inside Kubernetes"
@@ -5166,3 +5171,4 @@ test = ["zoxide --version", "zoxide {{version}}"]
 [tools.zprint]
 backends = ["asdf:mise-plugins/mise-zprint"]
 description = "Executables, uberjar, and library to beautifully format Clojure and Clojurescript source code and s-expressions"
+
