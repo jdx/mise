@@ -24,6 +24,10 @@ Task and arguments to run
 
 ## Flags
 
+### `--skip-deps`
+
+Run only the specified tasks skipping all dependencies
+
 ### `-w --watch… <PATH>`
 
 Watch a specific file or directory

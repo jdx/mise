@@ -191,6 +191,7 @@ pub async fn get_task_lists(
     config: &Arc<Config>,
     args: &[String],
     prompt: bool,
+    only: bool,
 ) -> Result<Vec<Task>> {
     let args = args
         .iter()
@@ -292,6 +293,13 @@ pub async fn get_task_lists(
                 .into_iter()
                 .map(|t| t.clone().with_args(args.to_vec()))
                 .for_each(|t| tasks.push(t));
+        }
+    }
+    if only {
+        for task in &mut tasks {
+            task.depends.clear();
+            task.depends_post.clear();
+            task.wait_for.clear();
         }
     }
     Ok(tasks)
