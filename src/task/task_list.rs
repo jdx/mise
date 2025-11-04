@@ -277,7 +277,13 @@ pub async fn get_task_lists(
             .cloned()
             .collect_vec();
         if cur_tasks.is_empty() {
-            if t != "default" || !prompt || !console::user_attended_stderr() {
+            // Check if this is a "default" task (either plain "default" or monorepo syntax like "//:default")
+            // For monorepo tasks, ensure it starts with "//" and has exactly one ":" before "default"
+            // This matches "//:default" and "//subfolder:default" but not "//subfolder:task-group:default"
+            let is_default_task = t == "default" || {
+                t.starts_with("//") && t.ends_with(":default") && t[2..].matches(':').count() == 1
+            };
+            if !is_default_task || !prompt || !console::user_attended_stderr() {
                 err_no_task(config, &t).await?;
             }
             tasks.push(prompt_for_task().await?);
