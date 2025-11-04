@@ -1173,7 +1173,7 @@ test = ["desk version", "desk {{version}}"]
 
 [tools.devcontainer-cli]
 backends = ["npm:@devcontainers/cli"]
-description = "Dev container CLI, which can take a devcontainer.json and create and configure a dev container from it."
+description = "CLI for creating and configuring dev containers from devcontainer.json"
 test = ["devcontainer --version", "{{version}}"]
 
 [tools.devspace]
