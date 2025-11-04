@@ -5,11 +5,16 @@ import "virtual:group-icons.css";
 import "./custom.css";
 import { onMounted } from "vue";
 import { data as starsData } from "../stars.data";
+import CopyOrDownloadAsMarkdownButtons from "vitepress-plugin-llms/vitepress-components/CopyOrDownloadAsMarkdownButtons.vue";
 
 export default {
   extends: DefaultTheme,
   enhanceApp({ app }) {
     enhanceAppWithTabs(app);
+    app.component(
+      "CopyOrDownloadAsMarkdownButtons",
+      CopyOrDownloadAsMarkdownButtons,
+    );
   },
   setup() {
     onMounted(() => {

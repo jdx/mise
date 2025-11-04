@@ -8,6 +8,8 @@ import { tabsMarkdownPlugin } from "vitepress-plugin-tabs";
 import { withMermaid } from "vitepress-plugin-mermaid";
 import kdlGrammar from "./grammars/kdl.tmLanguage.json";
 import miseTomlGrammar from "./grammars/mise-toml.tmLanguage.json";
+import llmstxt from "vitepress-plugin-llms";
+import { copyOrDownloadAsMarkdownButtons } from "vitepress-plugin-llms";
 
 // https://vitepress.dev/reference/site-config
 export default withMermaid(
@@ -266,10 +268,12 @@ export default withMermaid(
       config(md) {
         md.use(groupIconMdPlugin);
         md.use(tabsMarkdownPlugin);
+        md.use(copyOrDownloadAsMarkdownButtons);
       },
     },
     vite: {
       plugins: [
+        llmstxt(),
         groupIconVitePlugin({
           customIcon: {
             ".toml": "vscode-icons:file-type-toml",
