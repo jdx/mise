@@ -4363,10 +4363,10 @@ test = ["swiftlint --version", "{{version}}"]
 
 [tools.swift-outdated]
 backends = ["github:kiliankoe/swift-outdated"]
-description = "A swift subcommand for displaying when your dependencies (SwiftPM or Xcode) are out of date"
 depends = ["swift"]
-test = ["swift-outdated --version", "{{version}}"]
+description = "A swift subcommand for displaying when your dependencies (SwiftPM or Xcode) are out of date"
 os = ["linux", "macos"]
+test = ["swift-outdated --version", "{{version}}"]
 
 [tools.swiprolog]
 backends = ["asdf:mise-plugins/mise-swiprolog"]
