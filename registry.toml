@@ -2146,6 +2146,14 @@ test = ["helm-diff version", "{{version}}"]
 backends = ["aqua:norwoodj/helm-docs", "asdf:sudermanjr/asdf-helm-docs"]
 description = "A tool for automatically generating markdown documentation for helm charts"
 
+[tools.helm-ls]
+backends = ["aqua:mrjosh/helm-ls", "ubi:mrjosh/helm-ls[rename_exe=helm_ls]"]
+description = "Helm-ls is a helm language server protocol LSP implementation"
+test = [
+  "helm_ls version",
+  "Helm-ls version: master",
+] # helm_ls version returns always "master" - https://github.com/mrjosh/helm-ls/issues/179
+
 [tools.helmfile]
 backends = [
   "aqua:helmfile/helmfile",
