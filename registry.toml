@@ -1171,6 +1171,11 @@ description = "A lightweight workspace manager for the shell"
 os = ["linux", "macos"]
 test = ["desk version", "desk {{version}}"]
 
+[tools.devcontainer-cli]
+backends = ["npm:@devcontainers/cli"]
+description = "CLI for creating and configuring dev containers from devcontainer.json"
+test = ["devcontainer --version", "{{version}}"]
+
 [tools.devspace]
 backends = ["aqua:devspace-sh/devspace", "asdf:NeoHsu/asdf-devspace"]
 description = "DevSpace - The Fastest Developer Tool for Kubernetes  Automate your deployment workflow with DevSpace and develop software directly inside Kubernetes"
