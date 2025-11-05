@@ -1410,7 +1410,6 @@ description = "E1S - Easily Manage AWS ECS Resources in Terminal(~k9s for ECS)"
 backends = ["aqua:earthly/earthly", "asdf:YR-ZR0/asdf-earthly"]
 description = "Repeatable builds"
 
-
 [tools.ecspresso]
 backends = ["aqua:kayac/ecspresso", "asdf:kayac/asdf-ecspresso"]
 description = "ecspresso is a deployment tool for Amazon ECS"
