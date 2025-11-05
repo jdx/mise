@@ -39,6 +39,7 @@ pub struct Hook {
     pub hook: Hooks,
     pub script: String,
     pub shell: Option<String>,
+    pub os: Option<String>,
 }
 
 pub static SCHEDULED_HOOKS: Lazy<Mutex<IndexSet<Hooks>>> = Lazy::new(Default::default);
@@ -85,7 +86,8 @@ pub async fn run_one_hook(
     hook: Hooks,
     shell: Option<&dyn Shell>,
 ) {
-    let current_os = Settings::get().os();
+    let settings = Settings::get();
+    let current_os = settings.os();
     for (root, h) in all_hooks(config).await {
         if hook != h.hook 
             || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string()))
@@ -203,4 +205,72 @@ async fn execute(config: &Arc<Config>, ts: &Toolset, root: &Path, hook: &Hook) -
         .full_env(env)
         .run()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_multiple_hooks_with_different_os() {
+        // Test that multiple [[hooks.enter]] sections with different OS values don't overwrite each other
+        let toml_str = r#"
+            [[hooks.enter]]
+            os = "linux"
+            script = "echo linux"
+
+            [[hooks.enter]]
+            os = "macos"
+            script = "echo macos"
+
+            [[hooks.enter]]
+            os = "windows"
+            script = "echo windows"
+
+            [[hooks.enter]]
+            script = "echo any"
+        "#;
+
+        let value: toml::Value = toml::from_str(toml_str).unwrap();
+        let hooks_value = value.get("hooks").unwrap();
+        let enter_value = hooks_value.get("enter").unwrap();
+        
+        let hooks = Hook::from_toml(Hooks::Enter, enter_value.clone()).unwrap();
+        
+        // Should have 4 hooks total
+        assert_eq!(hooks.len(), 4);
+        
+        // Verify each hook is present
+        assert!(hooks.iter().any(|h| h.os.as_deref() == Some("linux") && h.script == "echo linux"));
+        assert!(hooks.iter().any(|h| h.os.as_deref() == Some("macos") && h.script == "echo macos"));
+        assert!(hooks.iter().any(|h| h.os.as_deref() == Some("windows") && h.script == "echo windows"));
+        assert!(hooks.iter().any(|h| h.os.is_none() && h.script == "echo any"));
+    }
+
+    #[test]
+    fn test_hook_from_toml_single_string() {
+        let value = toml::Value::String("echo test".to_string());
+        let hooks = Hook::from_toml(Hooks::Enter, value).unwrap();
+        
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0].script, "echo test");
+        assert_eq!(hooks[0].shell, None);
+        assert_eq!(hooks[0].os, None);
+    }
+
+    #[test]
+    fn test_hook_from_toml_table_with_os() {
+        let toml_str = r#"
+            script = "echo test"
+            os = "linux"
+            shell = "bash"
+        "#;
+        let value: toml::Value = toml::from_str(toml_str).unwrap();
+        let hooks = Hook::from_toml(Hooks::Enter, value).unwrap();
+        
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0].script, "echo test");
+        assert_eq!(hooks[0].os, Some("linux".to_string()));
+        assert_eq!(hooks[0].shell, Some("bash".to_string()));
+    }
 }

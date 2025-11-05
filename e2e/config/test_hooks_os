@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+# Detect current OS
+current_os=$(mise run -- bash -c 'echo $MISE_OS' 2>/dev/null || echo "linux")
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  current_os="macos"
+elif [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+  current_os="windows"
+fi
+
+# Determine which hooks should run based on current OS
+case "$current_os" in
+  linux)
+    should_run="LINUX"
+    should_not_run1="MACOS"
+    should_not_run2="WINDOWS"
+    ;;
+  macos)
+    should_run="MACOS"
+    should_not_run1="LINUX"
+    should_not_run2="WINDOWS"
+    ;;
+  windows)
+    should_run="WINDOWS"
+    should_not_run1="LINUX"
+    should_not_run2="MACOS"
+    ;;
+esac
+
+# Test that hooks only run on matching OS
+cat <<EOF >mise.toml
+[tools]
+dummy = 'latest'
+
+# Hook for Linux
+[[hooks.enter]]
+os = "linux"
+script = "echo HOOK-LINUX"
+
+# Hook for macOS
+[[hooks.enter]]
+os = "macos"
+script = "echo HOOK-MACOS"
+
+# Hook for Windows
+[[hooks.enter]]
+os = "windows"
+script = "echo HOOK-WINDOWS"
+
+# Hook with no OS restriction - should always run
+[[hooks.enter]]
+script = "echo HOOK-ANY-OS"
+
+# Test preinstall/postinstall with OS filtering
+[[hooks.preinstall]]
+os = "linux"
+script = "echo PREINSTALL-LINUX"
+
+[[hooks.preinstall]]
+os = "windows"
+script = "echo PREINSTALL-WINDOWS"
+
+[[hooks.preinstall]]
+os = "macos"
+script = "echo PREINSTALL-MACOS"
+
+[[hooks.postinstall]]
+os = "macos"
+script = "echo POSTINSTALL-MACOS"
+
+[[hooks.postinstall]]
+os = "linux"
+script = "echo POSTINSTALL-LINUX"
+
+[[hooks.postinstall]]
+os = "windows"
+script = "echo POSTINSTALL-WINDOWS"
+EOF
+
+# Test preinstall hooks - only current OS one should run
+assert_contains "mise i 2>&1" "PREINSTALL-$should_run"
+assert_not_contains "mise i 2>&1" "PREINSTALL-$should_not_run1"
+assert_not_contains "mise i 2>&1" "PREINSTALL-$should_not_run2"
+
+# Test postinstall hooks - only current OS one should run
+assert_contains "mise i dummy@1 2>&1" "POSTINSTALL-$should_run"
+assert_not_contains "mise i dummy@1 2>&1" "POSTINSTALL-$should_not_run1"
+assert_not_contains "mise i dummy@1 2>&1" "POSTINSTALL-$should_not_run2"
+
+# Initialize hook-env
+eval "$(mise hook-env)"
+
+# Navigate to trigger enter hooks
+cd ~ || exit 1
+eval "$(mise hook-env)"
+
+cd ~/workdir || exit 1
+
+# Test enter hooks - only current OS and no-OS hooks should run
+output=$(mise hook-env 2>&1)
+assert_contains "echo '$output'" "HOOK-$should_run"
+assert_contains "echo '$output'" "HOOK-ANY-OS"
+assert_not_contains "echo '$output'" "HOOK-$should_not_run1"
+assert_not_contains "echo '$output'" "HOOK-$should_not_run2"
