@@ -3451,8 +3451,9 @@ backends = ["github:DarthSim/overmind", "go:github.com/DarthSim/overmind/v2"]
 description = "Process manager for Procfile-based applications and tmux"
 
 [tools.oxipng]
-backends = ["aqua:shssoichiro/oxipng", "cargo:oxipng"]
-description = "Multithreaded PNG optimizer written in Rust"
+backends = ["aqua:oxipng/oxipng", "ubi:oxipng/oxipng", "cargo:oxipng"]
+description = "Oxipng is a multithreaded lossless PNG/APNG compression optimizer"
+test = ["oxipng --version", "oxipng {{version}}"]
 
 [tools.oxker]
 backends = ["aqua:mrjackwills/oxker", "ubi:mrjackwills/oxker", "cargo:oxker"]
