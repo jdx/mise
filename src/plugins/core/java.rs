@@ -347,7 +347,7 @@ impl Backend for JavaPlugin {
     }
 
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
-        let aliases = BTreeMap::from([("lts".into(), "21".into())]);
+        let aliases = BTreeMap::from([("lts".into(), "25".into())]);
         Ok(aliases)
     }
 
