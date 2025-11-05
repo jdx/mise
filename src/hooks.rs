@@ -85,8 +85,11 @@ pub async fn run_one_hook(
     hook: Hooks,
     shell: Option<&dyn Shell>,
 ) {
+    let current_os = Settings::get().os();
     for (root, h) in all_hooks(config).await {
-        if hook != h.hook || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string())) {
+        if hook != h.hook 
+            || (h.shell.is_some() && h.shell != shell.map(|s| s.to_string()))
+            || (h.os.is_some() && h.os.as_deref() != Some(current_os)) {
             continue;
         }
         trace!("running hook {hook} in {root:?}");
@@ -129,6 +132,7 @@ impl Hook {
                 hook,
                 script: run,
                 shell: None,
+                os: None,
             }]),
             toml::Value::Table(tbl) => {
                 let script = tbl
@@ -141,10 +145,15 @@ impl Hook {
                     .get("shell")
                     .and_then(|s| s.as_str())
                     .map(|s| s.to_string());
+                let os = tbl
+                    .get("os")
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_string());
                 Ok(vec![Hook {
                     hook,
                     script: script.to_string(),
                     shell,
+                    os,
                 }])
             }
             toml::Value::Array(arr) => {
