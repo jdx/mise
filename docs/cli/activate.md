@@ -43,6 +43,16 @@ Shell type to generate the script for
 
 ## Flags
 
+### `-q --quiet`
+
+Suppress non-error messages
+
+### `--no-hook-env`
+
+Do not automatically call hook-env
+
+This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then you can call `mise hook-env` manually which will output the env vars to stdout without actually modifying the environment. That way you can do things like `mise hook-env --trace` to get more information or just see the values that hook-env is outputting.
+
 ### `--shims`
 
 Use shims instead of modifying PATH
@@ -54,16 +64,6 @@ PATH="$HOME/.local/share/mise/shims:$PATH"
 
 `mise activate --shims` does not support all the features of `mise activate`.
 See <https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path> for more information
-
-### `-q --quiet`
-
-Suppress non-error messages
-
-### `--no-hook-env`
-
-Do not automatically call hook-env
-
-This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then you can call `mise hook-env` manually which will output the env vars to stdout without actually modifying the environment. That way you can do things like `mise hook-env --trace` to get more information or just see the values that hook-env is outputting.
 
 Examples:
 

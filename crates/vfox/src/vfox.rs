@@ -151,7 +151,7 @@ impl Vfox {
         trace!("{pre_install:?}");
         if let Some(url) = pre_install.url.as_ref().map(|s| Url::from_str(s)) {
             let file = self.download(&url?, &sdk, version).await?;
-            self.verify(&pre_install, &file)?;
+            self.verify(&pre_install, &file).await?;
             self.extract(&file, install_dir)?;
         }
 
@@ -282,7 +282,7 @@ impl Vfox {
         Ok(path)
     }
 
-    fn verify(&self, pre_install: &PreInstall, file: &Path) -> Result<()> {
+    async fn verify(&self, pre_install: &PreInstall, file: &Path) -> Result<()> {
         self.log_emit(format!("Verifying {file:?} checksum"));
         if let Some(sha256) = &pre_install.sha256 {
             xx::hash::ensure_checksum_sha256(file, sha256)?;
@@ -295,6 +295,44 @@ impl Vfox {
         }
         if let Some(_md5) = &pre_install.md5 {
             unimplemented!("md5")
+        }
+        if let Some(attestation) = &pre_install.attestation {
+            self.log_emit(format!("Verify {file:?} attestation"));
+            if let Some(owner) = &attestation.github_owner
+                && let Some(repo) = &attestation.github_repo
+            {
+                let token = std::env::var("MISE_GITHUB_TOKEN")
+                    .or_else(|_| std::env::var("GITHUB_TOKEN"))
+                    .or(Err("GitHub attestation verification requires either the MISE_GITHUB_TOKEN or GITHUB_TOKEN environment variable set"))?;
+                sigstore_verification::verify_github_attestation(
+                    file,
+                    owner.as_str(),
+                    repo.as_str(),
+                    Some(token.as_str()),
+                    attestation.github_signer_workflow.as_deref(),
+                )
+                .await?;
+            }
+
+            if let Some(sig_or_bundle_path) = &attestation.cosign_sig_or_bundle_path {
+                if let Some(public_key_path) = &attestation.cosign_public_key_path {
+                    sigstore_verification::verify_cosign_signature_with_key(
+                        file,
+                        sig_or_bundle_path,
+                        public_key_path,
+                    )
+                    .await?;
+                } else {
+                    sigstore_verification::verify_cosign_signature(file, sig_or_bundle_path)
+                        .await?;
+                }
+            }
+
+            if let Some(provenance_path) = &attestation.slsa_provenance_path {
+                let min_level = attestation.slsa_min_level.unwrap_or(1u8);
+                sigstore_verification::verify_slsa_provenance(file, provenance_path, min_level)
+                    .await?;
+            }
         }
         Ok(())
     }
@@ -420,31 +458,34 @@ mod tests {
         let install_dir = vfox.install_dir.join("cmake").join("3.21.0");
         vfox.install("cmake", "3.21.0", &install_dir).await.unwrap();
         if cfg!(target_os = "linux") {
-            assert!(vfox
-                .install_dir
-                .join("cmake")
-                .join("3.21.0")
-                .join("bin")
-                .join("cmake")
-                .exists());
+            assert!(
+                vfox.install_dir
+                    .join("cmake")
+                    .join("3.21.0")
+                    .join("bin")
+                    .join("cmake")
+                    .exists()
+            );
         } else if cfg!(target_os = "macos") {
-            assert!(vfox
-                .install_dir
-                .join("cmake")
-                .join("3.21.0")
-                .join("CMake.app")
-                .join("Contents")
-                .join("bin")
-                .join("cmake")
-                .exists());
+            assert!(
+                vfox.install_dir
+                    .join("cmake")
+                    .join("3.21.0")
+                    .join("CMake.app")
+                    .join("Contents")
+                    .join("bin")
+                    .join("cmake")
+                    .exists()
+            );
         } else if cfg!(target_os = "windows") {
-            assert!(vfox
-                .install_dir
-                .join("cmake")
-                .join("3.21.0")
-                .join("bin")
-                .join("cmake.exe")
-                .exists());
+            assert!(
+                vfox.install_dir
+                    .join("cmake")
+                    .join("3.21.0")
+                    .join("bin")
+                    .join("cmake.exe")
+                    .exists()
+            );
         }
         vfox.uninstall_plugin("cmake").unwrap();
         assert!(!vfox.plugin_dir.join("cmake").exists());

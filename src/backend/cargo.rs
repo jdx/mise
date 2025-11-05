@@ -9,6 +9,7 @@ use url::Url;
 use crate::Result;
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
+use crate::backend::static_helpers::lookup_platform_key;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -105,7 +106,7 @@ impl Backend for CargoBackend {
         };
 
         let opts = tv.request.options();
-        if let Some(bin) = opts.get("bin") {
+        if let Some(bin) = lookup_platform_key(&opts, "bin").or_else(|| opts.get("bin").cloned()) {
             cmd = cmd.arg(format!("--bin={bin}"));
         }
         if opts
@@ -117,10 +118,10 @@ impl Backend for CargoBackend {
         if let Some(features) = opts.get("features") {
             cmd = cmd.arg(format!("--features={features}"));
         }
-        if let Some(default_features) = opts.get("default-features") {
-            if default_features.to_lowercase() == "false" {
-                cmd = cmd.arg("--no-default-features");
-            }
+        if let Some(default_features) = opts.get("default-features")
+            && default_features.to_lowercase() == "false"
+        {
+            cmd = cmd.arg("--no-default-features");
         }
         if let Some(c) = opts.get("crate") {
             cmd = cmd.arg(c);

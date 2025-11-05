@@ -1,5 +1,5 @@
-use mlua::prelude::*;
 use mlua::Table;
+use mlua::prelude::*;
 use std::path::Path;
 
 pub fn mod_cmd(lua: &Lua) -> LuaResult<()> {

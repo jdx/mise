@@ -2,8 +2,8 @@ use mlua::prelude::LuaError;
 use mlua::{FromLua, IntoLua, Lua, MultiValue, Value};
 use std::path::{Path, PathBuf};
 
-use crate::error::Result;
 use crate::Plugin;
+use crate::error::Result;
 
 #[derive(Debug)]
 pub struct LegacyFileContext {

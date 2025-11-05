@@ -35,14 +35,14 @@ pub struct Trust {
     #[clap(long, conflicts_with = "untrust")]
     ignore: bool,
 
-    /// No longer trust this config, will prompt in the future
-    #[clap(long)]
-    untrust: bool,
-
     /// Show the trusted status of config files from the current directory and its parents.
     /// Does not trust or untrust any files.
     #[clap(long, verbatim_doc_comment)]
     show: bool,
+
+    /// No longer trust this config, will prompt in the future
+    #[clap(long)]
+    untrust: bool,
 }
 
 impl Trust {

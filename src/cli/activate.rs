@@ -28,16 +28,25 @@ use itertools::Itertools;
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Activate {
     /// Shell type to generate the script for
-    #[clap(long, short, hide = true)]
-    shell: Option<ShellType>,
-
-    /// Shell type to generate the script for
     #[clap()]
     shell_type: Option<ShellType>,
 
-    /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
-    #[clap(long, hide = true)]
-    status: bool,
+    /// Suppress non-error messages
+    #[clap(long, short)]
+    quiet: bool,
+
+    /// Shell type to generate the script for
+    #[clap(long, short, hide = true)]
+    shell: Option<ShellType>,
+
+    /// Do not automatically call hook-env
+    ///
+    /// This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then
+    /// you can call `mise hook-env` manually which will output the env vars to stdout without actually
+    /// modifying the environment. That way you can do things like `mise hook-env --trace` to get more
+    /// information or just see the values that hook-env is outputting.
+    #[clap(long)]
+    no_hook_env: bool,
 
     /// Use shims instead of modifying PATH
     /// Effectively the same as:
@@ -49,18 +58,9 @@ pub struct Activate {
     #[clap(long, verbatim_doc_comment)]
     shims: bool,
 
-    /// Suppress non-error messages
-    #[clap(long, short)]
-    quiet: bool,
-
-    /// Do not automatically call hook-env
-    ///
-    /// This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then
-    /// you can call `mise hook-env` manually which will output the env vars to stdout without actually
-    /// modifying the environment. That way you can do things like `mise hook-env --trace` to get more
-    /// information or just see the values that hook-env is outputting.
-    #[clap(long)]
-    no_hook_env: bool,
+    /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
+    #[clap(long, hide = true)]
+    status: bool,
 }
 
 impl Activate {

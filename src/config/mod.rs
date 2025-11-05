@@ -289,10 +289,10 @@ impl Config {
     }
 
     pub async fn vars_results(self: &Arc<Self>) -> Result<&EnvResults> {
-        if let Some(loader) = &self.vars_loader {
-            if let Some(results) = loader.vars_results.get() {
-                return Ok(results);
-            }
+        if let Some(loader) = &self.vars_loader
+            && let Some(results) = loader.vars_results.get()
+        {
+            return Ok(results);
         }
         self.vars_results
             .get_or_try_init(|| async move { load_vars(self).await })
@@ -400,10 +400,10 @@ impl Config {
     }
 
     pub async fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {
-        if let Some(plugin_aliases) = self.all_aliases.get(&backend.ba().short) {
-            if let Some(alias) = plugin_aliases.versions.get(v) {
-                return Ok(alias.clone());
-            }
+        if let Some(plugin_aliases) = self.all_aliases.get(&backend.ba().short)
+            && let Some(alias) = plugin_aliases.versions.get(v)
+        {
+            return Ok(alias.clone());
         }
         if let Some(alias) = backend.get_aliases()?.get(v) {
             return Ok(alias.clone());
@@ -846,6 +846,7 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
             ".config/mise/mise.local.toml",
             ".config/mise.local.toml",
             ".mise/config.local.toml",
+            "mise/config.local.toml",
             ".rtx.local.toml",
             "mise.local.toml",
             ".mise.local.toml",
@@ -938,10 +939,10 @@ pub fn config_file_from_dir(p: &Path) -> PathBuf {
         return p.to_path_buf();
     }
     for dir in all_dirs().unwrap_or_default() {
-        if let Some(cf) = self::config_files_in_dir(&dir).last() {
-            if !is_global_config(cf) {
-                return cf.clone();
-            }
+        if let Some(cf) = self::config_files_in_dir(&dir).last()
+            && !is_global_config(cf)
+        {
+            return cf.clone();
         }
     }
     match Settings::get().asdf_compat {
@@ -1089,10 +1090,11 @@ static CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
 fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
     let mut files = IndexSet::new();
     for p in file::ls(&dir.join("conf.d")).unwrap_or_default() {
-        if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string()) {
-            if !file_name.starts_with(".") && file_name.ends_with(".toml") {
-                files.insert(p);
-            }
+        if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string())
+            && !file_name.starts_with(".")
+            && file_name.ends_with(".toml")
+        {
+            files.insert(p);
         }
     }
     files.extend(CONFIG_FILENAMES.iter().map(|f| dir.join(f)));
@@ -1237,10 +1239,10 @@ async fn load_all_config_files(
         }
 
         // Mark monorepo roots so descendant configs are implicitly trusted
-        if cf.experimental_monorepo_root() == Some(true) {
-            if let Err(err) = config_file::mark_as_monorepo_root(f) {
-                warn!("failed to mark monorepo root: {err:#}");
-            }
+        if cf.experimental_monorepo_root() == Some(true)
+            && let Err(err) = config_file::mark_as_monorepo_root(f)
+        {
+            warn!("failed to mark monorepo root: {err:#}");
         }
 
         config_map.insert(f.clone(), cf);
@@ -1375,11 +1377,11 @@ impl Debug for Config {
                 &tasks.values().map(|t| t.to_string()).collect_vec(),
             );
         }
-        if let Some(env) = self.env_maybe() {
-            if !env.is_empty() {
-                s.field("Env", &env);
-                // s.field("Env Sources", &self.env_sources);
-            }
+        if let Some(env) = self.env_maybe()
+            && !env.is_empty()
+        {
+            s.field("Env", &env);
+            // s.field("Env Sources", &self.env_sources);
         }
         if let Some(env_results) = self.env.get() {
             if !env_results.env_files.is_empty() {

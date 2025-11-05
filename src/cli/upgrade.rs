@@ -29,10 +29,6 @@ pub struct Upgrade {
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
-    /// Just print what would be done, don't actually do it
-    #[clap(long, short = 'n', verbatim_doc_comment)]
-    dry_run: bool,
-
     /// Display multiselect menu to choose which tools to upgrade
     #[clap(long, short, verbatim_doc_comment, conflicts_with = "tool")]
     interactive: bool,
@@ -51,6 +47,10 @@ pub struct Upgrade {
     /// would change your config to `node = "22"`.
     #[clap(long, short = 'l', verbatim_doc_comment)]
     bump: bool,
+
+    /// Just print what would be done, don't actually do it
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    dry_run: bool,
 
     /// Directly pipe stdin/stdout/stderr from plugin to user
     /// Sets --jobs=1
@@ -111,13 +111,12 @@ impl Upgrade {
         let config_file_updates = outdated_with_config_files
             .iter()
             .filter(|(o, cf)| {
-                if let Ok(trs) = cf.to_tool_request_set() {
-                    if let Some(versions) = trs.tools.get(o.tool_request.ba()) {
-                        if versions.len() != 1 {
-                            warn!("upgrading multiple versions with --bump is not yet supported");
-                            return false;
-                        }
-                    }
+                if let Ok(trs) = cf.to_tool_request_set()
+                    && let Some(versions) = trs.tools.get(o.tool_request.ba())
+                    && versions.len() != 1
+                {
+                    warn!("upgrading multiple versions with --bump is not yet supported");
+                    return false;
                 }
                 true
             })

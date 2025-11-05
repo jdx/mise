@@ -121,6 +121,12 @@ test = [
   "docker-credential-ecr-login (github.com/awslabs/amazon-ecr-credential-helper/ecr-login) {{version}}",
 ]
 
+[tools.amazon-ecs-cli]
+aliases = ["ecs-cli"]
+backends = ["aqua:aws/amazon-ecs-cli"]
+description = "The Amazon ECS CLI enables users to run their applications on ECS/Fargate using the Docker Compose file format, quickly provision resources, push/pull images in ECR, and monitor running applications on ECS/Fargate."
+test = ["ecs-cli --version", "ecs-cli version {{version}}"]
+
 [tools.amp]
 backends = ["npm:@sourcegraph/amp"]
 description = "An agentic coding tool built by Sourcegraph"
@@ -1171,6 +1177,11 @@ description = "A lightweight workspace manager for the shell"
 os = ["linux", "macos"]
 test = ["desk version", "desk {{version}}"]
 
+[tools.devcontainer-cli]
+backends = ["npm:@devcontainers/cli"]
+description = "CLI for creating and configuring dev containers from devcontainer.json"
+test = ["devcontainer --version", "{{version}}"]
+
 [tools.devspace]
 backends = ["aqua:devspace-sh/devspace", "asdf:NeoHsu/asdf-devspace"]
 description = "DevSpace - The Fastest Developer Tool for Kubernetes  Automate your deployment workflow with DevSpace and develop software directly inside Kubernetes"
@@ -2087,10 +2098,6 @@ description = "checks presence of various command line tools and their versions 
 os = ["linux", "macos"]
 test = ["has --version", "v{{version}}"]
 
-[tools.haskell]
-backends = ["asdf:mise-plugins/mise-haskell"]
-description = "haskell language"
-
 [tools.hasura-cli]
 backends = ["aqua:hasura/graphql-engine", "asdf:gurukulkarni/asdf-hasura"]
 description = "Hasura GraphQL Engine CLI"
@@ -2144,6 +2151,14 @@ test = ["helm-diff version", "{{version}}"]
 [tools.helm-docs]
 backends = ["aqua:norwoodj/helm-docs", "asdf:sudermanjr/asdf-helm-docs"]
 description = "A tool for automatically generating markdown documentation for helm charts"
+
+[tools.helm-ls]
+backends = ["aqua:mrjosh/helm-ls", "ubi:mrjosh/helm-ls[rename_exe=helm_ls]"]
+description = "Helm-ls is a helm language server protocol LSP implementation"
+test = [
+  "helm_ls version",
+  "Helm-ls version: master",
+] # helm_ls version returns always "master" - https://github.com/mrjosh/helm-ls/issues/179
 
 [tools.helmfile]
 backends = [
@@ -2296,6 +2311,11 @@ description = "ImageMagick is a free, open-source software suite for creating, e
 [tools.imgpkg]
 backends = ["aqua:carvel-dev/imgpkg", "asdf:vmware-tanzu/asdf-carvel"]
 description = "Store application configuration files in Docker/OCI registries"
+
+[tools.infisical]
+backends = ["github:Infisical/cli"]
+description = "The open source secret management platform: Sync secrets across your team/infrastructure and prevent secret leaks"
+test = ["infisical --version", "infisical version {{version}}"]
 
 [tools.infracost]
 backends = ["aqua:infracost/infracost", "asdf:dex4er/asdf-infracost"]
@@ -3445,8 +3465,9 @@ backends = ["github:DarthSim/overmind", "go:github.com/DarthSim/overmind/v2"]
 description = "Process manager for Procfile-based applications and tmux"
 
 [tools.oxipng]
-backends = ["aqua:shssoichiro/oxipng", "cargo:oxipng"]
-description = "Multithreaded PNG optimizer written in Rust"
+backends = ["aqua:oxipng/oxipng", "ubi:oxipng/oxipng", "cargo:oxipng"]
+description = "Oxipng is a multithreaded lossless PNG/APNG compression optimizer"
+test = ["oxipng --version", "oxipng {{version}}"]
 
 [tools.oxker]
 backends = ["aqua:mrjackwills/oxker", "ubi:mrjackwills/oxker", "cargo:oxker"]
@@ -4127,7 +4148,11 @@ backends = ["aqua:slok/sloth", "asdf:slok/asdf-sloth"]
 description = "Easy and simple Prometheus SLO (service level objectives) generator"
 
 [tools.slsa-verifier]
-backends = ["github:slsa-framework/slsa-verifier"]
+backends = [
+  "aqua:slsa-framework/slsa-verifier",
+  "github:slsa-framework/slsa-verifier",
+  "go:github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier",
+]
 description = "Verify provenance from SLSA compliant builders"
 test = ["slsa-verifier version", "{{version}}"]
 
@@ -5091,8 +5116,9 @@ description = "yq is a portable command-line YAML processor"
 test = ["yq --version", "version v{{version}}"]
 
 [tools.yt-dlp]
-backends = ["github:yt-dlp/yt-dlp", "asdf:duhow/asdf-yt-dlp"]
+backends = ["ubi:yt-dlp/yt-dlp[rename_exe=yt-dlp]", "asdf:duhow/asdf-yt-dlp"]
 description = "A feature-rich command-line audio/video downloader"
+test = ["yt-dlp --version", "{{version}}"]
 
 [tools.ytt]
 backends = ["aqua:carvel-dev/ytt", "asdf:vmware-tanzu/asdf-carvel"]

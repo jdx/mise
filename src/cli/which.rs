@@ -18,6 +18,11 @@ pub struct Which {
     #[clap(required_unless_present = "complete")]
     pub bin_name: Option<String>,
 
+    /// Use a specific tool@version
+    /// e.g.: `mise which npm --tool=node@20`
+    #[clap(short, long, value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    pub tool: Option<ToolArg>,
+
     #[clap(long, hide = true)]
     pub complete: bool,
 
@@ -28,11 +33,6 @@ pub struct Which {
     /// Show the version instead of the path
     #[clap(long, conflicts_with = "plugin")]
     pub version: bool,
-
-    /// Use a specific tool@version
-    /// e.g.: `mise which npm --tool=node@20`
-    #[clap(short, long, value_name = "TOOL@VERSION", verbatim_doc_comment)]
-    pub tool: Option<ToolArg>,
 }
 
 impl Which {

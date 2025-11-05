@@ -56,26 +56,7 @@ pub async fn create_age_directive(
 }
 
 pub async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
-    let settings = Settings::get();
-    settings.ensure_experimental("age encryption")?;
-    let strict = settings.age.strict;
-    match decrypt_age_directive_inner(directive).await {
-        Ok(value) => Ok(value),
-        Err(e) => {
-            if strict {
-                Err(e)
-            } else {
-                debug!(
-                    "Age decryption failed but continuing in non-strict mode: {}",
-                    e
-                );
-                Ok(String::new())
-            }
-        }
-    }
-}
-
-async fn decrypt_age_directive_inner(directive: &EnvDirective) -> Result<String> {
+    Settings::get().ensure_experimental("age encryption")?;
     match directive {
         EnvDirective::Age { value, format, .. } => {
             let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
@@ -123,17 +104,17 @@ pub async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipient + S
     let mut recipients: IndexSet<String> = IndexSet::new();
 
     // Try to load from age key file
-    if let Some(key_file) = get_default_key_file().await {
-        if key_file.exists() {
-            let content = file::read_to_string(&key_file)?;
-            // For age keys, we need to parse them as x25519 identities to get public keys
-            for line in content.lines() {
-                let line = line.trim();
-                if line.starts_with("AGE-SECRET-KEY-") {
-                    if let Ok(identity) = line.parse::<age::x25519::Identity>() {
-                        recipients.insert(identity.to_public().to_string());
-                    }
-                }
+    if let Some(key_file) = get_default_key_file().await
+        && key_file.exists()
+    {
+        let content = file::read_to_string(&key_file)?;
+        // For age keys, we need to parse them as x25519 identities to get public keys
+        for line in content.lines() {
+            let line = line.trim();
+            if line.starts_with("AGE-SECRET-KEY-")
+                && let Ok(identity) = line.parse::<age::x25519::Identity>()
+            {
+                recipients.insert(identity.to_public().to_string());
             }
         }
     }
@@ -141,10 +122,10 @@ pub async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipient + S
     // Try to load from SSH private keys
     let ssh_key_paths = get_default_ssh_key_paths();
     for path in ssh_key_paths {
-        if path.exists() {
-            if let Ok(recipient) = load_ssh_recipient_from_private_key(&path).await {
-                recipients.insert(recipient);
-            }
+        if path.exists()
+            && let Ok(recipient) = load_ssh_recipient_from_private_key(&path).await
+        {
+            recipients.insert(recipient);
         }
     }
 
@@ -179,11 +160,11 @@ pub async fn load_recipients_from_key_file(path: &Path) -> Result<Vec<Box<dyn Re
     // Parse age x25519 identities and convert to recipients
     for line in content.lines() {
         let line = line.trim();
-        if line.starts_with("AGE-SECRET-KEY-") {
-            if let Ok(identity) = line.parse::<age::x25519::Identity>() {
-                let public_key = identity.to_public();
-                recipients.push(Box::new(public_key));
-            }
+        if line.starts_with("AGE-SECRET-KEY-")
+            && let Ok(identity) = line.parse::<age::x25519::Identity>()
+        {
+            let public_key = identity.to_public();
+            recipients.push(Box::new(public_key));
         }
     }
 
@@ -278,26 +259,25 @@ async fn load_all_identities() -> Result<Vec<Box<dyn Identity>>> {
     let mut identities: Vec<Box<dyn Identity>> = Vec::new();
 
     // Check MISE_AGE_KEY environment variable
-    if let Ok(age_key) = env::var("MISE_AGE_KEY") {
-        if !age_key.is_empty() {
-            // First try to parse as a raw age secret key
-            for line in age_key.lines() {
-                let line = line.trim();
-                if line.starts_with("AGE-SECRET-KEY-") {
-                    if let Ok(identity) = line.parse::<age::x25519::Identity>() {
-                        identities.push(Box::new(identity));
-                    }
-                }
+    if let Ok(age_key) = env::var("MISE_AGE_KEY")
+        && !age_key.is_empty()
+    {
+        // First try to parse as a raw age secret key
+        for line in age_key.lines() {
+            let line = line.trim();
+            if line.starts_with("AGE-SECRET-KEY-")
+                && let Ok(identity) = line.parse::<age::x25519::Identity>()
+            {
+                identities.push(Box::new(identity));
             }
+        }
 
-            // If no keys were found, try parsing as an identity file
-            if identities.is_empty() {
-                if let Ok(identity_file) = IdentityFile::from_buffer(age_key.as_bytes()) {
-                    if let Ok(mut file_identities) = identity_file.into_identities() {
-                        identities.append(&mut file_identities);
-                    }
-                }
-            }
+        // If no keys were found, try parsing as an identity file
+        if identities.is_empty()
+            && let Ok(identity_file) = IdentityFile::from_buffer(age_key.as_bytes())
+            && let Ok(mut file_identities) = identity_file.into_identities()
+        {
+            identities.append(&mut file_identities);
         }
     }
 
@@ -306,10 +286,10 @@ async fn load_all_identities() -> Result<Vec<Box<dyn Identity>>> {
         if path.exists() {
             match file::read_to_string(&path) {
                 Ok(content) => {
-                    if let Ok(identity_file) = IdentityFile::from_buffer(content.as_bytes()) {
-                        if let Ok(mut file_identities) = identity_file.into_identities() {
-                            identities.append(&mut file_identities);
-                        }
+                    if let Ok(identity_file) = IdentityFile::from_buffer(content.as_bytes())
+                        && let Ok(mut file_identities) = identity_file.into_identities()
+                    {
+                        identities.append(&mut file_identities);
                     }
                 }
                 Err(e) => {
@@ -453,118 +433,6 @@ mod tests {
         } else {
             panic!("Expected Age directive");
         }
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_age_decrypt_non_strict_returns_empty_on_missing_key() -> Result<()> {
-        // Create ciphertext for a random recipient, but don't provide its private key
-        let encrypt_identity = age::x25519::Identity::generate();
-        let recipient = encrypt_identity.to_public();
-        let plaintext = "secret value";
-        let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(recipient)];
-        let directive =
-            create_age_directive("TEST_VAR".to_string(), plaintext, &recipients).await?;
-
-        // Configure non-strict mode and ensure no usable identities are provided
-        env::remove_var("MISE_AGE_KEY");
-        env::set_var("MISE_AGE_STRICT", "false");
-        crate::config::Settings::reset(None);
-
-        if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
-            let result = decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
-                key: "TEST_VAR".to_string(),
-                value,
-                format,
-                options: Default::default(),
-            })
-            .await?;
-
-            // In non-strict mode, failure yields empty string
-            assert_eq!(result, "");
-        } else {
-            panic!("Expected Age directive");
-        }
-
-        // Cleanup
-        env::remove_var("MISE_AGE_STRICT");
-        crate::config::Settings::reset(None);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_age_decrypt_strict_errors_on_missing_key() -> Result<()> {
-        // Create ciphertext for a random recipient, but don't provide its private key
-        let encrypt_identity = age::x25519::Identity::generate();
-        let recipient = encrypt_identity.to_public();
-        let plaintext = "secret value";
-        let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(recipient)];
-        let directive =
-            create_age_directive("TEST_VAR".to_string(), plaintext, &recipients).await?;
-
-        // Strict mode (default) with no usable identities should error
-        env::remove_var("MISE_AGE_KEY");
-        env::set_var("MISE_AGE_STRICT", "true");
-        crate::config::Settings::reset(None);
-
-        if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
-            let result = decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
-                key: "TEST_VAR".to_string(),
-                value,
-                format,
-                options: Default::default(),
-            })
-            .await;
-
-            assert!(result.is_err());
-        } else {
-            panic!("Expected Age directive");
-        }
-
-        // Cleanup
-        env::remove_var("MISE_AGE_STRICT");
-        crate::config::Settings::reset(None);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_age_decrypt_non_strict_returns_empty_on_invalid_key() -> Result<()> {
-        // Encrypt to K1, but provide K2 as the identity
-        let k1 = age::x25519::Identity::generate();
-        let k2 = age::x25519::Identity::generate();
-        let recipient = k1.to_public();
-        let plaintext = "secret value";
-        let recipients: Vec<Box<dyn Recipient + Send>> = vec![Box::new(recipient)];
-        let directive =
-            create_age_directive("TEST_VAR".to_string(), plaintext, &recipients).await?;
-
-        use age::secrecy::ExposeSecret;
-        env::set_var("MISE_AGE_KEY", k2.to_string().expose_secret());
-        env::set_var("MISE_AGE_STRICT", "false");
-        crate::config::Settings::reset(None);
-
-        if let crate::config::env_directive::EnvDirective::Age { value, format, .. } = directive {
-            let result = decrypt_age_directive(&crate::config::env_directive::EnvDirective::Age {
-                key: "TEST_VAR".to_string(),
-                value,
-                format,
-                options: Default::default(),
-            })
-            .await?;
-
-            // In non-strict mode, a decryption failure yields empty string
-            assert_eq!(result, "");
-        } else {
-            panic!("Expected Age directive");
-        }
-
-        // Cleanup
-        env::remove_var("MISE_AGE_KEY");
-        env::remove_var("MISE_AGE_STRICT");
-        crate::config::Settings::reset(None);
-
         Ok(())
     }
 

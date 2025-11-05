@@ -291,10 +291,10 @@ impl ToolRequest {
     }
 
     pub fn is_os_supported(&self) -> bool {
-        if let Some(os) = self.os() {
-            if !os.contains(&crate::cli::version::OS) {
-                return false;
-            }
+        if let Some(os) = self.os()
+            && !os.contains(&crate::cli::version::OS)
+        {
+            return false;
         }
         self.ba().is_os_supported()
     }

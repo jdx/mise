@@ -25,7 +25,7 @@ Shell type to generate completions for
 Include the bash completion library in the bash completion script
 
 This is required for completions to work in bash, but it is not included by default
-you may source it separately or enable this flag to include it in the script.
+you may source it separately or enable this flag to enable it in the script.
 
 Examples:
 

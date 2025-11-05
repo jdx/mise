@@ -108,10 +108,10 @@ impl Shell for Zsh {
         formatdoc! {r#"
         precmd_functions=( ${{precmd_functions:#_mise_hook_precmd}} )
         chpwd_functions=( ${{chpwd_functions:#_mise_hook_chpwd}} )
-        unset -f _mise_hook_precmd
-        unset -f _mise_hook_chpwd
-        unset -f _mise_hook
-        unset -f mise
+        (( $+functions[_mise_hook_precmd] )) && unset -f _mise_hook_precmd
+        (( $+functions[_mise_hook_chpwd] )) && unset -f _mise_hook_chpwd
+        (( $+functions[_mise_hook] )) && unset -f _mise_hook
+        (( $+functions[mise] )) && unset -f mise
         unset MISE_SHELL
         unset __MISE_DIFF
         unset __MISE_SESSION

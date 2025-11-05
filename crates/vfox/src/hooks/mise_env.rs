@@ -1,8 +1,8 @@
 use mlua::{IntoLua, Lua, LuaSerdeExt, Value};
 
+use crate::Plugin;
 use crate::error::Result;
 use crate::hooks::env_keys::EnvKey;
-use crate::Plugin;
 
 #[derive(Debug)]
 pub struct MiseEnvContext<T: serde::Serialize> {

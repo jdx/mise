@@ -8,9 +8,6 @@ use crate::config;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct TaskDocs {
-    /// write only an index of tasks, intended for use with `--multi`
-    #[clap(long, short = 'I', verbatim_doc_comment)]
-    index: bool,
     /// inserts the documentation into an existing file
     ///
     /// This will look for a special comment, `<!-- mise-tasks -->`, and replace it with the generated documentation.
@@ -18,6 +15,9 @@ pub struct TaskDocs {
     /// run multiple times on the same file to update the documentation.
     #[clap(long, short, verbatim_doc_comment)]
     inject: bool,
+    /// write only an index of tasks, intended for use with `--multi`
+    #[clap(long, short = 'I', verbatim_doc_comment)]
+    index: bool,
     /// render each task as a separate document, requires `--output` to be a directory
     #[clap(long, short, verbatim_doc_comment)]
     multi: bool,

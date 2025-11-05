@@ -195,12 +195,11 @@ where
         if !self.cache_file_path.exists() {
             return false;
         }
-        if let Some(fresh_duration) = self.freshest_duration() {
-            if let Ok(metadata) = self.cache_file_path.metadata() {
-                if let Ok(modified) = metadata.modified() {
-                    return modified.elapsed().unwrap_or_default() < fresh_duration;
-                }
-            }
+        if let Some(fresh_duration) = self.freshest_duration()
+            && let Ok(metadata) = self.cache_file_path.metadata()
+            && let Ok(modified) = metadata.modified()
+        {
+            return modified.elapsed().unwrap_or_default() < fresh_duration;
         }
         true
     }
@@ -230,7 +229,7 @@ pub(crate) struct PruneOptions {
 }
 
 pub(crate) fn auto_prune() -> Result<()> {
-    if rand::random::<u8>() % 100 != 0 {
+    if !rand::random::<u8>().is_multiple_of(100) {
         return Ok(()); // only prune 1% of the time
     }
     let settings = Settings::get();
@@ -241,10 +240,10 @@ pub(crate) fn auto_prune() -> Result<()> {
         }
     };
     let auto_prune_file = dirs::CACHE.join(".auto_prune");
-    if let Ok(Ok(modified)) = auto_prune_file.metadata().map(|m| m.modified()) {
-        if modified.elapsed().unwrap_or_default() < age {
-            return Ok(());
-        }
+    if let Ok(Ok(modified)) = auto_prune_file.metadata().map(|m| m.modified())
+        && modified.elapsed().unwrap_or_default() < age
+    {
+        return Ok(());
     }
     let empty = file::ls(*dirs::CACHE).unwrap_or_default().is_empty();
     xx::file::touch_dir(&auto_prune_file)?;

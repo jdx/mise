@@ -25,9 +25,9 @@ pub struct Direnv {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    Activate(activate::DirenvActivate),
     Envrc(envrc::Envrc),
     Exec(exec::DirenvExec),
-    Activate(activate::DirenvActivate),
 }
 
 impl Commands {

@@ -38,9 +38,8 @@ pub struct PluginsInstall {
     )]
     git_url: Option<String>,
 
-    /// Reinstall even if plugin exists
-    #[clap(short, long, verbatim_doc_comment)]
-    force: bool,
+    #[clap(hide = true)]
+    rest: Vec<String>,
 
     /// Install all missing plugins
     /// This will only install plugins that have matching shorthands.
@@ -48,16 +47,17 @@ pub struct PluginsInstall {
     #[clap(short, long, conflicts_with_all = ["new_plugin", "force"], verbatim_doc_comment)]
     all: bool,
 
-    /// Show installation output
-    #[clap(long, short, action = clap::ArgAction::Count, verbatim_doc_comment)]
-    verbose: u8,
+    /// Reinstall even if plugin exists
+    #[clap(short, long, verbatim_doc_comment)]
+    force: bool,
 
     /// Number of jobs to run in parallel
     #[clap(long, short, verbatim_doc_comment)]
     jobs: Option<usize>,
 
-    #[clap(hide = true)]
-    rest: Vec<String>,
+    /// Show installation output
+    #[clap(long, short, action = clap::ArgAction::Count, verbatim_doc_comment)]
+    verbose: u8,
 }
 
 impl PluginsInstall {

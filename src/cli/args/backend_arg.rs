@@ -132,10 +132,10 @@ impl BackendArg {
 
     pub fn backend_type(&self) -> BackendType {
         // Check if this is a valid backend:tool format first
-        if let Some((backend_prefix, _tool_name)) = self.short.split_once(':') {
-            if let Ok(backend_type) = backend_prefix.parse::<BackendType>() {
-                return backend_type;
-            }
+        if let Some((backend_prefix, _tool_name)) = self.short.split_once(':')
+            && let Ok(backend_type) = backend_prefix.parse::<BackendType>()
+        {
+            return backend_type;
         }
 
         // Then check if this is a vfox plugin:tool format
@@ -154,10 +154,10 @@ impl BackendArg {
         }
 
         // Only check install state for non-plugin:tool format entries
-        if !self.short.contains(':') {
-            if let Ok(Some(backend_type)) = install_state::backend_type(&self.short) {
-                return backend_type;
-            }
+        if !self.short.contains(':')
+            && let Ok(Some(backend_type)) = install_state::backend_type(&self.short)
+        {
+            return backend_type;
         }
 
         let full = self.full();
@@ -165,15 +165,15 @@ impl BackendArg {
         if let Ok(backend_type) = backend.parse() {
             return backend_type;
         }
-        if config::is_loaded() {
-            if let Some(repo_url) = Config::get_().get_repo_url(&self.short) {
-                return if repo_url.contains("vfox-") {
-                    BackendType::Vfox
-                } else {
-                    // TODO: maybe something more intelligent?
-                    BackendType::Asdf
-                };
-            }
+        if config::is_loaded()
+            && let Some(repo_url) = Config::get_().get_repo_url(&self.short)
+        {
+            return if repo_url.contains("vfox-") {
+                BackendType::Vfox
+            } else {
+                // TODO: maybe something more intelligent?
+                BackendType::Asdf
+            };
         }
         BackendType::Unknown
     }
@@ -203,10 +203,9 @@ impl BackendArg {
             let config = Config::get_();
             if let Some(lt) =
                 lockfile::get_locked_version(&config, None, short, "").unwrap_or_default()
+                && let Some(backend) = lt.backend
             {
-                if let Some(backend) = lt.backend {
-                    return backend;
-                }
+                return backend;
             }
         }
         if let Some(full) = &self.full {
@@ -269,6 +268,14 @@ impl BackendArg {
             if !full.contains(['[', ']']) && !opts_str.is_empty() {
                 return format!("{full}[{opts_str}]");
             }
+        }
+        full
+    }
+
+    pub fn full_without_opts(&self) -> String {
+        let full = self.full();
+        if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
+            return c.get(1).unwrap().as_str().to_string();
         }
         full
     }

@@ -11,7 +11,7 @@ use crate::error::Result;
 use crate::metadata::Metadata;
 use crate::runtime::Runtime;
 use crate::sdk_info::SdkInfo;
-use crate::{config, error, lua_mod, VfoxError};
+use crate::{VfoxError, config, error, lua_mod};
 
 #[derive(Debug)]
 pub struct Plugin {

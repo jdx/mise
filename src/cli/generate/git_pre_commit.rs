@@ -14,15 +14,15 @@ use crate::git::Git;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
 pub struct GitPreCommit {
-    /// Which hook to generate (saves to .git/hooks/$hook)
-    #[clap(long, default_value = "pre-commit")]
-    hook: String,
     /// The task to run when the pre-commit hook is triggered
     #[clap(long, short, default_value = "pre-commit")]
     task: String,
     /// write to .git/hooks/pre-commit and make it executable
     #[clap(long, short)]
     write: bool,
+    /// Which hook to generate (saves to .git/hooks/$hook)
+    #[clap(long, default_value = "pre-commit")]
+    hook: String,
 }
 
 impl GitPreCommit {
@@ -51,7 +51,7 @@ impl GitPreCommit {
         let task = &self.task;
         format!(
             r#"#!/bin/sh
-STAGED="$(git diff-index --cached --name-only HEAD | tr ' ' '\ ' | tr '\n' ' ' | xargs)"
+STAGED="$(git diff-index --cached --name-only -z HEAD | xargs -0)"
 export STAGED
 export MISE_PRE_COMMIT=1
 exec mise run {task}

@@ -20,38 +20,28 @@ use tabled::Tabled;
 #[derive(Debug, clap::Args)]
 #[clap(aliases = ["ev", "env-vars"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Set {
-    /// The TOML file to update
-    ///
-    /// Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-    /// Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
-    #[clap(long, verbatim_doc_comment, required = false, value_hint = clap::ValueHint::AnyPath)]
-    file: Option<PathBuf>,
-
-    /// Render completions
-    #[clap(long, hide = true)]
-    complete: bool,
-
-    /// Set the environment variable in the global config file
-    #[clap(short, long, verbatim_doc_comment, overrides_with_all = &["file", "env"])]
-    global: bool,
+    /// Environment variable(s) to set
+    /// e.g.: NODE_ENV=production
+    #[clap(value_name = "ENV_VAR", verbatim_doc_comment)]
+    env_vars: Option<Vec<EnvVarArg>>,
 
     /// Create/modify an environment-specific config file like .mise.<env>.toml
     #[clap(short = 'E', long, overrides_with_all = &["global", "file"])]
     env: Option<String>,
 
-    /// Remove the environment variable from config file
-    ///
-    /// Can be used multiple times.
-    #[clap(long, value_name = "ENV_KEY", verbatim_doc_comment, visible_aliases = ["rm", "unset"], hide = true)]
-    remove: Option<Vec<String>>,
-
-    /// Prompt for environment variable values
-    #[clap(long)]
-    prompt: bool,
+    /// Set the environment variable in the global config file
+    #[clap(short, long, verbatim_doc_comment, overrides_with_all = &["file", "env"])]
+    global: bool,
 
     /// [experimental] Encrypt the value with age before storing
     #[clap(long, requires = "env_vars")]
     age_encrypt: bool,
+
+    /// [experimental] Age identity file for encryption
+    ///
+    /// Defaults to ~/.config/mise/age.txt if it exists
+    #[clap(long, value_name = "PATH", requires = "age_encrypt", value_hint = clap::ValueHint::FilePath)]
+    age_key_file: Option<PathBuf>,
 
     /// [experimental] Age recipient (x25519 public key) for encryption
     ///
@@ -65,16 +55,26 @@ pub struct Set {
     #[clap(long, value_name = "PATH_OR_PUBKEY", requires = "age_encrypt")]
     age_ssh_recipient: Vec<String>,
 
-    /// [experimental] Age identity file for encryption
-    ///
-    /// Defaults to ~/.config/mise/age.txt if it exists
-    #[clap(long, value_name = "PATH", requires = "age_encrypt", value_hint = clap::ValueHint::FilePath)]
-    age_key_file: Option<PathBuf>,
+    /// Render completions
+    #[clap(long, hide = true)]
+    complete: bool,
 
-    /// Environment variable(s) to set
-    /// e.g.: NODE_ENV=production
-    #[clap(value_name = "ENV_VAR", verbatim_doc_comment)]
-    env_vars: Option<Vec<EnvVarArg>>,
+    /// The TOML file to update
+    ///
+    /// Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
+    /// Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
+    #[clap(long, verbatim_doc_comment, required = false, value_hint = clap::ValueHint::AnyPath)]
+    file: Option<PathBuf>,
+
+    /// Prompt for environment variable values
+    #[clap(long)]
+    prompt: bool,
+
+    /// Remove the environment variable from config file
+    ///
+    /// Can be used multiple times.
+    #[clap(long, value_name = "ENV_KEY", verbatim_doc_comment, visible_aliases = ["rm", "unset"], hide = true)]
+    remove: Option<Vec<String>>,
 }
 
 impl Set {
@@ -120,20 +120,22 @@ impl Set {
             }
         }
 
-        if let Some(env_vars) = &self.env_vars {
-            if env_vars.len() == 1 && env_vars[0].value.is_none() && !self.prompt {
-                let key = &env_vars[0].key;
-                // Use Config's centralized env loading which handles decryption
-                let full_config = Config::get().await?;
-                let env = full_config.env().await?;
-                match env.get(key) {
-                    Some(value) => {
-                        miseprintln!("{value}");
-                    }
-                    None => bail!("Environment variable {key} not found"),
+        if let Some(env_vars) = &self.env_vars
+            && env_vars.len() == 1
+            && env_vars[0].value.is_none()
+            && !self.prompt
+        {
+            let key = &env_vars[0].key;
+            // Use Config's centralized env loading which handles decryption
+            let full_config = Config::get().await?;
+            let env = full_config.env().await?;
+            match env.get(key) {
+                Some(value) => {
+                    miseprintln!("{value}");
                 }
-                return Ok(());
+                None => bail!("Environment variable {key} not found"),
             }
+            return Ok(());
         }
 
         if let Some(mut env_vars) = self.env_vars.take() {
@@ -257,6 +259,7 @@ impl Set {
                 _ => None,
             }) {
                 Some((value, directive)) => {
+                    // this does not obey strict=false, since we want to fail if the decryption fails
                     let decrypted =
                         Self::decrypt_value_if_needed(&eva.key, &value, directive).await?;
                     miseprintln!("{decrypted}");

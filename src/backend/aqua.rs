@@ -99,11 +99,11 @@ impl Backend for AquaBackend {
         let pkg = AQUA_REGISTRY
             .package_with_version(&self.id, &versions)
             .await?;
-        if let Some(prefix) = &pkg.version_prefix {
-            if !v.starts_with(prefix) {
-                v = format!("{prefix}{v}");
-                v_prefixed = v_prefixed.map(|v| format!("{prefix}{v}"));
-            }
+        if let Some(prefix) = &pkg.version_prefix
+            && !v.starts_with(prefix)
+        {
+            v = format!("{prefix}{v}");
+            v_prefixed = v_prefixed.map(|v| format!("{prefix}{v}"));
         }
         validate(&pkg)?;
 
@@ -247,7 +247,7 @@ impl Backend for AquaBackend {
 
 impl AquaBackend {
     pub fn from_arg(ba: BackendArg) -> Self {
-        let full = ba.full();
+        let full = ba.full_without_opts();
         let mut id = full.split_once(":").unwrap_or(("", &full)).1;
         if !id.contains("/") {
             id = REGISTRY
@@ -397,76 +397,76 @@ impl AquaBackend {
         let download_path = tv.download_path();
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        if platform_info.checksum.is_none() {
-            if let Some(checksum) = &pkg.checksum {
-                if checksum.enabled() {
-                    let url = match checksum._type() {
-                        AquaChecksumType::GithubRelease => {
-                            let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
-                            self.github_release_asset(pkg, v, asset_strs).await?.0
-                        }
-                        AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
-                    };
-                    let checksum_path = download_path.join(format!("{filename}.checksum"));
-                    HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
-                        .await?;
-                    self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
-                        .await?;
-                    let mut checksum_file = file::read_to_string(&checksum_path)?;
-                    if checksum.file_format() == "regexp" {
-                        let pattern = checksum.pattern();
-                        if let Some(file) = &pattern.file {
-                            let re = regex::Regex::new(file.as_str())?;
-                            if let Some(line) = checksum_file.lines().find(|l| {
-                                re.captures(l).is_some_and(|c| c[1].to_string() == filename)
-                            }) {
-                                checksum_file = line.to_string();
-                            } else {
-                                debug!(
-                                    "no line found matching {} in {} for {}",
-                                    file, checksum_file, filename
-                                );
-                            }
-                        }
-                        let re = regex::Regex::new(pattern.checksum.as_str())?;
-                        if let Some(caps) = re.captures(checksum_file.as_str()) {
-                            checksum_file = caps[1].to_string();
-                        } else {
-                            debug!(
-                                "no checksum found matching {} in {}",
-                                pattern.checksum, checksum_file
-                            );
-                        }
-                    }
-                    let checksum_str = checksum_file
+        if platform_info.checksum.is_none()
+            && let Some(checksum) = &pkg.checksum
+            && checksum.enabled()
+        {
+            let url = match checksum._type() {
+                AquaChecksumType::GithubRelease => {
+                    let asset_strs = checksum.asset_strs(pkg, v, os(), arch())?;
+                    self.github_release_asset(pkg, v, asset_strs).await?.0
+                }
+                AquaChecksumType::Http => checksum.url(pkg, v, os(), arch())?,
+            };
+            let checksum_path = download_path.join(format!("{filename}.checksum"));
+            HTTP.download_file(&url, &checksum_path, Some(ctx.pr.as_ref()))
+                .await?;
+            self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
+                .await?;
+            let mut checksum_file = file::read_to_string(&checksum_path)?;
+            if checksum.file_format() == "regexp" {
+                let pattern = checksum.pattern();
+                if let Some(file) = &pattern.file {
+                    let re = regex::Regex::new(file.as_str())?;
+                    if let Some(line) = checksum_file
                         .lines()
-                        .filter_map(|l| {
-                            let split = l.split_whitespace().collect_vec();
-                            if split.len() == 2 {
-                                Some((
-                                    split[0].to_string(),
-                                    split[1]
-                                        .rsplit_once('/')
-                                        .map(|(_, f)| f)
-                                        .unwrap_or(split[1])
-                                        .trim_matches('*')
-                                        .to_string(),
-                                ))
-                            } else {
-                                None
-                            }
-                        })
-                        .find(|(_, f)| f == filename)
-                        .map(|(c, _)| c)
-                        .unwrap_or(checksum_file);
-                    let checksum_str = checksum_str.split_whitespace().next().unwrap();
-                    let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
-                    // Now set the checksum after all borrows are done
-                    let platform_key = self.get_platform_key();
-                    let platform_info = tv.lock_platforms.get_mut(&platform_key).unwrap();
-                    platform_info.checksum = Some(checksum_val);
+                        .find(|l| re.captures(l).is_some_and(|c| c[1].to_string() == filename))
+                    {
+                        checksum_file = line.to_string();
+                    } else {
+                        debug!(
+                            "no line found matching {} in {} for {}",
+                            file, checksum_file, filename
+                        );
+                    }
+                }
+                let re = regex::Regex::new(pattern.checksum.as_str())?;
+                if let Some(caps) = re.captures(checksum_file.as_str()) {
+                    checksum_file = caps[1].to_string();
+                } else {
+                    debug!(
+                        "no checksum found matching {} in {}",
+                        pattern.checksum, checksum_file
+                    );
                 }
             }
+            let checksum_str = checksum_file
+                .lines()
+                .filter_map(|l| {
+                    let split = l.split_whitespace().collect_vec();
+                    if split.len() == 2 {
+                        Some((
+                            split[0].to_string(),
+                            split[1]
+                                .rsplit_once('/')
+                                .map(|(_, f)| f)
+                                .unwrap_or(split[1])
+                                .trim_matches('*')
+                                .to_string(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .find(|(_, f)| f == filename)
+                .map(|(c, _)| c)
+                .unwrap_or(checksum_file);
+            let checksum_str = checksum_str.split_whitespace().next().unwrap();
+            let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
+            // Now set the checksum after all borrows are done
+            let platform_key = self.get_platform_key();
+            let platform_info = tv.lock_platforms.get_mut(&platform_key).unwrap();
+            platform_info.checksum = Some(checksum_val);
         }
         let tarball_path = tv.download_path().join(filename);
         self.verify_checksum(ctx, tv, &tarball_path)?;
@@ -553,33 +553,35 @@ impl AquaBackend {
             ctx.pr.set_message("verify slsa".to_string());
 
             // Download the provenance file
-            let repo_owner = slsa
+            let mut slsa_pkg = pkg.clone();
+            slsa_pkg.repo_owner = slsa
                 .repo_owner
                 .clone()
                 .unwrap_or_else(|| pkg.repo_owner.clone());
-            let repo_name = slsa
+            slsa_pkg.repo_name = slsa
                 .repo_name
                 .clone()
                 .unwrap_or_else(|| pkg.repo_name.clone());
-            let repo = format!("{repo_owner}/{repo_name}");
 
             let provenance_path = match slsa.r#type.as_deref().unwrap_or_default() {
                 "github_release" => {
-                    let asset = slsa.asset(pkg, v, os(), arch())?;
-                    let url = github::get_release(&repo, v)
-                        .await?
-                        .assets
-                        .into_iter()
-                        .find(|a| a.name == asset)
-                        .map(|a| a.browser_download_url);
-                    if let Some(url) = url {
-                        let path = tv.download_path().join(asset);
-                        HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
-                            .await?;
-                        path
-                    } else {
-                        warn!("no asset found for slsa verification of {tv}: {asset}");
+                    let asset_strs = slsa.asset_strs(pkg, v, os(), arch())?;
+                    if asset_strs.is_empty() {
+                        warn!("no asset configured for slsa verification of {tv}");
                         return Ok(());
+                    }
+                    match self.github_release_asset(&slsa_pkg, v, asset_strs).await {
+                        Ok((url, _)) => {
+                            let asset_filename = get_filename_from_url(&url);
+                            let path = tv.download_path().join(asset_filename);
+                            HTTP.download_file(&url, &path, Some(ctx.pr.as_ref()))
+                                .await?;
+                            path
+                        }
+                        Err(e) => {
+                            warn!("no asset found for slsa verification of {tv}: {e}");
+                            return Ok(());
+                        }
                     }
                 }
                 "http" => {
@@ -728,7 +730,33 @@ impl AquaBackend {
             // Use native sigstore-verification crate
             if let Some(key) = &cosign.key {
                 // Key-based verification
-                let key_arg = key.arg(pkg, v, os(), arch())?;
+                let mut key_pkg = pkg.clone();
+                key_pkg.repo_owner = key
+                    .repo_owner
+                    .clone()
+                    .unwrap_or_else(|| pkg.repo_owner.clone());
+                key_pkg.repo_name = key
+                    .repo_name
+                    .clone()
+                    .unwrap_or_else(|| pkg.repo_name.clone());
+                let key_arg = match key.r#type.as_deref().unwrap_or_default() {
+                    "github_release" => {
+                        let asset_strs = key.asset_strs(pkg, v, os(), arch())?;
+                        if asset_strs.is_empty() {
+                            String::new()
+                        } else {
+                            self.github_release_asset(&key_pkg, v, asset_strs).await?.0
+                        }
+                    }
+                    "http" => key.url(pkg, v, os(), arch())?,
+                    t => {
+                        warn!(
+                            "unsupported cosign key type for {}/{}: {t}",
+                            pkg.repo_owner, pkg.repo_name
+                        );
+                        String::new()
+                    }
+                };
                 if !key_arg.is_empty() {
                     // Download or locate the public key
                     let key_path = if key_arg.starts_with("http") {
@@ -742,7 +770,33 @@ impl AquaBackend {
 
                     // Download signature if specified
                     let sig_path = if let Some(signature) = &cosign.signature {
-                        let sig_arg = signature.arg(pkg, v, os(), arch())?;
+                        let mut sig_pkg = pkg.clone();
+                        sig_pkg.repo_owner = signature
+                            .repo_owner
+                            .clone()
+                            .unwrap_or_else(|| pkg.repo_owner.clone());
+                        sig_pkg.repo_name = signature
+                            .repo_name
+                            .clone()
+                            .unwrap_or_else(|| pkg.repo_name.clone());
+                        let sig_arg = match signature.r#type.as_deref().unwrap_or_default() {
+                            "github_release" => {
+                                let asset_strs = signature.asset_strs(pkg, v, os(), arch())?;
+                                if asset_strs.is_empty() {
+                                    String::new()
+                                } else {
+                                    self.github_release_asset(&sig_pkg, v, asset_strs).await?.0
+                                }
+                            }
+                            "http" => signature.url(pkg, v, os(), arch())?,
+                            t => {
+                                warn!(
+                                    "unsupported cosign signature type for {}/{}: {t}",
+                                    pkg.repo_owner, pkg.repo_name
+                                );
+                                String::new()
+                            }
+                        };
                         if !sig_arg.is_empty() {
                             if sig_arg.starts_with("http") {
                                 let sig_path = download_path.join(get_filename_from_url(&sig_arg));
@@ -784,7 +838,35 @@ impl AquaBackend {
                 }
             } else if let Some(bundle) = &cosign.bundle {
                 // Bundle-based keyless verification
-                let bundle_arg = bundle.arg(pkg, v, os(), arch())?;
+                let mut bundle_pkg = pkg.clone();
+                bundle_pkg.repo_owner = bundle
+                    .repo_owner
+                    .clone()
+                    .unwrap_or_else(|| pkg.repo_owner.clone());
+                bundle_pkg.repo_name = bundle
+                    .repo_name
+                    .clone()
+                    .unwrap_or_else(|| pkg.repo_name.clone());
+                let bundle_arg = match bundle.r#type.as_deref().unwrap_or_default() {
+                    "github_release" => {
+                        let asset_strs = bundle.asset_strs(pkg, v, os(), arch())?;
+                        if asset_strs.is_empty() {
+                            String::new()
+                        } else {
+                            self.github_release_asset(&bundle_pkg, v, asset_strs)
+                                .await?
+                                .0
+                        }
+                    }
+                    "http" => bundle.url(pkg, v, os(), arch())?,
+                    t => {
+                        warn!(
+                            "unsupported cosign bundle type for {}/{}: {t}",
+                            pkg.repo_owner, pkg.repo_name
+                        );
+                        String::new()
+                    }
+                };
                 if !bundle_arg.is_empty() {
                     let bundle_path = if bundle_arg.starts_with("http") {
                         let bundle_path = download_path.join(get_filename_from_url(&bundle_arg));

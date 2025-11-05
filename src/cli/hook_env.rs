@@ -28,25 +28,25 @@ pub enum HookReason {
 #[derive(Debug, clap::Args)]
 #[clap(hide = true)]
 pub struct HookEnv {
-    /// Shell type to generate script for
-    #[clap(long, short)]
-    shell: Option<ShellType>,
-
     /// Skip early exit check
     #[clap(long, short)]
     force: bool,
-
-    /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
-    #[clap(long, hide = true)]
-    status: bool,
 
     /// Hide warnings such as when a tool is not installed
     #[clap(long, short)]
     quiet: bool,
 
+    /// Shell type to generate script for
+    #[clap(long, short)]
+    shell: Option<ShellType>,
+
     /// Reason for calling hook-env (e.g., "precmd", "chpwd")
     #[clap(long, hide = true)]
     reason: Option<HookReason>,
+
+    /// Show "mise: <PLUGIN>@<VERSION>" message when changing directories
+    #[clap(long, hide = true)]
+    status: bool,
 }
 
 impl HookEnv {
@@ -255,20 +255,20 @@ impl HookEnv {
                 if post.contains(p) {
                     return false;
                 }
-                if let Ok(canonical) = p.canonicalize() {
-                    if post_canonical.contains(&canonical) {
-                        return false;
-                    }
+                if let Ok(canonical) = p.canonicalize()
+                    && post_canonical.contains(&canonical)
+                {
+                    return false;
                 }
 
                 // Also filter against pre (user additions) to avoid duplicates
                 if pre_set.contains(p) {
                     return false;
                 }
-                if let Ok(canonical) = p.canonicalize() {
-                    if pre_canonical.contains(&canonical) {
-                        return false;
-                    }
+                if let Ok(canonical) = p.canonicalize()
+                    && pre_canonical.contains(&canonical)
+                {
+                    return false;
                 }
 
                 true
@@ -291,10 +291,10 @@ impl HookEnv {
                 if pre_set.contains(p) {
                     return false;
                 }
-                if let Ok(canonical) = p.canonicalize() {
-                    if pre_canonical.contains(&canonical) {
-                        return false;
-                    }
+                if let Ok(canonical) = p.canonicalize()
+                    && pre_canonical.contains(&canonical)
+                {
+                    return false;
                 }
                 true
             })

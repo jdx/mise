@@ -1,5 +1,61 @@
 # Changelog
 
+## [2025.11.2](https://github.com/jdx/mise/compare/v2025.11.1..v2025.11.2) - 2025-11-03
+
+### 📦 Registry
+
+- rename mise-haskell -> asdf-haskell by @jdx in [#6859](https://github.com/jdx/mise/pull/6859)
+
+### 🚀 Features
+
+- **(cli)** switch manpage generation from clap_mangen to usage by @jdx in [#6868](https://github.com/jdx/mise/pull/6868)
+- **(task)** add selective stream suppression for silent configuration by @jdx in [#6851](https://github.com/jdx/mise/pull/6851)
+
+### 🐛 Bug Fixes
+
+- **(backend)** support platform-specific bin and bin_path configuration by @dragoscirjan in [#6853](https://github.com/jdx/mise/pull/6853)
+- **(generate)** update git pre-commit script to use null separator by @azais-corentin in [#6874](https://github.com/jdx/mise/pull/6874)
+- **(stubs)** lookup for aqua tools stubs fails because of tool options by @roele in [#6867](https://github.com/jdx/mise/pull/6867)
+- **(task)** resolve aliases correctly for monorepo tasks by @jdx in [#6857](https://github.com/jdx/mise/pull/6857)
+- **(task)** prevent MISE_TASK_OUTPUT from propagating to nested tasks by @jdx in [#6860](https://github.com/jdx/mise/pull/6860)
+- **(tasks)** simplify task command display to show only first line by @jdx in [#6863](https://github.com/jdx/mise/pull/6863)
+- **(tasks)** implement smart flag routing for task arguments by @jdx in [#6861](https://github.com/jdx/mise/pull/6861)
+- **(xonsh)** prevent KeyError when activating in nested shells by @jdx in [#6856](https://github.com/jdx/mise/pull/6856)
+- Don't set empty env var if decryption fails with age.strict=false by @iamkroot in [#6847](https://github.com/jdx/mise/pull/6847)
+
+### 🚜 Refactor
+
+- **(task)** split run.rs into modular task execution pipeline by @jdx in [#6852](https://github.com/jdx/mise/pull/6852)
+
+### 📚 Documentation
+
+- **(cli)** integrate clap-sort to validate subcommand ordering by @jdx in [#6865](https://github.com/jdx/mise/pull/6865)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#6873](https://github.com/jdx/mise/pull/6873)
+
+### New Contributors
+
+- @dragoscirjan made their first contribution in [#6853](https://github.com/jdx/mise/pull/6853)
+
+## [2025.11.1](https://github.com/jdx/mise/compare/v2025.11.0..v2025.11.1) - 2025-11-01
+
+### 📦 Registry
+
+- Disable libsql-server on Windows by @jayvdb in [#6837](https://github.com/jdx/mise/pull/6837)
+- add infisical by @jdx in [#6845](https://github.com/jdx/mise/pull/6845)
+
+### 🚀 Features
+
+- **(age)** add strict mode for non-strict decryption mode by @iamkroot in [#6838](https://github.com/jdx/mise/pull/6838)
+- **(vfox)** add support for specifying attestation metadata in the preinstall return value by @malept in [#6839](https://github.com/jdx/mise/pull/6839)
+
+### 🐛 Bug Fixes
+
+- **(activate)** prevent hash table errors during deactivation by @jdx in [#6846](https://github.com/jdx/mise/pull/6846)
+- **(install)** error on non-existent tools in `mise install` by @jdx in [#6844](https://github.com/jdx/mise/pull/6844)
+
 ## [2025.11.0](https://github.com/jdx/mise/compare/v2025.10.21..v2025.11.0) - 2025-11-01
 
 ### 🐛 Bug Fixes

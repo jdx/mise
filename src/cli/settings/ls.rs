@@ -23,25 +23,25 @@ pub struct SettingsLs {
     #[clap(long, short)]
     all: bool,
 
-    /// Print all settings with descriptions for shell completions
-    #[clap(long, hide = true)]
-    complete: bool,
+    /// Output in JSON format
+    #[clap(long, short = 'J', group = "output")]
+    json: bool,
 
     /// Use the local config file instead of the global one
     #[clap(long, short, global = true)]
     pub local: bool,
 
-    /// Output in JSON format
-    #[clap(long, short = 'J', group = "output")]
-    json: bool,
+    /// Output in TOML format
+    #[clap(long, short = 'T', group = "output")]
+    toml: bool,
+
+    /// Print all settings with descriptions for shell completions
+    #[clap(long, hide = true)]
+    complete: bool,
 
     /// Output in JSON format with sources
     #[clap(long, group = "output")]
     json_extended: bool,
-
-    /// Output in TOML format
-    #[clap(long, short = 'T', group = "output")]
-    toml: bool,
 }
 
 fn settings_type_to_string(st: &SettingsType) -> String {
