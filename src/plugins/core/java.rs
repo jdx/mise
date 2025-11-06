@@ -22,6 +22,7 @@ use indoc::formatdoc;
 use itertools::Itertools;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::sync::LazyLock as Lazy;
 use versions::Versioning;
 use xx::regex;
@@ -295,16 +296,22 @@ impl Backend for JavaPlugin {
         &self.ba
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        // TODO: find out how to get this to work for different os/arch
-        // See https://github.com/jdx/mise/discussions/6738
-        // match self.core.fetch_remote_versions_from_mise() {
-        //     Ok(Some(versions)) => return Ok(versions),
-        //     Ok(None) => {}
-        //     Err(e) => warn!("failed to fetch remote versions: {}", e),
-        // }
+    async fn list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        self._list_remote_versions(config).await
+    }
+
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
+        let release_type = config
+            .get_tool_request_set()
+            .await?
+            .list_tools()
+            .iter()
+            .find(|ba| ba.short == "java")
+            .and_then(|ba| ba.opts().get("release_type").cloned())
+            .unwrap_or_else(|| "ga".to_string());
+
         let versions = self
-            .fetch_java_metadata("ga")
+            .fetch_java_metadata(&release_type)
             .await?
             .iter()
             .sorted_by_cached_key(|(v, m)| {
@@ -316,12 +323,28 @@ impl Backend for JavaPlugin {
                     .is_some_and(|image_type| image_type == "jdk");
                 let features = 10 - m.features.as_ref().map_or(0, |f| f.len());
                 let version = Versioning::new(v);
+                // Extract build suffix after a '+', '.' if present. If not present, treat as 0.
+                let build_num = v
+                    .rsplit_once('+')
+                    .or_else(|| v.rsplit_once('.'))
+                    .and_then(|(_, tail)| {
+                        // take leading digits of tail
+                        let digits: String =
+                            tail.chars().take_while(|c| c.is_ascii_digit()).collect();
+                        if digits.is_empty() {
+                            None
+                        } else {
+                            u64::from_str(&digits).ok()
+                        }
+                    })
+                    .unwrap_or(0u64);
                 (
                     is_shorthand,
                     vendor,
                     is_jdk,
                     features,
                     version,
+                    build_num,
                     v.to_string(),
                 )
             })
