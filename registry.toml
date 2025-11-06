@@ -1063,6 +1063,11 @@ backends = [
 ]
 description = "crictl is a command-line interface for CRI-compatible container runtimes. You can use it to inspect and debug container runtimes and applications on a Kubernetes node"
 
+[tools.croc]
+backends = ["aqua:schollz/croc", "ubi:schollz/croc"]
+description = "Easily and securely send things from one computer to another 🐊 📦"
+test = ["croc --version", "croc version v{{version}}"]
+
 [tools.crossplane]
 aliases = ["crossplane-cli"]
 backends = ["aqua:crossplane/crossplane", "asdf:joke/asdf-crossplane-cli"]
