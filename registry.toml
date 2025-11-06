@@ -1977,6 +1977,11 @@ description = "Quick and Easy server testing/validation"
 backends = ["aqua:gotestyourself/gotestsum", "asdf:pmalek/mise-gotestsum"]
 description = "'go test' runner with output optimized for humans, JUnit XML for CI integration, and a summary of the test results"
 
+[tools.gping]
+backends = ["aqua:orf/gping", "cargo:gping"]
+description = "Ping, but with a graph"
+test = ["gping --version", "gping {{version}}"]
+
 [tools.graalvm]
 backends = ["asdf:mise-plugins/mise-graalvm"]
 description = "An advanced JDK with ahead-of-time Native Image compilation"
@@ -3233,6 +3238,11 @@ description = "Netwide Assembler (NASM), an assembler for the x86 CPU architectu
 backends = ["aqua:denisidoro/navi", "ubi:denisidoro/navi", "cargo:navi"]
 description = "An interactive cheatsheet tool for the command-line"
 test = ["navi --version", "navi {{version}}"]
+
+[tools.ncdu]
+backends = ["aqua:dev.yorhel.nl/ncdu"]
+description = "Ncdu is a ncurses-based du viewer. It provides a fast and easy-to-use interface through famous du utility. It allows one to browse through the directories and show percentages of disk usage with ncurses library."
+test = ["ncdu --version", "ncdu {{version}}"]
 
 [tools.neko]
 backends = ["github:HaxeFoundation/neko", "asdf:asdf-community/asdf-neko"]
