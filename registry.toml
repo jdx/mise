@@ -3241,7 +3241,7 @@ test = ["navi --version", "navi {{version}}"]
 
 [tools.ncdu]
 backends = ["aqua:dev.yorhel.nl/ncdu"]
-description = "Ncdu is a ncurses-based du viewer. It provides a fast and easy-to-use interface through famous du utility. It allows one to browse through the directories and show percentages of disk usage with ncurses library."
+description = "A disk usage analyzer with an ncurses interface"
 test = ["ncdu --version", "ncdu {{version}}"]
 
 [tools.neko]
