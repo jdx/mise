@@ -3239,11 +3239,6 @@ backends = ["aqua:denisidoro/navi", "ubi:denisidoro/navi", "cargo:navi"]
 description = "An interactive cheatsheet tool for the command-line"
 test = ["navi --version", "navi {{version}}"]
 
-[tools.ncdu]
-backends = ["aqua:dev.yorhel.nl/ncdu"]
-description = "A disk usage analyzer with an ncurses interface"
-test = ["ncdu --version", "ncdu {{version}}"]
-
 [tools.neko]
 backends = ["github:HaxeFoundation/neko", "asdf:asdf-community/asdf-neko"]
 description = "The Neko Virtual Machine"
