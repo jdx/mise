@@ -1980,7 +1980,7 @@ description = "'go test' runner with output optimized for humans, JUnit XML for 
 [tools.gping]
 backends = ["aqua:orf/gping", "cargo:gping"]
 description = "Ping, but with a graph"
-test = ["gping --version", "gping {{version}}"]
+test = ["gping --version | sed 's/gping /gping-v/'", "{{version}}"]
 
 [tools.graalvm]
 backends = ["asdf:mise-plugins/mise-graalvm"]
