@@ -5045,6 +5045,11 @@ backends = [
 description = "Friendly and fast tool for sending HTTP requests"
 test = ["xh -V", "xh {{version}}"]
 
+[tools.xxh]
+backends = ["pipx:xxh-xxh"]
+description = "🚀 Bring your favorite shell wherever you go through the ssh. Xonsh shell, fish, zsh, osquery and so on."
+test = ["xxh --version", "xxh/{{version}}"]
+
 [tools.yadm]
 backends = ["asdf:mise-plugins/mise-yadm"]
 description = "Yet Another Dotfiles Manager"
