@@ -640,6 +640,7 @@ test = ["ccache --version", "ccache version {{version}}"]
 backends = [
   "aqua:pete911/certinfo",
   "ubi:pete911/certinfo",
+  "github:pete911/certinfo",
   "go:github.com/pete911/certinfo",
 ]
 description = "print x509 certificate info; handles chains, multiple files and TCP addresses."
