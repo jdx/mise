@@ -5029,6 +5029,12 @@ test = ["xcodes version", "{{version}}"]
 backends = ["asdf:mise-plugins/mise-xcresultparser"]
 description = "Parse the binary xcresult bundle from Xcode builds and testruns"
 
+[tools.xcsift]
+backends = ["ubi:ldomaradzki/xcsift"]
+description = "Swift tool to parse and format xcodebuild output for coding agents"
+os = ["macos"]
+test = ["xcsift --version", "{{version}}"]
+
 [tools.xh]
 backends = [
   "aqua:ducaale/xh",
