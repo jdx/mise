@@ -1096,7 +1096,9 @@ description = "The power of curl, the ease of use of httpie"
 test = ["curlie version", "curlie {{version}}"]
 
 [tools.cve-bin-tool]
-backends = ["pipx:cve-bin-tool[pipx_args=--include-deps,uvx_args=--with gsutil]"]
+backends = [
+  "pipx:cve-bin-tool[pipx_args=--include-deps,uvx_args=--with gsutil]",
+]
 description = "The CVE Binary Tool helps you determine if your system includes known vulnerabilities"
 test = ["cve-bin-tool --version", "{{version}}"]
 
