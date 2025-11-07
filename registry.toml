@@ -1095,6 +1095,11 @@ backends = ["aqua:rs/curlie"]
 description = "The power of curl, the ease of use of httpie"
 test = ["curlie version", "curlie {{version}}"]
 
+[tools.cve-bin-tool]
+backends = [{ full = "pipx:cve-bin-tool", pipx_args = "--include-deps", uvx_args = "--with gsutil"}]
+description = "The CVE Binary Tool helps you determine if your system includes known vulnerabilities"
+test = ["cve-bin-tool --version", "{{version}}"]
+
 [tools.cyclonedx]
 backends = ["aqua:CycloneDX/cyclonedx-cli", "asdf:xeedio/asdf-cyclonedx"]
 description = "CycloneDX CLI tool for SBOM analysis, merging, diffs and format conversions"
