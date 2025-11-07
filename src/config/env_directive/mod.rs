@@ -241,17 +241,12 @@ pub struct EnvResults {
     pub tool_add_paths: Vec<PathBuf>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum ToolsFilter {
     ToolsOnly,
+    #[default]
     NonToolsOnly,
     Both,
-}
-
-impl Default for ToolsFilter {
-    fn default() -> Self {
-        Self::NonToolsOnly
-    }
 }
 
 pub struct EnvResolveOptions {

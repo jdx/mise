@@ -7,7 +7,7 @@ use crate::toolset::{InstallOptions, ToolsetBuilder};
 use crate::ui::time;
 use crate::{dirs, env, file};
 use eyre::{Result, bail, eyre};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{collections::BTreeSet, sync::Arc};
 
 /// Test a tool installs and executes
@@ -228,7 +228,7 @@ impl TestTool {
             .which(config, &tv, cmd)
             .await?
             .unwrap_or(PathBuf::from(cmd));
-        if cfg!(windows) && which_cmd == PathBuf::from("which") {
+        if cfg!(windows) && which_cmd == Path::new("which") {
             which_cmd = PathBuf::from("where");
         }
         let cmd = format!("{} {}", which_cmd.display(), which_parts.join(" "));
