@@ -3020,6 +3020,11 @@ description = "Painless E2E Automation for Mobile and Web"
 backends = ["aqua:magefile/mage", "asdf:mathew-fleisch/asdf-mage"]
 description = "a Make/rake-like dev tool using Go"
 
+[tools.magika]
+backends = ["pipx:magika", "npm:magika"]
+description = "Fast and accurate AI powered file content types detection"
+test = ["magika --version", "magika {{version}}"]
+
 [tools.make]
 backends = ["asdf:mise-plugins/mise-make"]
 description = "GNU Make is a tool which controls the generation of executables and other non-source files of a program from the program's source files"
