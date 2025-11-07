@@ -37,6 +37,11 @@ size = 22437956
 version = "1.15.10"
 backend = "aqua:cargo-bins/cargo-binstall"
 
+[tools.cargo-binstall.platforms.linux-x64]
+checksum = "sha256:c4957cb4f2cb5ddafe02aa740e8719c6772534a0198ef6714f87e2d5dbfe81b1"
+size = 6767806
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.10/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+
 [tools.cargo-binstall.platforms.macos-arm64]
 checksum = "sha256:9aa40aca226028c4ec45637f060815d8899fb4e49fb6e97947280c83d34a82d8"
 size = 5958077
