@@ -72,18 +72,13 @@ version = "2.6.0"
 backend = "cargo:usage-cli"
 
 [[tools.gh]]
-version = "2.82.1"
+version = "2.83.0"
 backend = "aqua:cli/cli"
 
 [tools.gh.platforms.linux-x64]
-checksum = "sha256:afada88676dfccea384e6cc28ae990b3e31bbc55f9d75c4697f902c757fa462b"
-size = 18099610
-url = "https://github.com/cli/cli/releases/download/v2.82.1/gh_2.82.1_linux_amd64.tar.gz"
-
-[tools.gh.platforms.macos-arm64]
-checksum = "sha256:8cf015d101a5a43bbf662155d47ba6242bd1a1630c814e764254efa86e448ba7"
-size = 17577889
-url = "https://github.com/cli/cli/releases/download/v2.82.1/gh_2.82.1_macOS_arm64.zip"
+checksum = "sha256:a5cf6cdb40fc67751adf561126b3314044779cea81ba4f254fbe8e9a69f1676f"
+size = 18175244
+url = "https://github.com/cli/cli/releases/download/v2.83.0/gh_2.83.0_linux_amd64.tar.gz"
 
 [[tools.hk]]
 version = "1.20.0"
@@ -130,18 +125,13 @@ version = "3.6.2"
 backend = "npm:prettier"
 
 [[tools.pkl]]
-version = "0.29.1"
+version = "0.30.0"
 backend = "aqua:apple/pkl"
 
 [tools.pkl.platforms.linux-x64]
-checksum = "blake3:8b26122653f2b25453211286c68f96eb53373763dc743bf8ff6c2c80917848e2"
-size = 103994144
-url = "https://github.com/apple/pkl/releases/download/0.29.1/pkl-linux-amd64"
-
-[tools.pkl.platforms.macos-arm64]
-checksum = "blake3:5160399295c75f15f6b2b1e2925945a5d42a66793aa4eec821ab2dc60a5ae4ea"
-size = 104874656
-url = "https://github.com/apple/pkl/releases/download/0.29.1/pkl-macos-aarch64"
+checksum = "sha256:182a50a2c84bb002010ea45c8982c1e63b54e7e6a40e939bb5eb70beaad38cd7"
+size = 99355968
+url = "https://github.com/apple/pkl/releases/download/0.30.0/pkl-linux-amd64"
 
 [[tools.pre-commit]]
 version = "4.3.0"
