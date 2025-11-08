@@ -9,10 +9,17 @@
 
 name: mise
 title: mise-en-place
-version: "2025.11.2"
-summary: dev tools, env vars, task runner
+version: "2025.11.3"
+summary: The front-end to your dev env
 description: |
-  dev tools, env vars, task runner
+  mise-en-place is a command line tool to manage your development environment.
+
+  - Like asdf (or nvm or pyenv but for any language) it manages [dev tools](https://mise.jdx.dev/dev-tools/) like node, python, cmake, terraform, and [hundreds more](https://mise.jdx.dev/registry.html).
+  - Like direnv it manages [environment variables](https://mise.jdx.dev/environments/) for different project directories.
+  - Like make it manages [tasks](https://mise.jdx.dev/tasks/) used to build and test projects.
+
+  See the [documentation](https://mise.jdx.dev/getting-started.html) to learn more.
+
 license: MIT
 website: https://mise.jdx.dev
 source-code: https://github.com/jdx/mise.git

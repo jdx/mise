@@ -85,7 +85,7 @@ packages:
         format: raw
         supported_envs:
           - linux/amd64
-      - version_constraint: semver("<= 1.4.1") || true
+      - version_constraint: semver("<= 1.4.1") || semver(">= 2.0.0b10, <= 2.0.0b18") || Version == "2.0.0b9"
         asset: borg-{{.OS}}
         format: raw
         replacements:
@@ -93,4 +93,22 @@ packages:
           darwin: macos1012
         supported_envs:
           - linux/amd64
+          - darwin
+      - version_constraint: "true"
+        asset: borg-{{.OS}}-{{.Arch}}-gh
+        format: raw
+        replacements:
+          linux: linux-glibc235
+          amd64: x86_64
+        overrides:
+          - goos: darwin
+            goarch: amd64
+            replacements:
+              darwin: macos-13
+          - goos: darwin
+            goarch: arm64
+            replacements:
+              darwin: macos-14
+        supported_envs:
+          - linux
           - darwin
