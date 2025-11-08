@@ -636,16 +636,6 @@ backends = ["github:ccache/ccache", "asdf:asdf-community/asdf-ccache"]
 description = "ccache – a fast compiler cache"
 test = ["ccache --version", "ccache version {{version}}"]
 
-[tools.certinfo]
-backends = [
-  "aqua:pete911/certinfo",
-  "ubi:pete911/certinfo",
-  "github:pete911/certinfo",
-  "go:github.com/pete911/certinfo",
-]
-description = "print x509 certificate info; handles chains, multiple files and TCP addresses."
-test = ["certinfo --version | sed 's/^v//'", "{{version}}"]
-
 [tools.certstrap]
 backends = ["github:square/certstrap", "asdf:carnei-ro/asdf-certstrap"]
 description = "Tools to bootstrap CAs, certificate requests, and signed certificates"
