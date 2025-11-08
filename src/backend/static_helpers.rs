@@ -288,6 +288,43 @@ pub fn install_artifact(
 
         // Extract with determined strip_components
         file::untar(file_path, &install_path, &tar_opts)?;
+
+        // Handle bin option for archives - rename extracted executable if bin is specified
+        if let Some(bin_name) = opts.get("bin") {
+            // Find all executable files in the install directory
+            let extracted_files = file::recursive_ls(&install_path)?;
+            let executable_files: Vec<_> = extracted_files
+                .iter()
+                .filter(|path| file::is_executable(path))
+                .collect();
+
+            match executable_files.len() {
+                1 => {
+                    // Rename the single executable to the specified bin name
+                    let executable_path = &executable_files[0];
+                    let dest_path = install_path.join(bin_name);
+
+                    // Only rename if the current name is different from the target
+                    if executable_path.file_name() != Some(std::ffi::OsStr::new(bin_name)) {
+                        file::rename(executable_path, &dest_path)?;
+                        debug!(
+                            "Renamed extracted binary from {} to {}",
+                            executable_path.display(),
+                            dest_path.display()
+                        );
+                    }
+                }
+                0 => {
+                    debug!("No executable files found in archive to rename with bin option");
+                }
+                _ => {
+                    debug!(
+                        "Found multiple executable files in archive, cannot determine which to rename for bin option. Files: {:?}",
+                        executable_files
+                    );
+                }
+            }
+        }
     }
     Ok(())
 }
