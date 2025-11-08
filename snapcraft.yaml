@@ -12,7 +12,7 @@ title: mise-en-place
 version: "2025.11.3"
 summary: The front-end to your dev env
 description: |
-  mise-en-place is a command line tool to manage your development envioronment.
+  mise-en-place is a command line tool to manage your development environment.
 
   - Like asdf (or nvm or pyenv but for any language) it manages [dev tools](https://mise.jdx.dev/dev-tools/) like node, python, cmake, terraform, and [hundreds more](https://mise.jdx.dev/registry.html).
   - Like direnv it manages [environment variables](https://mise.jdx.dev/environments/) for different project directories.
