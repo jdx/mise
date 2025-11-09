@@ -305,7 +305,7 @@ pub fn install_artifact(
                     let dest_path = install_path.join(bin_name);
 
                     // Only rename if the current name is different from the target
-                    if executable_path.file_name() != Some(std::ffi::OsStr::new(bin_name)) {
+                    if executable_path.file_name().map(|n| n.to_string_lossy()) != Some(bin_name.to_string()) {
                         file::rename(executable_path, &dest_path)?;
                         debug!(
                             "Renamed extracted binary from {} to {}",
@@ -318,7 +318,7 @@ pub fn install_artifact(
                     debug!("No executable files found in archive to rename with bin option");
                 }
                 _ => {
-                    debug!(
+                    warn!(
                         "Found multiple executable files in archive, cannot determine which to rename for bin option. Files: {:?}",
                         executable_files
                     );
