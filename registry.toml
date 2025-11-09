@@ -1063,6 +1063,11 @@ backends = [
 ]
 description = "crictl is a command-line interface for CRI-compatible container runtimes. You can use it to inspect and debug container runtimes and applications on a Kubernetes node"
 
+[tools.croc]
+backends = ["aqua:schollz/croc", "ubi:schollz/croc"]
+description = "Easily and securely send things from one computer to another 🐊 📦"
+test = ["croc --version", "croc version v{{version}}"]
+
 [tools.crossplane]
 aliases = ["crossplane-cli"]
 backends = ["aqua:crossplane/crossplane", "asdf:joke/asdf-crossplane-cli"]
@@ -1976,6 +1981,16 @@ description = "Quick and Easy server testing/validation"
 [tools.gotestsum]
 backends = ["aqua:gotestyourself/gotestsum", "asdf:pmalek/mise-gotestsum"]
 description = "'go test' runner with output optimized for humans, JUnit XML for CI integration, and a summary of the test results"
+
+[tools.gping]
+backends = [
+  "aqua:orf/gping",
+  "ubi:orf/gping",
+  "github:orf/gping",
+  "cargo:gping",
+]
+description = "Ping, but with a graph"
+test = ["gping --version | sed 's/gping /gping-v/'", "{{version}}"]
 
 [tools.graalvm]
 backends = ["asdf:mise-plugins/mise-graalvm"]
@@ -4303,8 +4318,10 @@ test = ["starship --version", "starship {{version}}"]
 backends = [
   "aqua:dominikh/go-tools/staticcheck",
   "asdf:pbr0ck3r/asdf-staticcheck",
+  "go:honnef.co/go/tools/cmd/staticcheck",
 ]
 description = "Staticcheck - The advanced Go linter"
+test = ["staticcheck --version", "staticcheck {{version}}"]
 
 [tools.steampipe]
 backends = ["aqua:turbot/steampipe", "asdf:carnei-ro/asdf-steampipe"]
