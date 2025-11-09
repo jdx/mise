@@ -3011,6 +3011,11 @@ description = "Painless E2E Automation for Mobile and Web"
 backends = ["aqua:magefile/mage", "asdf:mathew-fleisch/asdf-mage"]
 description = "a Make/rake-like dev tool using Go"
 
+[tools.magika]
+backends = ["cargo:magika-cli"]
+description = "Fast and accurate AI powered file content types detection"
+test = ["magika --version", "magika {{version | trim_start_matches(pat='v')}}"]
+
 [tools.make]
 backends = ["asdf:mise-plugins/mise-make"]
 description = "GNU Make is a tool which controls the generation of executables and other non-source files of a program from the program's source files"
@@ -5044,6 +5049,11 @@ backends = [
 ]
 description = "Friendly and fast tool for sending HTTP requests"
 test = ["xh -V", "xh {{version}}"]
+
+[tools.xxh]
+backends = ["pipx:xxh-xxh"]
+description = "🚀 Bring your favorite shell wherever you go through the ssh. Xonsh shell, fish, zsh, osquery and so on."
+test = ["xxh --version", "xxh/{{version}}"]
 
 [tools.yadm]
 backends = ["asdf:mise-plugins/mise-yadm"]
