@@ -371,22 +371,21 @@ impl RubyPlugin {
             }
         };
 
-        let asset_name = self.get_prebuilt_asset_name(version);
-        for release in releases {
-            if release.tag_name == version || release.tag_name == format!("v{}", version) {
-                // Check if asset exists for this platform
-                for asset in &release.assets {
-                    if asset.name.contains(&asset_name) {
-                        trace!("Found prebuilt asset: {}", asset.name);
-                        return Ok(true);
-                    }
+        // rv-ruby publishes all versions in the latest release
+        // Check the latest release for an asset matching this version/platform
+        if let Some(latest_release) = releases.first() {
+            let asset_pattern = self.get_prebuilt_asset_name(version);
+            for asset in &latest_release.assets {
+                if asset.name.starts_with(&asset_pattern) {
+                    trace!("Found prebuilt asset: {}", asset.name);
+                    return Ok(true);
                 }
             }
         }
 
         trace!(
-            "No prebuilt asset found matching pattern: {}",
-            asset_name
+            "No prebuilt asset found for ruby@{} in latest rv-ruby release",
+            version
         );
         Ok(false)
     }
@@ -398,29 +397,26 @@ impl RubyPlugin {
         pr: &dyn SingleReport,
     ) -> Result<PathBuf> {
         let releases = self.fetch_rv_releases().await?;
-        let asset_name = self.get_prebuilt_asset_name(&tv.version);
+        let asset_pattern = self.get_prebuilt_asset_name(&tv.version);
 
-        // Find the release and asset
-        for release in releases {
-            if release.tag_name == tv.version || release.tag_name == format!("v{}", tv.version) {
-                for asset in &release.assets {
-                    if asset.name.contains(&asset_name) {
-                        pr.set_message(format!("downloading prebuilt ruby from rv-ruby"));
-                        let tarball_path = tv.download_path().join(&asset.name);
+        // rv-ruby publishes all versions in the latest release
+        if let Some(latest_release) = releases.first() {
+            for asset in &latest_release.assets {
+                if asset.name.starts_with(&asset_pattern) {
+                    pr.set_message(format!("downloading prebuilt ruby from rv-ruby"));
+                    let tarball_path = tv.download_path().join(&asset.name);
 
-                        HTTP.download_file(&asset.browser_download_url, &tarball_path, Some(pr))
-                            .await?;
+                    HTTP.download_file(&asset.browser_download_url, &tarball_path, Some(pr))
+                        .await?;
 
-                        return Ok(tarball_path);
-                    }
+                    return Ok(tarball_path);
                 }
             }
         }
 
         eyre::bail!(
-            "No prebuilt binary found for ruby@{} matching pattern: {}",
-            tv.version,
-            asset_name
+            "No prebuilt binary found for ruby@{} in latest rv-ruby release",
+            tv.version
         );
     }
 
@@ -428,28 +424,54 @@ impl RubyPlugin {
     fn install_prebuilt(&self, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
         let install_path = tv.install_path();
 
-        // Extract tarball using the standard untar function with auto-detection
-        file::untar(tarball_path, &install_path, &file::TarOptions::default())?;
+        // First extract to a temporary directory
+        let temp_extract = temp_dir().join(format!("mise-ruby-extract-{}", tv.version));
+        file::remove_all(&temp_extract)?;
+        file::create_dir_all(&temp_extract)?;
+
+        file::untar(tarball_path, &temp_extract, &file::TarOptions::default())?;
+
+        // rv-ruby tarballs have structure: rv-ruby@VERSION/VERSION/...
+        // Find the nested Ruby directory and move it to the install_path
+        let rv_dir = temp_extract.join(format!("rv-ruby@{}", tv.version)).join(&tv.version);
+
+        if !rv_dir.exists() {
+            eyre::bail!(
+                "Expected Ruby directory not found after extraction: {}",
+                rv_dir.display()
+            );
+        }
+
+        // Move the Ruby installation to the final location
+        file::remove_all(&install_path)?;
+        file::rename(&rv_dir, &install_path)?;
+
+        // Clean up temp directory
+        file::remove_all(&temp_extract)?;
 
         Ok(())
     }
 
     /// Generate the asset name pattern for this platform
+    /// rv-ruby uses formats like:
+    /// - macOS arm64: ruby-3.4.7.arm64_sonoma.tar.gz
+    /// - macOS x86_64: ruby-3.4.7.ventura.tar.gz
+    /// - Linux arm64: ruby-3.4.7.arm64_linux.tar.gz
+    /// - Linux x86_64: ruby-3.4.7.x86_64_linux.tar.gz
     fn get_prebuilt_asset_name(&self, version: &str) -> String {
         let settings = Settings::get();
         let os = settings.os();
-        let arch = self.rv_arch_name(settings.arch());
+        let arch = settings.arch();
 
-        format!("ruby-{}-{}-{}", version, os, arch)
-    }
+        let platform_suffix = match (os, arch) {
+            ("macos", "arm64") => "arm64_sonoma",
+            ("macos", "x64") => "ventura",
+            ("linux", "arm64") => "arm64_linux",
+            ("linux", "x64") => "x86_64_linux",
+            _ => return format!("ruby-{}.unsupported", version), // Won't match any asset
+        };
 
-    /// Map mise arch names to rv arch names
-    fn rv_arch_name<'a>(&self, arch: &'a str) -> &'a str {
-        match arch {
-            "arm64" => "aarch64",
-            "x64" => "x86_64",
-            _ => arch,
-        }
+        format!("ruby-{}.{}", version, platform_suffix)
     }
 
     /// Fetch rv-ruby releases from GitHub
