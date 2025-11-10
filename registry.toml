@@ -3963,6 +3963,12 @@ description = "Rocq: A trustworthy, industrial-strength interactive theorem prov
 backends = ["core:ruby"]
 description = "Ruby language"
 
+[tools.rv-ruby]
+backends = ["rv:ruby"]
+description = "Ruby via rv (fast precompiled installs)"
+test = ["ruby --version", "ruby {{version}}"]
+os = ["macos", "linux"]
+
 [tools.ruff]
 backends = [
   "aqua:astral-sh/ruff",
