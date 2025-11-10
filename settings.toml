@@ -1007,6 +1007,55 @@ description = "URL to fetch ruby-install from."
 env = "MISE_RUBY_INSTALL_REPO"
 type = "String"
 
+[ruby.rv_prebuilt_binaries]
+description = "Use prebuilt Ruby binaries from rv-ruby releases for faster installations."
+docs = """
+Use prebuilt Ruby binaries from rv-ruby releases when available.
+
+When enabled, mise will first attempt to download a prebuilt Ruby binary
+from https://github.com/spinel-coop/rv-ruby/releases. If no prebuilt binary
+is available for your platform/version, mise will automatically fall back
+to compiling from source using ruby-build or ruby-install.
+
+Benefits:
+- Significantly faster installations (~1 second vs minutes)
+- No build dependencies required
+- Consistent binaries across machines
+
+Requirements:
+- macOS (arm64/x86_64) or Linux (x86_64/aarch64)
+- Linux requires glibc 2.35+ (Ubuntu 22.04+, Fedora 36+, etc.)
+
+Example:
+```sh
+mise settings set ruby.rv_prebuilt_binaries true
+mise install ruby@3.4.5  # Uses prebuilt if available
+```
+"""
+env = "MISE_RUBY_RV_PREBUILT_BINARIES"
+type = "Bool"
+
+[ruby.rv_prebuilt_binaries_fallback_to_source]
+default = true
+description = "Fallback to compiling from source if prebuilt binary is not available."
+docs = """
+Control whether to fallback to compiling Ruby from source when prebuilt binaries
+are not available. Only applies when ruby.rv_prebuilt_binaries is enabled.
+
+When set to false, installation will fail if no prebuilt binary is found instead
+of falling back to compilation. This is useful for testing or when you want to
+ensure only prebuilt binaries are used (e.g., in CI).
+
+Example:
+```sh
+mise settings set ruby.rv_prebuilt_binaries true
+mise settings set ruby.rv_prebuilt_binaries_fallback_to_source false
+mise install ruby@3.4.5  # Fails if no prebuilt available
+```
+"""
+env = "MISE_RUBY_RV_PREBUILT_BINARIES_FALLBACK_TO_SOURCE"
+type = "Bool"
+
 [ruby.verbose_install]
 description = "Set to true to enable verbose output during ruby installation."
 env = "MISE_RUBY_VERBOSE_INSTALL"

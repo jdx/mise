@@ -17,7 +17,7 @@ use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, file, plugins, timeout};
 use async_trait::async_trait;
-use eyre::{Result, WrapErr};
+use eyre::{bail, Result, WrapErr};
 use itertools::Itertools;
 use xx::regex;
 
@@ -309,6 +309,155 @@ impl RubyPlugin {
         }
         Ok(patches.join("\n"))
     }
+
+    // ========== Prebuilt Binary Support (rv-ruby) ==========
+
+    /// Try to install using prebuilt binaries from rv-ruby releases
+    async fn try_prebuilt_install(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+    ) -> Result<Option<ToolVersion>> {
+        // Check if prebuilt is available for this version/platform
+        if !self.is_prebuilt_available(&tv.version).await? {
+            trace!(
+                "Prebuilt binary not available for ruby@{} on this platform",
+                tv.version
+            );
+            return Ok(None);
+        }
+
+        // Try to download the prebuilt binary
+        let tarball = match self.download_prebuilt(tv, ctx.pr.as_ref()).await {
+            Ok(path) => path,
+            Err(e) => {
+                debug!("Error downloading prebuilt ruby: {:#}", e);
+                return Ok(None); // Fall back to compilation
+            }
+        };
+
+        // Verify checksum and install
+        let mut tv_mut = tv.clone();
+        self.verify_checksum(ctx, &mut tv_mut, &tarball)?;
+        self.install_prebuilt(tv, &tarball)?;
+
+        Ok(Some(tv_mut))
+    }
+
+    /// Check if a prebuilt binary is available for this version and platform
+    async fn is_prebuilt_available(&self, version: &str) -> Result<bool> {
+        let settings = Settings::get();
+        let os = settings.os();
+        let arch = settings.arch();
+
+        // Only support macos and linux
+        if os != "macos" && os != "linux" {
+            trace!("Prebuilt binaries not available for OS: {}", os);
+            return Ok(false);
+        }
+
+        // Only support x86_64 and arm64
+        if arch != "x86_64" && arch != "arm64" {
+            trace!("Prebuilt binaries not available for arch: {}", arch);
+            return Ok(false);
+        }
+
+        // Fetch releases and check if this version exists
+        let releases = match self.fetch_rv_releases().await {
+            Ok(r) => r,
+            Err(e) => {
+                debug!("Error fetching rv-ruby releases: {:#}", e);
+                return Ok(false);
+            }
+        };
+
+        let asset_name = self.get_prebuilt_asset_name(version);
+        for release in releases {
+            if release.tag_name == version || release.tag_name == format!("v{}", version) {
+                // Check if asset exists for this platform
+                for asset in &release.assets {
+                    if asset.name.contains(&asset_name) {
+                        trace!("Found prebuilt asset: {}", asset.name);
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+
+        trace!(
+            "No prebuilt asset found matching pattern: {}",
+            asset_name
+        );
+        Ok(false)
+    }
+
+    /// Download prebuilt binary tarball
+    async fn download_prebuilt(
+        &self,
+        tv: &ToolVersion,
+        pr: &dyn SingleReport,
+    ) -> Result<PathBuf> {
+        let releases = self.fetch_rv_releases().await?;
+        let asset_name = self.get_prebuilt_asset_name(&tv.version);
+
+        // Find the release and asset
+        for release in releases {
+            if release.tag_name == tv.version || release.tag_name == format!("v{}", tv.version) {
+                for asset in &release.assets {
+                    if asset.name.contains(&asset_name) {
+                        pr.set_message(format!("downloading prebuilt ruby from rv-ruby"));
+                        let tarball_path = tv.download_path().join(&asset.name);
+
+                        HTTP.download_file(&asset.browser_download_url, &tarball_path, Some(pr))
+                            .await?;
+
+                        return Ok(tarball_path);
+                    }
+                }
+            }
+        }
+
+        eyre::bail!(
+            "No prebuilt binary found for ruby@{} matching pattern: {}",
+            tv.version,
+            asset_name
+        );
+    }
+
+    /// Install from prebuilt tarball
+    fn install_prebuilt(&self, tv: &ToolVersion, tarball_path: &Path) -> Result<()> {
+        let install_path = tv.install_path();
+
+        // Extract tarball using the standard untar function with auto-detection
+        file::untar(tarball_path, &install_path, &file::TarOptions::default())?;
+
+        Ok(())
+    }
+
+    /// Generate the asset name pattern for this platform
+    fn get_prebuilt_asset_name(&self, version: &str) -> String {
+        let settings = Settings::get();
+        let os = settings.os();
+        let arch = self.rv_arch_name(settings.arch());
+
+        format!("ruby-{}-{}-{}", version, os, arch)
+    }
+
+    /// Map mise arch names to rv arch names
+    fn rv_arch_name<'a>(&self, arch: &'a str) -> &'a str {
+        match arch {
+            "arm64" => "aarch64",
+            "x64" => "x86_64",
+            _ => arch,
+        }
+    }
+
+    /// Fetch rv-ruby releases from GitHub
+    async fn fetch_rv_releases(&self) -> Result<Vec<GithubRelease>> {
+        let url = "https://api.github.com/repos/spinel-coop/rv-ruby/releases";
+        let releases: Vec<GithubRelease> = HTTP_FETCH.json(url).await?;
+        Ok(releases)
+    }
 }
 
 #[async_trait]
@@ -359,6 +508,34 @@ impl Backend for RubyPlugin {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        // Try prebuilt binary installation if enabled
+        let settings = Settings::get();
+        if settings.ruby.rv_prebuilt_binaries {
+            ctx.pr.set_message("checking for prebuilt ruby".into());
+            if let Some(tv) = self.try_prebuilt_install(ctx, &tv).await? {
+                ctx.pr.set_message("installed prebuilt ruby".into());
+
+                // Still install rubygems hook and default gems
+                self.install_rubygems_hook(&tv)?;
+                if let Err(err) = self
+                    .install_default_gems(&ctx.config, &tv, ctx.pr.as_ref())
+                    .await
+                {
+                    warn!("failed to install default ruby gems {err:#}");
+                }
+                return Ok(tv);
+            }
+
+            // Check if fallback is disabled
+            if !settings.ruby.rv_prebuilt_binaries_fallback_to_source {
+                bail!("Prebuilt binary not available for ruby@{} and fallback to source compilation is disabled. Enable fallback with: mise settings set ruby.rv_prebuilt_binaries_fallback_to_source true", tv.version);
+            }
+
+            // Fall back to compilation
+            ctx.pr.set_message("prebuilt not available, compiling from source".into());
+        }
+
+        // Existing compilation logic
         if let Err(err) = self.update_build_tool(Some(ctx)).await {
             warn!("ruby build tool update error: {err:#}");
         }
