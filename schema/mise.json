@@ -982,6 +982,15 @@
               "description": "URL to fetch ruby-install from.",
               "type": "string"
             },
+            "rv_prebuilt_binaries": {
+              "description": "Use prebuilt Ruby binaries from rv-ruby releases for faster installations.",
+              "type": "boolean"
+            },
+            "rv_prebuilt_binaries_fallback_to_source": {
+              "default": true,
+              "description": "Fallback to compiling from source if prebuilt binary is not available.",
+              "type": "boolean"
+            },
             "verbose_install": {
               "description": "Set to true to enable verbose output during ruby installation.",
               "type": "boolean"

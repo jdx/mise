@@ -17,7 +17,7 @@ use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, file, plugins, timeout};
 use async_trait::async_trait;
-use eyre::{bail, Result, WrapErr};
+use eyre::{Result, WrapErr, bail};
 use itertools::Itertools;
 use xx::regex;
 
@@ -391,11 +391,7 @@ impl RubyPlugin {
     }
 
     /// Download prebuilt binary tarball
-    async fn download_prebuilt(
-        &self,
-        tv: &ToolVersion,
-        pr: &dyn SingleReport,
-    ) -> Result<PathBuf> {
+    async fn download_prebuilt(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let releases = self.fetch_rv_releases().await?;
         let asset_pattern = self.get_prebuilt_asset_name(&tv.version);
 
@@ -403,7 +399,7 @@ impl RubyPlugin {
         if let Some(latest_release) = releases.first() {
             for asset in &latest_release.assets {
                 if asset.name.starts_with(&asset_pattern) {
-                    pr.set_message(format!("downloading prebuilt ruby from rv-ruby"));
+                    pr.set_message("downloading prebuilt ruby from rv-ruby".to_string());
                     let tarball_path = tv.download_path().join(&asset.name);
 
                     HTTP.download_file(&asset.browser_download_url, &tarball_path, Some(pr))
@@ -433,7 +429,9 @@ impl RubyPlugin {
 
         // rv-ruby tarballs have structure: rv-ruby@VERSION/VERSION/...
         // Find the nested Ruby directory and move it to the install_path
-        let rv_dir = temp_extract.join(format!("rv-ruby@{}", tv.version)).join(&tv.version);
+        let rv_dir = temp_extract
+            .join(format!("rv-ruby@{}", tv.version))
+            .join(&tv.version);
 
         if !rv_dir.exists() {
             eyre::bail!(
@@ -550,11 +548,15 @@ impl Backend for RubyPlugin {
 
             // Check if fallback is disabled
             if !settings.ruby.rv_prebuilt_binaries_fallback_to_source {
-                bail!("Prebuilt binary not available for ruby@{} and fallback to source compilation is disabled. Enable fallback with: mise settings set ruby.rv_prebuilt_binaries_fallback_to_source true", tv.version);
+                bail!(
+                    "Prebuilt binary not available for ruby@{} and fallback to source compilation is disabled. Enable fallback with: mise settings set ruby.rv_prebuilt_binaries_fallback_to_source true",
+                    tv.version
+                );
             }
 
             // Fall back to compilation
-            ctx.pr.set_message("prebuilt not available, compiling from source".into());
+            ctx.pr
+                .set_message("prebuilt not available, compiling from source".into());
         }
 
         // Existing compilation logic
