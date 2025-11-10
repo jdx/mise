@@ -3966,8 +3966,8 @@ description = "Ruby language"
 [tools.rv-ruby]
 backends = ["rv:ruby"]
 description = "Ruby via rv (fast precompiled installs)"
-test = ["ruby --version", "ruby {{version}}"]
 os = ["macos", "linux"]
+test = ["ruby --version", "ruby {{version}}"]
 
 [tools.ruff]
 backends = [

@@ -55,7 +55,10 @@ impl Backend for RvBackend {
         let current_os = settings.os();
         let current_arch = settings.arch();
 
-        trace!("Listing rv ruby versions for OS={} ARCH={}", current_os, current_arch);
+        trace!(
+            "Listing rv ruby versions for OS={} ARCH={}",
+            current_os, current_arch
+        );
 
         // Run: rv ruby list --format json
         let output = cmd!("rv", "ruby", "list", "--format", "json").read()?;
@@ -76,7 +79,10 @@ impl Backend for RvBackend {
             .sorted_by_cached_key(|v| versions::Versioning::new(v))
             .collect();
 
-        trace!("Found {} rv ruby versions after filtering", filtered_versions.len());
+        trace!(
+            "Found {} rv ruby versions after filtering",
+            filtered_versions.len()
+        );
         Ok(filtered_versions)
     }
 
@@ -197,8 +203,7 @@ impl RvBackend {
     }
 
     fn rv_rubies_dir() -> PathBuf {
-        crate::dirs::HOME
-            .join(".rubies")
+        crate::dirs::HOME.join(".rubies")
     }
 
     fn rv_install_path(version: &str) -> PathBuf {
