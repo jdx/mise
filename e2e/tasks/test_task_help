@@ -16,12 +16,14 @@ assert_contains "mise --help 2>&1 || true" "Usage: mise [OPTIONS] [TASK] [COMMAN
 assert_contains "mise install --help 2>&1 || true" "Usage: mise install [OPTIONS] [TOOL@VERSION]..."
 assert_contains "mise run --help 2>&1 || true" "Usage: run [OPTIONS] [TASK] [ARGS]..."
 assert_contains "mise atask -- --help 2>&1 || true" "Usage: atask <myarg>"
-assert "mise run -q npm --help 2>&1 || true" "npm --help"
+# After the fix, --help always shows task help, not passed to task script
+assert_contains "mise run -q npm --help 2>&1 || true" "Usage: npm"
+# With --, --help is passed to the task script
 assert "mise -q npm -- --help 2>&1 || true" "npm --help"
 assert "mise atask -q -- -- --help 2>&1 || true" "--help"
 assert_contains "mise run atask -q -- --help 2>&1 || true" "Usage: atask <myarg>"
 assert_contains "mise run atask -q -- foo --help 2>&1 || true" "Usage: atask <myarg>"
 assert_contains "mise run atask -q foo --help 2>&1 || true" "Usage: atask <myarg>"
 assert_contains "mise atask -q -- foo --help 2>&1 || true" "Usage: atask <myarg>"
-# Global flags after task name are NOT supported in naked runs - must use explicit separator
-assert_fail "mise atask -q foo --help 2>&1"
+# After the fix, --help shows task help even with extra args
+assert_contains "mise atask -q foo --help 2>&1 || true" "Usage: atask <myarg>"

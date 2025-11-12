@@ -136,6 +136,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
 - [`mise tasks ls [FLAGS]`](/cli/tasks/ls.md)
 - [`mise tasks run [FLAGS] [TASK] [ARGS]…`](/cli/tasks/run.md)
+- [`mise tasks validate [--errors-only] [--json] [TASKS]…`](/cli/tasks/validate.md)
 - [`mise test-tool [FLAGS] [TOOLS]…`](/cli/test-tool.md)
 - [`mise tool [FLAGS] <TOOL>`](/cli/tool.md)
 - [`mise tool-stub <FILE> [ARGS]…`](/cli/tool-stub.md)

@@ -427,6 +427,9 @@ Run task(s)
 \fIAliases: \fRr
 .RE
 .TP
+\fBtasks validate\fR
+Validate tasks for common errors and issues
+.TP
 \fBtest\-tool\fR
 Test a tool installs and executes
 .TP
@@ -2366,6 +2369,25 @@ Arguments to pass to the tasks. Use ":::" to separate tasks
 .TP
 \fB<ARGS_LAST>\fR
 Arguments to pass to the tasks. Use ":::" to separate tasks
+.SH "MISE TASKS VALIDATE"
+Validate tasks for common errors and issues
+.PP
+\fBUsage:\fR mise tasks validate [OPTIONS] [<TASKS>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-\-errors\-only\fR
+Only show errors (skip warnings)
+.TP
+\fB\-\-json\fR
+Output validation results in JSON format
+\fBArguments:\fR
+.PP
+.TP
+\fB<TASKS>\fR
+Tasks to validate
+If not specified, validates all tasks
 .SH "MISE TEST-TOOL"
 Test a tool installs and executes
 .PP
