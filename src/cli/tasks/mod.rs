@@ -8,6 +8,7 @@ mod deps;
 mod edit;
 mod info;
 mod ls;
+mod validate;
 
 /// Manage tasks
 #[derive(clap::Args)]
@@ -31,6 +32,7 @@ enum Commands {
     Info(info::TasksInfo),
     Ls(ls::TasksLs),
     Run(Box<run::Run>),
+    Validate(validate::TasksValidate),
 }
 
 impl Commands {
@@ -42,6 +44,7 @@ impl Commands {
             Self::Info(cmd) => cmd.run().await,
             Self::Ls(cmd) => cmd.run().await,
             Self::Run(cmd) => (*cmd).run().await,
+            Self::Validate(cmd) => cmd.run().await,
         }
     }
 }
