@@ -325,17 +325,22 @@ impl TasksValidate {
             }
         }
 
-        // Check for conflicts
+        // Check for conflicts - only report once for the first task alphabetically
         for alias in &task.aliases {
             if let Some(tasks) = alias_map.get(alias) {
                 if tasks.len() > 1 {
-                    issues.push(ValidationIssue {
-                        task: task.name.clone(),
-                        severity: Severity::Error,
-                        category: "alias-conflict".to_string(),
-                        message: format!("Alias '{}' is used by multiple tasks", alias),
-                        details: Some(format!("Tasks: {}", tasks.join(", "))),
-                    });
+                    // Only report the conflict for the first task (alphabetically) to avoid duplicates
+                    let mut sorted_tasks = tasks.clone();
+                    sorted_tasks.sort();
+                    if sorted_tasks[0] == task.name {
+                        issues.push(ValidationIssue {
+                            task: task.name.clone(),
+                            severity: Severity::Error,
+                            category: "alias-conflict".to_string(),
+                            message: format!("Alias '{}' is used by multiple tasks", alias),
+                            details: Some(format!("Tasks: {}", tasks.join(", "))),
+                        });
+                    }
                 }
             }
 
@@ -372,9 +377,7 @@ impl TasksValidate {
                     severity: Severity::Warning,
                     category: "not-executable".to_string(),
                     message: format!("Task file is not executable: {}", file::display_path(file)),
-                    details: Some(
-                        "Consider making the file executable or setting 'hide=false'".to_string(),
-                    ),
+                    details: Some(format!("Run: chmod +x {}", file::display_path(file))),
                 });
             }
         }

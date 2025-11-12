@@ -66,7 +66,7 @@ EOF
 
 assert_contains "mise task validate" "✓ All 3 task(s) validated successfully"
 
-# Test duplicate aliases
+# Test duplicate aliases (should only report once, not for each task)
 cat <<EOF >mise.toml
 [tasks.task1]
 run = "echo 1"
@@ -79,6 +79,9 @@ EOF
 
 assert_contains "mise task validate 2>&1 || true" "Alias 'myalias' is used by multiple tasks"
 assert_contains "mise task validate 2>&1 || true" "alias-conflict"
+# Verify the error is only reported once (not duplicated for each task)
+error_count=$(mise task validate 2>&1 | grep -c "Alias 'myalias' is used by multiple tasks" || true)
+[ "$error_count" = "1" ] || (echo "Expected 1 alias conflict error, got $error_count" && exit 1)
 
 # Test empty task
 cat <<EOF >mise.toml
