@@ -358,5 +358,6 @@ See [autocompletion](/installing-mise.html#autocompletion) to learn how to set u
 Many tools in mise require the use of the GitHub API. Unauthenticated requests to the GitHub API are
 often rate limited. If you see 4xx errors while using mise, you can set `MISE_GITHUB_TOKEN` or `GITHUB_TOKEN`
 to a token [generated from here](https://github.com/settings/tokens/new?description=MISE_GITHUB_TOKEN) which
-will likely fix the issue. The token does not require any scopes.
+will likely fix the issue. The token does not require any scopes, and you can run `mise github-token` to be guided
+through creating and saving it as `MISE_GITHUB_TOKEN` so it will not overwrite an existing `GITHUB_TOKEN`.
 :::

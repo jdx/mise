@@ -160,8 +160,8 @@ fn show_github_rate_limit_err(err: &Report) {
         );
         if env::GITHUB_TOKEN.is_none() {
             warn!(indoc!(
-                r#"GITHUB_TOKEN is not set. This means mise is making unauthenticated requests to GitHub which have a lower rate limit.
-                   Run `mise github-token` to set up a GitHub token and increase your rate limit.
+                r#"MISE_GITHUB_TOKEN (preferred) or GITHUB_TOKEN is not set. This means mise is making unauthenticated requests to GitHub which have a lower rate limit.
+                   Run `mise github-token` to create a scope-less token stored as MISE_GITHUB_TOKEN, so it will not interfere with other tools that expect GITHUB_TOKEN.
                    You do not need to give this token any scopes."#
             ));
         }

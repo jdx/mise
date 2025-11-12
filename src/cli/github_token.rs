@@ -161,4 +161,4 @@ The token will be available when mise is activated in your shell.
 );
 
 const TOKEN_COMMENT_SUFFIX: &str =
-    " # GitHub token for API rate limits (no scopes required - safe to store)";
+    " # MISE_GITHUB_TOKEN for API rate limits (no scopes required - safe to store)";

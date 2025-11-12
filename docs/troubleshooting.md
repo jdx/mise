@@ -170,6 +170,8 @@ use any of the following (in order of preference):
 - `GITHUB_TOKEN`
 - `GITHUB_API_TOKEN`
 
+Running `mise github-token` will walk you through creating the token and saving it as `MISE_GITHUB_TOKEN` without overwriting any existing `GITHUB_TOKEN` that other tools might rely on.
+
 ## Auto-install on command not found handler does not work for new tools
 
 If you are expecting mise to automatically install a tool when you run a command that is not found (using the [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) feature), be aware of an important limitation:
