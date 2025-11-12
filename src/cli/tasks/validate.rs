@@ -328,20 +328,21 @@ impl TasksValidate {
         // Check for conflicts - only report once for the first task alphabetically
         for alias in &task.aliases {
             if let Some(tasks) = alias_map.get(alias)
-                && tasks.len() > 1 {
-                    // Only report the conflict for the first task (alphabetically) to avoid duplicates
-                    let mut sorted_tasks = tasks.clone();
-                    sorted_tasks.sort();
-                    if sorted_tasks[0] == task.name {
-                        issues.push(ValidationIssue {
-                            task: task.name.clone(),
-                            severity: Severity::Error,
-                            category: "alias-conflict".to_string(),
-                            message: format!("Alias '{}' is used by multiple tasks", alias),
-                            details: Some(format!("Tasks: {}", tasks.join(", "))),
-                        });
-                    }
+                && tasks.len() > 1
+            {
+                // Only report the conflict for the first task (alphabetically) to avoid duplicates
+                let mut sorted_tasks = tasks.clone();
+                sorted_tasks.sort();
+                if sorted_tasks[0] == task.name {
+                    issues.push(ValidationIssue {
+                        task: task.name.clone(),
+                        severity: Severity::Error,
+                        category: "alias-conflict".to_string(),
+                        message: format!("Alias '{}' is used by multiple tasks", alias),
+                        details: Some(format!("Tasks: {}", tasks.join(", "))),
+                    });
                 }
+            }
 
             // Check if alias conflicts with a task name
             if all_tasks.contains_key(alias) {
@@ -394,18 +395,19 @@ impl TasksValidate {
                 match task.dir(config).await {
                     Ok(rendered_dir) => {
                         if let Some(rendered) = rendered_dir
-                            && !rendered.exists() {
-                                issues.push(ValidationIssue {
-                                    task: task.name.clone(),
-                                    severity: Severity::Warning,
-                                    category: "missing-directory".to_string(),
-                                    message: format!(
-                                        "Task directory does not exist: {}",
-                                        file::display_path(&rendered)
-                                    ),
-                                    details: Some(format!("Template: {}", dir)),
-                                });
-                            }
+                            && !rendered.exists()
+                        {
+                            issues.push(ValidationIssue {
+                                task: task.name.clone(),
+                                severity: Severity::Warning,
+                                category: "missing-directory".to_string(),
+                                message: format!(
+                                    "Task directory does not exist: {}",
+                                    file::display_path(&rendered)
+                                ),
+                                details: Some(format!("Template: {}", dir)),
+                            });
+                        }
                     }
                     Err(e) => {
                         issues.push(ValidationIssue {
