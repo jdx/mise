@@ -291,11 +291,13 @@ pub fn install_artifact(
 
         // Handle bin option for archives - rename extracted executable if bin is specified
         if let Some(bin_name) = opts.get("bin") {
-            // Find all executable files in the install directory
-            let extracted_files = file::recursive_ls(&install_path)?;
-            let executable_files: Vec<_> = extracted_files
+            // Only look for executables in the root directory (not recursively)
+            // This avoids picking up libraries and other files in subdirectories
+            let root_files = file::ls(&install_path)?;
+            let executable_files: Vec<_> = root_files
                 .iter()
-                .filter(|path| file::is_executable(path))
+                .filter(|path| path.is_file() && file::is_executable(path))
+                .cloned()
                 .collect();
 
             match executable_files.len() {
@@ -305,7 +307,7 @@ pub fn install_artifact(
                     let dest_path = install_path.join(bin_name);
 
                     // Only rename if the current name is different from the target
-                    if executable_path.file_name().map(|n| n.to_string_lossy()) != Some(bin_name.to_string()) {
+                    if executable_path.file_name().and_then(|n| n.to_str()) != Some(bin_name) {
                         file::rename(executable_path, &dest_path)?;
                         debug!(
                             "Renamed extracted binary from {} to {}",
@@ -315,13 +317,10 @@ pub fn install_artifact(
                     }
                 }
                 0 => {
-                    debug!("No executable files found in archive to rename with bin option");
+                    return Err(eyre::eyre!("No executable files found in archive to rename with bin option"));
                 }
                 _ => {
-                    warn!(
-                        "Found multiple executable files in archive, cannot determine which to rename for bin option. Files: {:?}",
-                        executable_files
-                    );
+                    return Err(eyre::eyre!("Found multiple executable files in archive, cannot determine which to rename for bin option. Files: {:?}", executable_files));
                 }
             }
         }

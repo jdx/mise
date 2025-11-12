@@ -153,6 +153,10 @@ bin = "docker-compose"  # Rename the downloaded binary to docker-compose
 When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `docker-compose-linux-x86_64` becomes `docker-compose` automatically. Use the `bin` option only when you need a specific custom name.
 :::
 
+::: tip
+When using `bin` with archives, mise only looks for executables in the root directory of the extracted archive. This avoids picking up libraries and other files in subdirectories.
+:::
+
 ### `bin_path`
 
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with `{name}`, `{version}`, `{os}`, `{arch}`, and `{ext}`:

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# Test GitHub backend bin parameter functionality
+# Tests scenarios:
+# 1. Archive with executable in root directory (like yt-dlp) - should work
+# 2. Single binary (not archive) with bin parameter - should work
+
+set -euo pipefail
+
+# Test 1: Archive with executable in root directory (like yt-dlp) - should work
+# yt-dlp is packaged as a zip file with the main executable in the root directory
+# The code only looks for executables in the root directory, avoiding libraries in subdirectories
+echo "=== Test 1: Archive with executable in root directory (yt-dlp) and bin parameter ==="
+cat <<EOF >mise.toml
+[tools]
+"github:yt-dlp/yt-dlp" = { version = "2025.11.12", bin = "yt-dlp" }
+EOF
+
+mise install -f github:yt-dlp/yt-dlp
+# Verify the binary is renamed correctly
+assert_succeed "mise x github:yt-dlp/yt-dlp -- yt-dlp --version"
+
+mise uninstall github:yt-dlp/yt-dlp
+
+# Test 2: Single binary (not archive) with bin parameter
+echo "=== Test 2: Single binary (not archive) with bin parameter ==="
+cat <<EOF >mise.toml
+[tools]
+"github:jdx/mise-test-fixtures" = { version = "1.0.0", asset_pattern = "hello-world", bin = "my-hello" }
+EOF
+
+mise install -f github:jdx/mise-test-fixtures
+assert_succeed "mise x github:jdx/mise-test-fixtures -- my-hello"
+assert_contains "mise x github:jdx/mise-test-fixtures -- my-hello" "hello world"
+
+mise uninstall github:jdx/mise-test-fixtures
+
+echo "All bin parameter tests completed"
+
