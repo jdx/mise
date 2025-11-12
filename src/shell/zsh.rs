@@ -6,24 +6,33 @@ use indoc::formatdoc;
 
 use crate::config::Settings;
 use crate::shell::bash::Bash;
-use crate::shell::{ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
 pub struct Zsh {}
+
+impl Zsh {}
 
 impl Shell for Zsh {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
+
         let exe = exe.to_string_lossy();
         let mut out = String::new();
+
+        out.push_str(&shell::build_deactivation_script(self));
+
         out.push_str(&self.format_activate_prelude(&opts.prelude));
 
         // much of this is from direnv
         // https://github.com/direnv/direnv/blob/cb5222442cb9804b1574954999f6073cc636eff0/internal/cmd/shell_zsh.go#L10-L22
         out.push_str(&formatdoc! {r#"
             export MISE_SHELL=zsh
-            export __MISE_ORIG_PATH="$PATH"
+            if [ -z "${{__MISE_ORIG_PATH:-}}" ]; then
+              export __MISE_ORIG_PATH="$PATH"
+            fi
+            export __MISE_ZSH_PRECMD_RUN=0
 
             mise() {{
               local command
@@ -53,13 +62,19 @@ impl Shell for Zsh {
             _mise_hook() {{
               eval "$({exe} hook-env{flags} -s zsh)";
             }}
+            _mise_hook_precmd() {{
+              eval "$({exe} hook-env{flags} -s zsh --reason precmd)";
+            }}
+            _mise_hook_chpwd() {{
+              eval "$({exe} hook-env{flags} -s zsh --reason chpwd)";
+            }}
             typeset -ag precmd_functions;
-            if [[ -z "${{precmd_functions[(r)_mise_hook]+1}}" ]]; then
-              precmd_functions=( _mise_hook ${{precmd_functions[@]}} )
+            if [[ -z "${{precmd_functions[(r)_mise_hook_precmd]+1}}" ]]; then
+              precmd_functions=( _mise_hook_precmd ${{precmd_functions[@]}} )
             fi
             typeset -ag chpwd_functions;
-            if [[ -z "${{chpwd_functions[(r)_mise_hook]+1}}" ]]; then
-              chpwd_functions=( _mise_hook ${{chpwd_functions[@]}} )
+            if [[ -z "${{chpwd_functions[(r)_mise_hook_chpwd]+1}}" ]]; then
+              chpwd_functions=( _mise_hook_chpwd ${{chpwd_functions[@]}} )
             fi
 
             _mise_hook
@@ -69,48 +84,18 @@ impl Shell for Zsh {
             out.push_str(&formatdoc! {r#"
             if [ -z "${{_mise_cmd_not_found:-}}" ]; then
                 _mise_cmd_not_found=1
-                # preserve existing handler if present
-                if typeset -f command_not_found_handler >/dev/null; then
-                    functions -c command_not_found_handler _command_not_found_handler
-                fi
+                [ -n "$(declare -f command_not_found_handler)" ] && eval "${{$(declare -f command_not_found_handler)/command_not_found_handler/_command_not_found_handler}}"
 
-                typeset -gA _mise_cnf_tried
-
-                # helper for fallback behavior
-                _mise_fallback() {{
-                    local _cmd="$1"; shift
-                    if typeset -f _command_not_found_handler >/dev/null; then
-                        _command_not_found_handler "$_cmd" "$@"
-                        return $?
+                function command_not_found_handler() {{
+                    if [[ "$1" != "mise" && "$1" != "mise-"* ]] && {exe} hook-not-found -s zsh -- "$1"; then
+                      _mise_hook
+                      "$@"
+                    elif [ -n "$(declare -f _command_not_found_handler)" ]; then
+                        _command_not_found_handler "$@"
                     else
-                        print -u2 -- "zsh: command not found: $_cmd"
+                        echo "zsh: command not found: $1" >&2
                         return 127
                     fi
-                }}
-
-                command_not_found_handler() {{
-                    local cmd="$1"; shift
-
-                    # never intercept mise itself or retry already-attempted commands
-                    if [[ "$cmd" == "mise" || "$cmd" == mise-* || -n "${{_mise_cnf_tried["$cmd"]}}" ]]; then
-                        _mise_fallback "$cmd" "$@"
-                        return $?
-                    fi
-
-                    # run the hook; only retry if the command is actually found afterward
-                    if {exe} hook-not-found -s zsh -- "$cmd"; then
-                        _mise_hook
-                        if command -v -- "$cmd" >/dev/null 2>&1; then
-                            "$cmd" "$@"
-                            return $?
-                        fi
-                    else
-                        # only mark as tried if mise explicitly can't handle it
-                        _mise_cnf_tried["$cmd"]=1
-                    fi
-
-                    # fall back
-                    _mise_fallback "$cmd" "$@"
                 }}
             fi
             "#});
@@ -121,13 +106,16 @@ impl Shell for Zsh {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-        precmd_functions=( ${{precmd_functions:#_mise_hook}} )
-        chpwd_functions=( ${{chpwd_functions:#_mise_hook}} )
-        unset -f _mise_hook
-        unset -f mise
+        precmd_functions=( ${{precmd_functions:#_mise_hook_precmd}} )
+        chpwd_functions=( ${{chpwd_functions:#_mise_hook_chpwd}} )
+        (( $+functions[_mise_hook_precmd] )) && unset -f _mise_hook_precmd
+        (( $+functions[_mise_hook_chpwd] )) && unset -f _mise_hook_chpwd
+        (( $+functions[_mise_hook] )) && unset -f _mise_hook
+        (( $+functions[mise] )) && unset -f mise
         unset MISE_SHELL
         unset __MISE_DIFF
         unset __MISE_SESSION
+        unset __MISE_ZSH_PRECMD_RUN
         "#}
     }
 
@@ -162,6 +150,12 @@ mod tests {
 
     #[test]
     fn test_activate() {
+        // Unset __MISE_ORIG_PATH to avoid PATH restoration logic in output
+        unsafe {
+            std::env::remove_var("__MISE_ORIG_PATH");
+            std::env::remove_var("__MISE_DIFF");
+        }
+
         let zsh = Zsh::default();
         let exe = Path::new("/some/dir/mise");
         let opts = ActivateOptions {

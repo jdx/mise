@@ -238,7 +238,7 @@ fn find_tool_version(
     tool_name: &str,
 ) -> Option<crate::toolset::ToolVersion> {
     for (_backend, tv) in toolset.list_current_installed_versions(config) {
-        if tv.ba().full() == tool_name {
+        if tv.ba().short == tool_name {
             return Some(tv);
         }
     }

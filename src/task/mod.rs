@@ -16,7 +16,7 @@ use globset::GlobBuilder;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use petgraph::prelude::*;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -33,14 +33,29 @@ use xx::regex;
 static FUZZY_MATCHER: Lazy<SkimMatcherV2> =
     Lazy::new(|| SkimMatcherV2::default().use_cache(true).smart_case());
 
+/// Type alias for tracking failed tasks with their exit codes
+pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
+
 mod deps;
+pub mod task_context_builder;
 mod task_dep;
+pub mod task_executor;
+pub mod task_fetcher;
 pub mod task_file_providers;
+pub mod task_helpers;
+pub mod task_list;
 mod task_load_context;
+pub mod task_output;
+pub mod task_output_handler;
+pub mod task_results_display;
+pub mod task_scheduler;
 mod task_script_parser;
+pub mod task_source_checker;
 pub mod task_sources;
+pub mod task_tool_installer;
 
 pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax};
+pub use task_output::TaskOutput;
 
 use crate::config::config_file::ConfigFile;
 use crate::env_diff::EnvMap;
@@ -60,6 +75,109 @@ pub enum RunEntry {
     SingleTask { task: String },
     /// Run multiple tasks in parallel
     TaskGroup { tasks: Vec<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub enum Silent {
+    #[default]
+    Off,
+    Bool(bool),
+    Stdout,
+    Stderr,
+}
+
+impl Silent {
+    pub fn is_silent(&self) -> bool {
+        matches!(self, Silent::Bool(true) | Silent::Stdout | Silent::Stderr)
+    }
+
+    pub fn suppresses_stdout(&self) -> bool {
+        matches!(self, Silent::Bool(true) | Silent::Stdout)
+    }
+
+    pub fn suppresses_stderr(&self) -> bool {
+        matches!(self, Silent::Bool(true) | Silent::Stderr)
+    }
+
+    pub fn suppresses_both(&self) -> bool {
+        matches!(self, Silent::Bool(true))
+    }
+}
+
+impl Serialize for Silent {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Silent::Off | Silent::Bool(false) => serializer.serialize_bool(false),
+            Silent::Bool(true) => serializer.serialize_bool(true),
+            Silent::Stdout => serializer.serialize_str("stdout"),
+            Silent::Stderr => serializer.serialize_str("stderr"),
+        }
+    }
+}
+
+impl From<bool> for Silent {
+    fn from(b: bool) -> Self {
+        if b { Silent::Bool(true) } else { Silent::Off }
+    }
+}
+
+impl std::str::FromStr for Silent {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "true" => Ok(Silent::Bool(true)),
+            "false" => Ok(Silent::Off),
+            "stdout" => Ok(Silent::Stdout),
+            "stderr" => Ok(Silent::Stderr),
+            _ => Err(format!(
+                "invalid silent value: {}, expected true, false, 'stdout', or 'stderr'",
+                s
+            )),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Silent {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct SilentVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for SilentVisitor {
+            type Value = Silent;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a boolean or a string ('stdout' or 'stderr')")
+            }
+
+            fn visit_bool<E>(self, value: bool) -> Result<Silent, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Silent::from(value))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Silent, E>
+            where
+                E: serde::de::Error,
+            {
+                match value {
+                    "stdout" => Ok(Silent::Stdout),
+                    "stderr" => Ok(Silent::Stderr),
+                    _ => Err(E::custom(format!(
+                        "invalid silent value: '{}', expected 'stdout' or 'stderr'",
+                        value
+                    ))),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(SilentVisitor)
+    }
 }
 
 impl std::str::FromStr for RunEntry {
@@ -123,7 +241,7 @@ pub struct Task {
     #[serde(default)]
     pub quiet: bool,
     #[serde(default)]
-    pub silent: bool,
+    pub silent: Silent,
     #[serde(default)]
     pub tools: IndexMap<String, String>,
     #[serde(default)]
@@ -233,7 +351,13 @@ impl Task {
         task.file = Some(path.to_path_buf());
         task.shell = p.parse_str("shell");
         task.quiet = p.parse_bool("quiet").unwrap_or_default();
-        task.silent = p.parse_bool("silent").unwrap_or_default();
+        task.silent = info
+            .get("silent")
+            .and_then(|v| {
+                // Try to deserialize as Silent enum (handles bool, "stdout", "stderr")
+                Silent::deserialize(v.clone()).ok()
+            })
+            .unwrap_or_default();
         task.tools = p
             .parse_table("tools")
             .map(|t| {
@@ -354,13 +478,14 @@ impl Task {
     }
 
     pub fn all_depends(&self, tasks: &BTreeMap<String, Task>) -> Result<Vec<Task>> {
+        let tasks_ref = build_task_ref_map(tasks.iter());
         let mut path = vec![self.name.clone()];
-        self.all_depends_recursive(tasks, &mut path)
+        self.all_depends_recursive(&tasks_ref, &mut path)
     }
 
     fn all_depends_recursive(
         &self,
-        tasks: &BTreeMap<String, Task>,
+        tasks: &BTreeMap<String, &Task>,
         path: &mut Vec<String>,
     ) -> Result<Vec<Task>> {
         let mut depends: Vec<Task> = self
@@ -403,6 +528,7 @@ impl Task {
         let tasks_to_run: HashSet<&Task> = tasks_to_run.iter().collect();
 
         // Build context with path hints from self, tasks_to_run, and dependency patterns
+        // Resolve patterns before extracting paths to handle local deps (e.g., ":A")
         let path_hints: Vec<String> = once(&self.name)
             .chain(tasks_to_run.iter().map(|t| &t.name))
             .filter_map(|name| extract_monorepo_path(name))
@@ -411,7 +537,8 @@ impl Task {
                     .iter()
                     .chain(self.wait_for.iter())
                     .chain(self.depends_post.iter())
-                    .filter_map(|td| extract_monorepo_path(&td.task)),
+                    .map(|td| resolve_task_pattern(&td.task, Some(self)))
+                    .filter_map(|resolved| extract_monorepo_path(&resolved)),
             )
             .unique()
             .collect();
@@ -426,16 +553,7 @@ impl Task {
         };
 
         let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
-        let tasks: BTreeMap<String, Task> = all_tasks
-            .iter()
-            .flat_map(|(_, t)| {
-                t.aliases
-                    .iter()
-                    .map(|a| (a.to_string(), t.clone()))
-                    .chain(once((t.name.clone(), t.clone())))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+        let tasks = build_task_ref_map(all_tasks.iter());
         let depends = self
             .depends
             .iter()
@@ -778,37 +896,79 @@ fn name_from_path(prefix: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<St
 
 /// Extract monorepo path from a task name
 /// e.g., "//projects/frontend:test" -> Some("projects/frontend")
+/// e.g., "//projects/frontend:test:nested" -> Some("projects/frontend")
 /// Returns None if the task name doesn't have monorepo syntax
 pub(crate) fn extract_monorepo_path(name: &str) -> Option<String> {
-    if name.starts_with("//") {
-        name.rsplit_once(':')
-            .map(|x| x.0)
-            .and_then(|s| s.strip_prefix("//"))
-            .map(|s| s.to_string())
-    } else {
-        None
-    }
+    name.strip_prefix("//").and_then(|stripped| {
+        // Find the FIRST colon after "//" prefix to handle task names with colons like "do:item-1"
+        stripped.find(':').map(|idx| stripped[..idx].to_string())
+    })
+}
+
+/// Build a map of task names and aliases to task references
+/// For monorepo tasks, creates entries for both prefixed and unprefixed aliases
+/// e.g., task "//:format" with alias "fmt" creates both "//:fmt" and "fmt"
+pub(crate) fn build_task_ref_map<'a, I>(tasks: I) -> BTreeMap<String, &'a Task>
+where
+    I: Iterator<Item = (&'a String, &'a Task)> + 'a,
+{
+    tasks
+        .flat_map(|(_, t)| {
+            t.aliases
+                .iter()
+                .flat_map(|a| {
+                    // For monorepo tasks, create entries for both prefixed and unprefixed aliases
+                    // This allows references like "fmt" to resolve to "//:format"
+                    if let Some(path) = extract_monorepo_path(&t.name) {
+                        vec![(format!("//{}:{}", path, a), t), (a.to_string(), t)]
+                    } else {
+                        // Non-monorepo task, use alias as-is
+                        vec![(a.to_string(), t)]
+                    }
+                })
+                .chain(once((t.name.clone(), t)))
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// Resolve a task dependency pattern, optionally relative to a parent task
 /// If pattern starts with ":" and parent_task is provided, resolve relative to parent's path
 /// For example: parent "//projects/frontend:test" with pattern ":build" -> "//projects/frontend:build"
-fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) -> String {
-    // If pattern starts with ":" and we have a parent task, resolve relatively
-    if pattern.starts_with(':') && !pattern.starts_with("::") {
-        if let Some(parent) = parent_task {
-            // Extract the path portion from the parent task name
-            // For monorepo tasks like "//projects/frontend:test", extract "//projects/frontend"
-            if let Some((path, _)) = parent.name.rsplit_once(':') {
-                return format!("{}{}", path, pattern);
+pub(crate) fn resolve_task_pattern(pattern: &str, parent_task: Option<&Task>) -> String {
+    // Check if this is a bare task name that should be treated as relative
+    let is_bare_name =
+        !pattern.starts_with("//") && !pattern.starts_with("::") && !pattern.starts_with(':');
+
+    // If pattern starts with ":" or is a bare name in monorepo context, resolve relatively
+    let should_resolve_relatively = pattern.starts_with(':') && !pattern.starts_with("::")
+        || (is_bare_name && parent_task.is_some_and(|p| p.name.starts_with("//")));
+
+    if should_resolve_relatively && let Some(parent) = parent_task {
+        // Extract the path portion from the parent task name
+        // For monorepo tasks like "//projects/frontend:test:nested", we need to extract "//projects/frontend"
+        // by finding the FIRST colon after the "//" prefix, not the last one
+        if let Some(stripped) = parent.name.strip_prefix("//") {
+            // Find the first colon after "//" prefix
+            if let Some(colon_idx) = stripped.find(':') {
+                let path = format!("//{}", &stripped[..colon_idx]);
+                // If pattern is a bare name, add the colon prefix
+                return if is_bare_name {
+                    format!("{}:{}", path, pattern)
+                } else {
+                    format!("{}{}", path, pattern)
+                };
             }
+        } else if let Some((path, _)) = parent.name.rsplit_once(':') {
+            // For non-monorepo tasks, use the old logic
+            return format!("{}{}", path, pattern);
         }
     }
     pattern.to_string()
 }
 
 fn match_tasks_with_context(
-    tasks: &BTreeMap<String, Task>,
+    tasks: &BTreeMap<String, &Task>,
     td: &TaskDep,
     parent_task: Option<&Task>,
 ) -> Result<Vec<Task>> {
@@ -817,7 +977,7 @@ fn match_tasks_with_context(
         .get_matching(&resolved_pattern)?
         .into_iter()
         .map(|t| {
-            let mut t = t.clone();
+            let mut t = (*t).clone();
             t.args = td.args.clone();
             t
         })
@@ -876,7 +1036,7 @@ impl Default for Task {
             sources: vec![],
             outputs: Default::default(),
             shell: None,
-            silent: false,
+            silent: Silent::Off,
             run: vec![],
             run_windows: vec![],
             args: vec![],
@@ -1334,18 +1494,24 @@ echo "hello world"
             "//projects/backend:build"
         );
 
-        // Test 4: Simple task name without parent context
-        assert_eq!(resolve_task_pattern("build", Some(&parent_task)), "build");
+        // Test 4: Simple task name with monorepo parent should resolve relatively (NEW BEHAVIOR)
+        assert_eq!(
+            resolve_task_pattern("build", Some(&parent_task)),
+            "//projects/frontend:build"
+        );
 
         // Test 5: Relative pattern without parent task (no resolution)
         assert_eq!(resolve_task_pattern(":build", None), ":build");
 
-        // Test 6: Non-monorepo task (no colon in parent name)
+        // Test 6: Non-monorepo task - colon pattern should not resolve
         let parent_task = Task {
             name: "test".to_string(),
             ..Default::default()
         };
         assert_eq!(resolve_task_pattern(":build", Some(&parent_task)), ":build");
+
+        // Test 6a: Non-monorepo task - bare name should not resolve
+        assert_eq!(resolve_task_pattern("build", Some(&parent_task)), "build");
 
         // Test 7: Root monorepo task (empty path)
         let parent_task = Task {
@@ -1385,6 +1551,118 @@ echo "hello world"
         assert_eq!(
             resolve_task_pattern(":dep", Some(&parent_task)),
             "//a/b/c/d:dep"
+        );
+
+        // Test 11: Task name with colon (e.g., "do:item-1")
+        // This is the bug that was fixed - we need to split on the FIRST colon after //
+        let parent_task = Task {
+            name: "//submodule:do:item-1".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern(":before", Some(&parent_task)),
+            "//submodule:before"
+        );
+
+        // Test 12: Another task name with multiple colons
+        let parent_task = Task {
+            name: "//project:test:unit:fast".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern(":setup", Some(&parent_task)),
+            "//project:setup"
+        );
+
+        // Test 13: Bare name without parent task (no resolution)
+        assert_eq!(resolve_task_pattern("build", None), "build");
+
+        // Test 14: Bare name with different monorepo parent
+        let parent_task = Task {
+            name: "//libs/shared:lint".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern("compile", Some(&parent_task)),
+            "//libs/shared:compile"
+        );
+
+        // Test 15: Bare name with root monorepo task
+        let parent_task = Task {
+            name: "//:root-task".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern("other", Some(&parent_task)),
+            "//:other"
+        );
+
+        // Test 16: Bare name with task containing colons
+        let parent_task = Task {
+            name: "//submodule:do:item-1".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern("before", Some(&parent_task)),
+            "//submodule:before"
+        );
+
+        // Test 17: Absolute path should not be modified even with monorepo parent
+        let parent_task = Task {
+            name: "//projects/frontend:test".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_task_pattern("//other/module:task", Some(&parent_task)),
+            "//other/module:task"
+        );
+
+        // Test 18: Global task (::) should not be modified
+        assert_eq!(
+            resolve_task_pattern("::global", Some(&parent_task)),
+            "::global"
+        );
+    }
+
+    #[test]
+    fn test_extract_monorepo_path() {
+        use super::extract_monorepo_path;
+
+        // Test 1: Simple monorepo task
+        assert_eq!(
+            extract_monorepo_path("//projects/frontend:test"),
+            Some("projects/frontend".to_string())
+        );
+
+        // Test 2: Root level task
+        assert_eq!(extract_monorepo_path("//:root-task"), Some("".to_string()));
+
+        // Test 3: Deep nested path
+        assert_eq!(
+            extract_monorepo_path("//a/b/c/d:task"),
+            Some("a/b/c/d".to_string())
+        );
+
+        // Test 4: Non-monorepo task (no // prefix)
+        assert_eq!(extract_monorepo_path("regular-task"), None);
+
+        // Test 5: Task name with colon (e.g., "do:item-1")
+        // This was the bug - we need to extract based on FIRST colon after //
+        assert_eq!(
+            extract_monorepo_path("//submodule:do:item-1"),
+            Some("submodule".to_string())
+        );
+
+        // Test 6: Multiple colons in task name
+        assert_eq!(
+            extract_monorepo_path("//project:test:unit:fast"),
+            Some("project".to_string())
+        );
+
+        // Test 7: Complex path with colons in task name
+        assert_eq!(
+            extract_monorepo_path("//apps/backend:build:prod"),
+            Some("apps/backend".to_string())
         );
     }
 

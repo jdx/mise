@@ -195,7 +195,8 @@ impl ProgressReport {
         ui::ctrlc::show_cursor_after_ctrl_c();
         // Footer shows text inside the progress bar with custom overlay rendering
         let pb = ProgressBar::new(length).with_style(FOOTER_TEMPLATE.clone());
-        pb.enable_steady_tick(TICK_INTERVAL);
+        // Don't enable steady tick for footer - it doesn't use a spinner template
+        // and the tick causes unnecessary redraws
 
         // Don't set initial message here - it will be set after adding to MultiProgress
         // to prevent ghost output before the bar is part of the managed display
@@ -229,50 +230,50 @@ impl ProgressReport {
 
     fn update_terminal_progress(&self) {
         // Map progress bar position to allocated range to prevent backwards progress
-        if let Some(report_id) = self.report_id {
-            if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
-                // Check if we're spinning (no length set yet)
-                if self.pb.length().is_none() {
-                    // During spinning, report minimal progress to show activity
-                    progress_trace!(
-                        "update_terminal_progress[{}]: spinning, reporting 1%",
-                        report_id
-                    );
-                    mpr.update_report_progress(report_id, 10_000, 1_000_000); // 1%
-                    return;
-                }
-
-                let base = *self.operation_base.lock().unwrap();
-                let allocated_length = *self.operation_length.lock().unwrap();
-
-                // Get progress bar state (position/length in bytes)
-                let pb_pos = self.pb.position();
-                let pb_len = self.pb.length().unwrap(); // Safe because we checked above
-
-                // Calculate progress as 0.0-1.0
-                let pb_progress = if pb_len > 0 {
-                    (pb_pos as f64 / pb_len as f64).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-
-                // Map to allocated range (base to base+allocated_length)
-                let mapped_position = base + (pb_progress * allocated_length as f64) as u64;
-
+        if let Some(report_id) = self.report_id
+            && let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get()
+        {
+            // Check if we're spinning (no length set yet)
+            if self.pb.length().is_none() {
+                // During spinning, report minimal progress to show activity
                 progress_trace!(
-                    "update_terminal_progress[{}]: pb=({}/{}) {:.1}%, base={}, alloc={}, mapped={}",
-                    report_id,
-                    pb_pos,
-                    pb_len,
-                    pb_progress * 100.0,
-                    base,
-                    allocated_length,
-                    mapped_position
+                    "update_terminal_progress[{}]: spinning, reporting 1%",
+                    report_id
                 );
-
-                // Always report against fixed 1,000,000 scale
-                mpr.update_report_progress(report_id, mapped_position, 1_000_000);
+                mpr.update_report_progress(report_id, 10_000, 1_000_000); // 1%
+                return;
             }
+
+            let base = *self.operation_base.lock().unwrap();
+            let allocated_length = *self.operation_length.lock().unwrap();
+
+            // Get progress bar state (position/length in bytes)
+            let pb_pos = self.pb.position();
+            let pb_len = self.pb.length().unwrap(); // Safe because we checked above
+
+            // Calculate progress as 0.0-1.0
+            let pb_progress = if pb_len > 0 {
+                (pb_pos as f64 / pb_len as f64).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+
+            // Map to allocated range (base to base+allocated_length)
+            let mapped_position = base + (pb_progress * allocated_length as f64) as u64;
+
+            progress_trace!(
+                "update_terminal_progress[{}]: pb=({}/{}) {:.1}%, base={}, alloc={}, mapped={}",
+                report_id,
+                pb_pos,
+                pb_len,
+                pb_progress * 100.0,
+                base,
+                allocated_length,
+                mapped_position
+            );
+
+            // Always report against fixed 1,000,000 scale
+            mpr.update_report_progress(report_id, mapped_position, 1_000_000);
         }
     }
 }
@@ -333,10 +334,10 @@ impl SingleReport for ProgressReport {
             );
 
             // Report completion of previous operation
-            if let Some(report_id) = self.report_id {
-                if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
-                    mpr.update_report_progress(report_id, completed_position, 1_000_000);
-                }
+            if let Some(report_id) = self.report_id
+                && let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get()
+            {
+                mpr.update_report_progress(report_id, completed_position, 1_000_000);
             }
 
             // New operation starts where previous ended
@@ -391,11 +392,11 @@ impl SingleReport for ProgressReport {
             self.pb.finish_and_clear();
         }
         // Mark this report as complete (100%) using fixed 0-1,000,000 range
-        if let Some(report_id) = self.report_id {
-            if let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get() {
-                progress_trace!("finish_with_icon[{}]: marking as 100% complete", report_id);
-                mpr.update_report_progress(report_id, 1_000_000, 1_000_000);
-            }
+        if let Some(report_id) = self.report_id
+            && let Some(mpr) = ui::multi_progress_report::MultiProgressReport::try_get()
+        {
+            progress_trace!("finish_with_icon[{}]: marking as 100% complete", report_id);
+            mpr.update_report_progress(report_id, 1_000_000, 1_000_000);
         }
     }
 

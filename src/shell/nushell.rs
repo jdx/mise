@@ -4,7 +4,7 @@ use std::fmt::Display;
 
 use indoc::formatdoc;
 
-use crate::shell::{ActivateOptions, ActivatePrelude, Shell};
+use crate::shell::{self, ActivateOptions, ActivatePrelude, Shell};
 use itertools::Itertools;
 
 #[derive(Default)]
@@ -51,6 +51,8 @@ impl Shell for Nushell {
         let exe = exe.to_string_lossy().replace('\\', r#"\\"#);
 
         let mut out = String::new();
+
+        out.push_str(&shell::build_deactivation_script(self));
         let inline_prelude = self.format_activate_prelude_inline(&opts.prelude);
         out.push_str(&formatdoc! {r#"
           export-env {{

@@ -294,6 +294,7 @@ pub static MISE_PID: Lazy<String> = Lazy::new(|| process::id().to_string());
 pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
 pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
 pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
+pub static __MISE_ZSH_PRECMD_RUN: Lazy<bool> = Lazy::new(|| !var_is_false("__MISE_ZSH_PRECMD_RUN"));
 pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
 pub static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
@@ -302,9 +303,9 @@ pub static WARN_ON_MISSING_REQUIRED_ENV: Lazy<bool> =
     Lazy::new(|| warn_on_missing_required_env(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
 pub static PRISTINE_ENV: Lazy<EnvMap> =
-    Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars().collect()));
+    Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars_safe().collect()));
 pub static PATH_KEY: Lazy<String> = Lazy::new(|| {
-    vars()
+    vars_safe()
         .map(|(k, _)| k)
         .find_or_first(|k| k.to_uppercase() == "PATH")
         .map(|k| k.to_string())
@@ -349,6 +350,11 @@ pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
 
 /// Disable color output - https://no-color.org/
 pub static NO_COLOR: Lazy<bool> = Lazy::new(|| var("NO_COLOR").is_ok_and(|v| !v.is_empty()));
+
+// Terminal detection
+pub static TERM_PROGRAM: Lazy<Option<String>> = Lazy::new(|| var("TERM_PROGRAM").ok());
+pub static WT_SESSION: Lazy<bool> = Lazy::new(|| var("WT_SESSION").is_ok());
+pub static VTE_VERSION: Lazy<bool> = Lazy::new(|| var("VTE_VERSION").is_ok());
 
 // python
 pub static PYENV_ROOT: Lazy<PathBuf> =
@@ -420,7 +426,7 @@ pub const PATH_ENV_SEP: char = ':';
 pub const PATH_ENV_SEP: char = ';';
 
 fn get_env_diff() -> EnvDiff {
-    let env = vars().collect::<HashMap<_, _>>();
+    let env = vars_safe().collect::<HashMap<_, _>>();
     match env.get("__MISE_DIFF") {
         Some(raw) => EnvDiff::deserialize(raw).unwrap_or_else(|err| {
             warn!("Failed to deserialize __MISE_DIFF: {:#}", err);
@@ -652,6 +658,17 @@ pub fn remove_var<K: AsRef<OsStr>>(key: K) {
     unsafe {
         std::env::remove_var(key);
     }
+}
+
+/// Safe wrapper around std::env::vars() that handles invalid UTF-8 gracefully.
+/// This function uses vars_os() and converts OsString to String, skipping any
+/// environment variables that contain invalid UTF-8 sequences.
+pub fn vars_safe() -> impl Iterator<Item = (String, String)> {
+    vars_os().filter_map(|(k, v)| {
+        let k_str = k.to_str()?;
+        let v_str = v.to_str()?;
+        Some((k_str.to_string(), v_str.to_string()))
+    })
 }
 
 pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {

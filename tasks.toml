@@ -23,7 +23,7 @@ depends = ['lint:*']
 [build]
 alias = "b"
 run = "cargo build --all-features"
-run_windows = "cargo build --features clap_mangen"
+run_windows = "cargo build"
 description = "Build the project"
 #sources = ["Cargo.*", "src/**/*.rs"]
 #outputs = ["target/debug/mise"]
@@ -31,24 +31,20 @@ description = "Build the project"
 [docs]
 description = 'Start the documentation development server'
 depends = ['docs:setup']
-dir = "docs"
 run = "bun run docs:dev"
 
 ["docs:setup"]
 description = 'Install documentation dependencies'
-dir = "docs"
-run = ["cd .. && bun i", "bun i"]
+run = "bun i"
 
 ["docs:build"]
 description = 'Build the documentation site'
 depends = ["docs:setup"]
-dir = "docs"
 run = "bun run docs:build"
 
 ["docs:preview"]
 description = 'Preview the documentation site'
 depends = ["docs:build"]
-dir = "docs"
 run = "bun run docs:preview"
 
 ["docs:demos"]
@@ -99,9 +95,9 @@ mise completion fish > completions/mise.fish
 
 ["render:mangen"]
 description = 'Generate man pages'
-depends = ["build"]
+depends = ["render:usage"]
 env = { NO_COLOR = "1" }
-run = "mise render-mangen"
+run = "usage generate manpage --file mise.usage.kdl > man/man1/mise.1"
 
 ["render:fig"]
 description = 'Generate Fig completion spec'

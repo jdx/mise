@@ -1,5 +1,5 @@
 use crate::backend::backend_type::BackendType;
-use crate::backend::static_helpers::try_with_v_prefix;
+use crate::backend::static_helpers::{lookup_platform_key, try_with_v_prefix};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::env::{
@@ -51,7 +51,6 @@ impl Backend for UbiBackend {
                 None => match forge {
                     ForgeType::GitHub => github::API_URL,
                     ForgeType::GitLab => gitlab::API_URL,
-                    _ => bail!("Unsupported forge type {:?}", forge),
                 },
             };
             let tag_regex = OnceLock::new();
@@ -66,7 +65,6 @@ impl Backend for UbiBackend {
                     .into_iter()
                     .map(|r| r.tag_name)
                     .collect::<Vec<String>>(),
-                _ => bail!("Unsupported forge type {:?}", forge),
             };
             if versions.is_empty() {
                 match forge {
@@ -82,7 +80,6 @@ impl Backend for UbiBackend {
                             .into_iter()
                             .collect();
                     }
-                    _ => bail!("Unsupported forge type {:?}", forge),
                 }
             }
 
@@ -114,9 +111,8 @@ impl Backend for UbiBackend {
     ) -> eyre::Result<ToolVersion> {
         let v = tv.version.to_string();
         let opts = tv.request.options();
-        let bin_path = opts
-            .get("bin_path")
-            .cloned()
+        let bin_path = lookup_platform_key(&opts, "bin_path")
+            .or_else(|| opts.get("bin_path").cloned())
             .unwrap_or_else(|| "bin".to_string());
         let extract_all = opts.get("extract_all").is_some_and(|v| v == "true");
         let bin_dir = tv.install_path();
@@ -243,9 +239,11 @@ impl Backend for UbiBackend {
         tv: &ToolVersion,
     ) -> eyre::Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
-        if let Some(bin_path) = opts.get("bin_path") {
+        if let Some(bin_path) =
+            lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+        {
             // bin_path should always point to a directory containing binaries
-            Ok(vec![tv.install_path().join(bin_path)])
+            Ok(vec![tv.install_path().join(&bin_path)])
         } else if opts.get("extract_all").is_some_and(|v| v == "true") {
             Ok(vec![tv.install_path()])
         } else {
@@ -283,7 +281,6 @@ fn set_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> UbiBuilder<'
             }
             builder
         }
-        _ => builder,
     }
 }
 
@@ -301,7 +298,6 @@ fn set_enterprise_token<'a>(mut builder: UbiBuilder<'a>, forge: &ForgeType) -> U
             }
             builder
         }
-        _ => builder,
     }
 }
 
@@ -345,11 +341,12 @@ async fn install(
     builder = builder.forge(forge.clone());
     builder = set_token(builder, &forge);
 
-    if let Some(api_url) = opts.get("api_url") {
-        if !api_url.contains("github.com") && !api_url.contains("gitlab.com") {
-            builder = builder.api_base_url(api_url.strip_suffix("/").unwrap_or(api_url));
-            builder = set_enterprise_token(builder, &forge);
-        }
+    if let Some(api_url) = opts.get("api_url")
+        && !api_url.contains("github.com")
+        && !api_url.contains("gitlab.com")
+    {
+        builder = builder.api_base_url(api_url.strip_suffix("/").unwrap_or(api_url));
+        builder = set_enterprise_token(builder, &forge);
     }
 
     let mut ubi = builder.build().map_err(|e| eyre::eyre!(e))?;

@@ -30,10 +30,9 @@ jobs:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
         with:
           fetch-depth: 0 # for lastUpdated
-      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+      - uses: jdx/mise-action@e3d7b8d67a7958d1207f6ed871e83b1ea780e7b0 # v3
         with:
           install_args: bun
-          cache: true
       - run: mise x wait-for-gh-rate-limit -- wait-for-gh-rate-limit
       - run: bun i
       - run: mise run docs:release

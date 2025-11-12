@@ -17,13 +17,13 @@ pub struct CachePrune {
     /// e.g.: node, python
     plugin: Option<Vec<String>>,
 
-    /// Just show what would be pruned
-    #[clap(long)]
-    dry_run: bool,
-
     /// Show pruned files
     #[clap(long, short, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Just show what would be pruned
+    #[clap(long)]
+    dry_run: bool,
 }
 
 impl CachePrune {

@@ -12,4 +12,4 @@ Run `mise cache` with no args to view the current cache directory.
 
 - [`mise cache clear [PLUGIN]…`](/cli/cache/clear.md)
 - [`mise cache path`](/cli/cache/path.md)
-- [`mise cache prune [--dry-run] [-v --verbose…] [PLUGIN]…`](/cli/cache/prune.md)
+- [`mise cache prune [-v --verbose…] [--dry-run] [PLUGIN]…`](/cli/cache/prune.md)

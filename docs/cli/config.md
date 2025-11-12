@@ -9,6 +9,10 @@ Manage config files
 
 ## Flags
 
+### `-J --json`
+
+Output in JSON format
+
 ### `--no-header`
 
 Do not print table header
@@ -17,13 +21,9 @@ Do not print table header
 
 List all tracked config files
 
-### `-J --json`
-
-Output in JSON format
-
 ## Subcommands
 
-- [`mise config generate [-t --tool-versions <TOOL_VERSIONS>] [-o --output <OUTPUT>]`](/cli/config/generate.md)
+- [`mise config generate [-o --output <OUTPUT>] [-t --tool-versions <TOOL_VERSIONS>]`](/cli/config/generate.md)
 - [`mise config get [-f --file <FILE>] [KEY]`](/cli/config/get.md)
 - [`mise config ls [FLAGS]`](/cli/config/ls.md)
 - [`mise config set [-f --file <FILE>] [-t --type <TYPE>] <KEY> <VALUE>`](/cli/config/set.md)

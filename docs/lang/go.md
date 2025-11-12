@@ -39,7 +39,7 @@ To enable this feature, provide a `$HOME/.default-go-packages` file that lists o
 line, for example:
 
 ```text
-github.com/Dreamacro/clash # allows comments
+github.com/daixiang0/gci # allows comments
 github.com/jesseduffield/lazygit
 ```
 

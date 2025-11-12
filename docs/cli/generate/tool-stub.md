@@ -4,7 +4,7 @@
 - **Usage**: `mise generate tool-stub [FLAGS] <OUTPUT>`
 - **Source code**: [`src/cli/generate/tool_stub.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/tool_stub.rs)
 
-[experimental] Generate a tool stub for HTTP-based tools
+Generate a tool stub for HTTP-based tools
 
 This command generates tool stubs that can automatically download and execute
 tools from HTTP URLs. It can detect checksums, file sizes, and binary paths
@@ -22,15 +22,33 @@ Output file path for the tool stub
 
 ## Flags
 
-### `--version <VERSION>`
+### `-b --bin <BIN>`
 
-Version of the tool
+Binary path within the extracted archive
+
+If not specified and the archive is downloaded, will auto-detect the most likely binary
 
 ### `-u --url <URL>`
 
 URL for downloading the tool
 
 Example: <https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz>
+
+### `--fetch`
+
+Fetch checksums and sizes for an existing tool stub file
+
+This reads an existing stub file and fills in any missing checksum/size fields by downloading the files. URLs must already be present in the stub.
+
+### `--http <HTTP>`
+
+HTTP backend type to use
+
+### `--platform-bin… <PLATFORM_BIN>`
+
+Platform-specific binary paths in the format platform:path
+
+Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
 
 ### `--platform-url… <PLATFORM_URL>`
 
@@ -42,31 +60,13 @@ If only a URL is provided (without platform:), the platform will be automaticall
 
 Examples: --platform-url linux-x64:https://... --platform-url <https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz>
 
-### `--platform-bin… <PLATFORM_BIN>`
-
-Platform-specific binary paths in the format platform:path
-
-Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
-
-### `-b --bin <BIN>`
-
-Binary path within the extracted archive
-
-If not specified and the archive is downloaded, will auto-detect the most likely binary
-
 ### `--skip-download`
 
 Skip downloading for checksum and binary path detection (faster but less informative)
 
-### `--fetch`
+### `--version <VERSION>`
 
-Fetch checksums and sizes for an existing tool stub file
-
-This reads an existing stub file and fills in any missing checksum/size fields by downloading the files. URLs must already be present in the stub.
-
-### `--http <HTTP>`
-
-HTTP backend type to use
+Version of the tool
 
 Examples:
 

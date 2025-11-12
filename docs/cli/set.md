@@ -18,28 +18,23 @@ e.g.: NODE_ENV=production
 
 ## Flags
 
-### `--file <FILE>`
+### `-E --env <ENV>`
 
-The TOML file to update
-
-Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
-Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
+Create/modify an environment-specific config file like .mise.&lt;env>.toml
 
 ### `-g --global`
 
 Set the environment variable in the global config file
 
-### `-E --env <ENV>`
-
-Create/modify an environment-specific config file like .mise.&lt;env>.toml
-
-### `--prompt`
-
-Prompt for environment variable values
-
 ### `--age-encrypt`
 
 [experimental] Encrypt the value with age before storing
+
+### `--age-key-file <PATH>`
+
+[experimental] Age identity file for encryption
+
+Defaults to ~/.config/mise/age.txt if it exists
 
 ### `--age-recipient… <RECIPIENT>`
 
@@ -53,11 +48,16 @@ Can be used multiple times. Requires --age-encrypt.
 
 Can be used multiple times. Requires --age-encrypt.
 
-### `--age-key-file <PATH>`
+### `--file <FILE>`
 
-[experimental] Age identity file for encryption
+The TOML file to update
 
-Defaults to ~/.config/mise/age.txt if it exists
+Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
+Defaults to MISE_DEFAULT_CONFIG_FILENAME environment variable, or `mise.toml`.
+
+### `--prompt`
+
+Prompt for environment variable values
 
 Examples:
 

@@ -133,17 +133,16 @@ pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &s
         if let Some(rest) = k
             .strip_prefix("platforms_")
             .or_else(|| k.strip_prefix("platform_"))
+            && let Some(platform_part) = rest.strip_suffix(&format!("_{}", key_type))
         {
-            if let Some(platform_part) = rest.strip_suffix(&format!("_{}", key_type)) {
-                // Only convert the OS/arch separator underscore to a dash, preserving
-                // underscores inside architecture names like x86_64
-                let platform_key = if let Some((os_part, rest)) = platform_part.split_once('_') {
-                    format!("{os_part}-{rest}")
-                } else {
-                    platform_part.to_string()
-                };
-                set.insert(platform_key);
-            }
+            // Only convert the OS/arch separator underscore to a dash, preserving
+            // underscores inside architecture names like x86_64
+            let platform_key = if let Some((os_part, rest)) = platform_part.split_once('_') {
+                format!("{os_part}-{rest}")
+            } else {
+                platform_part.to_string()
+            };
+            set.insert(platform_key);
         }
     }
 
@@ -214,13 +213,17 @@ pub fn install_artifact(
         // Handle compressed single binary
         let decompressed_name = file_name.trim_end_matches(&format!(".{}", ext));
         // Determine the destination path with support for bin_path
-        let dest = if let Some(bin_path_template) = opts.get("bin_path") {
-            let bin_path = template_string(bin_path_template, tv);
-            let bin_dir = install_path.join(bin_path);
+        let dest = if let Some(bin_path_template) =
+            lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+        {
+            let bin_path = template_string(&bin_path_template, tv);
+            let bin_dir = install_path.join(&bin_path);
             file::create_dir_all(&bin_dir)?;
             bin_dir.join(decompressed_name)
-        } else if let Some(bin_name) = opts.get("bin") {
-            install_path.join(bin_name)
+        } else if let Some(bin_name) =
+            lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+        {
+            install_path.join(&bin_name)
         } else {
             // Auto-clean binary names by removing OS/arch suffixes
             let cleaned_name = clean_binary_name(decompressed_name, Some(&tv.ba().tool_name));
@@ -238,16 +241,20 @@ pub fn install_artifact(
         file::make_executable(&dest)?;
     } else if format == file::TarFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
-        if let Some(bin_path_template) = opts.get("bin_path") {
-            let bin_path = template_string(bin_path_template, tv);
-            let bin_dir = install_path.join(bin_path);
+        if let Some(bin_path_template) =
+            lookup_platform_key(opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+        {
+            let bin_path = template_string(&bin_path_template, tv);
+            let bin_dir = install_path.join(&bin_path);
             file::create_dir_all(&bin_dir)?;
             let dest = bin_dir.join(file_path.file_name().unwrap());
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
-        } else if let Some(bin_name) = opts.get("bin") {
+        } else if let Some(bin_name) =
+            lookup_platform_key(opts, "bin").or_else(|| opts.get("bin").cloned())
+        {
             // If bin is specified, rename the file to this name
-            let dest = install_path.join(bin_name);
+            let dest = install_path.join(&bin_name);
             file::copy(file_path, &dest)?;
             file::make_executable(&dest)?;
         } else {
@@ -262,15 +269,15 @@ pub fn install_artifact(
         // Handle archive formats
         // Auto-detect if we need strip_components=1 before extracting
         // Only do this if strip_components was not explicitly set by the user AND bin_path is not configured
-        if strip_components.is_none() && opts.get("bin_path").is_none() {
-            if let Ok(should_strip) = file::should_strip_components(file_path, format) {
-                if should_strip {
-                    debug!(
-                        "Auto-detected single directory archive, extracting with strip_components=1"
-                    );
-                    strip_components = Some(1);
-                }
-            }
+        if strip_components.is_none()
+            && lookup_platform_key(opts, "bin_path")
+                .or_else(|| opts.get("bin_path").cloned())
+                .is_none()
+            && let Ok(should_strip) = file::should_strip_components(file_path, format)
+            && should_strip
+        {
+            debug!("Auto-detected single directory archive, extracting with strip_components=1");
+            strip_components = Some(1);
         }
         let tar_opts = file::TarOptions {
             format,
@@ -698,5 +705,137 @@ size = "5120"
 
         assert_eq!(checksum, Some("blake3:generic123".to_string()));
         assert_eq!(size, Some("512".to_string()));
+    }
+
+    #[test]
+    fn test_lookup_platform_key_bin_path() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platform".to_string(),
+            r#"
+[macos-arm64]
+bin_path = "CMake.app/Contents/bin"
+
+[linux-x64]
+bin_path = "bin"
+
+[windows-x64]
+bin_path = "."
+"#
+            .to_string(),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        // Test that platform-specific bin_path is found
+        let bin_path = lookup_platform_key(&tool_opts, "bin_path");
+
+        // The exact value depends on the current platform
+        if let Some(bp) = bin_path {
+            // Should be one of the platform-specific values
+            assert!(
+                bp == "CMake.app/Contents/bin" || bp == "bin" || bp == ".",
+                "Expected platform-specific bin_path, got: {}",
+                bp
+            );
+        }
+    }
+
+    #[test]
+    fn test_lookup_platform_key_bin() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platforms".to_string(),
+            r#"
+[macos-arm64]
+bin = "xmake"
+
+[linux-x64]
+bin = "xmake"
+
+[windows-x64]
+bin = "xmake.exe"
+"#
+            .to_string(),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        // Test that platform-specific bin is found
+        let bin = lookup_platform_key(&tool_opts, "bin");
+
+        // The exact value depends on the current platform
+        if let Some(b) = bin {
+            // Should be one of the platform-specific values
+            assert!(
+                b == "xmake" || b == "xmake.exe",
+                "Expected platform-specific bin, got: {}",
+                b
+            );
+        }
+    }
+
+    #[test]
+    fn test_lookup_platform_key_bin_with_fallback() {
+        let mut opts = IndexMap::new();
+        opts.insert("bin".to_string(), "generic-tool".to_string());
+        opts.insert(
+            "platforms".to_string(),
+            r#"
+[windows-x64]
+bin = "tool.exe"
+"#
+            .to_string(),
+        );
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        // Test that platform-specific bin takes precedence, or falls back to generic
+        let bin = lookup_platform_key(&tool_opts, "bin").or_else(|| tool_opts.get("bin").cloned());
+
+        assert!(bin.is_some());
+        let bin_value = bin.unwrap();
+        // On Windows x64, should get "tool.exe", otherwise "generic-tool"
+        assert!(
+            bin_value == "tool.exe" || bin_value == "generic-tool",
+            "Expected platform-specific or generic bin, got: {}",
+            bin_value
+        );
+    }
+
+    #[test]
+    fn test_lookup_platform_key_inline_format() {
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platforms_windows_x64_bin".to_string(),
+            "xmake.exe".to_string(),
+        );
+        opts.insert("platforms_linux_x64_bin".to_string(), "xmake".to_string());
+        opts.insert("platforms_macos_arm64_bin".to_string(), "xmake".to_string());
+
+        let tool_opts = ToolVersionOptions {
+            opts,
+            ..Default::default()
+        };
+
+        // Test that flat platform format works
+        let bin = lookup_platform_key(&tool_opts, "bin");
+
+        if let Some(b) = bin {
+            assert!(
+                b == "xmake" || b == "xmake.exe",
+                "Expected platform-specific bin from flat format, got: {}",
+                b
+            );
+        }
     }
 }

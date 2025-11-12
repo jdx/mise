@@ -198,7 +198,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:5f944c8356690cb4df4ed1596f9c0d24a90c5962488c1c3ecfe3e2b06d84dfe2
+    container: ghcr.io/jdx/mise:rpm@sha256:308b042424a245439d531b7c29a1a2eec8110b3fa330541f3e9f42bc775293a1
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
       - uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6
@@ -222,7 +222,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.head_ref == 'release'
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
-    container: ghcr.io/jdx/mise:deb@sha256:af96f8ead5d62cb23f2c0d17322550433a3a5ca6d6eb04ee23fd81d9863cf6e4
+    container: ghcr.io/jdx/mise:deb@sha256:3a847f2d79db65fffdb86d6f3fd658961371cb148d1433c9db3617dc55e19977
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
@@ -255,7 +255,7 @@ jobs:
       - build-tarball-linux
       - build-tarball-macos
       - build-tarball-windows
-    if: always()
+    if: ${{ !cancelled() && !failure() }}
     steps:
       - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
         with:

@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+# Test that calling mise activate multiple times preserves user-added paths at the front
+# while properly handling mise paths (env._.path and tool installs)
+#
+# Expected behavior:
+# - Start: A
+# - mise activate: env_path:mise_tools:A
+# - add B: B:env_path:mise_tools:A
+# - mise activate + hook-env: B:env_path:mise_tools:A (user path B preserved at front)
+# - add C: C:B:env_path:mise_tools:A
+# - mise activate + hook-env: C:B:env_path:mise_tools:A (user paths C,B preserved at front)
+# - deactivate: C:B:A (mise_tools and env_path removed, user paths preserved)
+
+# Create a mise config with a tool, env._.path, and env.FOO
+mkdir -p custom_bin
+cat >.mise.toml <<EOF
+[tools]
+tiny = "latest"
+
+[env]
+_.path = ["./custom_bin"]
+FOO = "bar"
+BAZ = "qux"
+EOF
+
+mise install
+
+# Save the original PATH for verification
+ORIGINAL_PATH="$PATH"
+
+# First activation
+eval "$(mise activate bash)"
+eval "$(mise hook-env -s bash)"
+
+# Verify env variables were set
+assert "echo $FOO" "bar"
+assert "echo $BAZ" "qux"
+
+# Get the mise tool path - it should be somewhere in PATH
+MISE_TOOL_PATH=$(echo "$PATH" | tr ':' '\n' | grep "/mise/installs/tiny" | head -1)
+assert_contains "echo $MISE_TOOL_PATH" "/mise/installs/tiny"
+
+# custom_bin from env._.path should be in PATH
+assert_contains "echo $PATH" "custom_bin"
+
+# env._.path (custom_bin) should come BEFORE tool paths
+# (both are part of mise installs, so custom_bin is first in installs)
+PATH_BEFORE_ORIGINAL="${PATH%%:"${ORIGINAL_PATH}"*}"
+assert_contains "echo $PATH_BEFORE_ORIGINAL" "custom_bin"
+
+# Tool path should come after custom_bin
+PATH_AFTER_CUSTOM="${PATH#*custom_bin:}"
+assert_contains "echo $PATH_AFTER_CUSTOM" "/mise/installs/tiny"
+
+# Verify no duplicate paths
+PATH_COUNT=$(echo "$PATH" | tr ':' '\n' | sort | uniq -d | wc -l)
+assert "echo $PATH_COUNT" "0"
+
+# User adds path B
+export PATH="/path_b:$PATH"
+
+# User modifies FOO
+export FOO="user_modified"
+
+# Second activation - user path preserved at front, mise paths follow
+eval "$(mise activate bash)"
+eval "$(mise hook-env -s bash)"
+
+# FOO should be reset to "bar" by mise
+assert "echo $FOO" "bar"
+
+# BAZ should still be qux
+assert "echo $BAZ" "qux"
+
+# Verify PATH structure: /path_b (user addition) should be first, then mise paths, then original
+FIRST_PATH=$(echo "$PATH" | cut -d: -f1)
+assert_contains "echo $FIRST_PATH" "/path_b"
+assert_contains "echo $PATH" "custom_bin"
+assert_contains "echo $PATH" "/mise/installs/tiny"
+
+# /path_b should come BEFORE custom_bin (it's a user addition)
+# Extract everything before custom_bin appears in PATH
+PATH_PREFIX="${PATH%%custom_bin*}"
+assert_contains "echo $PATH_PREFIX" "/path_b"
+
+# Check no duplicates
+PATH_COUNT=$(echo "$PATH" | tr ':' '\n' | sort | uniq -d | wc -l)
+assert "echo $PATH_COUNT" "0"
+
+# User adds path C
+export PATH="/path_c:$PATH"
+
+# Third activation - user paths preserved at front, mise paths follow
+eval "$(mise activate bash)"
+eval "$(mise hook-env -s bash)"
+
+# Verify user paths are first (C, B), then mise paths, then original
+FIRST_PATH=$(echo "$PATH" | cut -d: -f1)
+assert_contains "echo $FIRST_PATH" "/path_c"
+assert_contains "echo $PATH" "/path_b"
+assert_contains "echo $PATH" "custom_bin"
+assert_contains "echo $PATH" "/mise/installs/tiny"
+
+# /path_c and /path_b should come BEFORE custom_bin
+# Extract everything before custom_bin appears in PATH
+PATH_PREFIX="${PATH%%custom_bin*}"
+assert_contains "echo $PATH_PREFIX" "/path_c"
+assert_contains "echo $PATH_PREFIX" "/path_b"
+
+# Check no duplicates
+PATH_COUNT=$(echo "$PATH" | tr ':' '\n' | sort | uniq -d | wc -l)
+assert "echo $PATH_COUNT" "0"
+
+# Test deactivation - unsets mise shell functions and variables
+# (Comprehensive deactivation tests are in test_deactivate)
+eval "$(command mise deactivate)"

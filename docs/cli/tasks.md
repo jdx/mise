@@ -15,18 +15,6 @@ Task name to get info of
 
 ## Global Flags
 
-### `-x --extended`
-
-Show all columns
-
-### `--no-header`
-
-Do not print table header
-
-### `--hidden`
-
-Show hidden tasks
-
 ### `-g --global`
 
 Only show global tasks
@@ -39,10 +27,22 @@ Output in JSON format
 
 Only show non-global tasks
 
+### `-x --extended`
+
+Show all columns
+
 ### `--all`
 
 Load all tasks from the entire monorepo, including sibling directories.
 By default, only tasks from the current directory hierarchy are loaded.
+
+### `--hidden`
+
+Show hidden tasks
+
+### `--no-header`
+
+Do not print table header
 
 ### `--sort <COLUMN>`
 
@@ -67,11 +67,12 @@ Sort order. Default is asc.
 ## Subcommands
 
 - [`mise tasks add [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/add.md)
-- [`mise tasks deps [--hidden] [--dot] [TASKS]…`](/cli/tasks/deps.md)
+- [`mise tasks deps [--dot] [--hidden] [TASKS]…`](/cli/tasks/deps.md)
 - [`mise tasks edit [-p --path] <TASK>`](/cli/tasks/edit.md)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
 - [`mise tasks ls [FLAGS]`](/cli/tasks/ls.md)
 - [`mise tasks run [FLAGS] [TASK] [ARGS]…`](/cli/tasks/run.md)
+- [`mise tasks validate [--errors-only] [--json] [TASKS]…`](/cli/tasks/validate.md)
 
 Examples:
 

@@ -85,13 +85,13 @@ export const commands: { [key: string]: Command } = {
   direnv: {
     hide: true,
     subcommands: {
+      activate: {
+        hide: true,
+      },
       envrc: {
         hide: true,
       },
       exec: {
-        hide: true,
-      },
-      activate: {
         hide: true,
       },
     },
@@ -219,9 +219,6 @@ export const commands: { [key: string]: Command } = {
   "render-help": {
     hide: true,
   },
-  "render-mangen": {
-    hide: true,
-  },
   reshim: {
     hide: false,
   },
@@ -293,6 +290,9 @@ export const commands: { [key: string]: Command } = {
         hide: false,
       },
       run: {
+        hide: false,
+      },
+      validate: {
         hide: false,
       },
     },

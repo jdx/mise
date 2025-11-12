@@ -950,14 +950,18 @@ description = "Enable terminal progress indicators (OSC 9;4) for compatible term
 docs = """
 Enable terminal progress indicators using OSC 9;4 escape sequences. This provides
 native progress bars in the terminal window chrome for terminals that support it,
-including Ghostty, VS Code's integrated terminal, and iTerm2.
+including Ghostty, VS Code's integrated terminal, Windows Terminal, and VTE-based
+terminals (GNOME Terminal, Ptyxis, etc.).
 
 When enabled, mise will send progress updates to the terminal during operations like
 tool installations. The progress bar appears in the terminal's window UI, separate
 from the text output.
 
-Set to false to disable this feature if your terminal doesn't support it or if you
-prefer not to see these indicators.
+mise automatically detects whether your terminal supports OSC 9;4 and will only send
+these sequences if supported. Terminals like Alacritty, iTerm2, WezTerm, and kitty
+do not support OSC 9;4 and will not receive these sequences.
+
+Set to false to disable this feature if you prefer not to see these indicators.
 """
 env = "MISE_TERMINAL_PROGRESS"
 type = "Bool"
@@ -1070,6 +1074,11 @@ optional = true
 rust_type = "Vec<PathBuf>"
 type = "ListPath"
 
+[age.strict]
+default = true
+description = "If true, fail when age decryption fails (including when age is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases."
+env = "MISE_AGE_STRICT"
+type = "Bool"
 
 [sops.age_key]
 description = "The age private key to use for sops secret decryption."
@@ -1199,7 +1208,7 @@ enum = [
 ]
 env = "MISE_TASK_OUTPUT"
 optional = true
-rust_type = "crate::cli::run::TaskOutput"
+rust_type = "crate::task::TaskOutput"
 type = "String"
 
 [task_remote_no_cache]
@@ -1221,6 +1230,11 @@ env = "MISE_TASK_SKIP"
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
+
+[task_skip_depends]
+description = "Run only specified tasks skipping all dependencies."
+env = "MISE_TASK_SKIP_DEPENDS"
+type = "Bool"
 
 [task_timeout]
 description = "Default timeout for tasks. Can be overridden by individual tasks."
@@ -1250,13 +1264,13 @@ type = "ListPath"
 
 [unix_default_file_shell_args]
 default = "sh"
-description = "List of default shell arguments for unix to be used with `file`. For example `sh`."
+description = "Default shell arguments for Unix to be used for file commands. For example, `sh` for sh."
 env = "MISE_UNIX_DEFAULT_FILE_SHELL_ARGS"
 type = "String"
 
 [unix_default_inline_shell_args]
 default = "sh -c -o errexit"
-description = "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh."
+description = "Default shell arguments for Unix to be used for inline commands. For example, `sh -c` for sh."
 env = "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS"
 type = "String"
 
@@ -1316,14 +1330,13 @@ type = "Bool"
 
 [windows_default_file_shell_args]
 default = "cmd /c"
-description = "List of default shell arguments for Windows to be used for file commands. For example, `cmd`, `/c` for cmd.exe."
+description = "Default shell arguments for Windows to be used for file commands. For example, `cmd /c` for cmd.exe."
 env = "MISE_WINDOWS_DEFAULT_FILE_SHELL_ARGS"
-rust_type = "String"
-type = "ListString"
+type = "String"
 
 [windows_default_inline_shell_args]
 default = "cmd /c"
-description = "List of default shell arguments for Windows to be used for inline commands. For example, `cmd`, `/c` for cmd.exe."
+description = "Default shell arguments for Windows to be used for inline commands. For example, `cmd /c` for cmd.exe."
 env = "MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS"
 type = "String"
 
@@ -1350,6 +1363,25 @@ type = "String"
 [yes]
 description = "This will automatically answer yes or no to prompts. This is useful for scripting."
 env = "MISE_YES"
+type = "Bool"
+
+[zig.use_community_mirrors]
+default = true
+description = "Download Zig from community-maintained mirrors"
+docs = """
+This setting allows mise to fetch Zig from one of many community-maintained mirrors.
+
+The ziglang.org website does not offer any uptime or speed guarantees, and it
+recommends to use the mirrors. The mirror list is cached and allows the installs
+to succeed even if the main server is unavailable.
+
+The downloaded tarballs are always verified against Zig Software Foundation's public
+key, so there is no risk of third-party modifications. Read more on [ziglang.org](https://ziglang.org/download/community-mirrors/).
+
+If you don't have the mirror list cached locally, you can place the newline-separated
+server list inside `mise cache path`, folder `zig` as `community-mirrors.txt`.
+"""
+env = "MISE_ZIG_USE_COMMUNITY_MIRRORS"
 type = "Bool"
 
 [task.monorepo_depth]

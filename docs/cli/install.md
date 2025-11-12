@@ -23,10 +23,6 @@ Tool(s) to install e.g.: node@20
 
 ## Flags
 
-### `-n --dry-run`
-
-Show what would be installed without actually installing
-
 ### `-f --force`
 
 Force reinstall even if already installed
@@ -36,15 +32,19 @@ Force reinstall even if already installed
 Number of jobs to run in parallel
 [default: 4]
 
-### `--raw`
+### `-n --dry-run`
 
-Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
+Show what would be installed without actually installing
 
 ### `-v --verbose…`
 
 Show installation output
 
 This argument will print plugin output such as download, configuration, and compilation output.
+
+### `--raw`
+
+Directly pipe stdin/stdout/stderr from plugin to user Sets --jobs=1
 
 Examples:
 

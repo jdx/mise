@@ -1,4 +1,3 @@
-use crate::config::Settings;
 use crate::http::HTTP;
 use crate::ui::info;
 use crate::{Result, file, minisign};
@@ -7,7 +6,7 @@ use std::path::PathBuf;
 use xx::file::display_path;
 use xx::regex;
 
-/// [experimental] Generate a script to download+execute mise
+/// Generate a script to download+execute mise
 ///
 /// This is designed to be used in a project where contributors may not have mise installed.
 #[derive(Debug, clap::Args)]
@@ -18,20 +17,19 @@ pub struct Bootstrap {
     /// This is necessary if users may use a different version of mise outside the project.
     #[clap(long, short, verbatim_doc_comment)]
     localize: bool,
-    /// Directory to put localized data into
-    #[clap(long, verbatim_doc_comment, default_value=".mise", value_hint=ValueHint::DirPath)]
-    localized_dir: PathBuf,
     /// Specify mise version to fetch
     #[clap(long, short = 'V', verbatim_doc_comment)]
     version: Option<String>,
     /// instead of outputting the script to stdout, write to a file and make it executable
     #[clap(long, short, verbatim_doc_comment, num_args=0..=1, default_missing_value = "./bin/mise")]
     write: Option<PathBuf>,
+    /// Directory to put localized data into
+    #[clap(long, verbatim_doc_comment, default_value=".mise", value_hint=ValueHint::DirPath)]
+    localized_dir: PathBuf,
 }
 
 impl Bootstrap {
     pub async fn run(self) -> eyre::Result<()> {
-        Settings::get().ensure_experimental("generate bootstrap")?;
         let output = self.generate().await?;
         if let Some(bin) = &self.write {
             if let Some(parent) = bin.parent() {

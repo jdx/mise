@@ -1,21 +1,16 @@
 use std::collections::HashMap;
 
 use crate::{
-    config::Settings,
     dirs,
     file::{self, display_path},
     git::Git,
 };
 use serde::Serialize;
 
-/// [experimental] Generate a devcontainer to execute mise
+/// Generate a devcontainer to execute mise
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Devcontainer {
-    /// The name of the devcontainer
-    #[clap(long, short, verbatim_doc_comment)]
-    name: Option<String>,
-
     /// The image to use for the devcontainer
     #[clap(long, short, verbatim_doc_comment)]
     image: Option<String>,
@@ -23,6 +18,10 @@ pub struct Devcontainer {
     /// Bind the mise-data-volume to the devcontainer
     #[clap(long, short, verbatim_doc_comment)]
     mount_mise_data: bool,
+
+    /// The name of the devcontainer
+    #[clap(long, short, verbatim_doc_comment)]
+    name: Option<String>,
 
     /// write to .devcontainer/devcontainer.json
     #[clap(long, short)]
@@ -55,7 +54,6 @@ struct DevcontainerMount {
 
 impl Devcontainer {
     pub async fn run(self) -> eyre::Result<()> {
-        Settings::get().ensure_experimental("generate devcontainer")?;
         let output = self.generate()?;
 
         if self.write {

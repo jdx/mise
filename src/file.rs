@@ -274,6 +274,38 @@ pub fn touch_dir(dir: &Path) -> Result<()> {
         .wrap_err_with(|| format!("failed to touch dir: {}", display_path(dir)))
 }
 
+/// Synchronizes a directory to disk, ensuring that filesystem metadata changes
+/// (such as file creations or deletions) are persisted.
+///
+/// This is important after operations like removing files to ensure the changes
+/// are immediately visible to other processes, e.g. to avoid race conditions.
+///
+/// # Platform-specific behavior
+///
+/// - **Unix/Linux**: Performs an fsync on the directory file descriptor, which
+///   ensures directory metadata (like file listings) is written to disk.
+/// - **Windows**: Not implemented (no-op).
+///
+/// # Errors
+///
+/// On Unix systems, returns an error if the directory cannot be opened or synced.
+/// On Windows, always succeeds.
+#[cfg(unix)]
+pub fn sync_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    trace!("sync {}", display_path(path));
+    let dir = File::open(path)
+        .wrap_err_with(|| format!("failed to open dir for sync: {}", display_path(path)))?;
+    dir.sync_all()
+        .wrap_err_with(|| format!("failed to sync dir: {}", display_path(path)))
+}
+
+#[cfg(windows)]
+pub fn sync_dir<P: AsRef<Path>>(_path: P) -> Result<()> {
+    // Not implemented on Windows
+    Ok(())
+}
+
 pub fn modified_duration(path: &Path) -> Result<Duration> {
     let metadata = path.metadata()?;
     let modified = metadata.modified()?;
@@ -764,10 +796,10 @@ pub fn untar(archive: &Path, dest: &Path, opts: &TarOptions) -> Result<()> {
     create_dir_all(dest).wrap_err_with(err)?;
 
     // Set progress length once at the beginning with archive size
-    if let Some(pr) = &opts.pr {
-        if let Ok(metadata) = archive.metadata() {
-            pr.set_length(metadata.len());
-        }
+    if let Some(pr) = &opts.pr
+        && let Ok(metadata) = archive.metadata()
+    {
+        pr.set_length(metadata.len());
     }
 
     // Try to extract using the tar crate, detecting sparse files during extraction
@@ -978,12 +1010,12 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
 }
 
 pub fn desymlink_path(p: &Path) -> PathBuf {
-    if p.is_symlink() {
-        if let Ok(target) = fs::read_link(p) {
-            return target
-                .canonicalize()
-                .unwrap_or_else(|_| target.to_path_buf());
-        }
+    if p.is_symlink()
+        && let Ok(target) = fs::read_link(p)
+    {
+        return target
+            .canonicalize()
+            .unwrap_or_else(|_| target.to_path_buf());
     }
     p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
 }
@@ -1036,16 +1068,16 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
 
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
-        if let Some(path) = file.enclosed_name() {
-            if let Some(first_component) = path.components().next() {
-                let name = first_component.as_os_str().to_string_lossy().to_string();
+        if let Some(path) = file.enclosed_name()
+            && let Some(first_component) = path.components().next()
+        {
+            let name = first_component.as_os_str().to_string_lossy().to_string();
 
-                // Check if this entry indicates the component is a directory
-                let is_directory = file.is_dir() || path.components().count() > 1; // If there are nested components, it's a directory
+            // Check if this entry indicates the component is a directory
+            let is_directory = file.is_dir() || path.components().count() > 1; // If there are nested components, it's a directory
 
-                let existing = top_level_components.entry(name.clone()).or_insert(false);
-                *existing = *existing || is_directory;
-            }
+            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            *existing = *existing || is_directory;
         }
     }
 

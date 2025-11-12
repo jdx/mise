@@ -35,6 +35,10 @@ pub struct GithubAsset {
     // pub size: u64,
     pub browser_download_url: String,
     pub url: String,
+    /// SHA256 digest provided by GitHub API (format: "sha256:hash")
+    /// Will be null for releases created before this feature was added
+    #[serde(default)]
+    pub digest: Option<String>,
 }
 
 type CacheGroup<T> = HashMap<String, CacheManager<T>>;

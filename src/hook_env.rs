@@ -13,6 +13,7 @@ use itertools::Itertools;
 use serde_derive::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 
+use crate::cli::HookReason;
 use crate::config::Config;
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
@@ -60,9 +61,18 @@ impl From<PathBuf> for WatchFilePattern {
 
 /// this function will early-exit the application if hook-env is being
 /// called and it does not need to be
-pub fn should_exit_early(watch_files: impl IntoIterator<Item = WatchFilePattern>) -> bool {
+pub fn should_exit_early(
+    watch_files: impl IntoIterator<Item = WatchFilePattern>,
+    reason: Option<HookReason>,
+) -> bool {
     let args = env::ARGS.read().unwrap();
     if args.len() < 2 || args[1] != "hook-env" {
+        return false;
+    }
+    // Force hook-env to run at least once from precmd after activation
+    // This catches PATH modifications from shell initialization (e.g., path_helper in zsh)
+    if reason == Some(HookReason::Precmd) && !*env::__MISE_ZSH_PRECMD_RUN {
+        trace!("__MISE_ZSH_PRECMD_RUN=0 and reason=precmd, forcing hook-env to run");
         return false;
     }
     if dir_change().is_some() {
@@ -133,10 +143,7 @@ fn have_files_been_modified(watch_files: BTreeSet<PathBuf>) -> bool {
 }
 
 fn have_mise_env_vars_been_modified() -> bool {
-    if get_mise_env_vars_hashed() != PREV_SESSION.env_var_hash {
-        return true;
-    }
-    false
+    get_mise_env_vars_hashed() != PREV_SESSION.env_var_hash
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -236,13 +243,116 @@ fn get_mise_env_vars_hashed() -> String {
 
 pub fn clear_old_env(shell: &dyn Shell) -> String {
     let mut patches = env::__MISE_DIFF.reverse().to_patches();
-    if let Some(path) = env::PRISTINE_ENV.deref().get(&*PATH_KEY) {
-        patches.push(EnvDiffOperation::Change(
-            PATH_KEY.to_string(),
-            path.to_string(),
-        ));
+
+    // For fish shell, filter out PATH operations from the reversed diff because
+    // fish has its own PATH management that conflicts with ours.
+    if shell.to_string() == "fish" {
+        patches.retain(|p| match p {
+            EnvDiffOperation::Add(k, _)
+            | EnvDiffOperation::Change(k, _)
+            | EnvDiffOperation::Remove(k) => k != &*PATH_KEY,
+        });
+        // Fish also needs PATH restored during deactivation
+        let new_path = compute_deactivated_path();
+        patches.push(EnvDiffOperation::Change(PATH_KEY.to_string(), new_path));
+    } else {
+        // For non-fish shells, we need to preserve user-added paths while removing mise paths
+        let new_path = compute_deactivated_path();
+        patches.push(EnvDiffOperation::Change(PATH_KEY.to_string(), new_path));
     }
     build_env_commands(shell, &patches)
+}
+
+/// Compute PATH after deactivation, preserving user additions
+fn compute_deactivated_path() -> String {
+    // Get current PATH (may include user additions since last hook-env)
+    let current_path = env::var("PATH").unwrap_or_default();
+
+    // Get the PATH that mise set during the last hook-env
+    let mise_paths = &env::__MISE_DIFF.path;
+
+    // Get pristine PATH (from before mise activation)
+    let pristine_path = env::PRISTINE_ENV
+        .deref()
+        .get(&*PATH_KEY)
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+
+    if current_path.is_empty() || mise_paths.is_empty() {
+        // If no current PATH or no mise PATH, just return pristine
+        return pristine_path;
+    }
+
+    // Parse paths
+    let current_paths: Vec<PathBuf> = env::split_paths(&current_path).collect();
+    let mise_paths_vec = mise_paths.clone();
+
+    // Count occurrences of each path in current_path, mise_paths, and pristine_path
+    let pristine_paths: Vec<PathBuf> = env::split_paths(&pristine_path).collect();
+
+    let mut current_counts: std::collections::HashMap<PathBuf, usize> =
+        std::collections::HashMap::new();
+    for path in &current_paths {
+        *current_counts.entry(path.clone()).or_insert(0) += 1;
+    }
+
+    let mut mise_counts: std::collections::HashMap<PathBuf, usize> =
+        std::collections::HashMap::new();
+    for path in &mise_paths_vec {
+        *mise_counts.entry(path.clone()).or_insert(0) += 1;
+    }
+
+    let mut pristine_counts: std::collections::HashMap<PathBuf, usize> =
+        std::collections::HashMap::new();
+    for path in &pristine_paths {
+        *pristine_counts.entry(path.clone()).or_insert(0) += 1;
+    }
+
+    // Determine how many copies of each path we should keep: user additions plus pristine entries
+    use std::collections::HashMap;
+
+    let mut target_counts: HashMap<PathBuf, usize> = HashMap::new();
+    for (path, current_count) in current_counts.iter() {
+        let removal_count = *mise_counts.get(path).unwrap_or(&0);
+        let pristine_count = *pristine_counts.get(path).unwrap_or(&0);
+        let user_and_pristine = current_count
+            .saturating_sub(removal_count)
+            .max(pristine_count);
+        target_counts.insert(path.clone(), user_and_pristine);
+    }
+
+    for (path, pristine_count) in pristine_counts.iter() {
+        target_counts
+            .entry(path.clone())
+            .and_modify(|count| *count = (*count).max(*pristine_count))
+            .or_insert(*pristine_count);
+    }
+
+    let mut kept_counts: HashMap<PathBuf, usize> = HashMap::new();
+    let mut final_paths: Vec<PathBuf> = Vec::new();
+
+    for path in &current_paths {
+        if let Some(target) = target_counts.get(path) {
+            let kept = kept_counts.entry(path.clone()).or_insert(0);
+            if *kept < *target {
+                final_paths.push(path.clone());
+                *kept += 1;
+            }
+        }
+    }
+
+    for path in pristine_paths {
+        let target = target_counts.get(&path).copied().unwrap_or(0);
+        let kept = kept_counts.entry(path.clone()).or_insert(0);
+        while *kept < target {
+            final_paths.push(path.clone());
+            *kept += 1;
+        }
+    }
+
+    env::join_paths(final_paths.iter())
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or(pristine_path)
 }
 
 pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String {

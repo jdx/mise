@@ -9,7 +9,7 @@ mod task_docs;
 mod task_stubs;
 mod tool_stub;
 
-/// [experimental] Generate files for various tools/services
+/// Generate files for various tools/services
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "gen", alias = "g")]
 pub struct Generate {

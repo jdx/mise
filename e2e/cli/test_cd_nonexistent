@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Test that mise shows a friendly error when --cd is set to a non-existent path
+# This validates that the error message is clear and helpful to users
+
+echo "Testing --cd with non-existent directory..."
+
+# Test 1: --cd with non-existent absolute path
+echo "Test 1: --cd with non-existent absolute path"
+assert_fail "mise --cd /nonexistent/path/that/does/not/exist config ls" \
+	"Directory specified with --cd does not exist"
+
+# Test 2: --cd with non-existent relative path
+echo "Test 2: --cd with non-existent relative path"
+assert_fail "mise --cd ./nonexistent config ls" \
+	"Directory specified with --cd does not exist"
+
+# Test 3: --cd with a file instead of a directory
+echo "Test 3: --cd with a file (not a directory)"
+touch test_file
+assert_fail "mise --cd test_file config ls" \
+	"Path specified with --cd is not a directory"
+rm -f test_file
+
+# Test 4: --cd with existing directory should work
+echo "Test 4: --cd with existing directory (should succeed)"
+mkdir -p test_dir
+cat <<EOF >test_dir/mise.toml
+[env]
+TEST_VAR = "hello"
+EOF
+assert_contains "mise --cd $PWD/test_dir config ls" "test_dir/mise.toml"
+rm -rf test_dir
+
+# Test 5: Verify error message format and helpfulness
+echo "Test 5: Verify error message contains helpful guidance"
+output=$(mise --cd /does/not/exist config ls 2>&1) || true
+if [[ $output == *"Please check the path and try again"* ]]; then
+	ok "Error message includes helpful guidance"
+elif [[ $output == *"Directory specified with --cd does not exist"* ]]; then
+	ok "Error message shows the required info"
+else
+	fail "Error message missing expected text: ${output:0:200}..."
+fi
+
+# Test 6: Test with run command and non-existent --cd path
+echo "Test 6: --cd with run command and non-existent path"
+assert_fail "mise run --cd /nonexistent/path hello" \
+	"Directory specified with --cd does not exist"
+
+# Test 7: Test with other commands and non-existent --cd path
+echo "Test 7: --cd with various commands and non-existent path"
+assert_fail "mise --cd /nonexistent ls" \
+	"Directory specified with --cd does not exist"
+
+echo ""
+echo "All --cd non-existent directory tests passed!"

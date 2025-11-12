@@ -25,10 +25,6 @@ pub struct Install {
     #[clap(value_name = "TOOL@VERSION")]
     tool: Option<Vec<ToolArg>>,
 
-    /// Show what would be installed without actually installing
-    #[clap(long, short = 'n', verbatim_doc_comment)]
-    dry_run: bool,
-
     /// Force reinstall even if already installed
     #[clap(long, short, requires = "tool")]
     force: bool,
@@ -38,16 +34,20 @@ pub struct Install {
     #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
-    /// Directly pipe stdin/stdout/stderr from plugin to user
-    /// Sets --jobs=1
-    #[clap(long, overrides_with = "jobs")]
-    raw: bool,
+    /// Show what would be installed without actually installing
+    #[clap(long, short = 'n', verbatim_doc_comment)]
+    dry_run: bool,
 
     /// Show installation output
     ///
     /// This argument will print plugin output such as download, configuration, and compilation output.
     #[clap(long, short, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Directly pipe stdin/stdout/stderr from plugin to user
+    /// Sets --jobs=1
+    #[clap(long, overrides_with = "jobs")]
+    raw: bool,
 }
 
 impl Install {
@@ -164,7 +164,14 @@ impl Install {
         let trs = measure!("get_tool_request_set", {
             config.get_tool_request_set().await?
         });
-        let versions = measure!("fetching missing runtims", {
+
+        // Check for tools that don't exist in the registry
+        // These were tracked during build() before being filtered out
+        for ba in &trs.unknown_tools {
+            // This will error with a proper message like "tool not found in mise tool registry"
+            ba.backend()?;
+        }
+        let versions = measure!("fetching missing runtimes", {
             trs.missing_tools(&config)
                 .await
                 .into_iter()

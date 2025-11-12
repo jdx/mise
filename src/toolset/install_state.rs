@@ -188,12 +188,11 @@ pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
         .get(short)
         .and_then(|ist| ist.full.as_ref())
         .map(|full| BackendType::guess(full));
-    if let Some(BackendType::Unknown) = backend_type {
-        if let Some((plugin_name, _)) = short.split_once(':') {
-            if let Some(PluginType::VfoxBackend) = get_plugin_type(plugin_name) {
-                return Ok(Some(BackendType::VfoxBackend(plugin_name.to_string())));
-            }
-        }
+    if let Some(BackendType::Unknown) = backend_type
+        && let Some((plugin_name, _)) = short.split_once(':')
+        && let Some(PluginType::VfoxBackend) = get_plugin_type(plugin_name)
+    {
+        return Ok(Some(BackendType::VfoxBackend(plugin_name.to_string())));
     }
     Ok(backend_type)
 }
@@ -265,16 +264,9 @@ fn read_backend_meta(short: &str) -> Option<Vec<String>> {
 }
 
 pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
-    // only use full_with_opts for specific plugin prefixes
     let full = match ba.full() {
-        full if full.starts_with("cargo:")
-            || full.starts_with("go:")
-            || full.starts_with("pipx:")
-            || full.starts_with("ubi:") =>
-        {
-            ba.full_with_opts()
-        }
-        _ => ba.full(),
+        full if full.starts_with("core:") => ba.full(),
+        _ => ba.full_with_opts(),
     };
     let doc = format!("{}\n{}", ba.short, full);
     file::write(backend_meta_path(&ba.short), doc.trim())?;

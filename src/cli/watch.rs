@@ -1,6 +1,6 @@
 use crate::Result;
+use crate::cli::Cli;
 use crate::cli::args::BackendArg;
-use crate::cli::{Cli, run};
 use crate::cmd;
 use crate::config::Config;
 use crate::env;
@@ -40,6 +40,10 @@ pub struct Watch {
     #[clap(short, long, verbatim_doc_comment, hide = true)]
     glob: Vec<String>,
 
+    /// Run only the specified tasks skipping all dependencies
+    #[clap(long, verbatim_doc_comment)]
+    pub skip_deps: bool,
+
     #[clap(flatten)]
     watchexec: WatchexecArgs,
 }
@@ -75,7 +79,7 @@ impl Watch {
         if args.is_empty() {
             bail!("No tasks specified");
         }
-        let tasks = run::get_task_lists(&config, &args, false).await?;
+        let tasks = crate::task::task_list::get_task_lists(&config, &args, false, false).await?;
         let mut args = vec![];
         if let Some(delay_run) = self.watchexec.delay_run {
             args.push("--delay-run".to_string());
@@ -189,6 +193,9 @@ impl Watch {
             env::MISE_BIN.to_string_lossy().to_string(),
             "run".to_string(),
         ]);
+        if self.skip_deps {
+            args.push("--skip-deps".to_string());
+        }
         let task_args = itertools::intersperse(
             tasks.iter().map(|t| {
                 let mut args = vec![t.name.to_string()];

@@ -27,7 +27,11 @@ struct ReleaseAsset {
     name: String,
     url: String,
     url_api: String,
+    digest: Option<String>,
 }
+
+const DEFAULT_GITHUB_API_BASE_URL: &str = "https://api.github.com";
+const DEFAULT_GITLAB_API_BASE_URL: &str = "https://gitlab.com/api/v4";
 
 #[async_trait]
 impl Backend for UnifiedGitBackend {
@@ -95,6 +99,7 @@ impl Backend for UnifiedGitBackend {
                 }),
                 url: existing_platform.url.clone().unwrap_or_default(),
                 url_api: existing_platform.url_api.clone().unwrap_or_default(),
+                digest: None, // Don't use old digest from lockfile, will be fetched fresh if needed
             }
         } else {
             // Find the asset URL for this specific version
@@ -114,9 +119,11 @@ impl Backend for UnifiedGitBackend {
         tv: &ToolVersion,
     ) -> Result<Vec<std::path::PathBuf>> {
         let opts = tv.request.options();
-        if let Some(bin_path_template) = opts.get("bin_path") {
-            let bin_path = template_string(bin_path_template, tv);
-            Ok(vec![tv.install_path().join(bin_path)])
+        if let Some(bin_path_template) =
+            lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+        {
+            let bin_path = template_string(&bin_path_template, tv);
+            Ok(vec![tv.install_path().join(&bin_path)])
         } else {
             self.discover_bin_paths(tv)
         }
@@ -151,9 +158,9 @@ impl UnifiedGitBackend {
         opts.get("api_url")
             .map(|s| s.as_str())
             .unwrap_or(if self.is_gitlab() {
-                "https://gitlab.com/api/v4"
+                DEFAULT_GITLAB_API_BASE_URL
             } else {
-                "https://api.github.com"
+                DEFAULT_GITHUB_API_BASE_URL
             })
             .to_string()
     }
@@ -198,17 +205,38 @@ impl UnifiedGitBackend {
 
         ctx.pr.start_operations(op_count);
 
-        // Store the asset URL in the tool version
+        // Store the asset URL and digest (if available) in the tool version
         let platform_key = self.get_platform_key();
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
         platform_info.name = Some(asset.name.clone());
         platform_info.url = Some(asset.url.clone());
         platform_info.url_api = Some(asset.url_api.clone());
+        if let Some(digest) = &asset.digest {
+            debug!("using GitHub API digest for checksum verification");
+            platform_info.checksum = Some(digest.clone());
+        }
 
-        // check if url is reachable, 404 might indicate a private repo or asset
-        let url = match HTTP.head(asset.url.clone()).await {
-            Ok(_) => asset.url.clone(),
-            Err(_) => asset.url_api.clone(),
+        let url = match asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
+            || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
+        {
+            // check if url is reachable, 404 might indicate a private repo or asset.
+            // This is needed, because private repos and assets cannot be downloaded
+            // via browser url, therefore a fallback to api_url is needed in such cases.
+            true => match HTTP.head(asset.url.clone()).await {
+                Ok(_) => asset.url.clone(),
+                Err(_) => asset.url_api.clone(),
+            },
+
+            // Custom API URLs usually imply that a custom GitHub/GitLab instance is used.
+            // Often times such instances do not allow browser URL downloads, e.g. due to
+            // upstream company SSOs. Therefore, using the api_url for downloading is the safer approach.
+            false => {
+                debug!(
+                    "Since the tool resides on a custom GitHub/GitLab API ({:?}), the asset download will be performed using the given API instead of browser URL download",
+                    asset.url_api
+                );
+                asset.url_api.clone()
+            }
         };
 
         let headers = if self.is_gitlab() {
@@ -268,6 +296,7 @@ impl UnifiedGitBackend {
                 name: get_filename_from_url(&direct_url),
                 url: direct_url.clone(),
                 url_api: direct_url.clone(),
+                digest: None, // Direct URLs don't have API digest
             });
         }
 
@@ -324,6 +353,7 @@ impl UnifiedGitBackend {
                 name: asset.name,
                 url: asset.browser_download_url,
                 url_api: asset.url,
+                digest: asset.digest,
             });
         }
 
@@ -343,6 +373,7 @@ impl UnifiedGitBackend {
             name: asset.name.clone(),
             url: asset.browser_download_url.clone(),
             url_api: asset.url.clone(),
+            digest: asset.digest.clone(),
         })
     }
 
@@ -388,6 +419,7 @@ impl UnifiedGitBackend {
                 name: asset.name,
                 url: asset.url,
                 url_api: asset.direct_asset_url,
+                digest: None, // GitLab doesn't provide digests yet
             });
         }
 
@@ -407,6 +439,7 @@ impl UnifiedGitBackend {
             name: asset.name.clone(),
             url: asset.direct_asset_url.clone(),
             url_api: asset.url.clone(),
+            digest: None, // GitLab doesn't provide digests yet
         })
     }
 
@@ -464,10 +497,10 @@ impl UnifiedGitBackend {
         let opts = self.ba.opts();
 
         // If a custom version_prefix is configured, strip it first
-        if let Some(prefix) = opts.get("version_prefix") {
-            if let Some(stripped) = tag_name.strip_prefix(prefix) {
-                return stripped.to_string();
-            }
+        if let Some(prefix) = opts.get("version_prefix")
+            && let Some(stripped) = tag_name.strip_prefix(prefix)
+        {
+            return stripped.to_string();
         }
 
         // Fall back to stripping 'v' prefix

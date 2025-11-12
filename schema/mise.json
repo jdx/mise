@@ -1031,6 +1031,11 @@
               "items": {
                 "type": "string"
               }
+            },
+            "strict": {
+              "default": true,
+              "description": "If true, fail when age decryption fails (including when age is not available, the key is missing, or the key is invalid). If false, skip decryption and continue in these cases.",
+              "type": "boolean"
             }
           }
         },
@@ -1142,6 +1147,10 @@
             "type": "string"
           }
         },
+        "task_skip_depends": {
+          "description": "Run only specified tasks skipping all dependencies.",
+          "type": "boolean"
+        },
         "task_timeout": {
           "description": "Default timeout for tasks. Can be overridden by individual tasks.",
           "type": "string"
@@ -1164,12 +1173,12 @@
         },
         "unix_default_file_shell_args": {
           "default": "sh",
-          "description": "List of default shell arguments for unix to be used with `file`. For example `sh`.",
+          "description": "Default shell arguments for Unix to be used for file commands. For example, `sh` for sh.",
           "type": "string"
         },
         "unix_default_inline_shell_args": {
           "default": "sh -c -o errexit",
-          "description": "List of default shell arguments for unix to be used with inline commands. For example, `sh`, `-c` for sh.",
+          "description": "Default shell arguments for Unix to be used for inline commands. For example, `sh -c` for sh.",
           "type": "string"
         },
         "url_replacements": {
@@ -1200,15 +1209,12 @@
         },
         "windows_default_file_shell_args": {
           "default": "cmd /c",
-          "description": "List of default shell arguments for Windows to be used for file commands. For example, `cmd`, `/c` for cmd.exe.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+          "description": "Default shell arguments for Windows to be used for file commands. For example, `cmd /c` for cmd.exe.",
+          "type": "string"
         },
         "windows_default_inline_shell_args": {
           "default": "cmd /c",
-          "description": "List of default shell arguments for Windows to be used for inline commands. For example, `cmd`, `/c` for cmd.exe.",
+          "description": "Default shell arguments for Windows to be used for inline commands. For example, `cmd /c` for cmd.exe.",
           "type": "string"
         },
         "windows_executable_extensions": {
@@ -1227,6 +1233,17 @@
         "yes": {
           "description": "This will automatically answer yes or no to prompts. This is useful for scripting.",
           "type": "boolean"
+        },
+        "zig": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "use_community_mirrors": {
+              "default": true,
+              "description": "Download Zig from community-maintained mirrors",
+              "type": "boolean"
+            }
+          }
         },
         "task": {
           "type": "object",

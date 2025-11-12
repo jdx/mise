@@ -225,7 +225,7 @@ Render help documentation
 
 ## `render:mangen`
 
-- Depends: build
+- Depends: render:usage
 
 - **Usage**: `render:mangen`
 

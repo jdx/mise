@@ -134,28 +134,24 @@ pub async fn check_for_new_version(cache_duration: Duration) -> Option<String> {
     if let Some(latest) = get_latest_version(cache_duration)
         .await
         .and_then(Versioning::new)
+        && *V < latest
     {
-        if *V < latest {
-            return Some(latest.to_string());
-        }
+        return Some(latest.to_string());
     }
     None
 }
 
 async fn get_latest_version(duration: Duration) -> Option<String> {
     let version_file_path = dirs::CACHE.join("latest-version");
-    if let Ok(metadata) = modified_duration(&version_file_path) {
-        if metadata < duration {
-            if let Some(version) = file::read_to_string(&version_file_path)
-                .ok()
-                .map(|s| s.trim().to_string())
-                .and_then(Versioning::new)
-            {
-                if *V <= version {
-                    return Some(version.to_string());
-                }
-            }
-        }
+    if let Ok(metadata) = modified_duration(&version_file_path)
+        && metadata < duration
+        && let Some(version) = file::read_to_string(&version_file_path)
+            .ok()
+            .map(|s| s.trim().to_string())
+            .and_then(Versioning::new)
+        && *V <= version
+    {
+        return Some(version.to_string());
     }
     let _ = file::create_dir_all(*dirs::CACHE);
     let version = get_latest_version_call().await;

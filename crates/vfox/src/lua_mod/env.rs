@@ -1,5 +1,5 @@
-use mlua::prelude::*;
 use mlua::Table;
+use mlua::prelude::*;
 
 pub fn mod_env(lua: &Lua) -> LuaResult<()> {
     let package: Table = lua.globals().get("package")?;
@@ -11,7 +11,9 @@ pub fn mod_env(lua: &Lua) -> LuaResult<()> {
 }
 
 fn setenv(_lua: &Lua, (key, val): (String, String)) -> LuaResult<()> {
-    std::env::set_var(key, val);
+    unsafe {
+        std::env::set_var(key, val);
+    }
     Ok(())
 }
 

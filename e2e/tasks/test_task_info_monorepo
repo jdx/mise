@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+
+# Tests for `mise tasks info` in a monorepo setup
+
+cat >mise.toml <<EOF
+experimental_monorepo_root = true
+
+[tasks.root_task]
+alias = "some_root_task_alias"
+run = "echo This is the root task"
+EOF
+
+mkdir -p lib
+cat >lib/mise.toml <<EOF
+[tasks.echo]
+alias = ["lib_echo_alias", "e"]
+run = """
+echo Hello, World!
+"""
+EOF
+
+# Test non-existent task
+assert_fail "mise tasks info nonexistent"
+assert_contains "mise tasks info nonexistent 2>&1 || true" "Task not found: nonexistent"
+
+# Test non-existent monorepo task
+assert_fail "mise tasks info //lib:nonexistent"
+assert_contains "mise tasks info //lib:nonexistent 2>&1 || true" "Task not found: //lib:nonexistent"
+
+# Test non-existent alias
+assert_fail "mise tasks info //lib:fake_alias"
+assert_contains "mise tasks info //lib:fake_alias 2>&1 || true" "Task not found: //lib:fake_alias"
+
+# Test root task info
+assert "mise tasks info //:root_task" 'Task: //:root_task
+Aliases: some_root_task_alias
+Description:
+Source: ~/workdir/mise.toml
+
+Run:
+  echo This is the root task
+
+Usage Spec:
+  name "//:root_task"
+  bin "//:root_task"'
+
+assert_contains "mise tasks info //:root_task --json" '"name": "//:root_task"'
+
+# test that shorthand works
+assert_contains "mise tasks info root_task --json" '"name": "//:root_task"'
+assert_contains "mise tasks info some_root_task_alias --json" '"name": "//:root_task"'
+
+assert "mise tasks info //lib:echo" 'Task: //lib:echo
+Aliases: lib_echo_alias, e
+Description:
+Source: ~/workdir/lib/mise.toml
+
+Run:
+  echo Hello, World!
+
+Usage Spec:
+  name "//lib:echo"
+  bin "//lib:echo"'
+
+assert_contains "mise tasks info //lib:echo --json" '"name": "//lib:echo"'
+assert_contains "mise tasks info //lib:echo --json" '"source": "'"$PWD"'/lib/mise.toml"'
+
+# Test lib task lookup by prefixed aliases (from root)
+assert_contains "mise tasks info //lib:lib_echo_alias --json" '"name": "//lib:echo"'
+assert_contains "mise tasks info //lib:e --json" '"name": "//lib:echo"'
+
+#### Test from subdirectory
+cd lib
+
+# Unprefixed aliases should work from within lib directory
+assert_contains "mise tasks info lib_echo_alias --json" '"name": "//lib:echo"'
+assert_contains "mise tasks info e --json" '"name": "//lib:echo"'
+
+assert "mise tasks info //lib:echo" 'Task: //lib:echo
+Aliases: lib_echo_alias, e
+Description:
+Source: ~/workdir/lib/mise.toml
+
+Run:
+  echo Hello, World!
+
+Usage Spec:
+  name "//lib:echo"
+  bin "//lib:echo"'

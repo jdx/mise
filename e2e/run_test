@@ -101,13 +101,28 @@ within_isolated_env() {
 }
 
 run_test() {
+	# Check for problematic /tmp/mise.toml that can interfere with tests
+	if [[ -f /tmp/mise.toml ]]; then
+		err "/tmp/mise.toml exists and will interfere with e2e tests. Please remove it."
+		return 1
+	fi
+
 	setup_isolated_env
 	create_isolated_env
 
 	local status=0
 
 	START="$(date +%s)"
-	within_isolated_env bash --noprofile --norc -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+	# Check shebang to determine which shell to use
+	local shebang
+	shebang="$(head -n 1 "$TEST_SCRIPT")"
+	if [[ $shebang == "#!/usr/bin/env zsh"* ]]; then
+		within_isolated_env zsh -f -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+	elif [[ $shebang == "#!/usr/bin/env fish"* ]]; then
+		within_isolated_env fish --no-config "$TEST_SCRIPT" || status=$?
+	else
+		within_isolated_env bash --noprofile --norc -euo pipefail -c "source \"$SCRIPT_DIR/assert.sh\" && source \"$TEST_SCRIPT\"" || status=$?
+	fi
 	END="$(date +%s)"
 	DURATION=$((END - START))s
 

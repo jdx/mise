@@ -1,0 +1,232 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: github_release
+    repo_owner: openshift-pipelines
+    repo_name: pipelines-as-code
+    description: Pipelines-as-Code for Tekton
+    files:
+      - name: tkn-pac
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.4.3"
+        asset: tkn-pac_{{.Version}}_{{.OS}}_all.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: tkn-pac_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: tkn-pac_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+      - version_constraint: Version == "v0.17.4"
+        asset: tkn-pac_.{{trimV .Version}}_.{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        # Checksum file is broken
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: darwin
+            asset: tkn-pac_.{{trimV .Version}}_.{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: Version == "v0.33.0"
+        asset: tkn-pac_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: tkn-pac_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            # Checksums are missing for Windows
+            checksum:
+              enabled: false
+      - version_constraint: Version == "v0.35.3"
+        asset: tkn-pac_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: tkn-pac_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+      - version_constraint: Version == "v0.36.0"
+        asset: tkn-pac_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            asset: tkn-pac_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.3.0")
+        asset: tkn-pac_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 0.5.5")
+        asset: tkn-pac_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: tkn-pac_{{.Version}}_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.10.2")
+        asset: tkn-pac_{{.Version}}_{{.OS}}_all.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: tkn-pac_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+          - goos: windows
+            format: zip
+            asset: tkn-pac_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+      - version_constraint: semver("<= 0.17.3")
+        asset: tkn-pac_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: tkn-pac_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.17.7")
+        asset: tkn-pac_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: tkn-pac_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.19.2")
+        asset: tkn-pac_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: MacOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: tkn-pac_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.32.0")
+        asset: tkn-pac_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: tkn-pac_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.35.2")
+        asset: tkn-pac_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: zip
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+          - goos: darwin
+            asset: tkn-pac_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: "true"
+        asset: tkn-pac_{{trimV .Version}}_{{.OS}}_all.{{.Format}}
+        format: zip
+        replacements:
+          amd64: x86_64
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+            asset: tkn-pac_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+          - goos: windows
+            asset: tkn-pac_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}

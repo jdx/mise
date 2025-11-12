@@ -2,7 +2,7 @@
 
 rustPlatform.buildRustPackage {
   pname = "mise";
-  version = "2025.10.8";
+  version = "2025.11.3";
 
   src = lib.cleanSource ./.;
 
@@ -10,16 +10,23 @@ rustPlatform.buildRustPackage {
     lockFile = ./Cargo.lock;
   };
 
-  nativeBuildInputs = with pkgs; [ pkg-config ];
+  nativeBuildInputs = with pkgs; [
+    cmakeMinimal
+    clang
+    llvmPackages.libclang
+    pkg-config
+  ];
   buildInputs = with pkgs; [
-    coreutils
     bash
+    coreutils
     direnv
-    gnused
-    git
     gawk
+    git
+    gnused
     openssl
   ];
+
+  LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
 
   prePatch = ''
     substituteInPlace ./src/test.rs ./test/data/plugins/**/bin/* \

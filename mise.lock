@@ -22,21 +22,30 @@ size = 4758557
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"
 
 [[tools.bun]]
-version = "1.3.0"
+version = "1.3.1"
 backend = "core:bun"
 
 [tools.bun.platforms.linux-x64]
-checksum = "blake3:fa75018494a4add8c86fa10a5507a6c17aaa513aaea366e77ae1c6df84c7cb40"
-size = 39506212
+checksum = "blake3:a4bc824cf6779a832fe1a10dd83d94f7d3311f0ca4707666c287a01e281def7e"
+size = 39510697
+
+[tools.bun.platforms.macos-arm64]
+checksum = "blake3:1643fe56ae2f8adc8229a82672484113c01c82b5fe15b3e498610fc050831ffd"
+size = 22437956
 
 [[tools.cargo-binstall]]
-version = "1.15.7"
+version = "1.15.10"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "blake3:43c50bfc80bfe55dffeedfae7c43b34121b4fe2aa223b0ced25fa9bbb5f87595"
-size = 6756326
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.7/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+checksum = "sha256:c4957cb4f2cb5ddafe02aa740e8719c6772534a0198ef6714f87e2d5dbfe81b1"
+size = 6767806
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.10/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+
+[tools.cargo-binstall.platforms.macos-arm64]
+checksum = "sha256:9aa40aca226028c4ec45637f060815d8899fb4e49fb6e97947280c83d34a82d8"
+size = 5958077
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.10/cargo-binstall-aarch64-apple-darwin.zip"
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.7"
@@ -59,31 +68,26 @@ version = "0.2.3"
 backend = "cargo:toml-cli"
 
 [[tools."cargo:usage-cli"]]
-version = "2.3.2"
+version = "2.6.0"
 backend = "cargo:usage-cli"
 
 [[tools.gh]]
-version = "2.62.0"
+version = "2.83.0"
 backend = "aqua:cli/cli"
 
 [tools.gh.platforms.linux-x64]
-checksum = "sha256:41c8b0698ad3003cb5c44bde672a1ffd5f818595abd80162fbf8cc999418446a"
-size = 13065800
-url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz"
-
-[tools.gh.platforms.macos-arm64]
-checksum = "sha256:fdb77f31b8a6dd23c3fd858758d692a45f7fc76383e37d475bdcae038df92afc"
-size = 12793347
-url = "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_macOS_arm64.zip"
+checksum = "sha256:a5cf6cdb40fc67751adf561126b3314044779cea81ba4f254fbe8e9a69f1676f"
+size = 18175244
+url = "https://github.com/cli/cli/releases/download/v2.83.0/gh_2.83.0_linux_amd64.tar.gz"
 
 [[tools.hk]]
-version = "1.18.3"
+version = "1.20.0"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "blake3:dcb3b961bcaf97961bd6fea889954b7e38ff7ee3a3c37001632d5e4e65402d36"
-size = 7169077
-url = "https://github.com/jdx/hk/releases/download/v1.18.3/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:f35036c5e43f32e5c110a6c147df598d69d2afb56186ffa7b5d5af0d517c7069"
+size = 7184547
+url = "https://github.com/jdx/hk/releases/download/v1.20.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"
@@ -100,13 +104,13 @@ size = 841408
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
 
 [[tools.node]]
-version = "24.10.0"
+version = "24.11.0"
 backend = "core:node"
 
 [tools.node.platforms.linux-x64]
-checksum = "sha256:2b03c5417ce0b1076780df00e01da373bead3b4b80d1c78c1ad10ee7b918d90c"
-size = 58957192
-url = "https://nodejs.org/dist/v24.10.0/node-v24.10.0-linux-x64.tar.gz"
+checksum = "sha256:b3c071cdf47aab867c3b2aa287257df12ec5d7c962bf922b32fd33226c4295fd"
+size = 58899117
+url = "https://nodejs.org/dist/v24.11.0/node-v24.11.0-linux-x64.tar.gz"
 
 [[tools."npm:ajv-cli"]]
 version = "5.0.0"
@@ -121,18 +125,13 @@ version = "3.6.2"
 backend = "npm:prettier"
 
 [[tools.pkl]]
-version = "0.29.1"
+version = "0.30.0"
 backend = "aqua:apple/pkl"
 
 [tools.pkl.platforms.linux-x64]
-checksum = "blake3:8b26122653f2b25453211286c68f96eb53373763dc743bf8ff6c2c80917848e2"
-size = 103994144
-url = "https://github.com/apple/pkl/releases/download/0.29.1/pkl-linux-amd64"
-
-[tools.pkl.platforms.macos-arm64]
-checksum = "blake3:5160399295c75f15f6b2b1e2925945a5d42a66793aa4eec821ab2dc60a5ae4ea"
-size = 104874656
-url = "https://github.com/apple/pkl/releases/download/0.29.1/pkl-macos-aarch64"
+checksum = "sha256:182a50a2c84bb002010ea45c8982c1e63b54e7e6a40e939bb5eb70beaad38cd7"
+size = 99355968
+url = "https://github.com/apple/pkl/releases/download/0.30.0/pkl-linux-amd64"
 
 [[tools.pre-commit]]
 version = "4.3.0"
@@ -149,18 +148,13 @@ size = 8268268
 url = "https://github.com/pre-commit/pre-commit/releases/download/v4.3.0/pre-commit-4.3.0.pyz"
 
 [[tools.ripgrep]]
-version = "14.1.1"
+version = "15.1.0"
 backend = "aqua:BurntSushi/ripgrep"
 
 [tools.ripgrep.platforms.linux-x64]
-checksum = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
-size = 2566310
-url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz"
-
-[tools.ripgrep.platforms.macos-arm64]
-checksum = "sha256:24ad76777745fbff131c8fbc466742b011f925bfa4fffa2ded6def23b5b937be"
-size = 1787248
-url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599"
+size = 2263077
+url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz"
 
 [[tools.shellcheck]]
 version = "0.11.0"

@@ -188,10 +188,10 @@ impl Doctor {
         info::inline_section("activated", yn(env::is_activated()))?;
         info::inline_section("shims_on_path", yn(shims_on_path()))?;
         info::inline_section("self_update_available", yn(SelfUpdate::is_available()))?;
-        if !SelfUpdate::is_available() {
-            if let Some(instructions) = crate::cli::self_update::upgrade_instructions_text() {
-                info::section("self_update_instructions", instructions)?;
-            }
+        if !SelfUpdate::is_available()
+            && let Some(instructions) = crate::cli::self_update::upgrade_instructions_text()
+        {
+            info::section("self_update_instructions", instructions)?;
         }
         if env::is_activated() && shims_on_path() {
             self.errors.push("shims are on PATH and mise is also activated. You should only use one of these methods.".to_string());
@@ -290,12 +290,12 @@ impl Doctor {
         info::section("plugins", render_plugins())?;
 
         for backend in backend::list() {
-            if let Some(plugin) = backend.plugin() {
-                if !plugin.is_installed() {
-                    self.errors
-                        .push(format!("plugin {} is not installed", &plugin.name()));
-                    continue;
-                }
+            if let Some(plugin) = backend.plugin()
+                && !plugin.is_installed()
+            {
+                self.errors
+                    .push(format!("plugin {} is not installed", &plugin.name()));
+                continue;
             }
         }
 
@@ -454,7 +454,7 @@ fn mise_env_vars() -> Vec<(String, String)> {
         "MISE_GITHUB_ENTERPRISE_TOKEN",
         "MISE_GITLAB_ENTERPRISE_TOKEN",
     ];
-    env::vars()
+    env::vars_safe()
         .filter(|(k, _)| k.starts_with("MISE_"))
         .map(|(k, v)| {
             let v = if REDACT_KEYS.contains(&k.as_str()) {

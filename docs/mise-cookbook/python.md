@@ -110,7 +110,7 @@ Here is an example toml task:
 uv = 'latest'
 
 [tasks.print_peps]
-run = """
+run = '''
 #!/usr/bin/env -S uv run --script
 # /// script
 # dependencies = ["requests<3", "rich"]
@@ -122,7 +122,7 @@ from rich.pretty import pprint
 resp = requests.get("https://peps.python.org/api/peps.json")
 data = resp.json()
 pprint([(k, v["title"]) for k, v in data.items()][:10])
-"""
+'''
 ```
 
 Or as a file task:

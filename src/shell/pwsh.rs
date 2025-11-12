@@ -6,22 +6,29 @@ use std::fmt::Display;
 
 use indoc::formatdoc;
 
-use crate::shell::{ActivateOptions, Shell};
+use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
 pub struct Pwsh {}
+
+impl Pwsh {}
 
 impl Shell for Pwsh {
     fn activate(&self, opts: ActivateOptions) -> String {
         let exe = opts.exe;
         let flags = opts.flags;
+
         let exe = exe.to_string_lossy();
         let mut out = String::new();
+
+        out.push_str(&shell::build_deactivation_script(self));
 
         out.push_str(&self.format_activate_prelude(&opts.prelude));
         out.push_str(&formatdoc! {r#"
             $env:MISE_SHELL = 'pwsh'
-            $env:__MISE_ORIG_PATH = $env:PATH
+            if (-not (Test-Path -Path Env:/__MISE_ORIG_PATH)) {{
+                $env:__MISE_ORIG_PATH = $env:PATH
+            }}
 
             function mise {{
                 [CmdletBinding()]
@@ -172,7 +179,7 @@ impl Shell for Pwsh {
         formatdoc! {r#"
         Remove-Item -ErrorAction SilentlyContinue function:mise
         Remove-Item -ErrorAction SilentlyContinue -Path Env:/MISE_SHELL
-        Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_WATCH
+        Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_DIFF
         Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_SESSION
         "#}
     }
@@ -250,6 +257,12 @@ mod tests {
 
     #[test]
     fn test_activate() {
+        // Unset __MISE_ORIG_PATH to avoid PATH restoration logic in output
+        unsafe {
+            std::env::remove_var("__MISE_ORIG_PATH");
+            std::env::remove_var("__MISE_DIFF");
+        }
+
         let pwsh = Pwsh::default();
         let exe = Path::new("/some/dir/mise");
         let opts = ActivateOptions {

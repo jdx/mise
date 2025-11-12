@@ -1,5 +1,5 @@
 use crate::task::Task;
-use crate::{cli::run::resolve_depends, config::Config};
+use crate::{config::Config, task::task_list::resolve_depends};
 use itertools::Itertools;
 use petgraph::Direction;
 use petgraph::graph::DiGraph;

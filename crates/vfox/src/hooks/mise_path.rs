@@ -1,7 +1,7 @@
 use mlua::{IntoLua, Lua, LuaSerdeExt, Value};
 
-use crate::error::Result;
 use crate::Plugin;
+use crate::error::Result;
 
 #[derive(Debug)]
 pub struct MisePathContext<T: serde::Serialize> {

@@ -18,21 +18,13 @@ Tool(s) to use
 
 ## Flags
 
-### `-J --json`
-
-Output in JSON format
-
-### `--json-extended`
-
-Output in JSON format with additional information (source, tool)
-
 ### `-D --dotenv`
 
 Output in dotenv format
 
-### `--redacted`
+### `-J --json`
 
-Only show redacted environment variables
+Output in JSON format
 
 ### `-s --shell <SHELL>`
 
@@ -47,6 +39,14 @@ Shell type to generate environment variables for
 - `xonsh`
 - `zsh`
 - `pwsh`
+
+### `--json-extended`
+
+Output in JSON format with additional information (source, tool)
+
+### `--redacted`
+
+Only show redacted environment variables
 
 ### `--values`
 

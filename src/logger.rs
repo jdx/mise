@@ -23,13 +23,13 @@ impl log::Log for Logger {
     }
 
     fn log(&self, record: &Record) {
-        if record.level() <= self.file_level {
-            if let Some(log_file) = &self.log_file {
-                let mut log_file = log_file.lock().unwrap();
-                let out = self.render(record, self.file_level);
-                if !out.is_empty() {
-                    let _ = writeln!(log_file, "{}", console::strip_ansi_codes(&out));
-                }
+        if record.level() <= self.file_level
+            && let Some(log_file) = &self.log_file
+        {
+            let mut log_file = log_file.lock().unwrap();
+            let out = self.render(record, self.file_level);
+            if !out.is_empty() {
+                let _ = writeln!(log_file, "{}", console::strip_ansi_codes(&out));
             }
         }
         let term_level = *self.term_level.lock().unwrap();

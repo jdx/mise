@@ -28,13 +28,13 @@ pub struct SyncNodeType {
     #[clap(long)]
     brew: bool,
 
-    /// Get tool versions from nvm
-    #[clap(long)]
-    nvm: bool,
-
     /// Get tool versions from nodenv
     #[clap(long)]
     nodenv: bool,
+
+    /// Get tool versions from nvm
+    #[clap(long)]
+    nvm: bool,
 }
 
 impl SyncNode {

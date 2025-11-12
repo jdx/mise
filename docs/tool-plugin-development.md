@@ -14,7 +14,7 @@ Tool plugins use traditional hook functions to manage a single tool. They provid
 
 ## Plugin Architecture
 
-Tool plugins use a hook-based architecture with specific functions for different lifecycle events:
+Tool plugins are implemented in Lua (version 5.1 at the moment). They use a hook-based architecture with specific functions for different lifecycle events:
 
 ```mermaid
 graph TD
@@ -94,6 +94,16 @@ function PLUGIN:PreInstall(ctx)
         url = url,
         sha256 = "abc123...",  -- Optional checksum
         note = "Installing Node.js " .. version,
+        -- Optional attestation metadata, choose a verification type
+        attestation = {
+            -- GitHub
+            github_owner = "ownername"
+            github_repo = "reponame"
+            -- Cosign
+            cosign_sig_or_bundle_path = "/path/to/sig/or/bundle/file"
+            -- SLSA
+            slsa_provenance_path = "/path/to/provenance/file"
+        },
         -- Additional files can be specified
         addition = {
             {

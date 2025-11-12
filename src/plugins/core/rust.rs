@@ -85,11 +85,7 @@ impl Backend for RustPlugin {
     }
 
     async fn idiomatic_filenames(&self) -> Result<Vec<String>> {
-        if Settings::get().experimental {
-            Ok(vec!["rust-toolchain.toml".into()])
-        } else {
-            Ok(vec![])
-        }
+        Ok(vec!["rust-toolchain.toml".into()])
     }
 
     async fn parse_idiomatic_file(&self, path: &Path) -> Result<String> {
@@ -191,13 +187,13 @@ impl Backend for RustPlugin {
             }
             let out = cmd.read()?;
             for line in out.lines() {
-                if line.starts_with(&self.target_triple(tv)) {
-                    if let Some(_cap) = v_re.captures(line) {
-                        // let requested = cap.get(1).unwrap().as_str().to_string();
-                        // let latest = cap.get(2).unwrap().as_str().to_string();
-                        let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
-                        return Ok(Some(oi));
-                    }
+                if line.starts_with(&self.target_triple(tv))
+                    && let Some(_cap) = v_re.captures(line)
+                {
+                    // let requested = cap.get(1).unwrap().as_str().to_string();
+                    // let latest = cap.get(2).unwrap().as_str().to_string();
+                    let oi = OutdatedInfo::new(config, tv.clone(), tv.version.clone())?;
+                    return Ok(Some(oi));
                 }
             }
             Ok(None)

@@ -16,13 +16,13 @@ This won't overwrite any existing installs but will overwrite any existing symli
 
 Get tool versions from Homebrew
 
-### `--nvm`
-
-Get tool versions from nvm
-
 ### `--nodenv`
 
 Get tool versions from nodenv
+
+### `--nvm`
+
+Get tool versions from nvm
 
 Examples:
 

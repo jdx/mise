@@ -6,6 +6,8 @@ import {
 } from "vitepress-plugin-group-icons";
 import { tabsMarkdownPlugin } from "vitepress-plugin-tabs";
 import { withMermaid } from "vitepress-plugin-mermaid";
+import kdlGrammar from "./grammars/kdl.tmLanguage.json";
+import miseTomlGrammar from "./grammars/mise-toml.tmLanguage.json";
 
 // https://vitepress.dev/reference/site-config
 export default withMermaid(
@@ -135,6 +137,7 @@ export default withMermaid(
             { text: "Running Tasks", link: "/tasks/running-tasks" },
             { text: "TOML Tasks", link: "/tasks/toml-tasks" },
             { text: "File Tasks", link: "/tasks/file-tasks" },
+            { text: "Task Arguments", link: "/tasks/task-arguments" },
             { text: "Task Configuration", link: "/tasks/task-configuration" },
             { text: "Monorepo Tasks", link: "/tasks/monorepo" },
           ],
@@ -151,6 +154,10 @@ export default withMermaid(
             {
               text: "Tool Plugin Development",
               link: "/tool-plugin-development",
+            },
+            {
+              text: "Environment Plugin Development",
+              link: "/env-plugin-development",
             },
             { text: "Plugin Lua Modules", link: "/plugin-lua-modules" },
             { text: "Plugin Publishing", link: "/plugin-publishing" },
@@ -236,6 +243,26 @@ export default withMermaid(
       },
     },
     markdown: {
+      languages: [
+        // Load base languages needed for embedded support
+        "toml",
+        "shell",
+        "bash",
+        // TODO: Once Shiki bundles KDL (tracked in shikijs/textmate-grammars-themes),
+        // we can import it from 'shiki/langs/kdl' instead of storing locally
+        {
+          ...kdlGrammar,
+          name: "kdl",
+          scopeName: "source.kdl",
+        } as any,
+        // Custom mise.toml grammar with embedded KDL (usage fields) and bash (run fields)
+        {
+          ...miseTomlGrammar,
+          name: "mise-toml",
+          aliases: ["mise.toml"],
+          scopeName: "source.mise-toml",
+        } as any,
+      ],
       config(md) {
         md.use(groupIconMdPlugin);
         md.use(tabsMarkdownPlugin);

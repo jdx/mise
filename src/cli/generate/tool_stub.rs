@@ -1,7 +1,6 @@
 use crate::Result;
 use crate::backend::asset_detector::detect_platform_from_url;
 use crate::backend::static_helpers::get_filename_from_url;
-use crate::config::Settings;
 use crate::file::{self, TarFormat, TarOptions};
 use crate::http::HTTP;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -14,7 +13,7 @@ use std::path::PathBuf;
 use toml_edit::DocumentMut;
 use xx::file::display_path;
 
-/// [experimental] Generate a tool stub for HTTP-based tools
+/// Generate a tool stub for HTTP-based tools
 ///
 /// This command generates tool stubs that can automatically download and execute
 /// tools from HTTP URLs. It can detect checksums, file sizes, and binary paths
@@ -30,15 +29,34 @@ pub struct ToolStub {
     #[clap(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
 
-    /// Version of the tool
-    #[clap(long, default_value = "latest")]
-    pub version: String,
+    /// Binary path within the extracted archive
+    ///
+    /// If not specified and the archive is downloaded, will auto-detect the most likely binary
+    #[clap(long, short)]
+    pub bin: Option<String>,
 
     /// URL for downloading the tool
     ///
     /// Example: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz
     #[clap(long, short)]
     pub url: Option<String>,
+
+    /// Fetch checksums and sizes for an existing tool stub file
+    ///
+    /// This reads an existing stub file and fills in any missing checksum/size fields
+    /// by downloading the files. URLs must already be present in the stub.
+    #[clap(long, conflicts_with_all = &["url", "platform_url", "version", "bin", "platform_bin", "skip_download"])]
+    pub fetch: bool,
+
+    /// HTTP backend type to use
+    #[clap(long, default_value = "http")]
+    pub http: String,
+
+    /// Platform-specific binary paths in the format platform:path
+    ///
+    /// Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
+    #[clap(long)]
+    pub platform_bin: Vec<String>,
 
     /// Platform-specific URLs in the format platform:url or just url (auto-detect platform)
     ///
@@ -54,38 +72,17 @@ pub struct ToolStub {
     #[clap(long)]
     pub platform_url: Vec<String>,
 
-    /// Platform-specific binary paths in the format platform:path
-    ///
-    /// Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
-    #[clap(long)]
-    pub platform_bin: Vec<String>,
-
-    /// Binary path within the extracted archive
-    ///
-    /// If not specified and the archive is downloaded, will auto-detect the most likely binary
-    #[clap(long, short)]
-    pub bin: Option<String>,
-
     /// Skip downloading for checksum and binary path detection (faster but less informative)
     #[clap(long)]
     pub skip_download: bool,
 
-    /// Fetch checksums and sizes for an existing tool stub file
-    ///
-    /// This reads an existing stub file and fills in any missing checksum/size fields
-    /// by downloading the files. URLs must already be present in the stub.
-    #[clap(long, conflicts_with_all = &["url", "platform_url", "version", "bin", "platform_bin", "skip_download"])]
-    pub fetch: bool,
-
-    /// HTTP backend type to use
-    #[clap(long, default_value = "http")]
-    pub http: String,
+    /// Version of the tool
+    #[clap(long, default_value = "latest")]
+    pub version: String,
 }
 
 impl ToolStub {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("generate tool-stub")?;
-
         let stub_content = if self.fetch {
             self.fetch_checksums().await?
         } else {
@@ -162,10 +159,10 @@ impl ToolStub {
             .unwrap_or("");
 
         // Update bin if provided and different from stub filename
-        if let Some(bin) = &self.bin {
-            if bin != stub_filename {
-                doc["bin"] = toml_edit::value(bin);
-            }
+        if let Some(bin) = &self.bin
+            && bin != stub_filename
+        {
+            doc["bin"] = toml_edit::value(bin);
         }
 
         // We use toml_edit directly to preserve existing content
@@ -188,12 +185,12 @@ impl ToolStub {
                 }
                 doc["size"] = size_item;
 
-                if self.bin.is_none() {
-                    if let Some(detected_bin) = bin_path.as_ref() {
-                        // Only set bin if it's different from the stub filename
-                        if detected_bin != stub_filename {
-                            doc["bin"] = toml_edit::value(detected_bin);
-                        }
+                if self.bin.is_none()
+                    && let Some(detected_bin) = bin_path.as_ref()
+                {
+                    // Only set bin if it's different from the stub filename
+                    if detected_bin != stub_filename {
+                        doc["bin"] = toml_edit::value(detected_bin);
                     }
                 }
             }
@@ -233,10 +230,10 @@ impl ToolStub {
                 platform_table["url"] = toml_edit::value(&url);
 
                 // Set platform-specific bin path if explicitly provided and different from stub filename
-                if let Some(explicit_bin) = explicit_platform_bins.get(&platform) {
-                    if explicit_bin != stub_filename {
-                        platform_table["bin"] = toml_edit::value(explicit_bin);
-                    }
+                if let Some(explicit_bin) = explicit_platform_bins.get(&platform)
+                    && explicit_bin != stub_filename
+                {
+                    platform_table["bin"] = toml_edit::value(explicit_bin);
                 }
 
                 // Auto-detect checksum, size, and bin path if not skipped
@@ -258,12 +255,12 @@ impl ToolStub {
                     }
 
                     // Set bin path if not explicitly provided and we detected one different from stub filename
-                    if !explicit_platform_bins.contains_key(&platform) && self.bin.is_none() {
-                        if let Some(detected_bin) = bin_path.as_ref() {
-                            if detected_bin != stub_filename {
-                                platform_table["bin"] = toml_edit::value(detected_bin);
-                            }
-                        }
+                    if !explicit_platform_bins.contains_key(&platform)
+                        && self.bin.is_none()
+                        && let Some(detected_bin) = bin_path.as_ref()
+                        && detected_bin != stub_filename
+                    {
+                        platform_table["bin"] = toml_edit::value(detected_bin);
                     }
                 }
             }
@@ -281,12 +278,11 @@ impl ToolStub {
                 // Remove platform-specific bin entries since we'll have a global one
                 for platform_spec in &self.platform_url {
                     let (platform, _) = self.parse_platform_spec(platform_spec)?;
-                    if let Some(platform_table) = platforms.get_mut(&platform) {
-                        if let Some(table) = platform_table.as_table_mut() {
-                            if !explicit_platform_bins.contains_key(&platform) {
-                                table.remove("bin");
-                            }
-                        }
+                    if let Some(platform_table) = platforms.get_mut(&platform)
+                        && let Some(table) = platform_table.as_table_mut()
+                        && !explicit_platform_bins.contains_key(&platform)
+                    {
+                        table.remove("bin");
                     }
                 }
                 // Now set the global bin if different from stub filename
@@ -478,10 +474,10 @@ impl ToolStub {
             let entry = entry?;
             if entry.file_type().is_file() {
                 let path = entry.path();
-                if file::is_executable(path) {
-                    if let Ok(relative_path) = path.strip_prefix(dir) {
-                        executables.push(relative_path.to_string_lossy().to_string());
-                    }
+                if file::is_executable(path)
+                    && let Ok(relative_path) = path.strip_prefix(dir)
+                {
+                    executables.push(relative_path.to_string_lossy().to_string());
                 }
             }
         }
@@ -503,10 +499,10 @@ impl ToolStub {
                     return Ok(exe.clone());
                 }
                 // Check filename without extension
-                if let Some(stem) = path.file_stem().and_then(|f| f.to_str()) {
-                    if stem == tool_name {
-                        return Ok(exe.clone());
-                    }
+                if let Some(stem) = path.file_stem().and_then(|f| f.to_str())
+                    && stem == tool_name
+                {
+                    return Ok(exe.clone());
                 }
             }
         }
@@ -609,28 +605,28 @@ impl ToolStub {
         // Process platform-specific URLs
         if let Some(platforms) = doc.get_mut("platforms").and_then(|p| p.as_table_mut()) {
             for (platform_name, platform_value) in platforms.iter_mut() {
-                if let Some(platform_table) = platform_value.as_table_mut() {
-                    if let Some(url) = platform_table.get("url").and_then(|v| v.as_str()) {
-                        // Only fetch if checksum is missing for this platform
-                        if platform_table.get("checksum").is_none() {
-                            match self.analyze_url(url, &mpr).await {
-                                Ok((checksum, size, _)) => {
-                                    platform_table["checksum"] = toml_edit::value(&checksum);
+                if let Some(platform_table) = platform_value.as_table_mut()
+                    && let Some(url) = platform_table.get("url").and_then(|v| v.as_str())
+                {
+                    // Only fetch if checksum is missing for this platform
+                    if platform_table.get("checksum").is_none() {
+                        match self.analyze_url(url, &mpr).await {
+                            Ok((checksum, size, _)) => {
+                                platform_table["checksum"] = toml_edit::value(&checksum);
 
-                                    // Create size entry with human-readable comment
-                                    let mut size_item = toml_edit::value(size as i64);
-                                    if let Some(value) = size_item.as_value_mut() {
-                                        let formatted_comment = format_size_comment(size);
-                                        value.decor_mut().set_suffix(formatted_comment);
-                                    }
-                                    platform_table["size"] = size_item;
+                                // Create size entry with human-readable comment
+                                let mut size_item = toml_edit::value(size as i64);
+                                if let Some(value) = size_item.as_value_mut() {
+                                    let formatted_comment = format_size_comment(size);
+                                    value.decor_mut().set_suffix(formatted_comment);
                                 }
-                                Err(e) => {
-                                    // Log error but continue with other platforms
-                                    eprintln!(
-                                        "Warning: Failed to fetch checksum for platform '{platform_name}': {e}"
-                                    );
-                                }
+                                platform_table["size"] = size_item;
+                            }
+                            Err(e) => {
+                                // Log error but continue with other platforms
+                                eprintln!(
+                                    "Warning: Failed to fetch checksum for platform '{platform_name}': {e}"
+                                );
                             }
                         }
                     }

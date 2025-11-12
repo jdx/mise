@@ -26,23 +26,23 @@ The git url of the plugin
 
 ## Flags
 
-### `-f --force`
-
-Reinstall even if plugin exists
-
 ### `-a --all`
 
 Install all missing plugins
 This will only install plugins that have matching shorthands.
 i.e.: they don't need the full git repo url
 
-### `-v --verbose…`
+### `-f --force`
 
-Show installation output
+Reinstall even if plugin exists
 
 ### `-j --jobs <JOBS>`
 
 Number of jobs to run in parallel
+
+### `-v --verbose…`
+
+Show installation output
 
 Examples:
 

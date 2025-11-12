@@ -206,10 +206,24 @@ impl Config {
 
         measure!("config::load install_state", {
             for (plugin, url) in &config.repo_urls {
-                let plugin_type = match url.contains("vfox-") {
-                    true => PluginType::Vfox,
-                    false => PluginType::Asdf,
+                // check plugin type, fallback to asdf
+                let (mut plugin_type, has_explicit_prefix) = match plugin {
+                    p if p.starts_with("vfox:") => (PluginType::Vfox, true),
+                    p if p.starts_with("vfox-backend:") => (PluginType::VfoxBackend, true),
+                    p if p.starts_with("asdf:") => (PluginType::Asdf, true),
+                    _ => (PluginType::Asdf, false),
                 };
+                // keep backward compatibility for vfox plugins, but only if no explicit prefix
+                if !has_explicit_prefix && url.contains("vfox-") {
+                    plugin_type = PluginType::Vfox;
+                }
+
+                let plugin = plugin
+                    .strip_prefix("vfox:")
+                    .or_else(|| plugin.strip_prefix("vfox-backend:"))
+                    .or_else(|| plugin.strip_prefix("asdf:"))
+                    .unwrap_or(plugin);
+
                 install_state::add_plugin(plugin, plugin_type).await?;
             }
         });
@@ -275,10 +289,10 @@ impl Config {
     }
 
     pub async fn vars_results(self: &Arc<Self>) -> Result<&EnvResults> {
-        if let Some(loader) = &self.vars_loader {
-            if let Some(results) = loader.vars_results.get() {
-                return Ok(results);
-            }
+        if let Some(loader) = &self.vars_loader
+            && let Some(results) = loader.vars_results.get()
+        {
+            return Ok(results);
         }
         self.vars_results
             .get_or_try_init(|| async move { load_vars(self).await })
@@ -316,6 +330,16 @@ impl Config {
             .unwrap_or(plugin_name.to_string());
         let plugin_name = plugin_name.strip_prefix("asdf:").unwrap_or(&plugin_name);
         let plugin_name = plugin_name.strip_prefix("vfox:").unwrap_or(plugin_name);
+
+        if let Some(url) = self
+            .repo_urls
+            .keys()
+            .find(|k| k.ends_with(&format!(":{plugin_name}")))
+            .and_then(|k| self.repo_urls.get(k))
+        {
+            return Some(url.clone());
+        }
+
         self.shorthands
             .get(plugin_name)
             .map(|full| registry::full_to_url(&full[0]))
@@ -376,10 +400,10 @@ impl Config {
     }
 
     pub async fn resolve_alias(&self, backend: &ABackend, v: &str) -> Result<String> {
-        if let Some(plugin_aliases) = self.all_aliases.get(&backend.ba().short) {
-            if let Some(alias) = plugin_aliases.versions.get(v) {
-                return Ok(alias.clone());
-            }
+        if let Some(plugin_aliases) = self.all_aliases.get(&backend.ba().short)
+            && let Some(alias) = plugin_aliases.versions.get(v)
+        {
+            return Ok(alias.clone());
         }
         if let Some(alias) = backend.get_aliases()?.get(v) {
             return Ok(alias.clone());
@@ -693,12 +717,30 @@ impl Config {
 }
 
 fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<dyn ConfigFile>> {
-    DEFAULT_CONFIG_FILENAMES
+    let mut configs: Vec<&'a Arc<dyn ConfigFile>> = DEFAULT_CONFIG_FILENAMES
         .iter()
         .rev()
-        .map(|f| dir.join(f))
-        .filter_map(|f| config_files.get(&f))
-        .collect()
+        .flat_map(|f| {
+            if f.contains('*') {
+                // Handle glob patterns by matching against actual config file paths
+                glob(dir, f)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|path| config_files.get(&path))
+                    .collect::<Vec<_>>()
+            } else {
+                // Handle regular filenames
+                config_files
+                    .get(&dir.join(f))
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            }
+        })
+        .collect();
+    // Remove duplicates while preserving order
+    let mut seen = std::collections::HashSet::new();
+    configs.retain(|cf| seen.insert(cf.get_path().to_path_buf()));
+    configs
 }
 
 fn get_project_root(config_files: &ConfigMap) -> Option<PathBuf> {
@@ -804,6 +846,7 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
             ".config/mise/mise.local.toml",
             ".config/mise.local.toml",
             ".mise/config.local.toml",
+            "mise/config.local.toml",
             ".rtx.local.toml",
             "mise.local.toml",
             ".mise.local.toml",
@@ -896,10 +939,10 @@ pub fn config_file_from_dir(p: &Path) -> PathBuf {
         return p.to_path_buf();
     }
     for dir in all_dirs().unwrap_or_default() {
-        if let Some(cf) = self::config_files_in_dir(&dir).last() {
-            if !is_global_config(cf) {
-                return cf.clone();
-            }
+        if let Some(cf) = self::config_files_in_dir(&dir).last()
+            && !is_global_config(cf)
+        {
+            return cf.clone();
         }
     }
     match Settings::get().asdf_compat {
@@ -1047,10 +1090,11 @@ static CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
 fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
     let mut files = IndexSet::new();
     for p in file::ls(&dir.join("conf.d")).unwrap_or_default() {
-        if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string()) {
-            if !file_name.starts_with(".") && file_name.ends_with(".toml") {
-                files.insert(p);
-            }
+        if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string())
+            && !file_name.starts_with(".")
+            && file_name.ends_with(".toml")
+        {
+            files.insert(p);
         }
     }
     files.extend(CONFIG_FILENAMES.iter().map(|f| dir.join(f)));
@@ -1184,10 +1228,6 @@ async fn load_all_config_files(
         let cf = match parse_config_file(f, idiomatic_filenames).await {
             Ok(cfg) => cfg,
             Err(err) => {
-                if err.to_string().contains("are not trusted.") {
-                    warn!("{err}");
-                    continue;
-                }
                 return Err(err.wrap_err(format!(
                     "error parsing config file: {}",
                     style::ebold(display_path(f))
@@ -1199,10 +1239,10 @@ async fn load_all_config_files(
         }
 
         // Mark monorepo roots so descendant configs are implicitly trusted
-        if cf.experimental_monorepo_root() == Some(true) {
-            if let Err(err) = config_file::mark_as_monorepo_root(f) {
-                warn!("failed to mark monorepo root: {err:#}");
-            }
+        if cf.experimental_monorepo_root() == Some(true)
+            && let Err(err) = config_file::mark_as_monorepo_root(f)
+        {
+            warn!("failed to mark monorepo root: {err:#}");
         }
 
         config_map.insert(f.clone(), cf);
@@ -1223,10 +1263,6 @@ pub async fn load_config_files_from_paths(config_paths: &[PathBuf]) -> Result<Co
         let cf = match parse_config_file(f, &idiomatic_filenames).await {
             Ok(cfg) => cfg,
             Err(err) => {
-                if err.to_string().contains("are not trusted.") {
-                    trace!("skipping untrusted config: {}", display_path(f));
-                    continue;
-                }
                 return Err(err.wrap_err(format!(
                     "error parsing config file: {}",
                     style::ebold(display_path(f))
@@ -1341,11 +1377,11 @@ impl Debug for Config {
                 &tasks.values().map(|t| t.to_string()).collect_vec(),
             );
         }
-        if let Some(env) = self.env_maybe() {
-            if !env.is_empty() {
-                s.field("Env", &env);
-                // s.field("Env Sources", &self.env_sources);
-            }
+        if let Some(env) = self.env_maybe()
+            && !env.is_empty()
+        {
+            s.field("Env", &env);
+            // s.field("Env Sources", &self.env_sources);
         }
         if let Some(env_results) = self.env.get() {
             if !env_results.env_files.is_empty() {

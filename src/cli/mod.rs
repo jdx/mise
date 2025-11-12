@@ -1,11 +1,12 @@
-use crate::cli::run::TaskOutput;
 use crate::config::{Config, Settings};
 use crate::exit::exit;
-use crate::ui::ctrlc;
+use crate::task::TaskOutput;
+use crate::ui::{self, ctrlc};
 use crate::{Result, backend};
 use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{logger, migrate, shims};
 use clap::{ArgAction, CommandFactory, Parser, Subcommand};
+use eyre::bail;
 use std::path::PathBuf;
 
 mod activate;
@@ -30,6 +31,8 @@ mod generate;
 mod global;
 mod hook_env;
 mod hook_not_found;
+
+pub use hook_env::HookReason;
 mod implode;
 mod install;
 mod install_into;
@@ -46,8 +49,6 @@ mod prune;
 mod registry;
 #[cfg(debug_assertions)]
 mod render_help;
-#[cfg(feature = "clap_mangen")]
-mod render_mangen;
 mod reshim;
 pub mod run;
 mod search;
@@ -96,15 +97,12 @@ pub struct Cli {
     pub task_args: Option<Vec<String>>,
     #[clap(last = true, hide = true)]
     pub task_args_last: Vec<String>,
-    /// Change directory before running command
-    #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath)]
-    pub cd: Option<PathBuf>,
     /// Continue running tasks even if one fails
     #[clap(long, short = 'c', hide = true, verbatim_doc_comment)]
     pub continue_on_error: bool,
-    /// Dry run, don't actually do anything
-    #[clap(short = 'n', long, hide = true)]
-    pub dry_run: bool,
+    /// Change directory before running command
+    #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath)]
+    pub cd: Option<PathBuf>,
     /// Set the environment for loading `mise.<ENV>.toml`
     #[clap(short = 'E', long, global = true)]
     pub env: Option<Vec<String>>,
@@ -117,13 +115,17 @@ pub struct Cli {
     /// How many jobs to run in parallel [default: 8]
     #[clap(long, short, global = true, env = "MISE_JOBS")]
     pub jobs: Option<usize>,
+    /// Dry run, don't actually do anything
+    #[clap(short = 'n', long, hide = true)]
+    pub dry_run: bool,
     #[clap(long, short, hide = true, overrides_with = "interleave")]
     pub prefix: bool,
-    #[clap(long)]
-    pub output: Option<TaskOutput>,
     /// Set the profile (environment)
     #[clap(short = 'P', long, global = true, hide = true, conflicts_with = "env")]
     pub profile: Option<Vec<String>>,
+    /// Suppress non-error messages
+    #[clap(short = 'q', long, global = true, overrides_with_all = &["silent", "trace", "verbose", "debug", "log_level"])]
+    pub quiet: bool,
     #[clap(long, short, hide = true)]
     pub shell: Option<String>,
     /// Tool(s) to run in addition to what is in mise.toml files
@@ -136,14 +138,19 @@ pub struct Cli {
         env = "MISE_QUIET"
     )]
     pub tool: Vec<ToolArg>,
-    /// Read/write directly to stdin/stdout/stderr instead of by line
-    #[clap(long, global = true)]
-    pub raw: bool,
-    /// Shows elapsed time after each task completes
-    ///
-    /// Default to always show with `MISE_TASK_TIMINGS=1`
-    #[clap(long, alias = "timing", verbatim_doc_comment, hide = true)]
-    pub timings: bool,
+    /// Show extra output (use -vv for even more)
+    #[clap(short='v', long, global=true, action=ArgAction::Count, overrides_with_all = &["quiet", "silent", "trace", "debug"])]
+    pub verbose: u8,
+    #[clap(long, short = 'V', hide = true)]
+    pub version: bool,
+    /// Answer yes to all confirmation prompts
+    #[clap(short = 'y', long, global = true)]
+    pub yes: bool,
+    /// Sets log level to debug
+    #[clap(long, global = true, hide = true, overrides_with_all = &["quiet", "trace", "verbose", "silent", "log_level"])]
+    pub debug: bool,
+    #[clap(long, global = true, hide = true, value_name = "LEVEL", value_enum, overrides_with_all = &["quiet", "trace", "verbose", "silent", "debug"])]
+    pub log_level: Option<LevelFilter>,
     /// Do not load any config files
     ///
     /// Can also use `MISE_NO_CONFIG=1`
@@ -154,37 +161,22 @@ pub struct Cli {
     /// Default to always hide with `MISE_TASK_TIMINGS=0`
     #[clap(long, alias = "no-timing", hide = true, verbatim_doc_comment)]
     pub no_timings: bool,
-
-    #[clap(long, short = 'V', hide = true)]
-    pub version: bool,
-    /// Answer yes to all confirmation prompts
-    #[clap(short = 'y', long, global = true)]
-    pub yes: bool,
-
-    #[clap(flatten)]
-    pub global_output_flags: CliGlobalOutputFlags,
-}
-
-#[derive(clap::Args)]
-#[group(multiple = false)]
-pub struct CliGlobalOutputFlags {
-    /// Sets log level to debug
-    #[clap(long, global = true, hide = true, overrides_with_all = &["quiet", "trace", "verbose", "silent", "log_level"])]
-    pub debug: bool,
-    #[clap(long, global = true, hide = true, value_name = "LEVEL", value_enum, overrides_with_all = &["quiet", "trace", "verbose", "silent", "debug"])]
-    pub log_level: Option<LevelFilter>,
-    /// Suppress non-error messages
-    #[clap(short = 'q', long, global = true, overrides_with_all = &["silent", "trace", "verbose", "debug", "log_level"])]
-    pub quiet: bool,
+    #[clap(long)]
+    pub output: Option<TaskOutput>,
+    /// Read/write directly to stdin/stdout/stderr instead of by line
+    #[clap(long, global = true)]
+    pub raw: bool,
     /// Suppress all task output and mise non-error messages
     #[clap(long, global = true, overrides_with_all = &["quiet", "trace", "verbose", "debug", "log_level"])]
     pub silent: bool,
+    /// Shows elapsed time after each task completes
+    ///
+    /// Default to always show with `MISE_TASK_TIMINGS=1`
+    #[clap(long, alias = "timing", verbatim_doc_comment, hide = true)]
+    pub timings: bool,
     /// Sets log level to trace
     #[clap(long, global = true, hide = true, overrides_with_all = &["quiet", "silent", "verbose", "debug", "log_level"])]
     pub trace: bool,
-    /// Show extra output (use -vv for even more)
-    #[clap(short='v', long, global=true, action=ArgAction::Count, overrides_with_all = &["quiet", "silent", "trace", "debug"])]
-    pub verbose: u8,
 }
 
 #[derive(Subcommand, strum::Display)]
@@ -224,6 +216,8 @@ pub enum Commands {
     Plugins(plugins::Plugins),
     Prune(prune::Prune),
     Registry(registry::Registry),
+    #[cfg(debug_assertions)]
+    RenderHelp(render_help::RenderHelp),
     Reshim(reshim::Reshim),
     Run(Box<run::Run>),
     Search(search::Search),
@@ -248,12 +242,6 @@ pub enum Commands {
     Watch(Box<watch::Watch>),
     Where(r#where::Where),
     Which(which::Which),
-
-    #[cfg(debug_assertions)]
-    RenderHelp(render_help::RenderHelp),
-
-    #[cfg(feature = "clap_mangen")]
-    RenderMangen(render_mangen::RenderMangen),
 }
 
 impl Commands {
@@ -293,6 +281,8 @@ impl Commands {
             Self::Plugins(cmd) => cmd.run().await,
             Self::Prune(cmd) => cmd.run().await,
             Self::Registry(cmd) => cmd.run().await,
+            #[cfg(debug_assertions)]
+            Self::RenderHelp(cmd) => cmd.run(),
             Self::Reshim(cmd) => cmd.run().await,
             Self::Run(cmd) => (*cmd).run().await,
             Self::Search(cmd) => cmd.run().await,
@@ -317,14 +307,119 @@ impl Commands {
             Self::Watch(cmd) => cmd.run().await,
             Self::Where(cmd) => cmd.run().await,
             Self::Which(cmd) => cmd.run().await,
-
-            #[cfg(debug_assertions)]
-            Self::RenderHelp(cmd) => cmd.run(),
-
-            #[cfg(feature = "clap_mangen")]
-            Self::RenderMangen(cmd) => cmd.run(),
         }
     }
+}
+
+fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
+    let mut flags_with_values = Vec::new();
+    let mut boolean_flags = Vec::new();
+
+    for arg in cmd.get_arguments() {
+        let takes_value = matches!(
+            arg.get_action(),
+            clap::ArgAction::Set | clap::ArgAction::Append
+        );
+        let is_bool = matches!(
+            arg.get_action(),
+            clap::ArgAction::SetTrue | clap::ArgAction::SetFalse
+        );
+
+        if takes_value {
+            if let Some(long) = arg.get_long() {
+                flags_with_values.push(format!("--{}", long));
+            }
+            if let Some(short) = arg.get_short() {
+                flags_with_values.push(format!("-{}", short));
+            }
+        } else if is_bool {
+            if let Some(long) = arg.get_long() {
+                boolean_flags.push(format!("--{}", long));
+            }
+            if let Some(short) = arg.get_short() {
+                boolean_flags.push(format!("-{}", short));
+            }
+        }
+    }
+
+    (flags_with_values, boolean_flags)
+}
+
+fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<String> {
+    // Check if this might be a naked run (no subcommand)
+    if args.len() < 2 {
+        return args.to_vec();
+    }
+
+    // If there's already a '--' separator, let clap handle everything normally
+    if args.contains(&"--".to_string()) {
+        return args.to_vec();
+    }
+
+    let (flags_with_values, _) = get_global_flags(cmd);
+
+    // Skip global flags to find the first non-flag argument (subcommand or task)
+    let mut i = 1;
+    while i < args.len() {
+        let arg = &args[i];
+
+        if !arg.starts_with('-') {
+            // Found first non-flag argument
+            break;
+        }
+
+        // Check if this flag takes a value
+        let flag_takes_value = if arg.starts_with("--") {
+            if arg.contains('=') {
+                // --flag=value format, doesn't consume next arg
+                i += 1;
+                continue;
+            } else {
+                let flag_name = arg.split('=').next().unwrap();
+                flags_with_values.iter().any(|f| f == flag_name)
+            }
+        } else {
+            // Short form: check if it's in flags_with_values list
+            if arg.len() >= 2 {
+                let flag_name = &arg[..2]; // Get -X part
+                flags_with_values.iter().any(|f| f == flag_name)
+            } else {
+                false
+            }
+        };
+
+        if flag_takes_value && i + 1 < args.len() {
+            // Skip both the flag and its value
+            i += 2;
+        } else {
+            // Skip just the flag
+            i += 1;
+        }
+    }
+
+    // No non-flag argument found
+    if i >= args.len() {
+        return args.to_vec();
+    }
+
+    // Extract all known subcommand names and aliases from the clap Command
+    let known_subcommands: Vec<_> = cmd
+        .get_subcommands()
+        .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
+        .collect();
+
+    // Check if the first non-flag argument is a known subcommand
+    if known_subcommands.contains(&args[i].as_str()) {
+        return args.to_vec();
+    }
+
+    // This is a naked run - inject "run" subcommand so clap routes it correctly
+    // Format: ["mise", "-q", "task", "arg1"] becomes ["mise", "-q", "run", "task", "arg1"]
+    // This preserves global flags while making it an explicit run command
+    let mut result = args[..i].to_vec(); // Keep program name + global flags
+    result.push("run".to_string()); // Insert "run" subcommand
+    result.extend_from_slice(&args[i..]); // Add task name and args
+    result
 }
 
 impl Cli {
@@ -339,9 +434,16 @@ impl Cli {
         ctrlc::init();
         let print_version = version::print_version_if_requested(args)?;
         let _ = measure!("backend::load_tools", { backend::load_tools().await });
+
+        // Pre-process args to handle naked runs before clap parsing
+        let cmd = Cli::command();
+        let processed_args = preprocess_args_for_naked_run(&cmd, args);
+
         let cli = measure!("get_matches_from", {
-            Cli::parse_from(crate::env::ARGS.read().unwrap().iter())
+            Cli::parse_from(processed_args.iter())
         });
+        // Validate --cd path BEFORE Settings processes it and changes the directory
+        validate_cd_path(&cli.cd)?;
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
         measure!("logger", { logger::init() });
@@ -386,7 +488,6 @@ impl Cli {
                         cd: self.cd,
                         continue_on_error: self.continue_on_error,
                         dry_run: self.dry_run,
-                        failed_tasks: Default::default(),
                         force: self.force,
                         interleave: self.interleave,
                         is_linear: false,
@@ -395,20 +496,18 @@ impl Cli {
                         output: self.output,
                         prefix: self.prefix,
                         shell: self.shell,
-                        quiet: self.global_output_flags.quiet,
-                        silent: self.global_output_flags.silent,
+                        quiet: self.quiet,
+                        silent: self.silent,
                         raw: self.raw,
                         timings: self.timings,
                         tmpdir: Default::default(),
                         tool: Default::default(),
-                        keep_order_output: Default::default(),
-                        task_prs: Default::default(),
-                        timed_outputs: Default::default(),
-                        toolset_cache: Default::default(),
-                        tool_request_set_cache: Default::default(),
-                        env_resolution_cache: Default::default(),
+                        output_handler: None,
+                        context_builder: Default::default(),
+                        executor: None,
                         no_cache: Default::default(),
                         timeout: None,
+                        skip_deps: false,
                     })));
                 } else if let Some(cmd) = external::COMMANDS.get(&task) {
                     external::execute(
@@ -477,5 +576,42 @@ fn check_working_directory() {
             "Current directory does not exist or is not accessible: {}",
             dir_path
         );
+    }
+}
+
+/// Validate the --cd path if provided and return an error if it doesn't exist
+fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
+    if let Some(path) = cd {
+        if !path.exists() {
+            bail!(
+                "Directory specified with --cd does not exist: {}\n\
+                 Please check the path and try again.",
+                ui::style::epath(path)
+            );
+        }
+        if !path.is_dir() {
+            bail!(
+                "Path specified with --cd is not a directory: {}\n\
+                 Please provide a valid directory path.",
+                ui::style::epath(path)
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_subcommands_are_sorted() {
+        let cmd = Cli::command();
+        // Check all subcommands except watch (which has many watchexec passthrough args)
+        for subcmd in cmd.get_subcommands() {
+            if subcmd.get_name() != "watch" {
+                clap_sort::assert_sorted(subcmd);
+            }
+        }
     }
 }

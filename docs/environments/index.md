@@ -391,7 +391,7 @@ This **must** be a script that runs in bash as if it were executed like this:
 source ./script.sh
 ```
 
-The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/issues/1448)
+The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/discussions/6734)
 for a potential alternative that would work with binaries or other script languages.
 :::
 
@@ -427,7 +427,68 @@ _.source = [
 
 ## Plugin-provided `env._` Directives
 
-Plugins can provide their own `env._` directives. See [mise-env-sample](https://github.com/jdx/mise-env-sample) for an example of one.
+Plugins can provide their own `env._` directives that dynamically set environment variables and modify your PATH. This is particularly useful for:
+
+- Integrating with external secret management systems
+- Setting environment variables based on dynamic conditions
+- Managing complex PATH configurations
+- Providing team-wide environment standardization
+
+### Basic Usage
+
+Simple plugin activation:
+
+```toml
+[env]
+_.my-plugin = {}
+```
+
+Plugin with configuration options:
+
+```toml
+[env]
+_.my-plugin = { option1 = "value1", option2 = "value2" }
+```
+
+### How It Works
+
+When you use `env._.<plugin-name>`, mise:
+
+1. Loads the plugin from your installed plugins
+2. Calls the plugin's `MiseEnv` hook to get environment variables
+3. Calls the plugin's `MisePath` hook to get PATH entries (if defined)
+4. Applies these to your environment when running `mise env` or using shell integration
+
+The configuration options you provide (the TOML table after `=`) are passed to the plugin's hooks via `ctx.options`, allowing plugins to be configured per-project or per-environment.
+
+### Example: Secret Management Plugin
+
+```toml
+[env]
+# Fetch secrets from a vault
+_.vault-secrets = {
+  vault_url = "https://vault.example.com",
+  secrets_path = "secret/myapp"
+}
+```
+
+The plugin could then fetch secrets from HashiCorp Vault and expose them as environment variables.
+
+### Example: Dynamic Environment Plugin
+
+```toml
+[env]
+# Set environment based on git branch
+_.git-env = { production_branch = "main" }
+```
+
+The plugin could detect the current git branch and set `ENVIRONMENT=production` when on `main`, or `ENVIRONMENT=development` otherwise.
+
+### Creating Environment Plugins
+
+See [Environment Plugins](/plugins#environment-plugins) in the Plugins documentation for a complete guide to creating your own environment plugins.
+
+For a working example, see the [mise-env-sample](https://github.com/jdx/mise-env-sample) repository.
 
 ## Multiple `env._` Directives
 

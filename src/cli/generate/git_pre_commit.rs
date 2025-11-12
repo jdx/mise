@@ -1,10 +1,9 @@
 use xx::file::display_path;
 
-use crate::config::Settings;
 use crate::file;
 use crate::git::Git;
 
-/// [experimental] Generate a git pre-commit hook
+/// Generate a git pre-commit hook
 ///
 /// This command generates a git pre-commit hook that runs a mise task like `mise run pre-commit`
 /// when you commit changes to your repository.
@@ -15,21 +14,19 @@ use crate::git::Git;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
 pub struct GitPreCommit {
-    /// Which hook to generate (saves to .git/hooks/$hook)
-    #[clap(long, default_value = "pre-commit")]
-    hook: String,
     /// The task to run when the pre-commit hook is triggered
     #[clap(long, short, default_value = "pre-commit")]
     task: String,
     /// write to .git/hooks/pre-commit and make it executable
     #[clap(long, short)]
     write: bool,
+    /// Which hook to generate (saves to .git/hooks/$hook)
+    #[clap(long, default_value = "pre-commit")]
+    hook: String,
 }
 
 impl GitPreCommit {
     pub async fn run(self) -> eyre::Result<()> {
-        let settings = Settings::get();
-        settings.ensure_experimental("generate git-pre-commit")?;
         let output = self.generate();
         if self.write {
             let path = Git::get_root()?.join(".git/hooks").join(&self.hook);
@@ -54,7 +51,7 @@ impl GitPreCommit {
         let task = &self.task;
         format!(
             r#"#!/bin/sh
-STAGED="$(git diff-index --cached --name-only HEAD | tr ' ' '\ ' | tr '\n' ' ' | xargs)"
+STAGED="$(git diff-index --cached --name-only -z HEAD | xargs -0)"
 export STAGED
 export MISE_PRE_COMMIT=1
 exec mise run {task}

@@ -1,0 +1,181 @@
+#!/usr/bin/env zsh
+# shellcheck disable=SC1071
+set -euo pipefail
+
+# Test that calling mise activate multiple times preserves user-added paths at the front
+# while properly handling mise paths (env._.path and tool installs)
+#
+# Expected behavior:
+# - Start: A
+# - mise activate: env_path:mise_tools:A
+# - add B: B:env_path:mise_tools:A
+# - mise activate + hook-env: B:env_path:mise_tools:A (user path B preserved at front)
+# - add C: C:B:env_path:mise_tools:A
+# - mise activate + hook-env: C:B:env_path:mise_tools:A (user paths C,B preserved at front)
+# - deactivate: C:B:A (mise_tools and env_path removed, user paths preserved)
+
+# Create a mise config with a tool, env._.path, and env.FOO
+mkdir -p custom_bin
+cat >.mise.toml <<EOF
+[tools]
+tiny = "latest"
+
+[env]
+_.path = ["./custom_bin"]
+FOO = "bar"
+BAZ = "qux"
+EOF
+
+mise install
+
+# Save the original PATH for verification
+ORIGINAL_PATH="$PATH"
+
+# First activation
+eval "$(mise activate zsh --status)" && _mise_hook
+
+# Verify env variables were set
+[[ $FOO == "bar" ]] || {
+	echo "FOO should be bar, got: $FOO"
+	exit 1
+}
+[[ $BAZ == "qux" ]] || {
+	echo "BAZ should be qux, got: $BAZ"
+	exit 1
+}
+
+# Get the mise tool path - it should be somewhere in PATH
+MISE_TOOL_PATH=$(echo "$PATH" | tr ':' '\n' | grep "/mise/installs/tiny" | head -1)
+[[ $MISE_TOOL_PATH =~ "/mise/installs/tiny" ]] || {
+	echo "MISE_TOOL_PATH not found"
+	exit 1
+}
+
+# custom_bin from env._.path should be in PATH
+[[ $PATH =~ "custom_bin" ]] || {
+	echo "custom_bin not in PATH"
+	exit 1
+}
+
+# env._.path (custom_bin) should come BEFORE tool paths
+# (both are part of mise installs, so custom_bin is first in installs)
+PATH_BEFORE_ORIGINAL="${PATH%%:"${ORIGINAL_PATH}"*}"
+[[ $PATH_BEFORE_ORIGINAL =~ "custom_bin" ]] || {
+	echo "custom_bin not before original PATH"
+	exit 1
+}
+
+# Tool path should come after custom_bin
+PATH_AFTER_CUSTOM="${PATH#*custom_bin:}"
+[[ $PATH_AFTER_CUSTOM =~ "/mise/installs/tiny" ]] || {
+	echo "Tool path not after custom_bin"
+	exit 1
+}
+
+# Verify no duplicate paths
+PATH_COUNT=$(echo "$PATH" | tr ':' '\n' | sort | uniq -d | wc -l | tr -d ' ')
+[[ $PATH_COUNT == "0" ]] || {
+	echo "Duplicate paths found: $PATH_COUNT"
+	exit 1
+}
+
+# User adds path B
+export PATH="/path_b:$PATH"
+
+# User modifies FOO
+export FOO="user_modified"
+
+# Second activation - user path preserved at front, mise paths follow
+eval "$(mise activate zsh --status)" && _mise_hook
+
+# FOO should be reset to "bar" by mise
+[[ $FOO == "bar" ]] || {
+	echo "FOO should be bar after reactivation, got: $FOO"
+	exit 1
+}
+
+# BAZ should still be qux
+[[ $BAZ == "qux" ]] || {
+	echo "BAZ should be qux, got: $BAZ"
+	exit 1
+}
+
+# Verify PATH structure: /path_b (user addition) should be first, then mise paths, then original
+FIRST_PATH=$(echo "$PATH" | cut -d: -f1)
+[[ $FIRST_PATH =~ "/path_b" ]] || {
+	echo "First path should be /path_b, got: $FIRST_PATH"
+	exit 1
+}
+[[ $PATH =~ "custom_bin" ]] || {
+	echo "custom_bin not in PATH"
+	exit 1
+}
+[[ $PATH =~ "/mise/installs/tiny" ]] || {
+	echo "Tool path not in PATH"
+	exit 1
+}
+
+# /path_b should come BEFORE custom_bin (it's a user addition)
+# Extract everything before custom_bin appears in PATH
+PATH_PREFIX="${PATH%%custom_bin*}"
+[[ $PATH_PREFIX =~ "/path_b" ]] || {
+	echo "/path_b not before custom_bin"
+	exit 1
+}
+
+# Check no duplicates
+PATH_COUNT=$(echo "$PATH" | tr ':' '\n' | sort | uniq -d | wc -l | tr -d ' ')
+[[ $PATH_COUNT == "0" ]] || {
+	echo "Duplicate paths found: $PATH_COUNT"
+	exit 1
+}
+
+# User adds path C
+export PATH="/path_c:$PATH"
+
+# Third activation - user paths preserved at front, mise paths follow
+eval "$(mise activate zsh --status)" && _mise_hook
+
+# Verify user paths are first (C, B), then mise paths, then original
+FIRST_PATH=$(echo "$PATH" | cut -d: -f1)
+[[ $FIRST_PATH =~ "/path_c" ]] || {
+	echo "First path should be /path_c, got: $FIRST_PATH"
+	exit 1
+}
+[[ $PATH =~ "/path_b" ]] || {
+	echo "/path_b not in PATH"
+	exit 1
+}
+[[ $PATH =~ "custom_bin" ]] || {
+	echo "custom_bin not in PATH"
+	exit 1
+}
+[[ $PATH =~ "/mise/installs/tiny" ]] || {
+	echo "Tool path not in PATH"
+	exit 1
+}
+
+# /path_c and /path_b should come BEFORE custom_bin
+# Extract everything before custom_bin appears in PATH
+PATH_PREFIX="${PATH%%custom_bin*}"
+[[ $PATH_PREFIX =~ "/path_c" ]] || {
+	echo "/path_c not before custom_bin"
+	exit 1
+}
+[[ $PATH_PREFIX =~ "/path_b" ]] || {
+	echo "/path_b not before custom_bin"
+	exit 1
+}
+
+# Check no duplicates
+PATH_COUNT=$(echo "$PATH" | tr ':' '\n' | sort | uniq -d | wc -l | tr -d ' ')
+[[ $PATH_COUNT == "0" ]] || {
+	echo "Duplicate paths found: $PATH_COUNT"
+	exit 1
+}
+
+# Test deactivation - unsets mise shell functions and variables
+# (Comprehensive deactivation tests are in test_deactivate)
+mise deactivate
+
+echo "All tests passed!"

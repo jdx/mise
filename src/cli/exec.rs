@@ -72,6 +72,7 @@ impl Exec {
             missing_args_only: !self.tool.is_empty()
                 || !Settings::get().exec_auto_install
                 || *env::__MISE_SHIM,
+            skip_auto_install: !Settings::get().exec_auto_install || !Settings::get().auto_install,
             resolve_options: Default::default(),
             ..Default::default()
         };

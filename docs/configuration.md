@@ -9,6 +9,7 @@ Learn how to configure mise for your project with `mise.toml` files, environment
 - `mise.local.toml` - used for local config, this should not be committed to source control
 - `mise.toml`
 - `mise/config.toml`
+- `.mise/config.toml`
 - `.config/mise.toml` - use this in order to group config files into a common directory
 - `.config/mise/config.toml`
 - `.config/mise/conf.d/*.toml` - all files in this directory will be loaded in alphabetical order
@@ -183,10 +184,14 @@ _new_ plugin installations. Existing plugins can use any URL.
 [plugins]
 elixir = "https://github.com/my-org/mise-elixir.git"
 node = "https://github.com/my-org/mise-node.git#DEADBEEF" # supports specific gitref
+"vfox-backend:myplugin" = "https://github.com/jdx/vfox-npm"
 ```
 
+The plugin type prefix (e.g., `asdf:`, `vfox:` or `vfox-backend:`) is optional. If omitted, mise will fall back to
+either using `asdf` or `vfox` if the URL contains `vfox-` in the repo name.
+
 If you simply want to install a plugin from a specific URL once, it's better to use
-`mise plugin install plugin <GIT_URL>`. Add this section to `mise.toml` if you want
+`mise plugin install <NAME> <GIT_URL>`. Add this section to `mise.toml` if you want
 to share the plugin location/revision with other developers in your project.
 
 This is similar
@@ -277,7 +282,7 @@ always_keep_install = false         # deleted on failure by default
 
 # configure how frequently (in minutes) to fetch updated plugin repository changes
 # this is updated whenever a new runtime is installed
-# (note: this isn't currently implemented but there are plans to add it: https://github.com/jdx/mise/issues/128)
+# (note: this isn't currently implemented but there are plans to add it: https://github.com/jdx/mise/discussions/6735)
 plugin_autoupdate_last_check_duration = '1 week' # set to 0 to disable updates
 
 # config files with these prefixes will be trusted by default

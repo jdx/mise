@@ -3,25 +3,24 @@ use std::path::{Path, PathBuf};
 use clap::ValueHint;
 use eyre::Result;
 
-use crate::config::{Settings, config_file};
+use crate::config::config_file;
 use crate::file::display_path;
 use crate::{env, file};
 
-/// [experimental] Generate a mise.toml file
+/// Generate a mise.toml file
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "g", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct ConfigGenerate {
-    /// Path to a .tool-versions file to import tools from
-    #[clap(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
-    tool_versions: Option<PathBuf>,
     /// Output to file instead of stdout
     #[clap(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     output: Option<PathBuf>,
+    /// Path to a .tool-versions file to import tools from
+    #[clap(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
+    tool_versions: Option<PathBuf>,
 }
 
 impl ConfigGenerate {
     pub async fn run(self) -> Result<()> {
-        Settings::get().ensure_experimental("`mise config generate`")?;
         let doc = if let Some(tool_versions) = &self.tool_versions {
             self.tool_versions(tool_versions).await?
         } else {

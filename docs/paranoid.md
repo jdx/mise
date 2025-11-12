@@ -29,6 +29,8 @@ Also, in normal mode, a config file only needs to be trusted a single time.
 In paranoid, the contents of the file are hashed to check if the file changes.
 If you change your config file, you'll need to trust it again.
 
+Note that global and system config files (e.g., `~/.config/mise/config.toml`) are implicitly trusted and exempt from this check. This allows paranoid mode to be enabled in a global config without requiring a trust prompt for that file itself.
+
 ## Community plugins
 
 Community plugins can not be directly installed via short-name under paranoid.
