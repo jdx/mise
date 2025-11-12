@@ -36,4 +36,3 @@ assert_contains "mise x github:jdx/mise-test-fixtures -- my-hello" "hello world"
 mise uninstall github:jdx/mise-test-fixtures
 
 echo "All bin parameter tests completed"
-
