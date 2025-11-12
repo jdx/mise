@@ -205,6 +205,7 @@ impl Run {
 
         if !self.skip_deps {
             self.skip_deps = Settings::get().task_skip_depends;
+        }
 
         // Check if --help or -h is in the args (before executing the task)
         // This handles cases like: mise run --cd dir task --help
