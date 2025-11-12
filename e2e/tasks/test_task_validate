@@ -183,3 +183,7 @@ run = [
 EOF
 
 assert_contains "mise task validate" "✓ All 2 task(s) validated successfully"
+
+# Test that command-line validation can use task aliases
+assert_contains "mise task validate b" "✓ All 1 task(s) validated successfully"
+assert_contains "mise task validate build" "✓ All 1 task(s) validated successfully"

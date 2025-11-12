@@ -118,9 +118,15 @@ impl TasksValidate {
     ) -> Result<Vec<Task>> {
         let mut tasks = Vec::new();
         for name in task_names {
+            // Check if task exists by name, display_name, or alias
             match all_tasks
                 .get(name)
                 .or_else(|| all_tasks.values().find(|t| &t.display_name == name))
+                .or_else(|| {
+                    all_tasks
+                        .values()
+                        .find(|t| t.aliases.contains(&name.to_string()))
+                })
                 .cloned()
             {
                 Some(task) => tasks.push(task),
