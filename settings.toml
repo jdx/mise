@@ -1231,6 +1231,11 @@ parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
+[task_skip_depends]
+description = "Run only specified tasks skipping all dependencies."
+env = "MISE_TASK_SKIP_DEPENDS"
+type = "Bool"
+
 [task_timeout]
 description = "Default timeout for tasks. Can be overridden by individual tasks."
 env = "MISE_TASK_TIMEOUT"

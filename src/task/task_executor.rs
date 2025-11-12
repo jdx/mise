@@ -33,6 +33,7 @@ pub struct TaskExecutorConfig {
     pub timings: bool,
     pub continue_on_error: bool,
     pub dry_run: bool,
+    pub skip_deps: bool,
 }
 
 /// Executes tasks with proper context, environment, and output handling
@@ -49,6 +50,7 @@ pub struct TaskExecutor {
     pub timings: bool,
     pub continue_on_error: bool,
     pub dry_run: bool,
+    pub skip_deps: bool,
 }
 
 impl TaskExecutor {
@@ -68,6 +70,7 @@ impl TaskExecutor {
             timings: config.timings,
             continue_on_error: config.continue_on_error,
             dry_run: config.dry_run,
+            skip_deps: config.skip_deps,
         }
     }
 
@@ -324,6 +327,11 @@ impl TaskExecutor {
             for t in matches {
                 let mut t = (*t).clone();
                 t.args = args.clone();
+                if self.skip_deps {
+                    t.depends.clear();
+                    t.depends_post.clear();
+                    t.wait_for.clear();
+                }
                 to_run.push(t);
             }
         }

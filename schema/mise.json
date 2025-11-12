@@ -1147,6 +1147,10 @@
             "type": "string"
           }
         },
+        "task_skip_depends": {
+          "description": "Run only specified tasks skipping all dependencies.",
+          "type": "boolean"
+        },
         "task_timeout": {
           "description": "Default timeout for tasks. Can be overridden by individual tasks.",
           "type": "string"

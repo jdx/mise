@@ -163,6 +163,10 @@ pub struct Run {
     #[clap(long, alias = "no-timing", verbatim_doc_comment)]
     pub no_timings: bool,
 
+    /// Run only the specified tasks skipping all dependencies
+    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_SKIP_DEPENDS")]
+    pub skip_deps: bool,
+
     /// Timeout for the task to complete
     /// e.g.: 30s, 5m
     #[clap(long, verbatim_doc_comment)]
@@ -199,6 +203,10 @@ impl Run {
             return Ok(());
         }
 
+        if !self.skip_deps {
+            self.skip_deps = Settings::get().task_skip_depends;
+        }
+
         // Check if --help or -h is in the args (before executing the task)
         // This handles cases like: mise run --cd dir task --help
         // NOTE: Only check self.args, not self.args_last, because args_last contains
@@ -216,7 +224,7 @@ impl Run {
                 .chain(self.args.clone())
                 .collect_vec();
 
-            let task_list = get_task_lists(&config, &args, false).await?;
+            let task_list = get_task_lists(&config, &args, false, false).await?;
 
             if let Some(task) = task_list.first() {
                 // Get usage spec and display help using usage library
@@ -239,7 +247,7 @@ impl Run {
             .chain(self.args.clone())
             .collect_vec();
 
-        let mut task_list = get_task_lists(&config, &args, true).await?;
+        let mut task_list = get_task_lists(&config, &args, true, self.skip_deps).await?;
 
         // Args after -- go directly to tasks (no prefix)
         if !self.args_last.is_empty() {
@@ -491,6 +499,7 @@ impl Run {
             timings: self.timings,
             continue_on_error: self.continue_on_error,
             dry_run: self.dry_run,
+            skip_deps: self.skip_deps,
         };
         self.executor = Some(crate::task::task_executor::TaskExecutor::new(
             self.context_builder.clone(),

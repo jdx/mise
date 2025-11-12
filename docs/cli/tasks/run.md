@@ -121,6 +121,10 @@ Hides elapsed time after each task completes
 
 Default to always hide with `MISE_TASK_TIMINGS=0`
 
+### `--skip-deps`
+
+Run only the specified tasks skipping all dependencies
+
 ### `--timeout <TIMEOUT>`
 
 Timeout for the task to complete

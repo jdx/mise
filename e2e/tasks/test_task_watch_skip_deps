@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+mise use -g watchexec
+
+cat <<EOF >mise.toml
+[tasks.a]
+run = "echo a"
+sources = ["a.txt"]
+[tasks.b]
+depends = ["a"]
+run = "echo b"
+sources = ["b.txt"]
+EOF
+
+touch a.txt b.txt
+
+LOG_FILE=$(mktemp)
+mise watch b --skip-deps >"$LOG_FILE" 2>&1 &
+WATCH_PID=$!
+
+trap 'kill $WATCH_PID' EXIT
+
+sleep 1
+
+echo "" >"$LOG_FILE" # clear the log file to skip-deps capture the output of the re-run
+
+touch b.txt
+sleep 1
+
+output=$(cat "$LOG_FILE")
+
+if [[ $output != *"[b] $ echo b"* ]]; then
+	fail "Expected output to contain '[b] $ echo b', got: $output"
+fi
+if [[ $output == *"[a] $ echo a"* ]]; then
+	fail "Expected output to not contain '[a] $ echo a', got: $output"
+fi
+ok "mise watch b --skip-deps"

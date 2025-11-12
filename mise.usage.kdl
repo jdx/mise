@@ -679,6 +679,7 @@ cmd run help="Run task(s)" {
     flag --no-timings help="Hides elapsed time after each task completes" {
         long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
     }
+    flag --skip-deps help="Run only the specified tasks skipping all dependencies"
     flag --timeout help="Timeout for the task to complete\ne.g.: 30s, 5m" {
         arg <TIMEOUT>
     }
@@ -958,6 +959,7 @@ cmd tasks help="Manage tasks" {
         flag --no-timings help="Hides elapsed time after each task completes" {
             long_help "Hides elapsed time after each task completes\n\nDefault to always hide with `MISE_TASK_TIMINGS=0`"
         }
+        flag --skip-deps help="Run only the specified tasks skipping all dependencies"
         flag --timeout help="Timeout for the task to complete\ne.g.: 30s, 5m" {
             arg <TIMEOUT>
         }
@@ -1107,6 +1109,7 @@ cmd watch help="Run task(s) and watch for changes to rerun it" {
     flag "-g --glob" help="Files to watch\nDefaults to sources from the tasks(s)" var=#true hide=#true {
         arg <GLOB>
     }
+    flag --skip-deps help="Run only the specified tasks skipping all dependencies"
     flag "-w --watch" help="Watch a specific file or directory" var=#true {
         long_help "Watch a specific file or directory\n\nBy default, Watchexec watches the current directory.\n\nWhen watching a single file, it's often better to watch the containing directory instead, and filter on the filename. Some editors may replace the file with a new one when saving, and some platforms may not detect that or further changes.\n\nUpon starting, Watchexec resolves a \"project origin\" from the watched paths. See the help for '--project-origin' for more information.\n\nThis option can be specified multiple times to watch multiple files or directories.\n\nThe special value '/dev/null', provided as the only path watched, will cause Watchexec to not watch any paths. Other event sources (like signals or key events) may still be used."
         arg <PATH>

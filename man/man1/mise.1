@@ -1703,6 +1703,9 @@ Hides elapsed time after each task completes
 
 Default to always hide with `MISE_TASK_TIMINGS=0`
 .TP
+\fB\-\-skip\-deps\fR
+Run only the specified tasks skipping all dependencies
+.TP
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR
 Timeout for the task to complete
 e.g.: 30s, 5m
@@ -2345,6 +2348,9 @@ Hides elapsed time after each task completes
 
 Default to always hide with `MISE_TASK_TIMINGS=0`
 .TP
+\fB\-\-skip\-deps\fR
+Run only the specified tasks skipping all dependencies
+.TP
 \fB\-\-timeout\fR \fI<TIMEOUT>\fR
 Timeout for the task to complete
 e.g.: 30s, 5m
@@ -2739,6 +2745,9 @@ Tasks to run
 \fB\-g, \-\-glob\fR \fI<GLOB>\fR
 Files to watch
 Defaults to sources from the tasks(s)
+.TP
+\fB\-\-skip\-deps\fR
+Run only the specified tasks skipping all dependencies
 .TP
 \fB\-w, \-\-watch\fR \fI<PATH>\fR
 Watch a specific file or directory
