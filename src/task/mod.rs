@@ -227,6 +227,8 @@ pub struct Task {
     #[serde(default)]
     pub dir: Option<String>,
     #[serde(default)]
+    pub create_dir: bool,
+    #[serde(default)]
     pub hide: bool,
     #[serde(default)]
     pub global: bool,
@@ -1030,6 +1032,7 @@ impl Default for Task {
             wait_for: vec![],
             env: Default::default(),
             dir: None,
+            create_dir: true,
             hide: false,
             global: false,
             raw: false,

@@ -713,6 +713,24 @@ impl TaskExecutor {
                     display_path(&dir)
                 ),
             );
+            if Settings::get().auto_create_cwd || task.create_dir {
+                debug!(
+                    "Creating working directory for task at {}",
+                    display_path(&dir)
+                );
+                if let Err(err) = std::fs::create_dir_all(&dir) {
+                    self.eprint(
+                        task,
+                        prefix,
+                        &format!(
+                            "{} task working directory could not be created at {}: {}",
+                            style::eyellow("WARN"),
+                            display_path(&dir),
+                            err
+                        ),
+                    );
+                }
+            }
         }
         cmd = cmd.current_dir(dir);
         if self.dry_run {

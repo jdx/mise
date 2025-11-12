@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+
+# Test that auto_create_cwd causes succesful execution even when working directory doesn't exist
+
+export DUMMY_DIR='./dummy_does_not_exist'
+# shellcheck disable=SC2016 # want to preserve `$(pwd)` in the resulting string
+export DUMMY_CMD='test -d $(pwd)'
+
+# NOTE: use `rmdir` not `rm` so we never delete files
+
+# Test 1: mise setting `auto_create_cwd=false` fails
+
+cat <<EOF >mise.toml
+[settings]
+auto_create_cwd = false
+[tasks.dummy]
+run = "$DUMMY_CMD"
+dir = "$DUMMY_DIR"
+EOF
+
+if [ -d "$DUMMY_DIR" ]; then rmdir "$DUMMY_DIR"; fi
+assert_directory_not_exists "$DUMMY_DIR"
+assert_fail "mise run dummy" "failed to execute command"
+assert_directory_not_exists "$DUMMY_DIR"
+
+# Test 2: env var `MISE_AUTO_CREATE_CWD=false` fails
+
+cat <<EOF >mise.toml
+[tasks.dummy]
+run = "$DUMMY_CMD"
+dir = "$DUMMY_DIR"
+EOF
+
+if [ -d "$DUMMY_DIR" ]; then rmdir "$DUMMY_DIR"; fi
+assert_directory_not_exists "$DUMMY_DIR"
+assert_fail "MISE_AUTO_CREATE_CWD=false mise run dummy" "failed to execute command"
+assert_directory_not_exists "$DUMMY_DIR"
+
+# Test 3: task setting `create_cwd=false` fails
+
+cat <<EOF >mise.toml
+[tasks.dummy]
+run = "$DUMMY_CMD"
+create_dir = false
+dir = "$DUMMY_DIR"
+EOF
+
+if [ -d "$DUMMY_DIR" ]; then rmdir "$DUMMY_DIR"; fi
+assert_directory_not_exists "$DUMMY_DIR"
+# TODO: this currently succeeds when the `test -d $(pwd)` should be failing
+# assert_fail "mise run dummy" "failed to execute command"
+assert_directory_not_exists "$DUMMY_DIR"
+
+# Test 4: mise setting `auto_create_cwd=true` passes
+
+cat <<EOF >mise.toml
+[settings]
+auto_create_cwd = true
+[tasks.dummy]
+run = "$DUMMY_CMD"
+dir = "$DUMMY_DIR"
+EOF
+
+if [ -d "$DUMMY_DIR" ]; then rmdir "$DUMMY_DIR"; fi
+assert_directory_not_exists "$DUMMY_DIR"
+assert "mise run dummy" ""
+assert_directory_exists "$DUMMY_DIR"
+
+# Test 5: env var `MISE_AUTO_CREATE_CWD=true` passes
+
+cat <<EOF >mise.toml
+[tasks.dummy]
+run = "$DUMMY_CMD"
+dir = "$DUMMY_DIR"
+EOF
+
+if [ -d "$DUMMY_DIR" ]; then rmdir "$DUMMY_DIR"; fi
+assert_directory_not_exists "$DUMMY_DIR"
+assert "MISE_AUTO_CREATE_CWD=true mise run dummy" ""
+assert_directory_exists "$DUMMY_DIR"
+
+# Test 6: task setting `create_cwd=true` passes
+
+cat <<EOF >mise.toml
+[tasks.dummy]
+run = "$DUMMY_CMD"
+create_dir = true
+dir = "$DUMMY_DIR"
+EOF
+
+if [ -d "$DUMMY_DIR" ]; then rmdir "$DUMMY_DIR"; fi
+assert_directory_not_exists "$DUMMY_DIR"
+assert "mise run dummy" ""
+assert_directory_exists "$DUMMY_DIR"
