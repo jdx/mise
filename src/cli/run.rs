@@ -205,6 +205,36 @@ impl Run {
 
         if !self.skip_deps {
             self.skip_deps = Settings::get().task_skip_depends;
+
+        // Check if --help or -h is in the args (before executing the task)
+        // This handles cases like: mise run --cd dir task --help
+        // NOTE: Only check self.args, not self.args_last, because args_last contains
+        // arguments after -- which should always be passed through to the task
+        let has_help_flag =
+            self.args.contains(&"--help".to_string()) || self.args.contains(&"-h".to_string());
+
+        if has_help_flag {
+            // Remove --help/-h from args to get the task
+            self.args.retain(|arg| arg != "--help" && arg != "-h");
+            self.args_last.retain(|arg| arg != "--help" && arg != "-h");
+
+            // Build args list to get the task
+            let args = once(self.task.clone())
+                .chain(self.args.clone())
+                .collect_vec();
+
+            let task_list = get_task_lists(&config, &args, false).await?;
+
+            if let Some(task) = task_list.first() {
+                // Get usage spec and display help using usage library
+                let spec = task.parse_usage_spec_for_display(&config).await?;
+                // Render help using usage library
+                println!("{}", usage::docs::cli::render_help(&spec, &spec.cmd, true));
+            } else {
+                // No task found, show run command help
+                self.get_clap_command().print_long_help()?;
+            }
+            return Ok(());
         }
 
         time!("run init");
