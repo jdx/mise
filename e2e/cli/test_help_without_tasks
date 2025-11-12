@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Test that `mise help` works even when no tasks are defined
+# This validates the fix for https://github.com/jdx/mise/discussions/6947
+
+echo "Testing 'mise help' command without tasks defined..."
+
+# Test in a temporary directory without any mise config
+TEMP_DIR=$(mktemp -d)
+cd "$TEMP_DIR"
+
+# Test 1: `mise help` should work without tasks
+echo "Test 1: mise help (without tasks)"
+assert_contains "mise help" "Usage: mise"
+
+# Test 2: `mise --help` should work (baseline)
+echo "Test 2: mise --help"
+assert_contains "mise --help" "Usage: mise"
+
+# Test 3: `mise -h` should work (baseline)
+echo "Test 3: mise -h"
+assert_contains "mise -h" "Usage: mise"
+
+# Test 4: All three should produce similar output
+echo "Test 4: Verify all help variants work consistently"
+if mise help >/dev/null 2>&1; then
+	ok "mise help succeeded"
+else
+	fail "mise help failed"
+fi
+if mise --help >/dev/null 2>&1; then
+	ok "mise --help succeeded"
+else
+	fail "mise --help failed"
+fi
+if mise -h >/dev/null 2>&1; then
+	ok "mise -h succeeded"
+else
+	fail "mise -h failed"
+fi
+
+# Cleanup
+cd - >/dev/null
+rm -rf "$TEMP_DIR"
+
+echo ""
+echo "All help command tests passed!"
