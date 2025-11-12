@@ -155,14 +155,26 @@ impl HttpBackend {
 
         file::create_dir_all(cache_path)?;
 
-        // Use TarFormat for format detection
-        let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
-        let format = file::TarFormat::from_ext(ext);
+        // Handle `format` config
+        let file_path_with_ext = if let Some(added_extension) =
+            lookup_platform_key(opts, "format").or_else(|| opts.get("format").cloned())
+        {
+            file_path.with_added_extension(added_extension)
+        } else {
+            file_path.to_path_buf()
+        };
 
         // Get file extension and detect format
-        let file_name = file_path.file_name().unwrap().to_string_lossy();
+        let ext = file_path_with_ext
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+
+        // Use TarFormat for format detection
+        let format = file::TarFormat::from_ext(ext);
 
         // Check if it's a compressed binary (not a tar archive)
+        let file_name = file_path_with_ext.file_name().unwrap().to_string_lossy();
         let is_compressed_binary =
             !file_name.contains(".tar") && matches!(ext, "gz" | "xz" | "bz2" | "zst");
 
@@ -202,10 +214,10 @@ impl HttpBackend {
             let dest = dest_dir.join(&dest_filename);
 
             match ext {
-                "gz" => file::un_gz(file_path, &dest)?,
-                "xz" => file::un_xz(file_path, &dest)?,
-                "bz2" => file::un_bz2(file_path, &dest)?,
-                "zst" => file::un_zst(file_path, &dest)?,
+                "gz" => file::un_gz(&file_path, &dest)?,
+                "xz" => file::un_xz(&file_path, &dest)?,
+                "bz2" => file::un_bz2(&file_path, &dest)?,
+                "zst" => file::un_zst(&file_path, &dest)?,
                 _ => unreachable!(),
             }
 
@@ -252,7 +264,7 @@ impl HttpBackend {
                 && lookup_platform_key(opts, "bin_path")
                     .or_else(|| opts.get("bin_path").cloned())
                     .is_none()
-                && let Ok(should_strip) = file::should_strip_components(file_path, format)
+                && let Ok(should_strip) = file::should_strip_components(&file_path, format)
                 && should_strip
             {
                 debug!(
@@ -269,7 +281,7 @@ impl HttpBackend {
             };
 
             // Extract with determined strip_components
-            file::untar(file_path, cache_path, &tar_opts)?;
+            file::untar(&file_path, cache_path, &tar_opts)?;
         }
 
         Ok(())
