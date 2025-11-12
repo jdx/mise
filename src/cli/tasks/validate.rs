@@ -206,6 +206,15 @@ impl TasksValidate {
         issues
     }
 
+    /// Check if a task exists by name, display_name, or alias
+    fn task_exists(all_tasks: &BTreeMap<String, Task>, task_name: &str) -> bool {
+        all_tasks.contains_key(task_name)
+            || all_tasks.values().any(|t| &t.display_name == task_name)
+            || all_tasks
+                .values()
+                .any(|t| t.aliases.contains(&task_name.to_string()))
+    }
+
     fn validate_missing_references(
         &self,
         task: &Task,
@@ -228,11 +237,7 @@ impl TasksValidate {
             }
 
             // Check if task exists
-            let exists = all_tasks.contains_key(dep_name)
-                || all_tasks.values().any(|t| &t.display_name == dep_name)
-                || all_tasks.values().any(|t| t.aliases.contains(dep_name));
-
-            if !exists {
+            if !Self::task_exists(all_tasks, dep_name) {
                 issues.push(ValidationIssue {
                     task: task.name.clone(),
                     severity: Severity::Error,
@@ -524,10 +529,8 @@ impl TasksValidate {
                     }
                 }
                 crate::task::RunEntry::SingleTask { task: task_name } => {
-                    // Check if referenced task exists
-                    if !all_tasks.contains_key(task_name)
-                        && !all_tasks.values().any(|t| &t.display_name == task_name)
-                    {
+                    // Check if referenced task exists (by name, display_name, or alias)
+                    if !Self::task_exists(all_tasks, task_name) {
                         issues.push(ValidationIssue {
                             task: task.name.clone(),
                             severity: Severity::Error,
@@ -541,11 +544,9 @@ impl TasksValidate {
                     }
                 }
                 crate::task::RunEntry::TaskGroup { tasks } => {
-                    // Check if all tasks in group exist
+                    // Check if all tasks in group exist (by name, display_name, or alias)
                     for task_name in tasks {
-                        if !all_tasks.contains_key(task_name)
-                            && !all_tasks.values().any(|t| &t.display_name == task_name)
-                        {
+                        if !Self::task_exists(all_tasks, task_name) {
                             issues.push(ValidationIssue {
                                 task: task.name.clone(),
                                 severity: Severity::Error,

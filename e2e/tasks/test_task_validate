@@ -167,4 +167,19 @@ EOF
 assert_contains "mise task validate 2>&1 || true" "Task file not found"
 assert_contains "mise task validate 2>&1 || true" "missing-file"
 
+# Clean up before next test
 rm -rf mise-tasks non-executable.sh
+
+# Test that run entries can reference tasks by alias (not just by name)
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo building"
+alias = "b"
+
+[tasks.deploy]
+run = [
+  { task = "b" }
+]
+EOF
+
+assert_contains "mise task validate" "✓ All 2 task(s) validated successfully"
