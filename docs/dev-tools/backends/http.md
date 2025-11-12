@@ -154,7 +154,7 @@ Explicitly specify the archive format when the URL lacks a file extension or has
 ```toml
 [tools."http:my-tool"]
 version = "1.0.0"
-url = "https://internal-registry.example.com/artifacts/abc123"
+url = "https://example.com/releases/my-tool-v1.0.0"
 format = "tar.xz"  # Explicitly specify the format
 ```
 
@@ -171,9 +171,9 @@ You can specify different formats for different platforms:
 version = "1.0.0"
 
 [tools."http:my-tool".platforms]
-macos-x64 = { url = "https://internal-registry.example.com/artifacts/macos-x64/abc123", format = "tar.xz" }
-linux-x64 = { url = "https://internal-registry.example.com/artifacts/linux-x64/def456", format = "tar.gz" }
-windows-x64 = { url = "https://internal-registry.example.com/artifacts/windows-x64/ghi789", format = "zip" }
+macos-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-x64", format = "tar.xz" }
+linux-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-linux-x64", format = "tar.gz" }
+windows-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-windows-x64", format = "zip" }
 ```
 
 ### `bin_path`
