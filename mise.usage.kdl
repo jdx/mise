@@ -408,6 +408,10 @@ cmd generate subcommand_required=#true help="Generate files for various tools/se
         arg <OUTPUT> help="Output file path for the tool stub"
     }
 }
+cmd "github-token" help="Set up a GitHub token to increase API rate limits" {
+    long_help "Set up a GitHub token to increase API rate limits\n\nThis command helps you set up a GitHub personal access token for use with mise.\nIt will open your browser to the token creation page and guide you through\ncreating a token with no scopes (which is sufficient for API rate limits)."
+    after_long_help "Examples:\n\n    $ mise github-token\n    # Opens browser to create a token, then prompts you to paste it\n\nHow it works:\n\nThis command helps you set up a GitHub personal access token to increase your API rate limits.\nIt will open your browser to the GitHub token creation page where you can create a token\nwith no scopes (which is sufficient for API rate limits). After creating the token,\npaste it into the prompt and it will be saved to your global mise config file.\n\nThe token will be available when mise is activated in your shell."
+}
 cmd global hide=#true help="Sets/gets the global tool version(s)" {
     long_help "Sets/gets the global tool version(s)\n\nDisplays the contents of global config after writing.\nThe file is `$HOME/.config/mise/config.toml` by default. It can be changed with `$MISE_GLOBAL_CONFIG_FILE`.\nIf `$MISE_GLOBAL_CONFIG_FILE` is set to anything that ends in `.toml`, it will be parsed as `mise.toml`.\nOtherwise, it will be parsed as a `.tool-versions` file.\n\nUse MISE_ASDF_COMPAT=1 to default the global config to ~/.tool-versions\n\nUse `mise local` to set a tool version locally in the current directory."
     after_long_help "Examples:\n    # set the current version of node to 20.x\n    # will use a fuzzy version (e.g.: 20) in .tool-versions file\n    $ mise global --fuzzy node@20\n\n    # set the current version of node to 20.x\n    # will use a precise version (e.g.: 20.0.0) in .tool-versions file\n    $ mise global --pin node@20\n\n    # show the current version of node in ~/.tool-versions\n    $ mise global node\n    20.0.0\n"

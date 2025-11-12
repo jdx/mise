@@ -161,8 +161,7 @@ fn show_github_rate_limit_err(err: &Report) {
         if env::GITHUB_TOKEN.is_none() {
             warn!(indoc!(
                 r#"GITHUB_TOKEN is not set. This means mise is making unauthenticated requests to GitHub which have a lower rate limit.
-                   To increase the rate limit, set the GITHUB_TOKEN environment variable to a GitHub personal access token.
-                   Create a token at https://github.com/settings/tokens and set it as GITHUB_TOKEN in your environment.
+                   Run `mise github-token` to set up a GitHub token and increase your rate limit.
                    You do not need to give this token any scopes."#
             ));
         }

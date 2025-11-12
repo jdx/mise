@@ -295,6 +295,28 @@ impl MiseToml {
         Ok(())
     }
 
+    pub fn ensure_env_comment_suffix(&mut self, key: &str, comment: &str) -> eyre::Result<()> {
+        let mut doc = self.doc_mut()?;
+        if let Some(env_tbl) = doc
+            .get_mut()
+            .unwrap()
+            .get_mut("env")
+            .and_then(|item| item.as_table_mut())
+            && let Some(item) = env_tbl.get_mut(key)
+            && let Some(value) = item.as_value_mut()
+        {
+            let has_comment = value
+                .decor()
+                .suffix()
+                .and_then(|suffix| suffix.as_str())
+                .is_some_and(|suffix| suffix.contains(comment));
+            if !has_comment {
+                value.decor_mut().set_suffix(comment);
+            }
+        }
+        Ok(())
+    }
+
     pub fn update_env_age(
         &mut self,
         key: &str,

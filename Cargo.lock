@@ -4627,6 +4627,7 @@ dependencies = [
  "versions 6.3.2",
  "vfox",
  "walkdir",
+ "webbrowser",
  "which 7.0.3",
  "winapi",
  "xx",

@@ -413,6 +413,11 @@ fn display_github_rate_limit(resp: &Response) {
                     reset_time.with_timezone(&chrono::Local)
                 );
             }
+            if env::GITHUB_TOKEN.is_none() {
+                warn!(
+                    "Run `mise github-token` to set up a GitHub token and increase your rate limit."
+                );
+            }
             return;
         }
         // retry-after header is processed only if x-ratelimit-remaining is not 0 or is missing
@@ -426,6 +431,11 @@ fn display_github_rate_limit(resp: &Response) {
                 "GitHub rate limit exceeded. Retry after {} seconds",
                 retry_after
             );
+            if env::GITHUB_TOKEN.is_none() {
+                warn!(
+                    "Run `mise github-token` to set up a GitHub token and increase your rate limit."
+                );
+            }
         }
     }
 }
