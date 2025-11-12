@@ -120,8 +120,8 @@ impl GithubToken {
             MiseToml::init(&config_path)
         };
 
-        mise_toml.update_env("GITHUB_TOKEN", token)?;
-        mise_toml.ensure_env_comment_suffix("GITHUB_TOKEN", TOKEN_COMMENT_SUFFIX)?;
+        mise_toml.update_env("MISE_GITHUB_TOKEN", token)?;
+        mise_toml.ensure_env_comment_suffix("MISE_GITHUB_TOKEN", TOKEN_COMMENT_SUFFIX)?;
         mise_toml.save()
     }
 
