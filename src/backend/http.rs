@@ -214,10 +214,10 @@ impl HttpBackend {
             let dest = dest_dir.join(&dest_filename);
 
             match ext {
-                "gz" => file::un_gz(&file_path, &dest)?,
-                "xz" => file::un_xz(&file_path, &dest)?,
-                "bz2" => file::un_bz2(&file_path, &dest)?,
-                "zst" => file::un_zst(&file_path, &dest)?,
+                "gz" => file::un_gz(file_path, &dest)?,
+                "xz" => file::un_xz(file_path, &dest)?,
+                "bz2" => file::un_bz2(file_path, &dest)?,
+                "zst" => file::un_zst(file_path, &dest)?,
                 _ => unreachable!(),
             }
 
@@ -264,7 +264,7 @@ impl HttpBackend {
                 && lookup_platform_key(opts, "bin_path")
                     .or_else(|| opts.get("bin_path").cloned())
                     .is_none()
-                && let Ok(should_strip) = file::should_strip_components(&file_path, format)
+                && let Ok(should_strip) = file::should_strip_components(file_path, format)
                 && should_strip
             {
                 debug!(
@@ -281,7 +281,7 @@ impl HttpBackend {
             };
 
             // Extract with determined strip_components
-            file::untar(&file_path, cache_path, &tar_opts)?;
+            file::untar(file_path, cache_path, &tar_opts)?;
         }
 
         Ok(())
