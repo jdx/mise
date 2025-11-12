@@ -209,7 +209,7 @@ impl TasksValidate {
     /// Check if a task exists by name, display_name, or alias
     fn task_exists(all_tasks: &BTreeMap<String, Task>, task_name: &str) -> bool {
         all_tasks.contains_key(task_name)
-            || all_tasks.values().any(|t| &t.display_name == task_name)
+            || all_tasks.values().any(|t| t.display_name == task_name)
             || all_tasks
                 .values()
                 .any(|t| t.aliases.contains(&task_name.to_string()))
