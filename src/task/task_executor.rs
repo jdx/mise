@@ -502,20 +502,12 @@ impl TaskExecutor {
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.clone();
 
-        #[cfg(windows)]
-        {
-            full_args.push(script.to_string());
-            full_args.extend(args.iter().cloned());
+        let mut script = script.to_string();
+        if !args.is_empty() {
+            script = format!("{script} {}", shell_words::join(args));
         }
+        full_args.push(script);
 
-        #[cfg(unix)]
-        {
-            let mut script = script.to_string();
-            if !args.is_empty() {
-                script = format!("{script} {}", shell_words::join(args));
-            }
-            full_args.push(script);
-        }
         Ok((full_args[0].clone(), full_args[1..].to_vec()))
     }
 
