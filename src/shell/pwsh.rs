@@ -179,7 +179,7 @@ impl Shell for Pwsh {
         formatdoc! {r#"
         Remove-Item -ErrorAction SilentlyContinue function:mise
         Remove-Item -ErrorAction SilentlyContinue -Path Env:/MISE_SHELL
-        Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_WATCH
+        Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_DIFF
         Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_SESSION
         "#}
     }
