@@ -145,6 +145,9 @@ export const commands: { [key: string]: Command } = {
       },
     },
   },
+  "github-token": {
+    hide: false,
+  },
   global: {
     hide: true,
   },

@@ -966,6 +966,10 @@ esac`),
       ],
     },
     {
+      name: "github-token",
+      description: "Set up a GitHub token to increase API rate limits",
+    },
+    {
       name: "implode",
       description: "Removes mise CLI and all related data",
       options: [

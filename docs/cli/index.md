@@ -94,6 +94,7 @@ Can also use `MISE_NO_CONFIG=1`
 - [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.md)
 - [`mise generate task-stubs [-d --dir <DIR>] [-m --mise-bin <MISE_BIN>]`](/cli/generate/task-stubs.md)
 - [`mise generate tool-stub [FLAGS] <OUTPUT>`](/cli/generate/tool-stub.md)
+- [`mise github-token`](/cli/github-token.md)
 - [`mise implode [-n --dry-run] [--config]`](/cli/implode.md)
 - [`mise install [FLAGS] [TOOL@VERSION]…`](/cli/install.md)
 - [`mise install-into <TOOL@VERSION> <PATH>`](/cli/install-into.md)
