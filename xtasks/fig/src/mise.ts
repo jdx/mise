@@ -2526,6 +2526,29 @@ esac`),
           generateSpec: usageGenerateSpec(["mise tasks --usage"]),
           cache: false,
         },
+        {
+          name: "validate",
+          description: "Validate tasks for common errors and issues",
+          options: [
+            {
+              name: "--errors-only",
+              description: "Only show errors (skip warnings)",
+              isRepeatable: false,
+            },
+            {
+              name: "--json",
+              description: "Output validation results in JSON format",
+              isRepeatable: false,
+            },
+          ],
+          args: {
+            name: "tasks",
+            description:
+              "Tasks to validate\nIf not specified, validates all tasks",
+            isOptional: true,
+            isVariadic: true,
+          },
+        },
       ],
       options: [
         {

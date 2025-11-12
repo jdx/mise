@@ -969,6 +969,12 @@ cmd tasks help="Manage tasks" {
         arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks" required=#false var=#true hide=#true
         mount run="mise tasks --usage"
     }
+    cmd validate help="Validate tasks for common errors and issues" {
+        after_long_help "Examples:\n\n    # Validate all tasks\n    $ mise task validate\n\n    # Validate specific tasks\n    $ mise task validate build test\n\n    # Output results as JSON\n    $ mise task validate --json\n\n    # Only show errors (skip warnings)\n    $ mise task validate --errors-only\n\nValidation Checks:\n\nThe validate command performs the following checks:\n\n  • Circular Dependencies: Detects dependency cycles\n  • Missing References: Finds references to non-existent tasks\n  • Usage Spec Parsing: Validates #USAGE directives and specs\n  • Timeout Format: Checks timeout values are valid durations\n  • Alias Conflicts: Detects duplicate aliases across tasks\n  • File Existence: Verifies file-based tasks exist\n  • Directory Templates: Validates directory paths and templates\n  • Shell Commands: Checks shell executables exist\n  • Glob Patterns: Validates source and output patterns\n  • Run Entries: Ensures tasks reference valid dependencies\n"
+        flag --errors-only help="Only show errors (skip warnings)"
+        flag --json help="Output validation results in JSON format"
+        arg "[TASKS]…" help="Tasks to validate\nIf not specified, validates all tasks" required=#false var=#true
+    }
 }
 cmd test-tool help="Test a tool installs and executes" {
     after_long_help "Examples:\n\n    $ mise test-tool ripgrep\n"

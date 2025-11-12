@@ -128,7 +128,7 @@ impl TasksValidate {
                     return Err(eyre!(
                         "Task '{}' not found. Available tasks: {}",
                         name,
-                        all_tasks.keys().map(|k| style::ecyan(k)).join(", ")
+                        all_tasks.keys().map(style::ecyan).join(", ")
                     ));
                 }
             }
@@ -320,15 +320,15 @@ impl TasksValidate {
             for alias in &t.aliases {
                 alias_map
                     .entry(alias.clone())
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(t.name.clone());
             }
         }
 
         // Check for conflicts - only report once for the first task alphabetically
         for alias in &task.aliases {
-            if let Some(tasks) = alias_map.get(alias) {
-                if tasks.len() > 1 {
+            if let Some(tasks) = alias_map.get(alias)
+                && tasks.len() > 1 {
                     // Only report the conflict for the first task (alphabetically) to avoid duplicates
                     let mut sorted_tasks = tasks.clone();
                     sorted_tasks.sort();
@@ -342,7 +342,6 @@ impl TasksValidate {
                         });
                     }
                 }
-            }
 
             // Check if alias conflicts with a task name
             if all_tasks.contains_key(alias) {
@@ -394,8 +393,8 @@ impl TasksValidate {
                 // Contains template syntax - try to render it
                 match task.dir(config).await {
                     Ok(rendered_dir) => {
-                        if let Some(rendered) = rendered_dir {
-                            if !rendered.exists() {
+                        if let Some(rendered) = rendered_dir
+                            && !rendered.exists() {
                                 issues.push(ValidationIssue {
                                     task: task.name.clone(),
                                     severity: Severity::Warning,
@@ -407,7 +406,6 @@ impl TasksValidate {
                                     details: Some(format!("Template: {}", dir)),
                                 });
                             }
-                        }
                     }
                     Err(e) => {
                         issues.push(ValidationIssue {
