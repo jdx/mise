@@ -22,13 +22,13 @@ pub struct TasksValidate {
     #[clap(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
 
-    /// Output validation results in JSON format
-    #[clap(long, verbatim_doc_comment)]
-    pub json: bool,
-
     /// Only show errors (skip warnings)
     #[clap(long, verbatim_doc_comment)]
     pub errors_only: bool,
+
+    /// Output validation results in JSON format
+    #[clap(long, verbatim_doc_comment)]
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
