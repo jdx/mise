@@ -292,6 +292,9 @@ export const commands: { [key: string]: Command } = {
       run: {
         hide: false,
       },
+      validate: {
+        hide: false,
+      },
     },
   },
   "test-tool": {
