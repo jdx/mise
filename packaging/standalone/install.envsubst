@@ -192,7 +192,6 @@ get_checksum() {
     else
       if command -v wget >/dev/null 2>&1; then
         debug ">" wget -qO - "$url"
-        stderr=$(mktemp)
         checksums="$(wget -qO - "$url")"
       else
         error "mise standalone install specific version requires curl or wget but neither is installed. Aborting."
@@ -213,9 +212,9 @@ get_checksum() {
 
 download_file() {
   url="$1"
+  download_dir="$2"
   filename="$(basename "$url")"
-  cache_dir="$(mktemp -d)"
-  file="$cache_dir/$filename"
+  file="$download_dir/$filename"
 
   info "mise: installing mise..."
 
@@ -227,6 +226,7 @@ download_file() {
       debug ">" wget -qO "$file" "$url"
       stderr=$(mktemp)
       wget -O "$file" "$url" >"$stderr" 2>&1 || error "wget failed: $(cat "$stderr")"
+      rm "$stderr"
     else
       error "mise standalone install requires curl or wget but neither is installed. Aborting."
     fi
@@ -252,7 +252,8 @@ install_mise() {
     tarball_url="https://mise.jdx.dev/v${version}/mise-v${version}-${os}-${arch}.${ext}"
   fi
 
-  cache_file=$(download_file "$tarball_url")
+  download_dir="$(mktemp -d)"
+  cache_file=$(download_file "$tarball_url" "$download_dir")
   debug "mise-setup: tarball=$cache_file"
 
   debug "validating checksum"
@@ -261,13 +262,20 @@ install_mise() {
   # extract tarball
   mkdir -p "$install_dir"
   rm -rf "$install_path"
-  cd "$(mktemp -d)"
+  extract_dir="$(mktemp -d)"
+  cd "$extract_dir"
   if [ "$ext" = "tar.zst" ] && ! tar_supports_zstd; then
     zstd -d -c "$cache_file" | tar -xf -
   else
     tar -xf "$cache_file"
   fi
   mv mise/bin/mise "$install_path"
+
+  # cleanup
+  cd / # Move out of $extract_dir before removing it
+  rm -rf "$download_dir"
+  rm -rf "$extract_dir"
+
   info "mise: installed successfully to $install_path"
 }
 
