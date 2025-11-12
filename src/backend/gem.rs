@@ -106,14 +106,15 @@ fn parse_gem_versions(output: &str) -> eyre::Result<Vec<String>> {
         // Stop at first line that starts with content (the gem line)
         // Subsequent lines will be metadata
         if let Some(paren_start) = line.find('(')
-            && let Some(paren_end) = line.rfind(')') {
-                let versions_str = &line[paren_start + 1..paren_end];
-                let versions: Vec<String> = versions_str
-                    .split(',')
-                    .map(|v| v.trim().to_string())
-                    .collect();
-                return Ok(versions);
-            }
+            && let Some(paren_end) = line.rfind(')')
+        {
+            let versions_str = &line[paren_start + 1..paren_end];
+            let versions: Vec<String> = versions_str
+                .split(',')
+                .map(|v| v.trim().to_string())
+                .collect();
+            return Ok(versions);
+        }
     }
 
     Err(eyre::eyre!("Gem not found"))
