@@ -224,7 +224,7 @@ impl Run {
                 .chain(self.args.clone())
                 .collect_vec();
 
-            let task_list = get_task_lists(&config, &args, false).await?;
+            let task_list = get_task_lists(&config, &args, false, false).await?;
 
             if let Some(task) = task_list.first() {
                 // Get usage spec and display help using usage library
