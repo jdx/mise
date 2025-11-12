@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# Create a subdirectory with a task
+mkdir -p subdir
+cat <<EOF >subdir/mise.toml
+[tasks.build]
+run = 'echo "Building project"'
+description = 'Build the project'
+EOF
+
+# Test that --help shows help instead of running the task
+assert_contains "mise run --cd subdir build --help 2>&1 || true" "Usage:"
+assert_not_contains "mise run --cd subdir build --help 2>&1 || true" "Building project"
+
+# Test that -- separator passes --help through to task (for tasks without usage spec)
+assert "mise run --cd subdir build -- --help 2>&1 || true" "[build] $ echo \"Building project\" --help
+Building project --help"
+
+# Also test with a task that has arguments
+cat <<EOF >subdir/mise.toml
+[tasks.deploy]
+run = 'echo "Deploying {{arg(name="env")}}"'
+description = 'Deploy to environment'
+EOF
+
+assert_contains "mise run --cd subdir deploy --help 2>&1 || true" "Usage:"
+assert_contains "mise run --cd subdir deploy --help 2>&1 || true" "<env>"
+assert_not_contains "mise run --cd subdir deploy --help 2>&1 || true" "Deploying"
+
+# Note: For tasks WITH usage specs (arg() calls), the usage library itself
+# intercepts --help even after --, so mise run deploy -- --help also shows help
