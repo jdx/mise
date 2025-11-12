@@ -22,10 +22,6 @@ pub struct TasksValidate {
     #[clap(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
 
-    /// Show hidden tasks
-    #[clap(long, verbatim_doc_comment)]
-    pub hidden: bool,
-
     /// Output validation results in JSON format
     #[clap(long, verbatim_doc_comment)]
     pub json: bool,
@@ -112,11 +108,7 @@ impl TasksValidate {
     }
 
     fn get_all_tasks(&self, all_tasks: &BTreeMap<String, Task>) -> Vec<Task> {
-        all_tasks
-            .values()
-            .filter(|t| self.hidden || !t.hide)
-            .cloned()
-            .collect()
+        all_tasks.values().cloned().collect()
     }
 
     async fn get_specific_tasks(
@@ -685,9 +677,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     # Validate specific tasks
     $ <bold>mise task validate build test</bold>
-
-    # Validate with hidden tasks included
-    $ <bold>mise task validate --hidden</bold>
 
     # Output results as JSON
     $ <bold>mise task validate --json</bold>
