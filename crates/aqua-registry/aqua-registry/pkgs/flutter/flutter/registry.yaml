@@ -14,7 +14,10 @@ packages:
     version_constraint: "false"
     version_overrides:
       - version_constraint: "true"
-        url: https://storage.googleapis.com/flutter_infra_release/releases/stable/{{.OS}}/flutter_{{.OS}}_{{trimV .Version}}-stable.{{.Format}}
+        url: https://storage.googleapis.com/flutter_infra_release/releases/{{.Vars.channel}}/{{.OS}}/flutter_{{.OS}}_{{trimV .Version}}-{{.Vars.channel}}.{{.Format}}
+        vars:
+          - name: channel
+            default: stable
         format: zip
         replacements:
           darwin: macos
@@ -23,6 +26,6 @@ packages:
             format: tar.xz
           - goos: windows
             goarch: arm64
-            url: https://storage.googleapis.com/flutter_infra_release/releases/stable/{{.OS}}/flutter_{{.OS}}_{{trimV .Version}}-stable.{{.Format}}
+            url: https://storage.googleapis.com/flutter_infra_release/releases/{{.Vars.channel}}/{{.OS}}/flutter_{{.OS}}_{{trimV .Version}}-{{.Vars.channel}}.{{.Format}}
           - goarch: arm64
-            url: https://storage.googleapis.com/flutter_infra_release/releases/stable/{{.OS}}/flutter_{{.OS}}_{{.Arch}}_{{trimV .Version}}-stable.{{.Format}}
+            url: https://storage.googleapis.com/flutter_infra_release/releases/{{.Vars.channel}}/{{.OS}}/flutter_{{.OS}}_{{.Arch}}_{{trimV .Version}}-{{.Vars.channel}}.{{.Format}}
