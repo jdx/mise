@@ -413,6 +413,11 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
         return args.to_vec();
     }
 
+    // Special case: "help" should print help, not be treated as a task
+    if args[i] == "help" || args[i] == "-h" || args[i] == "--help" {
+        return args.to_vec();
+    }
+
     // This is a naked run - inject "run" subcommand so clap routes it correctly
     // Format: ["mise", "-q", "task", "arg1"] becomes ["mise", "-q", "run", "task", "arg1"]
     // This preserves global flags while making it an explicit run command
@@ -467,6 +472,12 @@ impl Cli {
             Ok(cmd)
         } else {
             if let Some(task) = self.task {
+                // Handle special case: "help", "-h", or "--help" as task should print help
+                if task == "help" || task == "-h" || task == "--help" {
+                    Cli::command().print_help()?;
+                    exit(0);
+                }
+
                 let config = Config::get().await?;
 
                 // Expand :task pattern to match tasks in current directory's config root
