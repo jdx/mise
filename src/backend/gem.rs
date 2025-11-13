@@ -3,14 +3,12 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::file;
-use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{Result, config::Config};
 use async_trait::async_trait;
 use indoc::formatdoc;
 use std::{fmt::Debug, sync::Arc};
-use url::Url;
 
 #[derive(Debug)]
 pub struct GemBackend {
@@ -31,16 +29,22 @@ impl Backend for GemBackend {
         Ok(vec!["ruby"])
     }
 
-    async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        // The `gem list` command does not supporting listing versions as json output
-        // so we use the rubygems.org api to get the list of versions.
-        let raw = HTTP_FETCH.get_text(get_gem_url(&self.tool_name())?).await?;
-        let gem_versions: Vec<GemVersion> = serde_json::from_str(&raw)?;
-        let mut versions: Vec<String> = vec![];
-        for version in gem_versions.iter().rev() {
-            versions.push(version.number.clone());
-        }
-        Ok(versions)
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
+        // Use `gem info` to list versions, which respects configured gem sources/mirrors
+        let env = self.dependency_env(config).await.unwrap_or_default();
+
+        let output = cmd!(
+            "gem",
+            "info",
+            "--remote",
+            "--all",
+            "--exact",
+            self.tool_name(),
+        )
+        .full_env(&env)
+        .read()?;
+
+        parse_gem_versions(&output)
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
@@ -84,8 +88,36 @@ impl GemBackend {
     }
 }
 
-fn get_gem_url(n: &str) -> eyre::Result<Url> {
-    Ok(format!("https://rubygems.org/api/v1/versions/{n}.json").parse()?)
+fn parse_gem_versions(output: &str) -> eyre::Result<Vec<String>> {
+    // Parse gem info output format:
+    // *** REMOTE GEMS ***
+    //
+    // gemname (1.2.3, 1.2.2, 1.2.1, ...)
+    //     Authors: ...
+    //     Homepage: ...
+
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("***") {
+            continue;
+        }
+
+        // Format: "gemname (version1, version2, ...)"
+        // Stop at first line that starts with content (the gem line)
+        // Subsequent lines will be metadata
+        if let Some(paren_start) = line.find('(')
+            && let Some(paren_end) = line.rfind(')')
+        {
+            let versions_str = &line[paren_start + 1..paren_end];
+            let versions: Vec<String> = versions_str
+                .split(',')
+                .map(|v| v.trim().to_string())
+                .collect();
+            return Ok(versions);
+        }
+    }
+
+    Err(eyre::eyre!("Gem not found"))
 }
 
 fn env_script_all_bin_files(install_path: &std::path::Path) -> eyre::Result<bool> {
@@ -138,7 +170,43 @@ fn get_gem_executables(install_path: &std::path::Path) -> eyre::Result<Vec<std::
     Ok(files)
 }
 
-#[derive(Debug, serde::Deserialize)]
-struct GemVersion {
-    number: String,
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_gem_versions() {
+        let output = r#"*** REMOTE GEMS ***
+
+rake (13.3.0, 13.2.1, 13.2.0, 13.1.0, 13.0.6, 13.0.5)
+    Authors: Hiroshi SHIBATA
+    Homepage: https://github.com/ruby/rake"#;
+
+        let versions = parse_gem_versions(output).unwrap();
+        assert_eq!(
+            versions,
+            vec!["13.3.0", "13.2.1", "13.2.0", "13.1.0", "13.0.6", "13.0.5"]
+        );
+    }
+
+    #[test]
+    fn test_parse_gem_versions_empty() {
+        let output = r#"*** REMOTE GEMS ***
+
+"#;
+
+        let result = parse_gem_versions(output);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Gem not found");
+    }
+
+    #[test]
+    fn test_parse_gem_versions_single() {
+        let output = r#"*** REMOTE GEMS ***
+
+bundler (2.5.4)"#;
+
+        let versions = parse_gem_versions(output).unwrap();
+        assert_eq!(versions, vec!["2.5.4"]);
+    }
 }
