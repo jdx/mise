@@ -155,14 +155,34 @@ impl HttpBackend {
 
         file::create_dir_all(cache_path)?;
 
-        // Use TarFormat for format detection
-        let ext = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
-        let format = file::TarFormat::from_ext(ext);
+        // Handle `format` config
+        let file_path_with_ext = if let Some(added_extension) =
+            lookup_platform_key(opts, "format").or_else(|| opts.get("format").cloned())
+        {
+            let mut file_path = file_path.to_path_buf();
+            let current_ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let new_ext = if current_ext.is_empty() {
+                added_extension.clone()
+            } else {
+                format!("{}.{}", current_ext, added_extension)
+            };
+            file_path.set_extension(new_ext);
+            file_path
+        } else {
+            file_path.to_path_buf()
+        };
 
         // Get file extension and detect format
-        let file_name = file_path.file_name().unwrap().to_string_lossy();
+        let ext = file_path_with_ext
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+
+        // Use TarFormat for format detection
+        let format = file::TarFormat::from_ext(ext);
 
         // Check if it's a compressed binary (not a tar archive)
+        let file_name = file_path_with_ext.file_name().unwrap().to_string_lossy();
         let is_compressed_binary =
             !file_name.contains(".tar") && matches!(ext, "gz" | "xz" | "bz2" | "zst");
 
