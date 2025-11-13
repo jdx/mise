@@ -160,7 +160,16 @@ impl HttpBackend {
             lookup_platform_key(opts, "format").or_else(|| opts.get("format").cloned())
         {
             let mut file_path = file_path.to_path_buf();
-            file_path.add_extension(added_extension);
+            let current_ext = file_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            let new_ext = if current_ext.is_empty() {
+                added_extension.clone()
+            } else {
+                format!("{}.{}", current_ext, added_extension)
+            };
+            file_path.set_extension(new_ext);
             file_path
         } else {
             file_path.to_path_buf()
