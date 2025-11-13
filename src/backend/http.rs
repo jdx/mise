@@ -159,7 +159,9 @@ impl HttpBackend {
         let file_path_with_ext = if let Some(added_extension) =
             lookup_platform_key(opts, "format").or_else(|| opts.get("format").cloned())
         {
-            file_path.with_added_extension(added_extension)
+            let mut file_path = file_path.to_path_buf();
+            file_path.add_extension(added_extension);
+            file_path
         } else {
             file_path.to_path_buf()
         };
