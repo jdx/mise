@@ -57,9 +57,9 @@ remove_isolated_env() {
 
 within_isolated_env() {
 	_env \
-		-i \
-		-C "$TEST_WORKDIR" \
-		-- \
+		--ignore-environment \
+		--chdir="$TEST_WORKDIR" \
+		- \
 		CARGO_HOME="$CARGO_HOME" \
 		CARGO_LLVM_COV="${CARGO_LLVM_COV:-}" \
 		CARGO_LLVM_COV_SHOW_ENV="${CARGO_LLVM_COV_SHOW_ENV:-}" \
