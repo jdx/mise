@@ -1,5 +1,64 @@
 # Changelog
 
+## [2025.11.4](https://github.com/jdx/mise/compare/v2025.11.3..v2025.11.4) - 2025-11-13
+
+### 📦 Registry
+
+- add xcsift by @alexey1312 in [#6923](https://github.com/jdx/mise/pull/6923)
+- add tools: magika & xxh by @IceCodeNew in [#6909](https://github.com/jdx/mise/pull/6909)
+- add aliases to aqua-backend tools by @IceCodeNew in [#6910](https://github.com/jdx/mise/pull/6910)
+
+### 🚀 Features
+
+- **(gem-backend)** use gem command for backend operations by @andrewthauer in [#6650](https://github.com/jdx/mise/pull/6650)
+- **(tasks)** add `mise task validate` command for task validation by @jdx in [#6958](https://github.com/jdx/mise/pull/6958)
+- Add `--skip-deps` flag to run specified tasks, skipping dependencies by @hverlin in [#6894](https://github.com/jdx/mise/pull/6894)
+
+### 🐛 Bug Fixes
+
+- **(cli)** intercept --help flag to show task help instead of executing task by @jdx in [#6955](https://github.com/jdx/mise/pull/6955)
+- **(cli)** handle `mise help` without requiring tasks by @jdx in [#6961](https://github.com/jdx/mise/pull/6961)
+- **(pwsh)** remove __MISE_DIFF env var instead of __MISE_WATCH on deactivate by @IMXEren in [#6886](https://github.com/jdx/mise/pull/6886)
+- remove temporary files after install by @vmeurisse in [#6948](https://github.com/jdx/mise/pull/6948)
+
+### 📚 Documentation
+
+- **(snapcraft)** update `summary` & `description` shown in snapcraft.io by @phanect in [#6926](https://github.com/jdx/mise/pull/6926)
+- Change package example in go.md by @nachtjasmin in [#6862](https://github.com/jdx/mise/pull/6862)
+- paranoid mode does not untrust global config by @iloveitaly in [#6952](https://github.com/jdx/mise/pull/6952)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#6932](https://github.com/jdx/mise/pull/6932)
+
+### Chore
+
+- bump cargo deps by @jdx in [#6960](https://github.com/jdx/mise/pull/6960)
+
+### New Contributors
+
+- @iloveitaly made their first contribution in [#6952](https://github.com/jdx/mise/pull/6952)
+- @nachtjasmin made their first contribution in [#6862](https://github.com/jdx/mise/pull/6862)
+- @IceCodeNew made their first contribution in [#6910](https://github.com/jdx/mise/pull/6910)
+- @alexey1312 made their first contribution in [#6923](https://github.com/jdx/mise/pull/6923)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (6)
+
+- [`CrociDB/bulletty`](https://github.com/CrociDB/bulletty)
+- [`Gaurav-Gosain/tuios`](https://github.com/Gaurav-Gosain/tuios)
+- [`ck-zhang/reddix`](https://github.com/ck-zhang/reddix)
+- [`hokaccha/spannerdef`](https://github.com/hokaccha/spannerdef)
+- [`lasantosr/intelli-shell`](https://github.com/lasantosr/intelli-shell)
+- [`zerocore-ai/microsandbox`](https://github.com/zerocore-ai/microsandbox)
+
+#### Updated Packages (4)
+
+- [`cue-lang/cue`](https://github.com/cue-lang/cue)
+- [`flutter/flutter`](https://github.com/flutter/flutter)
+- [`phiresky/ripgrep-all`](https://github.com/phiresky/ripgrep-all)
+- [`topgrade-rs/topgrade`](https://github.com/topgrade-rs/topgrade)
 ## [2025.11.3](https://github.com/jdx/mise/compare/v2025.11.2..v2025.11.3) - 2025-11-07
 
 ### 📦 Registry

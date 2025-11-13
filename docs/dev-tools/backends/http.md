@@ -147,6 +147,35 @@ bin = "docker-compose"  # Rename from docker-compose-linux-x86_64 to docker-comp
 When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `docker-compose-linux-x86_64` becomes `docker-compose` automatically. Use the `bin` option only when you need a specific custom name.
 :::
 
+### `format`
+
+Explicitly specify the archive format when the URL lacks a file extension or has an incorrect extension:
+
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+url = "https://example.com/releases/my-tool-v1.0.0"
+format = "tar.xz"  # Explicitly specify the format
+```
+
+::: info
+If `format` is not specified, mise will automatically detect the format from the file extension in the URL. Only use `format` when the URL doesn't have a proper extension or when you need to override the detected format.
+:::
+
+### Platform-specific Format
+
+You can specify different formats for different platforms:
+
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+
+[tools."http:my-tool".platforms]
+macos-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-macos-x64", format = "tar.xz" }
+linux-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-linux-x64", format = "tar.gz" }
+windows-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-windows-x64", format = "zip" }
+```
+
 ### `bin_path`
 
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with `{{version}}`:

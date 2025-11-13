@@ -1,8 +1,10 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
 packages:
   - type: github_release
-    repo_owner: microsandbox
+    repo_owner: zerocore-ai
     repo_name: microsandbox
+    aliases:
+      - name: microsandbox/microsandbox
     description: Self-Hosted Plaform for Secure Execution of Untrusted User/AI Code
     files:
       - name: msb
