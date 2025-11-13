@@ -56,7 +56,7 @@ remove_isolated_env() {
 }
 
 within_isolated_env() {
-	_env \
+	env \
 		-i \
 		-C "$TEST_WORKDIR" \
 		- \
@@ -147,14 +147,6 @@ run_test() {
 	fi
 
 	return "$status"
-}
-
-_env() {
-	if type genv >/dev/null 2>&1; then
-		genv "$@"
-	else
-		env "$@"
-	fi
 }
 
 os() {
