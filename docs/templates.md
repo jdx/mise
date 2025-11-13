@@ -177,7 +177,7 @@ of the task definition they are used in. In other words, their return values are
 across task definition(s).
 
 - `exec(command) -> String` – Runs a shell command and returns its output as a string.
-- `arch() -> String` – Retrieves the system architecture, such as `x86_64` or `arm64`.
+- `arch() -> String` – Retrieves the system architecture, such as `x64` or `arm64`.
 - `os() -> String` – Returns the name of the operating system,
   e.g. linux, macos, windows.
 - `os_family() -> String` – Returns the operating system family, e.g. `unix`, `windows`.
