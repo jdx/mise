@@ -87,18 +87,22 @@ impl Backend for UnifiedGitBackend {
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
-        let asset = if let Some(existing_platform) = tv.lock_platforms.get(&platform_key) {
+        let asset = if let Some(existing_platform) = tv.lock_platforms.get(&platform_key)
+            && Self::has_valid_cached_urls(existing_platform)
+        {
+            let url = existing_platform.url.as_ref().unwrap();
+            let url_api = existing_platform.url_api.as_ref().unwrap();
             debug!(
                 "Using existing URL from lockfile for platform {}: {}",
                 platform_key,
-                existing_platform.url.clone().unwrap_or_default()
+                url
             );
             ReleaseAsset {
                 name: existing_platform.name.clone().unwrap_or_else(|| {
-                    get_filename_from_url(existing_platform.url.as_deref().unwrap_or(""))
+                    get_filename_from_url(url)
                 }),
-                url: existing_platform.url.clone().unwrap_or_default(),
-                url_api: existing_platform.url_api.clone().unwrap_or_default(),
+                url: url.clone(),
+                url_api: url_api.clone(),
                 digest: None, // Don't use old digest from lockfile, will be fetched fresh if needed
             }
         } else {
@@ -144,6 +148,14 @@ impl UnifiedGitBackend {
         // This ensures that when an alias like "test-edit = github:microsoft/edit" is used,
         // the repository name is correctly extracted as "microsoft/edit"
         self.ba.tool_name()
+    }
+
+    /// Validates if cached platform info from lockfile has complete URL data.
+    /// Returns true only if both url and url_api are present and non-empty.
+    /// This prevents using corrupted/legacy lockfile entries that would cause panics.
+    fn has_valid_cached_urls(platform_info: &crate::lockfile::PlatformInfo) -> bool {
+        platform_info.url.as_ref().is_some_and(|u| !u.is_empty())
+            && platform_info.url_api.as_ref().is_some_and(|u| !u.is_empty())
     }
 
     // Helper to format asset names for error messages
@@ -238,6 +250,14 @@ impl UnifiedGitBackend {
                 asset.url_api.clone()
             }
         };
+
+        if url.is_empty() {
+            return Err(eyre::eyre!(
+                "Empty download URL for asset {}. This may indicate a corrupted lockfile. \
+                Try removing mise.lock and running again.",
+                asset.name
+            ));
+        }
 
         let headers = if self.is_gitlab() {
             gitlab::get_headers(&url)
@@ -605,5 +625,45 @@ mod tests {
         let result =
             backend.find_asset_case_insensitive(&assets, "nonexistent-asset.tar.gz", |a| &a.name);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_legacy_lockfile_handling() {
+        use crate::lockfile::PlatformInfo;
+
+        // Test case 1: Missing url_api (old lockfile format before url_api was added)
+        let mut platform_info_missing_url_api = PlatformInfo::default();
+        platform_info_missing_url_api.url = Some("https://github.com/test/repo/releases/download/v1.0.0/asset.tar.gz".to_string());
+        platform_info_missing_url_api.url_api = None;
+        assert!(!UnifiedGitBackend::has_valid_cached_urls(&platform_info_missing_url_api),
+            "Should NOT use cached asset when url_api is missing");
+
+        // Test case 2: Empty url_api (corrupted lockfile)
+        let mut platform_info_empty_url_api = PlatformInfo::default();
+        platform_info_empty_url_api.url = Some("https://github.com/test/repo/releases/download/v1.0.0/asset.tar.gz".to_string());
+        platform_info_empty_url_api.url_api = Some("".to_string());
+        assert!(!UnifiedGitBackend::has_valid_cached_urls(&platform_info_empty_url_api),
+            "Should NOT use cached asset when url_api is empty");
+
+        // Test case 3: Missing url
+        let mut platform_info_missing_url = PlatformInfo::default();
+        platform_info_missing_url.url = None;
+        platform_info_missing_url.url_api = Some("https://api.github.com/repos/test/repo/releases/assets/123".to_string());
+        assert!(!UnifiedGitBackend::has_valid_cached_urls(&platform_info_missing_url),
+            "Should NOT use cached asset when url is missing");
+
+        // Test case 4: Empty url
+        let mut platform_info_empty_url = PlatformInfo::default();
+        platform_info_empty_url.url = Some("".to_string());
+        platform_info_empty_url.url_api = Some("https://api.github.com/repos/test/repo/releases/assets/123".to_string());
+        assert!(!UnifiedGitBackend::has_valid_cached_urls(&platform_info_empty_url),
+            "Should NOT use cached asset when url is empty");
+
+        // Test case 5: Both url and url_api present and non-empty (valid lockfile)
+        let mut platform_info_valid = PlatformInfo::default();
+        platform_info_valid.url = Some("https://github.com/test/repo/releases/download/v1.0.0/asset.tar.gz".to_string());
+        platform_info_valid.url_api = Some("https://api.github.com/repos/test/repo/releases/assets/123".to_string());
+        assert!(UnifiedGitBackend::has_valid_cached_urls(&platform_info_valid),
+            "Should use cached asset when both url and url_api are valid");
     }
 }
