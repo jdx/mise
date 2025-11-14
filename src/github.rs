@@ -217,9 +217,7 @@ fn cache_dir() -> PathBuf {
 
 pub fn get_headers<U: IntoUrl>(url: U) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    let url = url
-        .into_url()
-        .expect("Missing URL");
+    let url = url.into_url().expect("Missing URL");
     let mut set_headers = |token: &str| {
         headers.insert(
             "authorization",
