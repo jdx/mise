@@ -279,6 +279,7 @@ impl Vfox {
         let mut file = tokio::fs::File::create(&path).await?;
         let bytes = resp.bytes().await?;
         tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await?;
+        file.sync_all().await?;
         Ok(path)
     }
 
