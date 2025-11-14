@@ -663,9 +663,7 @@ mod tests {
         // Test case 3: Missing url
         let platform_info_missing_url = PlatformInfo {
             url: None,
-            url_api: Some(
-                "https://api.github.com/repos/test/repo/releases/assets/123".to_string(),
-            ),
+            url_api: Some("https://api.github.com/repos/test/repo/releases/assets/123".to_string()),
             ..Default::default()
         };
         assert!(
@@ -676,9 +674,7 @@ mod tests {
         // Test case 4: Empty url
         let platform_info_empty_url = PlatformInfo {
             url: Some("".to_string()),
-            url_api: Some(
-                "https://api.github.com/repos/test/repo/releases/assets/123".to_string(),
-            ),
+            url_api: Some("https://api.github.com/repos/test/repo/releases/assets/123".to_string()),
             ..Default::default()
         };
         assert!(
@@ -691,9 +687,7 @@ mod tests {
             url: Some(
                 "https://github.com/test/repo/releases/download/v1.0.0/asset.tar.gz".to_string(),
             ),
-            url_api: Some(
-                "https://api.github.com/repos/test/repo/releases/assets/123".to_string(),
-            ),
+            url_api: Some("https://api.github.com/repos/test/repo/releases/assets/123".to_string()),
             ..Default::default()
         };
         assert!(
