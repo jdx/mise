@@ -3,6 +3,7 @@ use crate::task::Task;
 use crate::{dirs, env, file};
 use eyre::Result;
 use indoc::formatdoc;
+use std::path::MAIN_SEPARATOR_STR;
 
 /// Edit a tasks with $EDITOR
 ///
@@ -24,7 +25,9 @@ impl TasksEdit {
         let config = Config::get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
-        let path = Task::task_dir().await.join(&self.task);
+        let path = Task::task_dir()
+            .await
+            .join(self.task.replace(':', MAIN_SEPARATOR_STR));
 
         let task = if let Some(task) = config.tasks_with_aliases().await?.get(&self.task).cloned() {
             task
@@ -35,6 +38,7 @@ impl TasksEdit {
         };
         let file = &task.config_source;
         if !file.exists() {
+            file::create_dir_all(file.parent().unwrap())?;
             file::write(file, default_task())?;
             file::make_executable(file)?;
         }
