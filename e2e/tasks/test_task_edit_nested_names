@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+# Test that task edit with nested colons (foo:bar:baz) creates the correct file structure
+# and can be run with `mise run foo:bar:baz`
+
+# Create a temporary editor script that just writes a simple task
+export EDITOR="$PWD/fake-editor"
+cat <<'EDITOR_EOF' >fake-editor
+#!/usr/bin/env bash
+# Don't actually open an editor, just ensure the file has some content
+if [ ! -s "$1" ]; then
+	cat >"$1" <<'EOF'
+#!/usr/bin/env bash
+set -euxo pipefail
+
+echo "nested task executed"
+EOF
+fi
+EDITOR_EOF
+chmod +x fake-editor
+
+# Test 1: Create a task with nested colons using task edit
+echo "Running: mise task edit foo:bar:baz --path"
+TASK_PATH=$(mise task edit foo:bar:baz --path 2>&1)
+
+# Verify the file was created
+if [ ! -f "$TASK_PATH" ]; then
+	echo "ERROR: Task file was not created at $TASK_PATH"
+	exit 1
+fi
+
+echo "Task file created at: $TASK_PATH"
+
+# Write content to the task file
+cat >"$TASK_PATH" <<'EOF'
+#!/usr/bin/env bash
+set -euxo pipefail
+
+echo "nested task executed"
+EOF
+chmod +x "$TASK_PATH"
+
+# The key test: Can we run the task with its nested name?
+# Should successfully execute and output our message
+assert_contains "mise run foo:bar:baz" "nested task executed"
+
+# Test 2: Verify the task shows up in task list with the correct name
+assert_contains "mise tasks ls" "foo:bar:baz"
+
+# Test 3: Try editing an existing nested task (should not create duplicates)
+TASK_PATH2=$(mise task edit foo:bar:baz --path 2>&1)
+
+if [ "$TASK_PATH" != "$TASK_PATH2" ]; then
+	echo "ERROR: Editing the same task twice gave different paths"
+	echo "First edit: $TASK_PATH"
+	echo "Second edit: $TASK_PATH2"
+	exit 1
+fi
+
+# Test 4: Create a task with multiple levels of nesting
+TASK_PATH3=$(mise task edit deploy:prod:backend:api --path 2>&1)
+
+if [ ! -f "$TASK_PATH3" ]; then
+	echo "ERROR: Deeply nested task file was not created at $TASK_PATH3"
+	exit 1
+fi
+
+echo "Deeply nested task file created at: $TASK_PATH3"
+
+# Write content to the deeply nested task
+cat >"$TASK_PATH3" <<'EOF'
+#!/usr/bin/env bash
+set -euxo pipefail
+
+echo "deeply nested task executed"
+EOF
+chmod +x "$TASK_PATH3"
+
+# Run the deeply nested task
+assert_contains "mise run deploy:prod:backend:api" "deeply nested task executed"
+
+# Verify it shows up in the task list
+assert_contains "mise tasks ls" "deploy:prod:backend:api"
