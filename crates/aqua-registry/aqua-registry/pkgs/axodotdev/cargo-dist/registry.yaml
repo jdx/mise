@@ -134,6 +134,28 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: semver("<= 0.16.0-prerelease.5")
+        asset: cargo-dist-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        files:
+          - name: cargo-dist
+            src: "{{.AssetWithoutExt}}/cargo-dist"
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: cargo-dist
       - version_constraint: semver("<= 0.23.0")
         asset: cargo-dist-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.xz
@@ -156,6 +178,8 @@ packages:
             format: zip
             files:
               - name: cargo-dist
+        github_artifact_attestations:
+          signer_workflow: axodotdev/cargo-dist/.github/workflows/release.yml
       - version_constraint: Version == "v0.28.1-prerelease.1"
         asset: cargo-dist-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.xz
@@ -206,6 +230,8 @@ packages:
             format: zip
             files:
               - name: dist
+        github_artifact_attestations:
+          signer_workflow: axodotdev/cargo-dist/.github/workflows/release.yml
       - version_constraint: "true"
         asset: cargo-dist-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.xz
@@ -228,3 +254,5 @@ packages:
             format: zip
             files:
               - name: dist
+        github_artifact_attestations:
+          signer_workflow: axodotdev/cargo-dist/.github/workflows/release.yml

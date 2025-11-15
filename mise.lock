@@ -47,7 +47,7 @@ version = "1.43.2"
 backend = "cargo:cargo-insta"
 
 [[tools."cargo:cargo-release"]]
-version = "0.25.20"
+version = "0.25.22"
 backend = "cargo:cargo-release"
 
 [[tools."cargo:git-cliff"]]
@@ -63,13 +63,13 @@ version = "2.8.0"
 backend = "cargo:usage-cli"
 
 [[tools.gh]]
-version = "2.83.0"
+version = "2.83.1"
 backend = "aqua:cli/cli"
 
 [tools.gh.platforms.linux-x64]
-checksum = "sha256:a5cf6cdb40fc67751adf561126b3314044779cea81ba4f254fbe8e9a69f1676f"
-size = 18175244
-url = "https://github.com/cli/cli/releases/download/v2.83.0/gh_2.83.0_linux_amd64.tar.gz"
+checksum = "sha256:1c5252d4ce3db07b51c01ff0b909583da6364ff3fdc06d0c2e75e62dc0380a34"
+size = 18174787
+url = "https://github.com/cli/cli/releases/download/v2.83.1/gh_2.83.1_linux_amd64.tar.gz"
 
 [[tools.hk]]
 version = "1.20.0"

@@ -1,5 +1,38 @@
 # Changelog
 
+## [2025.11.5](https://github.com/jdx/mise/compare/v2025.11.4..v2025.11.5) - 2025-11-15
+
+### 🚀 Features
+
+- **(http)** Add 'format' to http backend by @thejcannon in [#6957](https://github.com/jdx/mise/pull/6957)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** wrong directory on first run by @vmeurisse in [#6971](https://github.com/jdx/mise/pull/6971)
+- **(tasks)** fix nested colons with `mise task edit` by @jdx in [#6978](https://github.com/jdx/mise/pull/6978)
+- Use compatible env flags by @thejcannon in [#6964](https://github.com/jdx/mise/pull/6964)
+- Flush vfox download buffer by @blampe in [#6969](https://github.com/jdx/mise/pull/6969)
+
+### 📚 Documentation
+
+- `arch()` template is `x64` by @thejcannon in [#6967](https://github.com/jdx/mise/pull/6967)
+- update section headers in getting-started.md by @JunichiroKohari in [#6980](https://github.com/jdx/mise/pull/6980)
+
+### New Contributors
+
+- @JunichiroKohari made their first contribution in [#6980](https://github.com/jdx/mise/pull/6980)
+- @blampe made their first contribution in [#6969](https://github.com/jdx/mise/pull/6969)
+- @thejcannon made their first contribution in [#6964](https://github.com/jdx/mise/pull/6964)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`cirruslabs/cirrus-cli`](https://github.com/cirruslabs/cirrus-cli)
+
+#### Updated Packages (1)
+
+- [`axodotdev/cargo-dist`](https://github.com/axodotdev/cargo-dist)
 ## [2025.11.4](https://github.com/jdx/mise/compare/v2025.11.3..v2025.11.4) - 2025-11-13
 
 ### 📦 Registry
