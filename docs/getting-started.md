@@ -305,7 +305,7 @@ ripgrep --version
 
 See [Backends](/dev-tools/backends/) for more ecosystems and details.
 
-### 5. Setting environment variables {#environment-variables}
+## 5. Setting environment variables {#environment-variables}
 
 You can set environment variables in `mise.toml` which will be set if mise is activated or if `mise x|exec` is used in a directory:
 
@@ -322,7 +322,7 @@ echo "node env: $NODE_ENV"
 # node env: production
 ```
 
-### 6. Run a task {#run-a-task}
+## 6. Run a task {#run-a-task}
 
 You can define simple tasks in `mise.toml` and run them with `mise run`:
 
