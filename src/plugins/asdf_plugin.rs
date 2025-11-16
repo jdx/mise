@@ -553,7 +553,6 @@ impl Plugin for AsdfPlugin {
 
         match source {
             PluginSource::Zip { url } => {
-                // Install from zip file
                 self.install_from_zip(&url, pr).await?;
                 self.exec_hook(pr, "post-plugin-add")?;
                 pr.finish_with_message(url.to_string());
@@ -563,7 +562,6 @@ impl Plugin for AsdfPlugin {
                 url: repo_url,
                 git_ref,
             } => {
-                // Install from git repository
                 if regex!(r"^[/~]").is_match(&repo_url) {
                     Err(eyre!(
                         r#"Invalid repository URL: {repo_url}
@@ -666,8 +664,6 @@ fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
 mod tests {
     use super::*;
     //use pretty_assertions::assert_str_eq;
-    use std::path::PathBuf;
-    use tempfile::TempDir;
 
     #[test]
     fn test_plugin_source_parse_git() {
