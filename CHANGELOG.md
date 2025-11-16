@@ -1,5 +1,7 @@
 # Changelog
 
+## [2025.11.6](https://github.com/jdx/mise/compare/v2025.11.5..v2025.11.6) - 2025-11-16
+
 ## [2025.11.5](https://github.com/jdx/mise/compare/v2025.11.4..v2025.11.5) - 2025-11-15
 
 ### 🚀 Features
