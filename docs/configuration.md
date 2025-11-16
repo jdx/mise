@@ -386,7 +386,7 @@ in mise and nvm. Here are some of the supported idiomatic version files:
 | terramate  | `.terramate-version`                  |
 | yarn       | `.yvmrc`                              |
 
-In mise, these are enabled by default. However, in 2025.10.0 they will default to disabled (see <https://github.com/jdx/mise/discussions/4345>).
+In mise, these are disabled by default, see <https://github.com/jdx/mise/discussions/4345> for rationale.
 
 - `mise settings add idiomatic_version_file_enable_tools python` for a specific tool such as Python ([docs](/configuration/settings.html#idiomatic_version_file_enable_tools))
 
