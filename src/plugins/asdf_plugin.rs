@@ -21,6 +21,39 @@ use std::sync::{Mutex, MutexGuard};
 use std::{collections::HashMap, sync::Arc};
 use xx::regex;
 
+#[derive(Debug, Clone)]
+pub enum PluginSource {
+    /// Git repository with URL and optional ref
+    Git { url: String, git_ref: Option<String> },
+    /// Zip file accessible via HTTPS
+    Zip { url: String },
+}
+
+impl PluginSource {
+    pub fn parse( repository: &str) -> Self {
+        // Split Parameters
+        let url_path = repository
+            .split('?')
+            .next()
+            .unwrap_or(repository)
+            .split('#')
+            .next()
+            .unwrap_or(repository);
+        // Check if it's a zip file (ends with -zip)
+        if url_path.to_lowercase().ends_with(".zip") {
+            return PluginSource::Zip {
+                url: repository.to_string(),
+            };
+        }
+        // Otherwise treat as git repository
+        let (url, git_ref) = Git::split_url_and_ref(repository);
+        PluginSource::Git {
+            url: url.to_string(),
+            git_ref: git_ref.map(|s| s.to_string()),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct AsdfPlugin {
     pub name: String,
@@ -180,6 +213,176 @@ impl AsdfPlugin {
             })
             .collect()
     }
+    async fn install_from_zip(&self, url: &str, pr: &dyn SingleReport) -> eyre::Result<()> {
+        let bytes = self.download_zip(url, pr).await?;
+        let strip_components = self.should_strip_components(&bytes)?;
+
+        self.extract_zip(bytes, strip_components, pr)?;
+        Ok(())
+    }
+
+    async fn download_zip(&self, url: &str, pr: &dyn SingleReport) -> eyre::Result<Vec<u8>> {
+        pr.set_message(format!("downloading {url}"));
+
+        let client = reqwest::Client::builder()
+            .user_agent("mise")
+            .build()?;
+
+        let resp = client.get(url).send().await
+            .wrap_err_with(|| format!("failed to send request to {url}"))?;
+
+        if !resp.status().is_success() {
+            bail!("Failed to download zip file: HTTP {}", resp.status());
+        }
+
+        Ok(resp.bytes().await?.to_vec())
+    }
+
+    // Determine if we need to strip root directory
+    fn should_strip_components(&self, bytes: &[u8]) -> eyre::Result<usize> {
+        let cursor = std::io::Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(cursor)
+            .wrap_err("Failed to read zip archive")?;
+
+        Self::should_strip_root_dir(&mut archive)
+    }
+
+    fn extract_zip(&self, bytes: Vec<u8>, strip_components: usize, pr: &dyn SingleReport) -> eyre::Result<()> {
+        pr.set_message("extracting zip file".to_string());
+
+        let cursor = std::io::Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(cursor)
+            .wrap_err("Failed to read zip archive")?;
+
+        std::fs::create_dir_all(&self.plugin_path)
+            .wrap_err_with(|| format!("Failed to create directory {}", display_path(&self.plugin_path)))?;
+
+        for i in 0..archive.len() {
+            self.extract_file(&mut archive, i, strip_components)?;
+        }
+
+        Ok(())
+    }
+
+    fn extract_file<R: std::io::Read + std::io::Seek>(
+        &self,
+        archive: &mut zip::ZipArchive<R>,
+        index: usize,
+        strip_components: usize,
+    ) -> eyre::Result<()> {
+        let mut file = archive.by_index(index)
+            .wrap_err_with(|| format!("Failed to read file at index {}", index))?;
+
+        let Some(file_path) = file.enclosed_name() else {
+            return Ok(());
+        };
+
+        let Some(outpath) = self.get_output_path(&file_path, strip_components) else {
+            return Ok(());
+        };
+
+        if file.name().ends_with('/') {
+            self.create_directory(&outpath)?;
+        } else {
+            self.extract_regular_file(&mut file, &outpath)?;
+        }
+
+        Ok(())
+    }
+
+    fn get_output_path(&self, file_path: &Path, strip_components: usize) -> Option<PathBuf> {
+        if strip_components == 0 {
+            return Some(self.plugin_path.join(file_path));
+        }
+
+        let components: Vec<_> = file_path.components().collect();
+        if components.len() <= strip_components {
+            return None;
+        }
+
+        let stripped: PathBuf = components[strip_components..].iter().collect();
+        Some(self.plugin_path.join(stripped))
+    }
+
+    fn create_directory(&self, path: &Path) -> eyre::Result<()> {
+        std::fs::create_dir_all(path)
+            .wrap_err_with(|| format!("Failed to create directory {}", display_path(path)))
+    }
+
+    fn extract_regular_file<R: std::io::Read>(
+        &self,
+        file: &mut zip::read::ZipFile<R>,
+        outpath: &Path,
+    ) -> eyre::Result<()> {
+        if let Some(parent) = outpath.parent() {
+            self.create_directory(parent)?;
+        }
+
+        let mut outfile = std::fs::File::create(outpath)
+            .wrap_err_with(|| format!("Failed to create file {}", display_path(outpath)))?;
+
+        std::io::copy(file, &mut outfile)
+            .wrap_err_with(|| format!("Failed to extract to file {}", display_path(outpath)))?;
+
+        #[cfg(unix)]
+        self.set_unix_permissions(file, outpath)?;
+
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn set_unix_permissions<R: std::io::Read>(
+        &self,
+        file: &zip::read::ZipFile<R>,
+        path: &Path,
+    ) -> eyre::Result<()> {
+        use std::fs::Permissions;
+        use std::os::unix::fs::PermissionsExt;
+
+        if let Some(mode) = file.unix_mode() {
+            std::fs::set_permissions(path, Permissions::from_mode(mode))
+                .wrap_err_with(|| format!("Failed to set permissions on {}", display_path(path)))?;
+        }
+        Ok(())
+    }
+
+    fn should_strip_root_dir<R: std::io::Read + std::io::Seek>(
+        archive: &mut zip::ZipArchive<R>
+    ) -> eyre::Result<usize> {
+        if archive.is_empty() {
+            return Ok(0);
+        }
+
+        let Some(root_dir) = Self::get_root_component(archive, 0)? else {
+            return Ok(0);
+        };
+
+        // Check if all entries share the same root directory
+        for i in 1..archive.len() {
+            let Some(component) = Self::get_root_component(archive, i)? else {
+                continue;
+            };
+
+            if component != root_dir {
+                return Ok(0);
+            }
+        }
+
+        Ok(1)
+    }
+
+    fn get_root_component<R: std::io::Read + std::io::Seek>(
+        archive: &mut zip::ZipArchive<R>,
+        index: usize,
+    ) -> eyre::Result<Option<String>> {
+        let file = archive.by_index(index)?;
+        let Some(path) = file.enclosed_name() else {
+            return Ok(None);
+        };
+
+        Ok(path.components().next()
+            .map(|c| c.as_os_str().to_string_lossy().to_string()))
+    }
 }
 
 #[async_trait]
@@ -327,35 +530,47 @@ impl Plugin for AsdfPlugin {
 
     async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
         let repository = self.get_repo_url(config)?;
-        let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
+        let source = PluginSource::parse(&repository);
         debug!("asdf_plugin[{}]:install {:?}", self.name, repository);
 
         if self.is_installed() {
             self.uninstall(pr).await?;
         }
 
-        if regex!(r"^[/~]").is_match(&repo_url) {
-            Err(eyre!(
+        match source {
+            PluginSource:: Zip {url} => {
+                // Install from zip file
+                self.install_from_zip(&url, pr).await?;
+                self.exec_hook(pr, "post-plugin-add")?;
+                pr.finish_with_message(format!("{url}"));
+                Ok(())
+            }
+            PluginSource::Git { url: repo_url, git_ref } => {
+                // Install from git repository
+                if regex!(r"^[/~]").is_match(&repo_url) {
+                    Err(eyre!(
                 r#"Invalid repository URL: {repo_url}
 If you are trying to link to a local directory, use `mise plugins link` instead.
 Plugins could support local directories in the future but for now a symlink is required which `mise plugins link` will create for you."#
-            ))?;
-        }
-        let git = Git::new(&self.plugin_path);
-        pr.set_message(format!("clone {repo_url}"));
-        git.clone(&repo_url, CloneOptions::default().pr(pr))?;
-        if let Some(ref_) = &repo_ref {
-            pr.set_message(format!("check out {ref_}"));
-            git.update(Some(ref_.to_string()))?;
-        }
-        self.exec_hook(pr, "post-plugin-add")?;
+                    ))?;
+                }
+                let git = Git::new(&self.plugin_path);
+                pr.set_message(format!("clone {repo_url}"));
+                git.clone(&repo_url, CloneOptions::default().pr(pr))?;
+                if let Some(ref_) = &git_ref {
+                    pr.set_message(format!("check out {ref_}"));
+                    git.update(Some(ref_.to_string()))?;
+                }
+                self.exec_hook(pr, "post-plugin-add")?;
 
-        let sha = git.current_sha_short()?;
-        pr.finish_with_message(format!(
-            "{repo_url}#{}",
-            style(&sha).bright().yellow().for_stderr(),
-        ));
-        Ok(())
+                let sha = git.current_sha_short()?;
+                pr.finish_with_message(format!(
+                    "{repo_url}#{}",
+                    style(&sha).bright().yellow().for_stderr(),
+                ));
+                Ok(())
+            }
+        }
     }
 
     fn external_commands(&self) -> eyre::Result<Vec<Command>> {
@@ -428,4 +643,72 @@ fn build_script_man(name: &str, plugin_path: &Path) -> ScriptManager {
         .with_env("GITHUB_TOKEN", token)
         // asdf plugins often use GITHUB_API_TOKEN as the env var for GitHub API token
         .with_env("GITHUB_API_TOKEN", token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    //use pretty_assertions::assert_str_eq;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_plugin_source_parse_git(){
+        // Test parsing Git URL
+        let source = PluginSource:: parse ("https://github.com/user/plugin.git");
+        match source {
+            PluginSource::Git { url, git_ref } => {
+                assert_eq! (url, "https://github.com/user/plugin.git");
+                assert_eq! (git_ref, None);
+            }
+            _ => panic!("Expected a git plugin")
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_git_with_ref(){
+        // Test parsing Git URL with refs
+        let source = PluginSource:: parse("https://github.com/user/plugin.git#v1.0.0");
+        match source {
+            PluginSource::Git { url, git_ref } => {
+                assert_eq!(url, "https://github.com/user/plugin.git");
+                assert_eq!(git_ref, Some("v1.0.0". to_string()));
+            }
+            _ => panic!("Expected a git plugin")
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_zip(){
+        // Test parsing zip URL
+        let source = PluginSource:: parse("https://example.com/plugins/my-plugin.zip");
+        match source {
+            PluginSource::Zip { url } => {
+                assert_eq! (url, "https://example.com/plugins/my-plugin.zip");
+            }
+            _ => panic!("Expected a Zip source")
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_uppercase_zip_with_query(){
+        // Test parsing zip URL
+        let source = PluginSource:: parse("https://example.com/plugins/my-plugin.ZIP?version=v1.0.0");
+        match source {
+            PluginSource::Zip { url } => {
+                assert_eq! (url, "https://example.com/plugins/my-plugin.ZIP?version=v1.0.0");
+            }
+            _ => panic!("Expected a Zip source")
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_edge_cases () {
+        let source = PluginSource:: parse ("https://example.com/.zip/plugin");
+        match source {
+            PluginSource:: Git { .. } => { } // Expected
+            _ => panic!("Expected a Zip source")
+        }
+    }
+    
 }
