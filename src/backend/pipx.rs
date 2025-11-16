@@ -178,7 +178,7 @@ impl Backend for PIPXBackend {
         let pipx_request = self
             .tool_name()
             .parse::<PipxRequest>()?
-            .pipx_request(&tv.version, &tv.request.options());
+            .pipx_request(&tv.version, &tv.request.options())?;
 
         if use_uvx {
             ctx.pr
@@ -378,18 +378,51 @@ impl PipxRequest {
         }
     }
 
-    fn pipx_request(&self, v: &str, opts: &ToolVersionOptions) -> String {
+    fn specname_from_opts(&self, opts: &ToolVersionOptions, url: &str) -> Result<String> {
+        match opts.get("specname") {
+            Some(specname) => Ok(specname.to_string()),
+            None => self.specname_from_url(url),
+        }
+    }
+
+    fn specname_from_url(&self, url: &str) -> eyre::Result<String> {
+        match regex!(r".*/([^/]+)").captures(url) {
+            Some(cap) => Ok(cap.get(1).unwrap().as_str().to_string()),
+            None => Err(eyre!(
+                "Can't derive spec name from URL, please set 'specname' tool option"
+            )),
+        }
+    }
+
+    fn format_git_spec(
+        &self,
+        url: &str,
+        extras: &str,
+        opts: &ToolVersionOptions,
+    ) -> Result<String> {
+        if extras.is_empty() {
+            Ok(format!("git+{url}.git"))
+        } else {
+            let specname = self.specname_from_opts(opts, url)?;
+            Ok(format!("{specname}{extras} @ git+{url}.git"))
+        }
+    }
+
+    fn pipx_request(&self, v: &str, opts: &ToolVersionOptions) -> Result<String> {
         let extras = self.extras_from_opts(opts);
 
         if v == "latest" {
             match self {
-                PipxRequest::Git(url) => format!("git+{url}.git"),
-                PipxRequest::Pypi(package) => format!("{package}{extras}"),
+                PipxRequest::Git(url) => self.format_git_spec(&url, &extras, &opts),
+                PipxRequest::Pypi(package) => Ok(format!("{package}{extras}")),
             }
         } else {
             match self {
-                PipxRequest::Git(url) => format!("git+{url}.git@{v}"),
-                PipxRequest::Pypi(package) => format!("{package}{extras}=={v}"),
+                PipxRequest::Git(url) => {
+                    let basespec = self.format_git_spec(&url, &extras, &opts)?;
+                    Ok(format!("{basespec}@{v}"))
+                }
+                PipxRequest::Pypi(package) => Ok(format!("{package}{extras}=={v}")),
             }
         }
     }
