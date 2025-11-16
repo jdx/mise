@@ -814,7 +814,7 @@ For testing package installation:
 ```bash
 # Test apt installation
 docker run -ti --rm ubuntu
-apt update -y && apt install -y gpg sudo wget curl
+apt update -y && apt install -y curl
 # ... installation steps
 ```
 
