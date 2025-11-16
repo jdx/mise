@@ -2074,6 +2074,11 @@ description = "GNU Guile"
 backends = ["aqua:charmbracelet/gum", "asdf:lwiechec/asdf-gum"]
 description = "A tool for glamorous shell scripts"
 
+[tools.guardy]
+backends = ["ubi:deepbrain.space/guardy[provider=gitlab]", "cargo:guardy"]
+description = "Fast, secure git hooks with secret scanning and protected file synchronization"
+test = ["guardy --version", "guardy {{version}}"]
+
 [tools.gup]
 backends = ["aqua:nao1215/gup"]
 description = 'gup - Update binaries installed by "go install" with goroutines'
