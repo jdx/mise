@@ -24,13 +24,16 @@ use xx::regex;
 #[derive(Debug, Clone)]
 pub enum PluginSource {
     /// Git repository with URL and optional ref
-    Git { url: String, git_ref: Option<String> },
+    Git {
+        url: String,
+        git_ref: Option<String>,
+    },
     /// Zip file accessible via HTTPS
     Zip { url: String },
 }
 
 impl PluginSource {
-    pub fn parse( repository: &str) -> Self {
+    pub fn parse(repository: &str) -> Self {
         // Split Parameters
         let url_path = repository
             .split('?')
@@ -224,11 +227,12 @@ impl AsdfPlugin {
     async fn download_zip(&self, url: &str, pr: &dyn SingleReport) -> eyre::Result<Vec<u8>> {
         pr.set_message(format!("downloading {url}"));
 
-        let client = reqwest::Client::builder()
-            .user_agent("mise")
-            .build()?;
+        let client = reqwest::Client::builder().user_agent("mise").build()?;
 
-        let resp = client.get(url).send().await
+        let resp = client
+            .get(url)
+            .send()
+            .await
             .wrap_err_with(|| format!("failed to send request to {url}"))?;
 
         if !resp.status().is_success() {
@@ -241,21 +245,28 @@ impl AsdfPlugin {
     // Determine if we need to strip root directory
     fn should_strip_components(&self, bytes: &[u8]) -> eyre::Result<usize> {
         let cursor = std::io::Cursor::new(bytes);
-        let mut archive = zip::ZipArchive::new(cursor)
-            .wrap_err("Failed to read zip archive")?;
+        let mut archive = zip::ZipArchive::new(cursor).wrap_err("Failed to read zip archive")?;
 
         Self::should_strip_root_dir(&mut archive)
     }
 
-    fn extract_zip(&self, bytes: Vec<u8>, strip_components: usize, pr: &dyn SingleReport) -> eyre::Result<()> {
+    fn extract_zip(
+        &self,
+        bytes: Vec<u8>,
+        strip_components: usize,
+        pr: &dyn SingleReport,
+    ) -> eyre::Result<()> {
         pr.set_message("extracting zip file".to_string());
 
         let cursor = std::io::Cursor::new(bytes);
-        let mut archive = zip::ZipArchive::new(cursor)
-            .wrap_err("Failed to read zip archive")?;
+        let mut archive = zip::ZipArchive::new(cursor).wrap_err("Failed to read zip archive")?;
 
-        std::fs::create_dir_all(&self.plugin_path)
-            .wrap_err_with(|| format!("Failed to create directory {}", display_path(&self.plugin_path)))?;
+        std::fs::create_dir_all(&self.plugin_path).wrap_err_with(|| {
+            format!(
+                "Failed to create directory {}",
+                display_path(&self.plugin_path)
+            )
+        })?;
 
         for i in 0..archive.len() {
             self.extract_file(&mut archive, i, strip_components)?;
@@ -270,7 +281,8 @@ impl AsdfPlugin {
         index: usize,
         strip_components: usize,
     ) -> eyre::Result<()> {
-        let mut file = archive.by_index(index)
+        let mut file = archive
+            .by_index(index)
             .wrap_err_with(|| format!("Failed to read file at index {}", index))?;
 
         let Some(file_path) = file.enclosed_name() else {
@@ -347,7 +359,7 @@ impl AsdfPlugin {
     }
 
     fn should_strip_root_dir<R: std::io::Read + std::io::Seek>(
-        archive: &mut zip::ZipArchive<R>
+        archive: &mut zip::ZipArchive<R>,
     ) -> eyre::Result<usize> {
         if archive.is_empty() {
             return Ok(0);
@@ -380,7 +392,9 @@ impl AsdfPlugin {
             return Ok(None);
         };
 
-        Ok(path.components().next()
+        Ok(path
+            .components()
+            .next()
             .map(|c| c.as_os_str().to_string_lossy().to_string()))
     }
 }
@@ -538,18 +552,21 @@ impl Plugin for AsdfPlugin {
         }
 
         match source {
-            PluginSource:: Zip {url} => {
+            PluginSource::Zip { url } => {
                 // Install from zip file
                 self.install_from_zip(&url, pr).await?;
                 self.exec_hook(pr, "post-plugin-add")?;
-                pr.finish_with_message(format!("{url}"));
+                pr.finish_with_message(url.to_string());
                 Ok(())
             }
-            PluginSource::Git { url: repo_url, git_ref } => {
+            PluginSource::Git {
+                url: repo_url,
+                git_ref,
+            } => {
                 // Install from git repository
                 if regex!(r"^[/~]").is_match(&repo_url) {
                     Err(eyre!(
-                r#"Invalid repository URL: {repo_url}
+                        r#"Invalid repository URL: {repo_url}
 If you are trying to link to a local directory, use `mise plugins link` instead.
 Plugins could support local directories in the future but for now a symlink is required which `mise plugins link` will create for you."#
                     ))?;
@@ -653,62 +670,65 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_plugin_source_parse_git(){
+    fn test_plugin_source_parse_git() {
         // Test parsing Git URL
-        let source = PluginSource:: parse ("https://github.com/user/plugin.git");
-        match source {
-            PluginSource::Git { url, git_ref } => {
-                assert_eq! (url, "https://github.com/user/plugin.git");
-                assert_eq! (git_ref, None);
-            }
-            _ => panic!("Expected a git plugin")
-        }
-    }
-
-    #[test]
-    fn test_plugin_source_parse_git_with_ref(){
-        // Test parsing Git URL with refs
-        let source = PluginSource:: parse("https://github.com/user/plugin.git#v1.0.0");
+        let source = PluginSource::parse("https://github.com/user/plugin.git");
         match source {
             PluginSource::Git { url, git_ref } => {
                 assert_eq!(url, "https://github.com/user/plugin.git");
-                assert_eq!(git_ref, Some("v1.0.0". to_string()));
+                assert_eq!(git_ref, None);
             }
-            _ => panic!("Expected a git plugin")
+            _ => panic!("Expected a git plugin"),
         }
     }
 
     #[test]
-    fn test_plugin_source_parse_zip(){
+    fn test_plugin_source_parse_git_with_ref() {
+        // Test parsing Git URL with refs
+        let source = PluginSource::parse("https://github.com/user/plugin.git#v1.0.0");
+        match source {
+            PluginSource::Git { url, git_ref } => {
+                assert_eq!(url, "https://github.com/user/plugin.git");
+                assert_eq!(git_ref, Some("v1.0.0".to_string()));
+            }
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_zip() {
         // Test parsing zip URL
-        let source = PluginSource:: parse("https://example.com/plugins/my-plugin.zip");
+        let source = PluginSource::parse("https://example.com/plugins/my-plugin.zip");
         match source {
             PluginSource::Zip { url } => {
-                assert_eq! (url, "https://example.com/plugins/my-plugin.zip");
+                assert_eq!(url, "https://example.com/plugins/my-plugin.zip");
             }
-            _ => panic!("Expected a Zip source")
+            _ => panic!("Expected a Zip source"),
         }
     }
 
     #[test]
-    fn test_plugin_source_parse_uppercase_zip_with_query(){
+    fn test_plugin_source_parse_uppercase_zip_with_query() {
         // Test parsing zip URL
-        let source = PluginSource:: parse("https://example.com/plugins/my-plugin.ZIP?version=v1.0.0");
+        let source =
+            PluginSource::parse("https://example.com/plugins/my-plugin.ZIP?version=v1.0.0");
         match source {
             PluginSource::Zip { url } => {
-                assert_eq! (url, "https://example.com/plugins/my-plugin.ZIP?version=v1.0.0");
+                assert_eq!(
+                    url,
+                    "https://example.com/plugins/my-plugin.ZIP?version=v1.0.0"
+                );
             }
-            _ => panic!("Expected a Zip source")
+            _ => panic!("Expected a Zip source"),
         }
     }
 
     #[test]
-    fn test_plugin_source_parse_edge_cases () {
-        let source = PluginSource:: parse ("https://example.com/.zip/plugin");
+    fn test_plugin_source_parse_edge_cases() {
+        let source = PluginSource::parse("https://example.com/.zip/plugin");
         match source {
-            PluginSource:: Git { .. } => { } // Expected
-            _ => panic!("Expected a Zip source")
+            PluginSource::Git { .. } => {} // Expected
+            _ => panic!("Expected a Zip source"),
         }
     }
-    
 }
