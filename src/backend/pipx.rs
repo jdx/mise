@@ -413,13 +413,13 @@ impl PipxRequest {
 
         if v == "latest" {
             match self {
-                PipxRequest::Git(url) => self.format_git_spec(&url, &extras, &opts),
+                PipxRequest::Git(url) => self.format_git_spec(url, &extras, opts),
                 PipxRequest::Pypi(package) => Ok(format!("{package}{extras}")),
             }
         } else {
             match self {
                 PipxRequest::Git(url) => {
-                    let basespec = self.format_git_spec(&url, &extras, &opts)?;
+                    let basespec = self.format_git_spec(url, &extras, opts)?;
                     Ok(format!("{basespec}@{v}"))
                 }
                 PipxRequest::Pypi(package) => Ok(format!("{package}{extras}=={v}")),
