@@ -4446,6 +4446,11 @@ backends = [
 description = "A task runner / simpler Make alternative written in Go"
 test = ["task --version", "{{version}}"]
 
+[tools.tbls]
+backends = ["aqua:k1LoW/tbls", "ubi:k1LoW/tbls"]
+description = "A CI-Friendly tool to document a database written in Go"
+test = ["tbls version", "{{version}}"]
+
 [tools.tctl]
 backends = ["aqua:temporalio/tctl", "asdf:eko/asdf-tctl"]
 description = "Temporal CLI"
