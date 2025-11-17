@@ -47,11 +47,11 @@ impl Shell for Pwsh {
                 }}
 
                 if ($arguments.count -eq 0) {{
-                    & {exe}
+                    & "{exe}"
                     _reset_output_encoding
                     return
                 }} elseif ($arguments -contains '-h' -or $arguments -contains '--help') {{
-                    & {exe} @arguments
+                    & "{exe}" @arguments
                     _reset_output_encoding
                     return
                 }}
@@ -65,11 +65,11 @@ impl Shell for Pwsh {
 
                 switch ($command) {{
                     {{ $_ -in 'deactivate', 'shell', 'sh' }} {{
-                        & {exe} $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                        & "{exe}" $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
                         _reset_output_encoding
                     }}
                     default {{
-                        & {exe} $command @remainingArgs
+                        & "{exe}" $command @remainingArgs
                         $status = $LASTEXITCODE
                         if ($(Test-Path -Path Function:\_mise_hook)){{
                             _mise_hook
@@ -91,7 +91,7 @@ impl Shell for Pwsh {
 
             function Global:_mise_hook {{
                 if ($env:MISE_SHELL -eq "pwsh"){{
-                    & {exe} hook-env{flags} $args -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+                    & "{exe}" hook-env{flags} $args -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
                 }}
             }}
 
@@ -149,7 +149,7 @@ impl Shell for Pwsh {
                         param([object] $Name, [System.Management.Automation.CommandLookupEventArgs] $eventArgs)
                         end {{
                             if ([Microsoft.PowerShell.PSConsoleReadLine]::GetHistoryItems()[-1].CommandLine -match ([regex]::Escape($Name))) {{
-                                if (& {exe} hook-not-found -s pwsh -- $Name){{
+                                if (& "{exe}" hook-not-found -s pwsh -- $Name){{
                                     _mise_hook
                                     if (Get-Command $Name -ErrorAction SilentlyContinue){{
                                         $EventArgs.Command = Get-Command $Name
