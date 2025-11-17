@@ -1,0 +1,30 @@
+#! /usr/bin/env sh
+
+# run this test with either:
+# - mise run e2e nushell
+# - LD_LIBRARY_PATH=/usr/lib:/home/linuxbrew/.linuxbrew/lib mise run e2e nushell
+
+set -eu
+
+if ! command -v nu >/dev/null 2>&1; then
+	# for now, treat these tests as optional if `nu` is unavailable
+	exit 0
+fi
+
+NUSHELL_INIT=$(mktemp e2e_nushell_init.XXXXXXXXXX)
+
+# nushell's `source` is a parser keyword:
+# https://www.nushell.sh/commands/docs/source.html
+# this means the sourced mise init file must exist before we run `nu`
+mise activate nu >"${NUSHELL_INIT}"
+
+# equivalent of try/catch so we always cleanup the temporary file,
+# even if the test fails
+set +e
+nu --commands 'exit 0'
+NUSHELL_EXIT_CODE=${?}
+set -e
+
+rm --force --verbose "${NUSHELL_INIT}"
+
+exit "${NUSHELL_EXIT_CODE}"
