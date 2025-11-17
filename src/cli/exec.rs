@@ -151,9 +151,15 @@ where
 
     let res = cmd.unchecked().run()?;
     match res.status.code() {
-        Some(0) => Ok(()),
-        Some(code) => Err(eyre!("command failed: exit code {}", code)),
-        None => Err(eyre!("command failed: terminated by signal")),
+        // Any exit code should be proxied transparently and the process terminated here.
+        // This matches the behavior of execvp, used on Unix, where the current process
+        // is fully replaced by the spawned tool.
+        Some(code) => {
+            std::process::exit(code);
+        }
+        None => {
+            Err(eyre!("command failed: terminated by signal"))
+        }
     }
 }
 
