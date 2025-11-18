@@ -667,10 +667,12 @@ When adding a new tool, the following requirements apply (automatically
 enforced by [GitHub Actions workflow](https://github.com/jdx/mise/blob/main/.github/workflows/registry_comment.yml)):
 
 - **New asdf plugins are not accepted** - Use aqua/ubi instead
-- **Tools may be rejected if they are not notable** - The tool should be
-  reasonably popular and well-maintained
 - **A test is required in `registry.toml`** - Must include a `test` field to
   verify installation
+- **Tools may be rejected if they are not notable** - The tool should be
+  reasonably popular and well-maintained. There are no specific guidelines for this and
+  a lot of factors are taken into account. @jdx won't explain why a given tool wasn't
+  accepted.
 
 ### Registry Format
 
