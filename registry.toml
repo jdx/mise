@@ -2825,6 +2825,11 @@ description = "The API traffic analyzer for Kubernetes providing real-time K8s p
 backends = ["aqua:pulumi/kubespy", "asdf:jfreeland/asdf-kubespy"]
 description = "Tools for observing Kubernetes resources in real time, powered by Pulumi"
 
+[tools.kubeswitch]
+backends = ["aqua:danielfoehrKn/kubeswitch", "github:danielfoehrKn/kubeswitch"]
+description = "The kubectx for operators"
+test = ["switcher --version", "switcher version v{{version}}"]
+
 [tools.kubeval]
 backends = ["aqua:instrumenta/kubeval", "asdf:stefansedich/asdf-kubeval"]
 description = "Validate your Kubernetes configuration files, supports multiple Kubernetes versions"
@@ -3970,6 +3975,7 @@ backends = [
   "asdf:simhem/asdf-ruff",
 ]
 description = "An extremely fast Python linter and code formatter, written in Rust"
+test = ["ruff --version", "ruff {{version}}"]
 
 [tools.rust]
 backends = ["core:rust", "asdf:code-lever/asdf-rust"]
