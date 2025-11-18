@@ -1,5 +1,53 @@
 # Changelog
 
+## [2025.11.6](https://github.com/jdx/mise/compare/v2025.11.5..v2025.11.6) - 2025-11-18
+
+### 📦 Registry
+
+- add tbls by @artemklevtsov in [#6987](https://github.com/jdx/mise/pull/6987)
+- add kubeswitch tool and add test for ruff by @jylenhof in [#6990](https://github.com/jdx/mise/pull/6990)
+
+### 🐛 Bug Fixes
+
+- **(nushell)** add missing `| parse env | update-env` for deactivation operations by @jokeyrhyme in [#6994](https://github.com/jdx/mise/pull/6994)
+- **(pwsh)** wrap the executable path with double quotes by @leosuncin in [#6993](https://github.com/jdx/mise/pull/6993)
+- in `activate bash` output, wrap mise executable path in single-quotes by @cspotcode in [#7002](https://github.com/jdx/mise/pull/7002)
+- On Windows, preserve/proxy the exit code of tools, to match behavior on Unix by @cspotcode in [#7001](https://github.com/jdx/mise/pull/7001)
+
+### 📚 Documentation
+
+- simplify apt instructions by @scop in [#6986](https://github.com/jdx/mise/pull/6986)
+- update idiomatic version files enablement info by @scop in [#6985](https://github.com/jdx/mise/pull/6985)
+- registry notability explanation by @jdx in [8f9ab15](https://github.com/jdx/mise/commit/8f9ab15e18d8cf0983d08a1f14b04511c999d681)
+
+### 🧪 Testing
+
+- **(aqua)** remove biome test due to version incompatibility by @jdx in [#7000](https://github.com/jdx/mise/pull/7000)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#6997](https://github.com/jdx/mise/pull/6997)
+
+### New Contributors
+
+- @cspotcode made their first contribution in [#7001](https://github.com/jdx/mise/pull/7001)
+- @jokeyrhyme made their first contribution in [#6994](https://github.com/jdx/mise/pull/6994)
+- @artemklevtsov made their first contribution in [#6987](https://github.com/jdx/mise/pull/6987)
+- @leosuncin made their first contribution in [#6993](https://github.com/jdx/mise/pull/6993)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`houseabsolute/omegasort`](https://github.com/houseabsolute/omegasort)
+
+#### Updated Packages (5)
+
+- [`apache/maven`](https://github.com/apache/maven)
+- [`chaqchase/lla`](https://github.com/chaqchase/lla)
+- [`leoafarias/fvm`](https://github.com/leoafarias/fvm)
+- [`rustic-rs/rustic`](https://github.com/rustic-rs/rustic)
+- [`sigstore/rekor`](https://github.com/sigstore/rekor)
 ## [2025.11.5](https://github.com/jdx/mise/compare/v2025.11.4..v2025.11.5) - 2025-11-15
 
 ### 🚀 Features

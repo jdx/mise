@@ -667,10 +667,12 @@ When adding a new tool, the following requirements apply (automatically
 enforced by [GitHub Actions workflow](https://github.com/jdx/mise/blob/main/.github/workflows/registry_comment.yml)):
 
 - **New asdf plugins are not accepted** - Use aqua/ubi instead
-- **Tools may be rejected if they are not notable** - The tool should be
-  reasonably popular and well-maintained
 - **A test is required in `registry.toml`** - Must include a `test` field to
   verify installation
+- **Tools may be rejected if they are not notable** - The tool should be
+  reasonably popular and well-maintained. There are no specific guidelines for this and
+  a lot of factors are taken into account. @jdx won't explain why a given tool wasn't
+  accepted.
 
 ### Registry Format
 
@@ -851,13 +853,12 @@ This is for arm64, but you can change the arch to amd64 if you want.
 ```sh
 docker run -ti --rm ubuntu
 apt update -y
-apt install -y gpg sudo wget curl
-sudo install -dm 755 /etc/apt/keyrings
-wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | \
-  sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] \
-https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
-apt update
+apt install -y curl
+install -dm 755 /etc/apt/keyrings
+curl -fSso /etc/apt/keyrings/mise-archive-keyring.pub https://mise.jdx.dev/gpg-key.pub
+echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.pub arch=arm64] \
+https://mise.jdx.dev/deb stable main" >/etc/apt/sources.list.d/mise.list
+apt update -y
 apt install -y mise
 mise -V
 ```

@@ -107,20 +107,20 @@ For installation on Ubuntu/Debian:
 ::: code-group
 
 ```sh [amd64]
-sudo apt update -y && sudo apt install -y gpg sudo wget curl
+sudo apt update -y && sudo apt install -y curl
 sudo install -dm 755 /etc/apt/keyrings
-wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=amd64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
-sudo apt update
+curl -fSs https://mise.jdx.dev/gpg-key.pub | sudo tee /etc/apt/keyrings/mise-archive-keyring.pub 1> /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.pub arch=amd64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
+sudo apt update -y
 sudo apt install -y mise
 ```
 
 ```sh [arm64]
-sudo apt update -y && apt install -y gpg sudo wget curl
+sudo apt update -y && sudo apt install -y curl
 sudo install -dm 755 /etc/apt/keyrings
-wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
-echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
-sudo apt update
+curl -fSs https://mise.jdx.dev/gpg-key.pub | sudo tee /etc/apt/keyrings/mise-archive-keyring.pub 1> /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.pub arch=arm64] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
+sudo apt update -y
 sudo apt install -y mise
 ```
 
