@@ -6,6 +6,23 @@ packages:
     description: rustic - fast, encrypted, and deduplicated backups powered by Rust
     version_constraint: "false"
     version_overrides:
+      - version_constraint: Version == "v0.10.2"
+        asset: rustic-{{.Version}}-1-g189b17c-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        overrides:
+          - goos: linux
+            goarch: arm64
+            asset: rustic-{{.Version}}-1-{{.Arch}}-{{.OS}}.{{.Format}}
+          - goos: darwin
+            goarch: arm64
+            asset: rustic-{{.Version}}-1-{{.Arch}}-{{.OS}}.{{.Format}}
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
       - version_constraint: semver("<= 0.2.0-rc1")
         asset: rustic_{{trimV .Version}}_{{.Arch}}_64-{{.OS}}.{{.Format}}
         format: bz2
