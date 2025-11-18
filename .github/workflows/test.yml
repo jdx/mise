@@ -201,6 +201,8 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Dependencies for e2e/shell/test_nushell
+        run: npm install --global nushell
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: mise-ubuntu-latest
