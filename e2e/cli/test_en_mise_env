@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+# Test that MISE_ENV is properly propagated when using 'mise -E <env> en'
+# This tests the fix for: https://github.com/jdx/mise/discussions/6928
+
+# Create base config
+cat >mise.toml <<EOF
+[env]
+TTT_BASE_VAR = "base_value"
+EOF
+
+# Create dev-specific config
+cat >mise.dev.toml <<EOF
+[env]
+TTT_ENV_NAME = "dev"
+TTT_BASE_VAR = "dev_value"
+EOF
+
+# Create staging-specific config
+cat >mise.staging.toml <<EOF
+[env]
+TTT_ENV_NAME = "staging"
+TTT_BASE_VAR = "staging_value"
+EOF
+
+# Test 1: Verify MISE_ENV is set in spawned shell
+assert_contains "mise -E dev en -s 'bash -c \"echo \$MISE_ENV\"'" "dev"
+
+# Test 2: Verify mise config can find dev-specific config files in spawned shell
+assert_contains "mise -E dev en -s 'bash -c \"mise config ls\"'" "mise.dev.toml"
+
+# Test 3: Verify environment variables from dev config are available
+assert_contains "mise -E dev en -s 'bash -c \"mise env | grep TTT_ENV_NAME\"'" "TTT_ENV_NAME=dev"
+
+# Test 4: Verify base variable is overridden by dev config
+assert_contains "mise -E dev en -s 'bash -c \"mise env | grep TTT_BASE_VAR\"'" "TTT_BASE_VAR=dev_value"
+
+# Test 5: Test with staging environment
+assert_contains "mise -E staging en -s 'bash -c \"echo \$MISE_ENV\"'" "staging"
+
+# Test 6: Verify staging-specific config files are found
+assert_contains "mise -E staging en -s 'bash -c \"mise config ls\"'" "mise.staging.toml"
+
+# Test 7: Verify staging-specific variables are loaded
+assert_contains "mise -E staging en -s 'bash -c \"mise env | grep TTT_ENV_NAME\"'" "TTT_ENV_NAME=staging"
+
+# Test 8: Verify staging overrides base variable
+assert_contains "mise -E staging en -s 'bash -c \"mise env | grep TTT_BASE_VAR\"'" "TTT_BASE_VAR=staging_value"
+
+# Test 9: Test multiple environments (comma-separated)
+assert_contains "mise -E dev,staging en -s 'bash -c \"echo \$MISE_ENV\"'" "dev,staging"
+
+# Test 10: Verify last environment wins for conflicting variables (staging should override dev)
+assert_contains "mise -E dev,staging en -s 'bash -c \"mise env | grep TTT_ENV_NAME\"'" "TTT_ENV_NAME=staging"
+
+# Test 11: Verify both config files are loaded
+assert_contains "mise -E dev,staging en -s 'bash -c \"mise config ls\"'" "mise.dev.toml"
+assert_contains "mise -E dev,staging en -s 'bash -c \"mise config ls\"'" "mise.staging.toml"
+
+# Test 12: Test reverse order (dev should win over staging)
+assert_contains "mise -E staging,dev en -s 'bash -c \"mise env | grep TTT_ENV_NAME\"'" "TTT_ENV_NAME=dev"
+
+# Test 13: Without -E flag, MISE_ENV should be empty
+assert_contains "mise en -s 'bash -c \"echo MISE_ENV_IS:\$MISE_ENV:END\"'" "MISE_ENV_IS::END"
+
+# Test 14: Without -E flag, only base config is loaded (no env-specific configs)
+assert_not_contains "mise en -s 'bash -c \"mise config ls\"'" "mise.dev.toml"
+assert_not_contains "mise en -s 'bash -c \"mise config ls\"'" "mise.staging.toml"
+
+# Test 15: Without -E flag, base variable has base value
+assert_contains "mise en -s 'bash -c \"mise env | grep TTT_BASE_VAR\"'" "TTT_BASE_VAR=base_value"
+
+# Test 16: Without -E flag, env-specific variable is not set
+assert_not_contains "mise en -s 'bash -c \"mise env\"'" "TTT_ENV_NAME"
+
+
+
+
