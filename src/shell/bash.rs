@@ -38,7 +38,7 @@ impl Shell for Bash {
               local command
               command="${{1:-}}"
               if [ "$#" = 0 ]; then
-                command {exe}
+                command '{exe}'
                 return
               fi
               shift
@@ -47,12 +47,12 @@ impl Shell for Bash {
               deactivate|shell|sh)
                 # if argv doesn't contains -h,--help
                 if [[ ! " $@ " =~ " --help " ]] && [[ ! " $@ " =~ " -h " ]]; then
-                  eval "$(command {exe} "$command" "$@")"
+                  eval "$(command '{exe}' "$command" "$@")"
                   return $?
                 fi
                 ;;
               esac
-              command {exe} "$command" "$@"
+              command '{exe}' "$command" "$@"
             }}
 
             _mise_hook() {{
@@ -85,7 +85,7 @@ impl Shell for Bash {
                 fi
 
                 command_not_found_handle() {{
-                    if [[ "$1" != "mise" && "$1" != "mise-"* ]] && {exe} hook-not-found -s bash -- "$1"; then
+                    if [[ "$1" != "mise" && "$1" != "mise-"* ]] && '{exe}' hook-not-found -s bash -- "$1"; then
                       _mise_hook
                       "$@"
                     elif [ -n "$(declare -f _command_not_found_handle)" ]; then
