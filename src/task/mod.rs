@@ -1885,4 +1885,132 @@ echo "hello world"
         // Should have task_a, task_b, and common (deduplicated)
         assert_eq!(deps.len(), 3);
     }
+
+    #[test]
+    fn test_file_path_raw_absolute() {
+        use std::path::PathBuf;
+
+        let task = Task {
+            name: "test".to_string(),
+            file: Some(PathBuf::from("/absolute/path/script.sh")),
+            config_root: Some(PathBuf::from("/project/root")),
+            ..Default::default()
+        };
+
+        let result = task.file_path_raw();
+        assert_eq!(result, Some(PathBuf::from("/absolute/path/script.sh")));
+    }
+
+    #[test]
+    fn test_file_path_raw_relative() {
+        use std::path::PathBuf;
+
+        let task = Task {
+            name: "test".to_string(),
+            file: Some(PathBuf::from("scripts/test.sh")),
+            config_root: Some(PathBuf::from("/project/root")),
+            ..Default::default()
+        };
+
+        let result = task.file_path_raw();
+        assert_eq!(
+            result,
+            Some(PathBuf::from("/project/root/scripts/test.sh"))
+        );
+    }
+
+    #[test]
+    fn test_file_path_raw_relative_no_config_root() {
+        use std::path::PathBuf;
+
+        let task = Task {
+            name: "test".to_string(),
+            file: Some(PathBuf::from("scripts/test.sh")),
+            config_root: None,
+            ..Default::default()
+        };
+
+        let result = task.file_path_raw();
+        assert_eq!(result, Some(PathBuf::from("scripts/test.sh")));
+    }
+
+    #[test]
+    fn test_file_path_raw_none() {
+        let task = Task {
+            name: "test".to_string(),
+            file: None,
+            config_root: None,
+            ..Default::default()
+        };
+
+        let result = task.file_path_raw();
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_file_path_absolute() {
+        use std::path::PathBuf;
+
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            name: "test".to_string(),
+            file: Some(PathBuf::from("/absolute/path/script.sh")),
+            config_root: Some(PathBuf::from("/project/root")),
+            ..Default::default()
+        };
+
+        let result = task.file_path(&config).await.unwrap();
+        assert_eq!(result, Some(PathBuf::from("/absolute/path/script.sh")));
+    }
+
+    #[tokio::test]
+    async fn test_file_path_relative() {
+        use std::path::PathBuf;
+
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            name: "test".to_string(),
+            file: Some(PathBuf::from("scripts/test.sh")),
+            config_root: Some(PathBuf::from("/project/root")),
+            ..Default::default()
+        };
+
+        let result = task.file_path(&config).await.unwrap();
+        assert_eq!(
+            result,
+            Some(PathBuf::from("/project/root/scripts/test.sh"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_file_path_none() {
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            name: "test".to_string(),
+            file: None,
+            config_root: None,
+            ..Default::default()
+        };
+
+        let result = task.file_path(&config).await.unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_file_path_with_templating() {
+        use std::path::PathBuf;
+
+        let config = Config::get().await.unwrap();
+        let task = Task {
+            name: "test".to_string(),
+            file: Some(PathBuf::from("scripts/{{config_root}}/test.sh")),
+            config_root: Some(PathBuf::from("/project/root")),
+            ..Default::default()
+        };
+
+        // This test verifies that templating is processed in file_path
+        let result = task.file_path(&config).await;
+        // Should succeed (not error on template rendering)
+        assert!(result.is_ok());
+    }
 }
