@@ -26,7 +26,7 @@ packages:
           type: github_release
           asset: rekor_checksums.txt
           algorithm: sha256
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.4.2")
         asset: rekor-cli-{{.OS}}-{{.Arch}}
         format: raw
         windows_arm_emulation: true
@@ -44,3 +44,20 @@ packages:
               - https://accounts.google.com
               - --signature
               - https://github.com/sigstore/rekor/releases/download/{{.Version}}/rekor_checksums.txt-keyless.sig
+      - version_constraint: "true"
+        asset: rekor-cli-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: rekor_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: "rekor_checksums.txt-keyless.sigstore.json"
+            opts:
+              - --certificate-identity
+              - keyless@projectsigstore.iam.gserviceaccount.com
+              - --certificate-oidc-issuer
+              - https://accounts.google.com

@@ -8,6 +8,14 @@ packages:
     description: A modern alternative to ls
     version_constraint: "false"
     version_overrides:
+      - version_constraint: Version == "v0.5.1"
+        asset: lla-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          darwin: macos
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: semver("<= 0.2.7")
         no_asset: true
       - version_constraint: "true"

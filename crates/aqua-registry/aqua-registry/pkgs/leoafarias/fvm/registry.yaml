@@ -170,7 +170,7 @@ packages:
                 src: fvm/fvm.bat
       - version_constraint: semver("<= 3.0.0-alpha.2")
         no_asset: true
-      - version_constraint: "true"
+      - version_constraint: semver("<= 4.0.0")
         asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
@@ -186,3 +186,19 @@ packages:
             files:
               - name: fvm
                 src: fvm/fvm.bat
+      - version_constraint: "true"
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm.exe
