@@ -72,7 +72,3 @@ assert_contains "mise en -s 'bash -c \"mise env | grep TTT_BASE_VAR\"'" "TTT_BAS
 
 # Test 16: Without -E flag, env-specific variable is not set
 assert_not_contains "mise en -s 'bash -c \"mise env\"'" "TTT_ENV_NAME"
-
-
-
-
