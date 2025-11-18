@@ -606,12 +606,12 @@ impl Task {
         cwd: Option<PathBuf>,
         env: &EnvMap,
     ) -> Result<(usage::Spec, Vec<String>)> {
-        let (mut spec, scripts) = if let Some(file) = &self.file {
-            let spec = usage::Spec::parse_script(file)
+        let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
+            let spec = usage::Spec::parse_script(&file)
                 .inspect_err(|e| {
                     warn!(
                         "failed to parse task file {} with usage: {e:?}",
-                        file::display_path(file)
+                        file::display_path(&file)
                     )
                 })
                 .unwrap_or_default();
@@ -630,12 +630,12 @@ impl Task {
     /// Parse usage spec for display purposes without expensive environment rendering
     pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
         let dir = self.dir(config).await?;
-        let mut spec = if let Some(file) = &self.file {
-            usage::Spec::parse_script(file)
+        let mut spec = if let Some(file) = self.file_path(config).await? {
+            usage::Spec::parse_script(&file)
                 .inspect_err(|e| {
                     warn!(
                         "failed to parse task file {} with usage: {e:?}",
-                        file::display_path(file)
+                        file::display_path(&file)
                     )
                 })
                 .unwrap_or_default()
@@ -723,6 +723,40 @@ impl Task {
         } else {
             Ok(self.config_root.clone())
         }
+    }
+
+    pub async fn file_path(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
+        if let Some(file) = &self.file {
+            let file_str = file.to_string_lossy().to_string();
+            let config_root = self.config_root.clone().unwrap_or_default();
+            let mut tera = get_tera(Some(&config_root));
+            let tera_ctx = self.tera_ctx(config).await?;
+            let rendered = tera.render_str(&file_str, &tera_ctx)?;
+            let rendered_path = file::replace_path(&rendered);
+            if rendered_path.is_absolute() {
+                Ok(Some(rendered_path))
+            } else if let Some(root) = &self.config_root {
+                Ok(Some(root.join(rendered_path)))
+            } else {
+                Ok(Some(rendered_path))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Get file path without templating (for display purposes)
+    /// This is a non-async version used when we just need the path for display
+    fn file_path_raw(&self) -> Option<PathBuf> {
+        self.file.as_ref().map(|file| {
+            if file.is_absolute() {
+                file.clone()
+            } else if let Some(root) = &self.config_root {
+                root.join(file)
+            } else {
+                file.clone()
+            }
+        })
     }
 
     pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<tera::Context> {
@@ -1057,7 +1091,7 @@ impl Display for Task {
             .iter()
             .map(|e| e.to_string())
             .next()
-            .or_else(|| self.file.as_ref().map(display_path));
+            .or_else(|| self.file_path_raw().as_ref().map(display_path));
 
         if let Some(cmd) = cmd {
             let cmd = cmd.lines().next().unwrap_or_default();
