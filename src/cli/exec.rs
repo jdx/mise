@@ -151,9 +151,6 @@ where
 
     let res = cmd.unchecked().run()?;
     match res.status.code() {
-        // Any exit code should be proxied transparently and the process terminated here.
-        // This matches the behavior of execvp, used on Unix, where the current process
-        // is fully replaced by the spawned tool.
         Some(code) => {
             std::process::exit(code);
         }
