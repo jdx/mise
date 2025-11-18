@@ -24,11 +24,11 @@ function mise {
     }
 
     if ($arguments.count -eq 0) {
-        & /some/dir/mise
+        & "/some/dir/mise"
         _reset_output_encoding
         return
     } elseif ($arguments -contains '-h' -or $arguments -contains '--help') {
-        & /some/dir/mise @arguments
+        & "/some/dir/mise" @arguments
         _reset_output_encoding
         return
     }
@@ -42,11 +42,11 @@ function mise {
 
     switch ($command) {
         { $_ -in 'deactivate', 'shell', 'sh' } {
-            & /some/dir/mise $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+            & "/some/dir/mise" $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
             _reset_output_encoding
         }
         default {
-            & /some/dir/mise $command @remainingArgs
+            & "/some/dir/mise" $command @remainingArgs
             $status = $LASTEXITCODE
             if ($(Test-Path -Path Function:\_mise_hook)){
                 _mise_hook
@@ -64,7 +64,7 @@ function mise {
 
 function Global:_mise_hook {
     if ($env:MISE_SHELL -eq "pwsh"){
-        & /some/dir/mise hook-env --status $args -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+        & "/some/dir/mise" hook-env --status $args -s pwsh | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
     }
 }
 
@@ -118,7 +118,7 @@ if (-not $__mise_pwsh_command_not_found){
             param([object] $Name, [System.Management.Automation.CommandLookupEventArgs] $eventArgs)
             end {
                 if ([Microsoft.PowerShell.PSConsoleReadLine]::GetHistoryItems()[-1].CommandLine -match ([regex]::Escape($Name))) {
-                    if (& /some/dir/mise hook-not-found -s pwsh -- $Name){
+                    if (& "/some/dir/mise" hook-not-found -s pwsh -- $Name){
                         _mise_hook
                         if (Get-Command $Name -ErrorAction SilentlyContinue){
                             $EventArgs.Command = Get-Command $Name

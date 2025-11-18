@@ -156,8 +156,9 @@ where
 
     let res = cmd.unchecked().run()?;
     match res.status.code() {
-        Some(0) => Ok(()),
-        Some(code) => Err(eyre!("command failed: exit code {}", code)),
+        Some(code) => {
+            std::process::exit(code);
+        }
         None => Err(eyre!("command failed: terminated by signal")),
     }
 }

@@ -30,13 +30,13 @@ checksum = "blake3:d9f743140120e39812867aa896512deea4fe99ab866029f8bd5a347557c61
 size = 39630922
 
 [[tools.cargo-binstall]]
-version = "1.15.11"
+version = "1.16.0"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "sha256:82d6c69a87d222bbf834371af0dc4d1c08037739ea54be9f4857e00ff7af05c7"
-size = 6770344
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.15.11/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+checksum = "sha256:d9f55ae6aff2ab7dbbd3f6478510a81d56dc700fdd1d2510c7ef6d074c2c94c9"
+size = 6768003
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.8"
@@ -72,13 +72,13 @@ size = 18174787
 url = "https://github.com/cli/cli/releases/download/v2.83.1/gh_2.83.1_linux_amd64.tar.gz"
 
 [[tools.hk]]
-version = "1.20.0"
+version = "1.21.0"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "sha256:f35036c5e43f32e5c110a6c147df598d69d2afb56186ffa7b5d5af0d517c7069"
-size = 7184547
-url = "https://github.com/jdx/hk/releases/download/v1.20.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:2dbe766a257272d4ad32704b434bccf9bbf985dd0d3b4fa59d0956d6c3c9020a"
+size = 7243194
+url = "https://github.com/jdx/hk/releases/download/v1.21.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"
