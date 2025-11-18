@@ -1913,10 +1913,7 @@ echo "hello world"
         };
 
         let result = task.file_path_raw();
-        assert_eq!(
-            result,
-            Some(PathBuf::from("/project/root/scripts/test.sh"))
-        );
+        assert_eq!(result, Some(PathBuf::from("/project/root/scripts/test.sh")));
     }
 
     #[test]
@@ -1976,10 +1973,7 @@ echo "hello world"
         };
 
         let result = task.file_path(&config).await.unwrap();
-        assert_eq!(
-            result,
-            Some(PathBuf::from("/project/root/scripts/test.sh"))
-        );
+        assert_eq!(result, Some(PathBuf::from("/project/root/scripts/test.sh")));
     }
 
     #[tokio::test]
