@@ -157,9 +157,7 @@ where
         Some(code) => {
             std::process::exit(code);
         }
-        None => {
-            Err(eyre!("command failed: terminated by signal"))
-        }
+        None => Err(eyre!("command failed: terminated by signal")),
     }
 }
 
