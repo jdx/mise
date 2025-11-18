@@ -68,7 +68,7 @@ impl Backend for GoBackend {
 
                 for i in indices {
                     let mod_path = parts[..=i].join("/");
-                    let res = cmd!("go", "list", "-m", "-versions", "-json", mod_path)
+                    let res = cmd!("go", "list", "-mod=readonly", "-m", "-versions", "-json", mod_path)
                         .full_env(self.dependency_env(config).await?)
                         .read();
                     if let Ok(raw) = res {
