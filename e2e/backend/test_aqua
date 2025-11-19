@@ -12,6 +12,10 @@ test aqua:helm/helm@3.16.3 "helm version" "v3.16.3"
 test aqua:crate-ci/typos@1.27.3 "typos --version" "typos-cli 1.27.3"
 test aqua:gruntwork-io/terragrunt@0.77.22 "terragrunt --version" "terragrunt version v0.77.22"
 
+# Test semver template function with apache/maven (uses {{(semver .SemVer).Major}})
+test aqua:apache/maven@3.9.9 "mvn --version" "Apache Maven 3.9.9"
+test aqua:apache/maven@4.0.0-rc-2 "mvn --version" "Apache Maven 4.0.0-rc-2"
+
 assert_contains "MISE_USE_VERSIONS_HOST=0 mise ls-remote aqua:sharkdp/hyperfine" "1.8.0
 1.9.0
 1.10.0

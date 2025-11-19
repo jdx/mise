@@ -42,6 +42,9 @@ enum Token<'a> {
     Func(&'a str),
     Whitespace(&'a str),
     Pipe,
+    LParen,
+    RParen,
+    Dot,
 }
 
 fn lex(code: &str) -> Result<Vec<Token<'_>>> {
@@ -60,6 +63,12 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
             } else {
                 break;
             }
+        } else if code.starts_with("(") {
+            tokens.push(Token::LParen);
+            code = &code[1..];
+        } else if code.starts_with(")") {
+            tokens.push(Token::RParen);
+            code = &code[1..];
         } else if code.starts_with("|") {
             tokens.push(Token::Pipe);
             code = &code[1..];
@@ -72,16 +81,35 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
                 }
             }
         } else if code.starts_with(".") {
-            let end = code.split_whitespace().next().unwrap().len();
-            tokens.push(Token::Key(&code[1..end]));
-            code = &code[end..];
-        } else if code.starts_with("|") {
-            tokens.push(Token::Pipe);
-            code = &code[1..];
+            // Dot followed by an identifier
+            let end = code[1..]
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .count();
+            if end > 0 {
+                let name = &code[1..=end];
+                // Check if previous token was RParen - that means this is field access
+                let is_field_access = tokens.last().map(|t| t.is_r_paren()).unwrap_or(false);
+
+                if is_field_access {
+                    // Field access like ).Major
+                    tokens.push(Token::Dot);
+                    tokens.push(Token::Func(name));
+                } else {
+                    // Context variable like .Version or .OS
+                    tokens.push(Token::Key(name));
+                }
+                code = &code[1 + end..];
+            } else {
+                bail!("unexpected . at end of input");
+            }
         } else {
-            let func = code.split_whitespace().next().unwrap();
-            tokens.push(Token::Func(func));
-            code = &code[func.len()..];
+            let end = code
+                .chars()
+                .position(|c| c.is_whitespace() || c == '(' || c == ')' || c == '.')
+                .unwrap_or(code.len());
+            tokens.push(Token::Func(&code[..end]));
+            code = &code[end..];
         }
     }
     Ok(tokens)
@@ -180,9 +208,48 @@ impl Parser<'_> {
                             };
                             s = str.replace(&from, &to);
                         }
+                        "semver" => {
+                            // Parse semver function matching sprig's semver behavior
+                            // https://masterminds.github.io/sprig/semver.html
+                            expect_whitespace(tokens.next())?;
+                            let version_str = self.parse(vec![tokens.next().wrap_err("semver missing argument")?])?;
+
+                            // Remove 'v' prefix if present (semver crate doesn't handle it)
+                            let version = version_str.trim_start_matches('v');
+                            let ver = semver::Version::parse(version)
+                                .map_err(|e| eyre::eyre!("invalid semver '{}': {}", version, e))?;
+
+                            // Store parsed version components as "major|minor|patch"
+                            // This will be used by field access operations (.Major, .Minor, .Patch)
+                            s = format!("{}|{}|{}", ver.major, ver.minor, ver.patch);
+                        }
+                        "Major" | "Minor" | "Patch" => {
+                            // Field access on semver result
+                            // s should contain "major|minor|patch" from semver
+                            let parts: Vec<&str> = s.split('|').collect();
+                            if parts.len() == 3 {
+                                s = match *func {
+                                    "Major" => parts[0].to_string(),
+                                    "Minor" => parts[1].to_string(),
+                                    "Patch" => parts[2].to_string(),
+                                    _ => unreachable!(),
+                                };
+                            } else {
+                                bail!("field access .{func} requires semver result");
+                            }
+                        }
                         _ => bail!("unexpected function: {func}"),
                     }
                     in_pipe = false
+                }
+                Token::LParen => {
+                    // Start of grouped expression - continue parsing
+                }
+                Token::RParen => {
+                    // End of grouped expression - continue parsing
+                }
+                Token::Dot => {
+                    // Dot for field access - the field name will come next as a Func token
                 }
                 Token::Whitespace(_) => {}
                 Token::Pipe => {
@@ -246,7 +313,40 @@ mod tests {
             vec![],
         ),
         test_parse_replace: (r#"replace "foo" "bar" "foo-bar""#, "bar-bar", vec![]),
+
+        // Semver tests matching sprig behavior
+        test_semver_major: (r#"(semver "1.2.3").Major"#, "1", vec![]),
+        test_semver_minor: (r#"(semver "1.2.3").Minor"#, "2", vec![]),
+        test_semver_patch: (r#"(semver "1.2.3").Patch"#, "3", vec![]),
+        test_semver_with_v_prefix: (r#"(semver "v1.2.3").Major"#, "1", vec![]),
+        test_semver_with_prerelease: (r#"(semver "1.2.3-alpha").Major"#, "1", vec![]),
+        test_semver_from_context: (r#"(semver .Version).Major"#, "2", vec![("Version", "2.5.8")]),
+        test_semver_from_semver_var: (r#"(semver .SemVer).Major"#, "3", vec![("SemVer", "3.9.0")]),
+
+        // Additional semver edge cases
+        test_semver_major_version_10: (r#"(semver "10.5.2").Major"#, "10", vec![]),
+        test_semver_with_build_metadata: (r#"(semver "1.2.3+build123").Major"#, "1", vec![]),
+        test_semver_prerelease_complex: (r#"(semver "2.0.0-rc.1+build").Minor"#, "0", vec![]),
+        test_semver_all_fields: (r#"(semver "4.5.6").Minor"#, "5", vec![]),
+        test_semver_zero_major: (r#"(semver "0.1.0").Major"#, "0", vec![]),
+        test_semver_zero_minor: (r#"(semver "1.0.5").Minor"#, "0", vec![]),
+        test_semver_large_numbers: (r#"(semver "99.88.77").Patch"#, "77", vec![]),
     );
+
+    // Real-world template patterns (like maven URL) - need render() for multiple {{...}} blocks
+    #[test]
+    fn test_semver_in_url_pattern() {
+        let tmpl = r#"maven-{{(semver "3.9.0").Major}}/{{trimV "3.9.0"}}"#;
+        let ctx = hashmap(vec![]);
+        assert_eq!(render(tmpl, &ctx).unwrap(), "maven-3/3.9.0");
+    }
+
+    #[test]
+    fn test_semver_with_context_in_url() {
+        let tmpl = r#"maven-{{(semver .Ver).Major}}/{{.Ver}}"#;
+        let ctx = hashmap(vec![("Ver", "4.0.0-rc-5")]);
+        assert_eq!(render(tmpl, &ctx).unwrap(), "maven-4/4.0.0-rc-5");
+    }
 
     #[test]
     fn test_parse_err() {

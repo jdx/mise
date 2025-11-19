@@ -37,8 +37,9 @@ strum = { version = "0.27", features = ["derive"] }
 
 # Template parsing and evaluation
 expr-lang = "0.3"
-versions = { version = "6", features = ["serde"] }
 heck = "0.5"
+semver = "1"
+versions = { version = "6", features = ["serde"] }
 
 # Async runtime
 tokio = { version = "1", features = ["sync"] }
