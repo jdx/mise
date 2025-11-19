@@ -456,6 +456,11 @@ backends = [
 description = "CLI for interacting with the Bitwarden Secrets Manager"
 test = ["bws --version", "bws {{version}}"]
 
+[tools.blender]
+backends = [ "aqua:blender/blender" ]
+description = "Blender is a free and open-source 3D computer graphics software"
+test = ["blender --version", "Blender {{version}}"]
+
 [tools.black]
 backends = ["aqua:psf/black"]
 description = "The uncompromising Python code formatter"
