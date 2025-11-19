@@ -376,9 +376,19 @@ mod tests {
 
     #[test]
     fn test_render_nested_semver_in_function() {
+        // The semver function handles 'v' prefix internally, so (semver .Version).Major
+        // correctly extracts "3" from "v3.9.11". Then trimV is called on "3" (no-op).
         let tmpl = "{{trimV (semver .Version).Major}}";
         let ctx = hashmap(vec![("Version", "v3.9.11")]);
         assert_eq!(render(tmpl, &ctx).unwrap(), "3");
+    }
+
+    #[test]
+    fn test_render_semver_handles_v_prefix() {
+        // semver function automatically strips 'v' prefix - no need for trimV
+        let tmpl = "{{semver .Version}}";
+        let ctx = hashmap(vec![("Version", "v3.9.11")]);
+        assert_eq!(render(tmpl, &ctx).unwrap(), "3.9.11");
     }
 
     #[test]
@@ -386,6 +396,25 @@ mod tests {
         let tmpl = "{{title (semver .Version).Major}}";
         let ctx = hashmap(vec![("Version", "3.9.11")]);
         assert_eq!(render(tmpl, &ctx).unwrap(), "3");
+    }
+
+    #[test]
+    fn test_lex_semver_with_property() {
+        let tokens = lex("(semver .Version).Major").unwrap();
+        // Should be: LParen, Func(semver), Whitespace, Key(Version), RParen, Dot, Ident(Major)
+        assert!(
+            tokens.len() >= 6,
+            "Expected at least 6 tokens, got {}: {:?}",
+            tokens.len(),
+            tokens
+        );
+    }
+
+    #[test]
+    fn test_render_just_semver_paren() {
+        let tmpl = "{{(semver .Version)}}";
+        let ctx = hashmap(vec![("Version", "1.2.3")]);
+        assert_eq!(render(tmpl, &ctx).unwrap(), "1.2.3");
     }
 
     macro_rules! parse_tests {
