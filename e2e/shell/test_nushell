@@ -29,7 +29,7 @@ set +e
 # use `env` to control the environment variables available to `nu`
 # - we need LD_LIBRARY_PATH so that mise can find libbz2.so.1.0
 # - we need PATH so that this test can find `nu`
-env --ignore-environment LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" PATH="${PATH}" nu --no-config-file --commands "source ${MISE_NUSHELL_INIT}"
+env --ignore-environment LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" PATH="${PATH}" nu --no-config-file --commands "use ${MISE_NUSHELL_INIT}"
 NUSHELL_EXIT_CODE=${?}
 
 set -e
