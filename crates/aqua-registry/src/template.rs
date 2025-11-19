@@ -150,7 +150,10 @@ impl Parser<'_> {
         };
         let next_arg =
             |tokens: &mut std::iter::Peekable<std::slice::Iter<&Token>>| -> Result<String> {
-                expect_whitespace(tokens.next())?;
+                // Skip optional whitespace
+                if matches!(tokens.peek(), Some(Token::Whitespace(_))) {
+                    tokens.next();
+                }
                 let arg = tokens.next().wrap_err("missing argument")?;
                 match arg {
                     Token::Key(key) => {
