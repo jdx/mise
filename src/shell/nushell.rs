@@ -73,14 +73,11 @@ impl Shell for Nushell {
         "#});
 
         let deactivation_ops_csv = &shell::build_deactivation_script(self);
-        out.push_str(&formatdoc! {r#"
-          "{deactivation_ops_csv}" | parse vars | update-env
-        "#});
-
         let inline_prelude = self.format_activate_prelude_inline(&opts.prelude);
         out.push_str(&formatdoc! {r#"
           export-env {{
             {inline_prelude}
+            "{deactivation_ops_csv}" | parse vars | update-env
             $env.MISE_SHELL = "nu"
             let mise_hook = {{
               condition: {{ "MISE_SHELL" in $env }}
