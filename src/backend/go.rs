@@ -68,9 +68,17 @@ impl Backend for GoBackend {
 
                 for i in indices {
                     let mod_path = parts[..=i].join("/");
-                    let res = cmd!("go", "list", "-m", "-versions", "-json", mod_path)
-                        .full_env(self.dependency_env(config).await?)
-                        .read();
+                    let res = cmd!(
+                        "go",
+                        "list",
+                        "-mod=readonly",
+                        "-m",
+                        "-versions",
+                        "-json",
+                        mod_path
+                    )
+                    .full_env(self.dependency_env(config).await?)
+                    .read();
                     if let Ok(raw) = res {
                         let res = serde_json::from_str::<GoModInfo>(&raw);
                         if let Ok(mut mod_info) = res {

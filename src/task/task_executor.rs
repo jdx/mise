@@ -189,7 +189,10 @@ impl TaskExecutor {
             env.insert("MISE_PROJECT_ROOT".into(), root.display().to_string());
         }
         env.insert("MISE_TASK_NAME".into(), task.name.clone());
-        let task_file = task.file.as_ref().unwrap_or(&task.config_source);
+        let task_file = task
+            .file_path(config)
+            .await?
+            .unwrap_or(task.config_source.clone());
         env.insert("MISE_TASK_FILE".into(), task_file.display().to_string());
         if let Some(dir) = task_file.parent() {
             env.insert("MISE_TASK_DIR".into(), dir.display().to_string());
@@ -199,9 +202,9 @@ impl TaskExecutor {
         }
         let timer = std::time::Instant::now();
 
-        if let Some(file) = &task.file {
+        if let Some(file) = task.file_path(config).await? {
             let exec_start = std::time::Instant::now();
-            self.exec_file(config, file, task, &env, &prefix).await?;
+            self.exec_file(config, &file, task, &env, &prefix).await?;
             trace!(
                 "task {} exec_file took {}ms (total {}ms)",
                 task.name,

@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+# Test that task file paths are resolved relative to the config file location
+# This ensures tasks with `file = "path/to/script"` work from subdirectories
+
+# Create a script in a subdirectory
+mkdir -p scripts
+cat >scripts/test.sh <<'EOF'
+#!/usr/bin/env bash
+echo "Task executed successfully"
+echo "Current directory: $(pwd)"
+EOF
+chmod +x scripts/test.sh
+
+# Create mise.toml with a task that references the script
+cat >mise.toml <<'EOF'
+[tasks.test-file]
+description = "Test task with file attribute"
+file = "scripts/test.sh"
+EOF
+
+# Trust the config
+mise trust
+
+# Test 1: Run the task from the root directory (should work)
+assert_contains "mise run test-file" "Task executed successfully"
+
+# Test 2: Run the task from a subdirectory (the fix - should work)
+mkdir -p subdir
+(
+	cd subdir
+	assert_contains "mise run test-file" "Task executed successfully"
+)
+
+# Test 3: Run from a nested subdirectory
+mkdir -p subdir/nested
+(
+	cd subdir/nested
+	assert_contains "mise run test-file" "Task executed successfully"
+)
+
+# Test 4: Verify the task shows up in task list from subdirectory
+(
+	cd subdir
+	assert_contains "mise tasks ls" "test-file"
+)
+
+# Test 5: Test with absolute path (should work from anywhere)
+ABSOLUTE_SCRIPT="$(pwd)/scripts/test.sh"
+cat >mise.toml <<EOF
+[tasks.test-absolute]
+description = "Test task with absolute path"
+file = "$ABSOLUTE_SCRIPT"
+EOF
+
+mise trust
+assert_contains "mise run test-absolute" "Task executed successfully"
+
+(
+	cd subdir
+	assert_contains "mise run test-absolute" "Task executed successfully"
+)
+
+# Test 6: Test with templated path
+cat >mise.toml <<'EOF'
+[tasks.test-template]
+description = "Test task with templated path"
+file = "{{config_root}}/scripts/test.sh"
+EOF
+
+mise trust
+assert_contains "mise run test-template" "Task executed successfully"
+
+(
+	cd subdir
+	assert_contains "mise run test-template" "Task executed successfully"
+)
+
+echo "All task file resolution tests passed!"

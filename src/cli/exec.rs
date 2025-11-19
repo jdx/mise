@@ -84,7 +84,12 @@ impl Exec {
         });
 
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
-        let env = measure!("env_with_path", { ts.env_with_path(&config).await? });
+        let mut env = measure!("env_with_path", { ts.env_with_path(&config).await? });
+
+        // Ensure MISE_ENV is set in the spawned shell if it was specified via -E flag
+        if !env::MISE_ENV.is_empty() {
+            env.insert("MISE_ENV".to_string(), env::MISE_ENV.join(","));
+        }
 
         if program.rsplit('/').next() == Some("fish") {
             let mut cmd = vec![];
