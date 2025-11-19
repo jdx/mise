@@ -3263,6 +3263,11 @@ test = ["navi --version", "navi {{version}}"]
 backends = ["github:HaxeFoundation/neko", "asdf:asdf-community/asdf-neko"]
 description = "The Neko Virtual Machine"
 
+[tools.nelm]
+backends = ["aqua:werf/nelm"]
+description = "Nelm is a Helm 4 alternative - it is a Kubernetes deployment tool that manages Helm Charts and deploys them to Kubernetes"
+test = ["nelm version | grep full", "full: {{version}}"]
+
 [tools.neonctl]
 backends = ["aqua:neondatabase/neonctl", "ubi:neondatabase/neonctl"]
 description = "Neon CLI tool. The Neon CLI is a command-line interface that lets you manage Neon Serverless Postgres directly from the terminal"
