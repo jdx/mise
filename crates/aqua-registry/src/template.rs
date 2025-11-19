@@ -1,4 +1,4 @@
-use eyre::{bail, ContextCompat, Result};
+use eyre::{ContextCompat, Result, bail};
 use heck::ToTitleCase;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -134,38 +134,112 @@ struct Parser<'a> {
 }
 
 impl Parser<'_> {
-    fn parse(&self, tokens: Vec<&Token>) -> Result<String> {
-        let mut s = String::new();
-        let mut tokens = tokens.iter().peekable();
-        let expect_whitespace = |t: Option<&&Token>| {
-            if let Some(token) = t {
-                if let Token::Whitespace(_) = token {
-                    Ok(())
-                } else {
-                    bail!("expected whitespace, found: {token:?}");
-                }
-            } else {
-                bail!("expected whitespace, found: end of input");
-            }
-        };
-        let next_arg =
-            |tokens: &mut std::iter::Peekable<std::slice::Iter<&Token>>| -> Result<String> {
+    // Helper method to evaluate parenthesized expressions like (semver .Version).Major
+    fn eval_paren_expr(
+        &self,
+        tokens: &mut std::iter::Peekable<std::slice::Iter<&Token>>,
+    ) -> Result<String> {
+        // We've already consumed the LParen, now get the function
+        let func_token = tokens.next().wrap_err("expected function after (")?;
+
+        if let Token::Func(func) = func_token {
+            if *func == "semver" {
                 // Skip optional whitespace
                 if matches!(tokens.peek(), Some(Token::Whitespace(_))) {
                     tokens.next();
                 }
-                let arg = tokens.next().wrap_err("missing argument")?;
-                match arg {
+
+                // Get the argument (could be Key, String, or nested LParen)
+                let arg_token = tokens.next().wrap_err("missing semver argument")?;
+                let arg = match arg_token {
                     Token::Key(key) => {
                         if let Some(val) = self.ctx.get(*key) {
-                            Ok(val.to_string())
+                            val.to_string()
                         } else {
                             bail!("unable to find key in context: {key}");
                         }
                     }
-                    Token::String(str) => Ok(str.to_string()),
-                    _ => bail!("expected key or string, found: {arg:?}"),
+                    Token::String(str) => str.to_string(),
+                    Token::LParen => {
+                        // Nested parenthesized expression
+                        self.eval_paren_expr(tokens)?
+                    }
+                    _ => bail!(
+                        "expected key, string, or expression for semver argument, found: {arg_token:?}"
+                    ),
+                };
+
+                // Expect )
+                if !matches!(tokens.next(), Some(Token::RParen)) {
+                    bail!("expected ) after semver argument");
                 }
+
+                // Check for property access
+                if matches!(tokens.peek(), Some(Token::Dot)) {
+                    tokens.next(); // consume dot
+                    if let Some(Token::Ident(prop)) = tokens.next() {
+                        // Strip 'v' prefix if present before parsing
+                        let clean_version = arg.strip_prefix('v').unwrap_or(&arg);
+
+                        // Parse version and extract property
+                        let version = Versioning::new(clean_version)
+                            .wrap_err_with(|| format!("invalid semver version: {arg}"))?;
+
+                        Ok(match *prop {
+                            "Major" => version.nth(0).unwrap_or(0).to_string(),
+                            "Minor" => version.nth(1).unwrap_or(0).to_string(),
+                            "Patch" => version.nth(2).unwrap_or(0).to_string(),
+                            _ => bail!("unknown semver property: {prop}"),
+                        })
+                    } else {
+                        bail!("expected identifier after dot");
+                    }
+                } else {
+                    // Return the whole version string
+                    Ok(arg)
+                }
+            } else {
+                bail!("unexpected function in parentheses: {func}");
+            }
+        } else {
+            bail!("expected function after (");
+        }
+    }
+
+    fn parse(&self, tokens: Vec<&Token>) -> Result<String> {
+        let mut s = String::new();
+        let mut tokens = tokens.iter().peekable();
+
+        // Helper to evaluate a sub-expression (handles LParen recursively)
+        let eval_expr = |tokens: &mut std::iter::Peekable<std::slice::Iter<&Token>>,
+                         parser: &Parser|
+         -> Result<String> {
+            // Skip optional whitespace
+            if matches!(tokens.peek(), Some(Token::Whitespace(_))) {
+                tokens.next();
+            }
+
+            let token = tokens.next().wrap_err("missing expression")?;
+            match token {
+                Token::Key(key) => {
+                    if let Some(val) = parser.ctx.get(*key) {
+                        Ok(val.to_string())
+                    } else {
+                        bail!("unable to find key in context: {key}");
+                    }
+                }
+                Token::String(str) => Ok(str.to_string()),
+                Token::LParen => {
+                    // Recursively evaluate parenthesized expression
+                    parser.eval_paren_expr(tokens)
+                }
+                _ => bail!("expected key, string, or parenthesized expression, found: {token:?}"),
+            }
+        };
+
+        let next_arg =
+            |tokens: &mut std::iter::Peekable<std::slice::Iter<&Token>>| -> Result<String> {
+                eval_expr(tokens, self)
             };
 
         let mut in_pipe = false;
@@ -188,49 +262,8 @@ impl Parser<'_> {
                     s = str.to_string()
                 }
                 Token::LParen => {
-                    // Handle (semver .Key).Property syntax
-                    let func_token = tokens.next().wrap_err("expected function after (")?;
-                    if let Token::Func(func) = func_token {
-                        if *func == "semver" {
-                            let arg = next_arg(&mut tokens)?;
-
-                            // Expect )
-                            if !matches!(tokens.next(), Some(Token::RParen)) {
-                                bail!("expected ) after semver argument");
-                            }
-
-                            // Check for property access
-                            if matches!(tokens.peek(), Some(Token::Dot)) {
-                                tokens.next(); // consume dot
-                                if let Some(Token::Ident(prop)) = tokens.next() {
-                                    // Strip 'v' prefix if present before parsing
-                                    let clean_version = arg.strip_prefix('v').unwrap_or(&arg);
-
-                                    // Parse version and extract property
-                                    let version =
-                                        Versioning::new(clean_version).wrap_err_with(|| {
-                                            format!("invalid semver version: {arg}")
-                                        })?;
-
-                                    s = match *prop {
-                                        "Major" => version.nth(0).unwrap_or(0).to_string(),
-                                        "Minor" => version.nth(1).unwrap_or(0).to_string(),
-                                        "Patch" => version.nth(2).unwrap_or(0).to_string(),
-                                        _ => bail!("unknown semver property: {prop}"),
-                                    };
-                                } else {
-                                    bail!("expected identifier after dot");
-                                }
-                            } else {
-                                // Return the whole version string
-                                s = arg;
-                            }
-                        } else {
-                            bail!("unexpected function in parentheses: {func}");
-                        }
-                    } else {
-                        bail!("expected function after (");
-                    }
+                    // Evaluate parenthesized expression using helper method
+                    s = self.eval_paren_expr(&mut tokens)?;
                 }
                 Token::Func(func) => {
                     match *func {
@@ -331,6 +364,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_render_nested_semver_in_function() {
+        let tmpl = "{{trimV (semver .Version).Major}}";
+        let ctx = hashmap(vec![("Version", "v3.9.11")]);
+        assert_eq!(render(tmpl, &ctx).unwrap(), "3");
+    }
+
+    #[test]
+    fn test_render_semver_as_function_arg() {
+        let tmpl = "{{title (semver .Version).Major}}";
+        let ctx = hashmap(vec![("Version", "3.9.11")]);
+        assert_eq!(render(tmpl, &ctx).unwrap(), "3");
+    }
+
     macro_rules! parse_tests {
     ($($name:ident: $value:expr,)*) => {
         $(
@@ -365,6 +412,8 @@ mod tests {
         test_parse_semver_patch: (r#"(semver .Version).Patch"#, "11", vec![("Version", "3.9.11")]),
         test_parse_semver_major_v_prefix: (r#"(semver .Version).Major"#, "1", vec![("Version", "v1.2.3")]),
         test_parse_semver_no_property: (r#"(semver .Version)"#, "1.2.3", vec![("Version", "1.2.3")]),
+        test_parse_nested_semver_in_trimv: (r#"trimV (semver .Version).Major"#, "3", vec![("Version", "v3.9.11")]),
+        test_parse_nested_semver_in_title: (r#"title (semver .Version).Minor"#, "9", vec![("Version", "3.9.11")]),
     );
 
     #[test]
