@@ -212,7 +212,8 @@ impl Parser<'_> {
                             // Parse semver function matching sprig's semver behavior
                             // https://masterminds.github.io/sprig/semver.html
                             expect_whitespace(tokens.next())?;
-                            let version_str = self.parse(vec![tokens.next().wrap_err("semver missing argument")?])?;
+                            let version_str = self
+                                .parse(vec![tokens.next().wrap_err("semver missing argument")?])?;
 
                             // Remove 'v' prefix if present (semver crate doesn't handle it)
                             let version = version_str.trim_start_matches('v');
