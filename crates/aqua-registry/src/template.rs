@@ -295,9 +295,9 @@ impl Evaluator<'_> {
     fn eval_with_input(&self, expr: &Expr, input: &str) -> Result<String> {
         match expr {
             Expr::FuncCall(func, args) => {
-                // For piped functions, prepend the input as first argument
-                let mut full_args = vec![Expr::Literal(input.to_string())];
-                full_args.extend(args.iter().cloned());
+                // For piped functions, append the input as last argument
+                let mut full_args = args.clone();
+                full_args.push(Expr::Literal(input.to_string()));
                 self.eval_func(func, &full_args)
             }
             _ => bail!("can only pipe to function calls"),
@@ -421,15 +421,47 @@ mod tests {
     }
 
     #[test]
+    fn test_versioning_nth() {
+        // Test the versions crate directly
+        let v = Versioning::new("3.6.0").unwrap();
+        assert_eq!(v.nth(0).unwrap_or(0), 3);
+        assert_eq!(v.nth(1).unwrap_or(0), 6);
+        assert_eq!(v.nth(2).unwrap_or(0), 0);
+    }
+
+    #[test]
+    fn test_semver_property_major() {
+        let tmpl = "{{(semver .Version).Major}}";
+        let ctx = hashmap(vec![("Version", "3.6.0")]);
+        let result = render(tmpl, &ctx).unwrap();
+        assert_eq!(result, "3");
+    }
+
+    #[test]
+    fn test_semver_property_minor() {
+        let tmpl = "{{(semver .Version).Minor}}";
+        let ctx = hashmap(vec![("Version", "3.6.0")]);
+        let result = render(tmpl, &ctx).unwrap();
+        assert_eq!(result, "6");
+    }
+
+    #[test]
     fn test_render_blender_url() {
-        // Exact pattern from blender registry
+        // Exact pattern from blender registry with version 3.6.0 (failing case)
         let tmpl = "https://download.blender.org/release/Blender{{(semver .Version).Major}}.{{(semver .Version).Minor}}/blender-{{trimV .Version}}-linux-x64.tar.xz";
-        let ctx = hashmap(vec![
-            ("Version", "4.3.2"),
-            ("OS", "linux"),
-            ("Arch", "x64"),
-            ("Format", "tar.xz"),
-        ]);
+        let ctx = hashmap(vec![("Version", "3.6.0")]);
+        let result = render(tmpl, &ctx).unwrap();
+        assert_eq!(
+            result,
+            "https://download.blender.org/release/Blender3.6/blender-3.6.0-linux-x64.tar.xz"
+        );
+    }
+
+    #[test]
+    fn test_render_blender_url_4_3() {
+        // Test with 4.3.2
+        let tmpl = "https://download.blender.org/release/Blender{{(semver .Version).Major}}.{{(semver .Version).Minor}}/blender-{{trimV .Version}}-linux-x64.tar.xz";
+        let ctx = hashmap(vec![("Version", "4.3.2")]);
         let result = render(tmpl, &ctx).unwrap();
         assert_eq!(
             result,
@@ -470,9 +502,8 @@ mod tests {
             fn $name() {
                 let (input, expected, ctx_data): (&str, &str, Vec<(&str, &str)>) = $value;
                 let ctx = hashmap(ctx_data);
-                let parser = Parser { ctx: &ctx };
-                let tokens = lex(input).unwrap();
-                assert_eq!(expected, parser.parse(tokens.iter().collect()).unwrap());
+                let tmpl = format!("{{{{{}}}}}", input);
+                assert_eq!(expected, render(&tmpl, &ctx).unwrap());
             }
         )*
     }}
@@ -505,11 +536,9 @@ mod tests {
 
     #[test]
     fn test_parse_err() {
-        let parser = Parser {
-            ctx: &HashMap::new(),
-        };
-        let tokens = lex("foo").unwrap();
-        assert!(parser.parse(tokens.iter().collect()).is_err());
+        let ctx = HashMap::new();
+        let result = render("{{foo}}", &ctx);
+        assert!(result.is_err());
     }
 
     #[test]
