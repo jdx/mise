@@ -267,6 +267,16 @@ impl Parser<'_> {
                 }
                 Token::Func(func) => {
                     match *func {
+                        "semver" => {
+                            // Handle semver without parentheses: {{semver .Version}}
+                            let arg = if in_pipe {
+                                s.clone()
+                            } else {
+                                next_arg(&mut tokens)?
+                            };
+                            // Strip 'v' prefix and return normalized version
+                            s = arg.trim_start_matches('v').to_string();
+                        }
                         "title" | "trimV" => {
                             let arg = if in_pipe {
                                 s.clone()
@@ -414,6 +424,8 @@ mod tests {
         test_parse_semver_no_property: (r#"(semver .Version)"#, "1.2.3", vec![("Version", "1.2.3")]),
         test_parse_nested_semver_in_trimv: (r#"trimV (semver .Version).Major"#, "3", vec![("Version", "v3.9.11")]),
         test_parse_nested_semver_in_title: (r#"title (semver .Version).Minor"#, "9", vec![("Version", "3.9.11")]),
+        test_parse_semver_standalone: (r#"semver .Version"#, "1.2.3", vec![("Version", "v1.2.3")]),
+        test_parse_semver_standalone_no_v: (r#"semver .Version"#, "1.2.3", vec![("Version", "1.2.3")]),
     );
 
     #[test]
