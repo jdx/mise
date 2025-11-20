@@ -3,6 +3,7 @@ use heck::ToTitleCase;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::LazyLock;
 use versions::Versioning;
 
 type Context = HashMap<String, String>;
@@ -314,8 +315,8 @@ fn skip_whitespace(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) {
 /// Function signature for template functions that return Value trait objects
 type TemplateFn = fn(&[Box<dyn Value>]) -> Result<Box<dyn Value>>;
 
-/// Get the registry of available template functions
-fn get_function_registry() -> HashMap<&'static str, TemplateFn> {
+/// Static registry of available template functions
+static FUNCTION_REGISTRY: LazyLock<HashMap<&'static str, TemplateFn>> = LazyLock::new(|| {
     let mut registry: HashMap<&'static str, TemplateFn> = HashMap::new();
 
     registry.insert("semver", |args| {
@@ -384,20 +385,16 @@ fn get_function_registry() -> HashMap<&'static str, TemplateFn> {
     });
 
     registry
-}
+});
 
 /// Evaluator walks the AST and produces results
 struct Evaluator<'a> {
     ctx: &'a Context,
-    functions: HashMap<&'static str, TemplateFn>,
 }
 
 impl<'a> Evaluator<'a> {
     fn new(ctx: &'a Context) -> Self {
-        Self {
-            ctx,
-            functions: get_function_registry(),
-        }
+        Self { ctx }
     }
 
     /// Evaluate an AST node and return a string (public interface)
@@ -454,7 +451,7 @@ impl<'a> Evaluator<'a> {
         let evaluated_args = evaluated_args?;
 
         // Look up function in registry
-        if let Some(func_impl) = self.functions.get(func) {
+        if let Some(func_impl) = FUNCTION_REGISTRY.get(func) {
             func_impl(&evaluated_args)
         } else {
             bail!("unknown function: {func}")
