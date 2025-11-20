@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/aquaproj/aqua/main/json-schema/registry.json
+packages:
+  - type: http
+    repo_owner: werf
+    repo_name: werf
+    description: A solution for implementing efficient and consistent software delivery to Kubernetes facilitating best practices.
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        url: https://tuf.werf.io/targets/releases/{{trimV .Version}}/{{.OS}}-{{.Arch}}/bin/werf
+        format: raw
+        windows_arm_emulation: true

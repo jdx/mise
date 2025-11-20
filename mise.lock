@@ -72,13 +72,13 @@ size = 18174787
 url = "https://github.com/cli/cli/releases/download/v2.83.1/gh_2.83.1_linux_amd64.tar.gz"
 
 [[tools.hk]]
-version = "1.21.0"
+version = "1.22.0"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "sha256:2dbe766a257272d4ad32704b434bccf9bbf985dd0d3b4fa59d0956d6c3c9020a"
-size = 7243194
-url = "https://github.com/jdx/hk/releases/download/v1.21.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:3bf36852e3449d331de72d360b56a56415682bac7a8998401384e0397c3c3f4c"
+size = 7255810
+url = "https://github.com/jdx/hk/releases/download/v1.22.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"
@@ -108,7 +108,7 @@ version = "5.0.0"
 backend = "npm:ajv-cli"
 
 [[tools."npm:markdownlint-cli"]]
-version = "0.45.0"
+version = "0.46.0"
 backend = "npm:markdownlint-cli"
 
 [[tools."npm:prettier"]]

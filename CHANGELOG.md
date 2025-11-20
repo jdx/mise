@@ -1,5 +1,41 @@
 # Changelog
 
+## [2025.11.7](https://github.com/jdx/mise/compare/v2025.11.6..v2025.11.7) - 2025-11-20
+
+### 📦 Registry
+
+- added nelm by @tony-sol in [#7020](https://github.com/jdx/mise/pull/7020)
+
+### 🚀 Features
+
+- **(exec)** ensure MISE_ENV is set in spawned shell when specified via -E flag by @ceelian in [#7007](https://github.com/jdx/mise/pull/7007)
+
+### 🐛 Bug Fixes
+
+- **(fig)** resolve __dirname error in ES module by @jdx in [#7021](https://github.com/jdx/mise/pull/7021)
+- **(go)** Don't allow auto mod=vendor mode by @mariduv in [#7006](https://github.com/jdx/mise/pull/7006)
+- **(nushell)** test `use` not `source`, fix pipeline parse error by @jokeyrhyme in [#7013](https://github.com/jdx/mise/pull/7013)
+- **(tasks)** make file paths relative to config location and templateable by @halms in [#7005](https://github.com/jdx/mise/pull/7005)
+
+### Chore
+
+- **(deny)** add exclusion for number_prefix by @jdx in [e955ecb](https://github.com/jdx/mise/commit/e955ecbb733d61ef1d0b522a979a7d1998ec8061)
+
+### New Contributors
+
+- @mariduv made their first contribution in [#7006](https://github.com/jdx/mise/pull/7006)
+- @ceelian made their first contribution in [#7007](https://github.com/jdx/mise/pull/7007)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`blender/blender`](https://github.com/blender/blender)
+- [`werf/werf`](https://github.com/werf/werf)
+
+#### Updated Packages (1)
+
+- [`mas-cli/mas`](https://github.com/mas-cli/mas)
 ## [2025.11.6](https://github.com/jdx/mise/compare/v2025.11.5..v2025.11.6) - 2025-11-18
 
 ### 📦 Registry
