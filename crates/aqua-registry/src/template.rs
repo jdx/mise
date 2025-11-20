@@ -57,18 +57,12 @@ impl Value for SemVerValue {
     }
 
     fn get_property(&self, prop: &str) -> Result<String> {
-        let result = match prop {
+        Ok(match prop {
             "Major" => self.major.to_string(),
             "Minor" => self.minor.to_string(),
             "Patch" => self.patch.to_string(),
             _ => bail!("unknown semver property: {prop}"),
-        };
-
-        if std::env::var("MISE_DEBUG").is_ok() {
-            eprintln!("[SEMVER.{prop}] {} -> {}", self.original, result);
-        }
-
-        Ok(result)
+        })
     }
 }
 
@@ -87,22 +81,9 @@ pub fn render(tmpl: &str, ctx: &Context) -> Result<String> {
             i += 1;
         } else if in_tag && c == '}' && next == '}' {
             in_tag = false;
-            if std::env::var("MISE_DEBUG").is_ok() {
-                eprintln!("[RENDER] Tag: {{{{{tag}}}}}");
-            }
             let tokens = lex(&tag)?;
-            if std::env::var("MISE_DEBUG").is_ok() {
-                eprintln!("[RENDER] Tokens: {:?}", tokens);
-            }
             let ast = parse_tokens(&tokens)?;
-            if std::env::var("MISE_DEBUG").is_ok() {
-                eprintln!("[RENDER] AST: {:?}", ast);
-            }
-            let eval_result = evaluator.eval(&ast)?;
-            if std::env::var("MISE_DEBUG").is_ok() {
-                eprintln!("[RENDER] Result: {eval_result}");
-            }
-            result += &eval_result;
+            result += &evaluator.eval(&ast)?;
             tag.clear();
             i += 1;
         } else if in_tag {
@@ -346,19 +327,10 @@ fn get_function_registry() -> HashMap<&'static str, TemplateFn> {
         let version = Versioning::new(clean_version)
             .wrap_err_with(|| format!("invalid semver version: {input}"))?;
 
-        let major = version.nth(0).unwrap_or(0);
-        let minor = version.nth(1).unwrap_or(0);
-        let patch = version.nth(2).unwrap_or(0);
-
-        if std::env::var("MISE_DEBUG").is_ok() {
-            eprintln!("[SEMVER] Input: {input}, Clean: {clean_version}");
-            eprintln!("[SEMVER] Parsed: Major={major}, Minor={minor}, Patch={patch}");
-        }
-
         Ok(Box::new(SemVerValue {
-            major,
-            minor,
-            patch,
+            major: version.nth(0).unwrap_or(0),
+            minor: version.nth(1).unwrap_or(0),
+            patch: version.nth(2).unwrap_or(0),
             original: clean_version.to_string(),
         }) as Box<dyn Value>)
     });

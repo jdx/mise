@@ -217,13 +217,7 @@ impl Default for AquaPackage {
 impl AquaPackage {
     /// Apply version-specific configurations and overrides
     pub fn with_version(mut self, versions: &[&str], os: &str, arch: &str) -> AquaPackage {
-        if std::env::var("MISE_DEBUG").is_ok() {
-            eprintln!("[with_version] Before override - url: {}", self.url);
-        }
         self = apply_override(self.clone(), self.version_override(versions));
-        if std::env::var("MISE_DEBUG").is_ok() {
-            eprintln!("[with_version] After version_override - url: {}", self.url);
-        }
         if let Some(avo) = self.overrides.clone().into_iter().find(|o| {
             if let (Some(goos), Some(goarch)) = (&o.goos, &o.goarch) {
                 goos == os && goarch == arch
@@ -235,10 +229,7 @@ impl AquaPackage {
                 false
             }
         }) {
-            self = apply_override(self, &avo.pkg);
-            if std::env::var("MISE_DEBUG").is_ok() {
-                eprintln!("[with_version] After platform override - url: {}", self.url);
-            }
+            self = apply_override(self, &avo.pkg)
         }
         self
     }
@@ -359,17 +350,10 @@ impl AquaPackage {
     /// Get the URL for this package and version
     pub fn url(&self, v: &str, os: &str, arch: &str) -> Result<String> {
         let mut url = self.url.clone();
-        if std::env::var("MISE_DEBUG").is_ok() {
-            eprintln!("[AquaPackage::url] template: {url}, version: {v}");
-        }
         if os == "windows" && self.complete_windows_ext && self.format(v, os, arch)? == "raw" {
             url.push_str(".exe");
         }
-        let result = self.parse_aqua_str(&url, v, &Default::default(), os, arch)?;
-        if std::env::var("MISE_DEBUG").is_ok() {
-            eprintln!("[AquaPackage::url] result: {result}");
-        }
-        Ok(result)
+        self.parse_aqua_str(&url, v, &Default::default(), os, arch)
     }
 
     /// Parse an Aqua template string with variable substitution and platform info
@@ -381,11 +365,6 @@ impl AquaPackage {
         os: &str,
         arch: &str,
     ) -> Result<String> {
-        if std::env::var("MISE_DEBUG").is_ok() {
-            eprintln!("[PARSE_AQUA_STR] Input version v: {v}");
-            eprintln!("[PARSE_AQUA_STR] version_prefix: {:?}", self.version_prefix);
-        }
-
         let mut actual_arch = arch;
         if os == "darwin" && arch == "arm64" && self.rosetta2 {
             actual_arch = "amd64";
@@ -406,10 +385,6 @@ impl AquaPackage {
         } else {
             v
         };
-
-        if std::env::var("MISE_DEBUG").is_ok() {
-            eprintln!("[PARSE_AQUA_STR] semver after prefix strip: {semver}");
-        }
 
         let mut ctx = HashMap::new();
         ctx.insert("Version".to_string(), replace(v));
