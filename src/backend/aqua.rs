@@ -103,7 +103,14 @@ impl Backend for AquaBackend {
             && !v.starts_with(prefix)
         {
             v = format!("{prefix}{v}");
-            v_prefixed = v_prefixed.map(|v| format!("{prefix}{v}"));
+            // Don't add prefix to v_prefixed if it already starts with the prefix
+            v_prefixed = v_prefixed.map(|vp| {
+                if vp.starts_with(prefix) {
+                    vp
+                } else {
+                    format!("{prefix}{vp}")
+                }
+            });
         }
         validate(&pkg)?;
 
