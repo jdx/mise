@@ -1,6 +1,9 @@
 import * as fsAsync from "node:fs/promises";
 import * as ts from "typescript";
 import * as path from "path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 type GeneratorIdentifier = {
   identifier: string;
