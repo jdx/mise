@@ -70,7 +70,16 @@ linux-arm*)
 	;;
 esac
 
-features="rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored"
+if [[ $suffix == "-musl" ]]; then
+	# For musl builds (Android/Alpine): use webpki-roots + hickory-dns
+	# This enables DNS resolution and TLS without requiring system files
+	features="rustls-webpki-hickory,self_update,vfox/vendored-lua"
+	echo "Building musl with embedded certificates and DNS resolver"
+else
+	# For glibc builds: use system certificates and DNS
+	features="rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored"
+fi
+
 if [[ $os == "linux" ]] && [[ $arch == "armv7" ]]; then
 	features="$features,aws-lc-rs"
 fi

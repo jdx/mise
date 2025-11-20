@@ -232,6 +232,16 @@ rustls-native-roots = [
   "vfox/rustls-native-roots",
   "xx/rustls-native-roots",
 ]
+rustls-webpki-hickory = [
+  "gix/blocking-http-transport-reqwest-rust-tls",
+  "reqwest/rustls-tls-webpki-roots",
+  "reqwest/hickory-dns",
+  "self_update/rustls",
+  "sigstore-verification/rustls",
+  "ubi/rustls-tls",
+  "vfox/rustls-webpki-roots",
+  "xx/rustls",
+]
 
 [package.metadata.binstall]
 bin-dir = "mise/bin/mise"

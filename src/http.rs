@@ -63,10 +63,18 @@ impl Client {
     fn _new() -> ClientBuilder {
         let v = &*version::VERSION;
         let shell = env::MISE_SHELL.map(|s| s.to_string()).unwrap_or_default();
-        ClientBuilder::new()
-            .user_agent(format!("mise/{v} {shell}").trim())
-            .gzip(true)
-            .zstd(true)
+        let mut builder = ClientBuilder::new().user_agent(format!("mise/{v} {shell}").trim());
+        builder = builder.gzip(true).zstd(true);
+
+        // Use hickory-dns resolver for musl builds (Android/Alpine)
+        // This enables DNS resolution without requiring /etc/resolv.conf
+        #[cfg(feature = "rustls-webpki-hickory")]
+        {
+            builder = builder.hickory_dns(true);
+            trace!("Using hickory-dns resolver for musl build");
+        }
+
+        builder
     }
 
     pub async fn get_bytes<U: IntoUrl>(&self, url: U) -> Result<impl AsRef<[u8]>> {

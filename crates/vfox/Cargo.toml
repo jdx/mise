@@ -61,6 +61,12 @@ rustls-native-roots = [
   "xx/http",
   "xx/rustls-native-roots",
 ]
+rustls-webpki-roots = [
+  "reqwest/rustls-tls-webpki-roots",
+  "reqwest/hickory-dns",
+  "xx/http",
+  "xx/rustls",
+]
 vendored-lua = ["mlua/vendored"]
 
 # [workspace.metadata.release] - removed since this is now part of mise workspace
