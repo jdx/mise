@@ -22,13 +22,57 @@ enum Expr {
     Pipe(Box<Expr>, Box<Expr>),
 }
 
+/// Runtime value trait - implemented by different value types
+trait Value: Debug {
+    fn as_string(&self) -> String;
+    fn get_property(&self, prop: &str) -> Result<String>;
+}
+
+/// String value type
+#[derive(Debug, Clone)]
+struct StringValue(String);
+
+impl Value for StringValue {
+    fn as_string(&self) -> String {
+        self.0.clone()
+    }
+
+    fn get_property(&self, _prop: &str) -> Result<String> {
+        bail!("cannot access property on string")
+    }
+}
+
+/// Semantic version value type
+#[derive(Debug, Clone)]
+struct SemVerValue {
+    major: u32,
+    minor: u32,
+    patch: u32,
+    original: String,
+}
+
+impl Value for SemVerValue {
+    fn as_string(&self) -> String {
+        self.original.clone()
+    }
+
+    fn get_property(&self, prop: &str) -> Result<String> {
+        Ok(match prop {
+            "Major" => self.major.to_string(),
+            "Minor" => self.minor.to_string(),
+            "Patch" => self.patch.to_string(),
+            _ => bail!("unknown semver property: {prop}"),
+        })
+    }
+}
+
 pub fn render(tmpl: &str, ctx: &Context) -> Result<String> {
     let mut result = String::new();
     let mut in_tag = false;
     let mut tag = String::new();
     let chars = tmpl.chars().collect_vec();
     let mut i = 0;
-    let evaluator = Evaluator { ctx };
+    let evaluator = Evaluator::new(ctx);
     while i < chars.len() {
         let c = chars[i];
         let next = chars.get(i + 1).cloned().unwrap_or(' ');
@@ -267,37 +311,128 @@ fn skip_whitespace(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) {
     }
 }
 
+/// Function signature for template functions that return Value trait objects
+type TemplateFn = fn(&[Box<dyn Value>]) -> Result<Box<dyn Value>>;
+
+/// Get the registry of available template functions
+fn get_function_registry() -> HashMap<&'static str, TemplateFn> {
+    let mut registry: HashMap<&'static str, TemplateFn> = HashMap::new();
+
+    registry.insert("semver", |args| {
+        if args.len() != 1 {
+            bail!("semver requires exactly 1 argument");
+        }
+        let input = args[0].as_string();
+        let clean_version = input.strip_prefix('v').unwrap_or(&input);
+        let version = Versioning::new(clean_version)
+            .wrap_err_with(|| format!("invalid semver version: {input}"))?;
+
+        Ok(Box::new(SemVerValue {
+            major: version.nth(0).unwrap_or(0),
+            minor: version.nth(1).unwrap_or(0),
+            patch: version.nth(2).unwrap_or(0),
+            original: clean_version.to_string(),
+        }) as Box<dyn Value>)
+    });
+
+    registry.insert("title", |args| {
+        if args.len() != 1 {
+            bail!("title requires exactly 1 argument");
+        }
+        Ok(Box::new(StringValue(args[0].as_string().to_title_case())) as Box<dyn Value>)
+    });
+
+    registry.insert("trimV", |args| {
+        if args.len() != 1 {
+            bail!("trimV requires exactly 1 argument");
+        }
+        Ok(Box::new(StringValue(
+            args[0].as_string().trim_start_matches('v').to_string(),
+        )) as Box<dyn Value>)
+    });
+
+    registry.insert("trimPrefix", |args| {
+        if args.len() != 2 {
+            bail!("trimPrefix requires exactly 2 arguments");
+        }
+        let prefix = args[0].as_string();
+        let text = args[1].as_string();
+        Ok(Box::new(StringValue(
+            text.strip_prefix(&prefix).unwrap_or(&text).to_string(),
+        )) as Box<dyn Value>)
+    });
+
+    registry.insert("trimSuffix", |args| {
+        if args.len() != 2 {
+            bail!("trimSuffix requires exactly 2 arguments");
+        }
+        let suffix = args[0].as_string();
+        let text = args[1].as_string();
+        Ok(Box::new(StringValue(
+            text.strip_suffix(&suffix).unwrap_or(&text).to_string(),
+        )) as Box<dyn Value>)
+    });
+
+    registry.insert("replace", |args| {
+        if args.len() != 3 {
+            bail!("replace requires exactly 3 arguments");
+        }
+        let from = args[0].as_string();
+        let to = args[1].as_string();
+        let text = args[2].as_string();
+        Ok(Box::new(StringValue(text.replace(&from, &to))) as Box<dyn Value>)
+    });
+
+    registry
+}
+
 /// Evaluator walks the AST and produces results
 struct Evaluator<'a> {
     ctx: &'a Context,
+    functions: HashMap<&'static str, TemplateFn>,
 }
 
-impl Evaluator<'_> {
-    /// Evaluate an AST node
+impl<'a> Evaluator<'a> {
+    fn new(ctx: &'a Context) -> Self {
+        Self {
+            ctx,
+            functions: get_function_registry(),
+        }
+    }
+
+    /// Evaluate an AST node and return a string (public interface)
     fn eval(&self, expr: &Expr) -> Result<String> {
+        let value = self.eval_value(expr)?;
+        Ok(value.as_string())
+    }
+
+    /// Evaluate an AST node and return a Value trait object (internal)
+    fn eval_value(&self, expr: &Expr) -> Result<Box<dyn Value>> {
         match expr {
-            Expr::Var(name) => self
-                .ctx
-                .get(name)
-                .map(|s| s.to_string())
-                .wrap_err_with(|| format!("variable not found: {name}")),
-            Expr::Literal(s) => Ok(s.clone()),
+            Expr::Var(name) => {
+                let s = self
+                    .ctx
+                    .get(name)
+                    .wrap_err_with(|| format!("variable not found: {name}"))?;
+                Ok(Box::new(StringValue(s.clone())) as Box<dyn Value>)
+            }
+            Expr::Literal(s) => Ok(Box::new(StringValue(s.clone())) as Box<dyn Value>),
             Expr::FuncCall(func, args) => self.eval_func(func, args),
             Expr::PropertyAccess(expr, prop) => self.eval_property(expr, prop),
             Expr::Pipe(left, right) => {
-                let left_val = self.eval(left)?;
-                self.eval_with_input(right, &left_val)
+                let left_val = self.eval_value(left)?;
+                self.eval_with_input(right, left_val)
             }
         }
     }
 
     /// Evaluate an expression with a piped input value
-    fn eval_with_input(&self, expr: &Expr, input: &str) -> Result<String> {
+    fn eval_with_input(&self, expr: &Expr, input: Box<dyn Value>) -> Result<Box<dyn Value>> {
         match expr {
             Expr::FuncCall(func, args) => {
                 // For piped functions, append the input as last argument
                 let mut full_args = args.clone();
-                full_args.push(Expr::Literal(input.to_string()));
+                full_args.push(Expr::Literal(input.as_string()));
                 self.eval_func(func, &full_args)
             }
             _ => bail!("can only pipe to function calls"),
@@ -305,73 +440,24 @@ impl Evaluator<'_> {
     }
 
     /// Evaluate property access
-    fn eval_property(&self, expr: &Expr, prop: &str) -> Result<String> {
-        let base = self.eval(expr)?;
-
-        // Check if this is semver property access
-        let clean_version = base.strip_prefix('v').unwrap_or(&base);
-        let version = Versioning::new(clean_version)
-            .wrap_err_with(|| format!("invalid semver version: {base}"))?;
-
-        Ok(match prop {
-            "Major" => version.nth(0).unwrap_or(0).to_string(),
-            "Minor" => version.nth(1).unwrap_or(0).to_string(),
-            "Patch" => version.nth(2).unwrap_or(0).to_string(),
-            _ => bail!("unknown property: {prop}"),
-        })
+    fn eval_property(&self, expr: &Expr, prop: &str) -> Result<Box<dyn Value>> {
+        let value = self.eval_value(expr)?;
+        let prop_value = value.get_property(prop)?;
+        Ok(Box::new(StringValue(prop_value)) as Box<dyn Value>)
     }
 
     /// Evaluate a function call
-    fn eval_func(&self, func: &str, args: &[Expr]) -> Result<String> {
-        match func {
-            "semver" => {
-                if args.len() != 1 {
-                    bail!("semver requires exactly 1 argument");
-                }
-                let version = self.eval(&args[0])?;
-                // Strip 'v' prefix if present
-                Ok(version.strip_prefix('v').unwrap_or(&version).to_string())
-            }
-            "title" => {
-                if args.len() != 1 {
-                    bail!("title requires exactly 1 argument");
-                }
-                let s = self.eval(&args[0])?;
-                Ok(s.to_title_case())
-            }
-            "trimV" => {
-                if args.len() != 1 {
-                    bail!("trimV requires exactly 1 argument");
-                }
-                let s = self.eval(&args[0])?;
-                Ok(s.trim_start_matches('v').to_string())
-            }
-            "trimPrefix" => {
-                if args.len() != 2 {
-                    bail!("trimPrefix requires exactly 2 arguments");
-                }
-                let prefix = self.eval(&args[0])?;
-                let s = self.eval(&args[1])?;
-                Ok(s.strip_prefix(&prefix).unwrap_or(&s).to_string())
-            }
-            "trimSuffix" => {
-                if args.len() != 2 {
-                    bail!("trimSuffix requires exactly 2 arguments");
-                }
-                let suffix = self.eval(&args[0])?;
-                let s = self.eval(&args[1])?;
-                Ok(s.strip_suffix(&suffix).unwrap_or(&s).to_string())
-            }
-            "replace" => {
-                if args.len() != 3 {
-                    bail!("replace requires exactly 3 arguments");
-                }
-                let from = self.eval(&args[0])?;
-                let to = self.eval(&args[1])?;
-                let s = self.eval(&args[2])?;
-                Ok(s.replace(&from, &to))
-            }
-            _ => bail!("unknown function: {func}"),
+    fn eval_func(&self, func: &str, args: &[Expr]) -> Result<Box<dyn Value>> {
+        // Evaluate all arguments first
+        let evaluated_args: Result<Vec<Box<dyn Value>>> =
+            args.iter().map(|arg| self.eval_value(arg)).collect();
+        let evaluated_args = evaluated_args?;
+
+        // Look up function in registry
+        if let Some(func_impl) = self.functions.get(func) {
+            func_impl(&evaluated_args)
+        } else {
+            bail!("unknown function: {func}")
         }
     }
 }
@@ -427,6 +513,35 @@ mod tests {
         assert_eq!(v.nth(0).unwrap_or(0), 3);
         assert_eq!(v.nth(1).unwrap_or(0), 6);
         assert_eq!(v.nth(2).unwrap_or(0), 0);
+    }
+
+    #[test]
+    fn test_two_semver_calls() {
+        // Test calling semver twice in same template
+        let tmpl = "{{(semver .Version).Major}}.{{(semver .Version).Minor}}";
+        let ctx = hashmap(vec![("Version", "4.6.0")]);
+        let result = render(tmpl, &ctx).unwrap();
+        assert_eq!(result, "4.6", "Expected '4.6' but got '{}'", result);
+    }
+
+    #[test]
+    fn test_parse_second_semver() {
+        // Debug: parse just the second semver call
+        let tokens = lex("(semver .Version).Minor").unwrap();
+        let ast = parse_tokens(&tokens).unwrap();
+
+        // Should be: PropertyAccess(FuncCall("semver", [Var("Version")]), "Minor")
+        if let Expr::PropertyAccess(inner, prop) = ast {
+            assert_eq!(prop, "Minor");
+            if let Expr::FuncCall(func, args) = *inner {
+                assert_eq!(func, "semver");
+                assert_eq!(args.len(), 1);
+            } else {
+                panic!("Inner should be FuncCall, got: {:?}", inner);
+            }
+        } else {
+            panic!("Should be PropertyAccess, got: {:?}", ast);
+        }
     }
 
     #[test]
