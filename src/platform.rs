@@ -175,6 +175,7 @@ impl From<&str> for Platform {
 ///
 /// Termux is an Android terminal emulator that uses a specific PREFIX path.
 /// This checks if the PREFIX environment variable matches the expected Termux path.
+#[cfg(target_os = "linux")]
 pub fn is_termux() -> bool {
     std::env::var("PREFIX")
         .ok()
@@ -186,11 +187,12 @@ pub fn is_termux() -> bool {
 ///
 /// termux-chroot changes the root directory to /data/data/com.termux/files
 /// We can detect this by reading the realpath of /proc/self/root
+#[cfg(target_os = "linux")]
 pub fn is_in_termux_chroot() -> bool {
     std::fs::read_link("/proc/self/root")
         .ok()
         .and_then(|p| p.canonicalize().ok())
-        .map(|p| p == std::path::PathBuf::from("/data/data/com.termux/files"))
+        .map(|p| p == std::path::Path::new("/data/data/com.termux/files"))
         .unwrap_or(false)
 }
 
@@ -198,6 +200,7 @@ pub fn is_in_termux_chroot() -> bool {
 ///
 /// Termux requires a custom SSL certificate path due to Android's filesystem restrictions.
 /// This returns the standard location where Termux stores its CA certificates.
+#[cfg(target_os = "linux")]
 pub fn get_termux_cert_path() -> &'static str {
     "/data/data/com.termux/files/usr/etc/tls/cert.pem"
 }
