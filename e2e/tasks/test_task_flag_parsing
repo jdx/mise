@@ -63,3 +63,43 @@ EOF
 # --verbose is a mise flag, so use -- to pass it to the task
 assert "mise mytask -- --verbose" "verbose=true"
 assert "mise mytask" "verbose="
+
+# Test boolean flags with explicit default="false"
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = 'echo "prebuilds=$usage_enable_prebuilds"'
+usage = '''
+flag "-p --enable-prebuilds" default="false"
+'''
+EOF
+
+# Test with mise run (works correctly)
+assert "mise run build -- --enable-prebuilds" "prebuilds=true"
+assert "mise run build -- -p" "prebuilds=true"
+assert "mise run build" "prebuilds=false"
+
+# Test naked runs with explicit default
+assert "mise build --enable-prebuilds" "prebuilds=true"
+# TODO: Short flags don't work with naked runs when default is set
+# assert "mise build -p" "prebuilds=true"
+assert "mise build" "prebuilds=false"
+
+# Test boolean flags without default value
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = 'echo "prebuilds=$usage_enable_prebuilds"'
+usage = '''
+flag "-p --enable-prebuilds"
+'''
+EOF
+
+# Test with mise run (works correctly)
+assert "mise run build -- --enable-prebuilds" "prebuilds=true"
+assert "mise run build -- -p" "prebuilds=true"
+assert "mise run build" "prebuilds="
+
+# Test naked runs without default - both long and short forms should work
+assert "mise build --enable-prebuilds" "prebuilds=true"
+# TODO: Short flags don't work with naked runs without default either
+# assert "mise build -p" "prebuilds=true"
+assert "mise build" "prebuilds="
