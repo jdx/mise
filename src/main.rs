@@ -105,20 +105,15 @@ fn main() -> eyre::Result<()> {
 
         // Re-execute mise through termux-chroot with exec (replaces current process)
         // termux-chroot expects: termux-chroot <command> <args...>
+        // Also set SSL_CERT_FILE for the new process to use Termux's certificate path
         let err = std::process::Command::new("termux-chroot")
+            .env("SSL_CERT_FILE", platform::get_termux_cert_path())
             .arg("mise") // First arg to termux-chroot is the command to run
             .args(&args[1..]) // Pass remaining args (skip argv[0] which is the mise path)
             .exec(); // Replace current process
 
         // If exec fails (it shouldn't return on success), return the error
         return Err(eyre::eyre!("Failed to exec termux-chroot: {}", err));
-    }
-
-    // Configure SSL_CERT_FILE for Termux to use the correct certificate path
-    // This is necessary because Termux uses a non-standard location for SSL certificates
-    #[cfg(target_os = "linux")]
-    if platform::is_termux() {
-        std::env::set_var("SSL_CERT_FILE", platform::get_termux_cert_path());
     }
 
     let nprocs = std::thread::available_parallelism()
