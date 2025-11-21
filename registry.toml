@@ -4064,6 +4064,15 @@ description = "Free database schema discovery and comprehension tool"
 backends = ["github:pantsbuild/scie-pants", "asdf:robzr/asdf-scie-pants"]
 description = "Protects your Pants from the elements"
 
+[tools.scooter]
+backends = [
+  "aqua:thomasschafer/scooter",
+  "ubi:thomasschafer/scooter",
+  "cargo:scooter",
+]
+description = "Interactive find-and-replace in the terminal"
+test = ["scooter --version", "scooter {{version}}"]
+
 [tools.scorecard]
 backends = ["aqua:ossf/scorecard"]
 description = "OpenSSF Scorecard - Security health metrics for Open Source"
