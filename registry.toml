@@ -4888,6 +4888,11 @@ backends = ["aqua:hashicorp/vault", "asdf:mise-plugins/mise-hashicorp"]
 description = "A tool for secrets management, encryption as a service, and privileged access management"
 test = ["vault version", "Vault v{{version}}"]
 
+[tools.vespa-cli]
+backends = ["ubi:vespa-engine/vespa"]
+description = "The command-line tool for Vespa.ai."
+test = ["vespa version", "Vespa CLI version {{version}}"]
+
 [tools.vcluster]
 backends = [
   "aqua:loft-sh/vcluster",
