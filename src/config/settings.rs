@@ -541,15 +541,13 @@ where
     T: FromStr + Eq + Ord,
     C: FromIterator<T>,
 {
-    // Handle empty input - return empty collection
-    if input.trim().is_empty() {
-        return Ok(BTreeSet::new().into_iter().collect());
-    }
-
     input
         .split(',')
-        .filter(|s| !s.trim().is_empty()) // Filter out empty strings
-        .map(|s| T::from_str(s.trim()))
+        // Filter out empty strings
+        .filter_map(|s| {
+            let trimmed = s.trim();
+            if !trimmed.is_empty() { Some(T::from_str(trimmed)) } else { None }
+        })
         // collect into BTreeSet to remove duplicates
         .collect::<Result<BTreeSet<_>, _>>()
         .map(|set| set.into_iter().collect())
