@@ -546,7 +546,11 @@ where
         // Filter out empty strings
         .filter_map(|s| {
             let trimmed = s.trim();
-            if !trimmed.is_empty() { Some(T::from_str(trimmed)) } else { None }
+            if !trimmed.is_empty() {
+                Some(T::from_str(trimmed))
+            } else {
+                None
+            }
         })
         // collect into BTreeSet to remove duplicates
         .collect::<Result<BTreeSet<_>, _>>()
