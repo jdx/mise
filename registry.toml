@@ -4055,7 +4055,11 @@ backends = ["github:pantsbuild/scie-pants", "asdf:robzr/asdf-scie-pants"]
 description = "Protects your Pants from the elements"
 
 [tools.scooter]
-backends = ["aqua:thomasschafer/scooter", "ubi:thomasschafer/scooter", "cargo:scooter"]
+backends = [
+  "aqua:thomasschafer/scooter",
+  "ubi:thomasschafer/scooter",
+  "cargo:scooter",
+]
 description = "Interactive find-and-replace in the terminal"
 test = ["scooter --version", "scooter {{version}}"]
 
