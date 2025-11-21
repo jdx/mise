@@ -611,9 +611,8 @@ mod tests {
     fn test_set_by_comma_trailing_comma() {
         let result: Result<BTreeSet<String>, _> = set_by_comma("foo,bar,");
         assert!(result.is_ok());
-        let expected: BTreeSet<String> = ["foo".to_string(), "bar".to_string()]
-            .into_iter()
-            .collect();
+        let expected: BTreeSet<String> =
+            ["foo".to_string(), "bar".to_string()].into_iter().collect();
         assert_eq!(result.unwrap(), expected);
     }
 
@@ -621,9 +620,8 @@ mod tests {
     fn test_set_by_comma_duplicate_values() {
         let result: Result<BTreeSet<String>, _> = set_by_comma("foo,bar,foo");
         assert!(result.is_ok());
-        let expected: BTreeSet<String> = ["foo".to_string(), "bar".to_string()]
-            .into_iter()
-            .collect();
+        let expected: BTreeSet<String> =
+            ["foo".to_string(), "bar".to_string()].into_iter().collect();
         assert_eq!(result.unwrap(), expected);
     }
 
@@ -631,9 +629,8 @@ mod tests {
     fn test_set_by_comma_empty_elements() {
         let result: Result<BTreeSet<String>, _> = set_by_comma("foo,,bar");
         assert!(result.is_ok());
-        let expected: BTreeSet<String> = ["foo".to_string(), "bar".to_string()]
-            .into_iter()
-            .collect();
+        let expected: BTreeSet<String> =
+            ["foo".to_string(), "bar".to_string()].into_iter().collect();
         assert_eq!(result.unwrap(), expected);
     }
 }
