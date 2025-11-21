@@ -541,10 +541,16 @@ where
     T: FromStr + Eq + Ord,
     C: FromIterator<T>,
 {
+    // Handle empty input - return empty collection
+    if input.trim().is_empty() {
+        return Ok(BTreeSet::new().into_iter().collect());
+    }
+
     input
         .split(',')
-        .map(T::from_str)
-        // collect into HashSet to remove duplicates
+        .filter(|s| !s.trim().is_empty()) // Filter out empty strings
+        .map(|s| T::from_str(s.trim()))
+        // collect into BTreeSet to remove duplicates
         .collect::<Result<BTreeSet<_>, _>>()
         .map(|set| set.into_iter().collect())
 }
@@ -553,4 +559,81 @@ where
 /// Expected format: {"source_domain": "replacement_domain", ...}
 pub fn parse_url_replacements(input: &str) -> Result<IndexMap<String, String>, serde_json::Error> {
     serde_json::from_str(input)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set_by_comma_empty_string() {
+        let result: Result<BTreeSet<String>, _> = set_by_comma("");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), BTreeSet::new());
+    }
+
+    #[test]
+    fn test_set_by_comma_whitespace_only() {
+        let result: Result<BTreeSet<String>, _> = set_by_comma("  ");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), BTreeSet::new());
+    }
+
+    #[test]
+    fn test_set_by_comma_single_value() {
+        let result: Result<BTreeSet<String>, _> = set_by_comma("foo");
+        assert!(result.is_ok());
+        let expected: BTreeSet<String> = ["foo".to_string()].into_iter().collect();
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_set_by_comma_multiple_values() {
+        let result: Result<BTreeSet<String>, _> = set_by_comma("foo,bar,baz");
+        assert!(result.is_ok());
+        let expected: BTreeSet<String> = ["foo".to_string(), "bar".to_string(), "baz".to_string()]
+            .into_iter()
+            .collect();
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_set_by_comma_with_whitespace() {
+        let result: Result<BTreeSet<String>, _> = set_by_comma("foo, bar, baz");
+        assert!(result.is_ok());
+        let expected: BTreeSet<String> = ["foo".to_string(), "bar".to_string(), "baz".to_string()]
+            .into_iter()
+            .collect();
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_set_by_comma_trailing_comma() {
+        let result: Result<BTreeSet<String>, _> = set_by_comma("foo,bar,");
+        assert!(result.is_ok());
+        let expected: BTreeSet<String> = ["foo".to_string(), "bar".to_string()]
+            .into_iter()
+            .collect();
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_set_by_comma_duplicate_values() {
+        let result: Result<BTreeSet<String>, _> = set_by_comma("foo,bar,foo");
+        assert!(result.is_ok());
+        let expected: BTreeSet<String> = ["foo".to_string(), "bar".to_string()]
+            .into_iter()
+            .collect();
+        assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_set_by_comma_empty_elements() {
+        let result: Result<BTreeSet<String>, _> = set_by_comma("foo,,bar");
+        assert!(result.is_ok());
+        let expected: BTreeSet<String> = ["foo".to_string(), "bar".to_string()]
+            .into_iter()
+            .collect();
+        assert_eq!(result.unwrap(), expected);
+    }
 }

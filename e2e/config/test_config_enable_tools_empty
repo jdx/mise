@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# Test that empty MISE_ENABLE_TOOLS doesn't crash mise
+export MISE_ENABLE_TOOLS=""
+mise ls
+
+# Test with whitespace-only
+export MISE_ENABLE_TOOLS="  "
+mise ls
+
+# Test that it behaves as if enable_tools is not set (all tools enabled except disabled ones)
+cat <<EOF >mise.toml
+[tools]
+tiny = 'latest'
+EOF
+
+# With empty enable_tools, tools should still be available
+export MISE_ENABLE_TOOLS=""
+assert_contains "mise ls" "tiny"
+
+# Test with trailing comma
+export MISE_ENABLE_TOOLS="tiny,"
+assert_contains "mise ls" "tiny"
+
+# Test with comma-separated list with spaces
+export MISE_ENABLE_TOOLS="tiny, dummy"
+assert_contains "mise ls" "tiny"
+
+# Clean up
+rm mise.toml
