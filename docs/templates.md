@@ -138,7 +138,7 @@ In **task run scripts**, mise also exposes a `usage` map when the task has a usa
 specification (see [Task Arguments](/tasks/task-arguments#usage-field)):
 
 - `usage: HashMap<String, Value>` – Parsed task arguments and flags, keyed by their
-  names. Values are unescaped and may be:
+  names. Values are **not shell-escaped or quoted** and may be:
   - booleans (for flags and boolean args)
   - strings
   - arrays of booleans/strings for variadic args/flags
