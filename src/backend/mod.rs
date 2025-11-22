@@ -1023,8 +1023,16 @@ pub fn unalias_backend(backend: &str) -> &str {
     match backend {
         "nodejs" => "node",
         "golang" => "go",
-        _ => backend,
+        _ => backend.trim_start_matches("core:"),
     }
+}
+
+#[test]
+fn test_unalias_backend() {
+    assert_eq!(unalias_backend("node"), "node");
+    assert_eq!(unalias_backend("nodejs"), "node");
+    assert_eq!(unalias_backend("core:node"), "node");
+    assert_eq!(unalias_backend("golang"), "go");
 }
 
 impl Display for dyn Backend {
