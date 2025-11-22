@@ -1165,6 +1165,8 @@ mod tests {
         });
         cmd.flags.push(usage::SpecFlag {
             name: "bar".to_string(),
+            // Ensure the flag is recognized as `--bar` by the usage parser
+            long: vec!["bar".to_string()],
             ..Default::default()
         });
         let spec = usage::Spec {
