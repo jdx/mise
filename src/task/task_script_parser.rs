@@ -657,6 +657,7 @@ impl TaskScriptParser {
         args: &[String],
         spec: &usage::Spec,
     ) -> Result<Vec<String>> {
+        let disable_spec_from_run_scripts = Settings::get().task.disable_spec_from_run_scripts;
         let args = vec!["".to_string()]
             .into_iter()
             .chain(args.iter().cloned())
@@ -742,7 +743,9 @@ impl TaskScriptParser {
             tera.register_function("flag", flag_func(false.to_string()));
             let mut tera_ctx = task.tera_ctx(config).await?;
             tera_ctx.insert("env", &env);
-            tera_ctx.insert("usage", &Self::make_usage_ctx(&m));
+            if disable_spec_from_run_scripts {
+                tera_ctx.insert("usage", &Self::make_usage_ctx(&m));
+            }
             out.push(Self::render_script_with_context(
                 &mut tera, script, &tera_ctx,
             )?);
@@ -1145,21 +1148,37 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_usage_hashmap() {
-        let config = Config::get().await.unwrap();
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+
+        // Ensure a clean settings state
+        crate::config::Settings::reset(None);
+
         let task = Task::default();
         let parser = TaskScriptParser::new(None);
 
-        // Create a script that uses both args and flags
-        let scripts = vec!["echo {{ arg(name='foo') }} {{ flag(name='bar') }}".to_string()];
+        // Manually construct a spec with one arg ("foo") and one flag ("bar")
+        // so this test does not rely on run-script parsing.
+        let mut cmd = usage::SpecCommand::default();
+        cmd.args.push(usage::SpecArg {
+            name: "foo".to_string(),
+            ..Default::default()
+        });
+        cmd.flags.push(usage::SpecFlag {
+            name: "bar".to_string(),
+            ..Default::default()
+        });
+        let spec = usage::Spec {
+            cmd,
+            ..Default::default()
+        };
 
-        // First parse to get the spec
-        let (parsed_scripts, spec) = parser
-            .parse_run_scripts(&config, &task, &scripts, &Default::default())
-            .await
-            .unwrap();
-        assert_eq!(parsed_scripts, vec!["echo  "]);
+        // Enable experimental opt-out so run scripts are not used for spec collection
+        // and usage context is made available to templates.
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.task.disable_spec_from_run_scripts = Some(true);
+        crate::config::Settings::reset(Some(settings));
 
-        dbg!(&spec);
+        let config = Config::get().await.unwrap();
 
         // Now test that the usage hashmap is accessible in templates when values are provided
         let scripts_with_usage = vec!["echo arg:{{ usage.foo }} flag:{{ usage.bar }}".to_string()];
@@ -1240,6 +1259,60 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo flag:false"]);
+    }
+
+    #[tokio::test]
+    async fn test_task_usage_multistring() {
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+
+        // Ensure a clean settings state
+        crate::config::Settings::reset(None);
+
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+
+        // Manually construct a spec with a var=true arg so usage-lib will produce a MultiString value
+        let mut cmd = usage::SpecCommand::default();
+        cmd.args.push(usage::SpecArg {
+            name: "tags".to_string(),
+            var: true,
+            ..Default::default()
+        });
+        let spec = usage::Spec {
+            cmd,
+            ..Default::default()
+        };
+
+        // Enable experimental opt-out so run scripts are not used for spec collection
+        // and usage context is made available to templates.
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.task.disable_spec_from_run_scripts = Some(true);
+        crate::config::Settings::reset(Some(settings));
+
+        let config = Config::get().await.unwrap();
+
+        // The script only uses the usage map, it does not rely on run-script parsing to build the spec
+        let scripts_with_usage = vec![
+            "echo count={{ usage.tags | length }} first={{ usage.tags[0] }} second={{ usage.tags[1] }}"
+                .to_string(),
+        ];
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts_with_usage,
+                &Default::default(),
+                &["one".to_string(), "two".to_string()],
+                &spec,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            parsed_scripts,
+            vec!["echo count=2 first=one second=two"],
+            "expected MultiString arg to be exposed as an array in the usage map"
+        );
     }
 
     #[tokio::test]
