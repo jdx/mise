@@ -657,7 +657,6 @@ impl TaskScriptParser {
         args: &[String],
         spec: &usage::Spec,
     ) -> Result<Vec<String>> {
-        let disable_spec_from_run_scripts = Settings::get().task.disable_spec_from_run_scripts;
         let args = vec!["".to_string()]
             .into_iter()
             .chain(args.iter().cloned())
@@ -743,9 +742,7 @@ impl TaskScriptParser {
             tera.register_function("flag", flag_func(false.to_string()));
             let mut tera_ctx = task.tera_ctx(config).await?;
             tera_ctx.insert("env", &env);
-            if disable_spec_from_run_scripts {
-                tera_ctx.insert("usage", &Self::make_usage_ctx(&m));
-            }
+            tera_ctx.insert("usage", &Self::make_usage_ctx(&m));
             out.push(Self::render_script_with_context(
                 &mut tera, script, &tera_ctx,
             )?);
@@ -756,6 +753,7 @@ impl TaskScriptParser {
     fn make_usage_ctx(usage: &usage::parse::ParseOutput) -> HashMap<String, tera::Value> {
         let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
 
+        // These values are not escaped or shell-quoted.
         let to_tera_value = |val: &usage::parse::ParseValue| -> tera::Value {
             use tera::Value;
             use usage::parse::ParseValue::*;
@@ -769,6 +767,8 @@ impl TaskScriptParser {
             }
         };
 
+        // The names are as-is. Hyphens are not converted to underscores.
+        // Use {{ usage["arg-name"] }} to access such args/flags.
         for (arg, val) in &usage.args {
             let tera_val = to_tera_value(val);
             usage_ctx.insert(arg.name.clone(), tera_val);
