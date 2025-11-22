@@ -560,31 +560,37 @@ impl TaskScriptParser {
         task: &Task,
         scripts: &[String],
     ) -> Result<usage::Spec> {
+        let disable_spec_from_run_scripts = Settings::get().task.disable_spec_from_run_scripts;
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
         let tera_ctx = task.tera_ctx(config).await?;
         // Don't insert env for spec-only parsing to avoid expensive environment rendering
-        // Render scripts to trigger spec collection via Tera template functions (arg/option/flag), but discard the results
-        for script in scripts {
-            Self::render_script_with_context(&mut tera, script, &tera_ctx)?;
+        // When enabled, render scripts to trigger spec collection via Tera template functions
+        // (arg/option/flag), but discard the results
+        if !disable_spec_from_run_scripts {
+            for script in scripts {
+                Self::render_script_with_context(&mut tera, script, &tera_ctx)?;
+            }
         }
         let mut cmd = usage::SpecCommand::default();
-        // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
-        let arg_order = arg_order.lock().unwrap();
-        cmd.args = input_args
-            .lock()
-            .unwrap()
-            .iter()
-            .cloned()
-            .sorted_by_key(|arg| {
-                arg_order
-                    .get(&arg.name)
-                    .unwrap_or_else(|| panic!("missing arg order for {}", arg.name.as_str()))
-            })
-            .collect();
-        cmd.flags = input_flags.lock().unwrap().clone();
+        if !disable_spec_from_run_scripts {
+            // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
+            let arg_order = arg_order.lock().unwrap();
+            cmd.args = input_args
+                .lock()
+                .unwrap()
+                .iter()
+                .cloned()
+                .sorted_by_key(|arg| {
+                    arg_order
+                        .get(&arg.name)
+                        .unwrap_or_else(|| panic!("missing arg order for {}", arg.name.as_str()))
+                })
+                .collect();
+            cmd.flags = input_flags.lock().unwrap().clone();
 
-        // Check for deprecated Tera template args usage
-        Self::check_tera_args_deprecation(&task.name, &cmd.args, &cmd.flags);
+            // Check for deprecated Tera template args usage
+            Self::check_tera_args_deprecation(&task.name, &cmd.args, &cmd.flags);
+        }
 
         let mut spec = usage::Spec {
             cmd,
@@ -603,6 +609,7 @@ impl TaskScriptParser {
         scripts: &[String],
         env: &EnvMap,
     ) -> Result<(Vec<String>, usage::Spec)> {
+        let disable_spec_from_run_scripts = Settings::get().task.disable_spec_from_run_scripts;
         let (mut tera, arg_order, input_args, input_flags) = self.setup_tera_for_spec_parsing(task);
         let mut tera_ctx = task.tera_ctx(config).await?;
         tera_ctx.insert("env", &env);
@@ -611,23 +618,25 @@ impl TaskScriptParser {
             .map(|s| Self::render_script_with_context(&mut tera, s, &tera_ctx))
             .collect::<Result<Vec<String>>>()?;
         let mut cmd = usage::SpecCommand::default();
-        // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
-        let arg_order = arg_order.lock().unwrap();
-        cmd.args = input_args
-            .lock()
-            .unwrap()
-            .iter()
-            .cloned()
-            .sorted_by_key(|arg| {
-                arg_order
-                    .get(&arg.name)
-                    .unwrap_or_else(|| panic!("missing arg order for {}", arg.name.as_str()))
-            })
-            .collect();
-        cmd.flags = input_flags.lock().unwrap().clone();
+        if !disable_spec_from_run_scripts {
+            // TODO: ensure no gaps in args, e.g.: 1,2,3,4,5
+            let arg_order = arg_order.lock().unwrap();
+            cmd.args = input_args
+                .lock()
+                .unwrap()
+                .iter()
+                .cloned()
+                .sorted_by_key(|arg| {
+                    arg_order
+                        .get(&arg.name)
+                        .unwrap_or_else(|| panic!("missing arg order for {}", arg.name.as_str()))
+                })
+                .collect();
+            cmd.flags = input_flags.lock().unwrap().clone();
 
-        // Check for deprecated Tera template args usage
-        Self::check_tera_args_deprecation(&task.name, &cmd.args, &cmd.flags);
+            // Check for deprecated Tera template args usage
+            Self::check_tera_args_deprecation(&task.name, &cmd.args, &cmd.flags);
+        }
 
         let mut spec = usage::Spec {
             cmd,
@@ -733,11 +742,44 @@ impl TaskScriptParser {
             tera.register_function("flag", flag_func(false.to_string()));
             let mut tera_ctx = task.tera_ctx(config).await?;
             tera_ctx.insert("env", &env);
+            tera_ctx.insert("usage", &Self::make_usage_ctx(&m));
             out.push(Self::render_script_with_context(
                 &mut tera, script, &tera_ctx,
             )?);
         }
         Ok(out)
+    }
+
+    fn make_usage_ctx(usage: &usage::parse::ParseOutput) -> HashMap<String, tera::Value> {
+        let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
+
+        for (arg, val) in &usage.args {
+            let tera_val = match val {
+                usage::parse::ParseValue::MultiBool(v) => {
+                    tera::Value::Array(v.iter().map(|b| tera::Value::Bool(*b)).collect())
+                }
+                usage::parse::ParseValue::MultiString(v) => {
+                    tera::Value::Array(v.iter().map(|s| tera::Value::String(s.clone())).collect())
+                }
+                usage::parse::ParseValue::Bool(v) => tera::Value::Bool(*v),
+                usage::parse::ParseValue::String(v) => tera::Value::String(v.clone()),
+            };
+            usage_ctx.insert(arg.name.clone(), tera_val);
+        }
+        for (flag, val) in &usage.flags {
+            let tera_val = match val {
+                usage::parse::ParseValue::MultiBool(v) => {
+                    tera::Value::Array(v.iter().map(|b| tera::Value::Bool(*b)).collect())
+                }
+                usage::parse::ParseValue::MultiString(v) => {
+                    tera::Value::Array(v.iter().map(|s| tera::Value::String(s.clone())).collect())
+                }
+                usage::parse::ParseValue::Bool(v) => tera::Value::Bool(*v),
+                usage::parse::ParseValue::String(v) => tera::Value::String(v.clone()),
+            };
+            usage_ctx.insert(flag.name.clone(), tera_val);
+        }
+        usage_ctx
     }
 }
 
@@ -758,7 +800,12 @@ fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use confique::Partial;
     use pretty_assertions::assert_eq;
+    use std::sync::Mutex as StdMutex;
+
+    // Ensure tests that modify global settings do not race
+    static TEST_SETTINGS_LOCK: StdMutex<()> = StdMutex::new(());
 
     #[tokio::test]
     async fn test_task_parse_arg() {
@@ -1094,5 +1141,153 @@ mod tests {
 
             assert_eq!(parsed, vec![expected]);
         }
+    }
+
+    #[tokio::test]
+    async fn test_task_usage_hashmap() {
+        let config = Config::get().await.unwrap();
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+
+        // Create a script that uses both args and flags
+        let scripts = vec!["echo {{ arg(name='foo') }} {{ flag(name='bar') }}".to_string()];
+
+        // First parse to get the spec
+        let (parsed_scripts, spec) = parser
+            .parse_run_scripts(&config, &task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo  "]);
+
+        dbg!(&spec);
+
+        // Now test that the usage hashmap is accessible in templates when values are provided
+        let scripts_with_usage =
+            vec!["echo arg:{{ usage.foo }} flag:{{ usage.bar }}".to_string()];
+
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts_with_usage,
+                &Default::default(),
+                &["test_value".to_string(), "--bar".to_string()],
+                &spec,
+            )
+            .await
+            .unwrap();
+
+        // The usage hashmap should contain the parsed values
+        // For a string arg, it should be "test_value"
+        // For a bool flag, it should be "true"
+        assert_eq!(parsed_scripts, vec!["echo arg:test_value flag:true"]);
+
+        // Test without the flag – usage.foo should still be available, but usage.bar
+        // should be undefined (accessing it in the template would error), so we only
+        // reference usage.foo here.
+        let scripts_with_usage_arg_only = vec!["echo arg:{{ usage.foo }}".to_string()];
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts_with_usage_arg_only,
+                &Default::default(),
+                &["test_value2".to_string()],
+                &spec,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(parsed_scripts, vec!["echo arg:test_value2"]);
+
+        // Negative case: referencing an undefined usage flag should cause rendering to fail
+        let scripts_with_missing_flag =
+            vec!["echo flag:{{ usage.bar }}".to_string()];
+        let result = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts_with_missing_flag,
+                &Default::default(),
+                &["only_arg_value".to_string()], // no --bar flag provided
+                &spec,
+            )
+            .await;
+        assert!(
+            result.is_err(),
+            "expected parsing to fail when template references usage.bar but flag was not provided"
+        );
+        // Need to explicitly set default value for flags to avoid errors when accessing undefined usage flags
+        // If a default value is set in the usage spec, referencing the flag in the script should not error,
+        // and the value should be the default when the flag is not provided.
+        let mut spec_with_default_flag = spec.clone();
+        if let Some(bar_flag) = spec_with_default_flag
+            .cmd
+            .flags
+            .iter_mut()
+            .find(|f| f.name == "bar")
+        {
+            bar_flag.default = Some("false".to_string());
+        }
+        // Now referencing usage.bar should render successfully, resolving to the default
+        let parsed_scripts = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts_with_missing_flag,
+                &Default::default(),
+                &["only_arg_value".to_string()],
+                &spec_with_default_flag,
+            )
+            .await
+            .unwrap();
+        assert_eq!(parsed_scripts, vec!["echo flag:false"]);
+    }
+
+    #[tokio::test]
+    async fn test_disable_spec_from_run_scripts_for_display() {
+        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+
+        // Ensure a clean settings state
+        crate::config::Settings::reset(None);
+
+        let config = Config::get().await.unwrap();
+        let task = Task::default();
+        let scripts = vec![
+            "echo {{ arg(name='from_script') }} {{ flag(name='flag_from_script') }}".to_string(),
+        ];
+        let parser = TaskScriptParser::new(None);
+
+        // By default, spec should be collected from run scripts
+        let spec_with_scripts = parser
+            .parse_run_scripts_for_spec_only(&config, &task, &scripts)
+            .await
+            .unwrap();
+        assert!(
+            !spec_with_scripts.cmd.args.is_empty() || !spec_with_scripts.cmd.flags.is_empty(),
+            "expected spec to be populated from run scripts when opt-out is disabled"
+        );
+
+        // Now enable the experimental opt-out so run scripts are not used for spec collection
+        let mut settings = crate::config::settings::SettingsPartial::empty();
+        settings.task.disable_spec_from_run_scripts = Some(true);
+        crate::config::Settings::reset(Some(settings));
+
+        let config = Config::get().await.unwrap();
+        let task = Task::default();
+
+        let spec_without_scripts = parser
+            .parse_run_scripts_for_spec_only(&config, &task, &scripts)
+            .await
+            .unwrap();
+
+        // Spec should now ignore arg()/flag() from run scripts
+        assert!(
+            spec_without_scripts.cmd.args.is_empty() && spec_without_scripts.cmd.flags.is_empty(),
+            "expected spec to be empty when run-script spec collection is disabled"
+        );
+
+        crate::config::Settings::reset(None);
+        
     }
 }
