@@ -798,10 +798,11 @@ mod tests {
     use super::*;
     use confique::Partial;
     use pretty_assertions::assert_eq;
-    use std::sync::Mutex as StdMutex;
+    use once_cell::sync::Lazy;
+    use tokio::sync::Mutex as AsyncMutex;
 
     // Ensure tests that modify global settings do not race
-    static TEST_SETTINGS_LOCK: StdMutex<()> = StdMutex::new(());
+    static TEST_SETTINGS_LOCK: Lazy<AsyncMutex<()>> = Lazy::new(|| AsyncMutex::new(()));
 
     #[tokio::test]
     async fn test_task_parse_arg() {
@@ -1141,7 +1142,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_usage_hashmap() {
-        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _guard = TEST_SETTINGS_LOCK.lock().await;
 
         // Ensure a clean settings state
         crate::config::Settings::reset(None);
@@ -1258,7 +1259,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_usage_multistring() {
-        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _guard = TEST_SETTINGS_LOCK.lock().await;
 
         // Ensure a clean settings state
         crate::config::Settings::reset(None);
@@ -1312,7 +1313,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_disable_spec_from_run_scripts_for_display() {
-        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _guard = TEST_SETTINGS_LOCK.lock().await;
 
         // Ensure a clean settings state
         crate::config::Settings::reset(None);
