@@ -68,7 +68,7 @@ page—you should not mix the two approaches in the same task.
 
 When `task.disable_spec_from_run_scripts` is `false` (the default), mise does
 an early Tera pass over run scripts to collect deprecated args; that pass does
-*not* see the `usage` map and will error if templates reference it. To avoid
+_not_ see the `usage` map and will error if templates reference it. To avoid
 this and only use the `usage` field for specs, set
 `task.disable_spec_from_run_scripts = true` (or
 `MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS=1`).
