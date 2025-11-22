@@ -77,6 +77,15 @@ mise install my-plugin:some-tool@1.0.0
 mise use my-plugin:some-tool@latest
 ```
 
+### Install from Zip File
+
+```bash
+# Install a plugin from a zip file over HTTPS
+mise plugin install <plugin-name> <zip-url>
+# Example: Installing a plugin from a zip file
+mise plugin install vfox-cmake https://github.com/mise-plugins/vfox-cmake/archive/refs/heads/main.zip
+```
+
 For more information, see:
 
 - [Using Plugins](../../plugin-usage.md) - End-user guide

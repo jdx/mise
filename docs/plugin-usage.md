@@ -45,6 +45,16 @@ mise plugin install <plugin-name> <repository-url>
 mise plugin install vfox-npm https://github.com/jdx/vfox-npm
 ```
 
+### From Zip File
+
+```bash
+# Install a plugin from a zip file over HTTPS
+mise plugin install <plugin-name> <zip-url>
+
+# Example: Installing a plugin from a zip file
+mise plugin install tiny https://github.com/mise-plugins/mise-tiny.git
+```
+
 ### From Local Directory
 
 ```bash

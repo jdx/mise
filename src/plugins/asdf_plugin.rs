@@ -2,13 +2,13 @@ use crate::config::{Config, Settings};
 use crate::errors::Error::PluginNotInstalled;
 use crate::file::{display_path, remove_all};
 use crate::git::{CloneOptions, Git};
-use crate::plugins::{Plugin, Script, ScriptManager};
+use crate::plugins::{Plugin, PluginSource, Script, ScriptManager};
 use crate::result::Result;
 use crate::timeout::run_with_timeout;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
-use crate::{dirs, env, exit, lock_file, registry};
+use crate::{dirs, env, exit, file, lock_file, registry};
 use async_trait::async_trait;
 use clap::Command;
 use console::style;
@@ -180,6 +180,48 @@ impl AsdfPlugin {
             })
             .collect()
     }
+    async fn install_from_zip(&self, url: &str, pr: &dyn SingleReport) -> eyre::Result<()> {
+        let bytes = self.download_zip(url, pr).await?;
+        self.extract_zip(bytes, pr)?;
+        Ok(())
+    }
+
+    async fn download_zip(&self, url: &str, pr: &dyn SingleReport) -> eyre::Result<Vec<u8>> {
+        pr.set_message(format!("downloading {url}"));
+
+        let client = reqwest::Client::builder().user_agent("mise").build()?;
+
+        let resp = client
+            .get(url)
+            .send()
+            .await
+            .wrap_err_with(|| format!("failed to send request to {url}"))?;
+
+        if !resp.status().is_success() {
+            bail!("Failed to download zip file: HTTP {}", resp.status());
+        }
+
+        Ok(resp.bytes().await?.to_vec())
+    }
+
+    fn extract_zip(&self, bytes: Vec<u8>, pr: &dyn SingleReport) -> eyre::Result<()> {
+        pr.set_message("extracting zip file".to_string());
+
+        let temp_dir = tempfile::TempDir::new()?;
+        let temp_archive = temp_dir.path().join("archive.zip");
+        file::write(&temp_archive, &bytes)?;
+
+        let strip_components = file::should_strip_components(&temp_archive, file::TarFormat::Zip)?;
+
+        file::unzip(
+            &temp_archive,
+            &self.plugin_path,
+            &file::ZipOptions {
+                strip_components: if strip_components { 1 } else { 0 },
+            },
+        )?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -327,35 +369,48 @@ impl Plugin for AsdfPlugin {
 
     async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
         let repository = self.get_repo_url(config)?;
-        let (repo_url, repo_ref) = Git::split_url_and_ref(&repository);
+        let source = PluginSource::parse(&repository);
         debug!("asdf_plugin[{}]:install {:?}", self.name, repository);
 
         if self.is_installed() {
             self.uninstall(pr).await?;
         }
 
-        if regex!(r"^[/~]").is_match(&repo_url) {
-            Err(eyre!(
-                r#"Invalid repository URL: {repo_url}
+        match source {
+            PluginSource::Zip { url } => {
+                self.install_from_zip(&url, pr).await?;
+                self.exec_hook(pr, "post-plugin-add")?;
+                pr.finish_with_message(url.to_string());
+                Ok(())
+            }
+            PluginSource::Git {
+                url: repo_url,
+                git_ref,
+            } => {
+                if regex!(r"^[/~]").is_match(&repo_url) {
+                    Err(eyre!(
+                        r#"Invalid repository URL: {repo_url}
 If you are trying to link to a local directory, use `mise plugins link` instead.
 Plugins could support local directories in the future but for now a symlink is required which `mise plugins link` will create for you."#
-            ))?;
-        }
-        let git = Git::new(&self.plugin_path);
-        pr.set_message(format!("clone {repo_url}"));
-        git.clone(&repo_url, CloneOptions::default().pr(pr))?;
-        if let Some(ref_) = &repo_ref {
-            pr.set_message(format!("check out {ref_}"));
-            git.update(Some(ref_.to_string()))?;
-        }
-        self.exec_hook(pr, "post-plugin-add")?;
+                    ))?;
+                }
+                let git = Git::new(&self.plugin_path);
+                pr.set_message(format!("clone {repo_url}"));
+                git.clone(&repo_url, CloneOptions::default().pr(pr))?;
+                if let Some(ref_) = &git_ref {
+                    pr.set_message(format!("check out {ref_}"));
+                    git.update(Some(ref_.to_string()))?;
+                }
+                self.exec_hook(pr, "post-plugin-add")?;
 
-        let sha = git.current_sha_short()?;
-        pr.finish_with_message(format!(
-            "{repo_url}#{}",
-            style(&sha).bright().yellow().for_stderr(),
-        ));
-        Ok(())
+                let sha = git.current_sha_short()?;
+                pr.finish_with_message(format!(
+                    "{repo_url}#{}",
+                    style(&sha).bright().yellow().for_stderr(),
+                ));
+                Ok(())
+            }
+        }
     }
 
     fn external_commands(&self) -> eyre::Result<Vec<Command>> {
