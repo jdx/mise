@@ -3560,7 +3560,7 @@ const completionSpec: Fig.Spec = {
         {
           name: "task",
           description:
-            "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`",
+            "Tasks to run\nCan specify multiple tasks by separating with `:::`\ne.g.: `mise watch task1 arg1 arg2 ::: task2 arg1 arg2`",
           isOptional: true,
           generators: simpleTaskGenerator,
           debounce: true,
