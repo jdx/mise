@@ -756,30 +756,23 @@ impl TaskScriptParser {
     fn make_usage_ctx(usage: &usage::parse::ParseOutput) -> HashMap<String, tera::Value> {
         let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
 
+        let to_tera_value = |val: &usage::parse::ParseValue| -> tera::Value {
+            use usage::parse::ParseValue::*;
+            use tera::Value;
+            match val {
+                MultiBool(v) => Value::Array(v.iter().map(|b| Value::Bool(*b)).collect()),
+                MultiString(v) => Value::Array(v.iter().map(|s| Value::String(s.clone())).collect()),
+                Bool(v) => Value::Bool(*v),
+                String(v) => Value::String(v.clone()),
+            }
+        };
+
         for (arg, val) in &usage.args {
-            let tera_val = match val {
-                usage::parse::ParseValue::MultiBool(v) => {
-                    tera::Value::Array(v.iter().map(|b| tera::Value::Bool(*b)).collect())
-                }
-                usage::parse::ParseValue::MultiString(v) => {
-                    tera::Value::Array(v.iter().map(|s| tera::Value::String(s.clone())).collect())
-                }
-                usage::parse::ParseValue::Bool(v) => tera::Value::Bool(*v),
-                usage::parse::ParseValue::String(v) => tera::Value::String(v.clone()),
-            };
+            let tera_val = to_tera_value(val);
             usage_ctx.insert(arg.name.clone(), tera_val);
         }
         for (flag, val) in &usage.flags {
-            let tera_val = match val {
-                usage::parse::ParseValue::MultiBool(v) => {
-                    tera::Value::Array(v.iter().map(|b| tera::Value::Bool(*b)).collect())
-                }
-                usage::parse::ParseValue::MultiString(v) => {
-                    tera::Value::Array(v.iter().map(|s| tera::Value::String(s.clone())).collect())
-                }
-                usage::parse::ParseValue::Bool(v) => tera::Value::Bool(*v),
-                usage::parse::ParseValue::String(v) => tera::Value::String(v.clone()),
-            };
+            let tera_val = to_tera_value(val);
             usage_ctx.insert(flag.name.clone(), tera_val);
         }
         usage_ctx
