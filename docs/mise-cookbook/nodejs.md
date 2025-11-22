@@ -122,7 +122,7 @@ postinstall = 'npx corepack enable'
 experimental = true
 
 [env]
-_.path = ['./node_modules/.bin']
+_.path = ['{{config_root}}/node_modules/.bin']
 
 [tasks.pnpm-install]
 description = 'Installs dependencies with pnpm'
