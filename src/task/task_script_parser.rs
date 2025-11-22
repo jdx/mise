@@ -757,11 +757,13 @@ impl TaskScriptParser {
         let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
 
         let to_tera_value = |val: &usage::parse::ParseValue| -> tera::Value {
-            use usage::parse::ParseValue::*;
             use tera::Value;
+            use usage::parse::ParseValue::*;
             match val {
                 MultiBool(v) => Value::Array(v.iter().map(|b| Value::Bool(*b)).collect()),
-                MultiString(v) => Value::Array(v.iter().map(|s| Value::String(s.clone())).collect()),
+                MultiString(v) => {
+                    Value::Array(v.iter().map(|s| Value::String(s.clone())).collect())
+                }
                 Bool(v) => Value::Bool(*v),
                 String(v) => Value::String(v.clone()),
             }
@@ -797,8 +799,8 @@ fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
 mod tests {
     use super::*;
     use confique::Partial;
-    use pretty_assertions::assert_eq;
     use once_cell::sync::Lazy;
+    use pretty_assertions::assert_eq;
     use tokio::sync::Mutex as AsyncMutex;
 
     // Ensure tests that modify global settings do not race
