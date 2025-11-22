@@ -658,6 +658,9 @@ impl ConfigFile for MiseToml {
                     if let Some(shell) = &hook.shell {
                         hook.shell = Some(self.parse_template(shell)?);
                     }
+                    if let Some(os) = &hook.os {
+                        hook.os = Some(self.parse_template(os)?);
+                    }
                 }
                 eyre::Ok(hooks)
             })
