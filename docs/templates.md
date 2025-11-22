@@ -134,6 +134,36 @@ These variables offer key information about the current environment:
 - `xdg_data_home: PathBuf` - Points to the directory of XDG data home
 - `xdg_state_home: PathBuf` - Points to the directory of XDG state home
 
+In **task run scripts**, mise also exposes a `usage` map when the task has a usage
+specification (see [Task Arguments](/tasks/task-arguments#usage-field)):
+
+- `usage: HashMap<String, Value>` – Parsed task arguments and flags, keyed by their
+  names. Values are unescaped and may be:
+  - booleans (for flags and boolean args)
+  - strings
+  - arrays of booleans/strings for variadic args/flags
+
+The keys are the argument/flag names as written in the usage spec. If the name
+contains `-`, use bracket access, e.g. <span v-pre>`{{ usage["dry-run"] }}`</span>.
+Examples:
+
+```mise-toml
+[tasks.deploy]
+usage = '''
+arg "<environment>" help="Target environment"
+flag "-v --verbose" help="Enable verbose output"
+arg "[tags]" var=#true
+'''
+run = '''
+echo "env={{ usage.environment }}"
+echo "verbose={{ usage.verbose }}"
+echo "tag count={{ usage.tags | length }}"
+{% for tag in usage.tags %}
+  echo "tag={{ tag }}"
+{% endfor %}
+'''
+```
+
 ### Functions
 
 #### Tera Built-In Functions
