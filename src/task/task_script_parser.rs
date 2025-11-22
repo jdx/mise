@@ -1162,8 +1162,7 @@ mod tests {
         dbg!(&spec);
 
         // Now test that the usage hashmap is accessible in templates when values are provided
-        let scripts_with_usage =
-            vec!["echo arg:{{ usage.foo }} flag:{{ usage.bar }}".to_string()];
+        let scripts_with_usage = vec!["echo arg:{{ usage.foo }} flag:{{ usage.bar }}".to_string()];
 
         let parsed_scripts = parser
             .parse_run_scripts_with_args(
@@ -1201,8 +1200,7 @@ mod tests {
         assert_eq!(parsed_scripts, vec!["echo arg:test_value2"]);
 
         // Negative case: referencing an undefined usage flag should cause rendering to fail
-        let scripts_with_missing_flag =
-            vec!["echo flag:{{ usage.bar }}".to_string()];
+        let scripts_with_missing_flag = vec!["echo flag:{{ usage.bar }}".to_string()];
         let result = parser
             .parse_run_scripts_with_args(
                 &config,
@@ -1288,6 +1286,5 @@ mod tests {
         );
 
         crate::config::Settings::reset(None);
-        
     }
 }

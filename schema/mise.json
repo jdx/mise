@@ -1184,6 +1184,35 @@
           "description": "Show completion message with elapsed time for each task on `mise run`. Default shows when output type is `prefix`.",
           "type": "boolean"
         },
+        "task": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "disable_spec_from_run_scripts": {
+              "default": false,
+              "description": "[experimental] Opt out of parsing task run scripts to infer the usage spec (arguments and flags). When enabled, mise will derive the usage spec only from the `usage` field, ignoring any `arg()`, `option()`, or `flag()` templates used in run scripts. This can restore previous behavior and avoid the extra template pass over run scripts when collecting specs.",
+              "type": "boolean"
+            },
+            "monorepo_depth": {
+              "default": 5,
+              "description": "Maximum depth to search for task files in monorepo subdirectories.",
+              "type": "number"
+            },
+            "monorepo_exclude_dirs": {
+              "default": [],
+              "description": "Directory patterns to exclude when discovering monorepo subdirectories.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "monorepo_respect_gitignore": {
+              "default": true,
+              "description": "Whether to respect .gitignore files when discovering monorepo subdirectories.",
+              "type": "boolean"
+            }
+          }
+        },
         "trace": {
           "description": "Sets log level to trace",
           "type": "boolean"
@@ -1266,30 +1295,6 @@
             "use_community_mirrors": {
               "default": true,
               "description": "Download Zig from community-maintained mirrors",
-              "type": "boolean"
-            }
-          }
-        },
-        "task": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "monorepo_depth": {
-              "default": 5,
-              "description": "Maximum depth to search for task files in monorepo subdirectories.",
-              "type": "number"
-            },
-            "monorepo_exclude_dirs": {
-              "default": [],
-              "description": "Directory patterns to exclude when discovering monorepo subdirectories.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "monorepo_respect_gitignore": {
-              "default": true,
-              "description": "Whether to respect .gitignore files when discovering monorepo subdirectories.",
               "type": "boolean"
             }
           }
