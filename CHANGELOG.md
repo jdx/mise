@@ -1,5 +1,43 @@
 # Changelog
 
+## [2025.11.8](https://github.com/jdx/mise/compare/v2025.11.7..v2025.11.8) - 2025-11-23
+
+### 📦 Registry
+
+- add blender by @lucasew in [#7014](https://github.com/jdx/mise/pull/7014)
+- add vespa-cli by @buinauskas in [#7037](https://github.com/jdx/mise/pull/7037)
+- fix vespa-cli order by @buinauskas in [#7038](https://github.com/jdx/mise/pull/7038)
+- add scooter by @TyceHerrman in [#7039](https://github.com/jdx/mise/pull/7039)
+
+### 🐛 Bug Fixes
+
+- **(core)** trim `core:` prefix in unalias_backend by @kou029w in [#7040](https://github.com/jdx/mise/pull/7040)
+- semver in aqua by @lucasew in [#7018](https://github.com/jdx/mise/pull/7018)
+- use the musl version if installing in Android (Termux) by @lucasew in [#7027](https://github.com/jdx/mise/pull/7027)
+- empty enable_tools crash by @moshen in [#7035](https://github.com/jdx/mise/pull/7035)
+
+### 📦️ Dependency Updates
+
+- update docker/metadata-action digest to 318604b by @renovate[bot] in [#7033](https://github.com/jdx/mise/pull/7033)
+- update actions/checkout digest to 34e1148 by @renovate[bot] in [#7032](https://github.com/jdx/mise/pull/7032)
+
+### New Contributors
+
+- @kou029w made their first contribution in [#7040](https://github.com/jdx/mise/pull/7040)
+- @moshen made their first contribution in [#7035](https://github.com/jdx/mise/pull/7035)
+- @buinauskas made their first contribution in [#7038](https://github.com/jdx/mise/pull/7038)
+- @lucasew made their first contribution in [#7014](https://github.com/jdx/mise/pull/7014)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (2)
+
+- [`m7medVision/lazycommit`](https://github.com/m7medVision/lazycommit)
+- [`owenlamont/ryl`](https://github.com/owenlamont/ryl)
+
+#### Updated Packages (1)
+
+- [`sst/opencode`](https://github.com/sst/opencode)
 ## [2025.11.7](https://github.com/jdx/mise/compare/v2025.11.6..v2025.11.7) - 2025-11-20
 
 ### 📦 Registry
