@@ -69,6 +69,7 @@ assert_json "mise task ls --json" "$(
    "env": [],
    "dir": null,
    "hide": false,
+   "global": false,
    "raw": false,
    "sources": [],
    "outputs": [],
@@ -76,9 +77,12 @@ assert_json "mise task ls --json" "$(
    "quiet": false,
    "silent": false,
    "tools": {},
+   "usage": "",
+   "timeout": null,
    "run": [
      "echo \"confdtask\""
    ],
+   "args": [],
    "file": null
  },
  {
@@ -92,6 +96,7 @@ assert_json "mise task ls --json" "$(
    "env": [],
    "dir": null,
    "hide": false,
+   "global": false,
    "raw": false,
    "sources": [],
    "outputs": [],
@@ -99,7 +104,10 @@ assert_json "mise task ls --json" "$(
    "quiet": false,
    "silent": false,
    "tools": {},
+   "usage": "",
+   "timeout": null,
    "run": [],
+   "args": [],
    "file": "$(pwd)/mytasks/filetask2"
  },
  {
@@ -113,6 +121,7 @@ assert_json "mise task ls --json" "$(
    "env": [],
    "dir": null,
    "hide": false,
+   "global": false,
    "raw": false,
    "sources": [],
    "outputs": [],
@@ -120,7 +129,10 @@ assert_json "mise task ls --json" "$(
    "quiet": false,
    "silent": false,
    "tools": {},
+   "usage": "",
+   "timeout": null,
    "run": [],
+   "args": [],
    "file": "$(pwd)/mytasks/filetask3.sh"
  },
  {
@@ -134,6 +146,7 @@ assert_json "mise task ls --json" "$(
    "env": [],
    "dir": null,
    "hide": false,
+   "global": false,
    "raw": false,
    "sources": [],
    "outputs": [],
@@ -141,9 +154,12 @@ assert_json "mise task ls --json" "$(
    "quiet": false,
    "silent": false,
    "tools": {},
+   "usage": "",
+   "timeout": null,
    "run": [
      "echo \"linting!\""
    ],
+   "args": [],
    "file": null
  },
  {
@@ -157,6 +173,7 @@ assert_json "mise task ls --json" "$(
    "env": [],
    "dir": null,
    "hide": false,
+   "global": false,
    "raw": false,
    "sources": [],
    "outputs": [],
@@ -164,9 +181,12 @@ assert_json "mise task ls --json" "$(
    "quiet": false,
    "silent": false,
    "tools": {},
+   "usage": "",
+   "timeout": null,
    "run": [
      "echo \"testing!\""
    ],
+   "args": [],
    "file": null
  },
  {
@@ -183,6 +203,7 @@ assert_json "mise task ls --json" "$(
    "env": [],
    "dir": null,
    "hide": false,
+   "global": false,
    "raw": false,
    "sources": [],
    "outputs": [],
@@ -190,9 +211,12 @@ assert_json "mise task ls --json" "$(
    "quiet": false,
    "silent": false,
    "tools": {},
+   "usage": "",
+   "timeout": null,
    "run": [
      "echo \"{{arg()}} {{flag(name=\"force\")}} {{option(name=\"user\")}}\""
    ],
+   "args": [],
    "file": null
  }
 ]
