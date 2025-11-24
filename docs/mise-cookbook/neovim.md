@@ -13,7 +13,7 @@ See the example here on the left side of the image:
 
 In your neovim config, create a `after/queries/toml/injections.scm` file with these queries:
 
-```scm
+```query
 ; extends
 
 (pair
