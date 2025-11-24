@@ -2,9 +2,12 @@
 
 Here are some tips for an improved mise workflow with [Neovim](https://github.com/neovim/neovim).
 
-## Code highlight for run commands
+## Syntax highlighting
 
-Use [Treesitter](https://github.com/nvim-treesitter/nvim-treesitter) to highlight code in the run commands of your mise files as shown on the left side of the image:
+### Run commands
+
+Use [Treesitter](https://github.com/nvim-treesitter/nvim-treesitter) to enable syntax highlighting for the code in the run commands of your mise files.
+See the example here on the left side of the image:
 
 ![image](https://github.com/user-attachments/assets/2961163b-1e6b-4ff6-b2e6-29eb53afc7e5)
 
@@ -55,7 +58,8 @@ In your neovim config, create a `after/queries/toml/injections.scm` file with th
 )
 ```
 
-To only apply the highlighting on mise files instead of all toml files, the `is-mise?` predicate is used. If you don't care for this distinction, the lines containing `(#is-mise?)` can be removed.
+To only apply the highlighting on mise files instead of all toml files, the `is-mise?` predicate is used.
+If you don't care for this distinction, the lines containing `(#is-mise?)` can be removed.
 Otherwise, make sure to also create the predicate somewhere in your neovim config.
 
 For example, using [`lazy.nvim`](https://github.com/folke/lazy.nvim):
@@ -99,4 +103,4 @@ Again using [`lazy.nvim`](https://github.com/folke/lazy.nvim):
 },
 ```
 
-This will only work if the [TS injection queries](#code-highlight-for-run-commands) are also set up.
+This will only work if the [TS injection queries](#run-commands) are also set up.
