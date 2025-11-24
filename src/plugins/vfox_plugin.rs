@@ -1,5 +1,6 @@
 use crate::file::{display_path, remove_all};
 use crate::git::{CloneOptions, Git};
+use crate::http::HTTP;
 use crate::plugins::{Plugin, PluginSource};
 use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -8,7 +9,7 @@ use crate::{config::Config, dirs, file, registry};
 use async_trait::async_trait;
 use console::style;
 use contracts::requires;
-use eyre::{Context, bail, eyre};
+use eyre::{Context, eyre};
 use indexmap::{IndexMap, indexmap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
@@ -90,35 +91,11 @@ impl VfoxPlugin {
     }
 
     async fn install_from_zip(&self, url: &str, pr: &dyn SingleReport) -> eyre::Result<()> {
-        let bytes = self.download_zip(url, pr).await?;
-        self.extract_zip(bytes, pr)?;
-        Ok(())
-    }
-
-    async fn download_zip(&self, url: &str, pr: &dyn SingleReport) -> eyre::Result<Vec<u8>> {
-        pr.set_message(format!("downloading {url}"));
-
-        let client = reqwest::Client::builder().user_agent("mise").build()?;
-
-        let resp = client
-            .get(url)
-            .send()
-            .await
-            .wrap_err_with(|| format!("failed to send request to {url}"))?;
-
-        if !resp.status().is_success() {
-            bail!("Failed to download zip file: HTTP {}", resp.status());
-        }
-
-        Ok(resp.bytes().await?.to_vec())
-    }
-
-    fn extract_zip(&self, bytes: Vec<u8>, pr: &dyn SingleReport) -> eyre::Result<()> {
-        pr.set_message("extracting zip file".to_string());
-
-        let temp_dir = tempfile::TempDir::new()?;
+        let temp_dir = tempfile::tempdir()?;
         let temp_archive = temp_dir.path().join("archive.zip");
-        file::write(&temp_archive, &bytes)?;
+        HTTP.download_file(url, &temp_archive, Some(pr)).await?;
+
+        pr.set_message("extracting zip file".to_string());
 
         let strip_components = file::should_strip_components(&temp_archive, file::TarFormat::Zip)?;
 
