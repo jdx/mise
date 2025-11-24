@@ -91,7 +91,7 @@ description = "AKS Engine deploys and manages Kubernetes clusters in Azure"
 test = ["aks-engine version", "Version: v{{version}}"]
 
 [tools.allure]
-backends = ["asdf:mise-plugins/mise-allure"]
+backends = ["github:allure-framework/allure2", "asdf:mise-plugins/mise-allure"]
 description = "Allure Report is a popular open source tool for visualizing the results of a test run"
 test = ["allure --version", "{{version}}"]
 
