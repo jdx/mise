@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn test_plugin_source_parse_uppercase_zip_with_query() {
-        // Test parsing zip URL
+        // Test parsing zip URL with query
         let source =
             PluginSource::parse("https://example.com/plugins/my-plugin.ZIP?version=v1.0.0");
         match source {
@@ -394,10 +394,11 @@ mod tests {
 
     #[test]
     fn test_plugin_source_parse_edge_cases() {
+        // Test parsing git url which contains `.zip`
         let source = PluginSource::parse("https://example.com/.zip/plugin");
         match source {
-            PluginSource::Git { .. } => {} // Expected
-            _ => panic!("Expected a Zip source"),
+            PluginSource::Git { .. } => {}
+            _ => panic!("Expected a git plugin"),
         }
     }
 }
