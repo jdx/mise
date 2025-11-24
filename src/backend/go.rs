@@ -118,7 +118,7 @@ impl Backend for GoBackend {
         let opts = self.ba.opts();
 
         let install = async |v| {
-            let mut cmd = CmdLineRunner::new("go").arg("install");
+            let mut cmd = CmdLineRunner::new("go").arg("install").arg("-mod=readonly");
 
             if let Some(tags) = opts.get("tags") {
                 cmd = cmd.arg("-tags").arg(tags);
