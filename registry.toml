@@ -341,7 +341,10 @@ test = ["awsweeper --version", "version: {{version}}"]
 
 [tools.azure]
 aliases = ["azure-cli"]
-backends = ["pipx:azure-cli[uvx_args=--prerelease=allow]", "asdf:mise-plugins/mise-azure-cli"]
+backends = [
+  "pipx:azure-cli[uvx_args=--prerelease=allow]",
+  "asdf:mise-plugins/mise-azure-cli",
+]
 description = "azure-cli (az)"
 test = ["az --version", "azure-cli                         {{version}}"]
 
