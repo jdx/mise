@@ -184,8 +184,7 @@ impl AsdfPlugin {
     async fn install_from_zip(&self, url: &str, pr: &dyn SingleReport) -> eyre::Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let temp_archive = temp_dir.path().join("archive.zip");
-        HTTP.download_file(url, &temp_archive, Some(pr))
-            .await?;
+        HTTP.download_file(url, &temp_archive, Some(pr)).await?;
 
         pr.set_message("extracting zip file".to_string());
 
