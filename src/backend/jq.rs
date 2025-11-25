@@ -122,7 +122,7 @@ fn extract_recursive(json: &serde_json::Value, path: &str, results: &mut Vec<Str
 
     // Handle field access with possible continuation
     // Find where the field name ends (at '.' or '[')
-    let (field, rest) = if let Some(idx) = path.find(|c| c == '.' || c == '[') {
+    let (field, rest) = if let Some(idx) = path.find(['.', '[']) {
         let (f, r) = path.split_at(idx);
         // Strip the leading dot if present, but preserve '[' for array handling
         let rest = if r.starts_with('.') { &r[1..] } else { r };
@@ -131,11 +131,10 @@ fn extract_recursive(json: &serde_json::Value, path: &str, results: &mut Vec<Str
         (path, "")
     };
 
-    if let Some(obj) = json.as_object() {
-        if let Some(val) = obj.get(field) {
+    if let Some(obj) = json.as_object()
+        && let Some(val) = obj.get(field) {
             extract_recursive(val, rest, results);
         }
-    }
 }
 
 fn extract_values(json: &serde_json::Value, results: &mut Vec<String>) {
