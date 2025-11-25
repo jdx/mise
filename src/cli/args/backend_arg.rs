@@ -282,14 +282,16 @@ impl BackendArg {
 
     pub fn opts(&self) -> ToolVersionOptions {
         // Start with registry options as base (if available)
+        // Use backend_options to get options specific to the backend being used
+        let full = self.full();
         let mut opts = REGISTRY
             .get(self.short.as_str())
-            .map(|rt| rt.tool_options())
+            .map(|rt| rt.backend_options(&full))
             .unwrap_or_default();
 
         // Get user-provided options (from self.opts or from full string)
         let user_opts = self.opts.clone().unwrap_or_else(|| {
-            if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&self.full()) {
+            if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
                 parse_tool_options(c.get(2).unwrap().as_str())
             } else {
                 ToolVersionOptions::default()

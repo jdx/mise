@@ -54,6 +54,26 @@
                       "type": "string"
                     },
                     "description": "Specific platforms this backend supports"
+                  },
+                  "options": {
+                    "type": "object",
+                    "description": "Backend-specific options (e.g., version_list_url, bin, platforms)",
+                    "properties": {
+                      "platforms": {
+                        "type": "object",
+                        "description": "Platform-specific options (e.g., macos-arm64, linux-x64)",
+                        "additionalProperties": {
+                          "type": "object",
+                          "description": "Platform-specific configuration",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
                   }
                 },
                 "required": ["full"],
@@ -105,26 +125,6 @@
             "type": "string"
           },
           "description": "Files that indicate this tool should be used in a project"
-        },
-        "options": {
-          "type": "object",
-          "description": "Backend-specific options for the tool (e.g., version_list_url, bin, platforms)",
-          "properties": {
-            "platforms": {
-              "type": "object",
-              "description": "Platform-specific options (e.g., macos-arm64, linux-x64)",
-              "additionalProperties": {
-                "type": "object",
-                "description": "Platform-specific configuration",
-                "additionalProperties": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "additionalProperties": {
-            "type": "string"
-          }
         }
       },
       "required": ["backends"],

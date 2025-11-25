@@ -16,6 +16,31 @@ fn main() {
     codegen_registry();
 }
 
+/// Parse options from a TOML value into a Vec of (key, value) pairs
+fn parse_options(opts: Option<&toml::Value>) -> Vec<(String, String)> {
+    opts.map(|opts| {
+        if let Some(table) = opts.as_table() {
+            table
+                .iter()
+                .map(|(k, v)| {
+                    let value = match v {
+                        toml::Value::String(s) => s.clone(),
+                        toml::Value::Table(t) => {
+                            // Serialize nested tables back to TOML string
+                            toml::to_string(t).unwrap_or_default()
+                        }
+                        _ => v.to_string(),
+                    };
+                    (k.clone(), value)
+                })
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        }
+    })
+    .unwrap_or_default()
+}
+
 fn codegen_registry() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("registry.rs");
@@ -53,6 +78,7 @@ fn codegen_registry() {
                         r##"RegistryBackend{{
                             full: r#"{backend}"#,
                             platforms: &[],
+                            options: &[],
                         }}"##
                     ));
                 }
@@ -68,14 +94,21 @@ fn codegen_registry() {
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default();
+                    let backend_options = parse_options(backend.get("options"));
                     backends.push(format!(
                         r##"RegistryBackend{{
                             full: r#"{full}"#,
                             platforms: &[{platforms}],
+                            options: &[{options}],
                         }}"##,
                         platforms = platforms
                             .into_iter()
                             .map(|p| format!("\"{p}\""))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        options = backend_options
+                            .iter()
+                            .map(|(k, v)| format!("(r###\"{k}\"###, r###\"{v}\"###)"))
                             .collect::<Vec<_>>()
                             .join(", ")
                     ));
@@ -121,32 +154,8 @@ fn codegen_registry() {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        // Parse options - can be a table with key=value pairs
-        let options = info
-            .get("options")
-            .map(|opts| {
-                if let Some(table) = opts.as_table() {
-                    table
-                        .iter()
-                        .map(|(k, v)| {
-                            let value = match v {
-                                toml::Value::String(s) => s.clone(),
-                                toml::Value::Table(t) => {
-                                    // Serialize nested tables back to TOML string
-                                    toml::to_string(t).unwrap_or_default()
-                                }
-                                _ => v.to_string(),
-                            };
-                            (k.clone(), value)
-                        })
-                        .collect::<Vec<_>>()
-                } else {
-                    vec![]
-                }
-            })
-            .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}], options: &[{options}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}]}}"#,
             description = description
                 .map(|d| format!("Some(r###\"{d}\"###)"))
                 .unwrap_or("None".to_string()),
@@ -172,11 +181,6 @@ fn codegen_registry() {
             idiomatic_files = idiomatic_files
                 .iter()
                 .map(|f| format!("\"{f}\""))
-                .collect::<Vec<_>>()
-                .join(", "),
-            options = options
-                .iter()
-                .map(|(k, v)| format!("(r###\"{k}\"###, r###\"{v}\"###)"))
                 .collect::<Vec<_>>()
                 .join(", "),
         );

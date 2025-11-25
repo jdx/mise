@@ -28,13 +28,13 @@ pub struct RegistryTool {
     pub os: &'static [&'static str],
     pub depends: &'static [&'static str],
     pub idiomatic_files: &'static [&'static str],
-    pub options: &'static [(&'static str, &'static str)],
 }
 
 #[derive(Debug, Clone)]
 pub struct RegistryBackend {
     pub full: &'static str,
     pub platforms: &'static [&'static str],
+    pub options: &'static [(&'static str, &'static str)],
 }
 
 // Cache for environment variable overrides
@@ -108,12 +108,21 @@ impl RegistryTool {
             .map(|f| BackendArg::new(self.short.to_string(), Some(f.to_string())))
     }
 
-    /// Convert registry options to ToolVersionOptions
-    pub fn tool_options(&self) -> ToolVersionOptions {
+    /// Get RegistryBackend for a specific full backend string
+    pub fn get_backend(&self, full: &str) -> Option<&RegistryBackend> {
+        self.backends.iter().find(|rb| rb.full == full)
+    }
+
+    /// Get options for a specific backend
+    pub fn backend_options(&self, full: &str) -> ToolVersionOptions {
         let mut opts = IndexMap::new();
-        for (k, v) in self.options {
-            opts.insert(k.to_string(), v.to_string());
+
+        if let Some(backend) = self.get_backend(full) {
+            for (k, v) in backend.options {
+                opts.insert(k.to_string(), v.to_string());
+            }
         }
+
         ToolVersionOptions {
             opts,
             ..Default::default()
