@@ -9,7 +9,7 @@ Here are some tips for an improved mise workflow with [Neovim](https://github.co
 Use [Treesitter](https://github.com/nvim-treesitter/nvim-treesitter) to enable syntax highlighting for the code in the run commands of your mise files.
 See the example here on the left side of the image:
 
-![image](https://github.com/user-attachments/assets/2961163b-1e6b-4ff6-b2e6-29eb53afc7e5)
+![run cmd syntax highlighting demo](./run-cmd-syntax-hl.png)
 
 In your neovim config, create a `after/queries/toml/injections.scm` file with these queries:
 
@@ -84,7 +84,7 @@ This will consider any `toml` file containing `mise` in its name as a mise file.
 You can also use Treesitter to enable syntax highlighting for `"#MISE` and `#USAGE` comments in file based tasks.
 See the example here on the left side of the image:
 
-![image](https://github.com/user-attachments/assets/6dd5e9dd-785c-4717-a48a-c305641f9e08)
+![USAGE spec syntax highlighting demo](./usage-spec-syntax-hl.png)
 
 In your neovim config, create a `after/queries/bash/injections.scm` file with these queries:
 
