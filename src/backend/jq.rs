@@ -125,7 +125,7 @@ fn extract_recursive(json: &serde_json::Value, path: &str, results: &mut Vec<Str
     let (field, rest) = if let Some(idx) = path.find(['.', '[']) {
         let (f, r) = path.split_at(idx);
         // Strip the leading dot if present, but preserve '[' for array handling
-        let rest = if r.starts_with('.') { &r[1..] } else { r };
+        let rest = r.strip_prefix('.').unwrap_or(r);
         (f, rest)
     } else {
         (path, "")
