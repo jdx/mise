@@ -132,9 +132,10 @@ fn extract_recursive(json: &serde_json::Value, path: &str, results: &mut Vec<Str
     };
 
     if let Some(obj) = json.as_object()
-        && let Some(val) = obj.get(field) {
-            extract_recursive(val, rest, results);
-        }
+        && let Some(val) = obj.get(field)
+    {
+        extract_recursive(val, rest, results);
+    }
 }
 
 fn extract_values(json: &serde_json::Value, results: &mut Vec<String>) {

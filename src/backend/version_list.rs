@@ -45,9 +45,10 @@ pub fn parse_version_list(
     // but fall back to text parsing if JSON parsing fails
     if let Some(json_path) = version_json_path {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed)
-            && let Ok(extracted) = jq::extract(&json, json_path) {
-                versions = extracted;
-            }
+            && let Ok(extracted) = jq::extract(&json, json_path)
+        {
+            versions = extracted;
+        }
         // If JSON parsing failed or path extraction failed, fall through to text parsing below
     }
     // If a regex is provided, use it to extract versions
