@@ -34,7 +34,7 @@ closer. asdf is likely fast enough that the difference in overhead between asdf-
 even be enough to notice for you—after all there are plenty of people still using asdf-bash that
 claim they don't even notice how slow it is (don't ask me how):
 
-![GgAQJJmWIAAUlec](https://github.com/user-attachments/assets/05689925-396d-41f3-bcd1-7b3b1bf6c2fa)
+![asdf vs mise exec performance comparison chart](./asdf-mise-exec-perf.jpg)
 
 I don't think performance is a good enough reason to switch though now that asdf-go is a thing. It's
 a reason, but it's a minor one. The improved security in mise, better DX, and lack of reliance on
