@@ -47,12 +47,14 @@ pub mod gem;
 pub mod github;
 pub mod go;
 pub mod http;
+pub mod jq;
 pub mod npm;
 pub mod pipx;
 pub mod platform_target;
 pub mod spm;
 pub mod static_helpers;
 pub mod ubi;
+pub mod version_list;
 pub mod vfox;
 
 pub type ABackend = Arc<dyn Backend>;

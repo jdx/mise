@@ -281,13 +281,35 @@ impl BackendArg {
     }
 
     pub fn opts(&self) -> ToolVersionOptions {
-        self.opts.clone().unwrap_or_else(|| {
-            if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&self.full()) {
+        // Start with registry options as base (if available)
+        // Use backend_options to get options specific to the backend being used
+        let full = self.full();
+        let mut opts = REGISTRY
+            .get(self.short.as_str())
+            .map(|rt| rt.backend_options(&full))
+            .unwrap_or_default();
+
+        // Get user-provided options (from self.opts or from full string)
+        let user_opts = self.opts.clone().unwrap_or_else(|| {
+            if let Some(c) = regex!(r"^(.+)\[(.+)\]$").captures(&full) {
                 parse_tool_options(c.get(2).unwrap().as_str())
             } else {
                 ToolVersionOptions::default()
             }
-        })
+        });
+
+        // Merge user options on top (user options take precedence)
+        for (k, v) in user_opts.opts {
+            opts.opts.insert(k, v);
+        }
+        for (k, v) in user_opts.install_env {
+            opts.install_env.insert(k, v);
+        }
+        if user_opts.os.is_some() {
+            opts.os = user_opts.os;
+        }
+
+        opts
     }
 
     pub fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {
