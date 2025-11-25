@@ -782,12 +782,22 @@ pub trait Backend: Debug + Send + Sync {
 
     fn fuzzy_match_filter(&self, versions: Vec<String>, query: &str) -> Vec<String> {
         let escaped_query = regex::escape(query);
-        let query = if query == "latest" {
+        let query_pattern = if query == "latest" {
             "v?[0-9].*"
         } else {
             &escaped_query
         };
-        let query_regex = Regex::new(&format!("^{query}([-.].+)?$")).unwrap();
+        let query_regex = Regex::new(&format!("^{query_pattern}([-.].+)?$")).unwrap();
+
+        // Also create a regex without the 'v' prefix if query starts with 'v'
+        // This allows "v1.0.0" to match "1.0.0" in registries that don't use v-prefix
+        let query_without_v_regex = if query.starts_with('v') || query.starts_with('V') {
+            let without_v = regex::escape(&query[1..]);
+            Some(Regex::new(&format!("^{without_v}([-.].+)?$")).unwrap())
+        } else {
+            None
+        };
+
         versions
             .into_iter()
             .filter(|v| {
@@ -797,7 +807,16 @@ pub trait Backend: Debug + Send + Sync {
                 if VERSION_REGEX.is_match(v) {
                     return false;
                 }
-                query_regex.is_match(v)
+                if query_regex.is_match(v) {
+                    return true;
+                }
+                // Try matching without the 'v' prefix
+                if let Some(ref re) = query_without_v_regex
+                    && re.is_match(v)
+                {
+                    return true;
+                }
+                false
             })
             .collect()
     }
