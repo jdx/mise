@@ -176,6 +176,76 @@ linux-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-linux-x64", for
 windows-x64 = { url = "https://example.com/releases/my-tool-v1.0.0-windows-x64", format = "zip" }
 ```
 
+### `version_list_url`
+
+Fetch available versions from a remote URL. This enables `mise ls-remote` to list available versions for HTTP-based tools:
+
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+url = "https://example.com/releases/my-tool-v{{version}}.tar.gz"
+version_list_url = "https://example.com/releases/versions.txt"
+```
+
+The version list URL can return data in multiple formats:
+
+- **Plain text**: A single version number (e.g., `2.0.53`)
+- **Line-separated**: One version per line
+- **JSON array of strings**: `["1.0.0", "1.1.0", "2.0.0"]`
+- **JSON array of objects**: `[{"version": "1.0.0"}, {"tag_name": "v2.0.0"}]`
+- **JSON object with versions array**: `{"versions": ["1.0.0", "2.0.0"]}`
+
+Version prefixes like `v` are automatically stripped.
+
+### `version_regex`
+
+Extract versions from the version list URL response using a regular expression:
+
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+url = "https://example.com/releases/my-tool-v{{version}}.tar.gz"
+version_list_url = "https://example.com/releases/"
+version_regex = 'my-tool-v(\d+\.\d+\.\d+)\.tar\.gz'
+```
+
+The first capturing group is used as the version. If no capturing group is present, the entire match is used.
+
+### `version_json_path`
+
+Extract versions from JSON responses using a jq-like path expression:
+
+```toml
+[tools."http:my-tool"]
+version = "1.0.0"
+url = "https://example.com/releases/my-tool-v{{version}}.tar.gz"
+version_list_url = "https://api.example.com/releases"
+version_json_path = ".[].tag_name"
+```
+
+Supported path expressions:
+
+- `.` - root value
+- `.[]` - iterate over array elements
+- `.[].field` - extract field from each array element
+- `.field` - extract field from object
+- `.field[]` - iterate over array in field
+- `.field.subfield` - nested field access
+- `.data.versions[]` - complex nested paths
+
+Examples:
+
+```toml
+# GitHub releases API format
+version_json_path = ".[].tag_name"
+
+# Nested versions array
+version_json_path = ".data.versions[]"
+
+# Release info objects
+version_json_path = ".releases[].info.version"
+```
+
 ### `bin_path`
 
 Specify the directory containing binaries within the extracted archive, or where to place the downloaded file. This supports templating with `{{version}}`:
