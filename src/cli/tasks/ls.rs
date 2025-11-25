@@ -181,6 +181,7 @@ impl TasksLs {
                   "env": task.env.0.iter().map(|d| d.to_string()).collect::<Vec<_>>(),
                   "dir": task.dir,
                   "hide": task.hide,
+                  "global": task.global,
                   "raw": task.raw,
                   "sources": task.sources,
                   "outputs": task.outputs,
@@ -188,8 +189,11 @@ impl TasksLs {
                   "quiet": task.quiet,
                   "silent": task.silent,
                   "tools": task.tools,
+                  "usage": task.usage,
+                  "timeout": task.timeout,
                   "run": task.run_script_strings(),
-                  "file": task.file,
+                  "args": task.args,
+                  "file": task.file
                 })
             })
             .collect::<serde_json::Value>();
