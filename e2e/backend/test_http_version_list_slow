@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+# Test HTTP backend with version_list_url (using claude-code from registry)
+
+# Test that ls-remote works with version_list_url
+assert_contains "mise ls-remote claude" "2."
+
+# Test installation of claude-code via http backend
+mise install claude@latest
+assert "mise x claude -- claude --version"

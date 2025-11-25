@@ -41,10 +41,15 @@ pub fn parse_version_list(
     let mut versions = Vec::new();
     let trimmed = content.trim();
 
-    // If a JSON path is provided (like ".[].version" or ".versions"), use it
+    // If a JSON path is provided (like ".[].version" or ".versions"), try to use it
+    // but fall back to text parsing if JSON parsing fails
     if let Some(json_path) = version_json_path {
-        let json: serde_json::Value = serde_json::from_str(trimmed)?;
-        versions = jq::extract(&json, json_path)?;
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            if let Ok(extracted) = jq::extract(&json, json_path) {
+                versions = extracted;
+            }
+        }
+        // If JSON parsing failed or path extraction failed, fall through to text parsing below
     }
     // If a regex is provided, use it to extract versions
     else if let Some(pattern) = version_regex {
@@ -72,17 +77,18 @@ pub fn parse_version_list(
                 versions = jq::extract_auto(&json);
             }
         }
+    }
 
-        // If no versions extracted from JSON, treat as line-separated or single version
-        if versions.is_empty() {
-            for line in trimmed.lines() {
-                let line = line.trim();
-                // Skip empty lines and comments
-                if !line.is_empty() && !line.starts_with('#') {
-                    // Strip common version prefixes
-                    let version = line.trim_start_matches('v');
-                    versions.push(version.to_string());
-                }
+    // If no versions extracted yet, treat as line-separated or single version
+    // This provides fallback for all cases including failed JSON parsing
+    if versions.is_empty() {
+        for line in trimmed.lines() {
+            let line = line.trim();
+            // Skip empty lines and comments
+            if !line.is_empty() && !line.starts_with('#') {
+                // Strip common version prefixes
+                let version = line.trim_start_matches('v');
+                versions.push(version.to_string());
             }
         }
     }
@@ -209,5 +215,24 @@ mod tests {
         let content = "   \n\n   ";
         let versions = parse_version_list(content, None, None).unwrap();
         assert!(versions.is_empty());
+    }
+
+    #[test]
+    fn test_parse_json_path_with_invalid_json_falls_back_to_text() {
+        // When version_json_path is provided but content is not valid JSON,
+        // it should gracefully fall back to text parsing
+        let content = "1.0.0\n2.0.0";
+        let versions = parse_version_list(content, None, Some(".[].version")).unwrap();
+        assert_eq!(versions, vec!["1.0.0", "2.0.0"]);
+    }
+
+    #[test]
+    fn test_parse_json_path_with_wrong_path_falls_back_to_text() {
+        // When version_json_path doesn't match the JSON structure,
+        // it should fall back to text parsing
+        let content = r#"{"other": "data"}"#;
+        let versions = parse_version_list(content, None, Some(".[].version")).unwrap();
+        // Falls back to treating JSON as a single line of text
+        assert_eq!(versions, vec![r#"{"other": "data"}"#]);
     }
 }
