@@ -22,6 +22,14 @@ rm -rf "$MISE_DATA_DIR/plugins/tiny"
 mise plugin install tiny https://github.com/mise-plugins/rtx-tiny
 assert_contains "mise plugin ls" "tiny"
 
+rm -rf "$MISE_DATA_DIR/plugins/tiny"
+mise plugin install tiny https://github.com/mise-plugins/mise-tiny/archive/refs/heads/main.zip
+assert_contains "mise plugin ls" "tiny"
+
+rm -rf "$MISE_DATA_DIR/plugins/vfox-cmake"
+mise plugin install vfox-cmake https://github.com/mise-plugins/vfox-cmake/archive/refs/heads/main.zip
+assert_contains "mise plugin ls" "vfox-cmake"
+
 rm -rf "$MISE_DATA_DIR/plugins/zprint"
 mise plugin install --all
 assert_contains "mise plugin ls" "zprint"

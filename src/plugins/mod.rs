@@ -1,4 +1,5 @@
 use crate::errors::Error::PluginNotInstalled;
+use crate::git::Git;
 use crate::plugins::asdf_plugin::AsdfPlugin;
 use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::toolset::install_state;
@@ -294,5 +295,110 @@ impl Eq for PluginEnum {}
 impl Display for PluginEnum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum PluginSource {
+    /// Git repository with URL and optional ref
+    Git {
+        url: String,
+        git_ref: Option<String>,
+    },
+    /// Zip file accessible via HTTPS
+    Zip { url: String },
+}
+
+impl PluginSource {
+    pub fn parse(repository: &str) -> Self {
+        // Split Parameters
+        let url_path = repository
+            .split('?')
+            .next()
+            .unwrap_or(repository)
+            .split('#')
+            .next()
+            .unwrap_or(repository);
+        // Check if it's a zip file (ends with -zip)
+        if url_path.to_lowercase().ends_with(".zip") {
+            return PluginSource::Zip {
+                url: repository.to_string(),
+            };
+        }
+        // Otherwise treat as git repository
+        let (url, git_ref) = Git::split_url_and_ref(repository);
+        PluginSource::Git {
+            url: url.to_string(),
+            git_ref: git_ref.map(|s| s.to_string()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_plugin_source_parse_git() {
+        // Test parsing Git URL
+        let source = PluginSource::parse("https://github.com/user/plugin.git");
+        match source {
+            PluginSource::Git { url, git_ref } => {
+                assert_eq!(url, "https://github.com/user/plugin.git");
+                assert_eq!(git_ref, None);
+            }
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_git_with_ref() {
+        // Test parsing Git URL with refs
+        let source = PluginSource::parse("https://github.com/user/plugin.git#v1.0.0");
+        match source {
+            PluginSource::Git { url, git_ref } => {
+                assert_eq!(url, "https://github.com/user/plugin.git");
+                assert_eq!(git_ref, Some("v1.0.0".to_string()));
+            }
+            _ => panic!("Expected a git plugin"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_zip() {
+        // Test parsing zip URL
+        let source = PluginSource::parse("https://example.com/plugins/my-plugin.zip");
+        match source {
+            PluginSource::Zip { url } => {
+                assert_eq!(url, "https://example.com/plugins/my-plugin.zip");
+            }
+            _ => panic!("Expected a Zip source"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_uppercase_zip_with_query() {
+        // Test parsing zip URL with query
+        let source =
+            PluginSource::parse("https://example.com/plugins/my-plugin.ZIP?version=v1.0.0");
+        match source {
+            PluginSource::Zip { url } => {
+                assert_eq!(
+                    url,
+                    "https://example.com/plugins/my-plugin.ZIP?version=v1.0.0"
+                );
+            }
+            _ => panic!("Expected a Zip source"),
+        }
+    }
+
+    #[test]
+    fn test_plugin_source_parse_edge_cases() {
+        // Test parsing git url which contains `.zip`
+        let source = PluginSource::parse("https://example.com/.zip/plugin");
+        match source {
+            PluginSource::Git { .. } => {}
+            _ => panic!("Expected a git plugin"),
+        }
     }
 }

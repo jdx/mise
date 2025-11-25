@@ -1,10 +1,11 @@
 use crate::file::{display_path, remove_all};
 use crate::git::{CloneOptions, Git};
-use crate::plugins::Plugin;
+use crate::http::HTTP;
+use crate::plugins::{Plugin, PluginSource};
 use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{config::Config, dirs, registry};
+use crate::{config::Config, dirs, file, registry};
 use async_trait::async_trait;
 use console::style;
 use contracts::requires;
@@ -87,6 +88,25 @@ impl VfoxPlugin {
         vfox.install_dir = dirs::INSTALLS.to_path_buf();
         let rx = vfox.log_subscribe();
         (vfox, rx)
+    }
+
+    async fn install_from_zip(&self, url: &str, pr: &dyn SingleReport) -> eyre::Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let temp_archive = temp_dir.path().join("archive.zip");
+        HTTP.download_file(url, &temp_archive, Some(pr)).await?;
+
+        pr.set_message("extracting zip file".to_string());
+
+        let strip_components = file::should_strip_components(&temp_archive, file::TarFormat::Zip)?;
+
+        file::unzip(
+            &temp_archive,
+            &self.plugin_path,
+            &file::ZipOptions {
+                strip_components: if strip_components { 1 } else { 0 },
+            },
+        )?;
+        Ok(())
     }
 }
 
@@ -208,34 +228,46 @@ impl Plugin for VfoxPlugin {
 
     async fn install(&self, config: &Arc<Config>, pr: &dyn SingleReport) -> eyre::Result<()> {
         let repository = self.get_repo_url(config)?;
-        let (repo_url, repo_ref) = Git::split_url_and_ref(repository.as_str());
+        let source = PluginSource::parse(repository.as_str());
         debug!("vfox_plugin[{}]:install {:?}", self.name, repository);
 
         if self.is_installed() {
             self.uninstall(pr).await?;
         }
 
-        if regex!(r"^[/~]").is_match(&repo_url) {
-            Err(eyre!(
-                r#"Invalid repository URL: {repo_url}
+        match source {
+            PluginSource::Zip { url } => {
+                self.install_from_zip(&url, pr).await?;
+                pr.finish_with_message(url.to_string());
+                Ok(())
+            }
+            PluginSource::Git {
+                url: repo_url,
+                git_ref,
+            } => {
+                if regex!(r"^[/~]").is_match(&repo_url) {
+                    Err(eyre!(
+                        r#"Invalid repository URL: {repo_url}
 If you are trying to link to a local directory, use `mise plugins link` instead.
 Plugins could support local directories in the future but for now a symlink is required which `mise plugins link` will create for you."#
-            ))?;
-        }
-        let git = Git::new(&self.plugin_path);
-        pr.set_message(format!("clone {repo_url}"));
-        git.clone(&repo_url, CloneOptions::default().pr(pr))?;
-        if let Some(ref_) = &repo_ref {
-            pr.set_message(format!("git update {ref_}"));
-            git.update(Some(ref_.to_string()))?;
-        }
+                    ))?;
+                }
+                let git = Git::new(&self.plugin_path);
+                pr.set_message(format!("clone {repo_url}"));
+                git.clone(&repo_url, CloneOptions::default().pr(pr))?;
+                if let Some(ref_) = &git_ref {
+                    pr.set_message(format!("git update {ref_}"));
+                    git.update(Some(ref_.to_string()))?;
+                }
 
-        let sha = git.current_sha_short()?;
-        pr.finish_with_message(format!(
-            "{repo_url}#{}",
-            style(&sha).bright().yellow().for_stderr(),
-        ));
-        Ok(())
+                let sha = git.current_sha_short()?;
+                pr.finish_with_message(format!(
+                    "{repo_url}#{}",
+                    style(&sha).bright().yellow().for_stderr(),
+                ));
+                Ok(())
+            }
+        }
     }
 }
 
