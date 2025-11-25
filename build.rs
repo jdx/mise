@@ -16,6 +16,35 @@ fn main() {
     codegen_registry();
 }
 
+/// Generate a raw string literal that safely contains the given content.
+/// Dynamically determines the minimum number of '#' needed.
+fn raw_string_literal(s: &str) -> String {
+    // Find the longest sequence of '#' characters following a '"' in the string
+    let mut max_hashes = 0;
+    let mut current_hashes = 0;
+    let mut after_quote = false;
+
+    for c in s.chars() {
+        if after_quote {
+            if c == '#' {
+                current_hashes += 1;
+                max_hashes = max_hashes.max(current_hashes);
+            } else {
+                after_quote = false;
+                current_hashes = 0;
+            }
+        }
+        if c == '"' {
+            after_quote = true;
+            current_hashes = 0;
+        }
+    }
+
+    // Use one more '#' than the longest sequence found
+    let hashes = "#".repeat(max_hashes + 1);
+    format!("r{hashes}\"{s}\"{hashes}")
+}
+
 /// Parse options from a TOML value into a Vec of (key, value) pairs
 fn parse_options(opts: Option<&toml::Value>) -> Vec<(String, String)> {
     opts.map(|opts| {
@@ -108,7 +137,11 @@ fn codegen_registry() {
                             .join(", "),
                         options = backend_options
                             .iter()
-                            .map(|(k, v)| format!("(r###\"{k}\"###, r###\"{v}\"###)"))
+                            .map(|(k, v)| format!(
+                                "({}, {})",
+                                raw_string_literal(k),
+                                raw_string_literal(v)
+                            ))
                             .collect::<Vec<_>>()
                             .join(", ")
                     ));
@@ -157,7 +190,7 @@ fn codegen_registry() {
         let rt = format!(
             r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}]}}"#,
             description = description
-                .map(|d| format!("Some(r###\"{d}\"###)"))
+                .map(|d| format!("Some({})", raw_string_literal(&d)))
                 .unwrap_or("None".to_string()),
             backends = backends.into_iter().collect::<Vec<_>>().join(", "),
             aliases = aliases
@@ -166,7 +199,11 @@ fn codegen_registry() {
                 .collect::<Vec<_>>()
                 .join(", "),
             test = test
-                .map(|(t, v)| format!("Some((r###\"{t}\"###, r###\"{v}\"###))"))
+                .map(|(t, v)| format!(
+                    "Some(({}, {}))",
+                    raw_string_literal(&t),
+                    raw_string_literal(&v)
+                ))
                 .unwrap_or("None".to_string()),
             os = os
                 .iter()
@@ -322,7 +359,8 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
             if let Some(description) = props.get("description") {
                 let description = description.as_str().unwrap().to_string();
                 lines.push(format!(
-                    r####"        description: r###"{description}"###,"####
+                    "        description: {},",
+                    raw_string_literal(&description)
                 ));
             }
             lines.push("    },".to_string());
@@ -346,7 +384,8 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
             if let Some(description) = props.get("description") {
                 let description = description.as_str().unwrap().to_string();
                 lines.push(format!(
-                    r####"        description: r###"{description}"###,"####
+                    "        description: {},",
+                    raw_string_literal(&description)
                 ));
             }
             lines.push("    },".to_string());
