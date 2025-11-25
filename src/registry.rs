@@ -1,7 +1,9 @@
 use crate::backend::backend_type::BackendType;
 use crate::cli::args::BackendArg;
 use crate::config::Settings;
+use crate::toolset::ToolVersionOptions;
 use heck::ToShoutySnakeCase;
+use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env;
 use std::env::consts::{ARCH, OS};
@@ -26,6 +28,7 @@ pub struct RegistryTool {
     pub os: &'static [&'static str],
     pub depends: &'static [&'static str],
     pub idiomatic_files: &'static [&'static str],
+    pub options: &'static [(&'static str, &'static str)],
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +106,18 @@ impl RegistryTool {
         self.backends()
             .first()
             .map(|f| BackendArg::new(self.short.to_string(), Some(f.to_string())))
+    }
+
+    /// Convert registry options to ToolVersionOptions
+    pub fn tool_options(&self) -> ToolVersionOptions {
+        let mut opts = IndexMap::new();
+        for (k, v) in self.options {
+            opts.insert(k.to_string(), v.to_string());
+        }
+        ToolVersionOptions {
+            opts,
+            ..Default::default()
+        }
     }
 }
 

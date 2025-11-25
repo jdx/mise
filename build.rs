@@ -121,8 +121,32 @@ fn codegen_registry() {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        // Parse options - can be a table with key=value pairs
+        let options = info
+            .get("options")
+            .map(|opts| {
+                if let Some(table) = opts.as_table() {
+                    table
+                        .iter()
+                        .map(|(k, v)| {
+                            let value = match v {
+                                toml::Value::String(s) => s.clone(),
+                                toml::Value::Table(t) => {
+                                    // Serialize nested tables back to TOML string
+                                    toml::to_string(t).unwrap_or_default()
+                                }
+                                _ => v.to_string(),
+                            };
+                            (k.clone(), value)
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    vec![]
+                }
+            })
+            .unwrap_or_default();
         let rt = format!(
-            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}]}}"#,
+            r#"RegistryTool{{short: "{short}", description: {description}, backends: &[{backends}], aliases: &[{aliases}], test: &{test}, os: &[{os}], depends: &[{depends}], idiomatic_files: &[{idiomatic_files}], options: &[{options}]}}"#,
             description = description
                 .map(|d| format!("Some(r###\"{d}\"###)"))
                 .unwrap_or("None".to_string()),
@@ -148,6 +172,11 @@ fn codegen_registry() {
             idiomatic_files = idiomatic_files
                 .iter()
                 .map(|f| format!("\"{f}\""))
+                .collect::<Vec<_>>()
+                .join(", "),
+            options = options
+                .iter()
+                .map(|(k, v)| format!("(r###\"{k}\"###, r###\"{v}\"###)"))
                 .collect::<Vec<_>>()
                 .join(", "),
         );

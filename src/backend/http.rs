@@ -4,6 +4,7 @@ use crate::backend::static_helpers::{
     clean_binary_name, get_filename_from_url, list_available_platforms_with_key,
     lookup_platform_key, template_string, verify_artifact,
 };
+use crate::backend::version_list;
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
@@ -378,6 +379,24 @@ impl HttpBackend {
         }
         Ok(())
     }
+
+    /// Fetch and parse versions from a version list URL
+    async fn fetch_versions_from_url(&self) -> Result<Vec<String>> {
+        let opts = self.ba.opts();
+
+        // Get version_list_url from options
+        let version_list_url = match opts.get("version_list_url") {
+            Some(url) => url.clone(),
+            None => return Ok(vec![]),
+        };
+
+        // Get optional version regex pattern or JSON path
+        let version_regex = opts.get("version_regex").map(|s| s.as_str());
+        let version_json_path = opts.get("version_json_path").map(|s| s.as_str());
+
+        // Use the version_list module to fetch and parse versions
+        version_list::fetch_versions(&version_list_url, version_regex, version_json_path).await
+    }
 }
 
 #[async_trait]
@@ -391,8 +410,8 @@ impl Backend for HttpBackend {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<String>> {
-        // Http backend doesn't support remote version listing
-        Ok(vec![])
+        // Fetch versions from version_list_url if configured
+        self.fetch_versions_from_url().await
     }
 
     async fn install_version_(
