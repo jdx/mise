@@ -795,7 +795,7 @@ test = ["clarinet --version", "clarinet {{version}}"]
 
 [tools.claude]
 aliases = ["claude-code"]
-backends = ["http:claude", "npm:@anthropic-ai/claude-code"]
+backends = ["http:claude"]
 description = "Claude Code is an agentic coding tool that lives in your terminal, understands your codebase, and helps you code faster by executing routine tasks, explaining complex code, and handling git workflows -- all through natural language commands"
 os = ["linux", "macos"]
 test = ["claude --version", "{{version}} (Claude Code)"]
