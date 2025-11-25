@@ -1,9 +1,6 @@
 # Roadmap
 
-Issues
-marked ["enhancements"](https://github.com/jdx/mise/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)
-are the best way to read about ideas for future
-functionality. As far as general scope however, these are likely going to be focuses for 2025:
+These are the likely focuses for 2025:
 
 - Removing experimental flag on features - several features are still marked as experimental. My hope
   is all features will be GA by the end of 2025.
