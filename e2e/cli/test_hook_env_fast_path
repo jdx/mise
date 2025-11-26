@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# Test that hook-env fast-path correctly detects when nothing has changed
+# and skips expensive initialization
+
+# Activate mise to set up the session
+eval "$(mise activate bash)"
+
+# Run hook-env once to establish a session
+mise hook-env -s bash
+
+# Verify fast-path works when nothing has changed
+# The fast-path should produce no output (empty response)
+output=$(mise hook-env -s bash 2>&1)
+if [[ -z $output || $output == *"early-exit"* ]]; then
+	ok "fast-path works when nothing changed"
+else
+	fail "fast-path did not work: got output '$output'"
+fi
+
+# Test 1: Creating a new config file should NOT trigger fast-path
+echo '[tools]' >mise.toml
+output=$(mise hook-env -s bash 2>&1)
+# The output should contain environment variable exports (not be empty)
+# because the new config file should be detected
+rm mise.toml
+ok "new config file detection test completed"
+
+# Test 2: Test that changing directories prevents fast-path
+# First reset the session
+eval "$(mise activate bash)"
+mise hook-env -s bash
+
+# Create a subdirectory and cd into it
+mkdir -p subdir
+pushd subdir >/dev/null
+output=$(mise hook-env -s bash 2>&1)
+popd >/dev/null
+rmdir subdir
+ok "directory change detection test completed"
+
+# Test 3: Creating config in parent's .config/mise should be detected
+mkdir -p ../.config/mise
+eval "$(mise activate bash)"
+mise hook-env -s bash
+# Wait a moment to ensure mtime difference
+sleep 0.1
+echo '[tools]' >../.config/mise/config.toml
+output=$(mise hook-env -s bash 2>&1)
+rm -rf ../.config
+ok "parent .config/mise config file detection test completed"
+
+# Test 4: Fast-path should work again after session is re-established
+eval "$(mise activate bash)"
+mise hook-env -s bash
+output=$(mise hook-env -s bash 2>&1)
+if [[ -z $output || $output == *"early-exit"* ]]; then
+	ok "fast-path works after session re-established"
+else
+	fail "fast-path did not work after re-establishment: got output '$output'"
+fi

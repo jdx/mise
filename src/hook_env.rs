@@ -124,16 +124,25 @@ pub fn should_exit_early_fast() -> bool {
     // Check if any directory in the config search path has been modified
     // This catches new config files created anywhere in the hierarchy
     if let Some(cwd) = &*dirs::CWD {
-        if let Ok(dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS) {
-            for dir in dirs {
-                if let Ok(metadata) = dir.metadata() {
-                    if let Ok(modified) = metadata.modified() {
-                        let modtime = modified
-                            .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis();
-                        if modtime > PREV_SESSION.latest_update {
-                            return false;
+        if let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS) {
+            // Config subdirectories that might contain config files
+            let config_subdirs = ["", ".config/mise", ".mise", "mise", ".config"];
+            for dir in ancestor_dirs {
+                for subdir in &config_subdirs {
+                    let check_dir = if subdir.is_empty() {
+                        dir.clone()
+                    } else {
+                        dir.join(subdir)
+                    };
+                    if let Ok(metadata) = check_dir.metadata() {
+                        if let Ok(modified) = metadata.modified() {
+                            let modtime = modified
+                                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis();
+                            if modtime > PREV_SESSION.latest_update {
+                                return false;
+                            }
                         }
                     }
                 }
