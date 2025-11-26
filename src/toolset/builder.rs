@@ -7,7 +7,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::Config;
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
-use crate::toolset::{ToolRequest, ToolSource, Toolset};
+use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset};
 use crate::{config, env};
 
 #[derive(Debug, Default)]
@@ -15,6 +15,7 @@ pub struct ToolsetBuilder {
     args: Vec<ToolArg>,
     global_only: bool,
     default_to_latest: bool,
+    resolve_options: ResolveOptions,
 }
 
 impl ToolsetBuilder {
@@ -37,6 +38,11 @@ impl ToolsetBuilder {
         self
     }
 
+    pub fn with_resolve_options(mut self, resolve_options: ResolveOptions) -> Self {
+        self.resolve_options = resolve_options;
+        self
+    }
+
     pub async fn build(self, config: &Arc<Config>) -> Result<Toolset> {
         let mut toolset = Toolset {
             ..Default::default()
@@ -51,7 +57,10 @@ impl ToolsetBuilder {
             self.load_runtime_args(&mut toolset)?;
         });
         measure!("toolset_builder::build::resolve", {
-            if let Err(err) = toolset.resolve(config).await {
+            if let Err(err) = toolset
+                .resolve_with_opts(config, &self.resolve_options)
+                .await
+            {
                 if Error::is_argument_err(&err) {
                     return Err(err);
                 }

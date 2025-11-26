@@ -31,7 +31,18 @@ impl ToolVersionList {
     ) -> eyre::Result<()> {
         self.versions.clear();
         for tvr in &mut self.requests {
-            match tvr.resolve(config, opts).await {
+            // Only use special options (latest_versions, skip lockfile) for requests that
+            // explicitly specify "latest". This ensures `mise x node@20 npm@latest` only
+            // fetches latest and skips the lockfile for npm, not node.
+            let request_opts = if tvr.version() == "latest" {
+                opts.clone()
+            } else {
+                ResolveOptions {
+                    latest_versions: false,
+                    use_locked_version: true,
+                }
+            };
+            match tvr.resolve(config, &request_opts).await {
                 Ok(v) => self.versions.push(v),
                 Err(err) => {
                     return Err(Error::FailedToResolveVersion {

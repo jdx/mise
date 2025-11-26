@@ -125,15 +125,24 @@ impl Toolset {
     }
     #[async_backtrace::framed]
     pub async fn resolve(&mut self, config: &Arc<Config>) -> eyre::Result<()> {
+        self.resolve_with_opts(config, &Default::default()).await
+    }
+
+    #[async_backtrace::framed]
+    pub async fn resolve_with_opts(
+        &mut self,
+        config: &Arc<Config>,
+        opts: &ResolveOptions,
+    ) -> eyre::Result<()> {
         self.list_missing_plugins();
         let versions = self
             .versions
             .clone()
             .into_iter()
-            .map(|(ba, tvl)| (config.clone(), ba, tvl.clone()))
+            .map(|(ba, tvl)| (config.clone(), ba, tvl.clone(), opts.clone()))
             .collect::<Vec<_>>();
-        let tvls = parallel::parallel(versions, |(config, ba, mut tvl)| async move {
-            if let Err(err) = tvl.resolve(&config, &Default::default()).await {
+        let tvls = parallel::parallel(versions, |(config, ba, mut tvl, opts)| async move {
+            if let Err(err) = tvl.resolve(&config, &opts).await {
                 warn!("Failed to resolve tool version list for {ba}: {err}");
             }
             Ok((ba, tvl))
