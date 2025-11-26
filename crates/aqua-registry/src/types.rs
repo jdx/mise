@@ -892,3 +892,26 @@ impl AquaGithubArtifactAttestations {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_aqua_file_src_gradle() {
+        // Test the gradle package src template: {{.AssetWithoutExt | trimSuffix "-bin"}}/bin/gradle
+        let pkg = AquaPackage {
+            repo_owner: "gradle".to_string(),
+            repo_name: "gradle-distributions".to_string(),
+            asset: "gradle-{{trimV .Version}}-bin.zip".to_string(),
+            ..Default::default()
+        };
+        let file = AquaFile {
+            name: "gradle".to_string(),
+            src: Some("{{.AssetWithoutExt | trimSuffix \"-bin\"}}/bin/gradle".to_string()),
+        };
+
+        let result = file.src(&pkg, "8.14.3", "darwin", "arm64").unwrap();
+        assert_eq!(result, Some("gradle-8.14.3/bin/gradle".to_string()));
+    }
+}

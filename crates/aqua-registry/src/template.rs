@@ -200,11 +200,15 @@ fn parse_tokens(tokens: &[Token]) -> Result<Expr> {
 fn parse_pipe(tokens: &mut std::iter::Peekable<std::slice::Iter<Token>>) -> Result<Expr> {
     let mut left = parse_primary(tokens)?;
 
+    // Skip whitespace before checking for pipe
+    skip_whitespace(tokens);
     while matches!(tokens.peek(), Some(Token::Pipe)) {
         tokens.next(); // consume pipe
         skip_whitespace(tokens);
         let right = parse_primary(tokens)?;
         left = Expr::Pipe(Box::new(left), Box::new(right));
+        // Skip whitespace before checking for next pipe
+        skip_whitespace(tokens);
     }
 
     Ok(left)
@@ -669,5 +673,14 @@ mod tests {
                 Token::Func("trimV"),
             ]
         );
+    }
+
+    #[test]
+    fn test_gradle_src_template() {
+        // Test the gradle src template pattern: {{.AssetWithoutExt | trimSuffix "-bin"}}/bin/gradle
+        // This tests that pipe expressions work correctly when preceded by whitespace
+        let tmpl = r#"{{.AssetWithoutExt | trimSuffix "-bin"}}/bin/gradle"#;
+        let ctx = hashmap(vec![("AssetWithoutExt", "gradle-8.14.3-bin")]);
+        assert_eq!(render(tmpl, &ctx).unwrap(), "gradle-8.14.3/bin/gradle");
     }
 }

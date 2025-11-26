@@ -12,11 +12,6 @@ checksum = "sha256:855e49e823fc68c6371fd6967e359cde11912d8d44fed343283c8e6e943bd
 size = 2068001
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.9/actionlint_1.7.9_darwin_arm64.tar.gz"
 
-[tools.actionlint.platforms.macos-arm64]
-checksum = "sha256:ffb1f6c429a51dc9f37af9d11f96c16bd52f54b713bf7f8bd92f7fce9fd4284a"
-size = 2056182
-url = "https://github.com/rhysd/actionlint/releases/download/v1.7.8/actionlint_1.7.8_darwin_arm64.tar.gz"
-
 [[tools.age]]
 version = "1.2.1"
 backend = "aqua:FiloSottile/age"
