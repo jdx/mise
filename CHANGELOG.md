@@ -1,5 +1,66 @@
 # Changelog
 
+## [2025.11.8](https://github.com/jdx/mise/compare/v2025.11.7..v2025.11.8) - 2025-11-26
+
+### 📦 Registry
+
+- add blender by @lucasew in [#7014](https://github.com/jdx/mise/pull/7014)
+- add vespa-cli by @buinauskas in [#7037](https://github.com/jdx/mise/pull/7037)
+- fix vespa-cli order by @buinauskas in [#7038](https://github.com/jdx/mise/pull/7038)
+- add scooter by @TyceHerrman in [#7039](https://github.com/jdx/mise/pull/7039)
+- Prefer github backend for allure by @TobiX in [#7049](https://github.com/jdx/mise/pull/7049)
+
+### 🚀 Features
+
+- **(plugins)** Install a plugin from a zip file over HTTPS by @KaanYT in [#6992](https://github.com/jdx/mise/pull/6992)
+- **(registry)** add tool options support for http backend by @jdx in [#7061](https://github.com/jdx/mise/pull/7061)
+
+### 🐛 Bug Fixes
+
+- **(core)** trim `core:` prefix in unalias_backend by @kou029w in [#7040](https://github.com/jdx/mise/pull/7040)
+- **(go)** use -mod=readonly for go install by @joonas in [#7052](https://github.com/jdx/mise/pull/7052)
+- **(npm)** handle v-prefixed versions correctly by @jdx in [#7062](https://github.com/jdx/mise/pull/7062)
+- **(tasks)** add missing task fields to JSON output by @roele in [#7044](https://github.com/jdx/mise/pull/7044)
+- semver in aqua by @lucasew in [#7018](https://github.com/jdx/mise/pull/7018)
+- use the musl version if installing in Android (Termux) by @lucasew in [#7027](https://github.com/jdx/mise/pull/7027)
+- empty enable_tools crash by @moshen in [#7035](https://github.com/jdx/mise/pull/7035)
+
+### 📚 Documentation
+
+- add MISE and USAGE syntax hl queries to neovim cookbook by @okuuva in [#7047](https://github.com/jdx/mise/pull/7047)
+- use local assets for screenshots by @okuuva in [#7056](https://github.com/jdx/mise/pull/7056)
+- remove GitHub issues link from roadmap by @jdx in [6897286](https://github.com/jdx/mise/commit/689728642b386e197a549ea8b5dd591c3b950b42)
+
+### 📦️ Dependency Updates
+
+- update docker/metadata-action digest to 318604b by @renovate[bot] in [#7033](https://github.com/jdx/mise/pull/7033)
+- update actions/checkout digest to 34e1148 by @renovate[bot] in [#7032](https://github.com/jdx/mise/pull/7032)
+- lock file maintenance by @renovate[bot] in [#7048](https://github.com/jdx/mise/pull/7048)
+
+### Chore
+
+- upgrade actionlint to 1.7.9 and fix lint issues by @jdx in [#7065](https://github.com/jdx/mise/pull/7065)
+
+### New Contributors
+
+- @joonas made their first contribution in [#7052](https://github.com/jdx/mise/pull/7052)
+- @KaanYT made their first contribution in [#6992](https://github.com/jdx/mise/pull/6992)
+- @kou029w made their first contribution in [#7040](https://github.com/jdx/mise/pull/7040)
+- @moshen made their first contribution in [#7035](https://github.com/jdx/mise/pull/7035)
+- @buinauskas made their first contribution in [#7038](https://github.com/jdx/mise/pull/7038)
+- @lucasew made their first contribution in [#7014](https://github.com/jdx/mise/pull/7014)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`m7medVision/lazycommit`](https://github.com/m7medVision/lazycommit)
+- [`microsoft/component-detection`](https://github.com/microsoft/component-detection)
+- [`owenlamont/ryl`](https://github.com/owenlamont/ryl)
+
+#### Updated Packages (1)
+
+- [`sst/opencode`](https://github.com/sst/opencode)
 ## [2025.11.7](https://github.com/jdx/mise/compare/v2025.11.6..v2025.11.7) - 2025-11-20
 
 ### 📦 Registry

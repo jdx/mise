@@ -2,6 +2,11 @@
 version = "1.7.9"
 backend = "aqua:rhysd/actionlint"
 
+[tools.actionlint.platforms.linux-x64]
+checksum = "sha256:233b280d05e100837f4af1433c7b40a5dcb306e3aa68fb4f17f8a7f45a7df7b4"
+size = 2237057
+url = "https://github.com/rhysd/actionlint/releases/download/v1.7.9/actionlint_1.7.9_linux_amd64.tar.gz"
+
 [tools.actionlint.platforms.macos-arm64]
 checksum = "sha256:855e49e823fc68c6371fd6967e359cde11912d8d44fed343283c8e6e943bd789"
 size = 2068001
@@ -27,28 +32,28 @@ size = 4758557
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-darwin-arm64.tar.gz"
 
 [[tools.bun]]
-version = "1.3.2"
+version = "1.3.3"
 backend = "core:bun"
 
 [tools.bun.platforms.linux-x64]
-checksum = "blake3:d9f743140120e39812867aa896512deea4fe99ab866029f8bd5a347557c61073"
-size = 39630922
+checksum = "blake3:21d78fbc47b9175cc18a79bc228c6b3aa92d102c3f9c006934101c6b588cc900"
+size = 39185481
 
 [[tools.cargo-binstall]]
-version = "1.16.0"
+version = "1.16.2"
 backend = "aqua:cargo-bins/cargo-binstall"
 
 [tools.cargo-binstall.platforms.linux-x64]
-checksum = "sha256:d9f55ae6aff2ab7dbbd3f6478510a81d56dc700fdd1d2510c7ef6d074c2c94c9"
-size = 6768003
-url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.0/cargo-binstall-x86_64-unknown-linux-musl.tgz"
+checksum = "sha256:3be2695803f7b9a86b9976f2bdb8568ed6e8df026bacfc39c8546d3c6ea34808"
+size = 6779867
+url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.2/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [[tools."cargo:cargo-edit"]]
 version = "0.13.8"
 backend = "cargo:cargo-edit"
 
 [[tools."cargo:cargo-insta"]]
-version = "1.43.2"
+version = "1.44.1"
 backend = "cargo:cargo-insta"
 
 [[tools."cargo:cargo-release"]]
@@ -77,13 +82,13 @@ size = 18174787
 url = "https://github.com/cli/cli/releases/download/v2.83.1/gh_2.83.1_linux_amd64.tar.gz"
 
 [[tools.hk]]
-version = "1.22.0"
+version = "1.25.0"
 backend = "aqua:jdx/hk"
 
 [tools.hk.platforms.linux-x64]
-checksum = "sha256:3bf36852e3449d331de72d360b56a56415682bac7a8998401384e0397c3c3f4c"
-size = 7255810
-url = "https://github.com/jdx/hk/releases/download/v1.22.0/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:7021d44c38e34ca2ee46f3536f906de59e5e89d67439d3400e1bd707235ebb4f"
+size = 7281217
+url = "https://github.com/jdx/hk/releases/download/v1.25.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [[tools.jq]]
 version = "1.8.1"
@@ -130,13 +135,13 @@ size = 99355968
 url = "https://github.com/apple/pkl/releases/download/0.30.0/pkl-linux-amd64"
 
 [[tools.pre-commit]]
-version = "4.4.0"
+version = "4.5.0"
 backend = "aqua:pre-commit/pre-commit"
 
 [tools.pre-commit.platforms.linux-x64]
-checksum = "sha256:9a7e1ff43020518d26698c3d1fe1dadddd161178880293333124348276ab98db"
-size = 8262847
-url = "https://github.com/pre-commit/pre-commit/releases/download/v4.4.0/pre-commit-4.4.0.pyz"
+checksum = "sha256:fbbfa47d19b98e03eb11963094ac3644a97cba105a8c660d8dab4c409c89cebe"
+size = 8263423
+url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"
 
 [[tools.ripgrep]]
 version = "15.1.0"
