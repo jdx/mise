@@ -13,7 +13,7 @@ use crate::cli::args::ToolArg;
 use crate::cmd;
 use crate::config::{Config, Settings};
 use crate::env;
-use crate::toolset::{InstallOptions, ToolsetBuilder};
+use crate::toolset::{InstallOptions, ResolveOptions, ToolsetBuilder};
 
 /// Execute a command with tool(s) set
 ///
@@ -55,13 +55,32 @@ impl Exec {
     #[async_backtrace::framed]
     pub async fn run(self) -> eyre::Result<()> {
         let mut config = Config::get().await?;
+
+        // Check if any tool arg explicitly specified @latest
+        // If so, resolve to the actual latest version from the registry (not just latest installed)
+        let has_explicit_latest = self
+            .tool
+            .iter()
+            .any(|t| t.tvr.as_ref().is_some_and(|tvr| tvr.version() == "latest"));
+
+        let resolve_options = if has_explicit_latest {
+            ResolveOptions {
+                latest_versions: true,
+                use_locked_version: false,
+            }
+        } else {
+            Default::default()
+        };
+
         let mut ts = measure!("toolset", {
             ToolsetBuilder::new()
                 .with_args(&self.tool)
                 .with_default_to_latest(true)
+                .with_resolve_options(resolve_options.clone())
                 .build(&config)
                 .await?
         });
+
         let opts = InstallOptions {
             force: false,
             jobs: self.jobs,
@@ -73,12 +92,18 @@ impl Exec {
                 || !Settings::get().exec_auto_install
                 || *env::__MISE_SHIM,
             skip_auto_install: !Settings::get().exec_auto_install || !Settings::get().auto_install,
-            resolve_options: Default::default(),
+            resolve_options,
             ..Default::default()
         };
         measure!("install_arg_versions", {
             ts.install_missing_versions(&mut config, &opts).await?
         });
+
+        // If we installed new versions for explicit @latest, re-resolve to pick up the installed versions
+        if has_explicit_latest {
+            ts.resolve_with_opts(&config, &opts.resolve_options).await?;
+        }
+
         measure!("notify_if_versions_missing", {
             ts.notify_if_versions_missing(&config).await;
         });
