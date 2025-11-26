@@ -4,7 +4,7 @@ use crate::task::TaskOutput;
 use crate::ui::{self, ctrlc};
 use crate::{Result, backend};
 use crate::{cli::args::ToolArg, path::PathExt};
-use crate::{logger, migrate, shims};
+use crate::{hook_env as hook_env_module, logger, migrate, shims};
 use clap::{ArgAction, CommandFactory, Parser, Subcommand};
 use eyre::bail;
 use std::path::PathBuf;
@@ -432,6 +432,11 @@ impl Cli {
         crate::env::ARGS.write().unwrap().clone_from(args);
         if *crate::env::MISE_TOOL_STUB && args.len() >= 2 {
             tool_stub::short_circuit_stub(&args[2..]).await?;
+        }
+        // Fast-path for hook-env: exit early if nothing has changed
+        // This avoids expensive backend::load_tools() and config loading
+        if hook_env_module::should_exit_early_fast() {
+            return Ok(());
         }
         measure!("logger", { logger::init() });
         check_working_directory();

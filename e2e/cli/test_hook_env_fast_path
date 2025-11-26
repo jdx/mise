@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+
+# Test that hook-env fast-path correctly detects when nothing has changed
+# and skips expensive initialization
+#
+# Key insight: When fast-path triggers, hook-env returns immediately with NO output.
+# When fast-path is bypassed, hook-env outputs shell commands including __MISE_SESSION.
+#
+# Note: eval "$(mise activate bash)" already runs hook-env and sets __MISE_SESSION,
+# so subsequent calls should take the fast-path if nothing changed.
+
+# Activate mise - this runs hook-env internally and establishes a session
+eval "$(mise activate bash)"
+
+# Verify session was established by activate
+if [[ -n $__MISE_SESSION ]]; then
+	ok "activate established __MISE_SESSION"
+else
+	fail "activate should establish __MISE_SESSION"
+fi
+
+# Fast-path should work - nothing has changed since activate
+output=$(mise hook-env -s bash)
+if [[ -z $output ]]; then
+	ok "fast-path works when nothing changed (no output)"
+else
+	fail "fast-path should produce no output but got: '$output'"
+fi
+
+# Test 1: Creating a new config file should bypass fast-path
+sleep 0.1 # ensure mtime difference
+echo '[tools]' >mise.toml
+output=$(mise hook-env -s bash)
+if [[ $output == *"__MISE_SESSION"* ]]; then
+	ok "new config file bypasses fast-path"
+else
+	fail "new config file should bypass fast-path but got: '$output'"
+fi
+rm mise.toml
+eval "$output"
+
+# Removing the config file also changes directory mtime, so the first
+# hook-env after removal will bypass fast-path. Run it to re-establish session.
+output=$(mise hook-env -s bash)
+eval "$output"
+
+# Now fast-path should work
+output=$(mise hook-env -s bash)
+if [[ -z $output ]]; then
+	ok "fast-path works after session re-established"
+else
+	fail "fast-path should work after session re-established but got: '$output'"
+fi
+
+# Test 2: Changing directories should bypass fast-path
+# First ensure we have a clean session in the current directory
+eval "$(mise activate bash)"
+# Verify fast-path works here
+output=$(mise hook-env -s bash)
+if [[ -n $output ]]; then
+	fail "expected fast-path before dir change but got output"
+fi
+
+# Now change directory and verify fast-path is bypassed
+# Use builtin cd to avoid the _mise_hook wrapper that activate installs
+mkdir -p subdir
+builtin cd subdir
+output=$(mise hook-env -s bash)
+if [[ $output == *"__MISE_SESSION"* ]]; then
+	ok "directory change bypasses fast-path"
+else
+	fail "directory change should bypass fast-path but got: '$output'"
+fi
+builtin cd ..
+rmdir subdir
+
+# Test 3: Creating config in parent's .config/mise should be detected
+# Re-establish session first
+eval "$(mise activate bash)"
+
+mkdir -p ../.config/mise
+sleep 0.1 # ensure mtime difference
+echo '[tools]' >../.config/mise/config.toml
+output=$(mise hook-env -s bash)
+if [[ $output == *"__MISE_SESSION"* ]]; then
+	ok "parent .config/mise config file bypasses fast-path"
+else
+	fail "parent .config/mise should bypass fast-path but got: '$output'"
+fi
+rm -rf ../.config

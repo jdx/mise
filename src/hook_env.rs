@@ -19,7 +19,15 @@ use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::hash::hash_to_str;
 use crate::shell::Shell;
-use crate::{dirs, env, hooks, watch_files};
+use crate::{dirs, env, file, hooks, watch_files};
+
+/// Convert a SystemTime to milliseconds since Unix epoch
+fn mtime_to_millis(mtime: SystemTime) -> u128 {
+    mtime
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
 
 pub static PREV_SESSION: Lazy<HookEnvSession> = Lazy::new(|| {
     env::var("__MISE_SESSION")
@@ -59,28 +67,111 @@ impl From<PathBuf> for WatchFilePattern {
     }
 }
 
-/// this function will early-exit the application if hook-env is being
-/// called and it does not need to be
-pub fn should_exit_early(
-    watch_files: impl IntoIterator<Item = WatchFilePattern>,
-    reason: Option<HookReason>,
-) -> bool {
+/// Fast-path early exit check that can be called BEFORE loading config/tools.
+/// This checks basic conditions using only the previous session data.
+/// Returns true if we can definitely skip hook-env, false if we need to continue.
+pub fn should_exit_early_fast() -> bool {
     let args = env::ARGS.read().unwrap();
     if args.len() < 2 || args[1] != "hook-env" {
         return false;
     }
+    // Can't exit early if no previous session
+    // Check for dir being set as a proxy for "has valid session"
+    // (loaded_configs can be empty if there are no config files)
+    if PREV_SESSION.dir.is_none() {
+        return false;
+    }
+    // Can't exit early if --force flag is present
+    if args.iter().any(|a| a == "--force" || a == "-f") {
+        return false;
+    }
+    // Check if running from precmd for the first time
+    // Handle both "--reason=precmd" and "--reason precmd" forms
+    let is_precmd = args.iter().any(|a| a == "--reason=precmd")
+        || args
+            .windows(2)
+            .any(|w| w[0] == "--reason" && w[1] == "precmd");
+    if is_precmd && !*env::__MISE_ZSH_PRECMD_RUN {
+        return false;
+    }
+    // Can't exit early if directory changed
+    if dir_change().is_some() {
+        return false;
+    }
+    // Can't exit early if MISE_ env vars changed
+    if have_mise_env_vars_been_modified() {
+        return false;
+    }
+    // Check if any loaded config files have been modified
+    for config_path in &PREV_SESSION.loaded_configs {
+        if let Ok(metadata) = config_path.metadata() {
+            if let Ok(modified) = metadata.modified()
+                && mtime_to_millis(modified) > PREV_SESSION.latest_update
+            {
+                return false;
+            }
+        } else if !config_path.exists() {
+            return false;
+        }
+    }
+    // Check if data dir has been modified (new tools installed, etc.)
+    // Also check if it's been deleted - this requires a full update
+    if !dirs::DATA.exists() {
+        return false;
+    }
+    if let Ok(metadata) = dirs::DATA.metadata()
+        && let Ok(modified) = metadata.modified()
+        && mtime_to_millis(modified) > PREV_SESSION.latest_update
+    {
+        return false;
+    }
+    // Check if any directory in the config search path has been modified
+    // This catches new config files created anywhere in the hierarchy
+    if let Some(cwd) = &*dirs::CWD
+        && let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS)
+    {
+        // Config subdirectories that might contain config files
+        let config_subdirs = ["", ".config/mise", ".mise", "mise", ".config"];
+        for dir in ancestor_dirs {
+            for subdir in &config_subdirs {
+                let check_dir = if subdir.is_empty() {
+                    dir.clone()
+                } else {
+                    dir.join(subdir)
+                };
+                if let Ok(metadata) = check_dir.metadata()
+                    && let Ok(modified) = metadata.modified()
+                    && mtime_to_millis(modified) > PREV_SESSION.latest_update
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// Check if hook-env can exit early after config is loaded.
+/// This is called after the fast-path check and handles cases that need
+/// the full config (watch_files, hook scheduling).
+pub fn should_exit_early(
+    watch_files: impl IntoIterator<Item = WatchFilePattern>,
+    reason: Option<HookReason>,
+) -> bool {
     // Force hook-env to run at least once from precmd after activation
     // This catches PATH modifications from shell initialization (e.g., path_helper in zsh)
     if reason == Some(HookReason::Precmd) && !*env::__MISE_ZSH_PRECMD_RUN {
         trace!("__MISE_ZSH_PRECMD_RUN=0 and reason=precmd, forcing hook-env to run");
         return false;
     }
+    // Schedule hooks on directory change (can't do this in fast-path)
     if dir_change().is_some() {
         hooks::schedule_hook(hooks::Hooks::Cd);
         hooks::schedule_hook(hooks::Hooks::Enter);
         hooks::schedule_hook(hooks::Hooks::Leave);
         return false;
     }
+    // Check full watch_files list from config (may include more than config files)
     let watch_files = match get_watch_files(watch_files) {
         Ok(w) => w,
         Err(e) => {
@@ -120,12 +211,8 @@ fn have_files_been_modified(watch_files: BTreeSet<PathBuf>) -> bool {
     // check the files to see if they've been altered
     let mut modified = false;
     for fp in &watch_files {
-        if let Ok(modtime) = fp.metadata().and_then(|m| m.modified()) {
-            let modtime = modtime
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_millis();
-            if modtime > PREV_SESSION.latest_update {
+        if let Ok(mtime) = fp.metadata().and_then(|m| m.modified()) {
+            if mtime_to_millis(mtime) > PREV_SESSION.latest_update {
                 trace!("file modified: {:?}", fp);
                 modified = true;
                 watch_files::add_modified_file(fp.clone());
@@ -198,10 +285,7 @@ pub async fn build_session(
         loaded_configs: config.config_files.keys().cloned().collect(),
         loaded_tools,
         config_paths,
-        latest_update: max_modtime
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_millis(),
+        latest_update: mtime_to_millis(max_modtime),
     })
 }
 
