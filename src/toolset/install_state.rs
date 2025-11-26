@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn test_version_sorting_with_v_prefix() {
         // Test that mixed v-prefix and non-v-prefix versions sort correctly
-        let versions = vec!["v2.0.51", "2.0.35", "2.0.52"];
+        let versions = ["v2.0.51", "2.0.35", "2.0.52"];
 
         // Without normalization - demonstrates the problem
         let sorted_without_norm: Vec<_> = versions
