@@ -110,7 +110,7 @@ When you want to update tool versions:
 
 ```sh
 # Update tool version in mise.toml
-mise use node@22
+mise use node@24
 
 # This will update both the installation and mise.lock
 ```

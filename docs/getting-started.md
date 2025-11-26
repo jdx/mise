@@ -107,19 +107,19 @@ mise exec python@3 -- python
 # >>> ...
 ```
 
-or run node 22:
+or run node 24:
 
 ```sh
-mise exec node@22 -- node -v
-# v22.x.x
+mise exec node@24 -- node -v
+# v24.x.x
 ```
 
 [`mise x|exec`](/cli/exec.html) is a powerful way to load the current `mise` context (tools & environment variables) without modifying your shell session or running ad-hoc commands with mise tools set. Installing [`tools`](/dev-tools/) is as simple as running [`mise u|use`](/cli/use.html).
 
 ```shell
-mise use --global node@22 # install node 22 and set it as the global default
+mise use --global node@24 # install node 24 and set it as the global default
 mise exec -- node my-script.js
-# run my-script.js with node 22...
+# run my-script.js with node 24...
 ```
 
 Another useful command is [`mise r|run`](/cli/run.html) which allows you to run a [`mise task`](/tasks/) or a script with the `mise` context.
@@ -219,16 +219,16 @@ You can run [`mise dr|doctor`](/cli/doctor.html) to verify that mise is correctl
 Now that `mise` is activated or its shims have been added to `PATH`, `node` is also available directly! (without using `mise exec`):
 
 ```sh
-mise use --global node@22
+mise use --global node@24
 node -v
-# v22.x.x
+# v24.x.x
 ```
 
-Note that when you ran `mise use --global node@22`, `mise` updated the global `mise` configuration.
+Note that when you ran `mise use --global node@24`, `mise` updated the global `mise` configuration.
 
 ```toml [~/.config/mise/config.toml]
 [tools]
-node = "22"
+node = "24"
 ```
 
 ## 4. Use tools from backends (npm, pipx, core, aqua, github) {#tool-backends}

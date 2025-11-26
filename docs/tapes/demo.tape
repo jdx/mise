@@ -32,7 +32,7 @@ Enter
 Type '# "mise exec <tool> -- <command>" allows you to run any tools with mise'
 Sleep 1s Enter Wait
 
-Type "mise exec node@22 -- node -v"
+Type "mise exec node@24 -- node -v"
 Sleep 500ms Enter Wait Sleep 2s
 
 Type '# node is only available in the mise environment, not globally' Sleep 500ms Enter Wait

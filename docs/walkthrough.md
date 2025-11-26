@@ -19,16 +19,16 @@ You use it like so (note that `mise` must be [activated](/getting-started.html#a
 
 ```bash
 mkdir example-project && cd example-project
-mise use node@22
+mise use node@24
 node -v
-# v22.0.0
+# v24.x.x
 ```
 
 And you'll also note that you now have a `mise.toml` file with the following content:
 
 ```mise-toml [mise.toml]
 [tools]
-node = "22"
+node = "24"
 ```
 
 - If this file is in the root of a project, `node` will be installed whenever someone runs [`mise install|i`](/cli/install).
@@ -78,11 +78,11 @@ Upgrading tool versions can be done with [`mise up|upgrade`](/cli/upgrade). By d
 the version prefix in `mise.toml`. If a [lockfile](/configuration/settings#lockfile) exists,
 mise will update `mise.lock` to the latest version of the tool with the prefix from `mise.toml`.
 
-So if you have `node = "22"` in `mise.toml`, then `mise upgrade node` will upgrade to the latest version of `node 22`.
+So if you have `node = "24"` in `mise.toml`, then `mise upgrade node` will upgrade to the latest version of `node 24`.
 
 If you'd like to upgrade to the latest version of node, you can use `mise upgrade --bump node`. It will set the version
-at the same specificity as the current version, so if you have `node = "22"`, but use `mise upgrade --bump node` to update to
-`node@24`, then it will set `node = "24"` in `mise.toml`.
+at the same specificity as the current version, so if you have `node = "24"`, but use `mise upgrade --bump node` to update to
+`node@26`, then it will set `node = "26"` in `mise.toml`.
 
 _See [Dev Tools](/dev-tools/) for more information on working with tools._
 
