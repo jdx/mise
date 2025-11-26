@@ -1100,6 +1100,11 @@ aliases = ["crossplane-cli"]
 backends = ["aqua:crossplane/crossplane", "asdf:joke/asdf-crossplane-cli"]
 description = "The Crossplane CLI extends kubectl with functionality to build, push, and install Crossplane packages"
 
+[tools.crush]
+backends = ["aqua:charmbracelet/crush"]
+description = "The glamourous AI coding agent for your favourite terminal"
+test = ["crush --version", "v{{version}}"]
+
 [tools.crystal]
 backends = ["asdf:mise-plugins/mise-crystal", "vfox:mise-plugins/vfox-crystal"]
 description = "Crystal: A language for humans and computers"
