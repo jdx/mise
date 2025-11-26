@@ -35,13 +35,13 @@ jobs:
           # Check if we can access the commits
           if ! git rev-parse ${{ github.event.pull_request.base.sha }} >/dev/null 2>&1; then
             echo "❌ Error: Cannot access base commit"
-            echo "only-registry-toml=false" >> $GITHUB_OUTPUT
+            echo "only-registry-toml=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           if ! git rev-parse ${{ github.event.pull_request.head.sha }} >/dev/null 2>&1; then
             echo "❌ Error: Cannot access head commit"
-            echo "only-registry-toml=false" >> $GITHUB_OUTPUT
+            echo "only-registry-toml=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -50,10 +50,10 @@ jobs:
 
           # Check if only registry.toml is modified
           if [[ "$MODIFIED_FILES" == "registry.toml" ]]; then
-            echo "only-registry-toml=true" >> $GITHUB_OUTPUT
+            echo "only-registry-toml=true" >> "$GITHUB_OUTPUT"
             echo "Only registry.toml is modified"
           else
-            echo "only-registry-toml=false" >> $GITHUB_OUTPUT
+            echo "only-registry-toml=false" >> "$GITHUB_OUTPUT"
             echo "Other files are also modified:"
             echo "$MODIFIED_FILES"
           fi
@@ -70,12 +70,12 @@ jobs:
           NEW_TOOLS=$(comm -13 <(echo "$BASE_TOOLS") <(echo "$HEAD_TOOLS"))
 
           if [[ -n "$NEW_TOOLS" ]]; then
-            echo "new-tools-added=true" >> $GITHUB_OUTPUT
-            echo "new-tools=$NEW_TOOLS" >> $GITHUB_OUTPUT
+            echo "new-tools-added=true" >> "$GITHUB_OUTPUT"
+            echo "new-tools=$NEW_TOOLS" >> "$GITHUB_OUTPUT"
             echo "New tools detected:"
             echo "$NEW_TOOLS"
           else
-            echo "new-tools-added=false" >> $GITHUB_OUTPUT
+            echo "new-tools-added=false" >> "$GITHUB_OUTPUT"
             echo "No new tools detected"
           fi
       - name: Check PR title format

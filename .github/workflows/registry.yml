@@ -63,7 +63,7 @@ jobs:
             || true \
           )
           echo "$changed_tools"
-          echo "tools=$changed_tools" >> $GITHUB_OUTPUT
+          echo "tools=$changed_tools" >> "$GITHUB_OUTPUT"
 
   test-tool:
     name: test-tool-${{ matrix.tranche }}

@@ -331,7 +331,7 @@ jobs:
             --notes-file /tmp/release-notes.txt \
             --verify-tag \
             --draft \
-            releases/$VERSION/*
+            "releases/$VERSION"/*
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
       - name: Publish Release Assets to CDN

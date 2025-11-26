@@ -33,12 +33,12 @@ jobs:
       - name: Download release artifacts
         run: |
           VERSION="$(./scripts/get-version.sh)"
-          mkdir -p releases/$VERSION
+          mkdir -p "releases/$VERSION"
 
           # Download release artifacts from GitHub release
           gh release download "$VERSION" \
             --repo ${{ github.repository }} \
-            --dir releases/$VERSION \
+            --dir "releases/$VERSION" \
             --pattern "mise-*.tar.gz" \
             --pattern "mise-*.tar.xz" || {
               echo "Failed to download release artifacts"
@@ -46,8 +46,8 @@ jobs:
             }
 
           # Also download to releases/ directory for compatibility
-          cp releases/$VERSION/mise-*.tar.gz releases/ || true
-          cp releases/$VERSION/mise-*.tar.xz releases/ || true
+          cp "releases/$VERSION"/mise-*.tar.gz releases/ || true
+          cp "releases/$VERSION"/mise-*.tar.xz releases/ || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
