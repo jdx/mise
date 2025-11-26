@@ -108,9 +108,9 @@ pub fn should_exit_early_fast() -> bool {
         }
     }
     // Check if data dir has been modified (new tools installed, etc.)
-    if dirs::DATA.exists() {
-        if let Ok(metadata) = dirs::DATA.metadata() {
-            if let Ok(modified) = metadata.modified() {
+    if dirs::DATA.exists()
+        && let Ok(metadata) = dirs::DATA.metadata()
+            && let Ok(modified) = metadata.modified() {
                 let modtime = modified
                     .duration_since(std::time::SystemTime::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -119,12 +119,10 @@ pub fn should_exit_early_fast() -> bool {
                     return false;
                 }
             }
-        }
-    }
     // Check if any directory in the config search path has been modified
     // This catches new config files created anywhere in the hierarchy
-    if let Some(cwd) = &*dirs::CWD {
-        if let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS) {
+    if let Some(cwd) = &*dirs::CWD
+        && let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS) {
             // Config subdirectories that might contain config files
             let config_subdirs = ["", ".config/mise", ".mise", "mise", ".config"];
             for dir in ancestor_dirs {
@@ -134,8 +132,8 @@ pub fn should_exit_early_fast() -> bool {
                     } else {
                         dir.join(subdir)
                     };
-                    if let Ok(metadata) = check_dir.metadata() {
-                        if let Ok(modified) = metadata.modified() {
+                    if let Ok(metadata) = check_dir.metadata()
+                        && let Ok(modified) = metadata.modified() {
                             let modtime = modified
                                 .duration_since(std::time::SystemTime::UNIX_EPOCH)
                                 .unwrap_or_default()
@@ -144,11 +142,9 @@ pub fn should_exit_early_fast() -> bool {
                                 return false;
                             }
                         }
-                    }
                 }
             }
         }
-    }
     true
 }
 
