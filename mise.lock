@@ -1,11 +1,11 @@
 [[tools.actionlint]]
-version = "1.7.8"
+version = "1.7.9"
 backend = "aqua:rhysd/actionlint"
 
-[tools.actionlint.platforms.linux-x64]
-checksum = "sha256:be92c2652ab7b6d08425428797ceabeb16e31a781c07bc388456b4e592f3e36a"
-size = 2219735
-url = "https://github.com/rhysd/actionlint/releases/download/v1.7.8/actionlint_1.7.8_linux_amd64.tar.gz"
+[tools.actionlint.platforms.macos-arm64]
+checksum = "sha256:855e49e823fc68c6371fd6967e359cde11912d8d44fed343283c8e6e943bd789"
+size = 2068001
+url = "https://github.com/rhysd/actionlint/releases/download/v1.7.9/actionlint_1.7.9_darwin_arm64.tar.gz"
 
 [[tools.age]]
 version = "1.2.1"

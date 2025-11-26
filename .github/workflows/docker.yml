@@ -52,58 +52,58 @@ jobs:
           tags: ghcr.io/jdx/mise:${{ matrix.flavor }}
           labels: ${{ steps.meta.outputs.labels }}
           file: packaging/${{ matrix.flavor }}/Dockerfile
-  dev:
-    if: false # getting 503 errors from mcr.microsoft.com
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3
-      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
-      - name: Log in to the Container registry
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-      - name: Build and push Docker image
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
-        with:
-          context: .
-          push: true
-          tags: ghcr.io/jdx/mise:dev
-          labels: ${{ steps.meta.outputs.labels }}
-          file: packaging/dev/Dockerfile
-          platforms: linux/amd64,linux/arm64
-  dev-test:
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/jdx/mise:dev@sha256:aa27808f06b3a4ca146108cb0be95e621bc5d0642aae891c5445a5a018c99df2
-    needs: [dev]
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - run: cargo install --path . --debug
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
-          path: |
-            ~/.local/share/mise
-            ~/.cache/mise
-      - run: mise install
-      - name: mise run test
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
-        with:
-          timeout_minutes: 30
-          max_attempts: 3
-          command: mise run test
+  # dev:
+  #   # Disabled: getting 503 errors from mcr.microsoft.com
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #     packages: write
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+  #     - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3
+  #     - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+  #     - name: Log in to the Container registry
+  #       uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
+  #       with:
+  #         registry: ${{ env.REGISTRY }}
+  #         username: ${{ github.actor }}
+  #         password: ${{ secrets.GITHUB_TOKEN }}
+  #     - name: Extract metadata (tags, labels) for Docker
+  #       id: meta
+  #       uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5
+  #       with:
+  #         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+  #     - name: Build and push Docker image
+  #       uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
+  #       with:
+  #         context: .
+  #         push: true
+  #         tags: ghcr.io/jdx/mise:dev
+  #         labels: ${{ steps.meta.outputs.labels }}
+  #         file: packaging/dev/Dockerfile
+  #         platforms: linux/amd64,linux/arm64
+  # dev-test:
+  #   runs-on: ubuntu-latest
+  #   container:
+  #     image: ghcr.io/jdx/mise:dev@sha256:aa27808f06b3a4ca146108cb0be95e621bc5d0642aae891c5445a5a018c99df2
+  #   needs: [dev]
+  #   steps:
+  #     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+  #     - run: cargo install --path . --debug
+  #     - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+  #       with:
+  #         key: ${{ runner.os }}-${{ runner.arch }}-mise-tools-${{ hashFiles('mise.lock') }}
+  #         path: |
+  #           ~/.local/share/mise
+  #           ~/.cache/mise
+  #     - run: mise install
+  #     - name: mise run test
+  #       uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+  #       with:
+  #         timeout_minutes: 30
+  #         max_attempts: 3
+  #         command: mise run test
   dockerhub:
     runs-on: ${{ matrix.platform.os }}
     strategy:
@@ -201,12 +201,16 @@ jobs:
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
         run: |
+          # shellcheck disable=SC2046
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf 'jdxcode/mise:${{ github.ref_name }}@sha256:%s ' *)
+          # shellcheck disable=SC2046
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf 'ghcr.io/jdx/mise:${{ github.ref_name }}@sha256:%s ' *)
+          # shellcheck disable=SC2046
           docker buildx imagetools create -t jdxcode/mise:latest \
             $(printf 'jdxcode/mise:${{ github.ref_name }}@sha256:%s ' *)
+          # shellcheck disable=SC2046
           docker buildx imagetools create -t ghcr.io/jdx/mise:latest \
             $(printf 'ghcr.io/jdx/mise:${{ github.ref_name }}@sha256:%s ' *)
       - name: Inspect image
