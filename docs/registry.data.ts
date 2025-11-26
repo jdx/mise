@@ -45,6 +45,7 @@ export default {
         slug.startsWith("http") ? slug : `https://github.com/${slug}`,
       cargo: (slug) => `https://crates.io/crates/${slug}`,
       core: (slug) => `https://mise.jdx.dev/lang/${slug}.html`,
+      github: (slug) => `https://github.com/${slug}`,
       go: (slug) => `https://pkg.go.dev/${slug}`,
       npm: (slug) => `https://www.npmjs.com/package/${slug}`,
       pipx: (slug) => `https://pypi.org/project/${slug}`,
