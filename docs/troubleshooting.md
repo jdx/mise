@@ -50,13 +50,13 @@ detected with your setup. If you submit a bug report, please include the output 
 
 Likely this means that mise isn't first in PATH—using shims or `mise activate`. You can verify if
 this is the case by calling `which -a`, for example, if node@20.0.0 is being used but mise specifies
-node@22.0.0, first make sure that mise has this version installed and active by running `mise ls node`.
+node@24.0.0, first make sure that mise has this version installed and active by running `mise ls node`.
 It should not say missing and have the correct "Requested" version:
 
 ```bash
 $ mise ls node
 Plugin  Version  Config Source       Requested
-node    22.0.0  ~/.mise/config.toml  22.0.0
+node    24.0.0  ~/.mise/config.toml  24.0.0
 ```
 
 If `node -v` isn't showing the right version, make sure mise is activated by running `mise doctor`.

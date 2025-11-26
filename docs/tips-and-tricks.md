@@ -151,7 +151,7 @@ export MISE_AQUA_MINISIGN=false
 ## [`mise up --bump`](/cli/upgrade.html)
 
 Use `mise up --bump` to upgrade all software to the latest version and update `mise.toml` files. This keeps the same semver range as before,
-so if you had `node = "20"` and node 22 is the latest, `mise up --bump node` will change `mise.toml` to `node = "22"`.
+so if you had `node = "22"` and node 24 is the latest, `mise up --bump node` will change `mise.toml` to `node = "24"`.
 
 ## cargo-binstall
 

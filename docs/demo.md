@@ -13,9 +13,9 @@ The following demo shows:
 `mise exec <tool> -- <command>` allows you to run any tools with mise
 
 ```shell
-mise exec node@22 -- node -v
-# mise node@22.14.0 ✓ installed
-# v22.14.0
+mise exec node@24 -- node -v
+# mise node@24.x.x ✓ installed
+# v24.x.x
 ```
 
 node is only available in the mise environment, not globally
