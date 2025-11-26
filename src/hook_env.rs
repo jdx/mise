@@ -86,11 +86,12 @@ pub fn should_exit_early_fast() -> bool {
         return false;
     }
     // Check if running from precmd for the first time
-    if args
-        .iter()
-        .any(|a| a == "--reason=precmd" || a.starts_with("--reason=precmd"))
-        && !*env::__MISE_ZSH_PRECMD_RUN
-    {
+    // Handle both "--reason=precmd" and "--reason precmd" forms
+    let is_precmd = args.iter().any(|a| a == "--reason=precmd")
+        || args
+            .windows(2)
+            .any(|w| w[0] == "--reason" && w[1] == "precmd");
+    if is_precmd && !*env::__MISE_ZSH_PRECMD_RUN {
         return false;
     }
     // Can't exit early if directory changed
