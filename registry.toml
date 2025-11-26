@@ -269,7 +269,10 @@ test = ["amplify --version", "{{version}}"]
 
 [tools.aws-cli]
 aliases = ["aws", "awscli"]
-backends = ["aqua:aws/aws-cli", "asdf:MetricMike/asdf-awscli"]
+backends = [
+  { full = "aqua:aws/aws-cli", options = { symlink_bins = "true" } },
+  "asdf:MetricMike/asdf-awscli",
+]
 description = "The AWS Command Line Interface (AWS CLI v2) is a unified tool that provides a consistent interface for interacting with all parts of Amazon Web Services"
 os = ["linux", "macos"]
 test = ["aws --version", "aws-cli/{{version}}"]

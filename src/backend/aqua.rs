@@ -190,7 +190,10 @@ impl Backend for AquaBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<PathBuf>> {
-        // TODO: instead of caching it would probably be better to create this as part of installation
+        if self.symlink_bins(tv) {
+            return Ok(vec![tv.install_path().join(".mise-bins")]);
+        }
+
         let cache = self
             .bin_path_caches
             .entry(tv.version.clone())
@@ -1013,18 +1016,48 @@ impl AquaBackend {
             }
         }
 
-        for (src, dst) in self.srcs(pkg, tv)? {
+        let srcs = self.srcs(pkg, tv)?;
+        for (src, dst) in &srcs {
             if src != dst && src.exists() && !dst.exists() {
                 if cfg!(windows) {
-                    file::copy(&src, &dst)?;
+                    file::copy(src, dst)?;
                 } else {
                     let src = PathBuf::from(".").join(src.file_name().unwrap().to_str().unwrap());
-                    file::make_symlink(&src, &dst)?;
+                    file::make_symlink(&src, dst)?;
+                }
+            }
+        }
+
+        if self.symlink_bins(tv) {
+            self.create_symlink_bin_dir(tv, &srcs)?;
+        }
+
+        Ok(())
+    }
+
+    /// Creates a `.mise-bins` directory with symlinks only to the binaries defined in the aqua registry.
+    /// This prevents bundled dependencies (like Python in aws-cli) from being exposed on PATH.
+    fn create_symlink_bin_dir(&self, tv: &ToolVersion, srcs: &[(PathBuf, PathBuf)]) -> Result<()> {
+        let symlink_dir = tv.install_path().join(".mise-bins");
+        file::create_dir_all(&symlink_dir)?;
+
+        for (_, dst) in srcs {
+            if let Some(bin_name) = dst.file_name() {
+                let symlink_path = symlink_dir.join(bin_name);
+                if dst.exists() && !symlink_path.exists() {
+                    file::make_symlink_or_copy(dst, &symlink_path)?;
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn symlink_bins(&self, tv: &ToolVersion) -> bool {
+        tv.request
+            .options()
+            .get("symlink_bins")
+            .is_some_and(|v| v == "true" || v == "1")
     }
 
     fn srcs(&self, pkg: &AquaPackage, tv: &ToolVersion) -> Result<Vec<(PathBuf, PathBuf)>> {

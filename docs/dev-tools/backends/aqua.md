@@ -42,6 +42,27 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 Some tools will default to use aqua if they're specified in [registry.toml](https://github.com/jdx/mise/blob/main/registry.toml)
 to use the aqua backend. To see these tools, run `mise registry | grep aqua:`.
 
+## Tool Options
+
+### `symlink_bins`
+
+Some tools bundle dependencies that you may not want exposed on PATH. For example, `aws-cli` bundles
+Python, which can conflict with your intended Python version.
+
+Setting `symlink_bins = true` creates a filtered bin directory containing symlinks only to the binaries
+explicitly defined in the aqua registry, preventing bundled dependencies from being exposed.
+
+```toml
+[tools]
+aws-cli = { version = "latest", symlink_bins = true }
+```
+
+When enabled:
+
+- Only binaries defined in the aqua registry's `files` field are exposed (e.g., `aws` and `aws_completer` for aws-cli)
+- A `.mise-bins` subdirectory is created with symlinks to these specific binaries
+- Bundled dependencies like Python are not added to PATH
+
 ## Settings
 
 <script setup>
