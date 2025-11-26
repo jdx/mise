@@ -105,11 +105,10 @@ pub fn should_exit_early_fast() -> bool {
     // Check if any loaded config files have been modified
     for config_path in &PREV_SESSION.loaded_configs {
         if let Ok(metadata) = config_path.metadata() {
-            if let Ok(modified) = metadata.modified() {
-                if mtime_to_millis(modified) > PREV_SESSION.latest_update {
+            if let Ok(modified) = metadata.modified()
+                && mtime_to_millis(modified) > PREV_SESSION.latest_update {
                     return false;
                 }
-            }
         } else if !config_path.exists() {
             return false;
         }
@@ -119,13 +118,11 @@ pub fn should_exit_early_fast() -> bool {
     if !dirs::DATA.exists() {
         return false;
     }
-    if let Ok(metadata) = dirs::DATA.metadata() {
-        if let Ok(modified) = metadata.modified() {
-            if mtime_to_millis(modified) > PREV_SESSION.latest_update {
+    if let Ok(metadata) = dirs::DATA.metadata()
+        && let Ok(modified) = metadata.modified()
+            && mtime_to_millis(modified) > PREV_SESSION.latest_update {
                 return false;
             }
-        }
-    }
     // Check if any directory in the config search path has been modified
     // This catches new config files created anywhere in the hierarchy
     if let Some(cwd) = &*dirs::CWD
