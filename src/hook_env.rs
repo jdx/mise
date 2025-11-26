@@ -110,16 +110,19 @@ pub fn should_exit_early_fast() -> bool {
         }
     }
     // Check if data dir has been modified (new tools installed, etc.)
-    if dirs::DATA.exists()
-        && let Ok(metadata) = dirs::DATA.metadata()
-        && let Ok(modified) = metadata.modified()
-    {
-        let modtime = modified
-            .duration_since(std::time::SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        if modtime > PREV_SESSION.latest_update {
-            return false;
+    // Also check if it's been deleted - this requires a full update
+    if !dirs::DATA.exists() {
+        return false;
+    }
+    if let Ok(metadata) = dirs::DATA.metadata() {
+        if let Ok(modified) = metadata.modified() {
+            let modtime = modified
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            if modtime > PREV_SESSION.latest_update {
+                return false;
+            }
         }
     }
     // Check if any directory in the config search path has been modified
