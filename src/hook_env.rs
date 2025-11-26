@@ -21,6 +21,14 @@ use crate::hash::hash_to_str;
 use crate::shell::Shell;
 use crate::{dirs, env, file, hooks, watch_files};
 
+/// Convert a SystemTime to milliseconds since Unix epoch
+fn mtime_to_millis(mtime: SystemTime) -> u128 {
+    mtime
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+
 pub static PREV_SESSION: Lazy<HookEnvSession> = Lazy::new(|| {
     env::var("__MISE_SESSION")
         .ok()
@@ -97,11 +105,7 @@ pub fn should_exit_early_fast() -> bool {
     for config_path in &PREV_SESSION.loaded_configs {
         if let Ok(metadata) = config_path.metadata() {
             if let Ok(modified) = metadata.modified() {
-                let modtime = modified
-                    .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis();
-                if modtime > PREV_SESSION.latest_update {
+                if mtime_to_millis(modified) > PREV_SESSION.latest_update {
                     return false;
                 }
             }
@@ -116,11 +120,7 @@ pub fn should_exit_early_fast() -> bool {
     }
     if let Ok(metadata) = dirs::DATA.metadata() {
         if let Ok(modified) = metadata.modified() {
-            let modtime = modified
-                .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis();
-            if modtime > PREV_SESSION.latest_update {
+            if mtime_to_millis(modified) > PREV_SESSION.latest_update {
                 return false;
             }
         }
@@ -141,14 +141,9 @@ pub fn should_exit_early_fast() -> bool {
                 };
                 if let Ok(metadata) = check_dir.metadata()
                     && let Ok(modified) = metadata.modified()
+                    && mtime_to_millis(modified) > PREV_SESSION.latest_update
                 {
-                    let modtime = modified
-                        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis();
-                    if modtime > PREV_SESSION.latest_update {
-                        return false;
-                    }
+                    return false;
                 }
             }
         }
@@ -216,12 +211,8 @@ fn have_files_been_modified(watch_files: BTreeSet<PathBuf>) -> bool {
     // check the files to see if they've been altered
     let mut modified = false;
     for fp in &watch_files {
-        if let Ok(modtime) = fp.metadata().and_then(|m| m.modified()) {
-            let modtime = modtime
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_millis();
-            if modtime > PREV_SESSION.latest_update {
+        if let Ok(mtime) = fp.metadata().and_then(|m| m.modified()) {
+            if mtime_to_millis(mtime) > PREV_SESSION.latest_update {
                 trace!("file modified: {:?}", fp);
                 modified = true;
                 watch_files::add_modified_file(fp.clone());
@@ -294,10 +285,7 @@ pub async fn build_session(
         loaded_configs: config.config_files.keys().cloned().collect(),
         loaded_tools,
         config_paths,
-        latest_update: max_modtime
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_millis(),
+        latest_update: mtime_to_millis(max_modtime),
     })
 }
 
