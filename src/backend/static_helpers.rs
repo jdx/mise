@@ -317,15 +317,16 @@ pub fn install_artifact(
                     }
                 }
                 0 => {
-                    return Err(eyre::eyre!(
-                        "No executable files found in archive to rename with bin option"
-                    ));
+                    warn!(
+                        "No executable found to rename with bin option '{}'",
+                        bin_name
+                    );
                 }
                 _ => {
-                    return Err(eyre::eyre!(
-                        "Found multiple executable files in archive, cannot determine which to rename for bin option. Files: {:?}",
+                    warn!(
+                        "Found multiple executable files, skipping bin rename. Files: {:?}",
                         executable_files
-                    ));
+                    );
                 }
             }
         }
