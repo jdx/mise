@@ -68,7 +68,9 @@ pub fn should_exit_early_fast() -> bool {
         return false;
     }
     // Can't exit early if no previous session
-    if PREV_SESSION.loaded_configs.is_empty() {
+    // Check for dir being set as a proxy for "has valid session"
+    // (loaded_configs can be empty if there are no config files)
+    if PREV_SESSION.dir.is_none() {
         return false;
     }
     // Can't exit early if --force flag is present
