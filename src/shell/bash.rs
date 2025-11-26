@@ -108,8 +108,8 @@ impl Shell for Bash {
                 PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook;/}}"
                 PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook/}}"
             fi
-            unset _mise_hook
-            unset mise
+            unset -f _mise_hook
+            unset -f mise
             unset MISE_SHELL
             unset __MISE_DIFF
             unset __MISE_SESSION
