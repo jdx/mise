@@ -4257,6 +4257,14 @@ backends = [
 ]
 description = "Solidity, the Smart Contract Programming Language"
 
+[tools.sonar-scanner-cli]
+backends = [
+  "aqua:SonarSource/sonar-scanner-cli",
+  "asdf:virtualstaticvoid/asdf-sonarscanner",
+]
+description = "Scanner CLI for SonarQube (Server, Cloud)"
+test = ["sonar-scanner --version", "SonarScanner CLI {{version}}"]
+
 [tools.sonobuoy]
 backends = ["github:vmware-tanzu/sonobuoy", "asdf:Nick-Triller/asdf-sonobuoy"]
 description = "Sonobuoy is a diagnostic tool that makes it easier to understand the state of a Kubernetes cluster by running a set of Kubernetes conformance tests and other plugins in an accessible and non-destructive manner"
