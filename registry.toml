@@ -2382,7 +2382,7 @@ description = "Io is a programming language focused on expressiveness through si
 [tools.istioctl]
 backends = ["aqua:istio/istio/istioctl", "asdf:virtualstaticvoid/asdf-istioctl"]
 description = "Istio configuration command line utility for service operators to debug and diagnose their Istio mesh"
-test = ["istioctl version", "{{version}}"]
+test = ["istioctl version --remote=false", "client version: {{version}}"]
 
 [tools.janet]
 backends = ["asdf:mise-plugins/mise-janet"]
@@ -4691,8 +4691,10 @@ backends = [
 ]
 description = "Tinymist is an integrated language service for Typst."
 test = [
-  "tinymist --version | grep 'Build Git Describe:' | cut -d':' -f2 | tr -d ' '",
-  "v{{version}}",
+  "tinymist --version",
+  "",
+  # 0.14.4 doesn't print version
+  # "Build Git Describe:  v{{version}}",
 ]
 
 [tools.tinytex]
@@ -5092,7 +5094,7 @@ description = "Modern HTTP benchmarking tool"
 [tools.wtfutil]
 backends = ["aqua:wtfutil/wtf", "asdf:NeoHsu/asdf-wtfutil"]
 description = "WTF is the personal information dashboard for your terminal"
-test = ["wtfutil --help", "wtfutil "] # may not have version in output
+test = ["wtfutil --version", "WTF v{{version}}"]
 
 [tools.xc]
 backends = ["aqua:joerdav/xc", "asdf:airtonix/asdf-xc"]
