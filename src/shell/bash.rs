@@ -104,8 +104,10 @@ impl Shell for Bash {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-            PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook;/}}"
-            PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook/}}"
+            if [[ ${{PROMPT_COMMAND-}} == *_mise_hook* ]]; then
+                PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook;/}}"
+                PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook/}}"
+            fi
             unset _mise_hook
             unset mise
             unset MISE_SHELL
