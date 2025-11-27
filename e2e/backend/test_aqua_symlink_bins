@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# Test that symlink_bins option prevents bundled dependencies from being exposed on PATH.
+# aws-cli bundles Python which should NOT be exposed when symlink_bins=true.
+#
+# Note: On macOS, aws-cli uses .pkg format which requires special extraction tools
+# not available in isolated test environments, so we skip the full test there.
+
+export MISE_EXPERIMENTAL=1
+
+# Verify aws-cli registry entry exists with aqua backend
+assert_contains "mise registry aws-cli" "aqua:aws/aws-cli"
+
+# Full installation test only on Linux (aws-cli uses zip format there)
+if [[ "$(uname -s)" == "Linux" ]]; then
+	# Install aws-cli (uses symlink_bins=true by default from registry)
+	mise install aws-cli@2.32.6
+
+	# Verify aws-cli is installed and working
+	assert_contains "mise x aws-cli@2.32.6 -- aws --version" "aws-cli/2.32.6"
+
+	# Get the bin path for aws-cli - should be .mise-bins directory
+	bin_path="$(mise where aws-cli@2.32.6)/.mise-bins"
+	assert_directory_exists "$bin_path"
+
+	# List binaries in the .mise-bins directory - should only have aws and aws_completer
+	bins=$(find "$bin_path" -maxdepth 1 \( -type l -o -type f \) -print0 | xargs -0 -n1 basename | sort | tr '\n' ' ')
+	assert_contains "echo '$bins'" "aws"
+	assert_contains "echo '$bins'" "aws_completer"
+
+	# Verify Python is NOT in the .mise-bins directory
+	assert_not_contains "echo '$bins'" "Python"
+	assert_not_contains "echo '$bins'" "python"
+fi
