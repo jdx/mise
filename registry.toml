@@ -301,7 +301,7 @@ backends = [
   { full = "aqua:aws/aws-sam-cli", platforms = [
     "linux",
     "macos",
-  ] },
+  ], options = { symlink_bins = "true" } },
   "pipx:aws-sam-cli",
   "asdf:mise-plugins/mise-pyapp",
 ]
