@@ -2382,7 +2382,7 @@ description = "Io is a programming language focused on expressiveness through si
 [tools.istioctl]
 backends = ["aqua:istio/istio/istioctl", "asdf:virtualstaticvoid/asdf-istioctl"]
 description = "Istio configuration command line utility for service operators to debug and diagnose their Istio mesh"
-test = ["istioctl version", "{{version}}"]
+test = ["istioctl version --remote=false", "client version: {{version}}"]
 
 [tools.janet]
 backends = ["asdf:mise-plugins/mise-janet"]
