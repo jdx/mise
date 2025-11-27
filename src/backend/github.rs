@@ -579,11 +579,13 @@ impl UnifiedGitBackend {
                             let script = format!("#!/bin/sh\nexec {:?} \"$@\"\n", src);
                             file::write(&dst, script)?;
                             file::make_executable(&dst)?;
-                        } else {
+                        } else if cfg!(windows) {
                             let mut cmd_dst = dst.clone();
                             cmd_dst.set_extension("cmd");
                             let script = format!("@echo off\r\ncall {:?} %*\r\n", src);
                             file::write(&cmd_dst, script)?;
+                        } else {
+                            file::make_symlink_or_copy(&src, &dst)?;
                         }
                     }
                     found = true;

@@ -185,6 +185,7 @@ When enabled:
 - Other files (like READMEs, docs, or other binaries) are not exposed on PATH
 - On Unix, wrapper scripts are used instead of symlinks to ensure tools that rely on finding resources relative to their executable location (like some Python wrapper scripts) continue to work correctly.
 - On Windows, `.cmd` batch wrappers are created for the same reason.
+- On other platforms, symlinks (or copies) are used as a fallback.
 
 ### `api_url`
 
