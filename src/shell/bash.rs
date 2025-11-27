@@ -63,7 +63,9 @@ impl Shell for Bash {
             "#});
         if !opts.no_hook_env {
             out.push_str(&formatdoc! {r#"
-            if [[ ";${{PROMPT_COMMAND:-}};" != *";_mise_hook;"* ]]; then
+            if [[ $(declare -p PROMPT_COMMAND 2>&1) == "declare -a"* ]]; then
+              [[ " ${{PROMPT_COMMAND[@]}} " == *" _mise_hook "* ]] || PROMPT_COMMAND=(_mise_hook "${{PROMPT_COMMAND[@]}}")
+            elif [[ ";${{PROMPT_COMMAND:-}};" != *";_mise_hook;"* ]]; then
               PROMPT_COMMAND="_mise_hook${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
             fi
             {chpwd_functions}
@@ -104,8 +106,15 @@ impl Shell for Bash {
 
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-            PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook;/}}"
-            PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook/}}"
+            if [[ $(declare -p PROMPT_COMMAND 2>&1) == "declare -a"* ]]; then
+                for i in $${{!PROMPT_COMMAND[@]}}; do
+                    [[ ${{PROMPT_COMMAND[i]}} != _mise_hook ]] || unset "PROMPT_COMMAND[i]"
+                done
+                unset i
+            else
+                PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook;/}}"
+                PROMPT_COMMAND="${{PROMPT_COMMAND//_mise_hook/}}"
+            fi
             unset _mise_hook
             unset mise
             unset MISE_SHELL
