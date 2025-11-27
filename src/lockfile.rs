@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::Mutex;
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 use toml_edit::DocumentMut;
@@ -193,8 +193,47 @@ impl Lockfile {
         self.tools.is_empty()
     }
 
-    pub fn tools(&self) -> &BTreeMap<String, Vec<LockfileTool>> {
-        &self.tools
+    /// Get all platform keys present in the lockfile
+    pub fn all_platform_keys(&self) -> BTreeSet<String> {
+        let mut platforms = BTreeSet::new();
+        for tools in self.tools.values() {
+            for tool in tools {
+                for platform_key in tool.platforms.keys() {
+                    platforms.insert(platform_key.clone());
+                }
+            }
+        }
+        platforms
+    }
+
+    /// Update or add platform info for a tool version
+    pub fn set_platform_info(
+        &mut self,
+        short: &str,
+        version: &str,
+        backend: Option<&str>,
+        platform_key: &str,
+        platform_info: PlatformInfo,
+    ) {
+        let tools = self.tools.entry(short.to_string()).or_default();
+        // Find existing tool version or create new one
+        if let Some(tool) = tools.iter_mut().find(|t| t.version == version) {
+            tool.platforms
+                .insert(platform_key.to_string(), platform_info);
+        } else {
+            let mut platforms = BTreeMap::new();
+            platforms.insert(platform_key.to_string(), platform_info);
+            tools.push(LockfileTool {
+                version: version.to_string(),
+                backend: backend.map(|s| s.to_string()),
+                platforms,
+            });
+        }
+    }
+
+    /// Save the lockfile to disk (public for mise lock command)
+    pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        self.save(path)
     }
 }
 

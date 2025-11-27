@@ -3,63 +3,60 @@
 export MISE_LOCKFILE=1
 export MISE_EXPERIMENTAL=1
 
-echo "=== Testing basic lockfile creation detection ==="
-# Create a mise.toml without a lockfile
+echo "=== Testing lockfile creation with aqua tool ==="
+# Create a mise.toml with an aqua tool (which supports cross-platform resolution)
 cat <<EOF >mise.toml
 [tools]
-tiny = "1.0.0"
-dummy = "2.0.0"
+"aqua:jqlang/jq" = "1.7.1"
 EOF
 
-echo "=== Testing lockfile creation use case ==="
-# Test when no lockfiles exist but mise.toml exists
-assert_contains "mise lock" "No lockfile found, would create"
-assert_contains "mise lock" "mise.lock"
+rm -f mise.lock
 
-# Should detect the missing lockfile and show what would be created
-assert_contains "mise lock" "No lockfile found, would create"
-assert_contains "mise lock" "mise.lock"
-assert_contains "mise lock" "Would create lockfile with 2 tool(s): tiny, dummy"
-assert_contains "mise lock" "Would initialize 2 tool(s) in new lockfile"
+# Test that lock command creates lockfile
+output=$(mise lock --platform linux-x64 2>&1)
+assert_contains "echo '$output'" "Processing 1 tool(s)"
+assert_contains "echo '$output'" "Updated"
+assert_contains "echo '$output'" "Lockfile written"
 
-echo "=== Testing dry-run mode for lockfile creation ==="
-# Test detailed dry-run output
-output=$(mise lock --dry-run)
-assert_contains "echo '$output'" "✓ tiny (new lockfile)"
-assert_contains "echo '$output'" "✓ dummy (new lockfile)"
+# Verify lockfile was created
+assert "test -f mise.lock"
+assert_contains "cat mise.lock" "jqlang/jq"
+assert_contains "cat mise.lock" "1.7.1"
+assert_contains "cat mise.lock" "platforms.linux-x64"
 
-echo "=== Testing tool filtering for lockfile creation ==="
-# Test filtering by specific tool
-assert_contains "mise lock tiny" "Would initialize 1 tool(s) in new lockfile"
-output=$(mise lock tiny --dry-run)
-assert_contains "echo '$output'" "✓ tiny (new lockfile)"
-assert_not_contains "echo '$output'" "✓ dummy (new lockfile)"
+echo "=== Testing lockfile update (adding platforms) ==="
+# Now add another platform - it should update the existing lockfile
+output=$(mise lock --platform macos-arm64 2>&1)
+assert_contains "echo '$output'" "Updated"
 
-# Test filtering by multiple tools
-assert_contains "mise lock tiny dummy" "Would initialize 2 tool(s) in new lockfile"
+# Should now have both platforms
+assert_contains "cat mise.lock" "platforms.linux-x64"
+assert_contains "cat mise.lock" "platforms.macos-arm64"
 
-# Test non-existent tool filtering
-assert_not_contains "mise lock nonexistent" "Would initialize"
-
-echo "=== Testing transition from creation to existing ==="
-# Create a lockfile - now it should show as existing instead of missing
-cat <<EOF >mise.lock
-[tools.tiny]
-version = "1.0.0"
-backend = "asdf:tiny"
+echo "=== Testing lockfile with multiple tools ==="
+rm -f mise.lock
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+"aqua:sharkdp/fd" = "10.2.0"
 EOF
 
-# Should now show existing lockfile instead of missing
-assert_contains "mise lock" "Found lockfile"
-assert_not_contains "mise lock" "No lockfile found, would create"
+output=$(mise lock --platform linux-x64 2>&1)
+assert_contains "echo '$output'" "Processing 2 tool(s)"
+assert_contains "cat mise.lock" "jqlang/jq"
+assert_contains "cat mise.lock" "sharkdp/fd"
 
-echo "=== Testing platform filtering with existing lockfile ==="
-# Platform filtering should work with existing lockfile
-assert_contains "mise lock --platform linux-x64" "Would update"
+echo "=== Testing lockfile retains existing data ==="
+# Create a lockfile with existing data
+rm -f mise.lock
+mise lock --platform linux-x64
 
-echo "=== Testing help for creation ==="
-# Help should mention both updating and creating
-assert_contains "mise lock --help" "Update lockfile checksums and URLs"
+# Now add more platforms
+mise lock --platform macos-arm64
+
+# Original platform data should still exist
+assert_contains "cat mise.lock" "platforms.linux-x64"
+assert_contains "cat mise.lock" "platforms.macos-arm64"
 
 echo "=== Cleanup ==="
 rm -f mise.toml mise.lock

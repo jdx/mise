@@ -21,14 +21,9 @@ If not specified, all tools in lockfile will be updated
 
 ## Flags
 
-### `-f --force`
-
-Update all tools even if lockfile data already exists
-
 ### `-j --jobs <JOBS>`
 
 Number of jobs to run in parallel
-[default: 4]
 
 ### `-n --dry-run`
 
@@ -41,9 +36,10 @@ e.g.: linux-x64,macos-arm64,windows-x64
 If not specified, all platforms already in lockfile will be updated
 
 Examples:
-  
-  $ mise lock                           Update lockfile in current directory for all platforms
-  $ mise lock node python              Update only node and python
-  $ mise lock --platform linux-x64     Update only linux-x64 platform
-  $ mise lock --dry-run                Show what would be updated or created
-  $ mise lock --force                  Re-download and update even if data exists
+
+```
+mise lock                       # update lockfile for all common platforms
+mise lock node python           # update only node and python
+mise lock --platform linux-x64  # update only linux-x64 platform
+mise lock --dry-run             # show what would be updated
+```

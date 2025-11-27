@@ -1,65 +1,63 @@
 #!/usr/bin/env bash
 
-# Test for future mise lock full implementation
-# This test will be useful once the command actually updates lockfiles
+# Test for cross-platform lockfile generation
+# This tests that mise lock can generate platform-specific URLs for all platforms
+# even when running on a different platform (e.g., generating linux URLs from macOS)
 
 export MISE_LOCKFILE=1
 export MISE_EXPERIMENTAL=1
 
-echo "=== Testing actual lockfile updates (future implementation) ==="
+echo "=== Testing cross-platform URL generation ==="
 
-# Create basic setup
+# Create a mise.toml with an aqua tool
 cat <<EOF >mise.toml
 [tools]
-tiny = "1.0.0"
+"aqua:jqlang/jq" = "1.7.1"
 EOF
 
-cat <<EOF >mise.lock
-[tools.tiny]
-version = "1.0.0"
-backend = "asdf:tiny"
+rm -f mise.lock
 
-[tools.tiny.platforms.linux-x64]
-checksum = "sha256:old_checksum"
-size = 1024
-url = "https://example.com/old_url"
-EOF
-
-echo "Initial lockfile:"
-cat mise.lock
-
-# When full implementation is ready, this should:
-# 1. Download assets for all platforms
-# 2. Generate new checksums
-# 3. Update URLs if needed
-# 4. Update lockfile with fresh data
-
-echo "Running mise lock..."
+# Generate lockfile for all default platforms
 mise lock
 
-echo "Updated lockfile:"
+echo "Generated lockfile:"
 cat mise.lock
 
-# Future tests should verify:
-# - Checksums are updated
-# - URLs are current
-# - All existing platforms are refreshed
-# - New platforms can be added via --platform flag
+# Verify each platform has correct URLs
+# jq uses different filenames for each platform
+assert_contains "cat mise.lock" "jq-linux-amd64"
+assert_contains "cat mise.lock" "jq-linux-arm64"
+assert_contains "cat mise.lock" "jq-macos-amd64"
+assert_contains "cat mise.lock" "jq-macos-arm64"
+assert_contains "cat mise.lock" "jq-windows-amd64.exe"
 
-echo "=== Testing platform addition (future) ==="
-# This should add a new platform to the lockfile
-mise lock --platform macos-arm64
+# Verify all 5 default platforms are present
+assert_contains "cat mise.lock" "platforms.linux-x64"
+assert_contains "cat mise.lock" "platforms.linux-arm64"
+assert_contains "cat mise.lock" "platforms.macos-x64"
+assert_contains "cat mise.lock" "platforms.macos-arm64"
+assert_contains "cat mise.lock" "platforms.windows-x64"
 
-echo "Lockfile with new platform:"
-cat mise.lock
+echo "=== Testing selective platform generation ==="
+rm -f mise.lock
 
-# Should now contain both linux-x64 and macos-arm64 sections
+# Generate only for specific platforms
+mise lock --platform linux-x64,windows-x64
 
-echo "=== Testing selective updates (future) ==="
-# This should only update specific tools
-mise lock tiny
+# Should only have the requested platforms
+assert_contains "cat mise.lock" "platforms.linux-x64"
+assert_contains "cat mise.lock" "platforms.windows-x64"
+assert_not_contains "cat mise.lock" "platforms.macos-arm64"
+assert_not_contains "cat mise.lock" "platforms.macos-x64"
+
+echo "=== Testing URL validity ==="
+rm -f mise.lock
+mise lock --platform linux-x64
+
+# URLs should be proper GitHub release URLs
+assert_contains "cat mise.lock" "https://github.com/jqlang/jq/releases/download"
 
 echo "=== Cleanup ==="
 rm -f mise.lock mise.toml
 
-echo "Future implementation tests completed!"
+echo "Cross-platform lockfile tests passed!"

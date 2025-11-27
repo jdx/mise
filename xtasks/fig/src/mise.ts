@@ -1452,13 +1452,8 @@ const completionSpec: Fig.Spec = {
         "Update lockfile checksums and URLs for all specified platforms",
       options: [
         {
-          name: ["-f", "--force"],
-          description: "Update all tools even if lockfile data already exists",
-          isRepeatable: false,
-        },
-        {
           name: ["-j", "--jobs"],
-          description: "Number of jobs to run in parallel\n[default: 4]",
+          description: "Number of jobs to run in parallel",
           isRepeatable: false,
           args: {
             name: "jobs",
