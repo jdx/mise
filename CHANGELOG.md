@@ -1,5 +1,36 @@
 # Changelog
 
+## [2025.11.10](https://github.com/jdx/mise/compare/v2025.11.9..v2025.11.10) - 2025-11-27
+
+### 📦 Registry
+
+- enable symlink_bins for aws-sam by @risu729 in [#7082](https://github.com/jdx/mise/pull/7082)
+- use cargo backend for tokei to support latest version by @risu729 in [#7086](https://github.com/jdx/mise/pull/7086)
+- add SonarSource/sonar-scanner-cli by @kapitoshka438 in [#7087](https://github.com/jdx/mise/pull/7087)
+
+### 🐛 Bug Fixes
+
+- **(docs)** link gitlab backended tools in registry by @risu729 in [#7078](https://github.com/jdx/mise/pull/7078)
+
+### 🚜 Refactor
+
+- **(hook-env)** derive config_subdirs from config filenames by @risu729 in [#7080](https://github.com/jdx/mise/pull/7080)
+
+### New Contributors
+
+- @kapitoshka438 made their first contribution in [#7087](https://github.com/jdx/mise/pull/7087)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (1)
+
+- [`kiali/kiali`](https://github.com/kiali/kiali)
+
+#### Updated Packages (3)
+
+- [`XAMPPRocky/tokei`](https://github.com/XAMPPRocky/tokei)
+- [`astral-sh/uv`](https://github.com/astral-sh/uv)
+- [`wtfutil/wtf`](https://github.com/wtfutil/wtf)
 ## [2025.11.9](https://github.com/jdx/mise/compare/v2025.11.8..v2025.11.9) - 2025-11-27
 
 ### 📦 Registry
