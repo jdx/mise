@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -14,6 +14,16 @@ use console::style;
 use eyre::Result;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
+
+/// Result type for lock task: (short_name, version, backend, platform, info, options)
+type LockTaskResult = (
+    String,
+    String,
+    String,
+    Platform,
+    Option<PlatformInfo>,
+    BTreeMap<String, String>,
+);
 
 /// Update lockfile checksums and URLs for all specified platforms
 ///
@@ -194,14 +204,7 @@ impl Lock {
     ) -> Result<Vec<(String, String, bool)>> {
         let jobs = self.jobs.unwrap_or(settings.jobs);
         let semaphore = Arc::new(Semaphore::new(jobs));
-        let mut jset: JoinSet<(
-            String,
-            String,
-            String,
-            Platform,
-            Option<PlatformInfo>,
-            std::collections::BTreeMap<String, String>,
-        )> = JoinSet::new();
+        let mut jset: JoinSet<LockTaskResult> = JoinSet::new();
         let mut results = Vec::new();
 
         let mpr = MultiProgressReport::get();
@@ -242,7 +245,7 @@ impl Lock {
                         }
                     } else {
                         warn!("Backend not found for {}", ba.short);
-                        (None, std::collections::BTreeMap::new())
+                        (None, BTreeMap::new())
                     };
 
                     (
