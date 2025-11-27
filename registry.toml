@@ -4706,10 +4706,11 @@ description = "tmux is a terminal multiplexer. It lets you switch easily between
 
 [tools.tokei]
 backends = [
+  # v13.0.0 doesn't have binaries
+  "cargo:tokei",
   "aqua:XAMPPRocky/tokei",
   "ubi:XAMPPRocky/tokei",
   "asdf:gasuketsu/asdf-tokei",
-  "cargo:tokei",
 ]
 description = "Count your code, quickly"
 test = ["tokei --version", "tokei {{version}}"]
