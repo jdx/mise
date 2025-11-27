@@ -1028,15 +1028,7 @@ impl AquaBackend {
             }
         }
 
-        let should_create_symlink = self.symlink_bins(tv);
-        info!(
-            "[{}] symlink_bins={}, srcs.len()={}, opts={:?}",
-            tv.ba(),
-            should_create_symlink,
-            srcs.len(),
-            tv.request.options()
-        );
-        if should_create_symlink {
+        if self.symlink_bins(tv) {
             self.create_symlink_bin_dir(tv, &srcs)?;
         }
 
@@ -1047,51 +1039,16 @@ impl AquaBackend {
     /// This prevents bundled dependencies (like Python in aws-cli) from being exposed on PATH.
     fn create_symlink_bin_dir(&self, tv: &ToolVersion, srcs: &[(PathBuf, PathBuf)]) -> Result<()> {
         let symlink_dir = tv.install_path().join(".mise-bins");
-        info!(
-            "[{}] create_symlink_bin_dir: symlink_dir={}",
-            tv.ba(),
-            symlink_dir.display()
-        );
         file::create_dir_all(&symlink_dir)?;
-        info!(
-            "[{}] after create_dir_all: symlink_dir.exists()={}",
-            tv.ba(),
-            symlink_dir.exists()
-        );
 
         for (_, dst) in srcs {
             if let Some(bin_name) = dst.file_name() {
                 let symlink_path = symlink_dir.join(bin_name);
-                info!(
-                    "[{}] checking dst={}, exists={}, will_create_symlink={}",
-                    tv.ba(),
-                    dst.display(),
-                    dst.exists(),
-                    dst.exists() && !symlink_path.exists()
-                );
                 if dst.exists() && !symlink_path.exists() {
                     file::make_symlink_or_copy(dst, &symlink_path)?;
-                    info!(
-                        "[{}] created symlink at {}, exists={}",
-                        tv.ba(),
-                        symlink_path.display(),
-                        symlink_path.exists()
-                    );
                 }
             }
         }
-
-        info!(
-            "[{}] FINAL: symlink_dir.exists()={}, contents={:?}",
-            tv.ba(),
-            symlink_dir.exists(),
-            std::fs::read_dir(&symlink_dir)
-                .map(|entries| entries
-                    .filter_map(|e| e.ok())
-                    .map(|e| e.file_name().to_string_lossy().to_string())
-                    .collect::<Vec<_>>())
-                .unwrap_or_default()
-        );
         Ok(())
     }
 
