@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
@@ -6,6 +7,7 @@ use crate::config::Settings;
 use crate::file::TarOptions;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::path::{Path, PathBuf, PathExt};
 use crate::plugins::VERSION_REGEX;
 use crate::registry::REGISTRY;
@@ -252,6 +254,104 @@ impl Backend for AquaBackend {
                 query_regex.is_match(v)
             })
             .collect()
+    }
+
+    /// Resolve platform-specific lock information for any target platform.
+    /// This enables cross-platform lockfile generation without installation.
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        // Map Platform to Aqua's os/arch conventions
+        let target_os = match target.os_name() {
+            "macos" => "darwin",
+            other => other,
+        };
+        let target_arch = match target.arch_name() {
+            "x64" => "amd64",
+            other => other,
+        };
+
+        // Get version tag
+        let tag = self
+            .get_version_tags()
+            .await
+            .ok()
+            .into_iter()
+            .flatten()
+            .find(|(version, _)| version == &tv.version)
+            .map(|(_, tag)| tag);
+        let mut v = tag.cloned().unwrap_or_else(|| tv.version.clone());
+        let v_prefixed = (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
+        let versions = match &v_prefixed {
+            Some(v_prefixed) => vec![v.as_str(), v_prefixed.as_str()],
+            None => vec![v.as_str()],
+        };
+
+        // Get package with version for the target platform
+        let pkg = AQUA_REGISTRY
+            .package_with_version(&self.id, &versions)
+            .await?;
+        let pkg = pkg.with_version(&versions, target_os, target_arch);
+
+        // Apply version prefix if present
+        if let Some(prefix) = &pkg.version_prefix
+            && !v.starts_with(prefix)
+        {
+            v = format!("{prefix}{v}");
+        }
+
+        // Check if this platform is supported
+        let envs: std::collections::HashSet<&str> =
+            pkg.supported_envs.iter().map(|s| s.as_str()).collect();
+        let os_arch = format!("{target_os}/{target_arch}");
+        let myself: std::collections::HashSet<&str> =
+            ["all", target_os, target_arch, os_arch.as_str()].into();
+        if !envs.is_empty() && envs.is_disjoint(&myself) {
+            // Platform not supported - return empty info (warn and continue strategy)
+            debug!(
+                "aqua package {} does not support {}: supported_envs={:?}",
+                self.id,
+                target.to_key(),
+                envs
+            );
+            return Ok(PlatformInfo::default());
+        }
+
+        // Get URL for the target platform
+        let url = match pkg.r#type {
+            AquaPackageType::GithubRelease => {
+                // For GitHub releases, we need to find the asset for the target platform
+                let asset_strs = pkg.asset_strs(&v, target_os, target_arch)?;
+                match self.github_release_asset(&pkg, &v, asset_strs).await {
+                    Ok((url, _digest)) => Some(url),
+                    Err(e) => {
+                        debug!(
+                            "Failed to get GitHub release asset for {} on {}: {}",
+                            self.id,
+                            target.to_key(),
+                            e
+                        );
+                        None
+                    }
+                }
+            }
+            AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
+                Some(self.github_archive_url(&pkg, &v))
+            }
+            AquaPackageType::Http => pkg.url(&v, target_os, target_arch).ok(),
+            _ => None,
+        };
+
+        let name = url.as_ref().map(|u| get_filename_from_url(u));
+        Ok(PlatformInfo {
+            url,
+            checksum: None, // Checksums require downloading checksum files - done during install
+            name,
+            size: None,
+            url_api: None,
+        })
     }
 }
 
