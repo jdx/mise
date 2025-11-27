@@ -86,7 +86,7 @@ impl Lock {
 
         // Get toolset and resolve versions
         let ts = config.get_toolset().await?;
-        let tools = self.get_tools_to_lock(ts);
+        let tools = self.get_tools_to_lock(&config, ts);
 
         if tools.is_empty() {
             miseprintln!("{} No tools configured to lock", style("!").yellow());
@@ -177,13 +177,76 @@ impl Lock {
 
     fn get_tools_to_lock(
         &self,
+        config: &Config,
         ts: &Toolset,
     ) -> Vec<(crate::cli::args::BackendArg, crate::toolset::ToolVersion)> {
-        let all_tools: Vec<_> = ts
-            .list_current_versions()
-            .into_iter()
-            .map(|(backend, tv)| (backend.ba().as_ref().clone(), tv))
-            .collect();
+        // Collect tools from ALL config files (not just resolved current versions)
+        // This ensures base config tools are included even when overridden by env configs
+        let mut all_tools: Vec<_> = Vec::new();
+        let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+
+        // First, get all tools from the resolved toolset (these are the "current" versions)
+        for (backend, tv) in ts.list_current_versions() {
+            let key = (backend.ba().short.clone(), tv.version.clone());
+            if seen.insert(key) {
+                all_tools.push((backend.ba().as_ref().clone(), tv));
+            }
+        }
+
+        // Then, iterate ALL config files to find tools that may have been overridden
+        for (_path, cf) in config.config_files.iter() {
+            if let Ok(trs) = cf.to_tool_request_set() {
+                for (ba, requests, _source) in trs.iter() {
+                    for request in requests {
+                        // Try to get a resolved version for this request
+                        if let Ok(backend) = ba.backend() {
+                            // Check if we already have this tool+version in toolset
+                            if let Some(resolved_tv) = ts.versions.get(ba.as_ref()) {
+                                for tv in &resolved_tv.versions {
+                                    if tv.request.version() == request.version() {
+                                        let key = (ba.short.clone(), tv.version.clone());
+                                        if seen.insert(key) {
+                                            all_tools.push((ba.as_ref().clone(), tv.clone()));
+                                        }
+                                    }
+                                }
+                            }
+                            // Also check installed versions that match this request
+                            let installed = backend.list_installed_versions();
+                            if request.version() == "latest" {
+                                // For "latest", find the highest installed version
+                                if let Some(latest_version) = installed.iter().max_by(|a, b| {
+                                    versions::Versioning::new(a).cmp(&versions::Versioning::new(b))
+                                }) {
+                                    let key = (ba.short.clone(), latest_version.clone());
+                                    if seen.insert(key.clone()) {
+                                        let tv = crate::toolset::ToolVersion::new(
+                                            request.clone(),
+                                            latest_version.clone(),
+                                        );
+                                        all_tools.push((ba.as_ref().clone(), tv));
+                                    }
+                                }
+                            } else {
+                                // For prefix requests, find matching versions
+                                for version in installed {
+                                    if version.starts_with(&request.version()) {
+                                        let key = (ba.short.clone(), version.clone());
+                                        if seen.insert(key.clone()) {
+                                            let tv = crate::toolset::ToolVersion::new(
+                                                request.clone(),
+                                                version,
+                                            );
+                                            all_tools.push((ba.as_ref().clone(), tv));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         if self.tool.is_empty() {
             // Lock all tools

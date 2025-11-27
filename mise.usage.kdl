@@ -501,7 +501,7 @@ cmd local hide=#true help="Sets/gets tool version in local .tool-versions or mis
 }
 cmd lock help="Update lockfile checksums and URLs for all specified platforms" {
     long_help "Update lockfile checksums and URLs for all specified platforms\n\nUpdates checksums and download URLs for all platforms already specified in the lockfile.\nIf no lockfile exists, shows what would be created based on the current configuration.\nThis allows you to refresh lockfile data for platforms other than the one you're currently on.\nOperates on the lockfile in the current config root. Use TOOL arguments to target specific tools."
-    after_long_help "Examples:\n\n    $ mise lock                       # update lockfile for all common platforms\n    $ mise lock node python           # update only node and python\n    $ mise lock --platform linux-x64  # update only linux-x64 platform\n    $ mise lock --dry-run             # show what would be updated\n"
+    after_long_help "Examples:\n\n    $ mise lock                       # update lockfile for all common platforms\n    $ mise lock node python           # update only node and python\n    $ mise lock --platform linux-x64  # update only linux-x64 platform\n    $ mise lock --dry-run             # show what would be updated\n    $ mise lock --local               # update mise.local.lock for local configs\n"
     flag "-j --jobs" help="Number of jobs to run in parallel" {
         arg <JOBS>
     }
@@ -509,6 +509,7 @@ cmd lock help="Update lockfile checksums and URLs for all specified platforms" {
     flag "-p --platform" help="Comma-separated list of platforms to target\ne.g.: linux-x64,macos-arm64,windows-x64\nIf not specified, all platforms already in lockfile will be updated" var=#true {
         arg <PLATFORM>
     }
+    flag --local help="Update mise.local.lock instead of mise.lock\nUse for tools defined in .local.toml configs"
     arg "[TOOL]…" help="Tool(s) to update in lockfile\ne.g.: node python\nIf not specified, all tools in lockfile will be updated" required=#false var=#true
 }
 cmd ls help="List installed and active tool versions" {

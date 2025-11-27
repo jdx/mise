@@ -22,7 +22,7 @@ output=$(mise lock 2>&1)
 assert_contains "echo '$output'" "Targeting 5 platform(s)"
 assert_contains "echo '$output'" "Processing 1 tool(s)"
 assert_contains "echo '$output'" "Updated"
-assert_contains "echo '$output'" "Lockfile written to mise.lock"
+assert_contains "echo '$output'" "Lockfile written to"
 
 # Verify lockfile was created with platform data
 assert "test -f mise.lock"
