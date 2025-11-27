@@ -5086,7 +5086,7 @@ description = "Modern HTTP benchmarking tool"
 [tools.wtfutil]
 backends = ["aqua:wtfutil/wtf", "asdf:NeoHsu/asdf-wtfutil"]
 description = "WTF is the personal information dashboard for your terminal"
-test = ["wtfutil --help", "wtfutil "] # may not have version in output
+test = ["wtfutil --version", "WTF v{{version}}"]
 
 [tools.xc]
 backends = ["aqua:joerdav/xc", "asdf:airtonix/asdf-xc"]
