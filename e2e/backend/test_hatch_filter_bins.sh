@@ -13,17 +13,11 @@ export MISE_EXPERIMENTAL=1
 # Install a known python version globally
 mise use --global python@3.11 || mise install python@3.11 && mise use --global python@3.11
 
-# Create a mise.toml to install hatch via github backend
-cat > mise.toml <<EOF
-[tools]
-"github:pypa/hatch" = { version = "1.20.0", filter_bins = "hatch", asset_pattern = "hatch-*-x86_64-unknown-linux-gnu.tar.gz" }
-EOF
-
-# Install hatch
-mise install "github:pypa/hatch"
+# Install hatch (should use github backend from registry)
+mise install hatch@latest
 
 # Get the base install path for hatch
-hatch_install_dir="$(mise where "github:pypa/hatch@latest")"
+hatch_install_dir="$(mise where hatch@latest)"
 
 # Verify hatch binary is in .mise-bins
 hatch_bin_dir="$hatch_install_dir/.mise-bins"
@@ -45,12 +39,11 @@ fi
 echo "Verified no unexpected python executables from hatch's .mise-bins."
 
 # Verify hatch itself works
-assert_contains "mise x hatch --version" "hatch"
+assert_contains "mise x hatch@latest -- hatch --version" "Hatch"
 
 # Verify global python is still the one mise manages and not hatch's bundled one
 assert_contains "mise x python -- python --version" "Python 3.11"
 
 # Clean up
-rm mise.toml
 mise uninstall hatch@latest
 mise uninstall python@3.11

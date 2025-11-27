@@ -575,7 +575,13 @@ impl UnifiedGitBackend {
                 if src.exists() {
                     let dst = symlink_dir.join(&bin_name);
                     if !dst.exists() {
-                        file::make_symlink_or_copy(&src, &dst)?;
+                        if cfg!(unix) {
+                            let script = format!("#!/bin/sh\nexec {:?} \"$@\"\n", src);
+                            file::write(&dst, script)?;
+                            file::make_executable(&dst)?;
+                        } else {
+                            file::make_symlink_or_copy(&src, &dst)?;
+                        }
                     }
                     found = true;
                     break;

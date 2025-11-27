@@ -181,8 +181,9 @@ Comma-separated list of binaries to symlink into a filtered `.mise-bins` directo
 
 When enabled:
 
-- A `.mise-bins` subdirectory is created with symlinks only to the specified binaries
+- A `.mise-bins` subdirectory is created with symlinks (or wrapper scripts on Unix) only to the specified binaries
 - Other files (like READMEs, docs, or other binaries) are not exposed on PATH
+- On Unix, wrapper scripts are used instead of symlinks to ensure tools that rely on finding resources relative to their executable location (like some Python wrapper scripts) continue to work correctly.
 
 ### `api_url`
 
