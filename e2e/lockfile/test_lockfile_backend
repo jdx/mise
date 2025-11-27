@@ -9,7 +9,7 @@ cat <<EOF >mise.toml
 version = "1.0.0"
 EOF
 cat <<EOF >mise.lock
-[tools.gh]
+[[tools.gh]]
 version = "1.0.0"
 backend = "ubi:cli/cli[exe=gh]"
 EOF

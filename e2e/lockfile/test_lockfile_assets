@@ -5,7 +5,7 @@ export MISE_EXPERIMENTAL=1
 
 # Test creating a lockfile with platforms sections
 cat <<EOF >mise.lock
-[tools.tiny]
+[[tools.tiny]]
 version = "1.0.0"
 backend = "asdf:tiny"
 
@@ -13,7 +13,7 @@ backend = "asdf:tiny"
 checksum = "sha256:abc123"
 size = 1024
 
-[tools.dummy]
+[[tools.dummy]]
 version = "2.0.0"
 backend = "core:dummy"
 

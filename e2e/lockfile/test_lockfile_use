@@ -36,7 +36,11 @@ backend = "asdf:tiny"'
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "3"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "3.1.0"
 
-echo 'tools.tiny = "1.0.0"' >mise.lock
+cat <<EOF >mise.lock
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:tiny"
+EOF
 assert "mise use tiny@1 tiny@2"
 assert "cat mise.lock" '[[tools.tiny]]
 version = "1.0.0"
