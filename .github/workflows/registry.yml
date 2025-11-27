@@ -62,8 +62,8 @@ jobs:
             | jq -rs '
               (.[0].tools) as $old |
               (.[1].tools) as $new |
-              [ ($new | keys[]) |
-              select($new[.] != $old[.]) ] | join(" ")
+              [ ($new | keys[]) | select($new[.] != $old[.]) ] |
+              join(" ")
             ' || true \
           )
           echo "$changed_tools"
