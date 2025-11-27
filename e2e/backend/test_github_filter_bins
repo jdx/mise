@@ -1,43 +1,48 @@
 #!/usr/bin/env bash
 
-# Test filter_bins option for github backend
-# We use ripgrep as it comes with extra files (README, etc) in the release archive
+# Test filter_bins option for github backend with hatch.
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "Skipping Linux-specific test on non-Linux OS"
   exit 0
 fi
 
-# Create a mise.toml with filter_bins option
-cat > mise.toml <<EOF
-[tools]
-"github:BurntSushi/ripgrep" = { version = "13.0.0", filter_bins = "rg" }
-EOF
+# Set MISE_EXPERIMENTAL for github backend features
+export MISE_EXPERIMENTAL=1
 
-# Install
-mise install
+# Install a known python version globally for hatch test
+mise use --global python@3.11 || mise install python@3.11 && mise use --global python@3.11
 
-# Verify installation path contains .mise-bins
-bin_path="$(mise where "github:BurntSushi/ripgrep@13.0.0")/.mise-bins"
-assert_directory_exists "$bin_path"
+# --- Test Hatch ---
+# Install hatch (should use github backend from registry)
+mise install hatch@latest
 
-# Verify rg is linked
-if [[ -f "$bin_path/rg" ]]; then
-    echo "rg binary exists"
+# Get the base install path for hatch
+hatch_install_dir="$(mise where hatch@latest)"
+
+# Verify hatch binary is in .mise-bins
+hatch_bin_dir="$hatch_install_dir/.mise-bins"
+assert_directory_exists "$hatch_bin_dir"
+if [[ -f "$hatch_bin_dir/hatch" ]]; then
+    echo "hatch binary exists in .mise-bins"
 else
-    echo "rg binary missing"
+    echo "hatch binary missing from .mise-bins"
     exit 1
 fi
 
-# Verify other files are NOT linked (e.g. README.md which is usually in the root of ripgrep archive)
-if [[ -f "$bin_path/README.md" ]]; then
-    echo "README.md should not exist"
+# Verify no python executable is exposed via hatch's .mise-bins
+if find "$hatch_bin_dir" -maxdepth 1 -name "python*" | grep -q "python"; then
+    echo "ERROR: Python executable found in hatch's .mise-bins directory. Filter_bins is not working."
     exit 1
 fi
+echo "Verified no unexpected python executables from hatch's .mise-bins."
 
-# Verify tool works
-assert_contains "mise x -- rg --version" "ripgrep 13.0.0"
+# Verify hatch itself works
+assert_contains "mise x hatch@latest -- hatch --version" "Hatch"
+
+# Verify global python is still the one mise manages and not hatch's bundled one
+assert_contains "mise x python -- python --version" "Python 3.11"
 
 # Clean up
-rm mise.toml
-mise uninstall "github:BurntSushi/ripgrep@13.0.0"
+mise uninstall hatch@latest
+mise uninstall python@3.11
