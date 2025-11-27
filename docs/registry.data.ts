@@ -32,7 +32,7 @@ export default {
     const { tools } = load(raw) as Registry;
     const registry: Record<string, Tool> = {};
 
-    // dotnet, gem, spm backends are not supported
+    // dotnet, gem, spm, and http backends are not supported
     const urlBuilders: Record<
       string,
       (slug: string, options: string | undefined) => string
@@ -46,6 +46,7 @@ export default {
       cargo: (slug) => `https://crates.io/crates/${slug}`,
       core: (slug) => `https://mise.jdx.dev/lang/${slug}.html`,
       github: (slug) => `https://github.com/${slug}`,
+      gitlab: (slug) => `https://gitlab.com/${slug}`,
       go: (slug) => `https://pkg.go.dev/${slug}`,
       npm: (slug) => `https://www.npmjs.com/package/${slug}`,
       pipx: (slug) => `https://pypi.org/project/${slug}`,
