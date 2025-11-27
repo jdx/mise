@@ -580,7 +580,10 @@ impl UnifiedGitBackend {
                             file::write(&dst, script)?;
                             file::make_executable(&dst)?;
                         } else {
-                            file::make_symlink_or_copy(&src, &dst)?;
+                            let mut cmd_dst = dst.clone();
+                            cmd_dst.set_extension("cmd");
+                            let script = format!("@echo off\r\ncall {:?} %*\r\n", src);
+                            file::write(&cmd_dst, script)?;
                         }
                     }
                     found = true;
