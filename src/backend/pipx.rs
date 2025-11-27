@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -6,7 +7,7 @@ use crate::config::{Config, Settings};
 use crate::github;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::{ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{backend::Backend, timeout};
@@ -15,6 +16,7 @@ use eyre::{Result, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use regex::Regex;
+use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::{fmt::Debug, sync::Arc};
 use versions::Versioning;
@@ -213,6 +215,24 @@ impl Backend for PIPXBackend {
             cmd.execute()?;
         }
         Ok(tv)
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let opts = request.options();
+        let mut result = BTreeMap::new();
+
+        // These options affect what gets installed
+        for key in ["extras", "pipx_args", "uvx_args", "uvx"] {
+            if let Some(value) = opts.get(key) {
+                result.insert(key.to_string(), value.clone());
+            }
+        }
+
+        result
     }
 }
 

@@ -201,10 +201,7 @@ impl BackendArg {
             }
 
             let config = Config::get_();
-            if let Some(lt) =
-                lockfile::get_locked_version(&config, None, short, "").unwrap_or_default()
-                && let Some(backend) = lt.backend
-            {
+            if let Some(backend) = lockfile::get_locked_backend(&config, short) {
                 return backend;
             }
         }

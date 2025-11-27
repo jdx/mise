@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::backend::Backend;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
@@ -13,7 +14,7 @@ use crate::github::GithubRelease;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{cmd, file, plugins, timeout};
 use async_trait::async_trait;
@@ -386,6 +387,29 @@ impl Backend for RubyPlugin {
         let map = BTreeMap::new();
         // No modification to RUBYLIB
         Ok(map)
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        _request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let mut opts = BTreeMap::new();
+        let settings = Settings::get();
+        let is_current_platform = target.is_current();
+
+        // Ruby uses ruby-install vs ruby-build (ruby compiles from source either way)
+        // Only include if using non-default ruby-install tool
+        let ruby_install = if is_current_platform {
+            settings.ruby.ruby_install
+        } else {
+            false
+        };
+        if ruby_install {
+            opts.insert("ruby_install".to_string(), "true".to_string());
+        }
+
+        opts
     }
 }
 

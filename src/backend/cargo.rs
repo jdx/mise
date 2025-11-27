@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::{fmt::Debug, sync::Arc};
 
 use async_trait::async_trait;
@@ -9,6 +10,7 @@ use url::Url;
 use crate::Result;
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::lookup_platform_key;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
@@ -16,7 +18,7 @@ use crate::config::{Config, Settings};
 use crate::env::GITHUB_TOKEN;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{env, file};
 
 #[derive(Debug)]
@@ -144,6 +146,24 @@ impl Backend for CargoBackend {
             .execute()?;
 
         Ok(tv.clone())
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let opts = request.options();
+        let mut result = BTreeMap::new();
+
+        // These options affect what gets compiled/installed
+        for key in ["features", "default-features", "bin"] {
+            if let Some(value) = opts.get(key) {
+                result.insert(key.to_string(), value.clone());
+            }
+        }
+
+        result
     }
 }
 

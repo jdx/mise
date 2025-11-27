@@ -1,6 +1,8 @@
+use std::collections::BTreeMap;
 use std::{path::PathBuf, sync::Arc};
 
 use crate::backend::Backend;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 #[cfg(unix)]
@@ -332,6 +334,28 @@ impl Backend for ErlangPlugin {
             return Ok(tv);
         }
         self.install_via_kerl(ctx, tv).await
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        _request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let mut opts = BTreeMap::new();
+        let settings = Settings::get();
+        let is_current_platform = target.is_current();
+
+        // Only include compile option if true (non-default)
+        let compile = if is_current_platform {
+            settings.erlang.compile.unwrap_or(false)
+        } else {
+            false
+        };
+        if compile {
+            opts.insert("compile".to_string(), "true".to_string());
+        }
+
+        opts
     }
 }
 

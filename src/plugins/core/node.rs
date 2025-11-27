@@ -7,7 +7,7 @@ use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::ui::progress_report::SingleReport;
 use crate::{env, file, gpg, hash, http, plugins};
 use async_trait::async_trait;
@@ -569,6 +569,35 @@ impl Backend for NodePlugin {
             .map_err(|e| eyre::eyre!("Failed to construct Node.js download URL: {e}"))?;
 
         Ok(Some(url.to_string()))
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        _request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let mut opts = BTreeMap::new();
+        let settings = Settings::get();
+        let is_current_platform = target.is_current();
+
+        // Only include compile option if true (non-default)
+        let compile = if is_current_platform {
+            settings.node.compile.unwrap_or(false)
+        } else {
+            false
+        };
+        if compile {
+            opts.insert("compile".to_string(), "true".to_string());
+        }
+
+        // Flavor affects which binary variant is downloaded (only if set)
+        if is_current_platform {
+            if let Some(flavor) = settings.node.flavor.clone() {
+                opts.insert("flavor".to_string(), flavor);
+            }
+        }
+
+        opts
     }
 }
 

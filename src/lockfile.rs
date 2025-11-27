@@ -27,7 +27,9 @@ pub struct Lockfile {
 pub struct LockfileTool {
     pub version: String,
     pub backend: Option<String>,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
+    pub options: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub platforms: BTreeMap<String, PlatformInfo>,
 }
 
@@ -201,12 +203,16 @@ impl Lockfile {
         short: &str,
         version: &str,
         backend: Option<&str>,
+        options: &BTreeMap<String, String>,
         platform_key: &str,
         platform_info: PlatformInfo,
     ) {
         let tools = self.tools.entry(short.to_string()).or_default();
-        // Find existing tool version or create new one
-        if let Some(tool) = tools.iter_mut().find(|t| t.version == version) {
+        // Find existing tool version with matching options or create new one
+        if let Some(tool) = tools
+            .iter_mut()
+            .find(|t| t.version == version && &t.options == options)
+        {
             tool.platforms
                 .insert(platform_key.to_string(), platform_info);
         } else {
@@ -215,6 +221,7 @@ impl Lockfile {
             tools.push(LockfileTool {
                 version: version.to_string(),
                 backend: backend.map(|s| s.to_string()),
+                options: options.clone(),
                 platforms,
             });
         }
@@ -325,10 +332,10 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 
                 // For each new tool, check if we have an existing entry with platform info
                 for new_tool in new_lockfile_tools {
-                    // Look for existing tool with same version to preserve platform info
+                    // Look for existing tool with same version AND options to preserve platform info
                     if let Some(existing_tool) = existing_tools
                         .iter()
-                        .find(|et| et.version == new_tool.version)
+                        .find(|et| et.version == new_tool.version && et.options == new_tool.options)
                     {
                         // Start with the new tool as base (it may have fresh platform info)
                         let mut merged_tool = new_tool;
@@ -343,7 +350,7 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
                         }
                         merged_tools.push(merged_tool);
                     } else {
-                        // No existing version match, use new tool as-is
+                        // No existing version+options match, use new tool as-is
                         merged_tools.push(new_tool);
                     }
                 }
@@ -351,10 +358,9 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
                 // Add any existing tools that weren't in the new toolset
                 // BUT only if they still match a request in the current configuration
                 for existing_tool in existing_tools {
-                    if !merged_tools
-                        .iter()
-                        .any(|mt| mt.version == existing_tool.version)
-                    {
+                    if !merged_tools.iter().any(|mt| {
+                        mt.version == existing_tool.version && mt.options == existing_tool.options
+                    }) {
                         // Check if this version still matches any request in the current toolset
                         // This prevents stale versions from persisting after upgrades
                         if let Some(tvl) = tools.get(short) {
@@ -424,6 +430,7 @@ pub fn get_locked_version(
     path: Option<&Path>,
     short: &str,
     prefix: &str,
+    request_options: &BTreeMap<String, String>,
 ) -> Result<Option<LockfileTool>> {
     if !Settings::get().lockfile || !Settings::get().experimental {
         return Ok(None);
@@ -446,13 +453,39 @@ pub fn get_locked_version(
     if let Some(tool) = lockfile.tools.get(short) {
         Ok(tool
             .iter()
-            // TODO: this likely won't work right when using `python@latest python@3.12`
-            .find(|v| prefix == "latest" || v.version.starts_with(prefix))
-            .inspect(|v| trace!("[{short}@{prefix}] found {} in lockfile", v.version))
+            .find(|v| {
+                // Version prefix matching
+                let version_matches = prefix == "latest" || v.version.starts_with(prefix);
+                // Options must match exactly
+                let options_match = &v.options == request_options;
+                version_matches && options_match
+            })
+            .inspect(|v| {
+                trace!(
+                    "[{short}@{prefix}] found {} in lockfile (options: {:?})",
+                    v.version, v.options
+                )
+            })
             .cloned())
     } else {
         Ok(None)
     }
+}
+
+/// Get the backend for a tool from the lockfile, ignoring options.
+/// This is used for backend discovery where we just need any entry's backend.
+pub fn get_locked_backend(config: &Config, short: &str) -> Option<String> {
+    if !Settings::get().lockfile || !Settings::get().experimental {
+        return None;
+    }
+
+    let lockfile = read_all_lockfiles(config);
+
+    lockfile
+        .tools
+        .get(short)
+        .and_then(|tools| tools.first())
+        .and_then(|tool| tool.backend.clone())
 }
 
 fn handle_missing_lockfile(err: Report, lockfile_path: &Path) -> Lockfile {
@@ -470,6 +503,7 @@ impl TryFrom<toml::Value> for LockfileTool {
             toml::Value::String(v) => LockfileTool {
                 version: v,
                 backend: Default::default(),
+                options: Default::default(),
                 platforms: Default::default(),
             },
             toml::Value::Table(mut t) => {
@@ -478,6 +512,15 @@ impl TryFrom<toml::Value> for LockfileTool {
                     let platforms_table: toml::Table = platforms_table.try_into()?;
                     for (platform, platform_info) in platforms_table {
                         platforms.insert(platform, platform_info.try_into()?);
+                    }
+                }
+                let mut options = BTreeMap::new();
+                if let Some(opts) = t.remove("options") {
+                    let opts_table: toml::Table = opts.try_into()?;
+                    for (key, value) in opts_table {
+                        if let toml::Value::String(s) = value {
+                            options.insert(key, s);
+                        }
                     }
                 }
                 LockfileTool {
@@ -491,6 +534,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                         .map(|v| v.try_into())
                         .transpose()?
                         .unwrap_or_default(),
+                    options,
                     platforms,
                 }
             }
@@ -507,6 +551,14 @@ impl LockfileTool {
         if let Some(backend) = self.backend {
             table.insert("backend".to_string(), backend.into());
         }
+        if !self.options.is_empty() {
+            let opts_table: toml::Table = self
+                .options
+                .into_iter()
+                .map(|(k, v)| (k, toml::Value::String(v)))
+                .collect();
+            table.insert("options".to_string(), toml::Value::Table(opts_table));
+        }
         if !self.platforms.is_empty() {
             table.insert("platforms".to_string(), self.platforms.clone().into());
         }
@@ -516,6 +568,8 @@ impl LockfileTool {
 
 impl From<ToolVersionList> for Vec<LockfileTool> {
     fn from(tvl: ToolVersionList) -> Self {
+        use crate::backend::platform_target::PlatformTarget;
+
         tvl.versions
             .iter()
             .map(|tv| {
@@ -535,9 +589,18 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
                     );
                 }
 
+                // Resolve lockfile options from the backend
+                let options = if let Ok(backend) = tv.request.backend() {
+                    let target = PlatformTarget::from_current();
+                    backend.resolve_lockfile_options(&tv.request, &target)
+                } else {
+                    BTreeMap::new()
+                };
+
                 LockfileTool {
                     version: tv.version.clone(),
                     backend: Some(tv.ba().full()),
+                    options,
                     platforms,
                 }
             })
@@ -637,6 +700,7 @@ backend = "core:python"
         let tool = LockfileTool {
             version: "20.10.0".to_string(),
             backend: Some("core:node".to_string()),
+            options: BTreeMap::new(),
             platforms,
         };
 
@@ -658,5 +722,129 @@ backend = "core:python"
 
         // Clean up
         let _ = std::fs::remove_file(&test_lockfile);
+    }
+
+    #[test]
+    fn test_options_field_parsing_and_serialization() {
+        // Test parsing lockfile with options
+        let toml_with_options = r#"
+[[tools.ripgrep]]
+version = "14.0.0"
+backend = "ubi:BurntSushi/ripgrep"
+options = { exe = "rg", matching = "musl" }
+
+[tools.ripgrep.platforms.linux-x64]
+checksum = "blake3:abc123"
+"#;
+
+        let table: toml::Table = toml::from_str(toml_with_options).unwrap();
+        let tools: toml::Table = table.get("tools").unwrap().clone().try_into().unwrap();
+
+        let mut lockfile = Lockfile::default();
+        for (short, value) in tools {
+            let versions = match value {
+                toml::Value::Array(arr) => arr
+                    .into_iter()
+                    .map(LockfileTool::try_from)
+                    .collect::<Result<Vec<_>>>()
+                    .unwrap(),
+                _ => vec![LockfileTool::try_from(value).unwrap()],
+            };
+            lockfile.tools.insert(short, versions);
+        }
+
+        // Verify options were parsed correctly
+        let ripgrep = &lockfile.tools["ripgrep"][0];
+        assert_eq!(ripgrep.options.get("exe"), Some(&"rg".to_string()));
+        assert_eq!(ripgrep.options.get("matching"), Some(&"musl".to_string()));
+    }
+
+    #[test]
+    fn test_options_field_not_serialized_when_empty() {
+        let mut lockfile = Lockfile::default();
+        let tool = LockfileTool {
+            version: "14.0.0".to_string(),
+            backend: Some("ubi:BurntSushi/ripgrep".to_string()),
+            options: BTreeMap::new(), // Empty options
+            platforms: BTreeMap::new(),
+        };
+        lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
+
+        let temp_dir = std::env::temp_dir();
+        let test_lockfile = temp_dir.join("test_lockfile_no_options.lock");
+
+        lockfile.save(&test_lockfile).unwrap();
+        let content = std::fs::read_to_string(&test_lockfile).unwrap();
+
+        // Should NOT contain "options" when it's empty
+        assert!(!content.contains("options"));
+
+        let _ = std::fs::remove_file(&test_lockfile);
+    }
+
+    #[test]
+    fn test_options_field_serialized_when_present() {
+        let mut lockfile = Lockfile::default();
+        let mut options = BTreeMap::new();
+        options.insert("exe".to_string(), "rg".to_string());
+        options.insert("matching".to_string(), "musl".to_string());
+
+        let tool = LockfileTool {
+            version: "14.0.0".to_string(),
+            backend: Some("ubi:BurntSushi/ripgrep".to_string()),
+            options,
+            platforms: BTreeMap::new(),
+        };
+        lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
+
+        let temp_dir = std::env::temp_dir();
+        let test_lockfile = temp_dir.join("test_lockfile_with_options.lock");
+
+        lockfile.save(&test_lockfile).unwrap();
+        let content = std::fs::read_to_string(&test_lockfile).unwrap();
+
+        // Should contain options
+        assert!(content.contains("options"));
+        assert!(content.contains("exe"));
+        assert!(content.contains("rg"));
+
+        let _ = std::fs::remove_file(&test_lockfile);
+    }
+
+    #[test]
+    fn test_options_matching_in_get_locked_version() {
+        // This tests that get_locked_version requires exact options match
+        let toml_with_options = r#"
+[[tools.ripgrep]]
+version = "14.0.0"
+backend = "ubi:BurntSushi/ripgrep"
+options = { exe = "rg", matching = "musl" }
+
+[[tools.ripgrep]]
+version = "14.0.0"
+backend = "ubi:BurntSushi/ripgrep"
+options = { exe = "rg" }
+"#;
+
+        let table: toml::Table = toml::from_str(toml_with_options).unwrap();
+        let tools: toml::Table = table.get("tools").unwrap().clone().try_into().unwrap();
+
+        let mut lockfile = Lockfile::default();
+        for (short, value) in tools {
+            let versions = match value {
+                toml::Value::Array(arr) => arr
+                    .into_iter()
+                    .map(LockfileTool::try_from)
+                    .collect::<Result<Vec<_>>>()
+                    .unwrap(),
+                _ => vec![LockfileTool::try_from(value).unwrap()],
+            };
+            lockfile.tools.insert(short, versions);
+        }
+
+        // Verify we have 2 entries for ripgrep with different options
+        assert_eq!(lockfile.tools["ripgrep"].len(), 2);
+        assert_eq!(lockfile.tools["ripgrep"][0].options.len(), 2);
+        assert_eq!(lockfile.tools["ripgrep"][1].options.len(), 1);
     }
 }

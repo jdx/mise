@@ -1,3 +1,4 @@
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::{Backend, VersionCacheManager};
 use crate::build_time::built_info;
 use crate::cache::{CacheManager, CacheManagerBuilder};
@@ -521,6 +522,41 @@ impl Backend for PythonPlugin {
                 ))
             })
             .clone()
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        _request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let mut opts = BTreeMap::new();
+        let settings = Settings::get();
+        let is_current_platform = target.is_current();
+
+        // Only include compile option if true (non-default)
+        let compile = if is_current_platform {
+            settings.python.compile.unwrap_or(false)
+        } else {
+            false
+        };
+        if compile {
+            opts.insert("compile".to_string(), "true".to_string());
+        }
+
+        // Only include precompiled options if not compiling and if set
+        if !compile && is_current_platform {
+            if let Some(arch) = settings.python.precompiled_arch.clone() {
+                opts.insert("precompiled_arch".to_string(), arch);
+            }
+            if let Some(os) = settings.python.precompiled_os.clone() {
+                opts.insert("precompiled_os".to_string(), os);
+            }
+            if let Some(flavor) = settings.python.precompiled_flavor.clone() {
+                opts.insert("precompiled_flavor".to_string(), flavor);
+            }
+        }
+
+        opts
     }
 }
 
