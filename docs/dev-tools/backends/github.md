@@ -170,6 +170,20 @@ bin_path = "{name}-{version}/bin" # expands to cli-1.0.0/bin
 3. If no `bin/` directory exists, search subdirectories for `bin/` directories
 4. If no `bin/` directories are found, use the root of the extracted directory
 
+### `filter_bins`
+
+Comma-separated list of binaries to symlink into a filtered `.mise-bins` directory. This is useful when the tool comes with extra files or binaries that you do not want to expose on PATH.
+
+```toml
+[tools]
+"github:BurntSushi/ripgrep" = { version = "13.0.0", filter_bins = "rg" }
+```
+
+When enabled:
+
+- A `.mise-bins` subdirectory is created with symlinks only to the specified binaries
+- Other files (like READMEs, docs, or other binaries) are not exposed on PATH
+
 ### `api_url`
 
 For GitHub Enterprise or self-hosted GitHub instances, specify the API URL:

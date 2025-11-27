@@ -8,6 +8,7 @@ use crate::backend::static_helpers::{
 use crate::cli::args::BackendArg;
 use crate::config::Config;
 use crate::config::Settings;
+use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersionOptions;
@@ -123,6 +124,10 @@ impl Backend for UnifiedGitBackend {
         _config: &Arc<Config>,
         tv: &ToolVersion,
     ) -> Result<Vec<std::path::PathBuf>> {
+        if self.get_filter_bins(tv).is_some() {
+            return Ok(vec![tv.install_path().join(".mise-bins")]);
+        }
+
         let opts = tv.request.options();
         if let Some(bin_path_template) =
             lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
@@ -276,6 +281,10 @@ impl UnifiedGitBackend {
         verify_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
         install_artifact(tv, &file_path, opts, Some(ctx.pr.as_ref()))?;
         self.verify_checksum(ctx, tv, &file_path)?;
+
+        if let Some(bins) = self.get_filter_bins(tv) {
+            self.create_symlink_bin_dir(tv, bins)?;
+        }
 
         Ok(())
     }
@@ -532,6 +541,52 @@ impl UnifiedGitBackend {
         } else {
             tag_name.to_string()
         }
+    }
+
+    fn get_filter_bins(&self, tv: &ToolVersion) -> Option<Vec<String>> {
+        tv.request.options().get("filter_bins").map(|s| {
+            s.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+    }
+
+    /// Creates a `.mise-bins` directory with symlinks only to the binaries specified in filter_bins.
+    fn create_symlink_bin_dir(&self, tv: &ToolVersion, bins: Vec<String>) -> Result<()> {
+        let symlink_dir = tv.install_path().join(".mise-bins");
+        file::create_dir_all(&symlink_dir)?;
+
+        // Find where the actual binaries are
+        let install_path = tv.install_path();
+        let bin_paths = self.discover_bin_paths(tv)?;
+        
+        // Collect all possible source directories (install root + discovered bin paths)
+        let mut src_dirs = bin_paths;
+        if !src_dirs.contains(&install_path) {
+            src_dirs.push(install_path);
+        }
+
+        for bin_name in bins {
+            // Find the binary in any of the source directories
+            let mut found = false;
+            for dir in &src_dirs {
+                let src = dir.join(&bin_name);
+                if src.exists() {
+                    let dst = symlink_dir.join(&bin_name);
+                    if !dst.exists() {
+                        file::make_symlink_or_copy(&src, &dst)?;
+                    }
+                    found = true;
+                    break;
+                }
+            }
+            
+            if !found {
+                warn!("Could not find binary '{}' in install directories. Available paths: {:?}", bin_name, src_dirs);
+            }
+        }
+        Ok(())
     }
 }
 

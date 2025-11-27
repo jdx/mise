@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# Test filter_bins option for github backend
+# We use ripgrep as it comes with extra files (README, etc) in the release archive
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "Skipping Linux-specific test on non-Linux OS"
+  exit 0
+fi
+
+# Create a mise.toml with filter_bins option
+cat > mise.toml <<EOF
+[tools]
+"github:BurntSushi/ripgrep" = { version = "13.0.0", filter_bins = "rg" }
+EOF
+
+# Install
+mise install
+
+# Verify installation path contains .mise-bins
+bin_path="$(mise where "github:BurntSushi/ripgrep@13.0.0")/.mise-bins"
+assert_directory_exists "$bin_path"
+
+# Verify rg is linked
+if [[ -f "$bin_path/rg" ]]; then
+    echo "rg binary exists"
+else
+    echo "rg binary missing"
+    exit 1
+fi
+
+# Verify other files are NOT linked (e.g. README.md which is usually in the root of ripgrep archive)
+if [[ -f "$bin_path/README.md" ]]; then
+    echo "README.md should not exist"
+    exit 1
+fi
+
+# Verify tool works
+assert_contains "mise x -- rg --version" "ripgrep 13.0.0"
+
+# Clean up
+rm mise.toml
+mise uninstall "github:BurntSushi/ripgrep@13.0.0"
