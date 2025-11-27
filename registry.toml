@@ -4683,8 +4683,10 @@ backends = [
 ]
 description = "Tinymist is an integrated language service for Typst."
 test = [
-  "tinymist --version | grep 'Build Git Describe:' | cut -d':' -f2 | tr -d ' '",
-  "v{{version}}",
+  "tinymist --version",
+  ""
+  # 0.14.4 doesn't print version
+  # "Build Git Describe:  v{{version}}",
 ]
 
 [tools.tinytex]
