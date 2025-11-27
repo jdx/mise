@@ -498,9 +498,8 @@ cmd local hide=#true help="Sets/gets tool version in local .tool-versions or mis
 }
 cmd lock help="Update lockfile checksums and URLs for all specified platforms" {
     long_help "Update lockfile checksums and URLs for all specified platforms\n\nUpdates checksums and download URLs for all platforms already specified in the lockfile.\nIf no lockfile exists, shows what would be created based on the current configuration.\nThis allows you to refresh lockfile data for platforms other than the one you're currently on.\nOperates on the lockfile in the current config root. Use TOOL arguments to target specific tools."
-    after_long_help "Examples:\n  \n  $ mise lock                           Update lockfile in current directory for all platforms\n  $ mise lock node python              Update only node and python \n  $ mise lock --platform linux-x64     Update only linux-x64 platform\n  $ mise lock --dry-run                Show what would be updated or created\n  $ mise lock --force                  Re-download and update even if data exists\n"
-    flag "-f --force" help="Update all tools even if lockfile data already exists"
-    flag "-j --jobs" help="Number of jobs to run in parallel\n[default: 4]" {
+    after_long_help "Examples:\n\n    $ mise lock                       # update lockfile for all common platforms\n    $ mise lock node python           # update only node and python\n    $ mise lock --platform linux-x64  # update only linux-x64 platform\n    $ mise lock --dry-run             # show what would be updated\n"
+    flag "-j --jobs" help="Number of jobs to run in parallel" {
         arg <JOBS>
     }
     flag "-n --dry-run" help="Show what would be updated without making changes"
