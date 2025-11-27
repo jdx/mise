@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::config::Config;
+use crate::config::config_file::config_root;
 use crate::file::display_path;
 use crate::lockfile::{Lockfile, PlatformInfo};
 use crate::platform::Platform;
@@ -53,6 +54,11 @@ pub struct Lock {
     /// If not specified, all platforms already in lockfile will be updated
     #[clap(long, short, value_delimiter = ',', verbatim_doc_comment)]
     pub platform: Vec<String>,
+
+    /// Update mise.local.lock instead of mise.lock
+    /// Use for tools defined in .local.toml configs
+    #[clap(long, verbatim_doc_comment)]
+    pub local: bool,
 }
 
 impl Lock {
@@ -61,8 +67,11 @@ impl Lock {
         let config = Config::get().await?;
         settings.ensure_experimental("lock")?;
 
+        // Determine lockfile path based on config root
+        let lockfile_path = self.get_lockfile_path(&config);
+
         // Determine target platforms
-        let target_platforms = self.determine_target_platforms()?;
+        let target_platforms = self.determine_target_platforms(&lockfile_path)?;
 
         miseprintln!(
             "{} Targeting {} platform(s): {}",
@@ -101,7 +110,6 @@ impl Lock {
         }
 
         // Process tools and update lockfile
-        let lockfile_path = PathBuf::from("mise.lock");
         let mut lockfile = Lockfile::read(&lockfile_path)?;
         let results = self
             .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
@@ -128,7 +136,24 @@ impl Lock {
         Ok(())
     }
 
-    fn determine_target_platforms(&self) -> Result<Vec<Platform>> {
+    fn get_lockfile_path(&self, config: &Config) -> PathBuf {
+        // Get config root from the first config file, or use current dir
+        let root = config
+            .config_files
+            .keys()
+            .next()
+            .map(|p| config_root::config_root(p))
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+        let lockfile_name = if self.local {
+            "mise.local.lock"
+        } else {
+            "mise.lock"
+        };
+        root.join(lockfile_name)
+    }
+
+    fn determine_target_platforms(&self, lockfile_path: &PathBuf) -> Result<Vec<Platform>> {
         if !self.platform.is_empty() {
             // User specified platforms explicitly
             return Platform::parse_multiple(&self.platform);
@@ -139,8 +164,7 @@ impl Lock {
         platforms.insert(Platform::current());
 
         // Add any existing platforms from lockfile
-        let lockfile_path = PathBuf::from("mise.lock");
-        if let Ok(lockfile) = Lockfile::read(&lockfile_path) {
+        if let Ok(lockfile) = Lockfile::read(lockfile_path) {
             for platform_key in lockfile.all_platform_keys() {
                 if let Ok(p) = Platform::parse(&platform_key) {
                     platforms.insert(p);
@@ -300,5 +324,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise lock node python</bold>           # update only node and python
     $ <bold>mise lock --platform linux-x64</bold>  # update only linux-x64 platform
     $ <bold>mise lock --dry-run</bold>             # show what would be updated
+    $ <bold>mise lock --local</bold>               # update mise.local.lock for local configs
 "#
 );

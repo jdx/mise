@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# Test that local configs use mise.local.lock
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+# Create base config
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "1"
+EOF
+
+# Create local config
+cat >mise.local.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+# Create both lockfiles
+touch mise.lock
+touch mise.local.lock
+
+# Install tools
+assert "mise install tiny@1.0.0"
+assert "mise install dummy@1.0.0"
+
+# Use the tools to trigger lockfile updates
+# Use --path to ensure tiny goes to mise.toml (not mise.local.toml which takes precedence)
+assert "mise use tiny@1 --path mise.toml"
+# Use dummy to trigger mise.local.lock update
+assert "mise use dummy@1.0.0 --path mise.local.toml"
+
+# Base tool should be in mise.lock
+assert_contains "cat mise.lock" "[[tools.tiny]]"
+assert_contains "cat mise.lock" 'version = "1.0.0"'
+
+# Local tool should be in mise.local.lock
+assert_contains "cat mise.local.lock" "[[tools.dummy]]"
+assert_contains "cat mise.local.lock" 'version = "1.0.0"'
+
+# mise.lock should NOT contain dummy
+assert_not_contains "cat mise.lock" "dummy"
+
+# mise.local.lock should NOT contain tiny
+assert_not_contains "cat mise.local.lock" "tiny"
