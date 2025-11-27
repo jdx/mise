@@ -170,7 +170,9 @@ name = "jq-linux-amd64"
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"
 
 [tools.jq.platforms.macos-arm64]
+checksum = "sha256:a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263603"
 name = "jq-macos-arm64"
+size = 841408
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64"
 
 [tools.jq.platforms.macos-x64]

@@ -127,7 +127,19 @@ impl Backend for AquaBackend {
                 let url = existing_platform;
                 let filename = get_filename_from_url(&url);
                 // Determine which version variant was used based on the URL or filename
-                let v = if url.contains(&format!("v{}", tv.version))
+                // Check for version_prefix (e.g., "jq-" for jq), "v" prefix, or raw version
+                let v = if let Some(prefix) = &pkg.version_prefix {
+                    let prefixed_version = format!("{prefix}{}", tv.version);
+                    if url.contains(&prefixed_version) || filename.contains(&prefixed_version) {
+                        prefixed_version
+                    } else if url.contains(&format!("v{}", tv.version))
+                        || filename.contains(&format!("v{}", tv.version))
+                    {
+                        format!("v{}", tv.version)
+                    } else {
+                        tv.version.clone()
+                    }
+                } else if url.contains(&format!("v{}", tv.version))
                     || filename.contains(&format!("v{}", tv.version))
                 {
                     format!("v{}", tv.version)
