@@ -166,6 +166,13 @@ pub struct Cli {
     /// Read/write directly to stdin/stdout/stderr instead of by line
     #[clap(long, global = true)]
     pub raw: bool,
+    /// Require lockfile URLs to be present during installation
+    ///
+    /// Fails if tools don't have pre-resolved URLs in the lockfile for the current platform.
+    /// This prevents API calls to GitHub, aqua registry, etc.
+    /// Can also be enabled via MISE_LOCKED=1 or settings.locked=true
+    #[clap(long, global = true, verbatim_doc_comment)]
+    pub locked: bool,
     /// Suppress all task output and mise non-error messages
     #[clap(long, global = true, overrides_with_all = &["quiet", "trace", "verbose", "debug", "log_level"])]
     pub silent: bool,

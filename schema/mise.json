@@ -723,6 +723,11 @@
           "description": "Create and read lockfiles for tool versions.",
           "type": "boolean"
         },
+        "locked": {
+          "default": false,
+          "description": "Require lockfile URLs to be present during installation.",
+          "type": "boolean"
+        },
         "log_level": {
           "default": "info",
           "description": "Show more/less output.",

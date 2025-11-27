@@ -269,6 +269,9 @@ impl Settings {
         if cli.raw {
             s.raw = Some(true);
         }
+        if cli.locked {
+            s.locked = Some(true);
+        }
         if let Some(cd) = &cli.cd {
             s.cd = Some(cd.clone());
         }

@@ -89,7 +89,10 @@ impl Backend for UnifiedGitBackend {
 
         // Check if URL already exists in lockfile platforms first
         let platform_key = self.get_platform_key();
-        let asset = if let Some(existing_platform) = tv.lock_platforms.get(&platform_key) {
+
+        let asset = if let Some(existing_platform) = tv.lock_platforms.get(&platform_key)
+            && existing_platform.url.is_some()
+        {
             debug!(
                 "Using existing URL from lockfile for platform {}: {}",
                 platform_key,

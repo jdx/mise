@@ -83,15 +83,27 @@ impl Backend for AquaBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tag = self
-            .get_version_tags()
-            .await
-            .ok()
-            .into_iter()
-            .flatten()
-            .find(|(version, _)| version == &tv.version)
-            .map(|(_, tag)| tag);
-        let mut v = tag.cloned().unwrap_or_else(|| tv.version.clone());
+        // Check if URL already exists in lockfile platforms first
+        // This allows us to skip API calls when lockfile has the URL
+        let platform_key = self.get_platform_key();
+        let existing_platform = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|asset| asset.url.clone());
+
+        // Skip get_version_tags() API call if we have lockfile URL
+        let tag = if existing_platform.is_some() {
+            None // We'll determine version from URL instead
+        } else {
+            self.get_version_tags()
+                .await
+                .ok()
+                .into_iter()
+                .flatten()
+                .find(|(version, _)| version == &tv.version)
+                .map(|(_, tag)| tag.clone())
+        };
+        let mut v = tag.clone().unwrap_or_else(|| tv.version.clone());
         let mut v_prefixed =
             (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
         let versions = match &v_prefixed {
@@ -115,13 +127,6 @@ impl Backend for AquaBackend {
             });
         }
         validate(&pkg)?;
-
-        // Check if URL already exists in lockfile platforms first
-        let platform_key = self.get_platform_key();
-        let existing_platform = tv
-            .lock_platforms
-            .get(&platform_key)
-            .and_then(|asset| asset.url.clone());
         let (url, v, filename, api_digest) =
             if let Some(existing_platform) = existing_platform.clone() {
                 let url = existing_platform;

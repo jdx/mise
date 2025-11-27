@@ -617,6 +617,34 @@ The lockfile is named the same as the config file but with `.lock` instead of `.
 env = "MISE_LOCKFILE"
 type = "Bool"
 
+[locked]
+default = false
+description = "Require lockfile URLs to be present during installation."
+docs = """
+
+> [!NOTE]
+> This setting requires both [lockfile](#lockfile) and [experimental](#experimental) to be enabled.
+
+When enabled, `mise install` will fail if tools don't have pre-resolved URLs in the lockfile
+for the current platform. This prevents API calls to GitHub, aqua registry, etc. and ensures
+reproducible installations.
+
+This is useful in CI/CD environments where you want to:
+- Avoid GitHub API rate limits
+- Ensure deterministic builds using pre-resolved URLs
+- Fail fast if the lockfile is incomplete
+
+To generate lockfile URLs, run:
+
+```sh
+mise lock
+```
+
+Equivalent to passing `--locked` to `mise install`.
+"""
+env = "MISE_LOCKED"
+type = "Bool"
+
 [log_level]
 default = "info"
 description = "Show more/less output."

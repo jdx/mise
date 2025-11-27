@@ -47,6 +47,9 @@ flag --output {
     arg <OUTPUT>
 }
 flag --raw help="Read/write directly to stdin/stdout/stderr instead of by line" global=#true
+flag --locked help="Require lockfile URLs to be present during installation" global=#true {
+    long_help "Require lockfile URLs to be present during installation\n\nFails if tools don't have pre-resolved URLs in the lockfile for the current platform.\nThis prevents API calls to GitHub, aqua registry, etc.\nCan also be enabled via MISE_LOCKED=1 or settings.locked=true"
+}
 flag --silent help="Suppress all task output and mise non-error messages" global=#true
 flag --timings help="Shows elapsed time after each task completes" hide=#true {
     long_help "Shows elapsed time after each task completes\n\nDefault to always show with `MISE_TASK_TIMINGS=1`"

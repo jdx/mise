@@ -515,6 +515,24 @@ pub trait Backend: Debug + Send + Sync {
                 return Ok(tv);
             }
         }
+        // Check for --locked mode: if enabled and no lockfile URL exists, fail early
+        if ctx.locked {
+            let platform_key = self.get_platform_key();
+            let has_lockfile_url = tv
+                .lock_platforms
+                .get(&platform_key)
+                .and_then(|p| p.url.as_ref())
+                .is_some();
+            if !has_lockfile_url {
+                bail!(
+                    "No lockfile URL found for {} on platform {} (--locked mode)\n\
+                    hint: Run `mise lock` to generate lockfile URLs, or disable locked mode",
+                    tv.style(),
+                    platform_key
+                );
+            }
+        }
+
         ctx.pr.set_message("install".into());
         let _lock = lock_file::get(&tv.install_path(), ctx.force)?;
         self.create_install_dirs(&tv)?;

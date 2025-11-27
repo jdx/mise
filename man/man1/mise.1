@@ -70,6 +70,13 @@ Default to always hide with `MISE_TASK_TIMINGS=0`
 \fB\-\-raw\fR
 Read/write directly to stdin/stdout/stderr instead of by line
 .TP
+\fB\-\-locked\fR
+Require lockfile URLs to be present during installation
+
+Fails if tools don't have pre\-resolved URLs in the lockfile for the current platform.
+This prevents API calls to GitHub, aqua registry, etc.
+Can also be enabled via MISE_LOCKED=1 or settings.locked=true
+.TP
 \fB\-\-silent\fR
 Suppress all task output and mise non\-error messages
 .TP
