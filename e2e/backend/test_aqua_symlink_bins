@@ -20,7 +20,13 @@ if [[ "$(uname -s)" == "Linux" ]]; then
 	assert_contains "mise x aws-cli@2.32.6 -- aws --version" "aws-cli/2.32.6"
 
 	# Get the bin path for aws-cli - should be .mise-bins directory
-	bin_path="$(mise where aws-cli@2.32.6)/.mise-bins"
+	install_path="$(mise where aws-cli@2.32.6)"
+	echo "DEBUG: mise where returned: $install_path"
+	echo "DEBUG: Contents of install_path:"
+	ls -la "$install_path" || echo "ls failed"
+	bin_path="$install_path/.mise-bins"
+	echo "DEBUG: bin_path=$bin_path"
+	echo "DEBUG: test -d result: $(test -d "$bin_path" && echo exists || echo missing)"
 	assert "test -d $bin_path" ".mise-bins directory exists"
 
 	# List binaries in the .mise-bins directory - should only have aws and aws_completer
