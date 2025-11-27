@@ -214,30 +214,6 @@ backend = "npm:markdownlint-cli"
 version = "3.7.1"
 backend = "npm:prettier"
 
-[[tools.opentofu]]
-version = "1.10.7"
-backend = "aqua:opentofu/opentofu"
-
-[tools.opentofu.platforms.linux-arm64]
-name = "tofu_1.10.7_linux_arm64.tar.gz"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.10.7/tofu_1.10.7_linux_arm64.tar.gz"
-
-[tools.opentofu.platforms.linux-x64]
-name = "tofu_1.10.7_linux_amd64.tar.gz"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.10.7/tofu_1.10.7_linux_amd64.tar.gz"
-
-[tools.opentofu.platforms.macos-arm64]
-name = "tofu_1.10.7_darwin_arm64.tar.gz"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.10.7/tofu_1.10.7_darwin_arm64.tar.gz"
-
-[tools.opentofu.platforms.macos-x64]
-name = "tofu_1.10.7_darwin_amd64.tar.gz"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.10.7/tofu_1.10.7_darwin_amd64.tar.gz"
-
-[tools.opentofu.platforms.windows-x64]
-name = "tofu_1.10.7_windows_amd64.tar.gz"
-url = "https://github.com/opentofu/opentofu/releases/download/v1.10.7/tofu_1.10.7_windows_amd64.tar.gz"
-
 [[tools.pkl]]
 version = "0.30.0"
 backend = "aqua:apple/pkl"
@@ -391,30 +367,6 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-darwin-x8
 name = "taplo-windows-x86_64.zip"
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"
 
-[[tools.terraform]]
-version = "1.14.0"
-backend = "aqua:hashicorp/terraform"
-
-[tools.terraform.platforms.linux-arm64]
-name = "terraform_1.14.0_linux_arm64.zip"
-url = "https://releases.hashicorp.com/terraform/1.14.0/terraform_1.14.0_linux_arm64.zip"
-
-[tools.terraform.platforms.linux-x64]
-name = "terraform_1.14.0_linux_amd64.zip"
-url = "https://releases.hashicorp.com/terraform/1.14.0/terraform_1.14.0_linux_amd64.zip"
-
-[tools.terraform.platforms.macos-arm64]
-name = "terraform_1.14.0_darwin_arm64.zip"
-url = "https://releases.hashicorp.com/terraform/1.14.0/terraform_1.14.0_darwin_arm64.zip"
-
-[tools.terraform.platforms.macos-x64]
-name = "terraform_1.14.0_darwin_amd64.zip"
-url = "https://releases.hashicorp.com/terraform/1.14.0/terraform_1.14.0_darwin_amd64.zip"
-
-[tools.terraform.platforms.windows-x64]
-name = "terraform_1.14.0_windows_amd64.zip"
-url = "https://releases.hashicorp.com/terraform/1.14.0/terraform_1.14.0_windows_amd64.zip"
-
 [[tools.wait-for-gh-rate-limit]]
 version = "1.0.0"
 backend = "ubi:jdx/wait-for-gh-rate-limit"
@@ -424,27 +376,3 @@ checksum = "blake3:2123971d2eea236d17fb0475c94bef89adf9239df4a8da53261d2eaf8551c
 
 [tools.wait-for-gh-rate-limit.platforms.macos-arm64-wait-for-gh-rate-limit]
 checksum = "blake3:8feb249767c436b69fd9bcb56901fdc56713c09247e9f6c1ce67f55b613bc082"
-
-[[tools.watchexec]]
-version = "2.3.2"
-backend = "aqua:watchexec/watchexec"
-
-[tools.watchexec.platforms.linux-arm64]
-name = "watchexec-2.3.2-aarch64-unknown-linux-gnu.tar.xz"
-url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-aarch64-unknown-linux-gnu.tar.xz"
-
-[tools.watchexec.platforms.linux-x64]
-name = "watchexec-2.3.2-x86_64-unknown-linux-gnu.tar.xz"
-url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-x86_64-unknown-linux-gnu.tar.xz"
-
-[tools.watchexec.platforms.macos-arm64]
-name = "watchexec-2.3.2-aarch64-apple-darwin.tar.xz"
-url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-aarch64-apple-darwin.tar.xz"
-
-[tools.watchexec.platforms.macos-x64]
-name = "watchexec-2.3.2-x86_64-apple-darwin.tar.xz"
-url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-x86_64-apple-darwin.tar.xz"
-
-[tools.watchexec.platforms.windows-x64]
-name = "watchexec-2.3.2-x86_64-pc-windows-msvc.zip"
-url = "https://github.com/watchexec/watchexec/releases/download/v2.3.2/watchexec-2.3.2-x86_64-pc-windows-msvc.zip"

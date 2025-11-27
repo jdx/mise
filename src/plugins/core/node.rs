@@ -591,10 +591,8 @@ impl Backend for NodePlugin {
         }
 
         // Flavor affects which binary variant is downloaded (only if set)
-        if is_current_platform {
-            if let Some(flavor) = settings.node.flavor.clone() {
-                opts.insert("flavor".to_string(), flavor);
-            }
+        if is_current_platform && let Some(flavor) = settings.node.flavor.clone() {
+            opts.insert("flavor".to_string(), flavor);
         }
 
         opts
