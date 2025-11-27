@@ -4684,7 +4684,7 @@ backends = [
 description = "Tinymist is an integrated language service for Typst."
 test = [
   "tinymist --version",
-  ""
+  "",
   # 0.14.4 doesn't print version
   # "Build Git Describe:  v{{version}}",
 ]
