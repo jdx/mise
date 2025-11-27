@@ -133,7 +133,7 @@ pub fn should_exit_early_fast() -> bool {
         // Config subdirectories that might contain config files
         let config_subdirs = DEFAULT_CONFIG_FILENAMES
             .iter()
-            .map(|f| f.split_once("/").map(|(dir, _)| dir).unwrap_or(""))
+            .map(|f| f.rsplit_once("/").map(|(dir, _)| dir).unwrap_or(""))
             .unique()
             .collect::<Vec<_>>();
         for dir in ancestor_dirs {
