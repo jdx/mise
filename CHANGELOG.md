@@ -1,5 +1,45 @@
 # Changelog
 
+## [2025.11.9](https://github.com/jdx/mise/compare/v2025.11.8..v2025.11.9) - 2025-11-27
+
+### 📦 Registry
+
+- add charmbracelet/crush by @ev-the-dev in [#7075](https://github.com/jdx/mise/pull/7075)
+
+### 🚀 Features
+
+- **(aqua)** add symlink_bins option to filter exposed binaries by @jdx in [#7076](https://github.com/jdx/mise/pull/7076)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** skip whitespace before pipe token in template parser by @jdx in [#7069](https://github.com/jdx/mise/pull/7069)
+- **(docs)** link github backends to github repo URLs by @SKalt in [#7071](https://github.com/jdx/mise/pull/7071)
+
+### 📚 Documentation
+
+- update node examples from 22 to 24 by @jdx in [#7074](https://github.com/jdx/mise/pull/7074)
+
+### ⚡ Performance
+
+- **(hook-env)** add fast-path to skip initialization when nothing changed by @jdx in [#7073](https://github.com/jdx/mise/pull/7073)
+
+### New Contributors
+
+- @ev-the-dev made their first contribution in [#7075](https://github.com/jdx/mise/pull/7075)
+- @SKalt made their first contribution in [#7071](https://github.com/jdx/mise/pull/7071)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`SonarSource/sonar-scanner-cli`](https://github.com/SonarSource/sonar-scanner-cli)
+- [`Stranger6667/jsonschema`](https://github.com/Stranger6667/jsonschema)
+- [`peteretelej/tree`](https://github.com/peteretelej/tree)
+
+#### Updated Packages (2)
+
+- [`astral-sh/uv`](https://github.com/astral-sh/uv)
+- [`pre-commit/pre-commit`](https://github.com/pre-commit/pre-commit)
 ## [2025.11.8](https://github.com/jdx/mise/compare/v2025.11.7..v2025.11.8) - 2025-11-26
 
 ### 📦 Registry
