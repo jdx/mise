@@ -1,4 +1,5 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{lookup_platform_key, try_with_v_prefix};
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
@@ -7,13 +8,14 @@ use crate::env::{
 };
 use crate::install_context::InstallContext;
 use crate::plugins::VERSION_REGEX;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{backend::Backend, toolset::ToolVersionOptions};
 use crate::{file, github, gitlab, hash};
 use async_trait::async_trait;
 use eyre::bail;
 use itertools::Itertools;
 use regex::Regex;
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -254,6 +256,24 @@ impl Backend for UbiBackend {
                 Ok(vec![tv.install_path()])
             }
         }
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let opts = request.options();
+        let mut result = BTreeMap::new();
+
+        // These options affect which artifact is downloaded
+        for key in ["exe", "matching", "matching_regex", "provider"] {
+            if let Some(value) = opts.get(key) {
+                result.insert(key.to_string(), value.clone());
+            }
+        }
+
+        result
     }
 }
 

@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -14,6 +14,16 @@ use console::style;
 use eyre::Result;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
+
+/// Result type for lock task: (short_name, version, backend, platform, info, options)
+type LockTaskResult = (
+    String,
+    String,
+    String,
+    Platform,
+    Option<PlatformInfo>,
+    BTreeMap<String, String>,
+);
 
 /// Update lockfile checksums and URLs for all specified platforms
 ///
@@ -194,8 +204,7 @@ impl Lock {
     ) -> Result<Vec<(String, String, bool)>> {
         let jobs = self.jobs.unwrap_or(settings.jobs);
         let semaphore = Arc::new(Semaphore::new(jobs));
-        let mut jset: JoinSet<(String, String, String, Platform, Option<PlatformInfo>)> =
-            JoinSet::new();
+        let mut jset: JoinSet<LockTaskResult> = JoinSet::new();
         let mut results = Vec::new();
 
         let mpr = MultiProgressReport::get();
@@ -216,12 +225,13 @@ impl Lock {
                     let target = PlatformTarget::new(platform.clone());
                     let backend = crate::backend::get(&ba);
 
-                    let info = if let Some(backend) = backend {
+                    let (info, options) = if let Some(backend) = backend {
+                        let options = backend.resolve_lockfile_options(&tv.request, &target);
                         match backend.resolve_lock_info(&tv, &target).await {
-                            Ok(info) if info.url.is_some() => Some(info),
+                            Ok(info) if info.url.is_some() => (Some(info), options),
                             Ok(_) => {
                                 debug!("No URL found for {} on {}", ba.short, platform.to_key());
-                                None
+                                (None, options)
                             }
                             Err(e) => {
                                 warn!(
@@ -230,12 +240,12 @@ impl Lock {
                                     platform.to_key(),
                                     e
                                 );
-                                None
+                                (None, options)
                             }
                         }
                     } else {
                         warn!("Backend not found for {}", ba.short);
-                        None
+                        (None, BTreeMap::new())
                     };
 
                     (
@@ -244,6 +254,7 @@ impl Lock {
                         ba.full(),
                         platform,
                         info,
+                        options,
                     )
                 });
             }
@@ -254,7 +265,7 @@ impl Lock {
         while let Some(result) = jset.join_next().await {
             completed += 1;
             match result {
-                Ok((short, version, backend, platform, info)) => {
+                Ok((short, version, backend, platform, info, options)) => {
                     let platform_key = platform.to_key();
                     pr.set_message(format!("{}@{} {}", short, version, platform_key));
                     pr.set_position(completed);
@@ -264,6 +275,7 @@ impl Lock {
                             &short,
                             &version,
                             Some(&backend),
+                            &options,
                             &platform_key,
                             info,
                         );

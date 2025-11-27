@@ -215,6 +215,21 @@ pub trait Backend: Debug + Send + Sync {
         format!("{os}-{arch}")
     }
 
+    /// Resolves the lockfile options for a tool request on a target platform.
+    /// These options affect artifact identity and must match exactly for lockfile lookup.
+    ///
+    /// For the current platform: resolves from Settings and ToolRequest options
+    /// For other platforms (cross-platform mise lock): uses sensible defaults
+    ///
+    /// Backends should override this to return options that affect which artifact is downloaded.
+    fn resolve_lockfile_options(
+        &self,
+        _request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        BTreeMap::new() // Default: no options affect artifact identity
+    }
+
     async fn description(&self) -> Option<String> {
         None
     }

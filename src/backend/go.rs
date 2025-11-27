@@ -1,14 +1,16 @@
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::config::Settings;
 use crate::install_context::InstallContext;
 use crate::timeout;
-use crate::toolset::ToolVersion;
+use crate::toolset::{ToolRequest, ToolVersion};
 use async_trait::async_trait;
 use itertools::Itertools;
+use std::collections::BTreeMap;
 use std::{fmt::Debug, sync::Arc};
 use xx::regex;
 
@@ -145,6 +147,22 @@ impl Backend for GoBackend {
         install(tv.version.clone()).await?;
 
         Ok(tv)
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let opts = request.options();
+        let mut result = BTreeMap::new();
+
+        // tags affect compilation
+        if let Some(value) = opts.get("tags") {
+            result.insert("tags".to_string(), value.clone());
+        }
+
+        result
     }
 }
 

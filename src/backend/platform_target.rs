@@ -30,6 +30,11 @@ impl PlatformTarget {
     pub fn to_key(&self) -> String {
         self.platform.to_key()
     }
+
+    /// Returns true if this target matches the current platform
+    pub fn is_current(&self) -> bool {
+        self.platform == Platform::current()
+    }
 }
 
 #[cfg(test)]

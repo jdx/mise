@@ -156,6 +156,7 @@ changelog="$(git cliff --tag "v$version" --unreleased --strip all)"
 changelog="$(echo "$changelog" | tail -n +3)"
 
 mise up
+mise lock
 git status
 # cargo update
 git add \

@@ -1,5 +1,6 @@
 use crate::backend::asset_detector;
 use crate::backend::backend_type::BackendType;
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::lookup_platform_key;
 use crate::backend::static_helpers::{
     get_filename_from_url, install_artifact, template_string, try_with_v_prefix, verify_artifact,
@@ -9,12 +10,13 @@ use crate::config::Config;
 use crate::config::Settings;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::toolset::ToolVersion;
 use crate::toolset::ToolVersionOptions;
+use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{backend::Backend, github, gitlab};
 use async_trait::async_trait;
 use eyre::Result;
 use regex::Regex;
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -127,6 +129,24 @@ impl Backend for UnifiedGitBackend {
         } else {
             self.discover_bin_paths(tv)
         }
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> BTreeMap<String, String> {
+        let opts = request.options();
+        let mut result = BTreeMap::new();
+
+        // These options affect which artifact is downloaded
+        for key in ["asset_pattern", "url", "version_prefix"] {
+            if let Some(value) = opts.get(key) {
+                result.insert(key.to_string(), value.clone());
+            }
+        }
+
+        result
     }
 }
 
