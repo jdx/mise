@@ -55,7 +55,7 @@ packages:
             format: zip
             files:
               - name: uv
-      - version_constraint: semver("<= 0.9.7")
+      - version_constraint: semver("<= 0.9.7") || Version == "0.9.11"
         asset: uv-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
