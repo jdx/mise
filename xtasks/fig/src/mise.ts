@@ -3674,6 +3674,11 @@ const completionSpec: Fig.Spec = {
       isRepeatable: false,
     },
     {
+      name: "--locked",
+      description: "Require lockfile URLs to be present during installation",
+      isRepeatable: false,
+    },
+    {
       name: "--silent",
       description: "Suppress all task output and mise non-error messages",
       isRepeatable: false,

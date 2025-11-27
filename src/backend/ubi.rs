@@ -111,6 +111,13 @@ impl Backend for UbiBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        // Check if lockfile has URL for this platform
+        let platform_key = self.get_platform_key();
+        let lockfile_url = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|p| p.url.clone());
+
         let v = tv.version.to_string();
         let opts = tv.request.options();
         let bin_path = lookup_platform_key(&opts, "bin_path")
@@ -119,7 +126,10 @@ impl Backend for UbiBackend {
         let extract_all = opts.get("extract_all").is_some_and(|v| v == "true");
         let bin_dir = tv.install_path();
 
-        if name_is_url(&self.tool_name()) {
+        // Use lockfile URL if available, otherwise fall back to standard resolution
+        if let Some(url) = &lockfile_url {
+            install(url, &v, &bin_dir, extract_all, &opts).await?;
+        } else if name_is_url(&self.tool_name()) {
             install(&self.tool_name(), &v, &bin_dir, extract_all, &opts).await?;
         } else {
             try_with_v_prefix(&v, None, |candidate| {

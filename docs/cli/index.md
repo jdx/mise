@@ -43,6 +43,14 @@ Answer yes to all confirmation prompts
 
 Read/write directly to stdin/stdout/stderr instead of by line
 
+### `--locked`
+
+Require lockfile URLs to be present during installation
+
+Fails if tools don't have pre-resolved URLs in the lockfile for the current platform.
+This prevents API calls to GitHub, aqua registry, etc.
+Can also be enabled via MISE_LOCKED=1 or settings.locked=true
+
 ### `--silent`
 
 Suppress all task output and mise non-error messages

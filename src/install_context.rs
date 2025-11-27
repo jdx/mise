@@ -9,4 +9,6 @@ pub struct InstallContext {
     pub pr: Box<dyn SingleReport>,
     pub force: bool,
     pub dry_run: bool,
+    /// require lockfile URLs to be present; fail if not
+    pub locked: bool,
 }

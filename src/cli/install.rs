@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
+use crate::config::Settings;
 use crate::hooks::Hooks;
 use crate::toolset::{InstallOptions, ResolveOptions, ToolRequest, ToolSource, Toolset};
 use crate::{config, env, hooks};
@@ -117,6 +118,7 @@ impl Install {
                 latest_versions: true,
             },
             dry_run: self.dry_run,
+            locked: Settings::get().locked,
             ..Default::default()
         }
     }
