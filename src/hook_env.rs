@@ -14,7 +14,7 @@ use serde_derive::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 
 use crate::cli::HookReason;
-use crate::config::Config;
+use crate::config::{Config, DEFAULT_CONFIG_FILENAMES};
 use crate::env::PATH_KEY;
 use crate::env_diff::{EnvDiffOperation, EnvDiffPatches, EnvMap};
 use crate::hash::hash_to_str;
@@ -131,7 +131,11 @@ pub fn should_exit_early_fast() -> bool {
         && let Ok(ancestor_dirs) = file::all_dirs(cwd, &env::MISE_CEILING_PATHS)
     {
         // Config subdirectories that might contain config files
-        let config_subdirs = ["", ".config/mise", ".mise", "mise", ".config"];
+        let config_subdirs = DEFAULT_CONFIG_FILENAMES
+            .iter()
+            .map(|f| f.split_once("/").map(|(dir, _)| dir).unwrap_or(""))
+            .unique()
+            .collect::<Vec<_>>();
         for dir in ancestor_dirs {
             for subdir in &config_subdirs {
                 let check_dir = if subdir.is_empty() {
