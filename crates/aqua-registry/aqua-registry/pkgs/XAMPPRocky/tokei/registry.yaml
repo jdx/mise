@@ -203,7 +203,7 @@ packages:
         supported_envs:
           - linux
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("<= 13.0.0-alpha.0")
         asset: tokei-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
@@ -225,3 +225,6 @@ packages:
           - goos: windows
             format: raw
             asset: tokei-{{.Arch}}-{{.OS}}
+      - version_constraint: "true"
+        type: cargo
+        crate: tokei
