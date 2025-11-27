@@ -90,7 +90,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        tranche: ${{ fromJson(needs.list-changed-tools.outputs.tools == '' && '[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]' || '[0]') }}
+        tranche: ${{ fromJson(needs.list-changed-tools.outputs.tools == '' && '[0,1,2,3,4,5,6,7]' || '[0]') }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -117,4 +117,4 @@ jobs:
           command: mise test-tool ${{ needs.list-changed-tools.outputs.tools == '' && '--all' || needs.list-changed-tools.outputs.tools }}
         env:
           TEST_TRANCHE: ${{ matrix.tranche }}
-          TEST_TRANCHE_COUNT: ${{ needs.list-changed-tools.outputs.tools == '' && 16 || 1 }}
+          TEST_TRANCHE_COUNT: ${{ needs.list-changed-tools.outputs.tools == '' && 8 || 1 }}
