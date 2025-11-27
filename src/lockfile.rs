@@ -136,7 +136,6 @@ impl Lockfile {
             .try_into()?;
 
         let mut lockfile = Lockfile::default();
-        let mut has_single_version_format = false;
 
         for (short, value) in tools {
             let versions = match value {
@@ -144,21 +143,11 @@ impl Lockfile {
                     .into_iter()
                     .map(LockfileTool::try_from)
                     .collect::<Result<Vec<_>>>()?,
-                _ => {
-                    // Single-Version format detected - will be auto-migrated
-                    has_single_version_format = true;
-                    trace!("Auto-migrating single-version format for tool: {}", short);
-                    vec![LockfileTool::try_from(value)?]
-                }
+                _ => bail!(
+                    "invalid lockfile format for tool {short}: expected array ([[tools.{short}]])"
+                ),
             };
             lockfile.tools.insert(short, versions);
-        }
-
-        if has_single_version_format {
-            debug!(
-                "Auto-migrated lockfile from single-version to multi-version format: {}",
-                path.display()
-            );
         }
 
         Ok(lockfile)
@@ -559,24 +548,8 @@ impl From<ToolVersionList> for Vec<LockfileTool> {
 fn format(mut doc: DocumentMut) -> String {
     if let Some(tools) = doc.get_mut("tools") {
         for (_k, v) in tools.as_table_mut().unwrap().iter_mut() {
-            match v {
-                toml_edit::Item::ArrayOfTables(art) => {
-                    for t in art.iter_mut() {
-                        t.sort_values_by(|a, _, b, _| {
-                            if a == "version" {
-                                return std::cmp::Ordering::Less;
-                            }
-                            a.to_string().cmp(&b.to_string())
-                        });
-                        // Sort platforms section within each tool
-                        if let Some(toml_edit::Item::Table(platforms_table)) =
-                            t.get_mut("platforms")
-                        {
-                            platforms_table.sort_values();
-                        }
-                    }
-                }
-                toml_edit::Item::Table(t) => {
+            if let toml_edit::Item::ArrayOfTables(art) = v {
+                for t in art.iter_mut() {
                     t.sort_values_by(|a, _, b, _| {
                         if a == "version" {
                             return std::cmp::Ordering::Less;
@@ -588,7 +561,6 @@ fn format(mut doc: DocumentMut) -> String {
                         platforms_table.sort_values();
                     }
                 }
-                _ => {}
             }
         }
     }
@@ -602,10 +574,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn test_multi_version_format_migration() {
-        // Test that single-version format is read correctly and writes as multi-version
-        let single_version_toml = r#"
-[tools.node]
+    fn test_array_format_required() {
+        // Test that multi-version (array) format is read correctly
+        let multi_version_toml = r#"
+[[tools.node]]
 version = "20.10.0"
 backend = "core:node"
 
@@ -614,7 +586,7 @@ version = "3.11.0"
 backend = "core:python"
 "#;
 
-        let table: toml::Table = toml::from_str(single_version_toml).unwrap();
+        let table: toml::Table = toml::from_str(multi_version_toml).unwrap();
         let tools: toml::Table = table.get("tools").unwrap().clone().try_into().unwrap();
 
         let mut lockfile = Lockfile::default();
@@ -625,7 +597,7 @@ backend = "core:python"
                     .map(LockfileTool::try_from)
                     .collect::<Result<Vec<_>>>()
                     .unwrap(),
-                _ => vec![LockfileTool::try_from(value).unwrap()],
+                _ => panic!("expected array format"),
             };
             lockfile.tools.insert(short, versions);
         }
@@ -635,20 +607,20 @@ backend = "core:python"
         assert!(lockfile.tools.contains_key("node"));
         assert!(lockfile.tools.contains_key("python"));
 
-        // Verify node was migrated from single-version
+        // Verify node
         let node_versions = &lockfile.tools["node"];
         assert_eq!(node_versions.len(), 1);
         assert_eq!(node_versions[0].version, "20.10.0");
         assert_eq!(node_versions[0].backend, Some("core:node".to_string()));
 
-        // Verify python was already multi-version
+        // Verify python
         let python_versions = &lockfile.tools["python"];
         assert_eq!(python_versions.len(), 1);
         assert_eq!(python_versions[0].version, "3.11.0");
     }
 
     #[test]
-    fn test_save_always_uses_multi_version_format() {
+    fn test_save_uses_array_format() {
         let mut lockfile = Lockfile::default();
         let mut platforms = BTreeMap::new();
         platforms.insert(
