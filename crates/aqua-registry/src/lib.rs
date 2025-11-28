@@ -12,7 +12,9 @@ pub use registry::{
     AQUA_STANDARD_REGISTRY_FILES, AquaRegistry, DefaultRegistryFetcher, FileCacheStore,
     NoOpCacheStore,
 };
-pub use types::{AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType, RegistryYaml};
+pub use types::{
+    AquaChecksum, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType, RegistryYaml,
+};
 
 use thiserror::Error;
 

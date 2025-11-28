@@ -1,6 +1,8 @@
+use eyre::Result;
 use regex::Regex;
 use std::sync::LazyLock;
 
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::get_filename_from_url;
 
 /// Platform detection patterns
@@ -357,6 +359,30 @@ pub fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
     } else {
         None
     }
+}
+
+/// Detects the best asset for a given target platform
+/// Used for cross-platform lockfile generation
+pub fn detect_asset_for_target(assets: &[String], target: &PlatformTarget) -> Result<String> {
+    let target_os = match target.os_name() {
+        "macos" => "darwin",
+        other => other,
+    };
+    let target_arch = match target.arch_name() {
+        "x64" => "x86_64",
+        "arm64" => "aarch64",
+        other => other,
+    };
+
+    let picker = AssetPicker::new(target_os.to_string(), target_arch.to_string());
+    picker.pick_best_asset(assets).ok_or_else(|| {
+        eyre::eyre!(
+            "No matching asset found for platform {}-{}\nAvailable assets: {}",
+            target_os,
+            target_arch,
+            assets.join(", ")
+        )
+    })
 }
 
 #[cfg(test)]
