@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# Test that MISE_ENV selects the correct locked version
+
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+
+# Create config requesting "tiny"
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "latest"
+EOF
+
+# Install both versions FIRST (before creating lockfile)
+# This prevents install from overwriting our manually-crafted lockfile
+assert "mise install tiny@1.0.0"
+assert "mise install tiny@2.1.0"
+
+# Now create the lockfile with both base and env-specific entries
+cat >mise.lock <<'EOF'
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:tiny"
+
+[[tools.tiny]]
+version = "2.1.0"
+backend = "asdf:tiny"
+env = ["test"]
+EOF
+
+# Without MISE_ENV, should use base version (1.0.0)
+assert "mise where tiny" "$MISE_DATA_DIR/installs/tiny/1.0.0"
+
+# With MISE_ENV=test, should use env-specific version (2.1.0)
+# Note: Must pass MISE_ENV in the command itself since assert uses bash -c
+assert "MISE_ENV=test mise where tiny" "$MISE_DATA_DIR/installs/tiny/2.1.0"
+
+# With MISE_ENV=production (not in lockfile), should fall back to base (1.0.0)
+assert "MISE_ENV=production mise where tiny" "$MISE_DATA_DIR/installs/tiny/1.0.0"

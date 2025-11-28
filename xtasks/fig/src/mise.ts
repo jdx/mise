@@ -1473,6 +1473,12 @@ const completionSpec: Fig.Spec = {
             name: "platform",
           },
         },
+        {
+          name: "--local",
+          description:
+            "Update mise.local.lock instead of mise.lock\nUse for tools defined in .local.toml configs",
+          isRepeatable: false,
+        },
       ],
       args: {
         name: "tool",

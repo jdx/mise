@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::backend::platform_target::PlatformTarget;
 use crate::config::Config;
+use crate::config::config_file::config_root;
 use crate::file::display_path;
 use crate::lockfile::{Lockfile, PlatformInfo};
 use crate::platform::Platform;
@@ -53,6 +54,11 @@ pub struct Lock {
     /// If not specified, all platforms already in lockfile will be updated
     #[clap(long, short, value_delimiter = ',', verbatim_doc_comment)]
     pub platform: Vec<String>,
+
+    /// Update mise.local.lock instead of mise.lock
+    /// Use for tools defined in .local.toml configs
+    #[clap(long, verbatim_doc_comment)]
+    pub local: bool,
 }
 
 impl Lock {
@@ -61,8 +67,11 @@ impl Lock {
         let config = Config::get().await?;
         settings.ensure_experimental("lock")?;
 
+        // Determine lockfile path based on config root
+        let lockfile_path = self.get_lockfile_path(&config);
+
         // Determine target platforms
-        let target_platforms = self.determine_target_platforms()?;
+        let target_platforms = self.determine_target_platforms(&lockfile_path)?;
 
         miseprintln!(
             "{} Targeting {} platform(s): {}",
@@ -77,7 +86,7 @@ impl Lock {
 
         // Get toolset and resolve versions
         let ts = config.get_toolset().await?;
-        let tools = self.get_tools_to_lock(ts);
+        let tools = self.get_tools_to_lock(&config, ts);
 
         if tools.is_empty() {
             miseprintln!("{} No tools configured to lock", style("!").yellow());
@@ -101,7 +110,6 @@ impl Lock {
         }
 
         // Process tools and update lockfile
-        let lockfile_path = PathBuf::from("mise.lock");
         let mut lockfile = Lockfile::read(&lockfile_path)?;
         let results = self
             .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
@@ -128,7 +136,24 @@ impl Lock {
         Ok(())
     }
 
-    fn determine_target_platforms(&self) -> Result<Vec<Platform>> {
+    fn get_lockfile_path(&self, config: &Config) -> PathBuf {
+        // Get config root from the first config file, or use current dir
+        let root = config
+            .config_files
+            .keys()
+            .next()
+            .map(|p| config_root::config_root(p))
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+        let lockfile_name = if self.local {
+            "mise.local.lock"
+        } else {
+            "mise.lock"
+        };
+        root.join(lockfile_name)
+    }
+
+    fn determine_target_platforms(&self, lockfile_path: &PathBuf) -> Result<Vec<Platform>> {
         if !self.platform.is_empty() {
             // User specified platforms explicitly
             return Platform::parse_multiple(&self.platform);
@@ -139,8 +164,7 @@ impl Lock {
         platforms.insert(Platform::current());
 
         // Add any existing platforms from lockfile
-        let lockfile_path = PathBuf::from("mise.lock");
-        if let Ok(lockfile) = Lockfile::read(&lockfile_path) {
+        if let Ok(lockfile) = Lockfile::read(lockfile_path) {
             for platform_key in lockfile.all_platform_keys() {
                 if let Ok(p) = Platform::parse(&platform_key) {
                     platforms.insert(p);
@@ -153,13 +177,77 @@ impl Lock {
 
     fn get_tools_to_lock(
         &self,
+        config: &Config,
         ts: &Toolset,
     ) -> Vec<(crate::cli::args::BackendArg, crate::toolset::ToolVersion)> {
-        let all_tools: Vec<_> = ts
-            .list_current_versions()
-            .into_iter()
-            .map(|(backend, tv)| (backend.ba().as_ref().clone(), tv))
-            .collect();
+        // Collect tools from ALL config files (not just resolved current versions)
+        // This ensures base config tools are included even when overridden by env configs
+        let mut all_tools: Vec<_> = Vec::new();
+        let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
+
+        // First, get all tools from the resolved toolset (these are the "current" versions)
+        for (backend, tv) in ts.list_current_versions() {
+            let key = (backend.ba().short.clone(), tv.version.clone());
+            if seen.insert(key) {
+                all_tools.push((backend.ba().as_ref().clone(), tv));
+            }
+        }
+
+        // Then, iterate ALL config files to find tools that may have been overridden
+        for (_path, cf) in config.config_files.iter() {
+            if let Ok(trs) = cf.to_tool_request_set() {
+                for (ba, requests, _source) in trs.iter() {
+                    for request in requests {
+                        // Try to get a resolved version for this request
+                        if let Ok(backend) = ba.backend() {
+                            // Check if we already have this tool+version in toolset
+                            if let Some(resolved_tv) = ts.versions.get(ba.as_ref()) {
+                                for tv in &resolved_tv.versions {
+                                    if tv.request.version() == request.version() {
+                                        let key = (ba.short.clone(), tv.version.clone());
+                                        if seen.insert(key) {
+                                            all_tools.push((ba.as_ref().clone(), tv.clone()));
+                                        }
+                                    }
+                                }
+                            }
+                            // Also check installed versions that match this request
+                            let installed = backend.list_installed_versions();
+                            if request.version() == "latest" {
+                                // For "latest", find the highest installed version
+                                if let Some(latest_version) = installed.iter().max_by(|a, b| {
+                                    versions::Versioning::new(a).cmp(&versions::Versioning::new(b))
+                                }) {
+                                    let key = (ba.short.clone(), latest_version.clone());
+                                    if seen.insert(key.clone()) {
+                                        let tv = crate::toolset::ToolVersion::new(
+                                            request.clone(),
+                                            latest_version.clone(),
+                                        );
+                                        all_tools.push((ba.as_ref().clone(), tv));
+                                    }
+                                }
+                            } else {
+                                // For prefix requests, find matching versions using proper fuzzy matching
+                                // (ensures "1" matches "1.0.0" but not "10.0.0")
+                                for version in
+                                    backend.list_installed_versions_matching(&request.version())
+                                {
+                                    let key = (ba.short.clone(), version.clone());
+                                    if seen.insert(key.clone()) {
+                                        let tv = crate::toolset::ToolVersion::new(
+                                            request.clone(),
+                                            version,
+                                        );
+                                        all_tools.push((ba.as_ref().clone(), tv));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         if self.tool.is_empty() {
             // Lock all tools
@@ -300,5 +388,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise lock node python</bold>           # update only node and python
     $ <bold>mise lock --platform linux-x64</bold>  # update only linux-x64 platform
     $ <bold>mise lock --dry-run</bold>             # show what would be updated
+    $ <bold>mise lock --local</bold>               # update mise.local.lock for local configs
 "#
 );
