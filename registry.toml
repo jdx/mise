@@ -349,7 +349,10 @@ description = "azure-cli (az)"
 test = ["az --version", "azure-cli                         {{version}}"]
 
 [tools.azure-functions-core-tools]
-backends = ["asdf:mise-plugins/mise-azure-functions-core-tools"]
+backends = [
+  "vfox:mise-plugins/vfox-azure-functions-core-tools",
+  "asdf:mise-plugins/mise-azure-functions-core-tools",
+]
 description = "Command line tools for Azure Functions"
 
 [tools.azure-kubelogin]
