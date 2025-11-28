@@ -52,7 +52,9 @@ impl HttpBackend {
         // Include extraction options in cache key to handle different extraction needs
         let mut cache_key_parts = vec![checksum.clone()];
 
-        if let Some(strip_components) = opts.get("strip_components") {
+        let strip_components = lookup_platform_key(opts, "strip_components")
+            .or_else(|| opts.get("strip_components").cloned());
+        if let Some(strip_components) = strip_components {
             cache_key_parts.push(format!("strip_{strip_components}"));
         }
 
