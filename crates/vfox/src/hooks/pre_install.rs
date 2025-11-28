@@ -19,6 +19,38 @@ impl Plugin {
 
         Ok(pre_install)
     }
+
+    pub async fn pre_install_for_platform(
+        &self,
+        version: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<PreInstall> {
+        debug!(
+            "[vfox:{}] pre_install_for_platform os={} arch={}",
+            &self.name, os, arch
+        );
+        let ctx = self.context(Some(version.to_string()))?;
+        let target_os = os.to_string();
+        let target_arch = arch.to_string();
+        let pre_install = self
+            .eval_async(chunk! {
+                require "hooks/pre_install"
+                -- Override globals with target platform for cross-platform URL generation
+                local saved_os = OS_TYPE
+                local saved_arch = ARCH_TYPE
+                OS_TYPE = $target_os
+                ARCH_TYPE = $target_arch
+                local result = PLUGIN:PreInstall($ctx)
+                -- Restore original values
+                OS_TYPE = saved_os
+                ARCH_TYPE = saved_arch
+                return result
+            })
+            .await?;
+
+        Ok(pre_install)
+    }
 }
 
 /// Optional attestation parameters provided by the return value of the preinstall hook.

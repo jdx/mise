@@ -174,6 +174,17 @@ impl Vfox {
         Ok(())
     }
 
+    pub async fn pre_install_for_platform(
+        &self,
+        sdk: &str,
+        version: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<PreInstall> {
+        let sdk = self.get_sdk(sdk)?;
+        sdk.pre_install_for_platform(version, os, arch).await
+    }
+
     pub async fn metadata(&self, sdk: &str) -> Result<Metadata> {
         self.get_sdk(sdk)?.get_metadata()
     }
