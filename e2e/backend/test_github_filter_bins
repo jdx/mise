@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Test filter_bins option for github backend using pandoc.
+# We use pandoc because it is a compiled binary and comes with multiple binaries to filter.
+
+if [[ "$(uname -s)" != "Linux" ]]; then
+	echo "Skipping Linux-specific test on non-Linux OS"
+	exit 0
+fi
+
+export MISE_EXPERIMENTAL=1
+
+mise install "github:jgm/pandoc[filter_bins=pandoc]@3.8.2"
+
+bin_path="$(mise where github:jgm/pandoc@3.8.2)/.mise-bins"
+assert_directory_exists "$bin_path"
+
+bins=$(find "$bin_path" -maxdepth 1 \( -type l -o -type f \) -print0 | xargs -0 -n1 basename | sort | tr '\n' ' ')
+assert_contains "echo '$bins'" "pandoc"
+assert_not_contains "echo '$bins'" "pandoc-lua"
+assert_not_contains "echo '$bins'" "pandoc-server"

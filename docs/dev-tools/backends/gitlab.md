@@ -185,6 +185,20 @@ bin_path = "{name}-{version}/bin" # expands to gitlab-runner-1.0.0/bin
 3. If no `bin/` directory exists, search subdirectories for `bin/` directories
 4. If no `bin/` directories are found, use the root of the extracted directory
 
+### `filter_bins`
+
+Comma-separated list of binaries to symlink into a filtered `.mise-bins` directory. This is useful when the tool comes with extra binaries that you do not want to expose on PATH.
+
+```toml
+[tools]
+"gitlab:myorg/mytool" = { version = "1.0.0", filter_bins = "mybin" }
+```
+
+When enabled:
+
+- A `.mise-bins` subdirectory is created with symlinks only to the specified binaries
+- Other binaries are not exposed on PATH
+
 ### `api_url`
 
 For self-hosted GitLab instances, specify the API URL:
