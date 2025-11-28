@@ -545,7 +545,7 @@ impl UnifiedGitBackend {
 
     fn get_filter_bins(&self, tv: &ToolVersion) -> Option<Vec<String>> {
         let opts = tv.request.options();
-        let filter_bins = lookup_platform_key(opts, "filter_bins")
+        let filter_bins = lookup_platform_key(&opts, "filter_bins")
             .or_else(|| opts.get("filter_bins").cloned())?;
 
         Some(
