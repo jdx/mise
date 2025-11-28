@@ -845,7 +845,7 @@ test = ["cli53 --version", "cli53 version {{version}}"]
 
 [tools.clickhouse]
 backends = [
-  # "ubi:ClickHouse/ClickHouse", # ubi not working on linux
+  "vfox:mise-plugins/vfox-clickhouse",
   "asdf:mise-plugins/mise-clickhouse",
 ]
 description = "ClickHouse® is a high-performance, column-oriented SQL database management system (DBMS) for online analytical processing (OLAP)"
