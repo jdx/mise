@@ -509,22 +509,32 @@ fn merge_tool_entries_with_env(
                     }
                 }
             } else if existing_tool.env.is_some() {
-                // Preserve env-specific entries that have no match in new entries
-                // This handles the case where env configs (e.g., mise.test.toml) aren't loaded
-                // but we don't want to lose their lockfile entries
-                by_key.insert(
-                    key,
-                    (
-                        existing_tool.clone(),
-                        existing_tool
-                            .env
-                            .clone()
-                            .unwrap_or_default()
-                            .into_iter()
-                            .collect(),
-                        false,
-                    ),
-                );
+                // Check if this env is already covered by a new entry
+                // If so, the existing entry is stale and should not be preserved
+                let existing_envs = existing_tool.env.as_ref().unwrap();
+                let env_already_covered = by_key
+                    .values()
+                    .any(|(_, new_envs, _)| existing_envs.iter().any(|e| new_envs.contains(e)));
+
+                if !env_already_covered {
+                    // Preserve env-specific entries that have no match in new entries
+                    // and whose env is not covered by any new entry
+                    // This handles the case where env configs (e.g., mise.test.toml) aren't loaded
+                    // but we don't want to lose their lockfile entries
+                    by_key.insert(
+                        key,
+                        (
+                            existing_tool.clone(),
+                            existing_tool
+                                .env
+                                .clone()
+                                .unwrap_or_default()
+                                .into_iter()
+                                .collect(),
+                            false,
+                        ),
+                    );
+                }
             }
         }
     }
