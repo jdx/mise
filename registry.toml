@@ -545,7 +545,7 @@ test = [
 ]
 
 [tools.btrace]
-backends = ["asdf:mise-plugins/mise-btrace"]
+backends = ["github:btraceio/btrace", "asdf:mise-plugins/mise-btrace"]
 description = "BTrace - a safe, dynamic tracing tool for the Java platform"
 test = ["btrace --version", "BTrace v.{{version}}"]
 
