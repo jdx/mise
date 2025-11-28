@@ -4811,7 +4811,7 @@ description = "A toolchain to generate Xcode projects from Swift packages"
 os = ["macos"]
 
 [tools.tusd]
-backends = ["ubi:tus/tusd"]
+backends = ["github:tus/tusd"]
 description = "Reference server implementation in Go of tus: the open protocol for resumable file uploads"
 test = ["tusd --version | head -n1", "Version: v{{version}}"]
 

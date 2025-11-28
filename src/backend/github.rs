@@ -333,13 +333,28 @@ impl UnifiedGitBackend {
             return Ok(vec![bin_path]);
         }
 
-        // Look for bin directory in subdirectories (for extracted archives)
+        // Look for bin directory or executables in subdirectories (for extracted archives)
         let mut paths = Vec::new();
         if let Ok(entries) = std::fs::read_dir(tv.install_path()) {
             for entry in entries.flatten() {
-                let sub_bin_path = entry.path().join("bin");
-                if sub_bin_path.exists() {
-                    paths.push(sub_bin_path);
+                let path = entry.path();
+                if path.is_dir() {
+                    // Check for {subdir}/bin
+                    let sub_bin_path = path.join("bin");
+                    if sub_bin_path.exists() {
+                        paths.push(sub_bin_path);
+                    } else {
+                        // Check for executables directly in subdir (e.g., tusd_darwin_arm64/tusd)
+                        if let Ok(sub_entries) = std::fs::read_dir(&path) {
+                            for sub_entry in sub_entries.flatten() {
+                                let sub_path = sub_entry.path();
+                                if sub_path.is_file() && file::is_executable(&sub_path) {
+                                    paths.push(path.clone());
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
