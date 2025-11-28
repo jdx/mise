@@ -182,7 +182,7 @@ Comma-separated list of binaries to symlink into a filtered `.mise-bins` directo
 When enabled:
 
 - A `.mise-bins` subdirectory is created with symlinks only to the specified binaries
-- Other files (like `pandoc-lua`, `pandoc-server`, or documentation) are not exposed on PATH
+- Other files (like `pandoc-lua` or `pandoc-server`) are not exposed on PATH
 
 ### `api_url`
 

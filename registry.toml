@@ -2153,10 +2153,7 @@ backends = ["aqua:hasura/graphql-engine", "asdf:gurukulkarni/asdf-hasura"]
 description = "Hasura GraphQL Engine CLI"
 
 [tools.hatch]
-backends = [
-  { full = "github:pypa/hatch", options = { filter_bins = "hatch", version_prefix = "hatch-v" } },
-  "pipx:hatch",
-]
+backends = ["pipx:hatch"]
 description = "Modern, extensible Python project management."
 test = ["hatch --version", "{{version}}"]
 
