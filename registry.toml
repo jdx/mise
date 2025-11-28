@@ -651,8 +651,9 @@ description = "Tools to bootstrap CAs, certificate requests, and signed certific
 test = ["certstrap --version", "certstrap version {{version}}"]
 
 [tools.cf]
-backends = ["asdf:mise-plugins/mise-cf"]
+backends = ["github:cloudfoundry/cli", "asdf:mise-plugins/mise-cf"]
 description = "The official command line client for Cloud Foundry"
+test = ["cf version", "cf version {{version}}"]
 
 [tools.cfn-lint]
 backends = ["pipx:cfn-lint"]
