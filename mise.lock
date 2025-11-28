@@ -51,19 +51,19 @@ version = "1.3.3"
 backend = "core:bun"
 
 [tools.bun.platforms.linux-arm64]
-url = "bun-linux-aarch64.zip"
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-aarch64.zip"
 
 [tools.bun.platforms.linux-x64]
-url = "bun-linux-x64.zip"
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-linux-x64.zip"
 
 [tools.bun.platforms.macos-arm64]
-url = "bun-darwin-aarch64.zip"
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-darwin-aarch64.zip"
 
 [tools.bun.platforms.macos-x64]
-url = "bun-darwin-x64.zip"
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-darwin-x64.zip"
 
 [tools.bun.platforms.windows-x64]
-url = "bun-windows-x64.zip"
+url = "https://github.com/oven-sh/bun/releases/download/bun-v1.3.3/bun-windows-x64.zip"
 
 [[tools.cargo-binstall]]
 version = "1.16.2"

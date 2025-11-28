@@ -1019,11 +1019,17 @@ pub trait Backend: Debug + Send + Sync {
         // 1. Query GitHub/GitLab release API
         // 2. Find matching asset for the target platform
         // 3. Extract download URL, size, and checksums
-        let asset_url = release_info.asset_pattern.as_ref().map(|pattern| {
+        let asset_name = release_info.asset_pattern.as_ref().map(|pattern| {
             pattern
                 .replace("{os}", target.os_name())
                 .replace("{arch}", target.arch_name())
         });
+
+        // Combine api_url (base URL) with asset_name to get full download URL
+        let asset_url = match (&release_info.api_url, &asset_name) {
+            (Some(base_url), Some(name)) => Some(format!("{}/{}", base_url, name)),
+            _ => asset_name.clone(),
+        };
 
         Ok(PlatformInfo {
             checksum: None, // TODO: Implement checksum fetching from releases
