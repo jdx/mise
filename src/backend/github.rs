@@ -7,7 +7,6 @@ use crate::backend::static_helpers::{
 };
 use crate::cli::args::BackendArg;
 use crate::config::Config;
-use crate::config::Settings;
 use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
@@ -55,29 +54,30 @@ impl Backend for UnifiedGitBackend {
         let repo = self.ba.tool_name();
         let opts = self.ba.opts();
         let api_url = self.get_api_url(&opts);
-        if self.is_gitlab() {
-            let releases = gitlab::list_releases_from_url(api_url.as_str(), &repo).await?;
-            Ok(releases
+        let version_prefix = opts.get("version_prefix");
+
+        // Get tag names from either GitHub or GitLab
+        let tag_names: Vec<String> = if self.is_gitlab() {
+            gitlab::list_releases_from_url(api_url.as_str(), &repo)
+                .await?
                 .into_iter()
-                .filter(|r| {
-                    opts.get("version_prefix")
-                        .is_none_or(|p| r.tag_name.starts_with(p))
-                })
-                .map(|r| self.strip_version_prefix(&r.tag_name))
-                .rev()
-                .collect())
+                .map(|r| r.tag_name)
+                .collect()
         } else {
-            let releases = github::list_releases_from_url(api_url.as_str(), &repo).await?;
-            Ok(releases
+            github::list_releases_from_url(api_url.as_str(), &repo)
+                .await?
                 .into_iter()
-                .filter(|r| {
-                    opts.get("version_prefix")
-                        .is_none_or(|p| r.tag_name.starts_with(p))
-                })
-                .map(|r| self.strip_version_prefix(&r.tag_name))
-                .rev()
-                .collect())
-        }
+                .map(|r| r.tag_name)
+                .collect()
+        };
+
+        // Apply common filtering and mapping
+        Ok(tag_names
+            .into_iter()
+            .filter(|tag| version_prefix.is_none_or(|p| tag.starts_with(p)))
+            .map(|tag| self.strip_version_prefix(&tag))
+            .rev()
+            .collect())
     }
 
     async fn install_version_(
@@ -351,7 +351,8 @@ impl UnifiedGitBackend {
         }
     }
 
-    /// Resolves the asset URL using either explicit patterns or auto-detection
+    /// Resolves the asset URL using either explicit patterns or auto-detection.
+    /// Delegates to resolve_asset_url_for_target with the current platform.
     async fn resolve_asset_url(
         &self,
         tv: &ToolVersion,
@@ -359,31 +360,9 @@ impl UnifiedGitBackend {
         repo: &str,
         api_url: &str,
     ) -> Result<ReleaseAsset> {
-        // Check for direct platform-specific URLs first
-        if let Some(direct_url) = lookup_platform_key(opts, "url") {
-            return Ok(ReleaseAsset {
-                name: get_filename_from_url(&direct_url),
-                url: direct_url.clone(),
-                url_api: direct_url.clone(),
-                digest: None, // Direct URLs don't have API digest
-            });
-        }
-
-        let version = &tv.version;
-        let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
-        if self.is_gitlab() {
-            try_with_v_prefix(version, version_prefix, |candidate| async move {
-                self.resolve_gitlab_asset_url(tv, opts, repo, api_url, &candidate)
-                    .await
-            })
+        let current_platform = PlatformTarget::from_current();
+        self.resolve_asset_url_for_target(tv, opts, repo, api_url, &current_platform)
             .await
-        } else {
-            try_with_v_prefix(version, version_prefix, |candidate| async move {
-                self.resolve_github_asset_url(tv, opts, repo, api_url, &candidate)
-                    .await
-            })
-            .await
-        }
     }
 
     /// Resolves asset URL for a specific target platform (for cross-platform lockfile generation)
@@ -549,149 +528,6 @@ impl UnifiedGitBackend {
             url: asset.direct_asset_url.clone(),
             url_api: asset.url.clone(),
             digest: None, // GitLab doesn't provide digests
-        })
-    }
-
-    async fn resolve_github_asset_url(
-        &self,
-        tv: &ToolVersion,
-        opts: &ToolVersionOptions,
-        repo: &str,
-        api_url: &str,
-        version: &str,
-    ) -> Result<ReleaseAsset> {
-        let release = github::get_release_for_url(api_url, repo, version).await?;
-
-        let available_assets: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
-
-        // Try explicit pattern first, then fall back to auto-detection
-        if let Some(pattern) = lookup_platform_key(opts, "asset_pattern")
-            .or_else(|| opts.get("asset_pattern").cloned())
-        {
-            // Template the pattern with actual values
-            let templated_pattern = template_string(&pattern, tv);
-
-            // Find matching asset using pattern
-            let asset = release
-                .assets
-                .into_iter()
-                .find(|a| self.matches_pattern(&a.name, &templated_pattern))
-                .ok_or_else(|| {
-                    eyre::eyre!(
-                        "No matching asset found for pattern: {}\nAvailable assets: {}",
-                        templated_pattern,
-                        Self::format_asset_list(available_assets.iter())
-                    )
-                })?;
-
-            return Ok(ReleaseAsset {
-                name: asset.name,
-                url: asset.browser_download_url,
-                url_api: asset.url,
-                digest: asset.digest,
-            });
-        }
-
-        // Fall back to auto-detection
-        let asset_name = self.auto_detect_asset(&available_assets)?;
-        let asset = self
-            .find_asset_case_insensitive(&release.assets, &asset_name, |a| &a.name)
-            .ok_or_else(|| {
-                eyre::eyre!(
-                    "Auto-detected asset not found: {}\nAvailable assets: {}",
-                    asset_name,
-                    Self::format_asset_list(available_assets.iter())
-                )
-            })?;
-
-        Ok(ReleaseAsset {
-            name: asset.name.clone(),
-            url: asset.browser_download_url.clone(),
-            url_api: asset.url.clone(),
-            digest: asset.digest.clone(),
-        })
-    }
-
-    async fn resolve_gitlab_asset_url(
-        &self,
-        tv: &ToolVersion,
-        opts: &ToolVersionOptions,
-        repo: &str,
-        api_url: &str,
-        version: &str,
-    ) -> Result<ReleaseAsset> {
-        let release = gitlab::get_release_for_url(api_url, repo, version).await?;
-
-        let available_assets: Vec<String> = release
-            .assets
-            .links
-            .iter()
-            .map(|a| a.name.clone())
-            .collect();
-
-        // Try explicit pattern first, then fall back to auto-detection
-        if let Some(pattern) = lookup_platform_key(opts, "asset_pattern")
-            .or_else(|| opts.get("asset_pattern").cloned())
-        {
-            // Template the pattern with actual values
-            let templated_pattern = template_string(&pattern, tv);
-
-            // Find matching asset using pattern
-            let asset = release
-                .assets
-                .links
-                .into_iter()
-                .find(|a| self.matches_pattern(&a.name, &templated_pattern))
-                .ok_or_else(|| {
-                    eyre::eyre!(
-                        "No matching asset found for pattern: {}\nAvailable assets: {}",
-                        templated_pattern,
-                        Self::format_asset_list(available_assets.iter())
-                    )
-                })?;
-
-            return Ok(ReleaseAsset {
-                name: asset.name,
-                url: asset.url,
-                url_api: asset.direct_asset_url,
-                digest: None, // GitLab doesn't provide digests yet
-            });
-        }
-
-        // Fall back to auto-detection
-        let asset_name = self.auto_detect_asset(&available_assets)?;
-        let asset = self
-            .find_asset_case_insensitive(&release.assets.links, &asset_name, |a| &a.name)
-            .ok_or_else(|| {
-                eyre::eyre!(
-                    "Auto-detected asset not found: {}\nAvailable assets: {}",
-                    asset_name,
-                    Self::format_asset_list(available_assets.iter())
-                )
-            })?;
-
-        Ok(ReleaseAsset {
-            name: asset.name.clone(),
-            url: asset.direct_asset_url.clone(),
-            url_api: asset.url.clone(),
-            digest: None, // GitLab doesn't provide digests yet
-        })
-    }
-
-    fn auto_detect_asset(&self, available_assets: &[String]) -> Result<String> {
-        let settings = Settings::get();
-        let picker = asset_detector::AssetPicker::new(
-            settings.os().to_string(),
-            settings.arch().to_string(),
-        );
-
-        picker.pick_best_asset(available_assets).ok_or_else(|| {
-            eyre::eyre!(
-                "No suitable asset found for current platform ({}-{})\nAvailable assets: {}",
-                settings.os(),
-                settings.arch(),
-                available_assets.join(", ")
-            )
         })
     }
 
