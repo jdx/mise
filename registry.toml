@@ -3447,7 +3447,7 @@ description = "Open Policy Agent (OPA) is an open source, general-purpose policy
 
 [tools.opam]
 backends = [
-  "github:ocaml/opam[asset_pattern=opam-*-*-{os}]",
+  "github:ocaml/opam[asset_pattern=opam-*-{gnu_arch}-{os}]",
   "asdf:asdf-community/asdf-opam",
 ]
 description = "(ocaml) opam is a source-based package manager. It supports multiple simultaneous compiler installations, flexible package constraints, and a Git-friendly development workflow"

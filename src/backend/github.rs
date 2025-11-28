@@ -654,6 +654,11 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
         "arm64" => "aarch64",
         _ => arch,
     };
+    // GNU-style arch: x64 -> x86_64, arm64 stays arm64 (used by opam, etc.)
+    let gnu_arch = match arch {
+        "x64" => "x86_64",
+        _ => arch,
+    };
 
     template
         .replace("{version}", version)
@@ -663,6 +668,7 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
         .replace("{darwin_os}", darwin_os)
         .replace("{amd64_arch}", amd64_arch)
         .replace("{x86_64_arch}", x86_64_arch)
+        .replace("{gnu_arch}", gnu_arch)
 }
 
 #[cfg(test)]
