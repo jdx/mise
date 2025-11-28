@@ -6,7 +6,7 @@
 
 [tools.1password]
 aliases = ["1password-cli", "op"]
-backends = ["asdf:mise-plugins/mise-1password-cli", "aqua:1password/cli"]
+backends = ["vfox:mise-plugins/vfox-1password", "aqua:1password/cli"]
 description = "Password manager developed by AgileBits Inc"
 test = ["op --version", "{{version}}"]
 
@@ -164,8 +164,9 @@ test = ["apko version", "GitVersion:    v{{version}}"]
 
 [tools.apollo-ios]
 aliases = ["apollo-ios-cli"]
-backends = ["asdf:mise-plugins/mise-apollo-ios-cli"]
+backends = ["github:apollographql/apollo-ios"]
 description = "Apollo iOS Code Generation"
+os = ["macos"]
 
 [tools.apollo-router]
 backends = ["github:apollographql/router", "asdf:safx/asdf-apollo-router"]
@@ -433,7 +434,7 @@ os = ["linux"]
 test = ["bbr-s3-config-validator --help", ""] # no version output
 
 [tools.bfs]
-backends = ["asdf:mise-plugins/mise-bfs"]
+backends = ["vfox:mise-plugins/vfox-bfs", "asdf:mise-plugins/mise-bfs"]
 description = "Breadth-first search for your files"
 test = ["bfs --version", "bfs {{version}}"]
 
@@ -527,7 +528,7 @@ description = "Boundary enables identity-based access management for dynamic inf
 test = ["boundary version", "Version Number:      {{version}}"]
 
 [tools.bpkg]
-backends = ["asdf:mise-plugins/mise-bpkg"]
+backends = ["vfox:mise-plugins/vfox-bpkg", "asdf:mise-plugins/mise-bpkg"]
 description = "Lightweight bash package manager"
 test = ["bpkg --version", "{{version}}"]
 
@@ -545,7 +546,7 @@ test = [
 ]
 
 [tools.btrace]
-backends = ["asdf:mise-plugins/mise-btrace"]
+backends = ["github:btraceio/btrace", "asdf:mise-plugins/mise-btrace"]
 description = "BTrace - a safe, dynamic tracing tool for the Java platform"
 test = ["btrace --version", "BTrace v.{{version}}"]
 
@@ -655,8 +656,9 @@ description = "Tools to bootstrap CAs, certificate requests, and signed certific
 test = ["certstrap --version", "certstrap version {{version}}"]
 
 [tools.cf]
-backends = ["asdf:mise-plugins/mise-cf"]
+backends = ["github:cloudfoundry/cli", "asdf:mise-plugins/mise-cf"]
 description = "The official command line client for Cloud Foundry"
+test = ["cf version", "cf version {{version}}"]
 
 [tools.cfn-lint]
 backends = ["pipx:cfn-lint"]
