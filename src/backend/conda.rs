@@ -2,7 +2,8 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
-use crate::config::{Config, Settings};
+use crate::config::Config;
+use crate::config::Settings;
 use crate::file::{self, TarOptions};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
@@ -231,6 +232,7 @@ impl Backend for CondaBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
+        Settings::get().ensure_experimental("conda backend")?;
         let files = self.fetch_package_files().await?;
         let subdir = Self::conda_subdir();
 

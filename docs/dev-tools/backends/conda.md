@@ -1,4 +1,4 @@
-# Conda Backend
+# Conda Backend <Badge type="warning" text="experimental" />
 
 You may install packages directly from [conda-forge](https://conda-forge.org/) and other
 Anaconda channels without needing conda or mamba installed.
