@@ -197,7 +197,7 @@ Comma-separated list of binaries to symlink into a filtered `.mise-bins` directo
 When enabled:
 
 - A `.mise-bins` subdirectory is created with symlinks only to the specified binaries
-- Other files (like other binaries) are not exposed on PATH
+- Other binaries are not exposed on PATH
 
 ### `api_url`
 
