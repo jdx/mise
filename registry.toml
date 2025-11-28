@@ -4424,7 +4424,7 @@ description = "Pretty fancy and modern terminal file manager"
 test = ["spf --version", "superfile version v{{version}}"]
 
 [tools.superhtml]
-backends = ["ubi:kristoff-it/superhtml"]
+backends = ["github:kristoff-it/superhtml"]
 description = "HTML Validator, Formatter, LSP, and Templating Language Library"
 test = ["superhtml version 2>&1", "{{version}}"]
 
@@ -4964,7 +4964,7 @@ backends = ["aqua:ovh/venom", "asdf:aabouzaid/asdf-venom"]
 description = "Manage and run your integration tests with efficiency - Venom run executors (script, HTTP Request, web, imap, etc... ) and assertions"
 
 [tools.vespa-cli]
-backends = ["ubi:vespa-engine/vespa"]
+backends = ["github:vespa-engine/vespa"]
 description = "The command-line tool for Vespa.ai."
 test = ["vespa version", "Vespa CLI version {{version}}"]
 
@@ -5129,7 +5129,7 @@ backends = ["asdf:mise-plugins/mise-xcresultparser"]
 description = "Parse the binary xcresult bundle from Xcode builds and testruns"
 
 [tools.xcsift]
-backends = ["ubi:ldomaradzki/xcsift"]
+backends = ["github:ldomaradzki/xcsift"]
 description = "Swift tool to parse and format xcodebuild output for coding agents"
 os = ["macos"]
 test = ["xcsift --version", "{{version}}"]
