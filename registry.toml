@@ -433,7 +433,7 @@ os = ["linux"]
 test = ["bbr-s3-config-validator --help", ""] # no version output
 
 [tools.bfs]
-backends = ["asdf:mise-plugins/mise-bfs"]
+backends = ["vfox:mise-plugins/vfox-bfs", "asdf:mise-plugins/mise-bfs"]
 description = "Breadth-first search for your files"
 test = ["bfs --version", "bfs {{version}}"]
 
