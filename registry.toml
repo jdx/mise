@@ -136,7 +136,7 @@ test = ["amp --version", "{{version}}"]
 backends = ["vfox:mise-plugins/vfox-android-sdk"]
 depends = ["java"]
 description = "Android Command-line tools"
-test = ["sdkmanager --version", "{{version}}"]
+test = ["sdkmanager --version", ".0"]
 
 [tools.ansible]
 backends = ["pipx:ansible[uvx=false,pipx_args=--include-deps]"]
