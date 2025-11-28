@@ -1491,7 +1491,7 @@ backends = ["asdf:mise-plugins/mise-elixir-ls"]
 description = "A frontend-independent IDE 'smartness' server for Elixir. Implements the 'Language Server Protocol' standard and provides debugger support via the 'Debug Adapter Protocol'"
 
 [tools.elm]
-backends = ["ubi:elm/compiler[exe=elm]", "asdf:asdf-community/asdf-elm"]
+backends = ["github:elm/compiler[bin=elm]", "asdf:asdf-community/asdf-elm"]
 description = "Compiler for Elm, a functional language for reliable webapps"
 test = ["elm --version", "{{version}}"]
 
@@ -3446,7 +3446,10 @@ backends = ["aqua:open-policy-agent/opa", "asdf:tochukwuvictor/asdf-opa"]
 description = "Open Policy Agent (OPA) is an open source, general-purpose policy engine"
 
 [tools.opam]
-backends = ["ubi:ocaml/opam", "asdf:asdf-community/asdf-opam"]
+backends = [
+  "github:ocaml/opam[asset_pattern=opam-*-*-{os}]",
+  "asdf:asdf-community/asdf-opam",
+]
 description = "(ocaml) opam is a source-based package manager. It supports multiple simultaneous compiler installations, flexible package constraints, and a Git-friendly development workflow"
 test = ["opam --version", "{{version}}"]
 
@@ -5226,7 +5229,7 @@ description = "yq is a portable command-line YAML processor"
 test = ["yq --version", "version v{{version}}"]
 
 [tools.yt-dlp]
-backends = ["ubi:yt-dlp/yt-dlp[rename_exe=yt-dlp]", "asdf:duhow/asdf-yt-dlp"]
+backends = ["github:yt-dlp/yt-dlp[rename_exe=yt-dlp]", "asdf:duhow/asdf-yt-dlp"]
 description = "A feature-rich command-line audio/video downloader"
 test = ["yt-dlp --version", "{{version}}"]
 

@@ -345,6 +345,13 @@ pub fn install_artifact(
 
         // Extract with determined strip_components
         file::untar(file_path, &install_path, &tar_opts)?;
+
+        // Handle rename_exe option for archives
+        if let Some(rename_to) =
+            lookup_platform_key(opts, "rename_exe").or_else(|| opts.get("rename_exe").cloned())
+        {
+            rename_executable_in_dir(&install_path, &rename_to)?;
+        }
     }
     Ok(())
 }
@@ -389,6 +396,35 @@ pub fn verify_checksum_str(
         hash::ensure_checksum(file_path, hash_str, pr, algo)?;
     } else {
         bail!("Invalid checksum format: {}", checksum);
+    }
+    Ok(())
+}
+
+/// Renames the first executable file found in a directory to a new name.
+/// Used by the `rename_exe` option to rename binaries after archive extraction.
+fn rename_executable_in_dir(dir: &Path, new_name: &str) -> eyre::Result<()> {
+    // Find executables in the directory (non-recursive for top level)
+    for entry in std::fs::read_dir(dir)?.flatten() {
+        let path = entry.path();
+        if path.is_file() && crate::file::is_executable(&path) {
+            let file_name = path.file_name().unwrap().to_string_lossy();
+            // Skip if already has the target name
+            if file_name == new_name {
+                return Ok(());
+            }
+            // Skip common non-binary files
+            if file_name.starts_with('.')
+                || file_name.ends_with(".txt")
+                || file_name.ends_with(".md")
+            {
+                continue;
+            }
+            // Rename this executable
+            let new_path = dir.join(new_name);
+            std::fs::rename(&path, &new_path)?;
+            debug!("Renamed {} to {}", path.display(), new_path.display());
+            return Ok(());
+        }
     }
     Ok(())
 }
