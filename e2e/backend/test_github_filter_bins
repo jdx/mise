@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-# Test filter_bins option for github backend with hatch.
+# Test filter_bins option for github backend using pandoc.
+# We use pandoc because it is a compiled binary and comes with multiple binaries to filter.
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "Skipping Linux-specific test on non-Linux OS"
@@ -10,39 +11,56 @@ fi
 # Set MISE_EXPERIMENTAL for github backend features
 export MISE_EXPERIMENTAL=1
 
-# Install a known python version globally for hatch test
-mise use --global python@3.11 || mise install python@3.11 && mise use --global python@3.11
+# --- Test Pandoc ---
+# Create a mise.toml with filter_bins option for pandoc
+# Use a specific asset pattern to ensure we get the right archive for Linux x64
+cat > mise.toml <<EOF
+[tools]
+"github:jgm/pandoc" = { version = "3.1.9", filter_bins = "pandoc", asset_pattern = "pandoc-*-linux-amd64.tar.gz" }
+EOF
 
-# --- Test Hatch ---
-# Install hatch (should use github backend from registry)
-mise install hatch@latest
+echo "Content of mise.toml:"
+cat mise.toml
 
-# Get the base install path for hatch
-hatch_install_dir="$(mise where hatch@latest)"
+mise trust
 
-# Verify hatch binary is in .mise-bins
-hatch_bin_dir="$hatch_install_dir/.mise-bins"
-assert_directory_exists "$hatch_bin_dir"
-if [[ -f "$hatch_bin_dir/hatch" ]]; then
-    echo "hatch binary exists in .mise-bins"
+# Install pandoc (from config)
+echo "Attempting to install pandoc..."
+mise install
+
+echo "Checking mise ls --json..."
+mise ls --json "github:jgm/pandoc"
+
+# Verify installation path contains .mise-bins for pandoc
+pandoc_install_path="$(mise where "github:jgm/pandoc@3.1.9")"
+pandoc_bin_path="$pandoc_install_path/.mise-bins"
+
+echo "Checking for .mise-bins at: $pandoc_bin_path"
+assert_directory_exists "$pandoc_bin_path"
+
+# Verify pandoc is linked in .mise-bins
+if [[ -f "$pandoc_bin_path/pandoc" ]]; then
+    echo "pandoc binary exists in .mise-bins"
 else
-    echo "hatch binary missing from .mise-bins"
+    echo "pandoc binary missing from .mise-bins"
+    ls -la "$pandoc_install_path"
     exit 1
 fi
 
-# Verify no python executable is exposed via hatch's .mise-bins
-if find "$hatch_bin_dir" -maxdepth 1 -name "python*" | grep -q "python"; then
-    echo "ERROR: Python executable found in hatch's .mise-bins directory. Filter_bins is not working."
+# Verify other binaries are NOT linked (e.g., pandoc-lua, pandoc-server)
+if [[ -f "$pandoc_bin_path/pandoc-lua" ]]; then
+    echo "ERROR: pandoc-lua should not exist in .mise-bins (filtering failed)"
     exit 1
 fi
-echo "Verified no unexpected python executables from hatch's .mise-bins."
+if [[ -f "$pandoc_bin_path/pandoc-server" ]]; then
+    echo "ERROR: pandoc-server should not exist in .mise-bins (filtering failed)"
+    exit 1
+fi
+echo "Verified other binaries are filtered out."
 
-# Verify hatch itself works
-assert_contains "mise x hatch@latest -- hatch --version" "Hatch"
-
-# Verify global python is still the one mise manages and not hatch's bundled one
-assert_contains "mise x python -- python --version" "Python 3.11"
+# Verify tool works via mise x
+assert_contains "mise x -- pandoc --version" "pandoc 3.1.9"
 
 # Clean up
-mise uninstall hatch@latest
-mise uninstall python@3.11
+rm mise.toml
+mise uninstall "github:jgm/pandoc@3.1.9"

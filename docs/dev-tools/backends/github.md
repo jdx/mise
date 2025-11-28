@@ -176,13 +176,13 @@ Comma-separated list of binaries to symlink into a filtered `.mise-bins` directo
 
 ```toml
 [tools]
-"github:aws/aws-cli" = { version = "latest", filter_bins = "aws" }
+"github:jgm/pandoc" = { version = "latest", filter_bins = "pandoc" }
 ```
 
 When enabled:
 
 - A `.mise-bins` subdirectory is created with symlinks only to the specified binaries
-- Other files (like READMEs, docs, or other binaries) are not exposed on PATH
+- Other files (like `pandoc-lua`, `pandoc-server`, or documentation) are not exposed on PATH
 
 ### `api_url`
 
