@@ -560,7 +560,7 @@ impl UnifiedGitBackend {
         // Find where the actual binaries are
         let install_path = tv.install_path();
         let bin_paths = self.discover_bin_paths(tv)?;
-        
+
         // Collect all possible source directories (install root + discovered bin paths)
         let mut src_dirs = bin_paths;
         if !src_dirs.contains(&install_path) {
@@ -581,9 +581,12 @@ impl UnifiedGitBackend {
                     break;
                 }
             }
-            
+
             if !found {
-                warn!("Could not find binary '{}' in install directories. Available paths: {:?}", bin_name, src_dirs);
+                warn!(
+                    "Could not find binary '{}' in install directories. Available paths: {:?}",
+                    bin_name, src_dirs
+                );
             }
         }
         Ok(())
