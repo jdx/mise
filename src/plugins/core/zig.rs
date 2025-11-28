@@ -5,8 +5,8 @@ use std::{
 };
 
 use crate::backend::Backend;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::duration::DAILY;
@@ -57,39 +57,10 @@ impl ZigPlugin {
 
     async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let settings = Settings::get();
-        let indexes = HashMap::from([
-            ("zig", "https://ziglang.org/download/index.json"),
-            ("mach", "https://machengine.org/zig/index.json"),
-        ]);
-
-        let url = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
-            self.get_tarball_url_from_json(
-                indexes["mach"],
-                tv.version.as_str(),
-                arch(&settings),
-                os(),
-            )
+        let url = self
+            .get_tarball_url(tv, &PlatformTarget::from_current())
             .await?
-        } else {
-            self.get_tarball_url_from_json(
-                indexes["zig"],
-                tv.version.as_str(),
-                arch(&settings),
-                os(),
-            )
-            .await
-            .or_else(|err| {
-                // We can construct the tarball name for numbered versions without the index
-                if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) {
-                    let (version, arch, os) = (tv.version.as_str(), arch(&settings), os());
-                    Ok(format!(
-                        "https://ziglang.org/download/{version}/zig-{arch}-{os}-{version}.tar.xz"
-                    ))
-                } else {
-                    Err(err)
-                }
-            })?
-        };
+            .ok_or_else(|| eyre::eyre!("Failed to resolve zig tarball URL for {}", tv.version))?;
 
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
@@ -291,26 +262,51 @@ impl Backend for ZigPlugin {
         self.verify(ctx, &tv)?;
         Ok(tv)
     }
-}
 
-fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "freebsd") {
-        "freebsd"
-    } else {
-        &OS
-    }
-}
+    async fn get_tarball_url(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        let indexes = HashMap::from([
+            ("zig", "https://ziglang.org/download/index.json"),
+            ("mach", "https://machengine.org/zig/index.json"),
+        ]);
 
-fn arch(settings: &Settings) -> &str {
-    match settings.arch() {
-        "x64" => "x86_64",
-        "arm64" => "aarch64",
-        "arm" => "armv7a",
-        "riscv64" => "riscv64",
-        other => other,
+        let arch = match target.arch_name() {
+            "x64" => "x86_64",
+            "arm64" => "aarch64",
+            "arm" => "armv7a",
+            "riscv64" => "riscv64",
+            other => other,
+        };
+        let os = match target.os_name() {
+            "macos" => "macos",
+            "linux" => "linux",
+            "freebsd" => "freebsd",
+            "windows" => "windows",
+            _ => "linux",
+        };
+
+        let (json_url, version) = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
+            (indexes["mach"], tv.version.as_str())
+        } else {
+            (indexes["zig"], tv.version.as_str())
+        };
+
+        match self
+            .get_tarball_url_from_json(json_url, version, arch, os)
+            .await
+        {
+            Ok(url) => Ok(Some(url)),
+            Err(_) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
+                // Fallback: construct URL directly for numbered versions
+                Ok(Some(format!(
+                    "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
+                    tv.version, os, arch, tv.version
+                )))
+            }
+            Err(_) => Ok(None),
+        }
     }
 }
