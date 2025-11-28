@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use crate::Result;
 use crate::backend::Backend;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
@@ -188,6 +189,36 @@ impl GoPlugin {
         }
         Ok(map)
     }
+
+    /// Map OS name from PlatformTarget to Go's naming convention
+    fn platform_for_target(target: &PlatformTarget) -> &'static str {
+        match target.os_name() {
+            "macos" => "darwin",
+            "linux" => "linux",
+            "windows" => "windows",
+            _ => "linux", // fallback
+        }
+    }
+
+    /// Map arch name from PlatformTarget to Go's naming convention
+    fn arch_for_target(target: &PlatformTarget) -> &str {
+        match target.arch_name() {
+            "x64" => "amd64",
+            "arm64" => "arm64",
+            "arm" => "armv6l",
+            "riscv64" => "riscv64",
+            other => other,
+        }
+    }
+
+    /// Get file extension for target platform
+    fn ext_for_target(target: &PlatformTarget) -> &'static str {
+        if target.os_name() == "windows" {
+            "zip"
+        } else {
+            "tar.gz"
+        }
+    }
 }
 
 #[async_trait]
@@ -264,6 +295,25 @@ impl Backend for GoPlugin {
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
         self._exec_env(tv)
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_tarball_url(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        let settings = Settings::get();
+        let filename = format!(
+            "go{}.{}-{}.{}",
+            tv.version,
+            Self::platform_for_target(target),
+            Self::arch_for_target(target),
+            Self::ext_for_target(target)
+        );
+        let url = format!("{}/{}", &settings.go_download_mirror, &filename);
+        Ok(Some(url))
     }
 }
 

@@ -11,6 +11,7 @@ use serde::Deserialize;
 use versions::Versioning;
 
 use crate::backend::Backend;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
@@ -89,6 +90,25 @@ impl DenoPlugin {
     fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         self.test_deno(tv, pr)
     }
+
+    /// Map OS name from PlatformTarget to Deno's naming convention
+    fn os_for_target(target: &PlatformTarget) -> &'static str {
+        match target.os_name() {
+            "macos" => "apple-darwin",
+            "linux" => "unknown-linux-gnu",
+            "windows" => "pc-windows-msvc",
+            _ => "unknown-linux-gnu", // fallback
+        }
+    }
+
+    /// Map arch name from PlatformTarget to Deno's naming convention
+    fn arch_for_target(target: &PlatformTarget) -> &str {
+        match target.arch_name() {
+            "x64" => "x86_64",
+            "arm64" => "aarch64",
+            other => other,
+        }
+    }
 }
 
 #[async_trait]
@@ -153,6 +173,22 @@ impl Backend for DenoPlugin {
             tv.install_path().join(".deno").to_string_lossy().into(),
         )]);
         Ok(map)
+    }
+
+    // ========== Lockfile Metadata Fetching Implementation ==========
+
+    async fn get_tarball_url(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        let arch = Self::arch_for_target(target);
+        let os = Self::os_for_target(target);
+        let url = format!(
+            "https://dl.deno.land/release/v{}/deno-{}-{}.zip",
+            tv.version, arch, os
+        );
+        Ok(Some(url))
     }
 }
 
