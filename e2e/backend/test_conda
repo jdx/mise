@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+# Test basic version listing
+assert_succeed "mise ls-remote conda:ruff | head -5"
+
+# Test installation and execution
+assert_contains "mise x conda:ruff@0.8.0 -- ruff --version" "0.8.0"
+
+# Test installing another tool
+assert_contains "mise x conda:bat@0.24.0 -- bat --version" "0.24.0"
