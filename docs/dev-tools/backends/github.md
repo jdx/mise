@@ -172,7 +172,7 @@ bin_path = "{name}-{version}/bin" # expands to cli-1.0.0/bin
 
 ### `filter_bins`
 
-Comma-separated list of binaries to symlink into a filtered `.mise-bins` directory. This is useful when the tool comes with extra files or binaries that you do not want to expose on PATH.
+Comma-separated list of binaries to symlink into a filtered `.mise-bins` directory. This is useful when the tool comes with extra binaries that you do not want to expose on PATH.
 
 ```toml
 [tools]
