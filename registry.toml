@@ -638,8 +638,12 @@ description = "Carp Language"
 test = ["which carp", ""] # hangs in non-interactive shells
 
 [tools.carthage]
-backends = ["asdf:mise-plugins/mise-carthage"]
+backends = [
+  "vfox:mise-plugins/vfox-carthage",
+  "asdf:mise-plugins/mise-carthage",
+]
 description = "A simple, decentralized dependency manager for Cocoa"
+os = ["macos"]
 
 [tools.ccache]
 backends = ["github:ccache/ccache", "asdf:asdf-community/asdf-ccache"]
