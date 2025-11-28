@@ -319,8 +319,9 @@ description = "A vault for securely storing and accessing AWS credentials in dev
 test = ["aws-vault --version 2>&1", "v{{version}}"]
 
 [tools.awscli-local]
-backends = ["asdf:mise-plugins/mise-awscli-local"]
+backends = ["pipx:awscli-local"]
 description = "This package provides the awslocal command, which is a thin wrapper around the aws command line interface for use with LocalStack"
+test = ["awslocal --version", "aws-cli/"]
 
 [tools.awsebcli]
 backends = ["pipx:awsebcli", "asdf:mise-plugins/mise-pyapp"]
