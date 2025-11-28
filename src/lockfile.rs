@@ -415,6 +415,29 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
             }
         }
 
+        // Preserve base entries from existing lockfile that were overridden by env configs
+        // Without this, base entries (env=None) get dropped when env configs override them
+        // Only preserve if ALL new entries are env-specific - if any new entry has env=None,
+        // it means the base config was updated and old entries should be replaced, not preserved
+        for (short, existing_entries) in &existing_lockfile.tools {
+            if let Some(new_entries) = tools_with_env.get_mut(short) {
+                // Only preserve if all new entries are env-specific (no base config update)
+                let all_env_specific = new_entries.iter().all(|(_, env)| env.is_some());
+                if all_env_specific {
+                    for existing in existing_entries {
+                        // If existing entry has no env (base) and isn't already in new_entries, preserve it
+                        if existing.env.is_none()
+                            && !new_entries.iter().any(|(t, _)| {
+                                t.version == existing.version && t.options == existing.options
+                            })
+                        {
+                            new_entries.push((existing.clone(), None));
+                        }
+                    }
+                }
+            }
+        }
+
         // Process each tool with deduplication and env merging
         for (short, entries) in tools_with_env {
             let merged_tools =
@@ -489,13 +512,6 @@ fn merge_tool_entries_with_env(
                 // Preserve env-specific entries that have no match in new entries
                 // This handles the case where env configs (e.g., mise.test.toml) aren't loaded
                 // but we don't want to lose their lockfile entries
-                //
-                // TODO: Base entries (env.is_none()) are NOT preserved here, which causes a bug:
-                // When MISE_ENV=test overrides a tool from mise.toml, the resolved toolset only
-                // contains the env-specific version. The base version isn't in new entries, and
-                // since env.is_none(), it fails this condition and gets dropped. Subsequently
-                // running without MISE_ENV loses the base entry. Fix would require tracking
-                // all tool versions from all config files, not just the resolved toolset.
                 by_key.insert(
                     key,
                     (
