@@ -128,15 +128,7 @@ impl Backend for UnifiedGitBackend {
             return Ok(vec![tv.install_path().join(".mise-bins")]);
         }
 
-        let opts = tv.request.options();
-        if let Some(bin_path_template) =
-            lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
-        {
-            let bin_path = template_string(&bin_path_template, tv);
-            Ok(vec![tv.install_path().join(&bin_path)])
-        } else {
-            self.discover_bin_paths(tv)
-        }
+        self.discover_bin_paths(tv)
     }
 
     fn resolve_lockfile_options(
@@ -291,6 +283,14 @@ impl UnifiedGitBackend {
 
     /// Discovers bin paths in the installation directory
     fn discover_bin_paths(&self, tv: &ToolVersion) -> Result<Vec<std::path::PathBuf>> {
+        let opts = tv.request.options();
+        if let Some(bin_path_template) =
+            lookup_platform_key(&opts, "bin_path").or_else(|| opts.get("bin_path").cloned())
+        {
+            let bin_path = template_string(&bin_path_template, tv);
+            return Ok(vec![tv.install_path().join(&bin_path)]);
+        }
+
         let bin_path = tv.install_path().join("bin");
         if bin_path.exists() {
             return Ok(vec![bin_path]);
