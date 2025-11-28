@@ -36,7 +36,7 @@ lockfile = true
 
 ```toml
 # Example mise.lock
-[tools.node]
+[[tools.node]]
 version = "20.11.0"
 backend = "core:node"
 
@@ -45,7 +45,7 @@ checksum = "sha256:a6c213b7a2c3b8b9c0aaf8d7f5b3a5c8d4e2f4a5b6c7d8e9f0a1b2c3d4e5f
 size = 23456789
 url = "https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.xz"
 
-[tools.python]
+[[tools.python]]
 version = "3.11.7"
 backend = "core:python"
 
@@ -53,13 +53,20 @@ backend = "core:python"
 checksum = "sha256:def456..."
 size = 12345678
 
-[tools.ripgrep]
+# Tool with backend-specific options
+[[tools.ripgrep]]
 version = "14.1.1"
 backend = "aqua:BurntSushi/ripgrep"
+options = { exe = "rg" }
 
 [tools.ripgrep.platforms.linux-x64]
 checksum = "sha256:4cf9f2741e6c465ffdb7c26f38056a59e2a2544b51f7cc128ef28337eeae4d8e"
 size = 1234567
+
+# Environment-specific version (only used when MISE_ENV=test)
+[[tools.tiny]]
+version = "2.1.0"
+env = ["test"]
 ```
 
 ### Platform Information
@@ -70,6 +77,16 @@ Each platform in a tool's `[tools.name.platforms]` section uses a key format lik
 - **`size`** (optional): File size in bytes for download validation
 - **`url`** (optional): Original download URL for reference or re-downloading
 
+### Tool Entry Fields
+
+Each tool entry (`[[tools.name]]`) can contain:
+
+- **`version`** (required): The exact version of the tool
+- **`backend`** (optional): The backend used to install the tool (e.g., `core:node`, `aqua:BurntSushi/ripgrep`)
+- **`options`** (optional): Backend-specific options that identify the artifact (e.g., `{exe = "rg", matching = "musl"}`)
+- **`env`** (optional): List of environment names this version applies to (e.g., `["test", "staging"]`)
+- **`platforms`** (optional): Platform-specific metadata (checksums, URLs, sizes)
+
 ### Platform Keys
 
 The platform key format is generally `os-arch` but can be customized by backends:
@@ -78,9 +95,71 @@ The platform key format is generally `os-arch` but can be customized by backends
 - **Backend-specific**: Some backends like Java may use more specific platform identifiers
 - **Tool-specific**: Backends like `ubi` may include additional tool-specific information in the platform key
 
-### Legacy Format Migration
+## Environment-Specific Versions
 
-Older lockfiles with separate `[tools.name.assets]` and `[tools.name.checksums]` sections are automatically migrated to the new platform-based `[tools.name.platforms]` format when read. The migration is seamless and maintains all existing functionality.
+When using [environment-specific configuration files](/configuration/environments) (e.g., `mise.test.toml`), tools from those files are tagged with an `env` field in the lockfile:
+
+```toml
+# mise.test.toml
+[tools]
+tiny = "2"
+```
+
+When you run `MISE_ENV=test mise use tiny@2`, the lockfile will include:
+
+```toml
+[[tools.tiny]]
+version = "2.1.0"
+env = ["test"]
+```
+
+**Resolution priority**: When resolving versions, mise checks in order:
+
+1. Entry with matching `env` for the current `MISE_ENV`
+2. Base entry (no `env` field)
+3. First available entry
+
+This allows different environments to use different tool versions while sharing the same lockfile.
+
+## Local Lockfiles
+
+Tools defined in `mise.local.toml` (which is typically gitignored) use a separate `mise.local.lock` file. This keeps local tool configurations separate from the committed lockfile.
+
+```sh
+# mise.local.toml tools go to mise.local.lock
+mise use --path mise.local.toml node@22
+
+# Regular mise.toml tools go to mise.lock
+mise use --path mise.toml node@20
+```
+
+Use `mise lock --local` to update the local lockfile for all platforms:
+
+```sh
+mise lock --local              # update mise.local.lock
+mise lock --local node python  # update specific tools in mise.local.lock
+```
+
+## Strict Lockfile Mode
+
+The `locked` setting enforces that all tools have pre-resolved URLs in the lockfile before installation. This prevents API calls to GitHub, aqua registry, etc., ensuring fully reproducible installations.
+
+```sh
+# Enable strict mode
+mise settings locked=true
+
+# Or via environment variable
+MISE_LOCKED=1 mise install
+```
+
+When enabled, `mise install` will fail if a tool doesn't have a URL for the current platform in the lockfile. To fix this, first populate the lockfile with URLs:
+
+```sh
+mise lock                    # generate URLs for all platforms
+mise lock --platform linux-x64,macos-arm64  # or specific platforms
+```
+
+This is useful for CI environments where you want to guarantee reproducible builds without any external API dependencies.
 
 ## Workflow
 
@@ -212,21 +291,6 @@ Since lockfiles are still experimental, enable them with:
 mise settings experimental=true
 mise settings lockfile=true
 ```
-
-## Benefits of the New Format
-
-The platform-based format provides several advantages:
-
-1. **Organized Structure**: Platform information is logically grouped by operating system and architecture
-2. **Cross-platform Support**: Each tool can have different assets for different platforms in the same lockfile
-3. **Reduced Duplication**: Platform-specific checksums and sizes are consolidated per platform
-4. **Extended Metadata**: Support for file sizes and download URLs per platform
-5. **Better Maintainability**: Clear separation of tool versions and their platform-specific assets
-6. **Easier Navigation**: Platform-specific assets are easier to locate and manage by os-arch keys
-7. **Full Traceability**: URLs provide complete audit trail of asset sources per platform
-8. **Enhanced Security**: Better compliance and security auditing capabilities across platforms
-9. **Avoids Rate Limits**: By storing URLs, future installs do not need to make API calls to GitHub or other providers, reducing the risk of hitting rate limits and removing the need for `GITHUB_TOKEN` in simple workflows
-10. **Backend Flexibility**: Backends can customize platform keys for tool-specific requirements (e.g., Java's detailed platform specifications)
 
 ## See Also
 
