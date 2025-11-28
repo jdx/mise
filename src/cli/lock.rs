@@ -228,17 +228,18 @@ impl Lock {
                                     }
                                 }
                             } else {
-                                // For prefix requests, find matching versions
-                                for version in installed {
-                                    if version.starts_with(&request.version()) {
-                                        let key = (ba.short.clone(), version.clone());
-                                        if seen.insert(key.clone()) {
-                                            let tv = crate::toolset::ToolVersion::new(
-                                                request.clone(),
-                                                version,
-                                            );
-                                            all_tools.push((ba.as_ref().clone(), tv));
-                                        }
+                                // For prefix requests, find matching versions using proper fuzzy matching
+                                // (ensures "1" matches "1.0.0" but not "10.0.0")
+                                for version in
+                                    backend.list_installed_versions_matching(&request.version())
+                                {
+                                    let key = (ba.short.clone(), version.clone());
+                                    if seen.insert(key.clone()) {
+                                        let tv = crate::toolset::ToolVersion::new(
+                                            request.clone(),
+                                            version,
+                                        );
+                                        all_tools.push((ba.as_ref().clone(), tv));
                                     }
                                 }
                             }

@@ -285,21 +285,22 @@ fn is_local_config(path: &Path) -> bool {
 }
 
 /// Extracts environment name from config filename
-/// e.g., "mise.test.toml" -> Some("test"), "mise.toml" -> None
+/// e.g., "mise.test.toml" -> Some("test"), "mise.test.local.toml" -> Some("test"), "mise.toml" -> None
 fn extract_env_from_config_path(path: &Path) -> Option<String> {
     let filename = path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or_default();
 
-    // Skip local files - they don't contribute env info
-    if filename.contains(".local.") {
-        return None;
-    }
-
-    // Pattern: mise.{env}.toml or .mise.{env}.toml or config.{env}.toml
-    // But not mise.toml, .mise.toml, config.toml, or config.local.toml
-    let re = regex!(r"^(?:\.?mise|config)\.([^.]+)\.toml$");
+    // Pattern matches:
+    // - mise.{env}.toml -> captures env
+    // - mise.{env}.local.toml -> captures env (env-specific local config)
+    // - .mise.{env}.toml -> captures env
+    // - config.{env}.toml -> captures env
+    // Does NOT match (returns None):
+    // - mise.toml, .mise.toml, config.toml (base configs)
+    // - mise.local.toml (local without env - filtered by "local" check)
+    let re = regex!(r"^(?:\.?mise|config)\.([^.]+)(?:\.local)?\.toml$");
     re.captures(filename)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().to_string())
@@ -432,6 +433,7 @@ pub fn update_lockfiles(config: &Config, ts: &Toolset, new_versions: &[ToolVersi
 /// - Same version+options: if any has no env (base), keep only base entry; otherwise merge env arrays
 /// - Different version/options: separate entries
 /// - Preserve existing env-specific entries that aren't in new entries (env configs may not be loaded)
+#[allow(clippy::type_complexity)]
 fn merge_tool_entries_with_env(
     entries: Vec<(LockfileTool, Option<String>)>,
     existing_tools: Option<&Vec<LockfileTool>>,
@@ -521,7 +523,18 @@ fn merge_tool_entries_with_env(
         .collect()
 }
 
-fn read_all_lockfiles(config: &Config) -> Lockfile {
+fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
+    // Cache by sorted config paths to avoid recomputing on every call
+    static CACHE: Lazy<Mutex<HashMap<Vec<PathBuf>, Arc<Lockfile>>>> = Lazy::new(Default::default);
+
+    // Create a cache key from the config file paths
+    let cache_key: Vec<PathBuf> = config.config_files.keys().cloned().collect();
+
+    let mut cache = CACHE.lock().unwrap();
+    if let Some(cached) = cache.get(&cache_key) {
+        return Arc::clone(cached);
+    }
+
     let mut seen_roots: HashSet<PathBuf> = HashSet::new();
     let mut all: Vec<Lockfile> = Vec::new();
 
@@ -548,7 +561,7 @@ fn read_all_lockfiles(config: &Config) -> Lockfile {
         }
     }
 
-    all.into_iter().fold(Lockfile::default(), |mut acc, l| {
+    let result = all.into_iter().fold(Lockfile::default(), |mut acc, l| {
         for (short, tools) in l.tools {
             let existing = acc.tools.entry(short).or_default();
             for tool in tools {
@@ -561,16 +574,20 @@ fn read_all_lockfiles(config: &Config) -> Lockfile {
             }
         }
         acc
-    })
+    });
+
+    let result = Arc::new(result);
+    cache.insert(cache_key, Arc::clone(&result));
+    result
 }
 
-fn read_lockfile_for(path: &Path) -> Result<Lockfile> {
+fn read_lockfile_for(path: &Path) -> Arc<Lockfile> {
     // Cache by config path to avoid recomputing lockfile_path_for_config on every call
-    static CACHE: Lazy<Mutex<HashMap<PathBuf, Lockfile>>> = Lazy::new(Default::default);
+    static CACHE: Lazy<Mutex<HashMap<PathBuf, Arc<Lockfile>>>> = Lazy::new(Default::default);
 
     let mut cache = CACHE.lock().unwrap();
     if let Some(cached) = cache.get(path) {
-        return Ok(cached.clone());
+        return Arc::clone(cached);
     }
 
     // Only compute lockfile path when not cached
@@ -578,8 +595,9 @@ fn read_lockfile_for(path: &Path) -> Result<Lockfile> {
     let lockfile = Lockfile::read(&lockfile_path)
         .unwrap_or_else(|err| handle_missing_lockfile(err, &lockfile_path));
 
-    cache.insert(path.to_path_buf(), lockfile.clone());
-    Ok(lockfile)
+    let lockfile = Arc::new(lockfile);
+    cache.insert(path.to_path_buf(), Arc::clone(&lockfile));
+    lockfile
 }
 
 pub fn get_locked_version(
@@ -601,7 +619,7 @@ pub fn get_locked_version(
                 "[{short}@{prefix}] reading lockfile for {}",
                 display_path(path)
             );
-            read_lockfile_for(path)?
+            read_lockfile_for(path)
         }
         None => {
             trace!("[{short}@{prefix}] reading all lockfiles");
