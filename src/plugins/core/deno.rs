@@ -50,7 +50,10 @@ impl DenoPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
-        let url = Self::tarball_url(tv, &PlatformTarget::from_current());
+        let url = self
+            .get_tarball_url(tv, &PlatformTarget::from_current())
+            .await?
+            .ok_or_else(|| eyre::eyre!("Failed to get deno tarball URL"))?;
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
@@ -80,25 +83,6 @@ impl DenoPlugin {
 
     fn verify(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<()> {
         self.test_deno(tv, pr)
-    }
-
-    /// Build the tarball URL for a given version and target platform
-    fn tarball_url(tv: &ToolVersion, target: &PlatformTarget) -> String {
-        let arch = match target.arch_name() {
-            "x64" => "x86_64",
-            "arm64" => "aarch64",
-            other => other,
-        };
-        let os = match target.os_name() {
-            "macos" => "apple-darwin",
-            "linux" => "unknown-linux-gnu",
-            "windows" => "pc-windows-msvc",
-            _ => "unknown-linux-gnu",
-        };
-        format!(
-            "https://dl.deno.land/release/v{}/deno-{}-{}.zip",
-            tv.version, arch, os
-        )
     }
 }
 
@@ -166,14 +150,26 @@ impl Backend for DenoPlugin {
         Ok(map)
     }
 
-    // ========== Lockfile Metadata Fetching Implementation ==========
-
     async fn get_tarball_url(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<Option<String>> {
-        Ok(Some(Self::tarball_url(tv, target)))
+        let arch = match target.arch_name() {
+            "x64" => "x86_64",
+            "arm64" => "aarch64",
+            other => other,
+        };
+        let os = match target.os_name() {
+            "macos" => "apple-darwin",
+            "linux" => "unknown-linux-gnu",
+            "windows" => "pc-windows-msvc",
+            _ => "unknown-linux-gnu",
+        };
+        Ok(Some(format!(
+            "https://dl.deno.land/release/v{}/deno-{}-{}.zip",
+            tv.version, arch, os
+        )))
     }
 }
 

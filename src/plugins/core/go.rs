@@ -96,7 +96,11 @@ impl GoPlugin {
 
     async fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> eyre::Result<PathBuf> {
         let settings = Settings::get();
-        let tarball_url = Arc::new(Self::tarball_url(tv, &PlatformTarget::from_current()));
+        let tarball_url = Arc::new(
+            self.get_tarball_url(tv, &PlatformTarget::from_current())
+                .await?
+                .ok_or_else(|| eyre::eyre!("Failed to get go tarball URL"))?,
+        );
         let filename = tarball_url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
@@ -182,33 +186,6 @@ impl GoPlugin {
         }
         Ok(map)
     }
-
-    /// Build the tarball URL for a given version and target platform
-    fn tarball_url(tv: &ToolVersion, target: &PlatformTarget) -> String {
-        let settings = Settings::get();
-        let platform = match target.os_name() {
-            "macos" => "darwin",
-            "linux" => "linux",
-            "windows" => "windows",
-            _ => "linux",
-        };
-        let arch = match target.arch_name() {
-            "x64" => "amd64",
-            "arm64" => "arm64",
-            "arm" => "armv6l",
-            "riscv64" => "riscv64",
-            other => other,
-        };
-        let ext = if target.os_name() == "windows" {
-            "zip"
-        } else {
-            "tar.gz"
-        };
-        format!(
-            "{}/go{}.{}-{}.{}",
-            &settings.go_download_mirror, tv.version, platform, arch, ext
-        )
-    }
 }
 
 #[async_trait]
@@ -287,13 +264,33 @@ impl Backend for GoPlugin {
         self._exec_env(tv)
     }
 
-    // ========== Lockfile Metadata Fetching Implementation ==========
-
     async fn get_tarball_url(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<Option<String>> {
-        Ok(Some(Self::tarball_url(tv, target)))
+        let settings = Settings::get();
+        let platform = match target.os_name() {
+            "macos" => "darwin",
+            "linux" => "linux",
+            "windows" => "windows",
+            _ => "linux",
+        };
+        let arch = match target.arch_name() {
+            "x64" => "amd64",
+            "arm64" => "arm64",
+            "arm" => "armv6l",
+            "riscv64" => "riscv64",
+            other => other,
+        };
+        let ext = if target.os_name() == "windows" {
+            "zip"
+        } else {
+            "tar.gz"
+        };
+        Ok(Some(format!(
+            "{}/go{}.{}-{}.{}",
+            &settings.go_download_mirror, tv.version, platform, arch, ext
+        )))
     }
 }

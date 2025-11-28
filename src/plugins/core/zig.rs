@@ -55,58 +55,10 @@ impl ZigPlugin {
             .execute()
     }
 
-    /// Resolve tarball URL for a given version and target platform
-    async fn resolve_tarball_url(
-        &self,
-        tv: &ToolVersion,
-        target: &PlatformTarget,
-    ) -> Result<Option<String>> {
-        let indexes = HashMap::from([
-            ("zig", "https://ziglang.org/download/index.json"),
-            ("mach", "https://machengine.org/zig/index.json"),
-        ]);
-
-        let arch = match target.arch_name() {
-            "x64" => "x86_64",
-            "arm64" => "aarch64",
-            "arm" => "armv7a",
-            "riscv64" => "riscv64",
-            other => other,
-        };
-        let os = match target.os_name() {
-            "macos" => "macos",
-            "linux" => "linux",
-            "freebsd" => "freebsd",
-            "windows" => "windows",
-            _ => "linux", // fallback
-        };
-
-        let (json_url, version) = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
-            (indexes["mach"], tv.version.as_str())
-        } else {
-            (indexes["zig"], tv.version.as_str())
-        };
-
-        match self
-            .get_tarball_url_from_json(json_url, version, arch, os)
-            .await
-        {
-            Ok(url) => Ok(Some(url)),
-            Err(_) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
-                // Fallback: construct URL directly for numbered versions
-                Ok(Some(format!(
-                    "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
-                    tv.version, arch, os, tv.version
-                )))
-            }
-            Err(_) => Ok(None),
-        }
-    }
-
     async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let settings = Settings::get();
         let url = self
-            .resolve_tarball_url(tv, &PlatformTarget::from_current())
+            .get_tarball_url(tv, &PlatformTarget::from_current())
             .await?
             .ok_or_else(|| eyre::eyre!("Failed to resolve zig tarball URL for {}", tv.version))?;
 
@@ -311,13 +263,50 @@ impl Backend for ZigPlugin {
         Ok(tv)
     }
 
-    // ========== Lockfile Metadata Fetching Implementation ==========
-
     async fn get_tarball_url(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<Option<String>> {
-        self.resolve_tarball_url(tv, target).await
+        let indexes = HashMap::from([
+            ("zig", "https://ziglang.org/download/index.json"),
+            ("mach", "https://machengine.org/zig/index.json"),
+        ]);
+
+        let arch = match target.arch_name() {
+            "x64" => "x86_64",
+            "arm64" => "aarch64",
+            "arm" => "armv7a",
+            "riscv64" => "riscv64",
+            other => other,
+        };
+        let os = match target.os_name() {
+            "macos" => "macos",
+            "linux" => "linux",
+            "freebsd" => "freebsd",
+            "windows" => "windows",
+            _ => "linux",
+        };
+
+        let (json_url, version) = if regex!(r"^mach-|-mach$").is_match(&tv.version) {
+            (indexes["mach"], tv.version.as_str())
+        } else {
+            (indexes["zig"], tv.version.as_str())
+        };
+
+        match self
+            .get_tarball_url_from_json(json_url, version, arch, os)
+            .await
+        {
+            Ok(url) => Ok(Some(url)),
+            Err(_) if regex!(r"^\d+\.\d+\.\d+$").is_match(&tv.version) => {
+                // Fallback: construct URL directly for numbered versions
+                Ok(Some(format!(
+                    "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
+                    tv.version, arch, os, tv.version
+                )))
+            }
+            Err(_) => Ok(None),
+        }
     }
 }
