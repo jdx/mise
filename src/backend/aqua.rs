@@ -14,7 +14,8 @@ use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
 use crate::{
     aqua::aqua_registry_wrapper::{
-        AQUA_REGISTRY, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
+        AQUA_REGISTRY, AquaChecksum, AquaChecksumType, AquaMinisignType, AquaPackage,
+        AquaPackageType,
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
@@ -320,29 +321,23 @@ impl Backend for AquaBackend {
         }
 
         // Check if this platform is supported
-        let envs: std::collections::HashSet<&str> =
-            pkg.supported_envs.iter().map(|s| s.as_str()).collect();
-        let os_arch = format!("{target_os}/{target_arch}");
-        let myself: std::collections::HashSet<&str> =
-            ["all", target_os, target_arch, os_arch.as_str()].into();
-        if !envs.is_empty() && envs.is_disjoint(&myself) {
-            // Platform not supported - return empty info (warn and continue strategy)
+        if !is_platform_supported(&pkg.supported_envs, target_os, target_arch) {
             debug!(
                 "aqua package {} does not support {}: supported_envs={:?}",
                 self.id,
                 target.to_key(),
-                envs
+                pkg.supported_envs
             );
             return Ok(PlatformInfo::default());
         }
 
-        // Get URL for the target platform
-        let url = match pkg.r#type {
+        // Get URL and checksum for the target platform
+        let (url, checksum) = match pkg.r#type {
             AquaPackageType::GithubRelease => {
                 // For GitHub releases, we need to find the asset for the target platform
                 let asset_strs = pkg.asset_strs(&v, target_os, target_arch)?;
                 match self.github_release_asset(&pkg, &v, asset_strs).await {
-                    Ok((url, _digest)) => Some(url),
+                    Ok((url, digest)) => (Some(url), digest),
                     Err(e) => {
                         debug!(
                             "Failed to get GitHub release asset for {} on {}: {}",
@@ -350,21 +345,32 @@ impl Backend for AquaBackend {
                             target.to_key(),
                             e
                         );
-                        None
+                        (None, None)
                     }
                 }
             }
             AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
-                Some(self.github_archive_url(&pkg, &v))
+                (Some(self.github_archive_url(&pkg, &v)), None)
             }
-            AquaPackageType::Http => pkg.url(&v, target_os, target_arch).ok(),
-            _ => None,
+            AquaPackageType::Http => (pkg.url(&v, target_os, target_arch).ok(), None),
+            _ => (None, None),
         };
 
         let name = url.as_ref().map(|u| get_filename_from_url(u));
+
+        // Try to get checksum from checksum file if not available from GitHub API
+        let checksum = match checksum {
+            Some(c) => Some(c),
+            None => self
+                .fetch_checksum_from_file(&pkg, &v, target_os, target_arch, name.as_deref())
+                .await
+                .ok()
+                .flatten(),
+        };
+
         Ok(PlatformInfo {
             url,
-            checksum: None, // Checksums require downloading checksum files - done during install
+            checksum,
             name,
             size: None,
             url_api: None,
@@ -491,6 +497,145 @@ impl AquaBackend {
         format!("https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz")
     }
 
+    /// Fetch checksum from a checksum file without downloading the actual tarball.
+    /// This is used for cross-platform lockfile generation.
+    async fn fetch_checksum_from_file(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        target_os: &str,
+        target_arch: &str,
+        filename: Option<&str>,
+    ) -> Result<Option<String>> {
+        let Some(checksum_config) = &pkg.checksum else {
+            return Ok(None);
+        };
+        if !checksum_config.enabled() {
+            return Ok(None);
+        }
+        let Some(filename) = filename else {
+            return Ok(None);
+        };
+
+        // Get the checksum file URL
+        let url = match checksum_config._type() {
+            AquaChecksumType::GithubRelease => {
+                let asset_strs = checksum_config.asset_strs(pkg, v, target_os, target_arch)?;
+                match self.github_release_asset(pkg, v, asset_strs).await {
+                    Ok((url, _)) => url,
+                    Err(e) => {
+                        debug!("Failed to get checksum file asset: {}", e);
+                        return Ok(None);
+                    }
+                }
+            }
+            AquaChecksumType::Http => checksum_config.url(pkg, v, target_os, target_arch)?,
+        };
+
+        // Download checksum file content
+        let checksum_content = match HTTP.get_text(&url).await {
+            Ok(content) => content,
+            Err(e) => {
+                debug!("Failed to download checksum file {}: {}", url, e);
+                return Ok(None);
+            }
+        };
+
+        // Parse checksum from file content
+        let checksum_str =
+            self.parse_checksum_from_content(&checksum_content, checksum_config, filename)?;
+
+        Ok(Some(format!(
+            "{}:{}",
+            checksum_config.algorithm(),
+            checksum_str
+        )))
+    }
+
+    /// Parse a checksum from checksum file content for a specific filename.
+    fn parse_checksum_from_content(
+        &self,
+        content: &str,
+        checksum_config: &AquaChecksum,
+        filename: &str,
+    ) -> Result<String> {
+        let mut checksum_file = content.to_string();
+
+        if checksum_config.file_format() == "regexp" {
+            let pattern = checksum_config.pattern();
+            if let Some(file_pattern) = &pattern.file {
+                let re = regex::Regex::new(file_pattern.as_str())?;
+                if let Some(line) = checksum_file
+                    .lines()
+                    .find(|l| re.captures(l).is_some_and(|c| c[1].to_string() == filename))
+                {
+                    checksum_file = line.to_string();
+                } else {
+                    debug!(
+                        "no line found matching {} in checksum file for {}",
+                        file_pattern, filename
+                    );
+                }
+            }
+            let re = regex::Regex::new(pattern.checksum.as_str())?;
+            if let Some(caps) = re.captures(checksum_file.as_str()) {
+                checksum_file = caps[1].to_string();
+            } else {
+                debug!(
+                    "no checksum found matching {} in checksum file",
+                    pattern.checksum
+                );
+            }
+        }
+
+        // Standard format: "<hash>  <filename>" or "<hash> *<filename>"
+        let checksum_str = checksum_file
+            .lines()
+            .filter_map(|l| {
+                let split = l.split_whitespace().collect_vec();
+                if split.len() == 2 {
+                    Some((
+                        split[0].to_string(),
+                        split[1]
+                            .rsplit_once('/')
+                            .map(|(_, f)| f)
+                            .unwrap_or(split[1])
+                            .trim_matches('*')
+                            .to_string(),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .find(|(_, f)| f == filename)
+            .map(|(c, _)| c)
+            .unwrap_or(checksum_file);
+
+        let checksum_str = checksum_str
+            .split_whitespace()
+            .next()
+            .unwrap_or(&checksum_str);
+        Ok(checksum_str.to_string())
+    }
+
+    /// Download a URL to a path, or convert a local path string to PathBuf.
+    /// Returns the path where the file is located.
+    async fn download_url_to_path(
+        &self,
+        url: &str,
+        download_path: &Path,
+        ctx: &InstallContext,
+    ) -> Result<PathBuf> {
+        if url.starts_with("http") {
+            let path = download_path.join(get_filename_from_url(url));
+            HTTP.download_file(url, &path, Some(ctx.pr.as_ref()))
+                .await?;
+            Ok(path)
+        } else {
+            Ok(PathBuf::from(url))
+        }
+    }
+
     async fn download(
         &self,
         ctx: &InstallContext,
@@ -540,55 +685,9 @@ impl AquaBackend {
                 .await?;
             self.cosign_checksums(ctx, pkg, v, tv, &checksum_path, &download_path)
                 .await?;
-            let mut checksum_file = file::read_to_string(&checksum_path)?;
-            if checksum.file_format() == "regexp" {
-                let pattern = checksum.pattern();
-                if let Some(file) = &pattern.file {
-                    let re = regex::Regex::new(file.as_str())?;
-                    if let Some(line) = checksum_file
-                        .lines()
-                        .find(|l| re.captures(l).is_some_and(|c| c[1].to_string() == filename))
-                    {
-                        checksum_file = line.to_string();
-                    } else {
-                        debug!(
-                            "no line found matching {} in {} for {}",
-                            file, checksum_file, filename
-                        );
-                    }
-                }
-                let re = regex::Regex::new(pattern.checksum.as_str())?;
-                if let Some(caps) = re.captures(checksum_file.as_str()) {
-                    checksum_file = caps[1].to_string();
-                } else {
-                    debug!(
-                        "no checksum found matching {} in {}",
-                        pattern.checksum, checksum_file
-                    );
-                }
-            }
-            let checksum_str = checksum_file
-                .lines()
-                .filter_map(|l| {
-                    let split = l.split_whitespace().collect_vec();
-                    if split.len() == 2 {
-                        Some((
-                            split[0].to_string(),
-                            split[1]
-                                .rsplit_once('/')
-                                .map(|(_, f)| f)
-                                .unwrap_or(split[1])
-                                .trim_matches('*')
-                                .to_string(),
-                        ))
-                    } else {
-                        None
-                    }
-                })
-                .find(|(_, f)| f == filename)
-                .map(|(c, _)| c)
-                .unwrap_or(checksum_file);
-            let checksum_str = checksum_str.split_whitespace().next().unwrap();
+            let checksum_content = file::read_to_string(&checksum_path)?;
+            let checksum_str =
+                self.parse_checksum_from_content(&checksum_content, checksum, filename)?;
             let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
             // Now set the checksum after all borrows are done
             let platform_key = self.get_platform_key();
@@ -621,14 +720,11 @@ impl AquaBackend {
             let sig_path = match minisign._type() {
                 AquaMinisignType::GithubRelease => {
                     let asset = minisign.asset(pkg, v, os(), arch())?;
-                    let repo_owner = minisign
-                        .repo_owner
-                        .clone()
-                        .unwrap_or_else(|| pkg.repo_owner.clone());
-                    let repo_name = minisign
-                        .repo_name
-                        .clone()
-                        .unwrap_or_else(|| pkg.repo_name.clone());
+                    let (repo_owner, repo_name) = resolve_repo_info(
+                        minisign.repo_owner.as_ref(),
+                        minisign.repo_name.as_ref(),
+                        pkg,
+                    );
                     let url = github::get_release(&format!("{repo_owner}/{repo_name}"), v)
                         .await?
                         .assets
@@ -681,14 +777,8 @@ impl AquaBackend {
 
             // Download the provenance file
             let mut slsa_pkg = pkg.clone();
-            slsa_pkg.repo_owner = slsa
-                .repo_owner
-                .clone()
-                .unwrap_or_else(|| pkg.repo_owner.clone());
-            slsa_pkg.repo_name = slsa
-                .repo_name
-                .clone()
-                .unwrap_or_else(|| pkg.repo_name.clone());
+            (slsa_pkg.repo_owner, slsa_pkg.repo_name) =
+                resolve_repo_info(slsa.repo_owner.as_ref(), slsa.repo_name.as_ref(), pkg);
 
             let provenance_path = match slsa.r#type.as_deref().unwrap_or_default() {
                 "github_release" => {
@@ -858,14 +948,8 @@ impl AquaBackend {
             if let Some(key) = &cosign.key {
                 // Key-based verification
                 let mut key_pkg = pkg.clone();
-                key_pkg.repo_owner = key
-                    .repo_owner
-                    .clone()
-                    .unwrap_or_else(|| pkg.repo_owner.clone());
-                key_pkg.repo_name = key
-                    .repo_name
-                    .clone()
-                    .unwrap_or_else(|| pkg.repo_name.clone());
+                (key_pkg.repo_owner, key_pkg.repo_name) =
+                    resolve_repo_info(key.repo_owner.as_ref(), key.repo_name.as_ref(), pkg);
                 let key_arg = match key.r#type.as_deref().unwrap_or_default() {
                     "github_release" => {
                         let asset_strs = key.asset_strs(pkg, v, os(), arch())?;
@@ -886,26 +970,18 @@ impl AquaBackend {
                 };
                 if !key_arg.is_empty() {
                     // Download or locate the public key
-                    let key_path = if key_arg.starts_with("http") {
-                        let key_path = download_path.join(get_filename_from_url(&key_arg));
-                        HTTP.download_file(&key_arg, &key_path, Some(ctx.pr.as_ref()))
-                            .await?;
-                        key_path
-                    } else {
-                        PathBuf::from(key_arg)
-                    };
+                    let key_path = self
+                        .download_url_to_path(&key_arg, download_path, ctx)
+                        .await?;
 
                     // Download signature if specified
                     let sig_path = if let Some(signature) = &cosign.signature {
                         let mut sig_pkg = pkg.clone();
-                        sig_pkg.repo_owner = signature
-                            .repo_owner
-                            .clone()
-                            .unwrap_or_else(|| pkg.repo_owner.clone());
-                        sig_pkg.repo_name = signature
-                            .repo_name
-                            .clone()
-                            .unwrap_or_else(|| pkg.repo_name.clone());
+                        (sig_pkg.repo_owner, sig_pkg.repo_name) = resolve_repo_info(
+                            signature.repo_owner.as_ref(),
+                            signature.repo_name.as_ref(),
+                            pkg,
+                        );
                         let sig_arg = match signature.r#type.as_deref().unwrap_or_default() {
                             "github_release" => {
                                 let asset_strs = signature.asset_strs(pkg, v, os(), arch())?;
@@ -925,14 +1001,8 @@ impl AquaBackend {
                             }
                         };
                         if !sig_arg.is_empty() {
-                            if sig_arg.starts_with("http") {
-                                let sig_path = download_path.join(get_filename_from_url(&sig_arg));
-                                HTTP.download_file(&sig_arg, &sig_path, Some(ctx.pr.as_ref()))
-                                    .await?;
-                                sig_path
-                            } else {
-                                PathBuf::from(sig_arg)
-                            }
+                            self.download_url_to_path(&sig_arg, download_path, ctx)
+                                .await?
                         } else {
                             // Default signature path
                             checksum_path.with_extension("sig")
@@ -966,14 +1036,8 @@ impl AquaBackend {
             } else if let Some(bundle) = &cosign.bundle {
                 // Bundle-based keyless verification
                 let mut bundle_pkg = pkg.clone();
-                bundle_pkg.repo_owner = bundle
-                    .repo_owner
-                    .clone()
-                    .unwrap_or_else(|| pkg.repo_owner.clone());
-                bundle_pkg.repo_name = bundle
-                    .repo_name
-                    .clone()
-                    .unwrap_or_else(|| pkg.repo_name.clone());
+                (bundle_pkg.repo_owner, bundle_pkg.repo_name) =
+                    resolve_repo_info(bundle.repo_owner.as_ref(), bundle.repo_name.as_ref(), pkg);
                 let bundle_arg = match bundle.r#type.as_deref().unwrap_or_default() {
                     "github_release" => {
                         let asset_strs = bundle.asset_strs(pkg, v, os(), arch())?;
@@ -995,14 +1059,9 @@ impl AquaBackend {
                     }
                 };
                 if !bundle_arg.is_empty() {
-                    let bundle_path = if bundle_arg.starts_with("http") {
-                        let bundle_path = download_path.join(get_filename_from_url(&bundle_arg));
-                        HTTP.download_file(&bundle_arg, &bundle_path, Some(ctx.pr.as_ref()))
-                            .await?;
-                        bundle_path
-                    } else {
-                        PathBuf::from(bundle_arg)
-                    };
+                    let bundle_path = self
+                        .download_url_to_path(&bundle_arg, download_path, ctx)
+                        .await?;
 
                     // Verify with bundle (keyless)
                     match sigstore_verification::verify_cosign_signature(
@@ -1230,18 +1289,13 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
     if let Some(message) = &pkg.error_message {
         bail!("{}", message);
     }
-    let envs: HashSet<&str> = pkg.supported_envs.iter().map(|s| s.as_str()).collect();
-    let os = os();
-    let arch = arch();
-    let os_arch = format!("{os}/{arch}");
-    let mut myself: HashSet<&str> = ["all", os, arch, os_arch.as_str()].into();
-    if os == "windows" && arch == "arm64" {
-        // assume windows/arm64 is supported
-        myself.insert("windows/amd64");
-        myself.insert("amd64");
-    }
-    if !envs.is_empty() && envs.is_disjoint(&myself) {
-        bail!("unsupported env: {os_arch} (supported: {envs:?})");
+    if !is_platform_supported(&pkg.supported_envs, os(), arch()) {
+        bail!(
+            "unsupported env: {}/{} (supported: {:?})",
+            os(),
+            arch(),
+            pkg.supported_envs
+        );
     }
     match pkg.r#type {
         AquaPackageType::Cargo => {
@@ -1268,6 +1322,38 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
         _ => {}
     }
     Ok(())
+}
+
+/// Resolve repo owner and name from an override config, falling back to pkg defaults.
+fn resolve_repo_info(
+    override_owner: Option<&String>,
+    override_name: Option<&String>,
+    pkg: &AquaPackage,
+) -> (String, String) {
+    let owner = override_owner
+        .cloned()
+        .unwrap_or_else(|| pkg.repo_owner.clone());
+    let name = override_name
+        .cloned()
+        .unwrap_or_else(|| pkg.repo_name.clone());
+    (owner, name)
+}
+
+/// Check if a platform is supported by the package's supported_envs.
+/// Returns true if supported, false if not.
+fn is_platform_supported(supported_envs: &[String], os: &str, arch: &str) -> bool {
+    if supported_envs.is_empty() {
+        return true;
+    }
+    let envs: HashSet<&str> = supported_envs.iter().map(|s| s.as_str()).collect();
+    let os_arch = format!("{os}/{arch}");
+    let mut myself: HashSet<&str> = ["all", os, arch, os_arch.as_str()].into();
+    // Windows ARM64 can typically run AMD64 binaries via emulation
+    if os == "windows" && arch == "arm64" {
+        myself.insert("windows/amd64");
+        myself.insert("amd64");
+    }
+    !envs.is_disjoint(&myself)
 }
 
 pub fn os() -> &'static str {
