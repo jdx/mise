@@ -7,7 +7,9 @@ name = "actionlint_1.7.9_linux_arm64.tar.gz"
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.9/actionlint_1.7.9_linux_arm64.tar.gz"
 
 [tools.actionlint.platforms.linux-x64]
+checksum = "sha256:233b280d05e100837f4af1433c7b40a5dcb306e3aa68fb4f17f8a7f45a7df7b4"
 name = "actionlint_1.7.9_linux_amd64.tar.gz"
+size = 2237057
 url = "https://github.com/rhysd/actionlint/releases/download/v1.7.9/actionlint_1.7.9_linux_amd64.tar.gz"
 
 [tools.actionlint.platforms.macos-arm64]
@@ -31,7 +33,9 @@ name = "age-v1.2.1-linux-arm64.tar.gz"
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-arm64.tar.gz"
 
 [tools.age.platforms.linux-x64]
+checksum = "blake3:8441277927f75428a6d22897a5cc05e8cdc03562d7a203b2bb9a7c6cd1d0c3bd"
 name = "age-v1.2.1-linux-amd64.tar.gz"
+size = 5194720
 url = "https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz"
 
 [tools.age.platforms.macos-arm64]
@@ -54,6 +58,8 @@ backend = "core:bun"
 url = "bun-linux-aarch64.zip"
 
 [tools.bun.platforms.linux-x64]
+checksum = "blake3:21d78fbc47b9175cc18a79bc228c6b3aa92d102c3f9c006934101c6b588cc900"
+size = 39185481
 url = "bun-linux-x64.zip"
 
 [tools.bun.platforms.macos-arm64]
@@ -74,7 +80,9 @@ name = "cargo-binstall-aarch64-unknown-linux-musl.tgz"
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.2/cargo-binstall-aarch64-unknown-linux-musl.tgz"
 
 [tools.cargo-binstall.platforms.linux-x64]
+checksum = "blake3:554c044d5033f1f924f69bfcc3febf252e8704a9ab8e99b246dc841004274b84"
 name = "cargo-binstall-x86_64-unknown-linux-musl.tgz"
+size = 6779867
 url = "https://github.com/cargo-bins/cargo-binstall/releases/download/v1.16.2/cargo-binstall-x86_64-unknown-linux-musl.tgz"
 
 [tools.cargo-binstall.platforms.macos-arm64]
@@ -122,7 +130,9 @@ name = "gh_2.83.1_linux_arm64.tar.gz"
 url = "https://github.com/cli/cli/releases/download/v2.83.1/gh_2.83.1_linux_arm64.tar.gz"
 
 [tools.gh.platforms.linux-x64]
+checksum = "sha256:1c5252d4ce3db07b51c01ff0b909583da6364ff3fdc06d0c2e75e62dc0380a34"
 name = "gh_2.83.1_linux_amd64.tar.gz"
+size = 18174787
 url = "https://github.com/cli/cli/releases/download/v2.83.1/gh_2.83.1_linux_amd64.tar.gz"
 
 [tools.gh.platforms.macos-arm64]
@@ -146,7 +156,9 @@ name = "hk-aarch64-unknown-linux-gnu.tar.gz"
 url = "https://github.com/jdx/hk/releases/download/v1.25.0/hk-aarch64-unknown-linux-gnu.tar.gz"
 
 [tools.hk.platforms.linux-x64]
+checksum = "blake3:62d8221f0cf130fcb4542315ee365fa57806d41dc61d2df87d770c79a32afa1c"
 name = "hk-x86_64-unknown-linux-gnu.tar.gz"
+size = 7281217
 url = "https://github.com/jdx/hk/releases/download/v1.25.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [tools.hk.platforms.macos-arm64]
@@ -166,7 +178,9 @@ name = "jq-linux-arm64"
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-arm64"
 
 [tools.jq.platforms.linux-x64]
+checksum = "sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d"
 name = "jq-linux-amd64"
+size = 2255816
 url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64"
 
 [tools.jq.platforms.macos-arm64]
@@ -191,6 +205,8 @@ backend = "core:node"
 url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-linux-arm64.tar.gz"
 
 [tools.node.platforms.linux-x64]
+checksum = "sha256:58a5ff5cc8f2200e458bea22e329d5c1994aa1b111d499ca46ec2411d58239ca"
+size = 56272770
 url = "https://nodejs.org/dist/v24.11.1/node-v24.11.1-linux-x64.tar.gz"
 
 [tools.node.platforms.macos-arm64]
@@ -223,7 +239,9 @@ name = "pkl-linux-aarch64"
 url = "https://github.com/apple/pkl/releases/download/0.30.0/pkl-linux-aarch64"
 
 [tools.pkl.platforms.linux-x64]
+checksum = "blake3:2a088f6ae2b0366bdca8307901862bf809fee2a0e2adb0516a0761ca5db96eff"
 name = "pkl-linux-amd64"
+size = 99355968
 url = "https://github.com/apple/pkl/releases/download/0.30.0/pkl-linux-amd64"
 
 [tools.pkl.platforms.macos-arm64]
@@ -247,7 +265,9 @@ name = "pre-commit-4.5.0.pyz"
 url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"
 
 [tools.pre-commit.platforms.linux-x64]
+checksum = "blake3:3e4087934816d8dc4847f8bbb998c18e4af8243e35dfbc2c8966170c656ab0c6"
 name = "pre-commit-4.5.0.pyz"
+size = 8263423
 url = "https://github.com/pre-commit/pre-commit/releases/download/v4.5.0/pre-commit-4.5.0.pyz"
 
 [tools.pre-commit.platforms.macos-arm64]
@@ -271,7 +291,9 @@ name = "ripgrep-15.1.0-aarch64-unknown-linux-gnu.tar.gz"
 url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-aarch64-unknown-linux-gnu.tar.gz"
 
 [tools.ripgrep.platforms.linux-x64]
+checksum = "sha256:1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599"
 name = "ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz"
+size = 2263077
 url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.ripgrep.platforms.macos-arm64]
@@ -304,7 +326,9 @@ name = "shfmt_v3.12.0_linux_arm64"
 url = "https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_linux_arm64"
 
 [tools.shfmt.platforms.linux-x64]
+checksum = "sha256:d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a745ea"
 name = "shfmt_v3.12.0_linux_amd64"
+size = 2916536
 url = "https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_linux_amd64"
 
 [tools.shfmt.platforms.macos-arm64]
@@ -328,7 +352,9 @@ name = "sops-v3.11.0.linux.arm64"
 url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.linux.arm64"
 
 [tools.sops.platforms.linux-x64]
+checksum = "sha256:775f1384d55decfad228e7196a3f683791914f92a473f78fc47700531c29dfef"
 name = "sops-v3.11.0.linux.amd64"
+size = 46346424
 url = "https://github.com/getsops/sops/releases/download/v3.11.0/sops-v3.11.0.linux.amd64"
 
 [tools.sops.platforms.macos-arm64]
@@ -352,7 +378,9 @@ name = "taplo-linux-aarch64.gz"
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-aarch64.gz"
 
 [tools.taplo.platforms.linux-x64]
+checksum = "blake3:4871fab0e60275a1eb46e7190726e144f56c9a9527f59b0d1da5a042baead8e2"
 name = "taplo-linux-x86_64.gz"
+size = 5116068
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-linux-x86_64.gz"
 
 [tools.taplo.platforms.macos-arm64]
