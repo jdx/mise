@@ -149,9 +149,9 @@ description = "ansible-core python package contains the core runtime and CLI too
 test = ["ansible --version", "ansible [core {{version}}]"]
 
 [tools.ant]
-backends = ["asdf:mise-plugins/mise-ant"]
+backends = ["vfox:mise-plugins/vfox-ant"]
 description = "Apache Ant is a Java library and command-line tool whose mission is to drive processes described in build files as targets and extension points dependent upon each other"
-# test = ["ant -version", "Apache Ant(TM) version {{version}}"] # installs wrong version
+test = ["ant -version", "Apache Ant(TM) version {{version}}"]
 
 [tools.apko]
 backends = [
