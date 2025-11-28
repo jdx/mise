@@ -489,6 +489,13 @@ fn merge_tool_entries_with_env(
                 // Preserve env-specific entries that have no match in new entries
                 // This handles the case where env configs (e.g., mise.test.toml) aren't loaded
                 // but we don't want to lose their lockfile entries
+                //
+                // TODO: Base entries (env.is_none()) are NOT preserved here, which causes a bug:
+                // When MISE_ENV=test overrides a tool from mise.toml, the resolved toolset only
+                // contains the env-specific version. The base version isn't in new entries, and
+                // since env.is_none(), it fails this condition and gets dropped. Subsequently
+                // running without MISE_ENV loses the base entry. Fix would require tracking
+                // all tool versions from all config files, not just the resolved toolset.
                 by_key.insert(
                     key,
                     (
