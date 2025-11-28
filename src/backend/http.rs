@@ -152,7 +152,9 @@ impl HttpBackend {
         opts: &ToolVersionOptions,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
-        let mut strip_components = opts.get("strip_components").and_then(|s| s.parse().ok());
+        let mut strip_components = lookup_platform_key(opts, "strip_components")
+            .or_else(|| opts.get("strip_components").cloned())
+            .and_then(|s| s.parse().ok());
 
         file::create_dir_all(cache_path)?;
 
