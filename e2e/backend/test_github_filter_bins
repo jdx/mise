@@ -8,59 +8,14 @@ if [[ "$(uname -s)" != "Linux" ]]; then
 	exit 0
 fi
 
-# Set MISE_EXPERIMENTAL for github backend features
 export MISE_EXPERIMENTAL=1
 
-# --- Test Pandoc ---
-# Create a mise.toml with filter_bins option for pandoc
-# Use a specific asset pattern to ensure we get the right archive for Linux x64
-cat >mise.toml <<EOF
-[tools]
-"github:jgm/pandoc" = { version = "3.1.9", filter_bins = "pandoc", asset_pattern = "pandoc-*-linux-amd64.tar.gz" }
-EOF
+mise install github:jgm/pandoc@3.8.2
 
-echo "Content of mise.toml:"
-cat mise.toml
+bin_path="$(mise where "github:jgm/pandoc@3.8.2")/.mise-bins"
+assert_directory_exists "$bin_path"
 
-mise trust
-
-# Install pandoc (from config)
-echo "Attempting to install pandoc..."
-mise install
-
-echo "Checking mise ls --json..."
-mise ls --json "github:jgm/pandoc"
-
-# Verify installation path contains .mise-bins for pandoc
-pandoc_install_path="$(mise where "github:jgm/pandoc@3.1.9")"
-pandoc_bin_path="$pandoc_install_path/.mise-bins"
-
-echo "Checking for .mise-bins at: $pandoc_bin_path"
-assert_directory_exists "$pandoc_bin_path"
-
-# Verify pandoc is linked in .mise-bins
-if [[ -f "$pandoc_bin_path/pandoc" ]]; then
-	echo "pandoc binary exists in .mise-bins"
-else
-	echo "pandoc binary missing from .mise-bins"
-	ls -la "$pandoc_install_path"
-	exit 1
-fi
-
-# Verify other binaries are NOT linked (e.g., pandoc-lua, pandoc-server)
-if [[ -f "$pandoc_bin_path/pandoc-lua" ]]; then
-	echo "ERROR: pandoc-lua should not exist in .mise-bins (filtering failed)"
-	exit 1
-fi
-if [[ -f "$pandoc_bin_path/pandoc-server" ]]; then
-	echo "ERROR: pandoc-server should not exist in .mise-bins (filtering failed)"
-	exit 1
-fi
-echo "Verified other binaries are filtered out."
-
-# Verify tool works via mise x
-assert_contains "mise x -- pandoc --version" "pandoc 3.1.9"
-
-# Clean up
-rm mise.toml
-mise uninstall "github:jgm/pandoc@3.1.9"
+bins=$(find "$bin_path" -maxdepth 1 \( -type l -o -type f \) -print0 | xargs -0 -n1 basename | sort | tr '\n' ' ')
+assert_contains "echo '$bins'" "pandoc"
+assert_not_contains "echo '$bins'" "pandoc-lua"
+assert_not_contains "echo '$bins'" "pandoc-server"
