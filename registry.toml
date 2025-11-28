@@ -11,7 +11,7 @@ description = "Password manager developed by AgileBits Inc"
 test = ["op --version", "{{version}}"]
 
 [tools.aapt2]
-backends = ["asdf:mise-plugins/mise-aapt2"]
+backends = ["vfox:mise-plugins/vfox-aapt2"]
 description = "Android Asset Packaging Tool (aapt)"
 test = [
   "aapt2 version 2>&1",
