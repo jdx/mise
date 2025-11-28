@@ -14,7 +14,8 @@ use crate::registry::REGISTRY;
 use crate::toolset::ToolVersion;
 use crate::{
     aqua::aqua_registry_wrapper::{
-        AQUA_REGISTRY, AquaChecksumType, AquaMinisignType, AquaPackage, AquaPackageType,
+        AQUA_REGISTRY, AquaChecksum, AquaChecksumType, AquaMinisignType, AquaPackage,
+        AquaPackageType,
     },
     cache::{CacheManager, CacheManagerBuilder},
 };
@@ -336,13 +337,13 @@ impl Backend for AquaBackend {
             return Ok(PlatformInfo::default());
         }
 
-        // Get URL for the target platform
-        let url = match pkg.r#type {
+        // Get URL and checksum for the target platform
+        let (url, checksum) = match pkg.r#type {
             AquaPackageType::GithubRelease => {
                 // For GitHub releases, we need to find the asset for the target platform
                 let asset_strs = pkg.asset_strs(&v, target_os, target_arch)?;
                 match self.github_release_asset(&pkg, &v, asset_strs).await {
-                    Ok((url, _digest)) => Some(url),
+                    Ok((url, digest)) => (Some(url), digest),
                     Err(e) => {
                         debug!(
                             "Failed to get GitHub release asset for {} on {}: {}",
@@ -350,21 +351,32 @@ impl Backend for AquaBackend {
                             target.to_key(),
                             e
                         );
-                        None
+                        (None, None)
                     }
                 }
             }
             AquaPackageType::GithubArchive | AquaPackageType::GithubContent => {
-                Some(self.github_archive_url(&pkg, &v))
+                (Some(self.github_archive_url(&pkg, &v)), None)
             }
-            AquaPackageType::Http => pkg.url(&v, target_os, target_arch).ok(),
-            _ => None,
+            AquaPackageType::Http => (pkg.url(&v, target_os, target_arch).ok(), None),
+            _ => (None, None),
         };
 
         let name = url.as_ref().map(|u| get_filename_from_url(u));
+
+        // Try to get checksum from checksum file if not available from GitHub API
+        let checksum = match checksum {
+            Some(c) => Some(c),
+            None => self
+                .fetch_checksum_from_file(&pkg, &v, target_os, target_arch, name.as_deref())
+                .await
+                .ok()
+                .flatten(),
+        };
+
         Ok(PlatformInfo {
             url,
-            checksum: None, // Checksums require downloading checksum files - done during install
+            checksum,
             name,
             size: None,
             url_api: None,
@@ -489,6 +501,127 @@ impl AquaBackend {
     fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> String {
         let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         format!("https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz")
+    }
+
+    /// Fetch checksum from a checksum file without downloading the actual tarball.
+    /// This is used for cross-platform lockfile generation.
+    async fn fetch_checksum_from_file(
+        &self,
+        pkg: &AquaPackage,
+        v: &str,
+        target_os: &str,
+        target_arch: &str,
+        filename: Option<&str>,
+    ) -> Result<Option<String>> {
+        let Some(checksum_config) = &pkg.checksum else {
+            return Ok(None);
+        };
+        if !checksum_config.enabled() {
+            return Ok(None);
+        }
+        let Some(filename) = filename else {
+            return Ok(None);
+        };
+
+        // Get the checksum file URL
+        let url = match checksum_config._type() {
+            AquaChecksumType::GithubRelease => {
+                let asset_strs = checksum_config.asset_strs(pkg, v, target_os, target_arch)?;
+                match self.github_release_asset(pkg, v, asset_strs).await {
+                    Ok((url, _)) => url,
+                    Err(e) => {
+                        debug!("Failed to get checksum file asset: {}", e);
+                        return Ok(None);
+                    }
+                }
+            }
+            AquaChecksumType::Http => checksum_config.url(pkg, v, target_os, target_arch)?,
+        };
+
+        // Download checksum file content
+        let checksum_content = match HTTP.get_text(&url).await {
+            Ok(content) => content,
+            Err(e) => {
+                debug!("Failed to download checksum file {}: {}", url, e);
+                return Ok(None);
+            }
+        };
+
+        // Parse checksum from file content
+        let checksum_str =
+            self.parse_checksum_from_content(&checksum_content, checksum_config, filename)?;
+
+        Ok(Some(format!(
+            "{}:{}",
+            checksum_config.algorithm(),
+            checksum_str
+        )))
+    }
+
+    /// Parse a checksum from checksum file content for a specific filename.
+    fn parse_checksum_from_content(
+        &self,
+        content: &str,
+        checksum_config: &AquaChecksum,
+        filename: &str,
+    ) -> Result<String> {
+        let mut checksum_file = content.to_string();
+
+        if checksum_config.file_format() == "regexp" {
+            let pattern = checksum_config.pattern();
+            if let Some(file_pattern) = &pattern.file {
+                let re = regex::Regex::new(file_pattern.as_str())?;
+                if let Some(line) = checksum_file
+                    .lines()
+                    .find(|l| re.captures(l).is_some_and(|c| c[1].to_string() == filename))
+                {
+                    checksum_file = line.to_string();
+                } else {
+                    debug!(
+                        "no line found matching {} in checksum file for {}",
+                        file_pattern, filename
+                    );
+                }
+            }
+            let re = regex::Regex::new(pattern.checksum.as_str())?;
+            if let Some(caps) = re.captures(checksum_file.as_str()) {
+                checksum_file = caps[1].to_string();
+            } else {
+                debug!(
+                    "no checksum found matching {} in checksum file",
+                    pattern.checksum
+                );
+            }
+        }
+
+        // Standard format: "<hash>  <filename>" or "<hash> *<filename>"
+        let checksum_str = checksum_file
+            .lines()
+            .filter_map(|l| {
+                let split = l.split_whitespace().collect_vec();
+                if split.len() == 2 {
+                    Some((
+                        split[0].to_string(),
+                        split[1]
+                            .rsplit_once('/')
+                            .map(|(_, f)| f)
+                            .unwrap_or(split[1])
+                            .trim_matches('*')
+                            .to_string(),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .find(|(_, f)| f == filename)
+            .map(|(c, _)| c)
+            .unwrap_or(checksum_file);
+
+        let checksum_str = checksum_str
+            .split_whitespace()
+            .next()
+            .unwrap_or(&checksum_str);
+        Ok(checksum_str.to_string())
     }
 
     async fn download(

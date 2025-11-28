@@ -1,4 +1,5 @@
 // Shared template logic for backends
+use crate::backend::platform_target::PlatformTarget;
 use crate::file;
 use crate::hash;
 use crate::toolset::ToolVersion;
@@ -108,6 +109,60 @@ pub fn platform_aliases() -> Vec<(String, String)> {
 pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<String> {
     // Try nested platform structure with os-arch format
     for (os, arch) in platform_aliases() {
+        for prefix in ["platforms", "platform"] {
+            // Try nested format: platforms.macos-x64.url
+            let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
+            if let Some(val) = opts.get_nested_string(&nested_key) {
+                return Some(val);
+            }
+            // Try flat format: platforms_macos_arm64_url
+            let flat_key = format!("{prefix}_{os}_{arch}_{key_type}");
+            if let Some(val) = opts.get(&flat_key) {
+                return Some(val.clone());
+            }
+        }
+    }
+    None
+}
+
+/// Returns all possible aliases for a given platform target (os, arch).
+fn target_platform_aliases(target: &PlatformTarget) -> Vec<(String, String)> {
+    let os = target.os_name();
+    let arch = target.arch_name();
+    let mut aliases = vec![];
+
+    // OS aliases
+    let os_aliases = match os {
+        "macos" | "darwin" => vec!["macos", "darwin"],
+        "linux" => vec!["linux"],
+        "windows" => vec!["windows"],
+        _ => vec![os],
+    };
+
+    // Arch aliases
+    let arch_aliases = match arch {
+        "x64" | "amd64" | "x86_64" => vec!["x64", "amd64", "x86_64"],
+        "arm64" | "aarch64" => vec!["arm64", "aarch64"],
+        _ => vec![arch],
+    };
+
+    for os in &os_aliases {
+        for arch in &arch_aliases {
+            aliases.push((os.to_string(), arch.to_string()));
+        }
+    }
+    aliases
+}
+
+/// Looks up a value in ToolVersionOptions for a specific target platform.
+/// Used for cross-platform lockfile generation.
+pub fn lookup_platform_key_for_target(
+    opts: &ToolVersionOptions,
+    key_type: &str,
+    target: &PlatformTarget,
+) -> Option<String> {
+    // Try nested platform structure with os-arch format
+    for (os, arch) in target_platform_aliases(target) {
         for prefix in ["platforms", "platform"] {
             // Try nested format: platforms.macos-x64.url
             let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
