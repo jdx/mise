@@ -44,7 +44,9 @@ pub struct PlatformInfo {
     pub checksum: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO: Add size back if we find a good way to generate it with `mise lock`
+    // Currently size is only available during installation, not during lockfile generation
+    #[serde(skip_serializing, default)]
     pub size: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
@@ -114,9 +116,10 @@ impl From<PlatformInfo> for toml::Value {
         if let Some(name) = platform_info.name {
             table.insert("name".to_string(), name.into());
         }
-        if let Some(size) = platform_info.size {
-            table.insert("size".to_string(), (size as i64).into());
-        }
+        // TODO: Add size back if we find a good way to generate it with `mise lock`
+        // if let Some(size) = platform_info.size {
+        //     table.insert("size".to_string(), (size as i64).into());
+        // }
         if let Some(url) = platform_info.url {
             table.insert("url".to_string(), url.into());
         }

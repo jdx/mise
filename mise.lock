@@ -343,7 +343,6 @@ backend = "aqua:koalaman/shellcheck"
 
 [tools.shellcheck.platforms.linux-x64]
 checksum = "blake3:0ad9524f3f16ad030f8350e7b970c62c24aeff3d813f2565665aecc5a8b79644"
-size = 2559196
 url = "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
 
 [[tools.shfmt]]
