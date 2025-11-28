@@ -164,8 +164,9 @@ test = ["apko version", "GitVersion:    v{{version}}"]
 
 [tools.apollo-ios]
 aliases = ["apollo-ios-cli"]
-backends = ["asdf:mise-plugins/mise-apollo-ios-cli"]
+backends = ["github:apollographql/apollo-ios"]
 description = "Apollo iOS Code Generation"
+os = ["macos"]
 
 [tools.apollo-router]
 backends = ["github:apollographql/router", "asdf:safx/asdf-apollo-router"]
