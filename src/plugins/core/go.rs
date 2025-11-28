@@ -5,7 +5,6 @@ use crate::Result;
 use crate::backend::Backend;
 use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file::{TarFormat, TarOptions};
@@ -97,15 +96,9 @@ impl GoPlugin {
 
     async fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> eyre::Result<PathBuf> {
         let settings = Settings::get();
-        let filename = format!(
-            "go{}.{}-{}.{}",
-            tv.version,
-            platform(),
-            arch(&settings),
-            ext()
-        );
-        let tarball_url = Arc::new(format!("{}/{}", &settings.go_download_mirror, &filename));
-        let tarball_path = tv.download_path().join(&filename);
+        let tarball_url = Arc::new(Self::tarball_url(tv, &PlatformTarget::from_current()));
+        let filename = tarball_url.split('/').next_back().unwrap();
+        let tarball_path = tv.download_path().join(filename);
 
         let tarball_url_ = tarball_url.clone();
         let checksum_handle = tokio::spawn(async move {
@@ -190,34 +183,31 @@ impl GoPlugin {
         Ok(map)
     }
 
-    /// Map OS name from PlatformTarget to Go's naming convention
-    fn platform_for_target(target: &PlatformTarget) -> &'static str {
-        match target.os_name() {
+    /// Build the tarball URL for a given version and target platform
+    fn tarball_url(tv: &ToolVersion, target: &PlatformTarget) -> String {
+        let settings = Settings::get();
+        let platform = match target.os_name() {
             "macos" => "darwin",
             "linux" => "linux",
             "windows" => "windows",
-            _ => "linux", // fallback
-        }
-    }
-
-    /// Map arch name from PlatformTarget to Go's naming convention
-    fn arch_for_target(target: &PlatformTarget) -> &str {
-        match target.arch_name() {
+            _ => "linux",
+        };
+        let arch = match target.arch_name() {
             "x64" => "amd64",
             "arm64" => "arm64",
             "arm" => "armv6l",
             "riscv64" => "riscv64",
             other => other,
-        }
-    }
-
-    /// Get file extension for target platform
-    fn ext_for_target(target: &PlatformTarget) -> &'static str {
-        if target.os_name() == "windows" {
+        };
+        let ext = if target.os_name() == "windows" {
             "zip"
         } else {
             "tar.gz"
-        }
+        };
+        format!(
+            "{}/go{}.{}-{}.{}",
+            &settings.go_download_mirror, tv.version, platform, arch, ext
+        )
     }
 }
 
@@ -304,37 +294,6 @@ impl Backend for GoPlugin {
         tv: &ToolVersion,
         target: &PlatformTarget,
     ) -> Result<Option<String>> {
-        let settings = Settings::get();
-        let filename = format!(
-            "go{}.{}-{}.{}",
-            tv.version,
-            Self::platform_for_target(target),
-            Self::arch_for_target(target),
-            Self::ext_for_target(target)
-        );
-        let url = format!("{}/{}", &settings.go_download_mirror, &filename);
-        Ok(Some(url))
+        Ok(Some(Self::tarball_url(tv, target)))
     }
-}
-
-fn platform() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "darwin"
-    } else {
-        &OS
-    }
-}
-
-fn arch(settings: &Settings) -> &str {
-    match settings.arch() {
-        "x64" => "amd64",
-        "arm64" => "arm64",
-        "arm" => "armv6l",
-        "riscv64" => "riscv64",
-        other => other,
-    }
-}
-
-fn ext() -> &'static str {
-    if cfg!(windows) { "zip" } else { "tar.gz" }
 }
