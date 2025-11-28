@@ -647,11 +647,11 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
     let darwin_os = if os == "macos" { "darwin" } else { os };
     let amd64_arch = match arch {
         "x64" => "amd64",
-        "arm64" => "aarch64",
-        _ => arch,
+        _ => arch, // arm64 stays as "arm64" in amd64/arm64 convention
     };
     let x86_64_arch = match arch {
         "x64" => "x86_64",
+        "arm64" => "aarch64",
         _ => arch,
     };
 
