@@ -11,10 +11,10 @@ use serde::Deserialize;
 use versions::Versioning;
 
 use crate::backend::Backend;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
-use crate::cli::version::OS;
 use crate::cmd::CmdLineRunner;
-use crate::config::{Config, Settings};
+use crate::config::Config;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
@@ -50,20 +50,15 @@ impl DenoPlugin {
     }
 
     async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
-        let settings = Settings::get();
-        let url = format!(
-            "https://dl.deno.land/release/v{}/deno-{}-{}.zip",
-            tv.version,
-            arch(&settings),
-            os()
-        );
+        let url = self
+            .get_tarball_url(tv, &PlatformTarget::from_current())
+            .await?
+            .ok_or_else(|| eyre::eyre!("Failed to get deno tarball URL"))?;
         let filename = url.split('/').next_back().unwrap();
         let tarball_path = tv.download_path().join(filename);
 
         pr.set_message(format!("download {filename}"));
         HTTP.download_file(&url, &tarball_path, Some(pr)).await?;
-
-        // TODO: hash::ensure_checksum_sha256(&tarball_path, &m.sha256)?;
 
         Ok(tarball_path)
     }
@@ -154,25 +149,27 @@ impl Backend for DenoPlugin {
         )]);
         Ok(map)
     }
-}
 
-fn os() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "apple-darwin"
-    } else if cfg!(target_os = "linux") {
-        "unknown-linux-gnu"
-    } else if cfg!(target_os = "windows") {
-        "pc-windows-msvc"
-    } else {
-        &OS
-    }
-}
-
-fn arch(settings: &Settings) -> &str {
-    match settings.arch() {
-        "x64" => "x86_64",
-        "arm64" => "aarch64",
-        other => other,
+    async fn get_tarball_url(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<Option<String>> {
+        let arch = match target.arch_name() {
+            "x64" => "x86_64",
+            "arm64" => "aarch64",
+            other => other,
+        };
+        let os = match target.os_name() {
+            "macos" => "apple-darwin",
+            "linux" => "unknown-linux-gnu",
+            "windows" => "pc-windows-msvc",
+            _ => "unknown-linux-gnu",
+        };
+        Ok(Some(format!(
+            "https://dl.deno.land/release/v{}/deno-{}-{}.zip",
+            tv.version, arch, os
+        )))
     }
 }
 
