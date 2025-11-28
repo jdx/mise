@@ -474,6 +474,17 @@
           "type": "boolean",
           "deprecated": true
         },
+        "conda": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "channel": {
+              "default": "conda-forge",
+              "description": "Default channel for conda packages.",
+              "type": "string"
+            }
+          }
+        },
         "cd": {
           "description": "Path to change to after launching mise",
           "type": "string"

@@ -11,6 +11,7 @@ Below is a list of the available backends in mise:
 - [asdf](/dev-tools/backends/asdf) (provide tools through [plugins](/plugins.html))
 - [aqua](/dev-tools/backends/aqua)
 - [cargo](/dev-tools/backends/cargo)
+- [conda](/dev-tools/backends/conda) <Badge type="warning" text="experimental" />
 - [dotnet](/dev-tools/backends/dotnet) <Badge type="warning" text="experimental" />
 - [gem](/dev-tools/backends/gem)
 - [github](/dev-tools/backends/github)

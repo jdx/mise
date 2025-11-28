@@ -211,6 +211,21 @@ hide = true
 optional = true
 type = "Bool"
 
+[conda.channel]
+default = "conda-forge"
+description = "Default channel for conda packages."
+docs = """
+Default conda channel when installing packages with the conda backend.
+Override per-package with `conda:package[channel=bioconda]`.
+
+The most common channels are:
+- `conda-forge` - Community-maintained packages (default)
+- `bioconda` - Bioinformatics packages
+- `nvidia` - NVIDIA CUDA packages
+"""
+env = "MISE_CONDA_CHANNEL"
+type = "String"
+
 [cd]
 description = "Path to change to after launching mise"
 env = "MISE_CD"
