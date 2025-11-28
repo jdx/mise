@@ -1,0 +1,25 @@
+name: pr-closer
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # daily at midnight
+  workflow_dispatch:
+
+jobs:
+  close-stale-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close stale PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr list -R jdx/mise --state open --json number,author,labels,createdAt --limit 100 | \
+          jq -r '.[] | select(
+            (.createdAt | fromdateiso8601) < (now - 30*24*60*60) and
+            .author.login != "jdx" and
+            ([.labels[].name] | index("keep-open") | not)
+          ) | .number' | \
+          while read -r pr; do
+            echo "Closing PR #$pr"
+            gh pr close "$pr" -R jdx/mise -c "This PR has been open for more than 30 days without activity. Please reopen if you'd like to continue working on it."
+          done
