@@ -1,10 +1,12 @@
 use crate::backend::backend_type::BackendType;
+use crate::backend::platform_target::PlatformTarget;
 use crate::cli::args::BackendArg;
 use crate::cli::version::{ARCH, OS};
 use crate::config::{Config, Settings};
 use crate::file::{self, TarOptions};
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
+use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
 use crate::{backend::Backend, hash, http::HTTP};
 use async_trait::async_trait;
@@ -43,6 +45,29 @@ impl CondaBackend {
             ("macos", "arm64") => "osx-arm64",
             ("windows", "x64") => "win-64",
             _ => "noarch",
+        }
+    }
+
+    /// Map PlatformTarget to conda subdir for lockfile resolution
+    fn conda_subdir_for_platform(target: &PlatformTarget) -> &'static str {
+        match (target.os_name(), target.arch_name()) {
+            ("linux", "x64") => "linux-64",
+            ("linux", "arm64") => "linux-aarch64",
+            ("macos", "x64") => "osx-64",
+            ("macos", "arm64") => "osx-arm64",
+            ("windows", "x64") => "win-64",
+            _ => "noarch",
+        }
+    }
+
+    /// Build a proper download URL from the API response
+    fn build_download_url(download_url: &str) -> String {
+        if download_url.starts_with("//") {
+            format!("https:{}", download_url)
+        } else if download_url.starts_with('/') {
+            format!("https://conda.anaconda.org{}", download_url)
+        } else {
+            download_url.to_string()
         }
     }
 
@@ -225,14 +250,7 @@ impl Backend for CondaBackend {
         };
 
         // Build download URL
-        // The download_url from the API is protocol-relative (starts with //)
-        let download_url = if pkg_file.download_url.starts_with("//") {
-            format!("https:{}", pkg_file.download_url)
-        } else if pkg_file.download_url.starts_with('/') {
-            format!("https://conda.anaconda.org{}", pkg_file.download_url)
-        } else {
-            pkg_file.download_url.clone()
-        };
+        let download_url = Self::build_download_url(&pkg_file.download_url);
 
         // Download the package
         // basename may contain a path prefix (e.g., "osx-arm64/ruff-0.8.0-py311h_0.conda")
@@ -282,6 +300,43 @@ impl Backend for CondaBackend {
         }
 
         Ok(tv)
+    }
+
+    async fn resolve_lock_info(
+        &self,
+        tv: &ToolVersion,
+        target: &PlatformTarget,
+    ) -> Result<PlatformInfo> {
+        let files = self.fetch_package_files().await?;
+        let subdir = Self::conda_subdir_for_platform(target);
+
+        // Find the package file for this version and platform
+        let pkg_file = self
+            .find_package_file(&files, &tv.version, subdir)
+            .or_else(|| self.find_package_file(&files, &tv.version, "noarch"));
+
+        match pkg_file {
+            Some(pkg_file) => {
+                let download_url = Self::build_download_url(&pkg_file.download_url);
+                Ok(PlatformInfo {
+                    url: Some(download_url),
+                    checksum: pkg_file.sha256.as_ref().map(|s| format!("sha256:{}", s)),
+                    name: None,
+                    size: None,
+                    url_api: None,
+                })
+            }
+            None => {
+                // No package available for this platform
+                Ok(PlatformInfo {
+                    url: None,
+                    checksum: None,
+                    name: None,
+                    size: None,
+                    url_api: None,
+                })
+            }
+        }
     }
 }
 
