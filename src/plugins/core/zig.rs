@@ -303,7 +303,7 @@ impl Backend for ZigPlugin {
                 // Fallback: construct URL directly for numbered versions
                 Ok(Some(format!(
                     "https://ziglang.org/download/{}/zig-{}-{}-{}.tar.xz",
-                    tv.version, arch, os, tv.version
+                    tv.version, os, arch, tv.version
                 )))
             }
             Err(_) => Ok(None),
