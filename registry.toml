@@ -1443,7 +1443,7 @@ backends = [
 description = "Monaco—This is the native Dynatrace Configuration as Code tool. Monaco is also the recommended tool for migrating from Dynatrace Managed to Dynatrace SaaS"
 
 [tools.e1s]
-backends = ["asdf:tbobm/asdf-e1s"]
+backends = ["aqua:keidarcy/e1s", "asdf:tbobm/asdf-e1s"]
 description = "E1S - Easily Manage AWS ECS Resources in Terminal(~k9s for ECS)"
 
 [tools.earthly]
