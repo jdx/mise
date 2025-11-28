@@ -714,7 +714,10 @@ description = "Manage your dotfiles across multiple diverse machines, securely"
 test = ["chezmoi --version", "chezmoi version v{{version}}"]
 
 [tools.chezscheme]
-backends = ["asdf:mise-plugins/mise-chezscheme"]
+backends = [
+  "vfox:mise-plugins/vfox-chezscheme",
+  "asdf:mise-plugins/mise-chezscheme",
+]
 description = "Chez Scheme is both a programming language and an implementation of that language, with supporting tools and documentation"
 
 [tools.chicken]
