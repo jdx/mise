@@ -527,7 +527,7 @@ description = "Boundary enables identity-based access management for dynamic inf
 test = ["boundary version", "Version Number:      {{version}}"]
 
 [tools.bpkg]
-backends = ["asdf:mise-plugins/mise-bpkg"]
+backends = ["vfox:mise-plugins/vfox-bpkg", "asdf:mise-plugins/mise-bpkg"]
 description = "Lightweight bash package manager"
 test = ["bpkg --version", "{{version}}"]
 
