@@ -544,12 +544,17 @@ impl UnifiedGitBackend {
     }
 
     fn get_filter_bins(&self, tv: &ToolVersion) -> Option<Vec<String>> {
-        tv.request.options().get("filter_bins").map(|s| {
-            s.split(',')
+        let opts = tv.request.options();
+        let filter_bins = lookup_platform_key(opts, "filter_bins")
+            .or_else(|| opts.get("filter_bins").cloned())?;
+
+        Some(
+            filter_bins
+                .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-                .collect()
-        })
+                .collect(),
+        )
     }
 
     /// Creates a `.mise-bins` directory with symlinks only to the binaries specified in filter_bins.
