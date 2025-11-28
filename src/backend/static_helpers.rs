@@ -193,7 +193,9 @@ pub fn install_artifact(
     pr: Option<&dyn SingleReport>,
 ) -> eyre::Result<()> {
     let install_path = tv.install_path();
-    let mut strip_components = opts.get("strip_components").and_then(|s| s.parse().ok());
+    let mut strip_components = lookup_platform_key(opts, "strip_components")
+        .or_else(|| opts.get("strip_components").cloned())
+        .and_then(|s| s.parse().ok());
 
     file::remove_all(&install_path)?;
     file::create_dir_all(&install_path)?;
