@@ -744,8 +744,12 @@ description = "A human-friendly and fast alternative to cut (and sometimes awk)"
 test = ["choose --version", "{{version}}"]
 
 [tools.chromedriver]
-backends = ["asdf:mise-plugins/mise-chromedriver"]
+backends = [
+  "vfox:mise-plugins/vfox-chromedriver",
+  "asdf:mise-plugins/mise-chromedriver",
+]
 description = "ChromeDriver is a standalone server that implements the W3C WebDriver and WebDriver BiDi standards"
+test = ["chromedriver --version", "ChromeDriver {{version}}"]
 
 [tools.cidr-merger]
 backends = ["github:zhanhb/cidr-merger", "asdf:ORCID/asdf-cidr-merger"]
