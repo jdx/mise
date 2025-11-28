@@ -13,9 +13,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr list -R jdx/mise --state open --json number,author,labels,createdAt --limit 100 | \
+          gh pr list -R jdx/mise --state open --json number,author,labels,updatedAt --limit 100 | \
           jq -r '.[] | select(
-            (.createdAt | fromdateiso8601) < (now - 30*24*60*60) and
+            (.updatedAt | fromdateiso8601) < (now - 30*24*60*60) and
             .author.login != "jdx" and
             ([.labels[].name] | index("keep-open") | not)
           ) | .number' | \
