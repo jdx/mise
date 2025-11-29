@@ -43,7 +43,8 @@ export default {
       },
       asdf: (slug) =>
         slug.startsWith("http") ? slug : `https://github.com/${slug}`,
-      conda: (slug, options) => `https://anaconda.org/${options.channel ?? "conda-forge"}/${slug}`,
+      conda: (slug, options) =>
+        `https://anaconda.org/${options.channel ?? "conda-forge"}/${slug}`,
       cargo: (slug) => `https://crates.io/crates/${slug}`,
       core: (slug) => `https://mise.jdx.dev/lang/${slug}.html`,
       dotnet: (slug) => `https://www.nuget.org/packages/${slug}`,
