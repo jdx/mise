@@ -2041,11 +2041,7 @@ backends = ["aqua:gotestyourself/gotestsum", "asdf:pmalek/mise-gotestsum"]
 description = "'go test' runner with output optimized for humans, JUnit XML for CI integration, and a summary of the test results"
 
 [tools.gping]
-backends = [
-  "aqua:orf/gping",
-  "github:orf/gping",
-  "cargo:gping",
-]
+backends = ["aqua:orf/gping", "github:orf/gping", "cargo:gping"]
 description = "Ping, but with a graph"
 test = ["gping --version", "gping {{version}}"]
 
