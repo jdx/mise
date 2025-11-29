@@ -135,19 +135,20 @@ impl Backend for UbiBackend {
         } else if name_is_url(&self.tool_name()) {
             install(&self.tool_name(), &v, &bin_dir, extract_all, &opts).await?;
         } else {
-            try_with_v_prefix(
-                &v,
-                None,
-                // ubi wraps 404 errors with a generic message
-                Some(|e| e.to_string().contains("returned an error status")),
-                |candidate| {
-                    let opts = opts.clone();
-                    let bin_dir = bin_dir.clone();
-                    async move {
-                        install(&self.tool_name(), &candidate, &bin_dir, extract_all, &opts).await
-                    }
-                },
-            )
+            try_with_v_prefix(&v, None, |candidate| {
+                let opts = opts.clone();
+                let bin_dir = bin_dir.clone();
+                async move {
+                    install(
+                        &self.tool_name(),
+                        &candidate,
+                        &bin_dir,
+                        extract_all,
+                        &opts,
+                    )
+                    .await
+                }
+            })
             .await?;
         }
 

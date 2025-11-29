@@ -24,7 +24,6 @@ const ARCH_PATTERNS: &[&str] = &[
 pub async fn try_with_v_prefix<F, Fut, T>(
     version: &str,
     version_prefix: Option<&str>,
-    should_retry: Option<fn(&eyre::Report) -> bool>,
     resolver: F,
 ) -> Result<T>
 where
@@ -60,9 +59,8 @@ where
         match resolver(candidate.clone()).await {
             Ok(res) => return Ok(res),
             Err(e) => {
-                if should_retry.as_ref().is_some_and(|f| f(&e))
-                    || crate::http::error_code(&e) == Some(404)
-                {
+                let is_404 = crate::http::error_code(&e) == Some(404);
+                if is_404 {
                     errors.push(e);
                 } else {
                     return Err(e);
