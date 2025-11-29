@@ -184,7 +184,7 @@ bin_path = "{name}-{version}/bin" # expands to cli-1.0.0/bin
 2. If `bin_path` is not set, look for a `bin/` directory in the install path
 3. If the install path root contains an executable file, use the install path root
 4. If no `bin/` directory exists, search subdirectories for `bin/` directories
-5. If no `bin/` directories are found, `mise` then searches immediate subdirectories for any executable files. If an executable is found directly within a subdirectory, that entire subdirectory is considered a binary path.
+5. If no `bin/` directories are found, searches immediate subdirectories for any executable files. If an executable is found directly within a subdirectory, that entire subdirectory is considered a binary path.
 6. If no executables are found, use the root of the extracted directory
 
 ### `filter_bins`
