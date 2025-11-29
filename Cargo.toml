@@ -53,6 +53,7 @@ opt-level = 3
 
 [dependencies]
 age = { version = "0.11", features = ["ssh"] }
+anyhow = "1.0.100"
 async-backtrace = "0.2"
 async-trait = "0.1"
 aws-lc-rs = { version = "1", optional = true, features = [

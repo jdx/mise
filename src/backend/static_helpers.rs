@@ -20,15 +20,56 @@ const ARCH_PATTERNS: &[&str] = &[
     "riscv64", "s390x", "i686", "i386", "x64", "mips", "arm", "x86",
 ];
 
+pub trait VerifiableError: Sized + Send + Sync + 'static {
+    fn is_not_found(&self) -> bool;
+    fn into_eyre(self) -> eyre::Report;
+}
+
+impl VerifiableError for eyre::Report {
+    fn is_not_found(&self) -> bool {
+        self.chain().any(|cause| {
+            if let Some(err) = cause.downcast_ref::<reqwest::Error>() {
+                err.status() == Some(reqwest::StatusCode::NOT_FOUND)
+            } else {
+                false
+            }
+        })
+    }
+
+    fn into_eyre(self) -> eyre::Report {
+        self
+    }
+}
+
+impl VerifiableError for anyhow::Error {
+    fn is_not_found(&self) -> bool {
+        if self.to_string().contains("404") {
+            return true;
+        }
+        self.chain().any(|cause| {
+            if let Some(err) = cause.downcast_ref::<reqwest::Error>() {
+                err.status() == Some(reqwest::StatusCode::NOT_FOUND)
+            } else {
+                false
+            }
+        })
+    }
+
+    fn into_eyre(self) -> eyre::Report {
+        eyre::eyre!(self)
+    }
+}
+
 /// Helper to try both prefixed and non-prefixed tags for a resolver function
-pub async fn try_with_v_prefix<F, Fut, T>(
+pub async fn try_with_v_prefix<F, Fut, T, E>(
     version: &str,
     version_prefix: Option<&str>,
     resolver: F,
 ) -> Result<T>
 where
     F: Fn(String) -> Fut,
-    Fut: std::future::Future<Output = Result<T>>,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    E: VerifiableError,
 {
     let mut errors = vec![];
 
@@ -43,27 +84,23 @@ where
         } else {
             vec![format!("{}{}", prefix, version), version.to_string()]
         }
+    } else if version.starts_with('v') {
+        vec![
+            version.to_string(),
+            version.trim_start_matches('v').to_string(),
+        ]
     } else {
-        // Fall back to 'v' prefix logic
-        if version.starts_with('v') {
-            vec![
-                version.to_string(),
-                version.trim_start_matches('v').to_string(),
-            ]
-        } else {
-            vec![format!("v{version}"), version.to_string()]
-        }
+        vec![format!("v{version}"), version.to_string()]
     };
 
     for candidate in candidates {
-        match resolver(candidate.clone()).await {
+        match resolver(candidate).await {
             Ok(res) => return Ok(res),
             Err(e) => {
-                let is_404 = crate::http::error_code(&e) == Some(404);
-                if is_404 {
-                    errors.push(e);
+                if e.is_not_found() {
+                    errors.push(e.into_eyre());
                 } else {
-                    return Err(e);
+                    return Err(e.into_eyre());
                 }
             }
         }
