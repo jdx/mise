@@ -43,7 +43,8 @@ export default {
       },
       asdf: (slug) =>
         slug.startsWith("http") ? slug : `https://github.com/${slug}`,
-      conda: (slug, options) => `https://anaconda.org/channels/${options.channel ?? "conda-forge"}/packages/${slug}/overview`,
+      conda: (slug, options) =>
+        `https://anaconda.org/channels/${options.channel ?? "conda-forge"}/packages/${slug}/overview`,
       cargo: (slug) => `https://crates.io/crates/${slug}`,
       core: (slug) => `https://mise.jdx.dev/lang/${slug}.html`,
       dotnet: (slug) => `https://www.nuget.org/packages/${slug}`,
@@ -53,7 +54,10 @@ export default {
       go: (slug) => `https://pkg.go.dev/${slug}`,
       npm: (slug) => `https://www.npmjs.com/package/${slug}`,
       pipx: (slug) => `https://pypi.org/project/${slug}`,
-      spm: (slug, options) => slug.startsWith("http") ? slug : `https://${options.proider == "gitlab" ? "gitlab.com" : "github.com"}/${slug}`,
+      spm: (slug, options) =>
+        slug.startsWith("http")
+          ? slug
+          : `https://${options.proider == "gitlab" ? "gitlab.com" : "github.com"}/${slug}`,
       http: () => "",
       ubi: (slug, options) => {
         const repoName = slug.split("/").slice(0, 2).join("/");
@@ -79,8 +83,7 @@ export default {
           const options = {
             ...(typeof backend === "object" && backend.options
               ? backend.options
-              : {}
-            ),
+              : {}),
             ...(match?.groups?.options
               ? Object.fromEntries(
                   match.groups.options.split(",").map((opt) => {
@@ -88,14 +91,11 @@ export default {
                     return [k, v];
                   }),
                 )
-              : {}
-            ),
+              : {}),
           };
           return {
             name: `${prefix}:${slug}`,
-            url: urlBuilders[prefix]
-              ? urlBuilders[prefix](slug, options)
-              : "",
+            url: urlBuilders[prefix] ? urlBuilders[prefix](slug, options) : "",
           };
         }),
         aliases: tool.aliases ?? [],
