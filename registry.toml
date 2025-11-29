@@ -3685,7 +3685,6 @@ backends = [
   "aqua:pnpm/pnpm",
   "ubi:pnpm/pnpm",
   "npm:pnpm",
-  "asdf:jonathanmorley/asdf-pnpm",
 ]
 description = "Fast, disk space efficient package manager"
 test = ["pnpm --version", "{{version}}"]
