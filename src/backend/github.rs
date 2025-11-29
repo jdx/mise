@@ -333,6 +333,17 @@ impl UnifiedGitBackend {
             return Ok(vec![bin_path]);
         }
 
+        // Check if the root directory contains an executable file
+        // If so, use the root directory as a bin path
+        if let Ok(entries) = std::fs::read_dir(tv.install_path()) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && file::is_executable(&path) {
+                    return Ok(vec![tv.install_path()]);
+                }
+            }
+        }
+
         // Look for bin directory or executables in subdirectories (for extracted archives)
         let mut paths = Vec::new();
         if let Ok(entries) = std::fs::read_dir(tv.install_path()) {
