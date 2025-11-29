@@ -402,7 +402,7 @@ impl UnifiedGitBackend {
         let version = &tv.version;
         let version_prefix = opts.get("version_prefix").map(|s| s.as_str());
         if self.is_gitlab() {
-            try_with_v_prefix(version, version_prefix, |candidate| async move {
+            try_with_v_prefix(version, version_prefix, None, |candidate| async move {
                 self.resolve_gitlab_asset_url_for_target(
                     tv, opts, repo, api_url, &candidate, target,
                 )
@@ -410,7 +410,7 @@ impl UnifiedGitBackend {
             })
             .await
         } else {
-            try_with_v_prefix(version, version_prefix, |candidate| async move {
+            try_with_v_prefix(version, version_prefix, None, |candidate| async move {
                 self.resolve_github_asset_url_for_target(
                     tv, opts, repo, api_url, &candidate, target,
                 )
